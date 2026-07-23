@@ -25,7 +25,8 @@ const (
 )
 
 type publishCheckEnv struct {
-	source *dagger.Directory
+	source    *dagger.Directory
+	workspace *dagger.Workspace
 
 	releaseTag     string
 	releaseVersion string
@@ -56,6 +57,8 @@ type publishCheckEnv struct {
 
 // Exercise the release publish path against local mock endpoints.
 // +check
+//
+//nolint:gocyclo
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
@@ -64,7 +67,7 @@ func (r *Release) PublishWithMockEndpoints(
 	// +defaultPath="/"
 	source *dagger.Directory,
 ) (rerr error) {
-	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"))
+	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace)
 	if err != nil {
 		return err
 	}
@@ -114,21 +117,28 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	if err != nil {
 		return err
 	}
-	for _, check := range []struct {
+	type publishCheck struct {
 		needle string
 		msg    string
-	}{
+	}
+	isPrerelease := semver.Prerelease(env.releaseTag) != ""
+	checks := []publishCheck{
 		{fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", env.releaseTag), "release publish should publish the engine"},
 		{fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", env.releaseTag), "release publish should publish the CLI"},
-		{"- [x] 📖 Docs", "release publish should publish docs"},
-		{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
-		{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
-		{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
-		{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
-		{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
-		{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
-		{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
-	} {
+	}
+	if !isPrerelease {
+		checks = append(checks,
+			publishCheck{"- [x] 📖 Docs", "release publish should publish docs"},
+			publishCheck{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
+			publishCheck{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
+			publishCheck{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
+			publishCheck{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
+			publishCheck{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
+			publishCheck{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
+			publishCheck{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
+		)
+	}
+	for _, check := range checks {
 		if err := requireContains(taggedOut, check.needle, check.msg); err != nil {
 			return err
 		}
@@ -143,21 +153,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	if err := env.assertCLIPublishMetadata(ctx); err != nil {
 		return err
 	}
-	if err := env.assertCLIGitHubRelease(ctx); err != nil {
-		return err
-	}
-	if err := env.assertCLIPackageManagers(ctx); err != nil {
-		return err
-	}
-	if err := env.assertComponentGitHubReleases(ctx); err != nil {
-		return err
-	}
-	if err := env.assertPackageRegistryRequests(ctx); err != nil {
-		return err
-	}
-	if err := env.assertMockEvents(ctx); err != nil {
-		return err
-	}
+
 	if err := env.assertRegistryTags(ctx); err != nil {
 		return err
 	}
@@ -167,19 +163,39 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	if err := env.assertCLIVersion(ctx); err != nil {
 		return err
 	}
-	if err := env.assertNpmVersion(ctx); err != nil {
-		return err
-	}
-	if err := env.assertHelmTags(ctx); err != nil {
-		return err
-	}
-	if err := env.assertSDKTags(ctx); err != nil {
-		return err
+
+	if !isPrerelease {
+		if err := env.assertCLIGitHubRelease(ctx); err != nil {
+			return err
+		}
+		if err := env.assertCLIPackageManagers(ctx); err != nil {
+			return err
+		}
+		if err := env.assertComponentGitHubReleases(ctx); err != nil {
+			return err
+		}
+		if err := env.assertPackageRegistryRequests(ctx); err != nil {
+			return err
+		}
+
+		if err := env.assertMockEvents(ctx); err != nil {
+			return err
+		}
+
+		if err := env.assertNpmVersion(ctx); err != nil {
+			return err
+		}
+		if err := env.assertHelmTags(ctx); err != nil {
+			return err
+		}
+		if err := env.assertSDKTags(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func newPublishCheckEnv(ctx context.Context, source *dagger.Directory) (*publishCheckEnv, error) {
+func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace) (*publishCheckEnv, error) {
 	platform, platformArchive, err := publishCheckPlatform(ctx)
 	if err != nil {
 		return nil, err
@@ -189,8 +205,46 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory) (*publish
 		return nil, err
 	}
 
+	// A stable release reads release notes from a changelog file per published
+	// component: the root .changes/<tag>.md for the engine and CLI (cli-dev's
+	// publish step), and <component>/.changes/<tag>.md for each SDK and the Helm
+	// chart (Changelog.lookupEntry, used when cutting their GitHub releases). The
+	// pre-release working tree under test carries none of these until the release
+	// is actually cut, so stub them all.
+	//
+	// The check inspects each resulting release body (see the embedded python
+	// below), asserting it mentions its own release tag, carries a "What to do
+	// next?" follow-up section, and (for the root release) has at least one
+	// "### Added/Changed/Fixed" section. Component release tags are
+	// "<component>/<version>" (e.g. "sdk/go/v1.0.0") while the root engine/CLI
+	// tag is just the version, so title each stub with its own tag — mirroring
+	// the real changelog headers (e.g. "## sdk/go/v0.11.0 - <date>").
+	// A component's changelog path and its release tag usually match, but not
+	// always: the Helm chart's notes live under helm/dagger/ while its release
+	// is tagged helm/chart/. Write each stub to its path but title it with its
+	// tag (the string the check looks for in the body).
+	for _, c := range []struct{ path, tag string }{
+		{"", ""}, // engine + CLI (root .changes, tagged just <version>)
+		{"sdk/go/", "sdk/go/"},
+		{"sdk/python/", "sdk/python/"},
+		{"sdk/typescript/", "sdk/typescript/"},
+		{"sdk/elixir/", "sdk/elixir/"},
+		{"sdk/rust/", "sdk/rust/"},
+		{"sdk/php/", "sdk/php/"},
+		{"helm/dagger/", "helm/chart/"},
+	} {
+		tag := c.tag + releaseTag // "v1.0.0", "sdk/go/v1.0.0", "helm/chart/v1.0.0"
+		notes := "## " + tag + "\n\n" +
+			"### Changed\n\n" +
+			"- Publish-check placeholder entry.\n\n" +
+			"### What to do next?\n\n" +
+			"- Read the [documentation](https://docs.dagger.io)\n"
+		source = source.WithNewFile(c.path+".changes/"+releaseTag+".md", notes)
+	}
+
 	env := &publishCheckEnv{
 		source:          source,
+		workspace:       ws,
 		releaseTag:      releaseTag,
 		releaseVersion:  releaseVersion,
 		awsBucket:       "dagger-release-test-" + strings.ToLower(randomID()),
@@ -320,6 +374,7 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
 	dev := dag.EngineDev(dagger.EngineDevOpts{
 		Source:       env.source,
+		Ws:           env.workspace,
 		SubnetNumber: 90,
 	}).IncrementSubnet()
 	networkCIDR, err := dev.NetworkCidr(ctx)
@@ -358,7 +413,7 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 }
 
 func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
-	dev := dag.EngineDev(dagger.EngineDevOpts{Source: env.source})
+	dev := dag.EngineDev(dagger.EngineDevOpts{Source: env.source, Ws: env.workspace})
 	client := dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{"apk-tools", "ca-certificates", "curl", "git"},
@@ -596,6 +651,10 @@ func (env *publishCheckEnv) assertStableCLIReleaseArtifacts(ctx context.Context)
 }
 
 func (env *publishCheckEnv) assertCLIPublishMetadata(ctx context.Context) error {
+	isPrerelease := "0"
+	if semver.Prerelease(env.releaseTag) != "" {
+		isPrerelease = "1"
+	}
 	_, err := env.awsCLI().
 		WithExec([]string{"apk", "add", "python3"}).
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
@@ -603,10 +662,15 @@ func (env *publishCheckEnv) assertCLIPublishMetadata(ctx context.Context) error 
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
 		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
 		WithEnvVariable("RELEASE_COMMIT", env.commit).
+		WithEnvVariable("IS_PRERELEASE", isPrerelease).
 		WithExec([]string{"sh", "-ec", `
 set -eu
 aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 --bucket "$AWS_BUCKET" > /tmp/s3-objects.json
-for key in dagger/latest_version dagger/versions/latest dagger/versions/${RELEASE_VERSION%.*} dagger/install.sh dagger/install.ps1; do
+latest_keys="dagger/latest_version dagger/versions/latest"
+if [ "$IS_PRERELEASE" = "1" ]; then
+	latest_keys=""
+fi
+for key in $latest_keys dagger/versions/${RELEASE_VERSION%.*} dagger/install.sh dagger/install.ps1; do
 	aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/$key" "/tmp/$(basename "$key")" >/dev/null
 done
 aws --endpoint-url "$AWS_ENDPOINT_URL" cloudfront list-invalidations --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION" > /tmp/cloudfront-invalidations.json
@@ -638,6 +702,7 @@ def fail(msg):
 tag = os.environ["RELEASE_TAG"]
 version = os.environ["RELEASE_VERSION"]
 commit = os.environ["RELEASE_COMMIT"]
+is_prerelease = os.environ["IS_PRERELEASE"] == "1"
 suffixes = [
     "darwin_amd64.tar.gz",
     "darwin_arm64.tar.gz",
@@ -657,20 +722,29 @@ for label, prefix in (
     for suffix in suffixes:
         expected.add(prefix + "/dagger_" + label + "_" + suffix)
     expected.add(prefix + "/checksums.txt")
+# Mirrors the shell's ${RELEASE_VERSION%.*}: "1.0.0" -> "1.0" (stable
+# major.minor pointer), "1.0.0-beta.7" -> "1.0.0-beta" (prerelease variant).
+version_pointer = version.rsplit(".", 1)[0]
 expected.update({
     "dagger/install.sh",
     "dagger/install.ps1",
-    "dagger/latest_version",
-    "dagger/versions/latest",
-    "dagger/versions/" + ".".join(version.split(".")[:2]),
+    "dagger/versions/" + version_pointer,
 })
+if not is_prerelease:
+    expected.update({
+        "dagger/latest_version",
+        "dagger/versions/latest",
+    })
 
 objects = json.load(open("/tmp/s3-objects.json", encoding="utf-8"))
 actual = {item["Key"] for item in objects.get("Contents", [])}
 if actual != expected:
     fail("S3 object set mismatch\nexpected: %r\nactual:   %r" % (sorted(expected), sorted(actual)))
 
-for pointer in ("latest_version", "latest", ".".join(version.split(".")[:2])):
+pointers = [version_pointer]
+if not is_prerelease:
+    pointers += ["latest_version", "latest"]
+for pointer in pointers:
     path = "/tmp/" + pointer
     got = open(path, encoding="utf-8").read()
     if got != version:
@@ -1420,6 +1494,10 @@ func (env *publishCheckEnv) mockEvents(ctx context.Context) (string, error) {
 }
 
 func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
+	isPrerelease := "0"
+	if semver.Prerelease(env.releaseTag) != "" {
+		isPrerelease = "1"
+	}
 	tags, err := dag.Container().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "curl"}).
@@ -1431,16 +1509,18 @@ func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list registry tags: %w", err)
 	}
-	for _, tag := range []string{
+	expectedTags := []string{
 		"main",
 		env.commit,
 		env.releaseTag,
-		"latest",
 		"main-gpu",
 		env.commit + "-gpu",
 		env.releaseTag + "-gpu",
-		"latest-gpu",
-	} {
+	}
+	if isPrerelease == "0" {
+		expectedTags = append(expectedTags, "latest", "latest-gpu")
+	}
+	for _, tag := range expectedTags {
 		if err := requireContains(tags, tag, "registry should contain engine tag"); err != nil {
 			return err
 		}
@@ -1450,13 +1530,18 @@ func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-manifest-password-"+randomID(), publishCheckRegistryPass)).
-		WithEnvVariable("RELEASE_TAG", env.releaseTag)
+		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithEnvVariable("IS_PRERELEASE", isPrerelease)
 
 	_, err = craneCtr.
 		WithExec([]string{"sh", "-ec", `
 set -eu
 	crane auth login registry:5000 --insecure --username "$REGISTRY_USERNAME" --password "$REGISTRY_PASSWORD"
-	for tag in main "$RELEASE_TAG" latest; do
+	manifest_tags="main $RELEASE_TAG"
+	if [ "$IS_PRERELEASE" != "1" ]; then
+		manifest_tags="$manifest_tags latest"
+	fi
+	for tag in $manifest_tags; do
 		crane manifest --insecure "registry:5000/dagger/engine:$tag" > "/tmp/default-$tag.json"
 		crane config --insecure "registry:5000/dagger/engine:$tag-gpu" > "/tmp/gpu-$tag.json"
 	done
@@ -1474,7 +1559,7 @@ check_platform_counts() {
 		exit 1
 	fi
 }
-	for tag in main "$RELEASE_TAG" latest; do
+	for tag in $manifest_tags; do
 		check_platform_counts "/tmp/default-$tag.json" 1 1 2
 		architecture="$(grep -o '"architecture"[[:space:]]*:[[:space:]]*"[^"]*"' "/tmp/gpu-$tag.json" | head -1 | sed 's/.*"architecture"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
 		os="$(grep -o '"os"[[:space:]]*:[[:space:]]*"[^"]*"' "/tmp/gpu-$tag.json" | head -1 | sed 's/.*"os"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
@@ -1484,17 +1569,19 @@ check_platform_counts() {
 			exit 1
 		fi
 	done
-	release_digest="$(crane digest --insecure "registry:5000/dagger/engine:$RELEASE_TAG")"
-	latest_digest="$(crane digest --insecure "registry:5000/dagger/engine:latest")"
-	if [ "$release_digest" != "$latest_digest" ]; then
-		echo "stable release tag and latest should point at the same engine manifest: release=$release_digest latest=$latest_digest" >&2
-		exit 1
-	fi
-	release_gpu_digest="$(crane digest --insecure "registry:5000/dagger/engine:$RELEASE_TAG-gpu")"
-	latest_gpu_digest="$(crane digest --insecure "registry:5000/dagger/engine:latest-gpu")"
-	if [ "$release_gpu_digest" != "$latest_gpu_digest" ]; then
-		echo "stable GPU release tag and latest-gpu should point at the same engine image: release=$release_gpu_digest latest=$latest_gpu_digest" >&2
-		exit 1
+	if [ "$IS_PRERELEASE" != "1" ]; then
+		release_digest="$(crane digest --insecure "registry:5000/dagger/engine:$RELEASE_TAG")"
+		latest_digest="$(crane digest --insecure "registry:5000/dagger/engine:latest")"
+		if [ "$release_digest" != "$latest_digest" ]; then
+			echo "stable release tag and latest should point at the same engine manifest: release=$release_digest latest=$latest_digest" >&2
+			exit 1
+		fi
+		release_gpu_digest="$(crane digest --insecure "registry:5000/dagger/engine:$RELEASE_TAG-gpu")"
+		latest_gpu_digest="$(crane digest --insecure "registry:5000/dagger/engine:latest-gpu")"
+		if [ "$release_gpu_digest" != "$latest_gpu_digest" ]; then
+			echo "stable GPU release tag and latest-gpu should point at the same engine image: release=$release_gpu_digest latest=$latest_gpu_digest" >&2
+			exit 1
+		fi
 	fi
 	`}).
 		Sync(ctx)

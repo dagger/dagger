@@ -412,7 +412,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs)")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
 	flags.StringVar(&lockMode, "lock", "", "Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
@@ -677,7 +677,7 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
 	switch commandName(cmd) {
 	case "settings", "workspace settings":
-		return len(args) == 3
+		return len(args) >= 3
 	default:
 		return false
 	}
@@ -742,6 +742,11 @@ const (
 	workspaceFlagPolicyLocalOnly  = "local-only"
 
 	showFinalProgressKey = "showFinalProgress"
+
+	// progressDefaultKey annotates a command with the progress mode it should
+	// default to when none is chosen explicitly (flag or DAGGER_PROGRESS),
+	// letting commands with machine consumers opt out of the report default.
+	progressDefaultKey = "progressDefault"
 )
 
 func commandShowsFinalProgress(cmd *cobra.Command) bool {
@@ -751,6 +756,24 @@ func commandShowsFinalProgress(cmd *cobra.Command) bool {
 		}
 	}
 	return false
+}
+
+// commandProgressDefault returns the progressDefault annotation of the
+// command os.Args points at, resolving it the way cobra will (global flags
+// may appear before the subcommand, and the command may be nested, e.g.
+// `dagger api session`). Empty when unresolvable or unannotated; a resolution
+// error just means cobra will reject the command line later anyway.
+func commandProgressDefault(args []string) string {
+	cmd, _, err := rootCmd.Traverse(args)
+	if err != nil || cmd == nil {
+		return ""
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if v := c.Annotations[progressDefaultKey]; v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func applyCommandProgressDefaults(cmd *cobra.Command) {
@@ -806,17 +829,31 @@ func Main() {
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
-		} else if os.Getenv("CLAUDECODE") == "1" {
+		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
+			// The command declares its own default (e.g. `dagger session`
+			// keeps plain progress for its SDK consumers). Checked before
+			// RunningInAgent: an agent-driven SDK program needs the stream
+			// just as much.
+			progress = def
+		} else if idtui.RunningInAgent() {
+			// An AI agent consumes the output as text; the report frontend's
+			// single final render suits it better than the live TUI.
 			progress = "report"
 		} else if hasTTY {
 			progress = "tty"
 		} else {
-			progress = "plain"
+			progress = "report"
 		}
 	}
 	if silent {
 		// if silent, don't even bother with the pretty frontend
 		progress = "plain"
+	}
+	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
+	// force it regardless of progress mode / tty (it doesn't need one).
+	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
+		progress = "tty"
+		hasTTY = true
 	}
 	switch progress {
 	case "plain":

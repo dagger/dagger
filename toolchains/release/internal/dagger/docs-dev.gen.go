@@ -33,16 +33,6 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 	}
 }
 
-// Bump the Go SDK's Engine dependency
-func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:119:1)
-	q := r.query.Select("bump")
-	q = q.Arg("engineVersion", engineVersion)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Check the docs website build
 func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../toolchains/docs-dev/main.go:52:1)
 	if r.check != nil {
@@ -54,7 +44,7 @@ func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../to
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:134:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:126:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -120,13 +110,13 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:167:2)
+	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:159:2)
 
-	APIURL string // docs-dev (../../../../toolchains/docs-dev/main.go:169:2)
+	APIURL string // docs-dev (../../../../toolchains/docs-dev/main.go:161:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:163:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:155:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -153,6 +143,12 @@ type DocsDevReferencesOpts struct {
 	// Dagger version to generate API docs for
 	//
 	Version string // docs-dev (../../../../toolchains/docs-dev/main.go:74:2)
+	//
+	// Workspace forwarded to engine-dev for VCS stamping (References is the
+	// only docs-dev method that builds). Auto-injected on a direct call;
+	// dependencies don't inherit it.
+	//
+	Ws *Workspace // docs-dev (../../../../toolchains/docs-dev/main.go:80:2)
 }
 
 // Regenerate the API schema and CLI reference docs
@@ -162,6 +158,10 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

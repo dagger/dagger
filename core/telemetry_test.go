@@ -56,8 +56,8 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*M
 	return nil
 }
 
-func (ms *mockServer) EnsureWorkspaceModules(context.Context, []string) error {
-	return nil
+func (ms *mockServer) EnsureWorkspaceModules(context.Context, []string, bool) ([]string, error) {
+	return nil, nil
 }
 
 func (ms *mockServer) CurrentModule(_ context.Context) (dagql.ObjectResult[*Module], error) {
@@ -137,7 +137,7 @@ func (ms *mockServer) SpecificClientAttachableConn(_ context.Context, clientID s
 	return conn, conn != nil, nil
 }
 
-func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {
+func (ms *mockServer) CurrentWorkspaceLock(context.Context, bool) (*workspacepkg.Lock, bool, error) {
 	return nil, false, nil
 }
 
@@ -183,6 +183,9 @@ func (ms *mockServer) SnapshotManager() bkcache.SnapshotManager        { return 
 func (ms *mockServer) Locker() *locker.Locker                          { return nil }
 func (ms *mockServer) SecretSalt() []byte                              { return nil }
 func (ms *mockServer) FlushSessionTelemetry(context.Context) error     { return nil }
+func (ms *mockServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	return context.WithoutCancel(ctx), nil
+}
 func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	return nil, nil
 }

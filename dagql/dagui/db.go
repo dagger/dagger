@@ -5,6 +5,7 @@ import (
 	"iter"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -21,6 +22,83 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
+
+// LLMTokenMetrics tracks token usage across all LLM calls.
+//
+// Aggregate runs on the UI goroutine (metric export is dispatched there), while
+// Snapshot is read from other goroutines (e.g. the CLI's LLM session driving
+// the status line), so access to ByModel is guarded by mu.
+type LLMTokenMetrics struct {
+	mu sync.Mutex
+	// ByModel maps a model name to its accumulated token metrics.
+	ByModel map[string]*LLMModelMetrics
+}
+
+// Snapshot returns a copy of the per-model metrics safe to read from any
+// goroutine.
+func (m *LLMTokenMetrics) Snapshot() []LLMModelMetrics {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]LLMModelMetrics, 0, len(m.ByModel))
+	for _, v := range m.ByModel {
+		out = append(out, *v)
+	}
+	return out
+}
+
+// LLMModelMetrics tracks token usage for a specific model.
+type LLMModelMetrics struct {
+	Model             string
+	Provider          string
+	InputTokens       int64
+	OutputTokens      int64
+	CachedTokenReads  int64
+	CachedTokenWrites int64
+}
+
+// Aggregate adds the metrics from a data point to the running totals, keyed by
+// the point's "model" attribute. Points without a model attribute are ignored.
+func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoint[int64]) {
+	var model, provider string
+	modelAttr, hasModel := point.Attributes.Value(attribute.Key("model"))
+	providerAttr, hasProvider := point.Attributes.Value(attribute.Key("provider"))
+
+	if !hasModel {
+		return // Skip if no model attribute.
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	model = modelAttr.AsString()
+	if hasProvider {
+		provider = providerAttr.AsString()
+	}
+
+	if m.ByModel == nil {
+		m.ByModel = make(map[string]*LLMModelMetrics)
+	}
+
+	metrics, ok := m.ByModel[model]
+	if !ok {
+		metrics = &LLMModelMetrics{
+			Model:    model,
+			Provider: provider,
+		}
+		m.ByModel[model] = metrics
+	}
+
+	switch metricName {
+	case telemetry.LLMInputTokens:
+		metrics.InputTokens += point.Value
+	case telemetry.LLMOutputTokens:
+		metrics.OutputTokens += point.Value
+	case telemetry.LLMInputTokensCacheReads:
+		metrics.CachedTokenReads += point.Value
+	case telemetry.LLMInputTokensCacheWrites:
+		metrics.CachedTokenWrites += point.Value
+	}
+}
 
 type DB struct {
 	PrimarySpan SpanID
@@ -48,6 +126,10 @@ type DB struct {
 	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
 	MetricsBySpan map[SpanID]map[string][]metricdata.DataPoint[int64]
 
+	// LLMTokenMetrics aggregates LLM token usage across all spans/models, used
+	// to drive the status line's cost/context display.
+	LLMTokenMetrics *LLMTokenMetrics
+
 	// updatedSpans is a set of spans that have been updated since the last
 	// sync, which includes any parent spans whose overall active time intervals
 	// or status were modified via a child or linked span.
@@ -62,7 +144,23 @@ type DB struct {
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
 
+	// mutations counts span adds and updates. Derived-view memos (e.g. the
+	// per-span test views and surfaced checks) key on it so a cached result is
+	// reused across the many reads of a single render frame but never survives
+	// new span data.
+	mutations uint64
+
+	surfacedChecks     []*CheckNode
+	surfacedChecksAt   uint64
+	surfacedChecksInit bool
+
 	testIndex *TestIndex
+}
+
+// MutationCount reports how many span adds/updates the DB has seen, for
+// callers memoizing views derived from span data (see the mutations field).
+func (db *DB) MutationCount() uint64 {
+	return db.mutations
 }
 
 type resumeOutputKey struct {
@@ -92,6 +190,8 @@ func NewDB() *DB {
 		pendingResumeOutputs: make(map[resumeOutputKey]SpanSet),
 		pendingLogsByOutput:  make(map[resumeOutputKey][]sdklog.Record),
 		resolvedLogsBySpan:   make(map[SpanID][]sdklog.Record),
+
+		LLMTokenMetrics: &LLMTokenMetrics{},
 	}
 }
 
@@ -110,8 +210,10 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// don't send along any stubs; let the client-side create its own stubs
 			return false
 		}
-		if filter == nil || filter[span.ParentID] {
-			// include subscribed (or all) spans
+		if filter == nil || filter[span.ParentID] || filter[span.ID] {
+			// include subscribed (or all) spans, and updates to spans that
+			// were explicitly subscribed themselves (e.g. time-breakdown support
+			// spans whose parents aren't subscribed)
 			return true
 		}
 		if span.IsFailedOrCausedFailure() {
@@ -182,6 +284,7 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 }
 
 func (db *DB) update(span *Span) {
+	db.mutations++
 	db.noteTestSpanUpdated(span)
 	if span.Final {
 		// don't bump versions for final spans; leave the remote as the
@@ -357,6 +460,16 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 		}
 
 		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+
+		// Aggregate LLM token metrics across all spans/models for the status
+		// line's cost/context display.
+		switch metric.Name {
+		case telemetry.LLMInputTokens, telemetry.LLMOutputTokens,
+			telemetry.LLMInputTokensCacheReads, telemetry.LLMInputTokensCacheWrites:
+			if db.LLMTokenMetrics != nil {
+				db.LLMTokenMetrics.Aggregate(metric.Name, point)
+			}
+		}
 	}
 }
 
@@ -425,19 +538,12 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.Status = span.Status()
 	spanData.Links = make([]SpanLink, len(span.Links()))
 	for i, link := range span.Links() {
-		var purpose string
-		for _, linkAttr := range link.Attributes {
-			if linkAttr.Key == telemetry.LinkPurposeAttr {
-				purpose = linkAttr.Value.AsString()
-				break
-			}
+		spanData.Links[i].SpanContext = SpanContext{
+			TraceID: TraceID{link.SpanContext.TraceID()},
+			SpanID:  SpanID{link.SpanContext.SpanID()},
 		}
-		spanData.Links[i] = SpanLink{
-			SpanContext: SpanContext{
-				TraceID: TraceID{link.SpanContext.TraceID()},
-				SpanID:  SpanID{link.SpanContext.SpanID()},
-			},
-			Purpose: purpose,
+		for _, linkAttr := range link.Attributes {
+			spanData.Links[i].ProcessAttribute(string(linkAttr.Key), linkAttr.Value.AsString())
 		}
 	}
 
@@ -785,6 +891,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// FIXME: refactor? can we keep some sort of flat map of spans an append
 	// children to them instead of having the single big ordered list?
 	db.Spans.Add(span)
+	db.mutations++
 	db.noteTestSpanUpdated(span)
 }
 

@@ -32,6 +32,7 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -93,6 +94,9 @@ type MCP struct {
 	typeCounts map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
+	// The dagql call.ID for each LLM-friendly ID, used to materialize objects
+	// back into the LLM history via withObject after a step rebuild.
+	idByLLMID map[string]*call.ID
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -135,6 +139,7 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 		objsByID:        map[string]contextualBinding{},
 		typeCounts:      map[string]int{},
 		idByHash:        map[digest.Digest]string{},
+		idByLLMID:       map[string]*call.ID{},
 		mcpServers:      make(map[string]*MCPServerConfig),
 		mcpSessions:     map[string]*mcp.ClientSession{},
 		mu:              &sync.Mutex{},
@@ -197,6 +202,7 @@ func (m *MCP) Clone() *MCP {
 	cp.objsByID = maps.Clone(cp.objsByID)
 	cp.typeCounts = maps.Clone(cp.typeCounts)
 	cp.idByHash = maps.Clone(cp.idByHash)
+	cp.idByLLMID = maps.Clone(cp.idByLLMID)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
 	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
@@ -1139,13 +1145,18 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
-func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
-	tool, err := m.LookupTool(toolCall.Function.Name, tools)
+func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
+	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
 		return err.Error(), true
 	}
 
-	args := toolCall.Function.Arguments
+	args := map[string]any{}
+	if len(toolCall.Arguments) > 0 {
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return fmt.Sprintf("failed to parse tool arguments: %s", err), true
+		}
+	}
 
 	var toolArgNames []string
 	var toolArgValues []string
@@ -1202,7 +1213,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvToContext(ctx, m.env), toolCall.Function.Arguments)
+	result, err := tool.Call(EnvToContext(ctx, m.env), args)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}
@@ -1221,15 +1232,36 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
 // grouping calls by destructiveness and server to avoid workspace conflicts
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+// toolCallCtx returns the display span context a tool call's arguments streamed
+// into, so the tool's execution nests beneath it. Falls back to ctx when no
+// display span exists (e.g. replay or a provider that doesn't stream).
+func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callID string) context.Context {
+	if tc, ok := displays[callID]; ok {
+		return tc.Ctx
+	}
+	return ctx
+}
+
+// endToolCallDisplay ends a tool call's display span once the tool returns,
+// marking it errored if the call failed. No-op when there's no display span.
+func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, errored bool, errMsg string) {
+	if tc, ok := displays[callID]; ok {
+		if errored {
+			tc.Span.SetStatus(codes.Error, errMsg)
+		}
+		tc.Span.End()
+	}
+}
+
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
 	// Group tool calls by their characteristics
-	readOnlyMCPCalls := make(map[string][]LLMToolCall)    // server -> read-only calls
-	destructiveMCPCalls := make(map[string][]LLMToolCall) // server -> destructive calls
-	regularCalls := make([]LLMToolCall, 0)
-	destructiveCalls := make([]LLMToolCall, 0)
+	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
+	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
+	regularCalls := make([]*LLMToolCall, 0)
+	destructiveCalls := make([]*LLMToolCall, 0)
 
 	for _, toolCall := range toolCalls {
-		tool, err := m.LookupTool(toolCall.Function.Name, tools)
+		tool, err := m.LookupTool(toolCall.Name, tools)
 		if err != nil {
 			// Couldn't find the tool, just call it regularly and let it fail with the
 			// tool not found (or ambiguous) error
@@ -1256,80 +1288,84 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 		}
 	}
 
-	var allResults []*ModelMessage
+	var allResults []*LLMMessage
 
 	// 1. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
-		result, isError := m.Call(ctx, tools, call)
-		allResults = append(allResults, &ModelMessage{
-			Role:        "user",
-			Content:     result,
-			ToolCallID:  call.ID,
-			ToolErrored: isError,
+		result, isError := m.Call(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
+		endToolCallDisplay(toolCallDisplays, call.CallID, isError, result)
+		allResults = append(allResults, &LLMMessage{
+			Role: LLMMessageRoleUser,
+			Content: []*LLMContentBlock{{
+				Kind:    LLMContentToolResult,
+				Text:    result,
+				CallID:  call.CallID,
+				Errored: isError,
+			}},
 		})
 	}
 
 	// 2. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
-		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName)
+		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallDisplays)
 		allResults = append(allResults, serverResults...)
 	}
 
 	// 3. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallDisplays)...)
 	}
 
 	// 4. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []LLMToolCall
+	var readOnlyToolCalls []*LLMToolCall
 	for _, calls := range readOnlyMCPCalls {
 		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
 	}
 	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallDisplays)...)
 	}
 
 	return allResults
 }
 
 // callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
-func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall, serverName string) []*ModelMessage {
+func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
 	mcpSrv, ok := m.mcpServers[serverName]
 	if !ok {
 		// Fall back to individual calls if server not found
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	if _, ok := m.mcpSessions[serverName]; !ok {
 		// Fall back to individual calls if session not found
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	ctr := mcpSrv.Service.Self().Container
 	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 	serviceDigest, err := mcpSrv.Service.ContentPreferredDigest(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 	running, err := query.Services(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 	runningSvc, err := running.Get(ctx, serviceDigest, false)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
-	var results []*ModelMessage
+	var results []*LLMMessage
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
 		runningSvc,
@@ -1337,13 +1373,13 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		m.env.Self().Workspace,
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
-			results = m.callBatchRegular(ctx, tools, toolCalls)
+			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 			return nil
 		})
 
 	if err != nil {
 		// Fall back to individual calls if sync fails
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	// Apply workspace changes if any were made
@@ -1357,21 +1393,41 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 }
 
 // callBatchRegular is the original parallel execution logic without MCP-specific syncing
-func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
 	// Run tool calls in parallel using the existing pool logic
-	toolCallsPool := pool.NewWithResults[*ModelMessage]()
+	toolCallsPool := pool.NewWithResults[*LLMMessage]()
 	for _, toolCall := range toolCalls {
-		toolCallsPool.Go(func() *ModelMessage {
-			content, isError := m.Call(ctx, tools, toolCall)
-			return &ModelMessage{
-				Role:        "user", // Anthropic only allows tool call results in user messages
-				Content:     content,
-				ToolCallID:  toolCall.ID,
-				ToolErrored: isError,
+		toolCallsPool.Go(func() *LLMMessage {
+			content, isError := m.Call(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), tools, toolCall)
+			endToolCallDisplay(toolCallDisplays, toolCall.CallID, isError, content)
+			return &LLMMessage{
+				Role: LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
+				Content: []*LLMContentBlock{{
+					Kind:    LLMContentToolResult,
+					Text:    content,
+					CallID:  toolCall.CallID,
+					Errored: isError,
+				}},
 			}
 		})
 	}
 	return toolCallsPool.Wait()
+}
+
+// stableIDDigest returns a stable identity digest for an ID in either form.
+// Recipe IDs use their recipe digest (unchanged behavior); handle-form IDs
+// (post-evaluation cache handles) have no recipe digest, so derive one from
+// their engine result ID — the same identity the engine uses to compare handle
+// objects. Both the store (WithObject) and the lookup (Binding.Digest) use this,
+// so object dedup stays consistent.
+func stableIDDigest(id *call.ID) digest.Digest {
+	if id == nil {
+		return digest.FromString("")
+	}
+	if id.IsHandle() {
+		return digest.FromString(fmt.Sprintf("engine-result:%d", id.EngineResultID()))
+	}
+	return id.Digest()
 }
 
 // sync this with idtui.llmLogsLastLines to ensure user and LLM sees the same
@@ -1402,7 +1458,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 	var lastLogID int64
 
 	for {
-		logs, err := q.SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
+		logs, err := q.Read().SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
 			ID:     lastLogID,
 			SpanID: sql.NullString{Valid: true, String: spanID},
 			Limit:  llmLogsBatchSize,
@@ -1439,7 +1495,10 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 			}
 
 			if log.SpanID.Valid {
-				span, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
+				if !log.TraceID.Valid {
+					return nil, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
+				}
+				span, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
 					TraceID: log.TraceID.String,
 					SpanID:  log.SpanID.String,
 				})
@@ -2447,11 +2506,20 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	typeName := id.Type().NamedType()
+	stable := stableIDDigest(id)
 	llmID, ok := m.idByHash[hash]
+	if !ok {
+		// The recipe digest misses for objects that were re-registered onto
+		// materialized LLM state by WithObject, which only knows the object's
+		// ID; recognize them by the same stable ID digest it keys with, so a
+		// re-ingested object keeps its tag instead of claiming a fresh number
+		// (and colliding with tags handed out in earlier steps).
+		llmID, ok = m.idByHash[stable]
+	}
 	if !ok {
 		m.typeCounts[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
-		m.idByHash[hash] = llmID
+		m.idByLLMID[llmID] = id
 		m.objsByID[llmID] = func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error) {
 			return &Binding{
 				Key:          llmID,
@@ -2461,7 +2529,84 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 			}, nil
 		}
 	}
+	m.idByHash[hash] = llmID
+	m.idByHash[stable] = llmID
 	return llmID, nil
+}
+
+// Snapshot returns a copy of the current LLM-ID-to-call.ID map for later
+// diffing (used by the step loop to detect objects created during tool calls).
+func (m *MCP) Snapshot() map[string]*call.ID {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return maps.Clone(m.idByLLMID)
+}
+
+// NewObjects returns the LLM IDs added since a prior snapshot.
+func (m *MCP) NewObjects(before map[string]*call.ID) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var newObjs []string
+	for llmID := range m.idByLLMID {
+		if _, exists := before[llmID]; !exists {
+			newObjs = append(newObjs, llmID)
+		}
+	}
+	return newObjs
+}
+
+// IDForLLMID returns the call.ID for a given LLM-friendly ID.
+func (m *MCP) IDForLLMID(llmID string) (*call.ID, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id, ok := m.idByLLMID[llmID]
+	return id, ok
+}
+
+// WithObject re-registers an object under a specific LLM-friendly ID, so that
+// objects created during a tool call survive a step's history rebuild. The
+// object is loaded lazily from its ID when next referenced.
+func (m *MCP) WithObject(llmID string, anyID dagql.AnyID) *MCP {
+	m = m.Clone()
+	id, err := anyID.ID()
+	if err != nil || id == nil {
+		return m
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	typeName := id.Type().NamedType()
+	hash := stableIDDigest(id)
+	// Keep the tag counter at or ahead of any re-registered TypeName#N tag so
+	// later ingestions can never claim a number this tag already occupies.
+	if _, numStr, found := strings.Cut(llmID, "#"); found {
+		if n, err := strconv.Atoi(numStr); err == nil && n > m.typeCounts[typeName] {
+			m.typeCounts[typeName] = n
+		}
+	} else if _, ok := m.idByHash[hash]; !ok {
+		m.typeCounts[typeName]++
+	}
+	m.idByHash[hash] = llmID
+	m.idByLLMID[llmID] = id
+	m.objsByID[llmID] = func(ctx context.Context, env dagql.ObjectResult[*Env]) (*Binding, error) {
+		srv, err := env.Self().deps.Schema(ctx)
+		if err != nil {
+			return nil, err
+		}
+		obj, err := srv.Load(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		asObj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](obj)
+		if !ok {
+			return nil, fmt.Errorf("object %q is not an object result", llmID)
+		}
+		return &Binding{
+			Key:          llmID,
+			Value:        asObj,
+			ExpectedType: asObj.Type().Name(),
+		}, nil
+	}
+	return m
 }
 
 func (m *MCP) IngestContextual(

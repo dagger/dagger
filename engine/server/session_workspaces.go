@@ -12,6 +12,8 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 )
@@ -164,9 +167,18 @@ func workspaceEnvFromClientMetadata(clientMD *engine.ClientMetadata) (string, bo
 	return "", false
 }
 
+// isModuleRuntimeClient reports whether client represents code executing inside
+// a module function. It keys off an active function call, not merely a module in
+// context: a client that only serves a module's schema (e.g. the CLI running
+// `dagger generate`) is not a runtime and still inherits its parent workspace.
+func isModuleRuntimeClient(client *daggerClient) bool {
+	return client != nil && client.fnCall != nil
+}
+
 // inheritWorkspaceBinding copies the nearest available parent workspace binding
-// onto the current client. This keeps nested clients aligned with their parent
-// workspace for currentWorkspace() resolution.
+// onto the current client. Inheritance stops when a module runtime client would
+// inherit through another module runtime parent, so workspace context does not
+// flow from one module runtime into a dependency module runtime.
 func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerClient) error {
 	client.workspaceMu.Lock()
 	if client.workspace != nil {
@@ -177,6 +189,9 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 
 	for i := len(client.parents) - 1; i >= 0; i-- {
 		parent := client.parents[i]
+		if isModuleRuntimeClient(client) && isModuleRuntimeClient(parent) {
+			return nil
+		}
 		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
 			return err
 		}
@@ -345,7 +360,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
-		core.NewWorkspaceSourceGitRef(gitRef.Result),
+		core.NewWorkspaceSourceGitRef(gitRef.Result, gitutil.IsCommitSHA(parsedRef.version)),
 	)
 }
 
@@ -664,7 +679,14 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			compatWorkspace, _ = workspace.ParseRuntimeCompatWorkspaceAt(data, cfgPath)
 		}
 		if compatWorkspace != nil {
-			if clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning {
+			// Only module-consuming clients get the user-facing migration
+			// warning: those loading workspace modules, and those loading an
+			// explicit module (`dagger call` resolves the cwd module as an
+			// extra module). Clients that opted out of module loading (SDK
+			// codegen, client generators, internal tooling) would leak it
+			// into the calling session's output.
+			warnCompat := loadModules || (clientMD != nil && len(clientMD.ExtraModules) > 0)
+			if warnCompat && (clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning) {
 				msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
 				console(ctx, msg)
 				slog.Warn(msg,
@@ -683,9 +705,21 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// No native workspace and no eligible legacy module: nothing to load.
+	// No native workspace and no eligible legacy module: keep a rootless local
+	// workspace for context-only APIs, but do not load modules.
 	if ws == nil {
-		client.workspace = nil
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("building rootless workspace: client metadata: %w", err)
+		}
+		coreWS := &core.Workspace{
+			Address:  localWorkspaceAddress(cwd, "."),
+			Cwd:      ".",
+			ClientID: clientMetadata.ClientID,
+		}
+		coreWS.SetHostPath(cwd)
+		coreWS.SetSource(core.NewWorkspaceSourceRootlessLocal(cwd))
+		client.workspace = coreWS
 		client.pendingModules = nil
 		return nil
 	}
@@ -824,7 +858,11 @@ func (srv *Server) buildCoreWorkspace(
 		// Local: store host path only. Directories are resolved lazily
 		// via per-call host.directory() in resolveRootfs.
 		coreWS.SetHostPath(detected.Root)
-		coreWS.SetSource(core.NewWorkspaceSourceClientLocal(detected.Root, clientMetadata.ClientID))
+		if detected.HasGitRoot {
+			coreWS.SetSource(core.NewWorkspaceSourceClientLocal(detected.Root))
+		} else {
+			coreWS.SetSource(core.NewWorkspaceSourceRootlessLocal(detected.Root))
+		}
 	} else {
 		// Remote: store the cloned git tree.
 		coreWS.SetRootfs(prebuiltRootfs)
@@ -895,16 +933,36 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 // = all); the rest stay pending for a later request or resolver. Loading is
 // additive, so narrowing is deferral, not exclusion. Mutex+flags (not
 // sync.Once) keep transient failures retriable.
-func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule) error {
+//
+// With bestEffort, a module that fails to load is skipped with a warning
+// instead of failing the whole batch: the demanding operation (dagger generate)
+// may be exactly what repairs it — e.g. a dagger-module.toml module whose
+// committed generated files don't exist yet, which loads only after its SDK
+// generator runs. The skipped modules' failure messages are returned so the
+// caller can surface them (e.g. GeneratorGroup.loadFailures). Genuine engine
+// errors (batch resolution, arbitration, serving) stay fatal regardless.
+func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []string, _ error) {
+	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, bestEffort, nil)
+}
+
+// ensureModulesLoadedModeWithSuccess runs onSuccessLocked after a successful
+// load while modulesMu is still held. Callers use it for state transitions
+// that must be atomic with the load becoming visible to another request.
+func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []string, rerr error) {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
+	defer func() {
+		if rerr == nil && onSuccessLocked != nil {
+			onSuccessLocked()
+		}
+	}()
 
 	if err := srv.ensureExtraModulesLoadedLocked(ctx, client); err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(client.pendingModules) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	demand := client.pendingModules
@@ -916,56 +974,80 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 	if len(demand) > 0 && len(pendingWorkspaceEntrypointIndexes(client.pendingModules)) > 1 {
 		demand = client.pendingModules
 	}
-	if len(demand) == 0 {
-		return nil
-	}
 
 	// A failed module stays pending; surface its recorded error rather than
-	// reloading it.
-	for _, mod := range demand {
-		if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-			return err
+	// reloading it. Best-effort loads skip it instead, collecting its message.
+	if bestEffort {
+		kept := make([]pendingModule, 0, len(demand))
+		for _, mod := range demand {
+			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
+				loadFailures = append(loadFailures, err.Error())
+				continue
+			}
+			kept = append(kept, mod)
 		}
+		demand = kept
+	} else {
+		for _, mod := range demand {
+			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
+				return nil, err
+			}
+		}
+	}
+	if len(demand) == 0 {
+		return loadFailures, nil
 	}
 
 	// Wait for the client's session attachables to be available.
 	// Transient failure — allow retry on next request.
 	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
-		return fmt.Errorf("waiting for client session attachables: %w", err)
+		return nil, fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
 	loads := gatherModuleLoadRequests(demand, nil)
 	resolvedLoads, resolveErrs, err := srv.resolveModuleLoadBatch(ctx, client, loads)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var firstErr error
+	okLoads := make([]moduleLoadRequest, 0, len(loads))
+	okResolved := make([]resolvedModuleLoad, 0, len(loads))
+	served := make([]pendingModule, 0, len(loads))
 	for i, load := range loads {
 		if resolveErrs[i] != nil {
 			loadErr := moduleLoadErr(load, resolveErrs[i])
 			client.recordFailedModule(load.mod, loadErr)
+			if bestEffort {
+				reportSkippedModule(ctx, moduleProgressName(load.mod), loadErr)
+				loadFailures = append(loadFailures, loadErr.Error())
+				continue
+			}
 			if firstErr == nil {
 				firstErr = loadErr
 			}
+			continue
 		}
+		okLoads = append(okLoads, load)
+		okResolved = append(okResolved, resolvedLoads[i])
+		served = append(served, load.mod)
 	}
 	if firstErr != nil {
-		return firstErr
+		return nil, firstErr
 	}
 
-	loads, resolvedLoads = dedupeResolvedModuleLoads(loads, resolvedLoads)
+	loads, resolvedLoads = dedupeResolvedModuleLoads(okLoads, okResolved)
 	if err := client.arbitrateAmbientEntrypoints(loads, resolvedLoads); err != nil {
-		return err
+		return nil, err
 	}
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 	if err := srv.serveResolvedModuleLoadsLocked(client, loads, resolvedLoads); err != nil {
-		return err
+		return nil, err
 	}
 	client.markEntrypointServed(resolvedLoads)
-	client.removePendingModules(demand)
-	return nil
+	client.removePendingModules(served)
+	return loadFailures, nil
 }
 
 // ensureExtraModulesLoadedLocked loads -m modules. They are explicitly
@@ -1125,15 +1207,18 @@ func (client *daggerClient) removePendingModules(served []pendingModule) {
 // EnsureWorkspaceModules loads the pending workspace modules a selector
 // resolver (checks/generators/services) demands. Those fields validate against
 // the core schema, so loading waits until resolution where include is native.
-func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string) error {
+// With bestEffort, modules that fail to load are skipped with a warning instead
+// of failing the operation, and their failure messages are returned for the
+// caller to surface (see ensureModulesLoadedMode).
+func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) ([]string, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return srv.ensureModulesLoaded(ctx, client, func(mods []pendingModule) []pendingModule {
+	return srv.ensureModulesLoadedMode(ctx, client, func(mods []pendingModule) []pendingModule {
 		// runs under client.modulesMu, which also guards servedWorkspaceModuleNames
 		return filterPendingWorkspaceModulesBySelectorInclude(mods, client.servedWorkspaceModuleNames, include)
-	})
+	}, bestEffort)
 }
 
 // canonicalWorkspaceModuleName kebab-normalizes a name or pattern segment for
@@ -1268,6 +1353,69 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		}
 	}
 	return filtered
+}
+
+// filterPendingWorkspaceModulesForScopedRootFields applies the client-declared
+// workspace module scope on top of the root-field demand: when the request's
+// only full-schema demand is currentTypeDefs, the scope replaces its
+// load-everything contribution with the scoped module set. Any other
+// full-schema field keeps loading everything, scope untouched. The second
+// result reports whether the scope was applied, so the caller can consume it.
+func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
+	if scope == "" || len(mods) == 0 {
+		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+	}
+
+	hasCurrentTypeDefs := false
+	remaining := make([]string, 0, len(rootFields))
+	for _, field := range rootFields {
+		if field == "currentTypeDefs" {
+			hasCurrentTypeDefs = true
+			continue
+		}
+		remaining = append(remaining, field)
+	}
+	if !hasCurrentTypeDefs || rootFieldsRequireFullWorkspaceSchema(remaining) {
+		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+	}
+
+	wanted := make(map[string]struct{})
+	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, remaining) {
+		wanted[moduleProgressName(mod)] = struct{}{}
+	}
+	for _, mod := range resolveWorkspaceModuleScope(mods, served, scope, entrypointServed) {
+		wanted[moduleProgressName(mod)] = struct{}{}
+	}
+	selected := make([]pendingModule, 0, len(wanted))
+	for _, mod := range mods {
+		if _, ok := wanted[moduleProgressName(mod)]; ok {
+			selected = append(selected, mod)
+		}
+	}
+	return selected, true
+}
+
+// resolveWorkspaceModuleScope maps the scope token to the pending modules it
+// demands: the named module plus the pending entrypoint module(s) -- the token
+// may be one of their root-proxied functions, and the command tree wants their
+// Query-root proxies either way. A token naming nothing known demands the
+// entrypoint alone when one is pending, or nothing when it is already served;
+// with no entrypoint to resolve it, everything loads (conservative: the token
+// could be anything).
+func resolveWorkspaceModuleScope(mods []pendingModule, served map[string]struct{}, scope string, entrypointServed bool) []pendingModule {
+	scopeName := canonicalWorkspaceModuleName(scope)
+	_, isModule := knownWorkspaceModuleNames(mods, served)[scopeName]
+
+	selected := make([]pendingModule, 0, len(mods))
+	for _, mod := range mods {
+		if (!entrypointServed && mod.Entrypoint) || (isModule && pendingModuleCliName(mod) == scopeName) {
+			selected = append(selected, mod)
+		}
+	}
+	if !isModule && !entrypointServed && len(selected) == 0 {
+		return mods
+	}
+	return selected
 }
 
 func rootFieldsRequireFullWorkspaceSchema(fields []string) bool {
@@ -1523,6 +1671,26 @@ func moduleLoadJobName(load moduleLoadRequest) string {
 		prefix = "load extra module: "
 	}
 	return prefix + moduleProgressName(load.mod)
+}
+
+// reportSkippedModule surfaces a best-effort load failure as its own span,
+// named by the module and marked failed, so the TUI renders it like a check
+// that did not pass — a concise red row with the error nested — instead of a
+// verbose console line. Reveal lifts it into the primary view (e.g. the zoomed
+// generators span) and the roll-up attrs collapse the load's internal spans so
+// the row stays terse. GenerateSkippedAttr collects it into the persisted
+// "SKIPPED MODULES" final report so it survives the live tree collapsing when
+// generate exits 0.
+func reportSkippedModule(ctx context.Context, name string, cause error) {
+	_, span := core.Tracer(ctx).Start(ctx, name,
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.Bool(telemetryattrs.GenerateSkippedAttr, true),
+		),
+	)
+	telemetry.EndWithCause(span, &cause)
 }
 
 func moduleLoadErr(load moduleLoadRequest, err error) error {

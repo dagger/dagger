@@ -31,6 +31,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/util/scrub"
@@ -39,6 +40,15 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// The frontend adjusts its output when driven by an AI coding agent
+	// (RunningInAgent): plain "== X ==" headings, the report on stdout, ANSI
+	// stripped. The tests and goldens assert the human form, and the golden
+	// suite passes os.Environ() to the CLIs it spawns -- so running the suite
+	// from inside an agent session would silently flip the output under test.
+	// Scrub the detection variables up front for the whole test binary.
+	for _, name := range idtui.AgentEnvVars {
+		os.Unsetenv(name)
+	}
 	os.Exit(oteltestctx.Main(m))
 }
 
@@ -146,6 +156,11 @@ entrypoint = true
 		}},
 		{Function: "revealed-spans"},
 		{Function: "partial-progress"},
+
+		// a generator whose changeset fails lazily during `dagger generate`'s
+		// merge must surface the underlying exec error -- the failed command and
+		// its stderr -- not a bare "exit code: N" (dagger/dagger#13606).
+		{Name: "generate-fail", Function: "generate-fail", Generate: true, Fail: true},
 
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",
@@ -317,6 +332,7 @@ type Example struct {
 	Function string
 	Args     []string
 	Check    bool
+	Generate bool
 	// verbosities 3 and higher do not work well with golden, they're not very deterministic atm
 	Verbosity int
 	Fail      bool
@@ -346,12 +362,18 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	}
 
 	var daggerArgs []string
-	if ex.Check {
+	switch {
+	case ex.Check:
 		daggerArgs = []string{"--progress=report", "-v", "--workdir", ex.Module, "check"}
 		if ex.Function != "" {
 			daggerArgs = append(daggerArgs, ex.Function)
 		}
-	} else {
+	case ex.Generate:
+		daggerArgs = []string{"--progress=report", "-v", "--workdir", ex.Module, "generate", "-y"}
+		if ex.Function != "" {
+			daggerArgs = append(daggerArgs, ex.Function)
+		}
+	default:
 		daggerArgs = []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
 	}
 	daggerArgs = append(daggerArgs, ex.Args...)

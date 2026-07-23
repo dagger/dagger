@@ -499,6 +499,13 @@ func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (dagql.ObjectR
 	if err := node.DagqlValue(ctx, &changes); err != nil {
 		return dagql.ObjectResult[*Changeset]{}, err
 	}
+	// DagqlValue only grabs the lazy Changeset; force it here, inside the
+	// generator's span, so the underlying exec runs (and any failure attributes)
+	// here rather than later during the merge. Generators already run in
+	// parallel and the changeset must sync eventually, so nothing is lost.
+	if err := changes.Self().Sync(ctx); err != nil {
+		return dagql.ObjectResult[*Changeset]{}, err
+	}
 	return changes, nil
 }
 

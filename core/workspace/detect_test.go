@@ -20,6 +20,7 @@ func TestDetectInitializedWorkspace(t *testing.T) {
 	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app")
 	require.NoError(t, err)
 	require.Equal(t, "/repo", ws.Root)
+	require.True(t, ws.HasGitRoot)
 	require.Equal(t, "app", ws.Cwd)
 	require.Equal(t, "app/dagger.toml", ws.ConfigFile)
 	require.Equal(t, "app/dagger.lock", ws.LockFile)
@@ -37,6 +38,7 @@ func TestDetectInitializedWorkspaceFromNestedCwd(t *testing.T) {
 	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
 	require.NoError(t, err)
 	require.Equal(t, "/repo", ws.Root)
+	require.True(t, ws.HasGitRoot)
 	require.Equal(t, "app/sub", ws.Cwd)
 	require.Equal(t, "dagger.toml", ws.ConfigFile)
 	require.Equal(t, "dagger.lock", ws.LockFile)
@@ -55,6 +57,7 @@ func TestDetectMissingConfigDoesNotChangeBoundary(t *testing.T) {
 	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
 	require.NoError(t, err)
 	require.Equal(t, "/repo", ws.Root)
+	require.True(t, ws.HasGitRoot)
 	require.Equal(t, "app/sub", ws.Cwd)
 	require.Empty(t, ws.ConfigFile)
 	require.Equal(t, "app/dagger.lock", ws.LockFile)
@@ -72,6 +75,7 @@ func TestDetectUsesExistingLockFile(t *testing.T) {
 	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
 	require.NoError(t, err)
 	require.Equal(t, "/repo", ws.Root)
+	require.True(t, ws.HasGitRoot)
 	require.Equal(t, "app/sub", ws.Cwd)
 	require.Empty(t, ws.ConfigFile)
 	require.Equal(t, "dagger.lock", ws.LockFile)
@@ -89,6 +93,7 @@ func TestDetectMapsExistingLegacyLockFileToCanonicalLockFile(t *testing.T) {
 	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
 	require.NoError(t, err)
 	require.Equal(t, "/repo", ws.Root)
+	require.True(t, ws.HasGitRoot)
 	require.Equal(t, "app/sub", ws.Cwd)
 	require.Empty(t, ws.ConfigFile)
 	require.Equal(t, "app/dagger.lock", ws.LockFile)
@@ -103,6 +108,23 @@ func TestDetectReturnsNilWithoutGit(t *testing.T) {
 	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app")
 	require.NoError(t, err)
 	require.Nil(t, ws)
+}
+
+func TestDetectInRootDoesNotClaimGitRoot(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/workspace/dagger.toml": {},
+	}
+
+	ws, err := DetectInRoot(ctx, fakePathExists(existing), "/workspace/app", "/workspace")
+	require.NoError(t, err)
+	require.Equal(t, "/workspace", ws.Root)
+	require.False(t, ws.HasGitRoot)
+	require.Equal(t, "app", ws.Cwd)
+	require.Equal(t, "dagger.toml", ws.ConfigFile)
+	require.Equal(t, "dagger.lock", ws.LockFile)
 }
 
 func fakePathExists(existing map[string]struct{}) PathExistsFunc {

@@ -49,16 +49,6 @@ func (r *ElixirSDKDev) BaseImage(ctx context.Context) (string, error) { // elixi
 	return response, q.Execute(ctx)
 }
 
-// Bump the Elixir SDK's Engine dependency
-func (r *ElixirSDKDev) Bump(version string) *Changeset { // elixir-sdk-dev (../../../../:0:0)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Regenerate the Elixir SDK API
 func (r *ElixirSDKDev) ClientLibrary() *Changeset { // elixir-sdk-dev (../../../../:0:0)
 	q := r.query.Select("clientLibrary")
@@ -291,6 +281,10 @@ type ElixirSDKDevOpts struct {
 	WorkspaceDir *Directory // elixir-sdk-dev (../../../../:0:0)
 
 	SourcePath string // elixir-sdk-dev (../../../../:0:0)
+	//
+	// Workspace
+	//
+	Ws *Workspace // elixir-sdk-dev (../../../../:0:0)
 }
 
 func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir-sdk-dev (../../../../:0:0)
@@ -307,6 +301,10 @@ func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

@@ -10,21 +10,14 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type workspaceModuleListArgs struct {
-	Module string `default:""`
-}
-
-func (s *workspaceSchema) moduleList(
+func (s *workspaceSchema) workspaceModules(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceModuleListArgs,
+	name string,
 ) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
 	ws := parent.Self()
-	if isSyntheticWorkspace(ws) {
-		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
-	}
 	if ws.ConfigFile == "" {
-		return nil, nil
+		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
 	}
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
@@ -37,19 +30,19 @@ func (s *workspaceSchema) moduleList(
 		return nil, err
 	}
 	modules := make(core.WorkspaceModules, 0, len(cfg.Modules))
-	for name, entry := range cfg.Modules {
-		if args.Module != "" && name != args.Module {
+	for moduleName, entry := range cfg.Modules {
+		if name != "" && moduleName != name {
 			continue
 		}
 		source := filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 		modules = append(modules, &core.WorkspaceModule{
-			Name:       name,
+			Name:       moduleName,
 			Entrypoint: entry.Entrypoint,
 			Source:     source,
 		})
 	}
-	if args.Module != "" && len(modules) == 0 {
-		return nil, fmt.Errorf("module %q is not installed in the workspace", args.Module)
+	if name != "" && len(modules) == 0 {
+		return nil, fmt.Errorf("module %q is not installed in the workspace", name)
 	}
 	modules.Sort()
 
@@ -73,6 +66,76 @@ func (s *workspaceSchema) moduleList(
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+func (s *workspaceSchema) modules(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
+	return s.workspaceModules(ctx, parent, "")
+}
+
+func (s *workspaceSchema) module(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Name string
+	},
+) (dagql.ObjectResult[*core.WorkspaceModule], error) {
+	if args.Name == "" {
+		return dagql.ObjectResult[*core.WorkspaceModule]{}, fmt.Errorf("module name is required")
+	}
+	modules, err := s.workspaceModules(ctx, parent, args.Name)
+	if err != nil {
+		return dagql.ObjectResult[*core.WorkspaceModule]{}, err
+	}
+	return modules[0], nil
+}
+
+type workspaceModuleSourceArgs struct {
+	Path string
+}
+
+// moduleSource loads a module source from a path within the workspace, applying
+// the standard workspace path rules (absolute from the workspace root, relative
+// from the workspace cwd). The whole workspace tree is materialized so the
+// module's dagger.json and dependency include paths resolve; asModuleSource then
+// scopes to sourceRootPath. Host reads route to the workspace owner via
+// workspaceOverlayRootfs, so this works both from the session that owns the
+// workspace and from a module that received the workspace as an argument.
+func (s *workspaceSchema) moduleSource(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceModuleSourceArgs,
+) (inst dagql.ObjectResult[*core.ModuleSource], _ error) {
+	ws := parent.Self()
+	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
+	if err != nil {
+		return inst, err
+	}
+
+	root, err := s.workspaceOverlayRootfs(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	// asModuleSource errors if the resolved path holds no module config, so it
+	// doubles as the "path is not an initialized module" check.
+	if err := srv.Select(ctx, root, &inst, dagql.Selector{
+		Field: "asModuleSource",
+		Args: []dagql.NamedInput{
+			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)
+	}
+	return inst, nil
 }
 
 func (s *workspaceSchema) workspaceModule(
@@ -101,7 +164,7 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, err
 	}
 
-	// moduleList creates WorkspaceModule results from Workspace.__workspaceModule,
+	// modules creates WorkspaceModule results from Workspace.__workspaceModule,
 	// so the DagQL receiver is the workspace that owns this module entry.
 	receiver, err := parent.Receiver(ctx, srv)
 	if err != nil {
@@ -111,10 +174,6 @@ func (s *workspaceSchema) moduleSettings(
 	if !ok {
 		return nil, fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
 	}
-	if err := unsupportedSyntheticWorkspaceFeature(ws.Self(), "module settings"); err != nil {
-		return nil, err
-	}
-
 	cfg, err := readWorkspaceConfig(ctx, ws.Self())
 	if err != nil {
 		return nil, err
@@ -138,11 +197,7 @@ func (s *workspaceSchema) moduleSettings(
 	if err != nil {
 		return nil, err
 	}
-	ref, err := workspaceSettingsModuleRef(ws.Self(), configDir, entry.Source)
-	if err != nil {
-		return nil, fmt.Errorf("resolve settings source for module %q: %w", parent.Self().Name, err)
-	}
-	if ref == "" {
+	if entry.Source == "" {
 		return nil, nil
 	}
 
@@ -151,7 +206,7 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, err
 	}
 
-	hints, err := introspectConstructorArgs(ctx, srv, ref)
+	hints, err := introspectWorkspaceModuleSettings(ctx, srv, ws.Self(), configDir, entry.Source)
 	if err != nil {
 		return nil, fmt.Errorf("discover settings for module %q: %w", parent.Self().Name, err)
 	}
@@ -170,33 +225,35 @@ func (s *workspaceSchema) moduleSettings(
 			Key:         hint.Name,
 			Value:       value,
 			Description: hint.Description,
+			IsList:      hint.IsList,
 		})
 	}
 
 	return settings, nil
 }
 
-func workspaceSettingsModuleRef(
+func introspectWorkspaceModuleSettings(
+	ctx context.Context,
+	srv *dagql.Server,
 	ws *core.Workspace,
 	configDir string,
 	source string,
-) (string, error) {
-	if source == "" {
-		return "", nil
-	}
-
+) ([]workspace.ConstructorArgHint, error) {
 	if core.FastModuleSourceKindCheck(source, "") != core.ModuleSourceKindLocal {
-		return source, nil
+		return introspectConstructorArgs(ctx, srv, source)
 	}
 
 	resolvedSource := workspace.ResolveModuleEntrySource(configDir, source)
 	if filepath.IsAbs(resolvedSource) {
-		return resolvedSource, nil
+		return introspectConstructorArgs(ctx, srv, resolvedSource)
 	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace project root is required for local module source %q", source)
+	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
+		return introspectConstructorArgsFromDirectory(ctx, srv, rootfs, resolvedSource)
 	}
-	return filepath.Join(ws.HostPath(), resolvedSource), nil
+	if ws.HostPath() != "" {
+		return introspectConstructorArgs(ctx, srv, filepath.Join(ws.HostPath(), resolvedSource))
+	}
+	return nil, fmt.Errorf("workspace project root is required for local module source %q", source)
 }
 
 func workspaceSettingConfigKey(moduleName, settingName string) string {

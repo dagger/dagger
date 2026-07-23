@@ -18,7 +18,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Release struct{}
+type Release struct {
+	Workspace *dagger.Workspace // +private
+}
+
+func New(ws *dagger.Workspace) *Release {
+	return &Release{Workspace: ws}
+}
 
 type ReleaseReport struct {
 	Ref     string
@@ -165,7 +171,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		// this is a public release
 		tags = append(tags, "latest")
 	}
-	err := dag.EngineDev().Publish(ctx, tags, dagger.EngineDevPublishOpts{
+	err := dag.EngineDev(dagger.EngineDevOpts{Ws: r.Workspace}).Publish(ctx, tags, dagger.EngineDevPublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
@@ -180,7 +186,10 @@ func (r *Release) Publish( //nolint:gocyclo
 		Name: "🚗 CLI",
 		Tag:  tag,
 	}
-	cliDevOpts := dagger.CliDevOpts{}
+	cliDevOpts := dagger.CliDevOpts{
+		// Dependencies don't inherit the workspace; forward it explicitly.
+		Ws: r.Workspace,
+	}
 	if version != "" {
 		cliDevOpts.Version = version
 	}
@@ -257,13 +266,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://pkg.go.dev/dagger.io/dagger@" + cmp.Or(version, "main"),
 			dev:  true,
 			release: func(ctx context.Context) error {
-				return dag.GoSDKDev().Release(ctx, tag, dagger.GoSDKDevReleaseOpts{
+				return dag.GoSDKDev(dagger.GoSDKDevOpts{Ws: r.Workspace}).Release(ctx, tag, dagger.GoSDKDevReleaseOpts{
 					GithubToken: githubToken,
 					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.GoSDKDev().ReleaseDryRun(ctx)
+				return dag.GoSDKDev(dagger.GoSDKDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -272,14 +281,14 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/python/",
 			link: "https://pypi.org/project/dagger-io/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.PythonSDKDev().Release(ctx, tag, dagger.PythonSDKDevReleaseOpts{
+				return dag.PythonSDKDev(dagger.PythonSDKDevOpts{Ws: r.Workspace}).Release(ctx, tag, dagger.PythonSDKDevReleaseOpts{
 					PypiRepo:  pypiRepo,
 					PypiURL:   pypiURL,
 					PypiToken: pypiToken,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.PythonSDKDev().ReleaseDryRun(ctx)
+				return dag.PythonSDKDev(dagger.PythonSDKDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -288,13 +297,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/typescript/",
 			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.TypescriptSDKDev().Release(ctx, tag, dagger.TypescriptSDKDevReleaseOpts{
+				return dag.TypescriptSDKDev(dagger.TypescriptSDKDevOpts{Ws: r.Workspace}).Release(ctx, tag, dagger.TypescriptSDKDevReleaseOpts{
 					NpmToken:       npmToken,
 					NpmRegistryURL: npmRegistryURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.TypescriptSDKDev().ReleaseDryRun(ctx)
+				return dag.TypescriptSDKDev(dagger.TypescriptSDKDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -303,13 +312,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/elixir/",
 			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.ElixirSDKDev().Publish(ctx, tag, dagger.ElixirSDKDevPublishOpts{
+				return dag.ElixirSDKDev(dagger.ElixirSDKDevOpts{Ws: r.Workspace}).Publish(ctx, tag, dagger.ElixirSDKDevPublishOpts{
 					HexAPIKey: hexAPIKey,
 					HexAPIURL: hexAPIURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.ElixirSDKDev().ReleaseDryRun(ctx)
+				return dag.ElixirSDKDev(dagger.ElixirSDKDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -318,12 +327,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/rust/",
 			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.RustSDKDev().Release(ctx, tag, cargoRegistryToken, dagger.RustSDKDevReleaseOpts{
-					CargoRegistryIndex: cargoRegistryIndex,
-				})
+				return dag.RustSDKDev(dagger.RustSDKDevOpts{Workspace: r.Workspace}).
+					Release(ctx, tag, cargoRegistryToken, dagger.RustSDKDevReleaseOpts{
+						CargoRegistryIndex: cargoRegistryIndex,
+					})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.RustSDKDev().ReleaseDryRun(ctx)
+				return dag.RustSDKDev(dagger.RustSDKDevOpts{Workspace: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -333,13 +343,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://packagist.org/packages/dagger/dagger#" + cmp.Or(version, "dev-main"),
 			dev:  true,
 			release: func(ctx context.Context) error {
-				return dag.PhpSDKDev().Release(ctx, tag, dagger.PhpSDKDevReleaseOpts{
+				return dag.PhpSDKDev(dagger.PhpSDKDevOpts{Ws: r.Workspace}).Release(ctx, tag, dagger.PhpSDKDevReleaseOpts{
 					GithubToken: githubToken,
 					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.PhpSDKDev().ReleaseDryRun(ctx)
+				return dag.PhpSDKDev(dagger.PhpSDKDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{

@@ -140,11 +140,11 @@ type PythonSDKDevBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:293:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:288:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:290:1)
+func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:285:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -158,18 +158,8 @@ func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // pyth
 	}
 }
 
-// Bump the Python SDK's Engine dependency
-func (r *PythonSDKDev) Bump(version string) *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:278:1)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Regenerate the core Python client library
-func (r *PythonSDKDev) ClientLibrary() *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:181:1)
+func (r *PythonSDKDev) ClientLibrary() *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:188:1)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -187,7 +177,7 @@ func (r *PythonSDKDev) DevContainer() *Container { // python-sdk-dev (../../../.
 }
 
 // Preview the reference documentation
-func (r *PythonSDKDev) Docs() *PythonSDKDevDocs { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:331:1)
+func (r *PythonSDKDev) Docs() *PythonSDKDevDocs { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:326:1)
 	q := r.query.Select("docs")
 
 	return &PythonSDKDevDocs{
@@ -200,11 +190,11 @@ type PythonSDKDevFormatOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:110:2)
+	Paths []string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:117:2)
 }
 
 // Format source files
-func (r *PythonSDKDev) Format(opts ...PythonSDKDevFormatOpts) *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:107:1)
+func (r *PythonSDKDev) Format(opts ...PythonSDKDevFormatOpts) *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:114:1)
 	q := r.query.Select("format")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -272,11 +262,11 @@ type PythonSDKDevLintOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:98:2)
+	Paths []string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:105:2)
 }
 
 // Check for linting errors
-func (r *PythonSDKDev) Lint(opts ...PythonSDKDevLintOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:95:1)
+func (r *PythonSDKDev) Lint(opts ...PythonSDKDevLintOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:102:1)
 	q := r.query.Select("lint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -292,11 +282,11 @@ func (r *PythonSDKDev) Lint(opts ...PythonSDKDevLintOpts) *Container { // python
 
 // PythonSDKDevLintDocsSnippetsOpts contains options for PythonSDKDev.LintDocsSnippets
 type PythonSDKDevLintDocsSnippetsOpts struct {
-	Workspace *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:87:2)
+	Workspace *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:94:2)
 }
 
 // Lint the Python snippets in the documentation
-func (r *PythonSDKDev) LintDocsSnippets(opts ...PythonSDKDevLintDocsSnippetsOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:79:1)
+func (r *PythonSDKDev) LintDocsSnippets(opts ...PythonSDKDevLintDocsSnippetsOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:86:1)
 	q := r.query.Select("lintDocsSnippets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -315,10 +305,10 @@ type PythonSDKDevProvisionOpts struct {
 	//
 	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
 	//
-	RunnerHost string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:343:2)
+	RunnerHost string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:338:2)
 }
 
-func (r *PythonSDKDev) Provision(cliBin *File, opts ...PythonSDKDevProvisionOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:337:1)
+func (r *PythonSDKDev) Provision(cliBin *File, opts ...PythonSDKDevProvisionOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:332:1)
 	assertNotNil("cliBin", cliBin)
 	q := r.query.Select("provision")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -341,15 +331,15 @@ type PythonSDKDevPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:307:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:302:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:310:2)
+	URL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:305:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonSDKDev) Publish(token *Secret, opts ...PythonSDKDevPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:302:1)
+func (r *PythonSDKDev) Publish(token *Secret, opts ...PythonSDKDevPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:297:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -370,7 +360,7 @@ func (r *PythonSDKDev) Publish(token *Secret, opts ...PythonSDKDevPublishOpts) *
 }
 
 // Test suite for python 3.10
-func (r *PythonSDKDev) Python310() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:140:1)
+func (r *PythonSDKDev) Python310() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:147:1)
 	q := r.query.Select("python310")
 
 	return &PythonSDKDevTestForPythonVersion{
@@ -379,7 +369,7 @@ func (r *PythonSDKDev) Python310() *PythonSDKDevTestForPythonVersion { // python
 }
 
 // Test suite for python 3.11
-func (r *PythonSDKDev) Python311() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:148:1)
+func (r *PythonSDKDev) Python311() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:155:1)
 	q := r.query.Select("python311")
 
 	return &PythonSDKDevTestForPythonVersion{
@@ -388,7 +378,7 @@ func (r *PythonSDKDev) Python311() *PythonSDKDevTestForPythonVersion { // python
 }
 
 // Test suite for python 3.12
-func (r *PythonSDKDev) Python312() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:156:1)
+func (r *PythonSDKDev) Python312() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:163:1)
 	q := r.query.Select("python312")
 
 	return &PythonSDKDevTestForPythonVersion{
@@ -397,7 +387,7 @@ func (r *PythonSDKDev) Python312() *PythonSDKDevTestForPythonVersion { // python
 }
 
 // Test suite for python 3.13
-func (r *PythonSDKDev) Python313() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:164:1)
+func (r *PythonSDKDev) Python313() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:171:1)
 	q := r.query.Select("python313")
 
 	return &PythonSDKDevTestForPythonVersion{
@@ -406,7 +396,7 @@ func (r *PythonSDKDev) Python313() *PythonSDKDevTestForPythonVersion { // python
 }
 
 // Test suite for python 3.14
-func (r *PythonSDKDev) Python314() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:172:1)
+func (r *PythonSDKDev) Python314() *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:179:1)
 	q := r.query.Select("python314")
 
 	return &PythonSDKDevTestForPythonVersion{
@@ -416,17 +406,17 @@ func (r *PythonSDKDev) Python314() *PythonSDKDevTestForPythonVersion { // python
 
 // PythonSDKDevReleaseOpts contains options for PythonSDKDev.Release
 type PythonSDKDevReleaseOpts struct {
-	DryRun bool // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:246:2)
+	DryRun bool // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:253:2)
 
-	PypiRepo string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:249:2)
+	PypiRepo string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:256:2)
 
-	PypiURL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:252:2)
+	PypiURL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:259:2)
 
-	PypiToken *Secret // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:255:2)
+	PypiToken *Secret // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:262:2)
 }
 
 // Release the Python SDK
-func (r *PythonSDKDev) Release(ctx context.Context, sourceTag string, opts ...PythonSDKDevReleaseOpts) error { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:239:1)
+func (r *PythonSDKDev) Release(ctx context.Context, sourceTag string, opts ...PythonSDKDevReleaseOpts) error { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:246:1)
 	if r.release != nil {
 		return nil
 	}
@@ -455,7 +445,7 @@ func (r *PythonSDKDev) Release(ctx context.Context, sourceTag string, opts ...Py
 }
 
 // Test the publishing process
-func (r *PythonSDKDev) ReleaseDryRun(ctx context.Context) error { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:227:1)
+func (r *PythonSDKDev) ReleaseDryRun(ctx context.Context) error { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:234:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -493,11 +483,11 @@ type PythonSDKDevTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:325:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:320:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonSDKDev) TestPublish(token *Secret, opts ...PythonSDKDevTestPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:320:1)
+func (r *PythonSDKDev) TestPublish(token *Secret, opts ...PythonSDKDevTestPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:315:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -515,7 +505,7 @@ func (r *PythonSDKDev) TestPublish(token *Secret, opts ...PythonSDKDevTestPublis
 
 // Run the type checker (mypy)
 // FIXME: this is not included as an automated check. Should it?
-func (r *PythonSDKDev) Typecheck(ctx context.Context) error { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:122:1)
+func (r *PythonSDKDev) Typecheck(ctx context.Context) error { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:129:1)
 	if r.typecheck != nil {
 		return nil
 	}
@@ -525,7 +515,7 @@ func (r *PythonSDKDev) Typecheck(ctx context.Context) error { // python-sdk-dev 
 }
 
 // Mount a directory on the base container
-func (r *PythonSDKDev) WithDirectory(source *Directory) *PythonSDKDev { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:131:1)
+func (r *PythonSDKDev) WithDirectory(source *Directory) *PythonSDKDev { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:138:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	q = q.Arg("source", source)
@@ -762,18 +752,23 @@ type PythonSDKDevOpts struct {
 	//
 	// A workspace containing the SDK source code and other relevant files
 	//
-	WorkspaceDir *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:45:2)
+	WorkspaceDir *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:47:2)
 
 	// Default: "sdk/python"
-	SourcePath string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:48:2)
+	SourcePath string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:50:2)
 	//
 	// A docker config file with credentials to install on clients.
 	//
-	ClientDockerConfig *Secret // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:51:2)
+	ClientDockerConfig *Secret // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:53:2)
+	//
+	// Workspace forwarded to engine-dev for VCS stamping. Auto-injected on a
+	// direct call; dependencies don't inherit it, so callers must forward it.
+	//
+	Ws *Workspace // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:56:2)
 }
 
 // A toolchain to develop the Dagger Python SDK
-func (r *Query) PythonSDKDev(opts ...PythonSDKDevOpts) *PythonSDKDev { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:24:1)
+func (r *Query) PythonSDKDev(opts ...PythonSDKDevOpts) *PythonSDKDev { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:26:1)
 	q := r.query.Select("pythonSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspaceDir` optional argument
@@ -787,6 +782,10 @@ func (r *Query) PythonSDKDev(opts ...PythonSDKDevOpts) *PythonSDKDev { // python
 		// `clientDockerConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

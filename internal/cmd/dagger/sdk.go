@@ -14,6 +14,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 )
 
@@ -146,9 +148,8 @@ func init() {
 		sdkClientOptionsCmd,
 	)
 
-	// These mutate workspace config on the host; rejecting `--workspace` for
-	// anything other than a local path keeps remote refs from sneaking into
-	// install/uninstall paths (matches `dagger install` / `dagger uninstall`).
+	// These commands finish by exporting the staged workspace, so the selected
+	// workspace must have a local Git source.
 	setWorkspaceFlagPolicy(sdkInstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(sdkUninstallCmd, workspaceFlagPolicyLocalOnly)
 }
@@ -163,43 +164,135 @@ func runSDKInstall(cmd *cobra.Command, args []string) error {
 	if name == "" {
 		name = defaultName
 	}
+	// The name the authoring commands dispatch on: the as-sdk alias if the
+	// registry set one, otherwise the install name.
+	hintName := asSDKName
+	if hintName == "" {
+		hintName = name
+	}
 
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		return callSDKInstall(ctx, ec.Dagger(), cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere)
+		dag := ec.Dagger()
+		if err := installWorkspaceSDK(ctx, dag, cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere); err != nil {
+			return err
+		}
+		printSDKInstallCapabilityHints(ctx, dag, cmd, hintName, canonicalRef)
+		return nil
 	})
 }
 
-// callSDKInstall invokes Workspace.install with asSdk=true via raw GraphQL.
-// Will collapse to `dag.CurrentWorkspace().Install(ctx, ref,
-// WorkspaceInstallOpts{Name, Here, AsSdk: true, AsSdkName: ...})` once the Go
-// SDK binding regenerates against the new schema.
-func callSDKInstall(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name, asSDKName string, here bool) error {
-	var res struct {
-		CurrentWorkspace struct {
-			Install string `json:"install"`
-		} `json:"currentWorkspace"`
+// sdkAuthoringCapabilities reports whether the SDK at sdkRef can author modules
+// (initModule) and/or clients (initClient) — the capabilities that gate
+// `dagger module init` and `dagger api client init`. A probe error other than
+// "capability absent" is returned, so callers can skip guidance rather than
+// wrongly imply the SDK does nothing.
+func sdkAuthoringCapabilities(ctx context.Context, dag *dagger.Client, sdkRef string) (module, client bool, rerr error) {
+	// Probing reloads the SDK module (serve + type defs); keep that plumbing out
+	// of the command's progress output — otherwise the install appears to reload
+	// the module after it already finished.
+	ctx, span := Tracer().Start(ctx, "inspect SDK capabilities", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	_, errModule := inspectSDKInitFunction(ctx, dag, sdkRef, sdkInitKindModule)
+	if errModule != nil && !errors.Is(errModule, errSDKInitFunctionNotFound) {
+		return false, false, errModule
 	}
-	err := dag.Do(ctx, &dagger.Request{
-		Query: `query SDKInstall($ref: String!, $name: String, $here: Boolean, $asSdk: Boolean, $asSdkName: String) {
-  currentWorkspace {
-    install(ref: $ref, name: $name, here: $here, asSdk: $asSdk, asSdkName: $asSdkName)
-  }
-}`,
-		Variables: map[string]any{
-			"ref":       ref,
-			"name":      name,
-			"here":      here,
-			"asSdk":     true,
-			"asSdkName": asSDKName,
-		},
-	}, &dagger.Response{Data: &res})
+	_, errClient := inspectSDKInitFunction(ctx, dag, sdkRef, sdkInitKindClient)
+	if errClient != nil && !errors.Is(errClient, errSDKInitFunctionNotFound) {
+		return false, false, errClient
+	}
+	return errModule == nil, errClient == nil, nil
+}
+
+// sdkInstallNoCapabilityWarning is shown when a just-installed SDK can author
+// neither modules nor clients: that's not a usable SDK, so it likely isn't one
+// (or targets an incompatible engine version).
+const sdkInstallNoCapabilityWarning = `
+  ⚠ %q was installed as an SDK, but it can neither create modules nor
+    initialize clients (no initModule or initClient). This usually means the
+    ref isn't an SDK, or it targets an incompatible engine version.
+
+    If that's not what you wanted, remove it:
+        dagger sdk uninstall %[1]s
+`
+
+// printSDKInstallCapabilityHints prints, after a successful install, one hint
+// per authoring capability the SDK has. An SDK that authors neither modules nor
+// clients is warned about (to stderr, and not suppressed by --silent) rather
+// than hinted at. Best-effort: a probe failure is logged and skipped, never
+// fatal — the install already succeeded.
+func printSDKInstallCapabilityHints(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, sdkName, sdkRef string) {
+	canModule, canClient, err := sdkAuthoringCapabilities(ctx, dag, sdkRef)
 	if err != nil {
-		return fmt.Errorf("install sdk: %w", err)
+		slog.Debug("inspect SDK capabilities for install hint", "sdk", sdkName, "err", err)
+		return
 	}
-	_, err = fmt.Fprintln(out, res.CurrentWorkspace.Install)
+
+	if !canModule && !canClient {
+		fmt.Fprintf(cmd.ErrOrStderr(), sdkInstallNoCapabilityWarning, sdkName)
+		return
+	}
+
+	if silent {
+		return
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\n  Installed SDK %q. This SDK can:\n", sdkName)
+	if canModule {
+		fmt.Fprintf(out, "\n    • Create a new module:\n        dagger module init %s <name>\n", sdkName)
+	}
+	if canClient {
+		fmt.Fprintf(out, "\n    • Initialize a generated API client:\n        dagger api client init %s <path> <module>\n", sdkName)
+	}
+}
+
+func installWorkspaceSDK(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name, asSDKName string, here bool) error {
+	current := dag.CurrentWorkspace()
+	previousConfig, err := current.ConfigFile(ctx)
+	if err != nil {
+		return err
+	}
+	updated, err := materializeWorkspace(ctx, dag, current.WithSDK(ref, dagger.WorkspaceWithSDKOpts{
+		Name:      name,
+		Here:      here,
+		AsSDKName: asSDKName,
+	}))
+	if err != nil {
+		return err
+	}
+	resolvedName, err := workspaceInstalledModuleName(ctx, current, updated, ref, name)
+	if err != nil {
+		return err
+	}
+	configPath, err := workspaceConfigHostPath(ctx, updated)
+	if err != nil {
+		return err
+	}
+	updatedConfig, err := updated.ConfigFile(ctx)
+	if err != nil {
+		return err
+	}
+	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	if isEmpty {
+		_, err = fmt.Fprintf(out, "SDK %q is already installed\n", resolvedName)
+		return err
+	}
+	if previousConfig != updatedConfig {
+		if _, err := fmt.Fprintf(out, "Created workspace config in %s\n", filepath.Dir(configPath)); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(out, "Installed SDK %q in %s\n", resolvedName, configPath)
 	return err
 }
 
@@ -235,7 +328,7 @@ func runSDKUninstall(cmd *cobra.Command, args []string) error {
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), ec.Dagger(), name, sdkUninstallHere)
+		return uninstallWorkspaceSDK(ctx, cmd.OutOrStdout(), ec.Dagger(), name, sdkUninstallHere)
 	})
 }
 

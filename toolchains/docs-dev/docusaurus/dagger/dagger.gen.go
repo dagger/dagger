@@ -287,6 +287,45 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Docusaurus Dagger Module\n\nThis module allows you to run docusaurus sites locally with Dagger\nwithout needing to install any additional dependencies.\n\nExample Usage:\n\n`dagger call -m github.com/levlaz/daggerverse/docusaurus --dir \"/src/docs\" --src https://github.com/kpenfound/dagger#kyle/docs-239-convert-secrets` serve up\n\nThe example above shows how to grab a remote git branch, the basic\nstructure is https://github.com/$USER/$REPO#$BRANCH. The `src` argument can\ntake a local directory, but this module becomes especially\nuseful when you pass in remote git repos. In particular, imagine you are trying\nto preview a PR for a docs change. You can simply pass in the git branch from\nyour fork and preview the docs without needing to install any local dependencies\nor have to remember how to fetch remote branches locally.\n").
+			WithObject(
+				dag.TypeDef().WithObject("Docusaurus", dagger.TypeDefWithObjectOpts{Description: "Docusaurus", SourceMap: dag.SourceMap("main.go", 59, 6)}).
+					WithFunction(
+						dag.Function("Base",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Return base container for running docusaurus with docs mounted and docusaurus\ndependencies installed.").
+							WithSourceMap(dag.SourceMap("main.go", 69, 1))).
+					WithFunction(
+						dag.Function("Build",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Build production docs").
+							WithSourceMap(dag.SourceMap("main.go", 101, 1))).
+					WithFunction(
+						dag.Function("Serve",
+							dag.TypeDef().WithObject("Service")).
+							WithDescription("Serve production docs locally as a service").
+							WithSourceMap(dag.SourceMap("main.go", 108, 1))).
+					WithFunction(
+						dag.Function("ServeDev",
+							dag.TypeDef().WithObject("Service")).
+							WithDescription("Build and serve development docs as a service").
+							WithSourceMap(dag.SourceMap("main.go", 116, 1))).
+					WithField("Src", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 60, 2)}).
+					WithField("Dir", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 61, 2)}).
+					WithField("DisableCache", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 62, 2)}).
+					WithField("CacheVolumeName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 63, 2)}).
+					WithField("Yarn", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 64, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Docusaurus")).
+							WithSourceMap(dag.SourceMap("main.go", 27, 1)).
+							WithArg("src", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{Description: "The source directory of your docusaurus site, this can be a local directory or a remote git repo", SourceMap: dag.SourceMap("main.go", 29, 2)}).
+							WithArg("dir", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Optional working directory if you need to execute docusaurus commands outside of your root", SourceMap: dag.SourceMap("main.go", 33, 2), DefaultValue: dagger.JSON("\".\"")}).
+							WithArg("disableCache", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Optional flag to disable cache", SourceMap: dag.SourceMap("main.go", 37, 2), DefaultValue: dagger.JSON("false")}).
+							WithArg("cacheVolumeName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Optional cache volume name; this is useful if you work with multiple projects\nor have node_dependencies that are rapidly changing to avoid issues with\nnpm having failures.", SourceMap: dag.SourceMap("main.go", 43, 2), DefaultValue: dagger.JSON("\"node-docusaurus-docs\"")}).
+							WithArg("yarn", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Optional flag to use yarn instead of npm", SourceMap: dag.SourceMap("main.go", 47, 2), DefaultValue: dagger.JSON("false")}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

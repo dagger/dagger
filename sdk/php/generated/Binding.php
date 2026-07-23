@@ -200,6 +200,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type LLMContentBlock
+     */
+    public function asLLMContentBlock(): LLMContentBlock
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLMContentBlock');
+        return new \Dagger\LLMContentBlock($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type LLMMessage
+     */
+    public function asLLMMessage(): LLMMessage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLMMessage');
+        return new \Dagger\LLMMessage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Module
      */
     public function asModule(): Module
@@ -326,6 +344,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type Volume
+     */
+    public function asVolume(): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asVolume');
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Workspace
      */
     public function asWorkspace(): Workspace
@@ -377,6 +404,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceModuleSetting');
         return new \Dagger\WorkspaceModuleSetting($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type WorkspaceSDK
+     */
+    public function asWorkspaceSDK(): WorkspaceSDK
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceSDK');
+        return new \Dagger\WorkspaceSDK($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -15,53 +14,12 @@ import (
 )
 
 const initialWorkspaceConfig = `# Dagger workspace configuration
-# Install modules with: dagger mod install <module>
+# Install modules with: dagger install <module>
 # Example:
-#   dagger mod install github.com/dagger/dagger/modules/wolfi
-
-# Run generators as part of 'dagger check' and fail when generated files are
-# stale. Set to false to skip them by default (like 'dagger check --no-generate').
-check-generated = true
+#   dagger install github.com/dagger/dagger/modules/wolfi
 
 [modules]
 `
-
-func (s *workspaceSchema) workspaceInit(
-	ctx context.Context,
-	parent *core.Workspace,
-	args struct {
-		Here bool `default:"false"`
-	},
-) (dagql.String, error) {
-	if err := requireLocalWorkspace(parent, "workspace init"); err != nil {
-		return "", err
-	}
-	if parent.CompatWorkspace() != nil {
-		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
-	}
-
-	configDirRel := workspaceConfigDirectoryForWrite(parent, args.Here)
-	configPath, err := workspaceHostPath(parent, configDirRel, workspace.ConfigFileName)
-	if err != nil {
-		return "", err
-	}
-	configDir := filepath.Dir(configPath)
-
-	if parent.ConfigFile != "" && workspaceSameConfigDirectory(parent, configDirRel) {
-		return "", fmt.Errorf("workspace config already exists at %s", configDir)
-	}
-
-	bk, err := workspaceBuildkit(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	if err := ensureWorkspaceInitialized(ctx, bk, parent, args.Here); err != nil {
-		return "", fmt.Errorf("initialize workspace: %w", err)
-	}
-
-	return dagql.String(configDir), nil
-}
 
 func workspaceBuildkit(ctx context.Context) (*engineutil.Client, error) {
 	query, err := core.CurrentQuery(ctx)
@@ -73,76 +31,6 @@ func workspaceBuildkit(ctx context.Context) (*engineutil.Client, error) {
 		return nil, fmt.Errorf("engine client: %w", err)
 	}
 	return bk, nil
-}
-
-type workspaceConfigMutationPolicy int
-
-const (
-	workspaceConfigMustExist workspaceConfigMutationPolicy = iota
-	workspaceConfigInitIfMissing
-)
-
-// loadWorkspaceConfigForMutation is the single policy choke point for commands
-// that need a writable workspace config. Future flags like --require-init should
-// only need to change the policy passed here.
-func loadWorkspaceConfigForMutation(
-	ctx context.Context,
-	ws *core.Workspace,
-	policy workspaceConfigMutationPolicy,
-	here bool,
-) (*workspace.Config, bool, error) {
-	if err := unsupportedSyntheticWorkspaceFeature(ws, "config mutations"); err != nil {
-		return nil, false, err
-	}
-	if err := requireLocalWorkspace(ws, "workspace config mutation"); err != nil {
-		return nil, false, err
-	}
-	if ws.ConfigFile != "" && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
-		cfg, err := readWorkspaceConfig(ctx, ws)
-		return cfg, false, err
-	}
-
-	if ws.CompatWorkspace() != nil {
-		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
-	}
-	if policy == workspaceConfigMustExist {
-		return nil, false, fmt.Errorf("no dagger.toml found in workspace")
-	}
-
-	bk, err := workspaceBuildkit(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	if err := ensureWorkspaceInitialized(ctx, bk, ws, here); err != nil {
-		return nil, false, fmt.Errorf("initialize workspace: %w", err)
-	}
-
-	// Keep this consistent with initialWorkspaceConfig: the freshly written file
-	// already carries `check-generated = true`, so the returned config must too,
-	// otherwise the next write would prune it as a removed key.
-	checkGenerated := true
-	return &workspace.Config{
-		Modules:        map[string]workspace.ModuleEntry{},
-		CheckGenerated: &checkGenerated,
-	}, true, nil
-}
-
-func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, here bool) error {
-	configDirRel := workspaceConfigDirectoryForWrite(ws, here)
-	if ws.ConfigFile != "" && workspaceSameConfigDirectory(ws, configDirRel) {
-		return nil
-	}
-
-	configPath, err := workspaceHostPath(ws, configDirRel, workspace.ConfigFileName)
-	if err != nil {
-		return err
-	}
-	if err := exportWorkspaceFileToHost(ctx, bk, configPath, []byte(initialWorkspaceConfig)); err != nil {
-		return err
-	}
-
-	setWorkspaceConfigSelection(ws, configDirRel)
-	return nil
 }
 
 func workspaceConfigDirectoryForWrite(ws *core.Workspace, here bool) string {
@@ -192,14 +80,6 @@ func cleanWorkspaceRelPath(p string) string {
 	return filepath.Clean(p)
 }
 
-func configHostPath(ws *core.Workspace) (string, error) {
-	configFile, err := workspaceConfigFile(ws)
-	if err != nil {
-		return "", err
-	}
-	return workspaceHostPath(ws, configFile)
-}
-
 func workspaceHostPath(ws *core.Workspace, rel ...string) (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
@@ -212,14 +92,6 @@ func workspaceHostPath(ws *core.Workspace, rel ...string) (string, error) {
 	return filepath.Join(parts...), nil
 }
 
-func exportConfigToHost(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, config []byte) error {
-	configPath, err := configHostPath(ws)
-	if err != nil {
-		return err
-	}
-	return exportWorkspaceFileToHost(ctx, bk, configPath, config)
-}
-
 func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace is required")
@@ -229,7 +101,26 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 		return nil, err
 	}
 
+	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
+		data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading config: %w", err)
+		}
+		return data, nil
+	}
+
 	if ws.HostPath() != "" {
+		// Host overlay edits to the config live only in the changeset's delta
+		// side (host overlays store no full read root — see overlayEdit);
+		// untouched configs read straight from the host file below.
+		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok && ws.OverlayPathTouched(configFile) {
+			data, err := core.DirectoryReadFile(ctx, deltaRoot, configFile)
+			if err != nil {
+				return nil, fmt.Errorf("reading config: %w", err)
+			}
+			return data, nil
+		}
+
 		ctx, err = withWorkspaceClientContext(ctx, ws)
 		if err != nil {
 			return nil, err
@@ -277,38 +168,6 @@ func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Co
 	return cfg, nil
 }
 
-func writeWorkspaceConfig(ctx context.Context, ws *core.Workspace, cfg *workspace.Config) error {
-	return writeWorkspaceConfigWithHints(ctx, ws, cfg, nil)
-}
-
-func writeWorkspaceConfigWithHints(
-	ctx context.Context,
-	ws *core.Workspace,
-	cfg *workspace.Config,
-	hints map[string][]workspace.ConstructorArgHint,
-) error {
-	if cfg.Modules == nil {
-		cfg.Modules = map[string]workspace.ModuleEntry{}
-	}
-	existingData, err := readConfigBytes(ctx, ws)
-	if err != nil {
-		return err
-	}
-	updated, err := workspace.UpdateConfigBytesWithHints(existingData, cfg, hints)
-	if err != nil {
-		return err
-	}
-	return writeConfigBytes(ctx, ws, updated)
-}
-
-func writeConfigBytes(ctx context.Context, ws *core.Workspace, data []byte) error {
-	bk, err := workspaceBuildkit(ctx)
-	if err != nil {
-		return err
-	}
-	return exportConfigToHost(ctx, bk, ws, data)
-}
-
 type configReadArgs struct {
 	Key string `default:""`
 }
@@ -318,9 +177,6 @@ func (s *workspaceSchema) configRead(
 	parent *core.Workspace,
 	args configReadArgs,
 ) (dagql.String, error) {
-	if err := unsupportedSyntheticWorkspaceFeature(parent, "config"); err != nil {
-		return "", err
-	}
 	if parent.ConfigFile == "" {
 		result, err := workspace.ReadConfigValue(nil, args.Key)
 		if err != nil {
@@ -359,48 +215,16 @@ func (s *workspaceSchema) configRead(
 	return dagql.String(result), nil
 }
 
-type configWriteArgs struct {
-	Key   string
-	Value string
-	Here  bool `default:"false"`
+type workspaceConfigValueArgs struct {
+	Key    string
+	Value  string
+	Values dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Here   bool `default:"false"`
 }
 
-func (s *workspaceSchema) configWrite(
-	ctx context.Context,
-	parent *core.Workspace,
-	args configWriteArgs,
-) (dagql.String, error) {
-	if _, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here); err != nil {
-		return "", err
-	}
-
-	data, err := readConfigBytes(ctx, parent)
-	if err != nil {
-		return "", err
-	}
-
-	writeKey := args.Key
-	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
-		cfg, err := workspace.ParseConfig(data)
-		if err != nil {
-			return "", err
-		}
-		writeKey, err = envScopedConfigKey(cfg, envName, args.Key)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	updated, err := workspace.WriteConfigValue(data, writeKey, args.Value)
-	if err != nil {
-		return "", err
-	}
-
-	if err := writeConfigBytes(ctx, parent, updated); err != nil {
-		return "", err
-	}
-
-	return dagql.String(args.Value), nil
+type workspaceConfigKeyArgs struct {
+	Key  string
+	Here bool `default:"false"`
 }
 
 func selectedWorkspaceEnv(ctx context.Context) (string, bool) {
@@ -446,25 +270,4 @@ func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, err
 	}
 
 	return workspace.JoinConfigPath(append([]string{"env", envName}, parts...)...), nil
-}
-
-func exportWorkspaceFileToHost(ctx context.Context, bk *engineutil.Client, hostPath string, contents []byte) error {
-	tmpFile, err := os.CreateTemp("", "workspace-file-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(contents); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-
-	if err := bk.LocalFileExport(ctx, tmpFile.Name(), filepath.Base(hostPath), hostPath, true); err != nil {
-		return fmt.Errorf("export %s: %w", filepath.Base(hostPath), err)
-	}
-	return nil
 }

@@ -53,6 +53,10 @@ type TypescriptSDKDevOpts struct {
 	WorkspaceDir *Directory // typescript-sdk-dev (../../../../:0:0)
 
 	SourcePath string // typescript-sdk-dev (../../../../:0:0)
+	//
+	// Workspace
+	//
+	Ws *Workspace // typescript-sdk-dev (../../../../:0:0)
 }
 
 func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev { // typescript-sdk-dev (../../../../:0:0)
@@ -77,6 +81,10 @@ func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 
@@ -114,16 +122,6 @@ func (r *TypescriptSDKDev) Binary() *File { // typescript-sdk-dev (../../../../:
 	q := r.query.Select("binary")
 
 	return &File{
-		query: q,
-	}
-}
-
-// Bump the Typescript SDK's engine dependency
-func (r *TypescriptSDKDev) Bump(version string) *Changeset { // typescript-sdk-dev (../../../../:0:0)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
 		query: q,
 	}
 }

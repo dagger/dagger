@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -21,6 +22,22 @@ func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
 	}
+}
+
+// TestInitialWorkspaceConfigOmitsCheckGenerated verifies the default dagger.toml
+// (written by dagger install / workspace init) does not set check-generated: the
+// engine never writes it by default, and an absent setting already behaves as
+// check-generated = true.
+func TestInitialWorkspaceConfigOmitsCheckGenerated(t *testing.T) {
+	t.Parallel()
+
+	require.Contains(t, initialWorkspaceConfig, "# Dagger workspace configuration")
+	require.Contains(t, initialWorkspaceConfig, "[modules]")
+	require.NotContains(t, initialWorkspaceConfig, "check-generated")
+
+	cfg, err := workspace.ParseConfig([]byte(initialWorkspaceConfig))
+	require.NoError(t, err)
+	require.Nil(t, cfg.CheckGenerated)
 }
 
 func TestMatchWorkspaceInclude(t *testing.T) {
@@ -464,6 +481,69 @@ func TestWorkspaceMigrationModuleConfigConversions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "data", cfg.Name)
 	require.Nil(t, cfg.SDK)
+}
+
+func TestWorkspaceMigrationJoinRelPathAndScope(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		dir         string
+		source      string
+		wantDir     string
+		projectRoot string
+		wantWithin  bool
+	}{
+		{name: "child from root", dir: ".", source: "./toolchain", wantDir: "toolchain", projectRoot: "", wantWithin: true},
+		{name: "nested child", dir: "libs/foo", source: "./sub", wantDir: "libs/foo/sub", projectRoot: "", wantWithin: true},
+		{name: "sibling within project dir", dir: "app/libs/foo", source: "../bar", wantDir: "app/libs/bar", projectRoot: "app", wantWithin: true},
+		{name: "self", dir: "libs/foo", source: ".", wantDir: "libs/foo", projectRoot: "", wantWithin: true},
+		{name: "escapes workspace root", dir: ".", source: "../shared", wantDir: "../shared", projectRoot: "", wantWithin: false},
+		{name: "sibling outside project", dir: "app", source: "../hello", wantDir: "hello", projectRoot: "app", wantWithin: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := workspaceMigrationJoinRelPath(tc.dir, tc.source)
+			require.Equal(t, tc.wantDir, got)
+			require.Equal(t, tc.wantWithin, workspaceMigrationWithinProject(tc.projectRoot, got))
+		})
+	}
+
+	// An absolute source must be caught before joining: path.Join silently
+	// strips the leading slash and rebases it under the referrer, so the scope
+	// check alone would not flag it — the DFS special-cases path.IsAbs first.
+	require.Equal(t, "app/tmp/foo", workspaceMigrationJoinRelPath("app", "/tmp/foo"))
+	require.True(t, path.IsAbs("/tmp/foo"))
+}
+
+func TestWorkspaceMigrationDiscoveredLocalModuleConversions(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+
+	// A normal toolchain (sdk + non-root source) would look "workspace-shaped"
+	// to mustMigrateToWorkspaceConfig, but as a discovered local module it must
+	// convert in place, keeping its source.
+	toolchain := testRuntimeCompatWorkspace(t, filepath.Join(root, "toolchain"), `{
+  "name": "tc",
+  "sdk": {"source": "go"},
+  "source": "src"
+}`)
+	toolchain.DiscoveredLocalModule = true
+
+	// A discovered module that owns toolchains is a genuine nested workspace and
+	// must be left as legacy, not converted in place.
+	nested := testRuntimeCompatWorkspace(t, filepath.Join(root, "nested"), `{
+  "name": "nested",
+  "sdk": {"source": "go"},
+  "toolchains": [{"name": "x", "source": "./x"}]
+}`)
+	nested.DiscoveredLocalModule = true
+
+	conversions, err := workspaceMigrationModuleConfigConversions([]*workspace.CompatWorkspace{toolchain, nested})
+	require.NoError(t, err)
+	require.Len(t, conversions, 1, "the normal toolchain converts; the nested workspace is left as legacy")
+	require.Equal(t, filepath.Join(root, "toolchain"), conversions[0].ProjectRoot)
+	cfg, err := modules.ParseModuleConfigForFilename(conversions[0].ConfigData, workspace.ModuleConfigFileName)
+	require.NoError(t, err)
+	require.Equal(t, "tc", cfg.Name)
+	require.Equal(t, "go", cfg.SDK.Source)
+	require.Equal(t, "src", cfg.Source)
 }
 
 func TestWorkspaceMigrationLegacyLockProjectRootsIncludesModuleConfigConversions(t *testing.T) {

@@ -519,7 +519,9 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 					Include: []string{"dagger/subdir/keepdir", "!dagger/subdir/keepdir/rmdir"},
 					Source:  "dagger",
 				})).
-				WithDirectory("dagger/subdir/keepdir/rmdir", c.Directory())
+				WithDirectory("dagger/subdir/keepdir/rmdir", c.Directory()).
+				// materialize generated files first: toml modules don't regenerate at runtime
+				With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`))
 
 			// call should work even though dagger.json and main source files weren't
 			// explicitly included

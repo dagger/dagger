@@ -1,0 +1,48 @@
+"""
+An expert Go programmer micro-agent, driven by the LLM integration tests
+to record and replay conversations.
+"""
+type GoProgrammer {
+  model: String = null
+
+  """
+  Complete the assignment and return the resulting workspace's container.
+  """
+  run(assignment: String!): Container! {
+    agent(assignment)
+      .env
+      .output("result")
+      .asToyWorkspace
+      .container
+  }
+
+  """
+  Complete the assignment and return the conversation itself, so that a
+  caller can inspect it (e.g. the integration tests export its messages
+  to record a replay).
+  """
+  agent(assignment: String!): LLM! {
+    llm(model: model)
+      .withEnv(
+        env
+          .withToyWorkspaceInput(
+            "workspace",
+            toyWorkspace,
+            "A toy workspace that can edit files and run 'go build'",
+          )
+          .withToyWorkspaceOutput(
+            "result",
+            "The workspace after running the assignment",
+          )
+      )
+      .withPrompt(
+        "You are an expert go programmer. You have access to a workspace.\n" +
+        "Use the read, write, build tools to complete the following assignment.\n" +
+        "Do not try to access the container directly.\n" +
+        "Don't stop until your code builds.\n" +
+        "\n" +
+        "Assignment: " + assignment + "\n"
+      )
+      .loop
+  }
+}

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,6 +121,56 @@ greeting = "hola"
 
 [env.local]
 `, string(out))
+}
+
+func TestEnvModuleSourceRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// An env may add a module by giving it a source (with optional pin and
+	// settings) alongside settings-only overrides of installed modules.
+	data := []byte(`[modules.greeter]
+source = "modules/greeter"
+
+[env.dev.modules.delegate]
+source = "modules/delegate"
+pin = "abc123"
+
+[env.dev.modules.delegate.settings]
+verbose = true
+
+[env.dev.modules.greeter.settings]
+greeting = "hey"
+`)
+
+	cfg, err := ParseConfig(data)
+	require.NoError(t, err)
+	require.Equal(t, EnvModuleOverlay{
+		Source: "modules/delegate",
+		Pin:    "abc123",
+		Settings: map[string]any{
+			"verbose": true,
+		},
+	}, cfg.Env["dev"].Modules["delegate"])
+	require.Equal(t, EnvModuleOverlay{
+		Settings: map[string]any{
+			"greeting": "hey",
+		},
+	}, cfg.Env["dev"].Modules["greeter"])
+
+	// Round-trips through the canonical serializer without loss.
+	reparsed, err := ParseConfig(SerializeConfig(cfg))
+	require.NoError(t, err)
+	require.Equal(t, cfg.Env, reparsed.Env)
+
+	// Applying the env installs the added module and overrides the settings.
+	applied, err := ApplyEnvOverlay(cfg, "dev")
+	require.NoError(t, err)
+	require.Equal(t, ModuleEntry{
+		Source:   "modules/delegate",
+		Pin:      "abc123",
+		Settings: map[string]any{"verbose": true},
+	}, applied.Modules["delegate"])
+	require.Equal(t, "hey", applied.Modules["greeter"].Settings["greeting"])
 }
 
 func TestWorkspaceCheckGeneratedSetting(t *testing.T) {
@@ -413,6 +464,60 @@ func TestWriteConfigValue(t *testing.T) {
 		}, cfg.Env["ci"])
 	})
 
+	t.Run("settings named after module bool fields keep their written value", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValue(nil, "modules.greeter.settings.entrypoint", "cmd/main.go")
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "env.ci.modules.greeter.settings.entrypoint", "cmd/ci.go")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, "cmd/main.go", cfg.Modules["greeter"].Settings["entrypoint"])
+		require.Equal(t, "cmd/ci.go", cfg.Env["ci"].Modules["greeter"].Settings["entrypoint"])
+	})
+
+	t.Run("bracketed values keep string handling instead of JSON parsing", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValue(nil, "modules.greeter.settings.glob", `[abc]*`)
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.settings.globs", `[a]*,[b]*`)
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.settings.lint", `["!docs","!x"]`)
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{
+			"glob":  "[abc]*",
+			"globs": []any{"[a]*", "[b]*"},
+			"lint":  []any{`["!docs"`, `"!x"]`},
+		}, cfg.Modules["greeter"].Settings)
+	})
+
+	t.Run("WriteConfigValues stores elements verbatim as native arrays", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValues(nil, "modules.greeter.settings.lint", []string{"!docs", "!x"})
+		require.NoError(t, err)
+		data, err = WriteConfigValues(data, "modules.greeter.settings.tags", []string{"a,b", `["c"]`, "", "true", "42"})
+		require.NoError(t, err)
+		data, err = WriteConfigValues(data, "env.ci.modules.greeter.settings.lint", []string{"ci-only"})
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{
+			"lint": []any{"!docs", "!x"},
+			"tags": []any{"a,b", `["c"]`, "", "true", "42"},
+		}, cfg.Modules["greeter"].Settings)
+		require.Equal(t, map[string]any{
+			"lint": []any{"ci-only"},
+		}, cfg.Env["ci"].Modules["greeter"].Settings)
+	})
+
 	t.Run("writes module skip fields", func(t *testing.T) {
 		t.Parallel()
 
@@ -469,8 +574,8 @@ func TestWriteConfigValue(t *testing.T) {
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
 
-		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.source", "github.com/acme/greeter")
-		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.source\"; valid fields at this level: settings")
+		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.unknown", "value")
+		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.unknown\"; valid fields at this level: pin, settings, source")
 	})
 
 	t.Run("preserves comments and section layout", func(t *testing.T) {
@@ -523,6 +628,26 @@ region = "us-west-2"
 		require.Contains(t, out, "# region comment")
 		require.Contains(t, out, "[env.ci.modules.greeter.settings]")
 		require.Contains(t, out, `region = "us-east-1"`)
+	})
+
+	t.Run("adds a module to an env by writing its source", func(t *testing.T) {
+		t.Parallel()
+
+		data := []byte(`# top comment
+[modules.greeter]
+source = "modules/greeter"
+`)
+
+		updated, err := WriteConfigValue(data, "env.dev.modules.delegate.source", "modules/delegate")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(updated)
+		require.NoError(t, err)
+		require.Equal(t, "modules/delegate", cfg.Env["dev"].Modules["delegate"].Source)
+
+		out := string(updated)
+		require.Contains(t, out, "# top comment")
+		require.Contains(t, out, `source = "modules/delegate"`)
 	})
 }
 
@@ -779,6 +904,75 @@ func TestApplyEnvOverlay(t *testing.T) {
 		}, "ci")
 		require.EqualError(t, err, `workspace env "ci" references unknown module "missing"`)
 	})
+
+	t.Run("adds a module that only exists in the environment", func(t *testing.T) {
+		t.Parallel()
+
+		base := &Config{
+			Modules: map[string]ModuleEntry{
+				"aws": {Source: "github.com/dagger/aws"},
+			},
+			Env: map[string]EnvOverlay{
+				"dev": {
+					Modules: map[string]EnvModuleOverlay{
+						"delegate": {
+							Source: "modules/delegate",
+							Pin:    "abc123",
+							Settings: map[string]any{
+								"verbose": true,
+							},
+						},
+					},
+				},
+			},
+		}
+
+		applied, err := ApplyEnvOverlay(base, "dev")
+		require.NoError(t, err)
+		require.Equal(t, ModuleEntry{
+			Source:   "modules/delegate",
+			Pin:      "abc123",
+			Settings: map[string]any{"verbose": true},
+		}, applied.Modules["delegate"])
+		// base config is left untouched.
+		require.NotContains(t, base.Modules, "delegate")
+	})
+
+	t.Run("env source overrides an installed module", func(t *testing.T) {
+		t.Parallel()
+
+		base := &Config{
+			Modules: map[string]ModuleEntry{
+				"editor": {
+					Source: "github.com/vito/editor",
+					Pin:    "old",
+					Settings: map[string]any{
+						"theme": "light",
+					},
+				},
+			},
+			Env: map[string]EnvOverlay{
+				"dev": {
+					Modules: map[string]EnvModuleOverlay{
+						"editor": {
+							Source: "modules/editor",
+							Settings: map[string]any{
+								"theme": "dark",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		applied, err := ApplyEnvOverlay(base, "dev")
+		require.NoError(t, err)
+		require.Equal(t, ModuleEntry{
+			Source:   "modules/editor",
+			Pin:      "", // pin travels with the source it pinned
+			Settings: map[string]any{"theme": "dark"},
+		}, applied.Modules["editor"])
+	})
 }
 
 func TestResolveModuleEntrySource(t *testing.T) {
@@ -797,5 +991,215 @@ func TestResolveModuleEntrySource(t *testing.T) {
 	t.Run("leaves remote source unchanged", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t, "github.com/dagger/dagger/modules/wolfi", ResolveModuleEntrySource(LockDirName, "github.com/dagger/dagger/modules/wolfi"))
+	})
+}
+
+func TestDeleteConfigValue(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`# workspace config
+[modules.greeter]
+source = "modules/greeter"
+entrypoint = true
+
+[modules.greeter.settings]
+greeting = "hello"
+enabled = true
+
+[env.ci.modules.greeter.settings]
+greeting = "hola"
+
+[env.local]
+`)
+
+	t.Run("removes a base setting and keeps the rest", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := DeleteConfigValue(data, "modules.greeter.settings.greeting")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.NotContains(t, cfg.Modules["greeter"].Settings, "greeting")
+		require.Equal(t, true, cfg.Modules["greeter"].Settings["enabled"])
+		require.Equal(t, "hola", cfg.Env["ci"].Modules["greeter"].Settings["greeting"])
+		require.Contains(t, string(out), "# workspace config")
+	})
+
+	t.Run("removing the last base setting drops the settings section", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := DeleteConfigValue(data, "modules.greeter.settings.greeting")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "modules.greeter.settings.enabled")
+		require.NoError(t, err)
+
+		require.NotContains(t, string(out), "[modules.greeter.settings]")
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.Empty(t, cfg.Modules["greeter"].Settings)
+		require.Equal(t, "modules/greeter", cfg.Modules["greeter"].Source)
+	})
+
+	t.Run("removes an env setting and keeps the env defined", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := DeleteConfigValue(data, "env.ci.modules.greeter.settings.greeting")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.Contains(t, cfg.Env, "ci")
+		require.NotContains(t, cfg.Env["ci"].Modules, "greeter")
+		require.Equal(t, "hello", cfg.Modules["greeter"].Settings["greeting"])
+		require.Contains(t, cfg.Env, "local")
+		require.Contains(t, string(out), "[env.ci]")
+		require.NotContains(t, string(out), "[env]\n")
+	})
+
+	t.Run("removes boolean and list fields", func(t *testing.T) {
+		t.Parallel()
+
+		listData := []byte(`ignore = ["dist"]
+defaults_from_dotenv = true
+check-generated = false
+
+[modules.greeter]
+source = "modules/greeter"
+entrypoint = true
+
+[modules.greeter.check]
+skip = ["slow"]
+`)
+
+		out, err := DeleteConfigValue(listData, "modules.greeter.entrypoint")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "modules.greeter.check.skip")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "ignore")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "defaults_from_dotenv")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "check-generated")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.False(t, cfg.Modules["greeter"].Entrypoint)
+		require.Empty(t, cfg.Modules["greeter"].Check.Skip)
+		require.Empty(t, cfg.Ignore)
+		require.False(t, cfg.DefaultsFromDotEnv)
+		require.Nil(t, cfg.CheckGenerated)
+		require.NotContains(t, string(out), "entrypoint")
+		require.NotContains(t, string(out), "check-generated")
+	})
+
+	t.Run("removes explicitly set zero values", func(t *testing.T) {
+		t.Parallel()
+
+		zeroData := []byte(`ignore = []
+defaults_from_dotenv = false
+
+[modules.greeter]
+source = "modules/greeter"
+entrypoint = false
+`)
+
+		for _, tc := range []struct {
+			key  string
+			line string
+		}{
+			{"ignore", "ignore"},
+			{"defaults_from_dotenv", "defaults_from_dotenv"},
+			{"modules.greeter.entrypoint", "entrypoint"},
+		} {
+			out, err := DeleteConfigValue(zeroData, tc.key)
+			require.NoError(t, err, tc.key)
+			require.NotContains(t, string(out), tc.line, tc.key)
+
+			_, err = DeleteConfigValue(out, tc.key)
+			require.ErrorContains(t, err, fmt.Sprintf("key %q is not set", tc.key), tc.key)
+		}
+	})
+
+	t.Run("errors when the key is not set", func(t *testing.T) {
+		t.Parallel()
+
+		for _, key := range []string{
+			"modules.greeter.settings.missing",
+			"modules.missing.settings.greeting",
+			"env.missing.modules.greeter.settings.greeting",
+			"env.ci.modules.missing.settings.greeting",
+			"env.ci.modules.greeter.settings.enabled",
+			"modules.greeter.legacy-default-path",
+			"check-generated",
+			"ignore",
+		} {
+			_, err := DeleteConfigValue(data, key)
+			require.ErrorContains(t, err, fmt.Sprintf("key %q is not set", key), key)
+		}
+	})
+
+	t.Run("rejects invalid and protected keys", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := DeleteConfigValue(data, "")
+		require.ErrorContains(t, err, "key is required")
+
+		_, err = DeleteConfigValue(data, "modules.greeter.source")
+		require.ErrorContains(t, err, "cannot unset modules.greeter.source")
+
+		_, err = DeleteConfigValue(data, "modules.greeter")
+		require.ErrorContains(t, err, `cannot unset "modules.greeter" directly; use dagger uninstall to remove a module`)
+
+		_, err = DeleteConfigValue(data, "modules.greeter.settings")
+		require.ErrorContains(t, err, `cannot unset "modules.greeter.settings" directly`)
+
+		_, err = DeleteConfigValue(data, "modules.greeter.badfield")
+		require.ErrorContains(t, err, "unknown config key")
+
+		_, err = DeleteConfigValue(data, "modules.greeter.as-sdk.name")
+		require.ErrorContains(t, err, "SDK state is managed by dagger install")
+
+		portsData := []byte("[ports.3000]\nbackendService = \"web\"\nbackendPort = 8080\n")
+		_, err = DeleteConfigValue(portsData, "ports.3000.backendService")
+		require.ErrorContains(t, err, "cannot unset")
+	})
+
+	t.Run("removes keys without dedicated handling", func(t *testing.T) {
+		t.Parallel()
+
+		pinned := []byte(`[modules.greeter]
+source = "modules/greeter"
+pin = "abc123"
+`)
+
+		out, err := DeleteConfigValue(pinned, "modules.greeter.pin")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "pin")
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.Equal(t, "modules/greeter", cfg.Modules["greeter"].Source)
+	})
+
+	t.Run("removes quoted setting keys", func(t *testing.T) {
+		t.Parallel()
+
+		quoted := []byte(`[modules."my.module"]
+source = "modules/my.module"
+
+[modules."my.module".settings]
+"some.key" = "value"
+other = "kept"
+`)
+
+		out, err := DeleteConfigValue(quoted, `modules."my.module".settings."some.key"`)
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.NotContains(t, cfg.Modules["my.module"].Settings, "some.key")
+		require.Equal(t, "kept", cfg.Modules["my.module"].Settings["other"])
 	})
 }

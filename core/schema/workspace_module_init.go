@@ -14,16 +14,9 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-// workspaceModuleInitArgs is the schema-facing arg set for
-// Workspace.moduleInit. The redesigned shape returns a Changeset rather
-// than applying immediately; callers preview and apply via the standard
-// changeset path. The SelfCalls arg is gone (the feature graduated to a
-// runtime-capability check), and Path is new (workspace-relative, defaults
-// to .dagger/modules/<name>). SDK is the user-facing SDK name from
-// [modules.<name>.as-sdk] or the module entry name, not a module source ref.
-type workspaceModuleInitArgs struct {
+type workspaceInitModuleArgs struct {
 	Name    string
-	SDK     string    `default:""`
+	SDK     string
 	Path    string    `default:""`
 	Source  string    `default:""`
 	Include []string  `default:"[]"`
@@ -31,7 +24,7 @@ type workspaceModuleInitArgs struct {
 	Here    bool      `default:"false"`
 }
 
-// moduleInit builds the workspace edits required to create a new module
+// initModuleChanges builds the workspace edits required to create a new module
 // owned by this workspace: the module config file (dagger-module.toml) at
 // `path`, the authoring entry under `[[modules.<sdk>.as-sdk.modules]]`, and —
 // when the default path is used — an `[modules.<name>]` install for the new
@@ -45,21 +38,16 @@ type workspaceModuleInitArgs struct {
 // merged in at the end. The two are disjoint by construction, so the merge
 // never conflicts on a shared path.
 //
-// Every change is staged into one Changeset and returned. No filesystem
-// write happens inside this function; the caller previews via
-// `handleChangesetResponseAt` (or any other Changeset consumer) and decides
-// whether to apply. This eliminates the half-mutated-workspace failure
-// window the previous immediate-apply shape inherited.
+// Every change is staged into one Changeset and returned. No filesystem write
+// happens inside this function.
 //
 //nolint:gocyclo // inherently branchy orchestration (validate args, resolve SDK, plan changes)
-func (s *workspaceSchema) moduleInit(
+func (s *workspaceSchema) initModuleChanges(
 	ctx context.Context,
-	parent *core.Workspace,
-	args workspaceModuleInitArgs,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceInitModuleArgs,
 ) (res dagql.ObjectResult[*core.Changeset], _ error) {
-	if err := requireLocalWorkspace(parent, "module init"); err != nil {
-		return res, err
-	}
+	ws := parent.Self()
 	if args.Name == "" {
 		return res, fmt.Errorf("module name is required")
 	}
@@ -82,13 +70,11 @@ func (s *workspaceSchema) moduleInit(
 		return res, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
 	}
 
-	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
+	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, args.Here)
 	if err != nil {
 		return res, err
 	}
-	if cfg.Modules == nil {
-		cfg.Modules = map[string]workspace.ModuleEntry{}
-	}
+	cfg := staged.Config
 	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
 		return res, err
@@ -105,7 +91,7 @@ func (s *workspaceSchema) moduleInit(
 			continue
 		}
 		for _, m := range installed.AsSDK.Modules {
-			if m.Path == relPath {
+			if filepath.Clean(m.Path) == relPath {
 				return res, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
 			}
 		}
@@ -114,15 +100,26 @@ func (s *workspaceSchema) moduleInit(
 	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: relPath})
 	cfg.Modules[sdkName] = sdkEntry
 
-	// Resolve which engine runtime ref the new module should declare. The
-	// runtime/SDK split allows an SDK to *delegate* execution to a separate
-	// runtime module by exposing a `targetRuntime: String!` field. When the
-	// field isn't declared, the SDK module IS the runtime — its own
-	// installed ref serves as the runtime ref. That's the common case today
-	// (every shipped SDK does codegen + runtime in one module).
-	runtimeRef, err := s.resolveModuleRuntimeRef(ctx, sdkRef)
+	loadedSDK, err := s.loadWorkspaceSDK(ctx, ws, staged.ConfigDir, sdkRef)
 	if err != nil {
 		return res, err
+	}
+
+	// By default the SDK module is also the runtime. SDKs that split authoring
+	// from execution advertise RuntimeTarget and provide the runtime ref.
+	defaultRuntimeRef, err := moduleEntrySourceWithPinRelativeTo(staged.ConfigDir, relPath, sdkEntry)
+	if err != nil {
+		return res, err
+	}
+	runtimeRef := defaultRuntimeRef
+	if target, ok := loadedSDK.AsRuntimeTarget(); ok {
+		runtimeRef, err = target.TargetRuntime(ctx)
+		if err != nil {
+			return res, fmt.Errorf("resolve SDK target runtime: %w", err)
+		}
+		if runtimeRef == "" {
+			return res, fmt.Errorf("SDK target runtime is empty")
+		}
 	}
 
 	if usingDefaultPath {
@@ -130,11 +127,7 @@ func (s *workspaceSchema) moduleInit(
 	}
 
 	// Render new dagger.toml bytes through the format-preserving editor.
-	existingConfigBytes, err := readConfigBytes(ctx, parent)
-	if err != nil {
-		return res, fmt.Errorf("read workspace config: %w", err)
-	}
-	newConfigBytes, err := workspace.UpdateConfigBytes(existingConfigBytes, cfg)
+	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, cfg)
 	if err != nil {
 		return res, fmt.Errorf("update workspace config: %w", err)
 	}
@@ -147,23 +140,18 @@ func (s *workspaceSchema) moduleInit(
 	// they can never collide on a shared path ("added in both changesets").
 	// The diff is workspace-root-relative because the moduleSource is
 	// constructed against the local workspace context.
-	moduleDiff, err := s.workspaceModuleInitConfigDiff(ctx, args, relPath, runtimeRef)
-	if err != nil {
-		return res, err
-	}
-
-	configRelPath, err := workspaceConfigFile(parent)
-	if err != nil {
-		return res, err
-	}
-
 	// Layer the workspace edits onto the workspace rootfs and compute the
 	// resulting Changeset. Operation order matters only for legibility — the
 	// diff is computed at the end.
-	baseDir, err := s.resolveRootfs(ctx, parent, ".", core.CopyFilter{}, false)
+	baseDir, err := s.workspaceOverlayRootfs(ctx, ws)
 	if err != nil {
 		return res, fmt.Errorf("resolve workspace rootfs: %w", err)
 	}
+	moduleDiff, err := s.workspaceModuleInitConfigDiff(ctx, baseDir, args, relPath, runtimeRef)
+	if err != nil {
+		return res, err
+	}
+	configRelPath := staged.ConfigFile
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -171,7 +159,7 @@ func (s *workspaceSchema) moduleInit(
 	}
 
 	updatedDir := baseDir
-	updatedDir, err = workspaceWithFile(ctx, dag, updatedDir, configRelPath, newConfigBytes, 0o644)
+	updatedDir, err = workspaceWithFile(ctx, dag, updatedDir, configRelPath, newConfigBytes)
 	if err != nil {
 		return res, fmt.Errorf("stage workspace config update: %w", err)
 	}
@@ -189,19 +177,11 @@ func (s *workspaceSchema) moduleInit(
 	if err != nil {
 		return res, err
 	}
-	loadedSDK, err := s.loadWorkspaceSDK(ctx, sdkRef)
-	if err != nil {
-		return res, err
-	}
 	moduleInitializer, ok := loadedSDK.AsModuleInitializer()
 	if !ok {
 		return res, fmt.Errorf("%q does not support module init", args.SDK)
 	}
-	workspaceObj, err := s.currentWorkspaceObject(ctx)
-	if err != nil {
-		return res, err
-	}
-	sdkChanges, err := moduleInitializer.InitModule(ctx, workspaceObj, args.Name, relPath, sdkArgs)
+	sdkChanges, err := moduleInitializer.InitModule(ctx, parent, args.Name, relPath, sdkArgs)
 	if err != nil {
 		return res, fmt.Errorf("sdk module init: %w", err)
 	}
@@ -266,73 +246,62 @@ func validateSDKInitChangesetOwnership(
 // for overlaying onto the workspace rootfs. It deliberately does NOT run
 // codegen: per the CLI-1.0 contract the engine owns only the config file
 // (dagger.toml + dagger-module.toml), while the SDK's initModule owns the
-// rest of the module directory. It therefore selects updatedConfigDirectory
-// (config-only) rather than generatedContextDirectory (full codegen pass),
-// so the engine's changeset stays a single file and never overlaps the
-// SDK's. runtimeRef is what gets recorded as the module's `runtime` field on
-// disk; it may differ from args.SDK when the SDK delegates execution to a
-// separate runtime module (see resolveModuleRuntimeRef).
+// rest of the module directory. Serializing the engine-owned config directly
+// keeps this diff to one file and prevents it from overlapping the SDK's
+// output. runtimeRef is what gets recorded as the module's `runtime` field;
+// it may differ from args.SDK when the SDK delegates execution to a separate
+// runtime module (see resolveModuleRuntimeRef).
 func (s *workspaceSchema) workspaceModuleInitConfigDiff(
 	ctx context.Context,
-	args workspaceModuleInitArgs,
+	workspaceRoot dagql.ObjectResult[*core.Directory],
+	args workspaceInitModuleArgs,
 	relPath string,
 	runtimeRef string,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	var res dagql.ObjectResult[*core.Directory]
+	statFS := &core.DirectoryStatFS{Dir: workspaceRoot}
+	for _, filename := range []string{workspace.ModuleConfigFileName, workspace.LegacyModuleConfigFileName} {
+		_, exists, err := core.StatFSExists(ctx, statFS, filepath.Join(relPath, filename))
+		if err != nil {
+			return res, fmt.Errorf("check existing module at %q: %w", relPath, err)
+		}
+		if exists {
+			return res, fmt.Errorf("a module already exists at %q", relPath)
+		}
+	}
+
+	source := args.Source
+	if source == "." {
+		source = ""
+	}
+	config, err := modules.MarshalModuleConfigForFilename(&modules.ModuleConfigWithUserFields{
+		ModuleConfig: modules.ModuleConfig{
+			Name:          args.Name,
+			EngineVersion: modules.EngineVersionLatest,
+			SDK:           &modules.SDK{Source: runtimeRef},
+			Source:        source,
+			Include:       append([]string(nil), args.Include...),
+		},
+	}, workspace.ModuleConfigFileName)
+	if err != nil {
+		return res, fmt.Errorf("marshal module config: %w", err)
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("dagql server: %w", err)
 	}
-
-	baseSelector := workspaceModuleInitSourceSelector(relPath)
-
-	var configExists dagql.Boolean
-	if err := srv.Select(ctx, srv.Root(), &configExists,
-		baseSelector,
-		dagql.Selector{Field: "configExists"},
-	); err != nil {
-		return res, fmt.Errorf("check existing module at %q: %w", relPath, err)
-	}
-	if bool(configExists) {
-		return res, fmt.Errorf("a module already exists at %q", relPath)
-	}
-
-	selectors := []dagql.Selector{
-		baseSelector,
-		{Field: "withName", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(args.Name)}}},
-		{Field: "withSDK", Args: []dagql.NamedInput{{Name: "source", Value: dagql.String(runtimeRef)}}},
-	}
-	if args.Source != "" {
-		selectors = append(selectors, dagql.Selector{
-			Field: "withSourceSubpath",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(args.Source)}},
-		})
-	}
-	if len(args.Include) > 0 {
-		patterns := make(dagql.ArrayInput[dagql.String], len(args.Include))
-		for i, include := range args.Include {
-			patterns[i] = dagql.String(include)
-		}
-		selectors = append(selectors, dagql.Selector{
-			Field: "withIncludes",
-			Args:  []dagql.NamedInput{{Name: "patterns", Value: patterns}},
-		})
-	}
-	selectors = append(selectors,
+	if err := srv.Select(ctx, srv.Root(), &res,
+		dagql.Selector{Field: "directory"},
 		dagql.Selector{
-			Field: "withEngineVersion",
-			Args:  []dagql.NamedInput{{Name: "version", Value: dagql.String(modules.EngineVersionLatest)}},
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(filepath.ToSlash(filepath.Join(relPath, workspace.ModuleConfigFileName)))},
+				{Name: "contents", Value: dagql.String(config)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
+			},
 		},
-		// updatedConfigDirectory writes only the module config file and diffs
-		// it against the (empty) source context, so the result is exactly
-		// {<relPath>/dagger-module.toml}. Using generatedContextDirectory here
-		// would instead run a full SDK codegen pass and emit the starter
-		// source + generated client too, which then collides with the SDK's
-		// own initModule output during the merge below.
-		dagql.Selector{Field: "updatedConfigDirectory"},
-	)
-
-	if err := srv.Select(ctx, srv.Root(), &res, selectors...); err != nil {
+	); err != nil {
 		return res, fmt.Errorf("generate module config: %w", err)
 	}
 	return res, nil
@@ -346,7 +315,6 @@ func workspaceWithFile(
 	dir dagql.ObjectResult[*core.Directory],
 	path string,
 	contents []byte,
-	mode int,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	var out dagql.ObjectResult[*core.Directory]
 	err := dag.Select(ctx, dir, &out,
@@ -355,7 +323,7 @@ func workspaceWithFile(
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(path)},
 				{Name: "contents", Value: dagql.String(contents)},
-				{Name: "permissions", Value: dagql.Int(mode)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
 			},
 		},
 	)
@@ -385,70 +353,4 @@ func workspaceWithDirectoryOverlay(
 		},
 	)
 	return out, err
-}
-
-// resolveModuleRuntimeRef returns the runtime ref to record in the new
-// module's dagger-module.toml given the SDK ref the caller picked.
-//
-// Resolution order:
-//
-//  1. Load the SDK module and look for a `targetRuntime: String!` field on
-//     its main object. If present and non-empty, use its value. This is the
-//     decoupled case: the SDK and the runtime are different modules; the
-//     SDK declares which runtime its codegen targets.
-//
-//  2. Otherwise default to sdkRef itself. The SDK module IS the runtime —
-//     this is the common case today and requires no SDK-side declaration.
-//
-// The introspection path is intentionally fail-soft: any error during
-// the lookup falls through to the default. The override exists so SDKs
-// CAN opt into the split, not as a load-bearing dependency. No SDK
-// currently exposes `targetRuntime`, so today every call resolves via
-// the default; the override hook waits dormant for the first opt-in.
-func (s *workspaceSchema) resolveModuleRuntimeRef(ctx context.Context, sdkRef string) (string, error) {
-	if sdkRef == "" {
-		return "", fmt.Errorf("cannot resolve runtime ref from empty SDK ref")
-	}
-
-	if override, ok := s.lookupSDKTargetRuntime(ctx, sdkRef); ok && override != "" {
-		return override, nil
-	}
-	return sdkRef, nil
-}
-
-// lookupSDKTargetRuntime attempts to read the SDK module's optional
-// `targetRuntime` field. Returns ("", false) when the field is absent or
-// any step of the lookup fails — callers fall back to the SDK ref itself.
-//
-// Resolution chain: load the SDK module via the standard SDK loader, ask
-// for the RuntimeTarget capability, and if implemented, call it. Fail-soft
-// on every error path — the override is opt-in, not load-bearing, so any
-// failure to load or call the field falls through to the default and the
-// caller records the SDK's own ref as the runtime.
-func (s *workspaceSchema) lookupSDKTargetRuntime(ctx context.Context, sdkRef string) (string, bool) {
-	loaded, err := s.loadWorkspaceSDK(ctx, sdkRef)
-	if err != nil {
-		return "", false
-	}
-	target, ok := loaded.AsRuntimeTarget()
-	if !ok {
-		return "", false
-	}
-	ref, err := target.TargetRuntime(ctx)
-	if err != nil || ref == "" {
-		return "", false
-	}
-	return ref, true
-}
-
-func workspaceModuleInitSourceSelector(refPath string) dagql.Selector {
-	return dagql.Selector{
-		Field: "moduleSource",
-		Args: []dagql.NamedInput{
-			{Name: "refString", Value: dagql.String(refPath)},
-			{Name: "disableFindUp", Value: dagql.Boolean(true)},
-			{Name: "allowNotExists", Value: dagql.Boolean(true)},
-			{Name: "requireKind", Value: dagql.Opt(core.ModuleSourceKindLocal)},
-		},
-	}
 }

@@ -14,14 +14,48 @@ import (
 )
 
 const workspaceSettingsQuery = `
-query WorkspaceSettings($module: String!) {
+query WorkspaceSettings {
   currentWorkspace {
-    moduleList(module: $module) {
+    modules {
       name
       settings {
         key
         value
         description
+      }
+    }
+  }
+}
+`
+
+const workspaceModuleSettingsQuery = `
+query WorkspaceModuleSettings($module: String!) {
+  currentWorkspace {
+    module(name: $module) {
+      name
+      settings {
+        key
+        value
+        description
+      }
+    }
+  }
+}
+`
+
+// workspaceModuleSettingsQueryWithIsList additionally requests isList, which
+// older engines don't expose. Only multi-value writes need it, so other flows
+// use the queries above and keep working against those engines.
+const workspaceModuleSettingsQueryWithIsList = `
+query WorkspaceModuleSettings($module: String!) {
+  currentWorkspace {
+    module(name: $module) {
+      name
+      settings {
+        key
+        value
+        description
+        isList
       }
     }
   }
@@ -41,26 +75,43 @@ func init() {
 	addWorkspaceHereFlag(settingsCmd)
 }
 
+var workspaceSettingsUnset bool
+
 func newSettingsCmd(hidden bool) *cobra.Command {
-	return &cobra.Command{
-		Use:    "settings [module] [key] [value]",
-		Short:  "Get or set module settings (use --env for an env overlay)",
+	cmd := &cobra.Command{
+		Use:    "settings [module] [key] [value...]",
+		Short:  "Get, set, or unset module settings (use --env for an env overlay)",
 		Hidden: hidden,
-		Args:   cobra.MaximumNArgs(3),
+		Args:   cobra.ArbitraryArgs,
 		RunE:   runWorkspaceSettings,
 	}
+	cmd.Flags().BoolVarP(&workspaceSettingsUnset, "unset", "u", false, "Remove the setting from workspace config")
+	return cmd
 }
 
 func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
+	if workspaceSettingsUnset && len(args) != 2 {
+		return fmt.Errorf("--unset requires MODULE and KEY arguments")
+	}
 	return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 		moduleName := ""
 		if len(args) > 0 {
 			moduleName = args[0]
 		}
 
-		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName)
+		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName, len(args) > 3)
 		if err != nil {
 			return err
+		}
+
+		if workspaceSettingsUnset {
+			setting, err := state.lookupSetting(args[1])
+			if err != nil {
+				return err
+			}
+			return state.Workspace.
+				WithoutConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).
+				Export(ctx)
 		}
 
 		switch len(args) {
@@ -73,15 +124,18 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			}
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), setting.Value)
 			return err
-		case 3:
+		default:
 			setting, err := state.lookupSetting(args[1])
 			if err != nil {
 				return err
 			}
-			_, err = state.Workspace.ConfigWrite(ctx, workspaceSettingConfigKey(setting.Module, setting.Key), args[2], dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
-			return err
-		default:
-			return fmt.Errorf("expected 0-3 arguments, got %d", len(args))
+			value, values, err := workspaceSettingWriteValue(setting, args[2:])
+			if err != nil {
+				return err
+			}
+			return state.Workspace.
+				WithConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
+				Export(ctx)
 		}
 	})
 }
@@ -91,6 +145,22 @@ type workspaceSetting struct {
 	Key         string
 	Value       string
 	Description string
+	IsList      bool
+}
+
+// workspaceSettingWriteValue maps trailing CLI args onto WithConfigValue's
+// value/values split. A single value passes through unchanged so existing
+// scalar and comma-separated forms keep their behavior. Multiple values are
+// only valid for list settings and are passed as an explicit list so elements
+// round-trip exactly, without comma-splitting.
+func workspaceSettingWriteValue(setting workspaceSetting, args []string) (string, []string, error) {
+	if len(args) == 1 {
+		return args[0], nil, nil
+	}
+	if !setting.IsList {
+		return "", nil, fmt.Errorf("setting %q of module %q is not a list and accepts a single value", setting.Key, setting.Module)
+	}
+	return "", args, nil
 }
 
 type workspaceSettingsState struct {
@@ -99,26 +169,43 @@ type workspaceSettingsState struct {
 	Settings  []workspaceSetting
 }
 
-func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string) (*workspaceSettingsState, error) {
-	var res struct {
-		CurrentWorkspace struct {
-			ModuleList []struct {
-				Name     string
-				Settings []workspaceSetting
+func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string, withIsList bool) (*workspaceSettingsState, error) {
+	type settingsModule struct {
+		Name     string
+		Settings []workspaceSetting
+	}
+	var modules []settingsModule
+	if moduleName == "" {
+		var res struct {
+			CurrentWorkspace struct {
+				Modules []settingsModule
 			}
 		}
-	}
-	if err := dag.Do(ctx, &dagger.Request{
-		Query:     workspaceSettingsQuery,
-		Variables: map[string]any{"module": moduleName},
-	}, &dagger.Response{
-		Data: &res,
-	}); err != nil {
-		return nil, err
+		if err := dag.Do(ctx, &dagger.Request{Query: workspaceSettingsQuery}, &dagger.Response{Data: &res}); err != nil {
+			return nil, err
+		}
+		modules = res.CurrentWorkspace.Modules
+	} else {
+		query := workspaceModuleSettingsQuery
+		if withIsList {
+			query = workspaceModuleSettingsQueryWithIsList
+		}
+		var res struct {
+			CurrentWorkspace struct {
+				Module settingsModule
+			}
+		}
+		if err := dag.Do(ctx, &dagger.Request{
+			Query:     query,
+			Variables: map[string]any{"module": moduleName},
+		}, &dagger.Response{Data: &res}); err != nil {
+			return nil, err
+		}
+		modules = []settingsModule{res.CurrentWorkspace.Module}
 	}
 
 	settings := make([]workspaceSetting, 0)
-	for _, module := range res.CurrentWorkspace.ModuleList {
+	for _, module := range modules {
 		for _, setting := range module.Settings {
 			setting.Module = module.Name
 			settings = append(settings, setting)

@@ -132,6 +132,14 @@ func NewPlain(w io.Writer) Frontend {
 
 func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
 
+func (fe *frontendPlain) SetStatusLine(StatusLineData) {}
+
+func (fe *frontendPlain) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
 }
@@ -611,8 +619,19 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		} else {
 			fmt.Fprint(fe.output, fe.output.String(" DONE").Foreground(termenv.ANSIGreen))
 		}
-		duration := dagui.FormatDuration(span.Activity.Duration(time.Now()))
-		fmt.Fprint(fe.output, fe.output.String(fmt.Sprintf(" [%s]", duration)).Foreground(termenv.ANSIBrightBlack))
+		hb := span.TimeBreakdown(time.Now())
+		var durText string
+		if hb.Material {
+			// the time the op actually spent executing; note where the
+			// rest went since a log line can't be hovered
+			durText = dagui.FormatDuration(hb.Self)
+			if hb.DominantLabel != "" {
+				durText += ", waited on " + hb.DominantLabel
+			}
+		} else {
+			durText = dagui.FormatDuration(span.Activity.Duration(time.Now()))
+		}
+		fmt.Fprint(fe.output, fe.output.String(fmt.Sprintf(" [%s]", durText)).Foreground(termenv.ANSIBrightBlack))
 		r.renderMetrics(fe.output, span)
 
 		if span.IsFailed() && span.Status.Description != "" {

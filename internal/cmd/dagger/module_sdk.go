@@ -40,7 +40,7 @@ var moduleSdkCmd = &cobra.Command{
 	Long: `Run SDK-specific commands against the current module's SDK.
 
 Reads the SDK from the module's dagger-module.toml and dispatches
-through "dagger call <sdk>". Available subcommands depend entirely on
+through "dagger api call <sdk>". Available subcommands depend entirely on
 the SDK in use — the wrapper is a thin forwarder.
 
 Examples:

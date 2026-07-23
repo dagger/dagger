@@ -223,7 +223,12 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
-	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "version"})
+	// The engine name reaches the user via the client's "connected" INFO log,
+	// which only the streaming plain frontend prints (the report frontend, the
+	// non-TTY default, doesn't render passing-span logs).
+	clientCtr = clientCtr.
+		WithEnvVariable("DAGGER_PROGRESS", "plain").
+		WithExec([]string{"dagger", "core", "version"})
 
 	// version call
 	stdout, err := clientCtr.Stdout(ctx)
@@ -273,6 +278,11 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 			)
 
 			clientCtr = clientCtr.
+				// The stderr assertion below checks the plain frontend's live
+				// span stream ("Container.from"); the report frontend (the
+				// non-TTY default) renders the tree once at exit with
+				// call-chain naming instead.
+				WithEnvVariable("DAGGER_PROGRESS", "plain").
 				WithExec([]string{"apk", "add", "jq", "curl"}).
 				WithExec([]string{"sh", "-c", command})
 
@@ -360,15 +370,15 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientMinVersion: "v2.0.0",
 		},
 		{
-			// v2.0.1-foobar > v2.0.0 for both client and engine
-			name:             "old dev version",
+			// a prerelease of v2.0.0 shares base v2.0.0, so it satisfies a
+			// ">= v2.0.0" gate under base-version comparison (previously this
+			// was rejected because strict semver ranks a prerelease below its
+			// release)
+			name:             "prerelease of the required version",
 			engineVersion:    "v2.0.0-foobar",
 			engineMinVersion: "v2.0.0",
 			clientVersion:    "v2.0.0-foobar",
 			clientMinVersion: "v2.0.0",
-			errs: []string{
-				"incompatible engine version v2.0.0-foobar",
-			},
 		},
 
 		{
@@ -401,15 +411,14 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientMinVersion: "v2.0.0-foo-123",
 		},
 		{
-			// but can't not be a perfect match (unlike dev versions)
-			name:             "incompatible prereleases",
+			// differing prerelease suffixes still share base v2.0.0, so they
+			// are compatible too: base-version comparison ignores the suffix
+			// (this used to require an exact match)
+			name:             "prereleases of the same base",
 			engineVersion:    "v2.0.0-foo-123",
 			engineMinVersion: "v2.0.0-foo-456",
 			clientVersion:    "v2.0.0-foo-456",
 			clientMinVersion: "v2.0.0-foo-123",
-			errs: []string{
-				"incompatible engine version v2.0.0-foo-123",
-			},
 		},
 
 		// empty clients/engines can happen with manual builds

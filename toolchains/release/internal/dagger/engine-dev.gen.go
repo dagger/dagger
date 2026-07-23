@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type EngineDev
-func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:62:6)
+func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:97:6)
 	q := r.query.Select("asEngineDev")
 
 	return &EngineDev{
@@ -27,10 +27,9 @@ func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-d
 	}
 }
 
-type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go:62:6)
+type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go:97:6)
 	query *querybuilder.Selection
 
-	benchmark     *Void
 	id            *ID
 	networkCidr   *string
 	publish       *Void
@@ -53,223 +52,7 @@ func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
 	}
 }
 
-// EngineDevBenchmarkOpts contains options for EngineDev.Benchmark
-type EngineDevBenchmarkOpts struct {
-	//
-	// Only run these benchmarks
-	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/bench.go:17:2)
-	//
-	// Skip these benchmarks
-	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/bench.go:20:2)
-
-	// Default: "./..."
-	Pkg string // engine-dev (../../../../toolchains/engine-dev/bench.go:23:2)
-	//
-	// Abort bench run on first failure
-	//
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/bench.go:26:2)
-	//
-	// How long before timing out the benchmark run
-	//
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/bench.go:29:2)
-
-	Race bool // engine-dev (../../../../toolchains/engine-dev/bench.go:31:2)
-
-	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/bench.go:34:2)
-	//
-	// Enable verbose output
-	//
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/bench.go:37:2)
-	//
-	// run benchmarks once with metrics tagged "prewarm" before running for real
-	//
-	Prewarm bool // engine-dev (../../../../toolchains/engine-dev/bench.go:40:2)
-	//
-	// notify this discord webhook on failure
-	//
-	DiscordWebhook *Secret // engine-dev (../../../../toolchains/engine-dev/bench.go:43:2)
-	//
-	// Git repository to extract git metadata for discord notification
-	//
-	Repo *GitRepository // engine-dev (../../../../toolchains/engine-dev/bench.go:46:2)
-}
-
-// Perform a benchmark of the given test run
-func (r *EngineDev) Benchmark(ctx context.Context, opts ...EngineDevBenchmarkOpts) error { // engine-dev (../../../../toolchains/engine-dev/bench.go:13:1)
-	if r.benchmark != nil {
-		return nil
-	}
-	q := r.query.Select("benchmark")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `pkg` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkg) {
-			q = q.Arg("pkg", opts[i].Pkg)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `prewarm` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Prewarm) {
-			q = q.Arg("prewarm", opts[i].Prewarm)
-		}
-		// `discordWebhook` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DiscordWebhook) {
-			q = q.Arg("discordWebhook", opts[i].DiscordWebhook)
-		}
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-// EngineDevBenchmarkDumpOpts contains options for EngineDev.BenchmarkDump
-type EngineDevBenchmarkDumpOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/bench.go:105:2)
-	//
-	// Skip these tests
-	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/bench.go:108:2)
-
-	// Default: "./..."
-	Pkg string // engine-dev (../../../../toolchains/engine-dev/bench.go:111:2)
-	//
-	// Abort test run on first failure
-	//
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/bench.go:114:2)
-	//
-	// How long before timing out the test run
-	//
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/bench.go:117:2)
-
-	Race bool // engine-dev (../../../../toolchains/engine-dev/bench.go:119:2)
-
-	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/bench.go:122:2)
-	//
-	// Enable verbose output
-	//
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/bench.go:125:2)
-	//
-	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
-	//
-	//
-	// Default: "pprof/heap"
-	Route string // engine-dev (../../../../toolchains/engine-dev/bench.go:129:2)
-	//
-	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
-	//
-	NoFinal bool // engine-dev (../../../../toolchains/engine-dev/bench.go:133:2)
-	//
-	// wait this long before starting to take dumps. delay does not include engine startup.
-	//
-	//
-	// Default: "1s"
-	Delay string // engine-dev (../../../../toolchains/engine-dev/bench.go:137:2)
-	//
-	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
-	//
-	//
-	// Default: "-1s"
-	Interval string // engine-dev (../../../../toolchains/engine-dev/bench.go:141:2)
-}
-
-// Run specific benchmarks while curling (pprof) dumps from their associated dev engine:
-// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
-func (r *EngineDev) BenchmarkDump(opts ...EngineDevBenchmarkDumpOpts) *Directory { // engine-dev (../../../../toolchains/engine-dev/bench.go:101:1)
-	q := r.query.Select("benchmarkDump")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `pkg` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkg) {
-			q = q.Arg("pkg", opts[i].Pkg)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `route` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Route) {
-			q = q.Arg("route", opts[i].Route)
-		}
-		// `noFinal` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
-			q = q.Arg("noFinal", opts[i].NoFinal)
-		}
-		// `delay` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Delay) {
-			q = q.Arg("delay", opts[i].Delay)
-		}
-		// `interval` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Interval) {
-			q = q.Arg("interval", opts[i].Interval)
-		}
-	}
-
-	return &Directory{
-		query: q,
-	}
-}
-
-func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../toolchains/engine-dev/main.go:71:2)
+func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../toolchains/engine-dev/main.go:112:2)
 	q := r.query.Select("clientDockerConfig")
 
 	return &Secret{
@@ -279,7 +62,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../to
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:352:1)
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:395:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -290,15 +73,15 @@ func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../.
 
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
-	Platform Platform // engine-dev (../../../../toolchains/engine-dev/main.go:146:2)
+	Platform Platform // engine-dev (../../../../toolchains/engine-dev/main.go:189:2)
 
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:148:2)
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:191:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:150:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:193:2)
 }
 
 // Build the engine container
-func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:142:1)
+func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:185:1)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -322,7 +105,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:367:1)
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:410:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -332,11 +115,11 @@ func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchain
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:326:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:369:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:323:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:366:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -399,7 +182,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:78:1)
+func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:121:1)
 	q := r.query.Select("incrementSubnet")
 
 	return &EngineDev{
@@ -412,13 +195,13 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:268:2)
+	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:311:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:270:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:313:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:262:1)
+func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:305:1)
 	assertNotNil("client", client)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -440,7 +223,7 @@ func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallCli
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:310:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:353:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -449,7 +232,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolc
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:344:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:387:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -495,7 +278,7 @@ func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOp
 	}
 }
 
-func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:74:1)
+func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:117:1)
 	if r.networkCidr != nil {
 		return *r.networkCidr, nil
 	}
@@ -512,23 +295,23 @@ type EngineDevPlaygroundOpts struct {
 	//
 	// Build from a custom base image
 	//
-	Base *Container // engine-dev (../../../../toolchains/engine-dev/main.go:108:2)
+	Base *Container // engine-dev (../../../../toolchains/engine-dev/main.go:151:2)
 	//
 	// Enable experimental GPU support
 	//
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:111:2)
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:154:2)
 	//
 	// Share cache globally
 	//
-	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:114:2)
+	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:157:2)
 
-	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:116:2)
+	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:159:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:118:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:161:2)
 }
 
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
-func (r *EngineDev) Playground(opts ...EngineDevPlaygroundOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:104:1)
+func (r *EngineDev) Playground(opts ...EngineDevPlaygroundOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:147:1)
 	q := r.query.Select("playground")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `base` optional argument
@@ -565,17 +348,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:449:2)
+	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:495:2)
 
-	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:454:2)
+	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:500:2)
 
-	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:457:2)
+	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:503:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:459:2)
+	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:505:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:444:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:490:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -603,7 +386,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:430:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:476:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -614,17 +397,17 @@ func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (..
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:209:2)
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:252:2)
 
-	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:211:2)
+	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:254:2)
 
-	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:213:2)
+	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:256:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:215:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:258:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:205:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:248:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
@@ -651,7 +434,7 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 	}
 }
 
-func (r *EngineDev) Source() *Directory { // engine-dev (../../../../toolchains/engine-dev/main.go:63:2)
+func (r *EngineDev) Source() *Directory { // engine-dev (../../../../toolchains/engine-dev/main.go:98:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -765,130 +548,6 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 	return q.Execute(ctx)
 }
 
-// EngineDevTestDumpOpts contains options for EngineDev.TestDump
-type EngineDevTestDumpOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/pprof.go:24:2)
-	//
-	// Skip these tests
-	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/pprof.go:27:2)
-
-	// Default: "./..."
-	Pkg string // engine-dev (../../../../toolchains/engine-dev/pprof.go:30:2)
-	//
-	// Abort test run on first failure
-	//
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:33:2)
-	//
-	// How many tests to run in parallel - defaults to the number of CPUs
-	//
-	Parallel int // engine-dev (../../../../toolchains/engine-dev/pprof.go:36:2)
-	//
-	// How long before timing out the test run
-	//
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/pprof.go:39:2)
-
-	Race bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:41:2)
-
-	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/pprof.go:44:2)
-	//
-	// Enable verbose output
-	//
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:47:2)
-	//
-	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
-	//
-	//
-	// Default: "pprof/heap"
-	Route string // engine-dev (../../../../toolchains/engine-dev/pprof.go:51:2)
-	//
-	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
-	//
-	NoFinal bool // engine-dev (../../../../toolchains/engine-dev/pprof.go:55:2)
-	//
-	// wait this long before starting to take dumps. delay does not include engine startup.
-	//
-	//
-	// Default: "1s"
-	Delay string // engine-dev (../../../../toolchains/engine-dev/pprof.go:59:2)
-	//
-	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
-	//
-	//
-	// Default: "-1s"
-	Interval string // engine-dev (../../../../toolchains/engine-dev/pprof.go:63:2)
-}
-
-// Run specific tests while curling (pprof) dumps from their associated dev engine:
-// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(datebut also works for profiles:
-// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date
-func (r *EngineDev) TestDump(opts ...EngineDevTestDumpOpts) *Directory { // engine-dev (../../../../toolchains/engine-dev/pprof.go:20:1)
-	q := r.query.Select("testDump")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
-		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `pkg` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkg) {
-			q = q.Arg("pkg", opts[i].Pkg)
-		}
-		// `failfast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Failfast) {
-			q = q.Arg("failfast", opts[i].Failfast)
-		}
-		// `parallel` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Parallel) {
-			q = q.Arg("parallel", opts[i].Parallel)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `testVerbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
-			q = q.Arg("testVerbose", opts[i].TestVerbose)
-		}
-		// `route` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Route) {
-			q = q.Arg("route", opts[i].Route)
-		}
-		// `noFinal` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoFinal) {
-			q = q.Arg("noFinal", opts[i].NoFinal)
-		}
-		// `delay` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Delay) {
-			q = q.Arg("delay", opts[i].Delay)
-		}
-		// `interval` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Interval) {
-			q = q.Arg("interval", opts[i].Interval)
-		}
-	}
-
-	return &Directory{
-		query: q,
-	}
-}
-
 // EngineDevTestTelemetryOpts contains options for EngineDev.TestTelemetry
 type EngineDevTestTelemetryOpts struct {
 	//
@@ -990,7 +649,7 @@ func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (
 	return response, q.Execute(ctx)
 }
 
-func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:83:1)
+func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:126:1)
 	q := r.query.Select("withEbpfprogs")
 	q = q.Arg("names", names)
 
@@ -999,7 +658,7 @@ func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (..
 	}
 }
 
-func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:88:1)
+func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:131:1)
 	q := r.query.Select("withEngineConfig")
 	q = q.Arg("key", key)
 	q = q.Arg("value", value)
@@ -1009,7 +668,7 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // e
 	}
 }
 
-func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:98:1)
+func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:141:1)
 	q := r.query.Select("withLogLevel")
 	q = q.Arg("level", level)
 
@@ -1018,7 +677,7 @@ func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../..
 	}
 }
 
-func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:93:1)
+func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:136:1)
 	q := r.query.Select("withRace")
 
 	return &EngineDev{
@@ -1165,7 +824,7 @@ func (r *EngineDevLoadedEngine) AsNode() Node {
 }
 
 // Create or update a binding of type EngineDev in the environment
-func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/main.go:62:6)
+func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/main.go:97:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEngineDevInput")
 	q = q.Arg("name", name)
@@ -1202,7 +861,7 @@ func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *
 }
 
 // Declare a desired EngineDev output to be assigned in the environment
-func (r *Env) WithEngineDevOutput(name string, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/main.go:62:6)
+func (r *Env) WithEngineDevOutput(name string, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/main.go:97:6)
 	q := r.query.Select("withEngineDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -1214,19 +873,29 @@ func (r *Env) WithEngineDevOutput(name string, description string) *Env { // eng
 
 // EngineDevOpts contains options for Query.EngineDev
 type EngineDevOpts struct {
-	Source *Directory // engine-dev (../../../../toolchains/engine-dev/main.go:45:2)
+	Source *Directory // engine-dev (../../../../toolchains/engine-dev/main.go:46:2)
 	//
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
 	//
 	//
 	// Default: 89
-	SubnetNumber int // engine-dev (../../../../toolchains/engine-dev/main.go:49:2)
+	SubnetNumber int // engine-dev (../../../../toolchains/engine-dev/main.go:50:2)
 	//
 	// A docker config file with credentials to install on clients,
 	// to ensure they can access private registries
 	//
-	ClientDockerConfig *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:53:2)
+	ClientDockerConfig *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:54:2)
+	//
+	// Workspace whose git HEAD commit and dirty state stamp the built
+	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
+	// when it's a dependency the caller must forward it. It is resolved to
+	// scalar commit/dirty values here and never stored: keeping a Workspace
+	// field would taint the cache key of every EngineDev method (a
+	// session-scoped resource), which would break disk-cache reuse across
+	// engine restarts.
+	//
+	Ws *Workspace // engine-dev (../../../../toolchains/engine-dev/main.go:64:2)
 }
 
 // TODO: updating filter for engine restart test, probably go back to original
@@ -1244,6 +913,10 @@ func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../
 		// `clientDockerConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

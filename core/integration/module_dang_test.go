@@ -385,6 +385,59 @@ func (DangSuite) TestNullableSDKInputObjectFields(_ context.Context, t *testctx.
 	}
 }
 
+func (DangSuite) TestSelfCallReturningOwnType(_ context.Context, t *testctx.T) {
+	// A self-call that returns the module's own object type surfaces as the
+	// object's GraphQL ID (a string), since the object lives in the module's
+	// runtime schema. The runtime must load that ID back into the object
+	// rather than choke on the raw string. Regression test for tui-qa's
+	// `stop`, which returns `tuiQa`.
+	t.Run("return own type from a self-call and read a field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "self-calls").
+			With(daggerCall("fresh", "get-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from field", strings.TrimSpace(out))
+	})
+
+	t.Run("read a field off a self-returned object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "self-calls").
+			With(daggerCall("self-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from field", strings.TrimSpace(out))
+	})
+
+	// Self-calls are not limited to the module's main type: a field may return
+	// a secondary object type as it lives in the runtime schema (namespaced,
+	// carrying a GraphQL id), annotated Dagger.TestWidget. This exercises the
+	// declaration-phase injection of *every* declared type, not just the main
+	// one. The label is passed in through the API and must round-trip through
+	// the self-call's ID, so it's constructed via the API rather than hardcoded.
+	t.Run("return a secondary type from a self-call", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "self-calls").
+			With(daggerCall("widget", "--label", "constructed via api", "get-label")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "constructed via api", strings.TrimSpace(out))
+	})
+
+	t.Run("read a field off a self-returned secondary object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "self-calls").
+			With(daggerCall("widget-label", "--label", "constructed via api")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "constructed via api", strings.TrimSpace(out))
+	})
+}
+
 func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/dang", moduleName))

@@ -50,7 +50,14 @@ func (Impl) ModuleTypes(
 	runner := dangSourceRunner(func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
 		return dang.RunDir(ctx, modSrcDir, false)
 	})
-	if src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
+	// When self-calls are enabled the module's own types (and root fields like
+	// `tuiQa`) only exist in the *runtime* schema, after this ModuleTypes pass
+	// has installed them. So the declaration-only runner is required here: full
+	// inference would try to resolve self-referencing bodies against the deps
+	// schema, which does not yet carry the module's own API. The Dang SDK always
+	// enables self-calls (AlwaysEnablesSelfCalls), so gate on SelfCallsEnabled
+	// rather than the raw experimental flag.
+	if src.Self().SelfCallsEnabled() {
 		runner = runDangDirForModuleTypes
 	}
 

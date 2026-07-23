@@ -58,16 +58,6 @@ func (r *GoSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *GoSDKDev {
 	}
 }
 
-// Bump the Go SDK's Engine dependency
-func (r *GoSDKDev) Bump(version string) *Changeset { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Build a container to run the go toolchain
 func (r *GoSDKDev) DevContainer() *Container { // go-sdk-dev (../../../../:0:0)
 	q := r.query.Select("devContainer")
@@ -284,6 +274,10 @@ type GoSDKDevOpts struct {
 	// Path of the Go SDK source within the workspace
 	//
 	SourcePath string // go-sdk-dev (../../../../:0:0)
+	//
+	// Workspace
+	//
+	Ws *Workspace // go-sdk-dev (../../../../:0:0)
 }
 
 func (r *Query) GoSDKDev(opts ...GoSDKDevOpts) *GoSDKDev { // go-sdk-dev (../../../../:0:0)
@@ -296,6 +290,10 @@ func (r *Query) GoSDKDev(opts ...GoSDKDevOpts) *GoSDKDev { // go-sdk-dev (../../
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

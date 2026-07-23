@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,13 +17,25 @@ import (
 const lockCoreNamespace = ""
 
 type workspaceLookupLock struct {
-	ctx   context.Context
-	query *core.Query
-	lock  *workspace.Lock
+	ctx      context.Context
+	query    *core.Query
+	lock     *workspace.Lock
+	writable bool
 }
 
-func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspaceLookupLock, error) {
-	lock, ok, err := query.CurrentWorkspaceLock(ctx)
+type workspaceLookupLockOverrideKey struct{}
+
+func withWorkspaceLookupLockOverride(ctx context.Context, lock *workspace.Lock) context.Context {
+	ctx = context.WithValue(ctx, workspaceLookupLockOverrideKey{}, lock)
+	return dagql.WithPerClientCacheScope(ctx)
+}
+
+func loadWorkspaceLookupLock(ctx context.Context, query *core.Query, requireWritable bool) (*workspaceLookupLock, error) {
+	if lock, ok := ctx.Value(workspaceLookupLockOverrideKey{}).(*workspace.Lock); ok && lock != nil {
+		return &workspaceLookupLock{lock: lock, writable: requireWritable}, nil
+	}
+
+	lock, ok, err := query.CurrentWorkspaceLock(ctx, requireWritable)
 	if err != nil {
 		return nil, err
 	}
@@ -31,9 +44,10 @@ func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspace
 	}
 
 	return &workspaceLookupLock{
-		ctx:   ctx,
-		query: query,
-		lock:  lock,
+		ctx:      ctx,
+		query:    query,
+		lock:     lock,
+		writable: requireWritable,
 	}, nil
 }
 
@@ -41,8 +55,13 @@ func (l *workspaceLookupLock) SetLookup(namespace, operation string, inputs []an
 	if l == nil {
 		return fmt.Errorf("workspace lock is required")
 	}
-	if err := l.query.SetCurrentWorkspaceLookup(l.ctx, namespace, operation, inputs, result); err != nil {
-		return err
+	if !l.writable {
+		return fmt.Errorf("workspace lock is not writable")
+	}
+	if l.query != nil {
+		if err := l.query.SetCurrentWorkspaceLookup(l.ctx, namespace, operation, inputs, result); err != nil {
+			return err
+		}
 	}
 	if err := l.lock.SetLookup(namespace, operation, inputs, result); err != nil {
 		return err
@@ -59,10 +78,10 @@ func currentLookupLockMode(ctx context.Context) (workspace.LockMode, error) {
 }
 
 // lookupLockForMode is the policy boundary between ordinary lookups and
-// workspace lockfiles. Default/live/pinned lookups use a writable local
-// workspace lock binding when one exists; without one they resolve live and
-// skip lock writes. Frozen mode is different: it is an explicit request to
-// enforce a lockfile, so absence of a writable workspace lock is an error.
+// workspace lockfiles. Default/live/pinned lookups require a writable local
+// workspace lock binding; without one they resolve live and skip lock writes.
+// Frozen only reads, so it can also consume an immutable remote workspace's
+// committed lockfile. Absence of an eligible lock in frozen mode is an error.
 func lookupLockForMode(
 	ctx context.Context,
 	query *core.Query,
@@ -76,7 +95,7 @@ func lookupLockForMode(
 		return lockMode, nil, nil
 	}
 
-	lookupLock, err := loadWorkspaceLookupLock(ctx, query)
+	lookupLock, err := loadWorkspaceLookupLock(ctx, query, lockMode != workspace.LockModeFrozen)
 	if err != nil {
 		return "", nil, fmt.Errorf("%s lockfile: %w", operation, err)
 	}

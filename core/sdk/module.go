@@ -69,6 +69,24 @@ func (sdk *module) CloneForModuleSource(*core.ModuleSource) core.SDK {
 	return &cp
 }
 
+// RuntimeTrustsCommittedFiles reports whether the SDK runtime can build the
+// module from committed generated files, without the introspection JSON. An
+// SDK declares it by making moduleRuntime's introspectionJson arg optional.
+func (sdk *module) RuntimeTrustsCommittedFiles() bool {
+	fn, ok := sdk.funcs["moduleRuntime"]
+	if !ok {
+		return false
+	}
+	for _, arg := range fn.Args {
+		if arg.Self() == nil || arg.Self().Name != introspectionJSONArgName {
+			continue
+		}
+		typeDef := arg.Self().TypeDef
+		return typeDef.Self() != nil && typeDef.Self().Optional
+	}
+	return false
+}
+
 func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
 	dag, err := dagql.NewServer(ctx, sdk.root)
 	if err != nil {

@@ -49,10 +49,21 @@ func New(
 	// +optional
 	version string,
 
-	// Git repository for VCS info injection.
+	// Workspace whose git info stamps the CLI's VCS metadata. Auto-injected
+	// when cli-dev is called directly; a parent toolchain (e.g. engine-dev)
+	// instead resolves it to the scalar vcsCommit/vcsDirty below and forwards
+	// those, so the session-scoped Workspace never taints the cached build.
 	// +optional
-	// +defaultPath="/"
-	repo *dagger.GitRepository,
+	ws *dagger.Workspace,
+
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
+	// precedence over ws.
+	// +optional
+	vcsCommit string,
+
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	// +optional
+	vcsDirty bool,
 ) (*CliDev, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -61,9 +72,6 @@ func New(
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
 	var values []string
-	if version != "" {
-		values = append(values, "github.com/dagger/dagger/engine.Version="+version)
-	}
 	if runnerHost != "" {
 		values = append(values, "main.RunnerHost="+runnerHost)
 	}
@@ -75,7 +83,13 @@ func New(
 			Source: source,
 			Base:   base,
 			Values: values,
-			Repo:   repo,
+			// Forward VCS info for stamping. Prefer the scalars a parent
+			// resolved for us; fall back to the auto-injected workspace on a
+			// direct call. The go toolchain resolves ws to scalars internally,
+			// so this never taints the build cache.
+			Ws:        ws,
+			VcsCommit: vcsCommit,
+			VcsDirty:  vcsDirty,
 		}),
 	}, nil
 }

@@ -24,6 +24,13 @@ var versionAnnotation = distconsts.OCIVersionAnnotation
 type Builder struct {
 	source *dagger.Directory
 
+	// Resolved VCS info stamped into the built engine, threaded in from
+	// engine-dev as scalars. Storing the source Workspace here instead would
+	// taint the cache key of every build method and break disk-cache reuse
+	// across engine restarts.
+	vcsCommit string
+	vcsDirty  bool
+
 	version string
 
 	platform     dagger.Platform
@@ -32,18 +39,26 @@ type Builder struct {
 	gpuSupport bool
 
 	race bool
+
+	ws *dagger.Workspace
 }
 
 func NewBuilder(
 	ctx context.Context,
 	source *dagger.Directory,
 	version string,
+	vcsCommit string,
+	vcsDirty bool,
+	ws *dagger.Workspace,
 ) (*Builder, error) {
 	return &Builder{
 		source:       source,
+		vcsCommit:    vcsCommit,
+		vcsDirty:     vcsDirty,
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 		version:      version,
+		ws:           ws,
 	}, nil
 }
 
@@ -95,6 +110,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		"mount", "umount", "posix-libc-utils", "coreutils",
 		// for git
 		"git", "openssh-client",
+		// for SSHFS-backed volumes
+		"fuse3", "glib",
 		// for compression/decompression, containerd prefers igzip from the isa-l package as it's fastest
 		"isa-l", "pigz", "xz",
 		// for CNI (use nft variants for compatibility with kernels lacking legacy xtables)
@@ -127,6 +144,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	}
 	bins := []binAndPath{
 		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
+		{path: "/usr/bin/sshfs", file: build.sshfsBin()},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
@@ -152,7 +170,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", name), file: bin})
 	}
 
-	ctr := base
+	ctr := base.
+		WithExec([]string{"sh", "-c", "mkdir -p /etc && touch /etc/fuse.conf && (grep -qxF user_allow_other /etc/fuse.conf || printf '%s\\n' user_allow_other >> /etc/fuse.conf)"})
 	for _, bin := range bins {
 		ctr = ctr.WithFile(bin.path, bin.file, bin.fileOpts...)
 		eg.Go(func() error {
@@ -161,7 +180,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	}
 
 	ctr = ctr.
-		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
+		WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl").
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 
 	if err := eg.Wait(); err != nil {
@@ -209,14 +228,12 @@ func (build *Builder) Go(race bool) *dagger.Go {
 }
 
 func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
-	var values []string
-	if build.version != "" {
-		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
-	}
 	return dag.Go(dagger.GoOpts{
-		Source: source,
-		Values: values,
-		Race:   race,
+		Ws:        build.ws,
+		Source:    source,
+		VcsCommit: build.vcsCommit,
+		VcsDirty:  build.vcsDirty,
+		Race:      race,
 		Tags: []string{
 			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
 			// for enabling features at compile time:
@@ -249,6 +266,35 @@ func (build *Builder) runcBin() *dagger.File {
 		File("runc")
 }
 
+func (build *Builder) sshfsBin() *dagger.File {
+	// Wolfi's sshfs package currently lags upstream at 3.7.4, so build the
+	// known-good release from source. Prefer the Wolfi package again once it
+	// catches up.
+	src := dag.
+		Git("https://github.com/libfuse/sshfs.git").
+		Tag("sshfs-" + consts.SSHFSVersion).
+		Tree()
+
+	return dag.
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: []string{
+				"build-base",
+				"ca-certificates-bundle",
+				"coreutils",
+				"fuse3-dev",
+				"glib-dev",
+				"meson",
+			},
+			Arch: build.platformSpec.Architecture,
+		}).
+		WithMountedDirectory("/src", src).
+		WithWorkdir("/src").
+		WithExec([]string{"meson", "setup", "build", "--buildtype=release"}).
+		WithExec([]string{"meson", "compile", "-C", "build"}).
+		File("/src/build/sshfs")
+}
+
 func (build *Builder) qemuBins(ctx context.Context) ([]*dagger.File, error) {
 	dir := dag.
 		Container(dagger.ContainerOpts{Platform: build.platform}).
@@ -276,7 +322,9 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 		"./plugins/meta/firewall",
 		"./plugins/ipam/host-local",
 	} {
-		bin := dag.Go(dagger.GoOpts{Source: src}).Binary(pluginPath, dagger.GoBinaryOpts{
+		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
+		// don't thread any VCS info into their build.
+		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,

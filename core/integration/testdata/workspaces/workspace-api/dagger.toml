@@ -30,3 +30,12 @@ source = ".dagger/modules/abs-rel"
 
 [modules.finder]
 source = ".dagger/modules/finder"
+
+[modules.globber]
+source = ".dagger/modules/globber"
+
+[modules.searcher]
+source = ".dagger/modules/searcher"
+
+[modules.files-searcher]
+source = ".dagger/modules/files-searcher"

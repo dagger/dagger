@@ -85,7 +85,7 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	dir := t.TempDir()
-	require.NoError(t, os.CopyFS(dir, os.DirFS(filepath.Join(wd, "../../modules"))))
+	require.NoError(t, os.CopyFS(dir, os.DirFS(filepath.Join(wd, "../../../modules"))))
 	cmd := exec.Command("git", "init")
 	cmd.Dir = dir
 	require.NoError(t, cmd.Run())

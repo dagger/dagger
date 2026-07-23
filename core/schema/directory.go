@@ -165,7 +165,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`).
 					View(AfterVersion("v0.21.0")),
 			),
-		dagql.NodeFunc("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompat).
+		dagql.NodeFunc("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompatContentHashed).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`(Internal-only) Dockerfile-compat directory copy path.`).
@@ -180,7 +180,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 			),
-		dagql.NodeFunc("filter", s.filter).
+		dagql.NodeFunc("filter", maintainContentHashing(s.filter)).
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
@@ -595,6 +595,51 @@ func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, par
 		dir.Dir.SetValue(parentDir)
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+// withDirectoryDockerfileCompatContentHashed wraps withDirectoryDockerfileCompat
+// and gives the result a content-based cache identity so unrelated build-context
+// changes don't re-key downstream calls.
+func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Directory],
+	args WithDirectoryDockerfileCompatArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	res, err := s.withDirectoryDockerfileCompat(ctx, parent, args)
+	if err != nil {
+		return res, err
+	}
+	if res.Self() == nil {
+		return res, fmt.Errorf("failed to content hash dockerfile copy: nil directory result")
+	}
+	// On errors past this point the result may hold a committed snapshot that
+	// dagql never attached, so release it instead of leaking the ref.
+	releaseErr := func(err error) (dagql.ObjectResult[*core.Directory], error) {
+		_ = res.Self().OnRelease(context.WithoutCancel(ctx))
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	if lazy := res.Self().LazyEvalFunc(); lazy != nil {
+		if err := lazy(ctx); err != nil {
+			return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
+		}
+	}
+	snapshot, ok := res.Self().Snapshot.Peek()
+	if !ok {
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: snapshot unset"))
+	}
+	dirPath, ok := res.Self().Dir.Peek()
+	if !ok {
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: directory path unset"))
+	}
+	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	if err != nil {
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
+	}
+	res, err = res.WithContentDigest(ctx, dgst)
+	if err != nil {
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
+	}
+	return res, nil
 }
 
 type FilterArgs struct {
@@ -1226,7 +1271,8 @@ func (s *directorySchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 
 func (s *directorySchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct {
 	From core.DirectoryID
-}) (res *core.Changeset, _ error) {
+},
+) (res *core.Changeset, _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
@@ -1371,8 +1417,7 @@ func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.Objec
 	return dagql.Boolean(isEmpty), nil
 }
 
-type changesetPathsArgs struct {
-}
+type changesetPathsArgs struct{}
 
 func (s *directorySchema) changesetAddedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args changesetPathsArgs) (dagql.Array[dagql.String], error) {
 	paths, err := parent.Self().ComputePaths(ctx)
@@ -1398,8 +1443,7 @@ func (s *directorySchema) changesetRemovedPaths(ctx context.Context, parent dagq
 	return dagql.NewStringArray(paths.Removed...), nil
 }
 
-type changesetDiffStatsArgs struct {
-}
+type changesetDiffStatsArgs struct{}
 
 func (s *directorySchema) changesetDiffStats(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], _ changesetDiffStatsArgs) (dagql.Array[*core.DiffStat], error) {
 	return parent.Self().DiffStats(ctx)

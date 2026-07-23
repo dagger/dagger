@@ -473,20 +473,19 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Initialize a Large Language Model (LLM)
+  Initialize a new LLM conversation.
 
   > #### Experimental {: .warning}
   >
   > "LLM support is not yet stabilized"
   """
-  @spec llm(t(), [{:model, String.t() | nil}, {:max_api_calls, integer() | nil}]) ::
-          Dagger.LLM.t()
+  @spec llm(t(), [{:model, String.t() | nil}, {:provider, String.t() | nil}]) :: Dagger.LLM.t()
   def llm(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("llm")
       |> QB.maybe_put_arg("model", optional_args[:model])
-      |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
+      |> QB.maybe_put_arg("provider", optional_args[:provider])
 
     %Dagger.LLM{
       query_builder: query_builder,
@@ -610,6 +609,44 @@ defmodule Dagger.Client do
       |> QB.put_arg("column", column)
 
     %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Constructs an SSHFS volume.
+  """
+  @spec sshfs_volume(t(), String.t(), Dagger.Secret.t(), [
+          {:known_hosts, Dagger.Secret.t() | nil},
+          {:cache_key, String.t() | nil},
+          {:insecure_skip_host_key_check, boolean() | nil},
+          {:experimental_service_host, Dagger.Service.t() | nil}
+        ]) :: Dagger.Volume.t()
+  def sshfs_volume(%__MODULE__{} = client, endpoint, private_key, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("sshfsVolume")
+      |> QB.put_arg("endpoint", endpoint)
+      |> QB.put_arg("privateKey", Dagger.ID.id!(private_key))
+      |> QB.maybe_put_arg(
+        "knownHosts",
+        if(optional_args[:known_hosts], do: Dagger.ID.id!(optional_args[:known_hosts]), else: nil)
+      )
+      |> QB.maybe_put_arg("cacheKey", optional_args[:cache_key])
+      |> QB.maybe_put_arg(
+        "insecureSkipHostKeyCheck",
+        optional_args[:insecure_skip_host_key_check]
+      )
+      |> QB.maybe_put_arg(
+        "experimentalServiceHost",
+        if(optional_args[:experimental_service_host],
+          do: Dagger.ID.id!(optional_args[:experimental_service_host]),
+          else: nil
+        )
+      )
+
+    %Dagger.Volume{
       query_builder: query_builder,
       client: client.client
     }

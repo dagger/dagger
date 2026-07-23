@@ -12,12 +12,17 @@ type ElixirSdkDev {
 
   pub sourcePath: String! = "sdk/elixir"
 
+  """
+  Workspace
+  """
+  let ws: Workspace!
+
   pub source: Directory! {
     workspaceDir.directory(sourcePath)
   }
 
   pub devContainer: Container! {
-    daggerEngine
+    daggerEngine(ws: self.ws)
       .installClient(
         withBase(source),
       )
@@ -43,7 +48,7 @@ type ElixirSdkDev {
       .withDirectory(sourcePath, source)
 
     let gen = withCodegen(devContainer)
-      .withMountedFile("/schema.json", daggerEngine.introspectionJson)
+      .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
       .withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"])
       .withExec(["mix", "format", "gen/*.ex"])
       .directory("gen")
@@ -157,20 +162,6 @@ type ElixirSdkDev {
   }
 
   """
-  Bump the Elixir SDK's Engine dependency
-  """
-  pub bump(version: String!): Changeset! {
-    let versionFilePath = "lib/dagger/core/version.ex"
-    container
-      .from(baseImage)
-      .withWorkdir("/app")
-      .withDirectory(".", source)
-      .withExec(["sed", "-E", "-i", "-e", "s/@dagger_cli_version \"([^\"]+)\"/@dagger_cli_version \"" + version + "\"/g", versionFilePath])
-      .directory(".")
-      .changes(source)
-  }
-
-  """
   Sync Elixir image to keep both dev and runtime modules consistent
   """
   pub syncImage: File! {
@@ -208,7 +199,7 @@ type ElixirSdkDev {
   }
 
   let isSemver(version: String!): Boolean! {
-    let binary = go(source: currentModule.source.directory("is-semver")).binary("is-semver")
+    let binary = go(ws: self.ws, source: currentModule.source.directory("is-semver")).binary("is-semver")
     let exitCode = devContainer
       .from("alpine:3")
       .withFile("/bin/is-semver", binary)

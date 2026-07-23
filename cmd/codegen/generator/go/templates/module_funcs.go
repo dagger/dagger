@@ -9,11 +9,15 @@ import (
 	"strconv"
 	"strings"
 
-	"dagger.io/dagger"
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/mitchellh/mapstructure"
 )
 
 const errorTypeName = "error"
+
+var voidDef = Qual("dag", "TypeDef").Call().
+	Dot("WithKind").Call(Id("dagger").Dot("TypeDefKindVoidKind")).
+	Dot("WithOptional").Call(Lit(true))
 
 //nolint:gocyclo
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
@@ -163,64 +167,58 @@ type funcTypeSpec struct {
 }
 
 var _ ParsedType = &funcTypeSpec{}
-var _ FuncParsedType = &funcTypeSpec{}
 
-func (spec *funcTypeSpec) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	return nil, nil
-}
-
-func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, error) {
-	var fnReturnTypeDef *dagger.TypeDef
+func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
+	var fnReturnTypeDefCode *Statement
 	if spec.returnSpec == nil {
-		fnReturnTypeDef = dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)
+		fnReturnTypeDefCode = voidDef
 	} else {
 		var err error
-		fnReturnTypeDef, err = spec.returnSpec.TypeDef(dag)
+		fnReturnTypeDefCode, err = spec.returnSpec.TypeDefCode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate return type object: %w", err)
+			return nil, fmt.Errorf("failed to generate return type code: %w", err)
 		}
 	}
 
-	fnTypeDef := dag.Function(spec.name, fnReturnTypeDef)
+	fnTypeDefCode := Qual("dag", "Function").Call(Lit(spec.name), Add(Line(), fnReturnTypeDefCode))
 
 	if spec.doc != "" {
-		fnTypeDef = fnTypeDef.WithDescription(strings.TrimSpace(spec.doc))
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDescription").Call(Lit(strings.TrimSpace(spec.doc)))
 	}
 
 	switch spec.cachePolicy {
 	case "never":
-		fnTypeDef = fnTypeDef.WithCachePolicy(dagger.FunctionCachePolicyNever)
-
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithCachePolicy").Call(Id("dagger").Dot("FunctionCachePolicyNever"))
 	case "session":
-		fnTypeDef = fnTypeDef.WithCachePolicy(dagger.FunctionCachePolicyPerSession)
-
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithCachePolicy").Call(Id("dagger").Dot("FunctionCachePolicyPerSession"))
 	case "":
-
 	default:
-		fnTypeDef = fnTypeDef.WithCachePolicy(
-			dagger.FunctionCachePolicyDefault,
-			dagger.FunctionWithCachePolicyOpts{
-				TimeToLive: strings.TrimSpace(spec.cachePolicy),
-			},
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithCachePolicy").Call(
+			Id("dagger").Dot("FunctionCachePolicyDefault"),
+			Id("dagger").Dot("FunctionWithCachePolicyOpts").Values(
+				Id("TimeToLive").Op(":").Lit(strings.TrimSpace(spec.cachePolicy)),
+			),
 		)
 	}
 
 	if spec.sourceMap != nil {
-		fnTypeDef = fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithSourceMap").Call(spec.sourceMap.TypeDefCode())
 	}
 	if spec.deprecated != nil {
-		fnTypeDef = fnTypeDef.WithDeprecated(dagger.FunctionWithDeprecatedOpts{
-			Reason: strings.TrimSpace(*spec.deprecated),
-		})
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDeprecated").Call(
+			Id("dagger").Dot("FunctionWithDeprecatedOpts").Values(
+				Id("Reason").Op(":").Lit(strings.TrimSpace(*spec.deprecated)),
+			),
+		)
 	}
 	if spec.isCheck {
-		fnTypeDef = fnTypeDef.WithCheck()
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithCheck").Call()
 	}
 	if spec.isGenerator {
-		fnTypeDef = fnTypeDef.WithGenerator()
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithGenerator").Call()
 	}
 	if spec.isUp {
-		fnTypeDef = fnTypeDef.WithUp()
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithUp").Call()
 	}
 
 	for _, argSpec := range spec.argSpecs {
@@ -229,31 +227,31 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 			continue
 		}
 
-		argTypeDef, err := argSpec.typeSpec.TypeDef(dag)
+		argTypeDefCode, err := argSpec.typeSpec.TypeDefCode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate arg type object: %w", err)
+			return nil, fmt.Errorf("failed to generate arg type code: %w", err)
 		}
 		if argSpec.optional {
-			argTypeDef = argTypeDef.WithOptional(true)
+			argTypeDefCode = argTypeDefCode.Dot("WithOptional").Call(Lit(true))
 		}
 
-		argOpts := dagger.FunctionWithArgOpts{}
+		argOptsCode := []Code{}
 		if argSpec.description != "" {
-			argOpts.Description = strings.TrimSpace(argSpec.description)
+			argOptsCode = append(argOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(argSpec.description)))
 		}
 		if argSpec.sourceMap != nil {
-			argOpts.SourceMap = argSpec.sourceMap.TypeDef(dag)
+			argOptsCode = append(argOptsCode, Id("SourceMap").Op(":").Add(argSpec.sourceMap.TypeDefCode()))
 		}
 		if argSpec.hasDefaultValue {
 			var defaultValue string
 			if enumType, ok := argSpec.typeSpec.(*parsedEnumTypeReference); ok {
 				v, ok := argSpec.defaultValue.(string)
 				if !ok {
-					return nil, fmt.Errorf("unknown enum value %q", v)
+					return nil, fmt.Errorf("unknown enum value %v", argSpec.defaultValue)
 				}
 				res := enumType.lookup(v)
 				if res == nil {
-					return nil, fmt.Errorf("unknown enum value %q", defaultValue)
+					return nil, fmt.Errorf("unknown enum value %q", v)
 				}
 				defaultValue = strconv.Quote(res.name)
 			} else {
@@ -263,29 +261,39 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 				}
 				defaultValue = string(v)
 			}
-			argOpts.DefaultValue = dagger.JSON(defaultValue)
+			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(defaultValue)))
 		}
 
 		if argSpec.defaultPath != "" {
-			argOpts.DefaultPath = argSpec.defaultPath
+			argOptsCode = append(argOptsCode, Id("DefaultPath").Op(":").Lit(argSpec.defaultPath))
 		}
 
 		if argSpec.defaultAddress != "" {
-			argOpts.DefaultAddress = argSpec.defaultAddress
+			argOptsCode = append(argOptsCode, Id("DefaultAddress").Op(":").Lit(argSpec.defaultAddress))
 		}
 
 		if argSpec.deprecated != nil {
-			argOpts.Deprecated = *argSpec.deprecated
+			argOptsCode = append(argOptsCode, Id("Deprecated").Op(":").Lit(*argSpec.deprecated))
 		}
 
 		if len(argSpec.ignore) > 0 {
-			argOpts.Ignore = argSpec.ignore
+			ignores := make([]Code, 0, len(argSpec.ignore))
+			for _, pattern := range argSpec.ignore {
+				ignores = append(ignores, Lit(pattern))
+			}
+
+			argOptsCode = append(argOptsCode, Id("Ignore").Op(":").Index().String().Values(ignores...))
 		}
 
-		fnTypeDef = fnTypeDef.WithArg(argSpec.name, argTypeDef, argOpts)
+		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
+		argTypeDefArgCode := []Code{Lit(argSpec.name), argTypeDefCode}
+		if len(argOptsCode) > 0 {
+			argTypeDefArgCode = append(argTypeDefArgCode, Id("dagger").Dot("FunctionWithArgOpts").Values(argOptsCode...))
+		}
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithArg").Call(argTypeDefArgCode...)
 	}
 
-	return fnTypeDef, nil
+	return fnTypeDefCode, nil
 }
 
 func (spec *funcTypeSpec) GoType() types.Type {

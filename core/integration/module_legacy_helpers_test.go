@@ -52,11 +52,6 @@ func daggerNonNestedExecFail(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
-	args = append([]string{"api", "exec"}, args...)
-	return daggerNonNestedExec(args...)
-}
-
 func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
 	return hostDaggerCommandRaw(ctx, t, workdir, args...)
 }

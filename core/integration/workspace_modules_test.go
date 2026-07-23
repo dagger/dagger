@@ -31,23 +31,21 @@ func TestWorkspaceModules(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceModulesSuite{})
 }
 
-// TestWorkspaceModuleInstall should cover module installation into a
-// workspace, through both CLI commands and CurrentWorkspace.Install.
+// TestWorkspaceModuleInstall covers module installation through both the CLI
+// and the Workspace overlay/export API.
 func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *testctx.T) {
-	t.Run("CurrentWorkspace.Install initializes a workspace for remote modules", func(ctx context.Context, t *testctx.T) {
+	t.Run("Workspace.WithModule initializes config and lock for remote modules", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		ref := "github.com/dagger/dagger/modules/wolfi@v0.20.2"
 
-		msg, err := c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
+		updated := c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		added, err := updated.Changes().AddedPaths(ctx)
 		require.NoError(t, err)
-		require.Equal(t,
-			"Created workspace config in "+workdir+"\n"+
-				`Installed module "mywolfi" in `+filepath.Join(workdir, workspacecfg.ConfigFileName),
-			msg,
-		)
+		require.ElementsMatch(t, []string{workspacecfg.ConfigFileName, workspacecfg.LockFileName}, added)
+		require.NoError(t, updated.Export(ctx))
 
 		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 		require.NoError(t, err)
@@ -63,14 +61,16 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
+		require.Contains(t, string(lockBytes), `"git.tag"`)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
-		msg, err = c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
+		updated = c.CurrentWorkspace().WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: "mywolfi"})
+		empty, err := updated.Changes().IsEmpty(ctx)
 		require.NoError(t, err)
-		require.Equal(t, `Module "mywolfi" is already installed`, msg)
+		require.True(t, empty)
 	})
 
-	t.Run("CurrentWorkspace.Install rewrites local refs relative to dagger.toml", func(ctx context.Context, t *testctx.T) {
+	t.Run("Workspace.WithModule rewrites local refs relative to dagger.toml", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
 
@@ -80,13 +80,11 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
-		msg, err := c.CurrentWorkspace().Install(ctx, "./dep")
+		updated := c.CurrentWorkspace().WithModule("./dep")
+		added, err := updated.Changes().AddedPaths(ctx)
 		require.NoError(t, err)
-		require.Equal(t,
-			"Created workspace config in "+workdir+"\n"+
-				`Installed module "dep" in `+filepath.Join(workdir, workspacecfg.ConfigFileName),
-			msg,
-		)
+		require.Equal(t, []string{workspacecfg.ConfigFileName}, added)
+		require.NoError(t, updated.Export(ctx))
 
 		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 		require.NoError(t, err)
@@ -120,7 +118,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, "dep", cfg.Modules["dep"].Source)
 	})
 
-	t.Run("workspace install does not write module resolve lock entries", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace install pins Git resolution without a modules.resolve entry", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
@@ -136,6 +134,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
+		require.Contains(t, string(lockBytes), `"git.tag"`)
 	})
 
 	t.Run("absolute local installs preserve absolute source paths", func(ctx context.Context, t *testctx.T) {

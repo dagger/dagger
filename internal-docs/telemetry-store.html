@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Replacing SQLite in the per-client telemetry store</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --dim: #666; --line: #d8d8d8;
+    --code-bg: #f6f6f4; --accent: #0b6e99; --warn-bg: #fff7e6; --warn-line: #e0a800;
+    --good: #1a7f37; --bad: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c; --fg: #e6e6e6; --dim: #9a9a9a; --line: #3a3d44;
+      --code-bg: #1f2228; --accent: #58a6d6; --warn-bg: #2a2417; --warn-line: #b08900;
+      --good: #4ac26b; --bad: #ff7b72;
+    }
+  }
+  body { font: 16px/1.55 system-ui, sans-serif; color: var(--fg); background: var(--bg);
+         max-width: 60rem; margin: 0 auto; padding: 2rem 1.5rem 6rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; }
+  h2 { font-size: 1.3rem; margin-top: 2.5rem; border-bottom: 1px solid var(--line); padding-bottom: .3rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.8rem; }
+  code, pre { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  code { background: var(--code-bg); padding: .1em .3em; border-radius: 3px; }
+  pre { background: var(--code-bg); padding: .8rem 1rem; border-radius: 6px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; margin: 1rem 0; width: 100%; }
+  th, td { border: 1px solid var(--line); padding: .4rem .6rem; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); }
+  .dim { color: var(--dim); }
+  .warn { background: var(--warn-bg); border-left: 4px solid var(--warn-line); padding: .6rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .good { color: var(--good); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  figure { margin: 1.5rem 0; }
+  figcaption { font-size: .85rem; color: var(--dim); margin-top: .4rem; }
+  svg text { font: 12px ui-monospace, monospace; fill: var(--fg); }
+  svg .box { fill: var(--code-bg); stroke: var(--line); }
+  svg .hot { fill: none; stroke: var(--bad); stroke-width: 2; }
+  svg .lab { fill: var(--dim); }
+  svg line, svg path { stroke: var(--dim); }
+  .toc { background: var(--code-bg); padding: .8rem 1.2rem; border-radius: 6px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  li { margin: .25rem 0; }
+</style>
+</head>
+<body>
+
+<h1>Replacing SQLite in the per-client telemetry store</h1>
+<p class="dim">Design doc &middot; engine/clientdb &middot; based on code as of upstream/main <code>98a28c9b7</code> (2026-07-22). Everything in §2 was re-derived from the current code, not from memory.</p>
+
+<div class="toc">
+<b>Contents</b>
+<ol>
+  <li><a href="#why">Why we're doing this (short)</a></li>
+  <li><a href="#hole">The hole: everything the current system does that we must keep doing</a></li>
+  <li><a href="#design">The replacement: an append-only log store</a></li>
+  <li><a href="#perf">Why this is faster, with numbers</a></li>
+  <li><a href="#risks">Surprises, risks, and open decisions</a></li>
+  <li><a href="#plan">Implementation and test plan</a></li>
+</ol>
+</div>
+
+<h2 id="why">1. Why we're doing this (short)</h2>
+
+<p>Every Dagger client gets a private store on the engine holding its telemetry (spans, logs,
+metrics) so the CLI can stream it out, resume after a disconnect, and drain the rest at shutdown.
+Today that store is a SQLite database per client.</p>
+
+<p>SQLite allows <b>one writer at a time per database file</b>. But we point many concurrent
+writers at each file: the client's own telemetry, a copy of every descendant client's telemetry
+(so the CLI can drain the whole tree from one place), and the HTTP handlers that receive telemetry
+from processes inside containers. The verified post-fix shutdown flake (trace
+<code>e791c309…</code>) showed exactly this: during one session's teardown, writes of <b>4–35 rows</b>
+spent <b>1.3–3.2&nbsp;seconds</b> queued for the main client DB's single write connection
+(<code>beginWait</code>, up to 111 waiters), while the actual INSERT time was milliseconds. Seven
+clients flushing at once each accumulated 8–10s of queueing and blew the CLI's 10s shutdown budget.
+Four rounds of tuning (connection pools, batching, flush scoping, write splitting) each moved this
+tail without removing it, because one-writer-per-file is the floor of the current design.</p>
+
+<p>Meanwhile, the feature list we actually use from SQLite is very short (§2.6). The proposal:
+replace the storage layer under the existing <code>clientdb</code> package API with a small
+append-only log we write ourselves, designed for exactly this access pattern.</p>
+
+<h2 id="hole">2. The hole: what the current system does</h2>
+
+<p>If we cut SQLite out, the replacement must fill this exact shape. Every item below was
+verified against current code (file references inline).</p>
+
+<h3>2.1 The data</h3>
+
+<p>Three independent streams per client, each a numbered sequence of immutable rows
+(<code>engine/clientdb/models.go</code>):</p>
+
+<pre><code>type Span struct {          // ~21 fields; the big ones are []byte blobs:
+    ID int64                //   Attributes, Events, Links, InstrumentationScope,
+    TraceID, SpanID string  //   Resource — each protojson-encoded
+    ParentSpanID sql.NullString
+    StartTime int64; EndTime sql.NullInt64
+    ... }
+type Log struct {  ID int64; TraceID, SpanID sql.NullString; Timestamp int64
+                   Body, Attributes, InstrumentationScope, Resource []byte; ... }
+type Metric struct { ID int64; Data []byte }   // one opaque blob per row</code></pre>
+
+<p>Facts that matter for the design:</p>
+<ul>
+<li>Rows are <b>never updated or deleted</b>. Cleanup deletes the whole store
+    (<code>DBs.GC</code>). There are no secondary indexes and no triggers
+    (<code>schema.sql</code>).</li>
+<li>The <b>same span appears as multiple rows</b>: a "live" snapshot when it starts, another
+    when it ends (plus heartbeat re-exports). This is by design — the schema says so — and
+    consumers dedupe by span ID downstream. A typical row is 0.5–3&nbsp;KiB; the blobs dominate.</li>
+<li>IDs are per-stream, start at 1, and <b>strictly increase in write order</b>
+    (SQLite <code>AUTOINCREMENT</code>). Gaps are harmless (readers only compare and order).
+    IDs must <b>keep increasing across a close and reopen</b> of the same client's store —
+    reopening today continues the AUTOINCREMENT sequence, and resumed SSE cursors depend on
+    IDs never going backwards.</li>
+</ul>
+
+<h3>2.2 The writers</h3>
+
+<p>All writes are batch appends. Per destination store, the concurrent writers are
+(<code>engine/server/session.go:840-940</code>, <code>engine/server/telemetry.go</code>):</p>
+
+<ol>
+<li><b>The client's own OTel processors</b> — spans (batches up to 2048, every 100ms tick or on
+    flush, with live starts emitted uniformly for internal and visible spans), logs (batches up
+    to 128, every 250ms), metrics (one row per 5s).</li>
+<li><b>One extra set of the same processors per descendant client.</b> A nested client's
+    providers export both to its own store and to every ancestor's store. This is the fan-in:
+    a session's main store receives writes from every client in the tree.</li>
+<li><b>The OTLP HTTP handlers</b> (<code>/v1/traces</code> etc.) — telemetry POSTed by processes
+    inside containers is written to the posting client's store <i>and</i> every ancestor's store,
+    concurrently (an errgroup per POST).</li>
+</ol>
+
+<p>So a busy session's main store has dozens of goroutines writing small batches at once.
+That is the workload that must be fast.</p>
+
+<h3>2.3 The readers</h3>
+
+<p>There are exactly two read paths in the whole codebase:</p>
+
+<p><b>(a) The SSE drain</b> (<code>engine/server/telemetry.go:695-772</code>) — one loop per
+stream per subscriber. The CLI subscribes to spans, logs, and metrics; each loop does:</p>
+
+<pre><code>for {
+    rows = SelectXSince(cursor, limit=1000)   // WHERE id > cursor ORDER BY id LIMIT 1000
+    if empty {
+        if terminating { return }              // second empty read after shutdown → done
+        wait 100ms | shutdown signal → terminating = true | request gone → return
+        continue
+    }
+    cursor = last row's ID; emit rows as one SSE event (ID = cursor)
+}</code></pre>
+
+<p>Semantics the replacement must preserve exactly:</p>
+<ul>
+<li><b>Cursor reads:</b> "give me up to N rows with ID &gt; X, in ID order." Nothing else.</li>
+<li><b>Resume:</b> after a disconnect the CLI reconnects with its last event ID
+    (<code>X-Last-Event-ID</code>) and continues from there. Cursors may be arbitrarily far
+    behind the newest data.</li>
+<li><b>The shutdown handshake:</b> when the client's shutdown begins, the loop switches to
+    "terminating" and exits on the next <i>empty</i> read. Combined with the flush guarantee
+    below, this is how the tail of a trace reliably reaches the CLI.</li>
+<li>Multiple subscribers to the same client's streams are allowed (each has its own cursor).</li>
+</ul>
+
+<p><b>(b) The LLM log capture</b> (<code>core/mcp.go:1441-1520</code>) — runs mid-session,
+concurrent with writes, when an LLM asks for the logs under a span:</p>
+<ul>
+<li><code>SelectLogsBeneathSpan(spanID, cursor, limit)</code>: find all descendant spans of
+    <code>spanID</code> (recursive walk over <code>parent_span_id</code>), then return log rows
+    whose span is in that set, with ID &gt; cursor, in ID order, up to a limit. Paginated by the
+    caller.</li>
+<li><code>SelectSpan(traceID, spanID)</code>: fetch one span row to inspect its attributes.
+    <span class="dim">Quirk, verified: the query has no ORDER BY, and spans have duplicate rows —
+    so today it returns the <i>first</i> row for that span (the start snapshot), and the
+    attributes it reads are set at span start. The replacement should keep first-row
+    semantics.</span></li>
+</ul>
+<p class="dim">A third query (<code>SelectLogsTimespan</code>) exists but has no callers. Dead code;
+not part of the hole.</p>
+
+<h3>2.4 The visibility rule (the one everything leans on)</h3>
+
+<p><b>When a write call returns, the rows must be readable by every reader.</b> Today one
+SQLite transaction per batch provides this. The shutdown path depends on it: the drain phase
+force-flushes the OTel processors, whose exporters call the write path; when the flush returns,
+the SSE terminating drain must be able to see everything, or the trace tail is silently lost.
+This "returned means readable" rule is the single most load-bearing behavior in the system.</p>
+
+<p class="dim">One refinement is allowed: today a whole batch becomes visible atomically (one
+transaction). Both readers only ever drain forward with cursors, so making rows visible
+one-append-at-a-time in ID order is indistinguishable to them — they'd just occasionally see
+data slightly sooner. Nothing observes "batch boundaries." (Checked both read paths.)</p>
+
+<h3>2.5 Lifecycle, files, and cleanup</h3>
+
+<p>From <code>engine/clientdb/dbs.go</code> and <code>engine/server/session.go</code>:</p>
+<ul>
+<li><b>Refcounted opens.</b> <code>DBs.Open(clientID)</code> returns a shared handle and bumps a
+    refcount; <code>Close()</code> decrements; the store fully closes at zero. Each client holds a
+    keep-alive handle for its lifetime; every export batch and SSE loop briefly opens its own.
+    (Pinned by <code>dbs_test.go</code>.)</li>
+<li><b>The file outlives the process's interest in it.</b> Closing releases resources, but the
+    on-disk data stays. Reopening the same client ID continues where it left off — including the
+    ID sequence.</li>
+<li><b>GC:</b> a sweep every minute deletes stores whose files haven't been modified for 1 hour,
+    skipping clients that are still active or open (<code>DBs.GC(keep)</code>,
+    <code>server.go:gcClientDBs</code>).</li>
+<li><b>No durability.</b> <code>synchronous=OFF</code> today: a crash may lose anything.
+    Telemetry does not need to survive an engine crash — sessions don't either.</li>
+</ul>
+
+<h3>2.6 What we use vs. what we pay for</h3>
+
+<table>
+<tr><th>SQLite capability</th><th>Do we use it?</th></tr>
+<tr><td>Append rows with auto-assigned increasing IDs</td><td class="good">Yes — constantly</td></tr>
+<tr><td>Read rows by "ID &gt; X, in order, limit N"</td><td class="good">Yes — constantly</td></tr>
+<tr><td>One recursive query + one point lookup (LLM capture)</td><td class="good">Yes — occasionally (and both are full-table scans today: no indexes)</td></tr>
+<tr><td>UPDATE / DELETE / secondary indexes / joins / triggers</td><td class="bad">No — never</td></tr>
+<tr><td>Crash durability, WAL recovery</td><td class="bad">No — explicitly disabled</td></tr>
+<tr><td>Multi-process access</td><td class="bad">No — single engine process</td></tr>
+<tr><td>Concurrent writer serialization (locks, BEGIN IMMEDIATE, busy timeouts)</td><td class="bad">This is the part that hurts us</td></tr>
+</table>
+
+<figure>
+<svg viewBox="0 0 720 240" width="100%" role="img" aria-label="Fan-in diagram">
+  <rect class="box" x="10" y="10" width="180" height="50" rx="6"/>
+  <text x="24" y="32">main client's</text><text x="24" y="48">3 OTel processors</text>
+  <rect class="box" x="10" y="70" width="180" height="50" rx="6"/>
+  <text x="24" y="92">nested client A's</text><text x="24" y="108">ancestor-copy processors</text>
+  <rect class="box" x="10" y="130" width="180" height="50" rx="6"/>
+  <text x="24" y="152">nested client B..N's</text><text x="24" y="168">ancestor-copy processors</text>
+  <rect class="box" x="10" y="190" width="180" height="40" rx="6"/>
+  <text x="24" y="214">OTLP POST handlers</text>
+  <line x1="190" y1="35" x2="330" y2="110" /><line x1="190" y1="95" x2="330" y2="112"/>
+  <line x1="190" y1="155" x2="330" y2="118"/><line x1="190" y1="210" x2="330" y2="122"/>
+  <rect class="hot" x="335" y="90" width="150" height="50" rx="6"/>
+  <text x="348" y="112">ONE write conn</text><text x="348" y="128">(SQLite: 1 writer/file)</text>
+  <line x1="485" y1="115" x2="560" y2="115"/>
+  <rect class="box" x="565" y="90" width="145" height="50" rx="6"/>
+  <text x="580" y="112">main client's</text><text x="580" y="128">store (.db file)</text>
+  <text class="lab" x="335" y="165">measured: 4–35-row writes waiting 1.3–3.2s here,</text>
+  <text class="lab" x="335" y="182">up to 111 queued — the shutdown-flake mechanism</text>
+</svg>
+<figcaption>Fig 1 — Today: every writer serializes on one connection per destination store.</figcaption>
+</figure>
+
+<h2 id="design">3. The replacement: an append-only log store</h2>
+
+<h3>3.1 Shape and seam</h3>
+
+<p>Keep the <code>clientdb</code> package as the boundary and re-implement its internals. The
+public surface that survives unchanged: <code>DBs.Open / GC</code>, <code>DB.Close / Read()</code>,
+the row structs, the five live query methods, and the PB conversion helpers
+(<code>Span.ReadOnly()</code>, <code>LogsToPB</code>, <code>MetricsToPB</code>). Callers that go away:
+<code>BeginTx / WithTx / Stats / Begin</code> (the transaction machinery in the two exporters —
+their insert loops become one <code>Append</code> call; <code>Begin()</code> is already dead code).
+The mocks in <code>core/telemetry_test.go</code> and <code>core/schema/test_server_test.go</code>
+keep working because the type names don't change.</p>
+
+<p>Per client store = three <b>streams</b> (spans, logs, metrics). A stream is: an in-memory
+tail of recent rows, a spill file holding everything older, and a couple of counters.</p>
+
+<pre><code>type stream[Row any] struct {
+    mu       sync.Mutex
+    nextID   int64      // next ID to assign
+    tail     []Row      // rows (tailBase..nextID-1], newest data, always in memory
+    tailBase int64      // ID of tail[0]; rows &lt; tailBase live in the spill file
+    tailBytes int64     // accounted size of tail
+
+    spill    spillFile  // append-only file + sparse index (§3.4)
+}</code></pre>
+
+<h3>3.2 Writing</h3>
+
+<pre><code>// Append assigns IDs and makes rows visible. When it returns, every
+// reader can see them — same guarantee the SQLite transaction gave.
+func (s *stream[Row]) Append(rows []Row, size int64) (last int64) {
+    s.mu.Lock()
+    s.waitBelowHardCap(size)  // cond.Wait releases mu while the spiller drains
+    for i := range rows { setID(&amp;rows[i], s.nextID); s.nextID++ }
+    s.tail = append(s.tail, rows...)
+    s.tailBytes += size
+    last = s.nextID - 1
+    needSpill := s.tailBytes &gt; tailBudget
+    s.mu.Unlock()
+    if needSpill { s.requestSpill() }   // wakes the background spiller
+    return last
+}</code></pre>
+
+<p>The critical section is an ID assignment and a slice append — nanoseconds to microseconds,
+with no I/O. Below the hard cap, a hundred goroutines appending small batches interleave with
+negligible waiting, because nobody holds the lock long enough to queue behind. If a stream tail
+reaches its 32&nbsp;MiB hard cap, <code>Append</code> waits on the condition variable until the
+spiller drains enough data (and an oversized batch waits until it is physically spilled). The
+<code>beginWait</code> convoy has no equivalent on the normal path — there is no transaction to
+begin and no connection to acquire.</p>
+
+<p>The exporters simplify accordingly: the row-building code they already have
+(<code>ExportSpans</code> building <code>InsertSpanParams</code>) stays, and the
+begin/insert-loop/commit block is replaced by one <code>Append</code>. The per-write
+instrumentation keeps the same log line with <code>appendDuration</code> and
+<code>spillLag</code> fields replacing the transaction timings (noted in §5 for log
+comparability).</p>
+
+<h3>3.3 Reading</h3>
+
+<pre><code>func (s *stream[Row]) Since(id int64, limit int) ([]Row, error) {
+    s.mu.Lock()
+    if id+1 &gt;= s.tailBase {                    // common case: reader is at the tail
+        rows := copyRange(s.tail, id, limit)   // copy row headers out; blobs are
+        s.mu.Unlock()                          // immutable []byte, shared safely
+        return rows, nil
+    }
+    base := s.tailBase                          // reader is behind: read the file,
+    s.mu.Unlock()                               // NOT holding the lock
+    return s.spill.readSince(id, min(limit, base-id-1))  // then tail on next call
+}</code></pre>
+
+<p>SSE loops poll at 100ms and are almost always at the tail, so the hot read path is a
+mutex-guarded slice copy. Readers that fall behind (or resume after reconnect) read from the
+spill file <i>without holding the stream lock</i> — a behind reader can never slow a writer or
+another reader. The 100ms polling loop in <code>sseHandler</code> is kept exactly as-is for this
+design (zero behavior change); switching it to blocking wakeups is a possible follow-up, not
+part of this change.</p>
+
+<h3>3.4 The spill file: how memory stays bounded</h3>
+
+<p>The tail is a small window, not the history. A background spiller per stream moves the oldest
+tail rows into the file whenever the tail exceeds its 2&nbsp;MiB budget:</p>
+
+<ol>
+<li>Take the lock briefly to grab a batch of the oldest tail rows (they're immutable — safe to
+    encode outside the lock).</li>
+<li>Encode and append them to the file (buffered writes, <b>no fsync ever</b> — matching today's
+    <code>synchronous=OFF</code>).</li>
+<li>Take the lock again to advance <code>tailBase</code> and drop the spilled rows from memory.
+    <b>Rows leave memory only after they are in the file</b> — so any row is always readable
+    from one place or the other, and the visibility rule survives.</li>
+</ol>
+
+<p>File format, one file per stream (<code>&lt;clientID&gt;.spans.log</code> etc., same directory
+and GC sweep as today): a small header with a format version, then frames of
+<code>varint length + row encoding</code>. Row encoding is a hand-written ~30-line
+field-by-field binary codec per row type (varint ints, length-prefixed strings/bytes) — no
+reflection, no new dependencies. <span class="dim">(Considered: <code>encoding/gob</code> —
+reflection cost and self-describing overhead per stream; a protobuf mirror of the row structs —
+codegen churn for three flat structs. Hand-rolled is ~100 lines total including decode and is
+the fastest of the three; the format is private to the engine and versioned by the header
+byte.)</span></p>
+
+<p>To make behind-readers cheap, the spiller keeps a <b>sparse index in memory</b>: every K rows
+(say 256) it records (first ID, file offset). A read from ID X binary-searches that index, seeks,
+and scans at most K frames. The index costs 16 bytes per K rows — negligible.</p>
+
+<figure>
+<svg viewBox="0 0 720 210" width="100%" role="img" aria-label="Stream layout">
+  <line x1="30" y1="60" x2="690" y2="60"/>
+  <text class="lab" x="30" y="40">IDs →</text>
+  <rect class="box" x="30" y="48" width="400" height="24" rx="4"/>
+  <text x="150" y="65">spill file (rows 1 … 41,200)</text>
+  <rect class="box" x="430" y="48" width="180" height="24" rx="4" style="stroke-width:2"/>
+  <text x="448" y="65">tail in memory (41,201 …)</text>
+  <text class="lab" x="614" y="65">← appends</text>
+  <path d="M 90 100 L 90 74" marker-end="none"/><text class="lab" x="60" y="118">reader B (resumed,</text><text class="lab" x="60" y="134">reads file, no lock)</text>
+  <path d="M 560 100 L 560 74"/><text class="lab" x="500" y="118">reader A (live SSE,</text><text class="lab" x="500" y="134">reads tail under mutex)</text>
+  <path d="M 430 160 L 430 76"/><text class="lab" x="330" y="178">tailBase — rows leave memory only</text>
+  <text class="lab" x="330" y="194">after they are written to the file</text>
+</svg>
+<figcaption>Fig 2 — One stream: file prefix + memory tail. Cursor readers are served from
+whichever side their position falls on.</figcaption>
+</figure>
+
+<h3>3.5 The two LLM-capture queries</h3>
+
+<p>Today these are full-table scans (no indexes exist). The replacement maintains two small maps
+on the span stream, updated during <code>Append</code> and rebuilt on reopen:</p>
+
+<pre><code>firstRow map[spanID]int64      // span ID → row ID of its FIRST row (matches today's
+                               //   no-ORDER-BY first-row semantics for SelectSpan)
+children map[spanID][]spanID   // parent → unique child span IDs (for the descendant walk)</code></pre>
+
+<ul>
+<li><code>SelectSpan</code>: map lookup → row ID → read from tail or file. (Faster than today's scan.)</li>
+<li><code>SelectLogsBeneathSpan</code>: walk <code>children</code> from the target span to build
+    the descendant set, then cursor-scan the <b>log</b> stream from the caller's cursor, keeping
+    rows whose span ID is in the set, up to the limit. Same worst case as the SQL (it also scans
+    logs forward from the cursor), minus the SQL machinery.</li>
+</ul>
+
+<p>Cost: two map entries per <i>unique</i> span. At 100k unique spans that's on the order of
+10–15&nbsp;MB per client — real, bounded, and only for clients that big; called out in §5.</p>
+
+<h3>3.6 Lifecycle mapping</h3>
+
+<table>
+<tr><th>Today (SQLite)</th><th>Replacement</th></tr>
+<tr><td>Open = refcounted handle; pools + prepared statements on first open</td>
+    <td>Same registry, refcounts, and per-client locking (<code>DBs</code> keeps its shape); first open loads or creates the three stream files</td></tr>
+<tr><td>Reopen continues AUTOINCREMENT</td>
+    <td>Reopen scans each file forward once to rebuild <code>nextID</code>, the sparse index, and the two span maps (§5 discusses the cost)</td></tr>
+<tr><td>Close at refcount 0 releases pools; file stays</td>
+    <td>Close at refcount 0 flushes the spill buffer, drops the tail (after spilling it), stops the spiller; files stay</td></tr>
+<tr><td>GC deletes <code>&lt;id&gt;.db</code>* files (mtime &gt; 1h, not active, not open)</td>
+    <td>Identical sweep over <code>&lt;id&gt;.*.log</code> files; during a version transition the sweep also collects leftover <code>.db</code> files</td></tr>
+<tr><td>Crash: lose anything (synchronous=OFF)</td><td>Crash: lose anything (no fsync). Same contract.</td></tr>
+</table>
+
+<p>No data migration is needed: stores only matter within a session, sessions don't survive an
+engine upgrade, and stale files age out of the 1-hour GC on their own.</p>
+
+<h3>3.7 The shutdown path, after</h3>
+
+<figure>
+<svg viewBox="0 0 720 190" width="100%" role="img" aria-label="Shutdown before/after">
+  <text x="10" y="20" style="font-weight:600">Before (measured)</text>
+  <rect class="box" x="10" y="30" width="200" height="26" rx="4"/><text x="18" y="47">drain OTel queues (ms)</text>
+  <rect class="hot" x="215" y="30" width="360" height="26" rx="4"/><text x="223" y="47">queue for write conn + tx per batch (seconds, convoy)</text>
+  <rect class="box" x="580" y="30" width="120" height="26" rx="4"/><text x="588" y="47">SSE final drain</text>
+  <text x="10" y="100" style="font-weight:600">After</text>
+  <rect class="box" x="10" y="110" width="200" height="26" rx="4"/><text x="18" y="127">drain OTel queues (ms)</text>
+  <rect class="box" x="215" y="110" width="90" height="26" rx="4"/><text x="223" y="127">appends (µs)</text>
+  <rect class="box" x="310" y="110" width="120" height="26" rx="4"/><text x="318" y="127">SSE final drain</text>
+  <text class="lab" x="10" y="170">The 8–10s "flush client telemetry" phase becomes: drain the SDK queues into memory appends.</text>
+</svg>
+<figcaption>Fig 3 — What the flake's 10s budget is spent on, before and after.</figcaption>
+</figure>
+
+<p>Flushing a client's telemetry still means "drain the OTel SDK processors through the
+exporters" — but the exporter's write is now a memory append. There is nothing downstream to
+wait for: no lock queue, no transaction, no file I/O on the flush path (spilling is the
+spiller's job and irrelevant to visibility). The same applies to the OTLP POST handlers — the
+other measured slow-fan-out source — and SSE reads stop competing with writes entirely.</p>
+
+<h2 id="perf">4. Why this is faster, with numbers</h2>
+
+<table>
+<tr><th>Operation</th><th>Today (measured)</th><th>Replacement (expected)</th></tr>
+<tr><td>Append a batch, uncontended</td><td>~1ms/row (SQL VM + B-tree + WAL)</td><td>~1–5µs/row (mutex + slice append; blobs already built by the exporter)</td></tr>
+<tr><td>Append a batch, 10s of concurrent writers</td><td class="bad">seconds of beginWait (convoy); the flake</td><td class="good">unchanged µs — the lock is held for ns–µs, queues can't form at these hold times</td></tr>
+<tr><td>Flush-at-shutdown per client</td><td>p99 9s in the failing capture</td><td>SDK queue drain + appends: milliseconds</td></tr>
+<tr><td>SSE tail read (the 10Hz poll)</td><td>SQL query on the read pool</td><td>mutex + slice copy</td></tr>
+<tr><td>Resumed/behind reader</td><td>B-tree range scan</td><td>indexed file seek + sequential decode (page-cache-hot for recent data)</td></tr>
+<tr><td>LLM capture queries</td><td>full-table scans (no indexes)</td><td>map lookup / walk + one cursor scan</td></tr>
+<tr><td>Memory</td><td>SQLite page cache lives in the Go heap (modernc is pure Go), per open DB</td><td>tail budget (2 MiB/stream) + span maps; file cache is OS page cache, reclaimable</td></tr>
+</table>
+
+<p>The honest core of the argument: the failure we're fixing is lock queueing, and this design
+removes the queue by making the critical section five orders of magnitude shorter, not by
+tuning it. Host pressure (the CI runners are overloaded during these failures) still slows
+everything — but a µs critical section stretched 100× is still 100µs, while a 1ms+lock-queue
+write stretched 100× is the 10s we measured.</p>
+
+<h2 id="risks">5. Surprises, risks, and open decisions</h2>
+
+<p>Found while re-deriving the contract; none is a blocker, all should be decided consciously.</p>
+
+<div class="warn"><b>Review outcome (Erik, 2026-07-22): all eight points accepted as written.</b>
+Specifically: (1) reopen-scan cost accepted for v1, mitigate later only if it bites;
+(2) stale-store replay behavior is preserved exactly — the underlying question of whether it's
+desirable may be looked at separately, out of scope here; (3) the <code>clientdb-dump</code> tool
+ships with phase&nbsp;2; (4) span-map heap accepted — visible and bounded beats hidden;
+(5) per-append visibility accepted; (6) the new error shape accepted; (7) the in-flight fan-in
+writer merges first as an interim fix and is later replaced wholesale by this; (8) scope
+boundaries confirmed. Proceeding to implementation (phased per §6, review council per phase).
+This doc lives in the repo at <code>internal-docs/telemetry-store.html</code>.</div>
+
+<div class="warn"><b>Round-2 council decision and benchmark retune (2026-07-22):</b> the initial
+4&nbsp;MiB spill target and 64&nbsp;MiB blocking hard cap left grouped-scale tails hovering
+near the target at a cost of about 120&nbsp;MiB of transient live heap; the SSE hot path needs
+only about 100&nbsp;ms of data. Four-way tuning found that 1&nbsp;MiB reclaimed about
+50–58% but showed one non-reproduced churn signal, while the selected 2&nbsp;MiB target kept
+about 40% of the reclaim with zero slow-write warnings across three runs and a 2.67&nbsp;MiB
+maximum spill lag against its 32&nbsp;MiB cap. A wedged disk may still block indefinitely,
+matching the accepted SQLite failure mode.</div>
+
+<ol>
+<li><b>Reopen cost.</b> Rebuilding <code>nextID</code>, the sparse index, and the span maps on
+    reopen means one sequential read of the files. Full closes mid-session are rare (each client
+    holds a keep-alive handle for its lifetime), but a reconnect after idle would pay it. A
+    ~100MB store scans in well under a second; acceptable, but it's a new cost where SQLite had
+    none. <span class="dim">Mitigation if ever needed: periodic checkpoint of the counters into a
+    sidecar file; not in v1.</span></li>
+<li><b>Stale-store replay is existing behavior we'd preserve.</b> Nested clients have stable
+    (digest-derived) IDs. If the same client ID runs again within the 1-hour GC window, today it
+    reopens the old SQLite file, continues its IDs, and a fresh subscriber (cursor 0) would
+    re-drain the previous run's rows. The replacement reproduces this exactly. Whether that
+    behavior is <i>desirable</i> is a separate question — flagged, not changed here.</li>
+<li><b>We lose <code>sqlite3</code> as a debugging tool.</b> Real ergonomic loss — being able to
+    query a client DB by hand has been useful. Mitigation: a ~50-line
+    <code>hack/clientdb-dump</code> that decodes a store to JSON lines; the format is trivial.
+    Should ship in the same PR.</li>
+<li><b>New heap where SQLite used its page cache: the span maps.</b> ~10–15MB per 100k-span
+    client (§3.5). Offset by dropping modernc's in-heap page cache, but it's per-client heap that
+    didn't exist as Go objects before. Bounded and measurable; the validation plan includes a
+    heap check at the usual profile points.</li>
+<li><b>Batch visibility becomes per-append instead of per-transaction.</b> Argued harmless in
+    §2.4 (cursor readers can't observe it). Called out so nobody is surprised reviewing.</li>
+<li><b>Error surface shrinks but changes shape.</b> Appends can no longer fail per-row (no
+    constraint checks); the only failure modes are file-system errors in the spiller, which are
+    reported on the next Append/flush of that stream (and logged). The log exporter's current
+    "log and continue on row error" behavior maps to: encoding errors are impossible for rows the
+    exporter already built (it marshaled the blobs itself), I/O errors are stream-fatal-and-logged.
+    Reviewers should check this matches operational expectations.</li>
+<li><b>Relationship to the in-flight fan-in writer work.</b> The per-DB single-writer agent
+    currently being built attacks the same convoy at the SQLite layer. If this design proceeds,
+    that work is an interim fix that this replaces wholesale (its queue is conceptually this
+    design's tail). Sequencing decision — ship fan-in first for the next release and then swap,
+    or leapfrog straight to this — belongs to Erik/vito, not this doc.</li>
+<li><b>What this deliberately does not change:</b> the SSE wire protocol and cursor format, the
+    100ms poll cadence, what data is stored (including duplicate span rows and the fat per-row
+    resource/scope blobs — vito's row-payload normalization idea is compatible but separate), the
+    OTel processor stack in front, and anything CLI- or Cloud-side.</li>
+</ol>
+
+<h2 id="plan">6. Implementation and test plan</h2>
+
+<ol>
+<li><b>Phase 1 — the store, standalone</b> (new files in <code>engine/clientdb</code>; no callers
+    change): stream, spill file + sparse index, codecs, span maps, DBs registry rework. Tests:
+    port <code>dbs_test.go</code> (refcount lifecycle pins); property tests — append/read
+    equivalence vs a naive in-memory reference model under randomized concurrent
+    writers/readers/spills (with <code>-race</code>); visibility test (Append returned ⇒ Since
+    sees it, hammered concurrently); reopen test (IDs continue, maps rebuilt, behind-cursor
+    reads correct); GC test. Rough size: ~600 lines code, ~600 lines tests.</li>
+<li><b>Phase 2 — swap the callers</b>: exporters lose their transaction blocks, SSE fetchers and
+    mcp queries call the same-named methods, instrumentation fields updated
+    (<code>appendDuration</code>/<code>spillLag</code>; keep the log line name so before/after CI
+    captures stay comparable), <code>hack/clientdb-dump</code>. Gates: focused unit suites, then
+    <code>dagger call engine-dev test --pkg ./dagql/idtui --run='TestTelemetry'</code> (the golden
+    suite covers the whole pipeline end to end, including nested-client span delivery after
+    Close), then a CI-scale capture compared against the flake baseline
+    (<code>/tmp/postfix-check-full.log</code>): expect <code>slow client DB telemetry write</code>
+    count ≈ 0 and the "flush client telemetry" phase p99 in milliseconds.</li>
+<li><b>Rollout</b>: engine-version boundary, no migration (§3.6). Revert path is clean — the
+    package boundary means a revert is one commit.</li>
+</ol>
+
+<p class="dim">End of doc. Feedback welcome on: the §5 decisions (especially 2, 6, 7), the tail
+budget default, and whether the SSE blocking-wakeup follow-up is worth bundling.</p>
+
+</body>
+</html>

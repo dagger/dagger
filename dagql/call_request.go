@@ -16,6 +16,14 @@ type CallRequest struct {
 	// PassthroughTelemetry keeps the call span available for trace metadata while
 	// asking the UI to show its children in its place.
 	PassthroughTelemetry bool
+
+	// ReceiverTypeName is the immediate receiver's GraphQL type name, stamped
+	// lookup-free at the object call site (objects.go) from r.class.inner.Type().Name().
+	// It is request-only carrier state (never digested, never persisted) consumed by
+	// core.AroundFunc to compute the static profile-skip decision and stamp it onto
+	// the call frame (ResultCall.ProfileSkip) — so the predicate needs no egraphMu
+	// receiver-resolution lookup per call.
+	ReceiverTypeName string
 }
 
 func (req *CallRequest) Clone() *CallRequest {
@@ -33,6 +41,7 @@ func (req *CallRequest) Clone() *CallRequest {
 		DoNotCache:           req.DoNotCache,
 		IsPersistable:        req.IsPersistable,
 		PassthroughTelemetry: req.PassthroughTelemetry,
+		ReceiverTypeName:     req.ReceiverTypeName,
 	}
 }
 

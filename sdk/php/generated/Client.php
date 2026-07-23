@@ -348,16 +348,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
-     * Initialize a Large Language Model (LLM)
+     * Initialize a new LLM conversation.
      */
-    public function llm(?string $model = null, ?int $maxAPICalls = null): LLM
+    public function llm(?string $model = null, ?string $provider = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
         if (null !== $model) {
         $innerQueryBuilder->setArgument('model', $model);
         }
-        if (null !== $maxAPICalls) {
-        $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
+        if (null !== $provider) {
+        $innerQueryBuilder->setArgument('provider', $provider);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -468,6 +468,35 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Constructs an SSHFS volume.
+     */
+    public function sshfsVolume(
+        string $endpoint,
+        Secret $privateKey,
+        ?Secret $knownHosts = null,
+        ?string $cacheKey = null,
+        ?bool $insecureSkipHostKeyCheck = false,
+        ?Service $experimentalServiceHost = null,
+    ): Volume {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sshfsVolume');
+        $innerQueryBuilder->setArgument('endpoint', $endpoint);
+        $innerQueryBuilder->setArgument('privateKey', $privateKey);
+        if (null !== $knownHosts) {
+        $innerQueryBuilder->setArgument('knownHosts', $knownHosts);
+        }
+        if (null !== $cacheKey) {
+        $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
+        }
+        if (null !== $insecureSkipHostKeyCheck) {
+        $innerQueryBuilder->setArgument('insecureSkipHostKeyCheck', $insecureSkipHostKeyCheck);
+        }
+        if (null !== $experimentalServiceHost) {
+        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
+        }
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

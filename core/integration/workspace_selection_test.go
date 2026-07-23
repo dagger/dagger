@@ -161,8 +161,8 @@ func (m *Files) ReadWorkspaceArg(ctx context.Context, workspace *dagger.Workspac
 	return workspace.File("marker.txt").Contents(ctx)
 }
 
-func (m *Files) ReadCurrentWorkspace(ctx context.Context) (string, error) {
-	return dag.CurrentWorkspace().File("marker.txt").Contents(ctx)
+func (m *Files) ReadDeclaredWorkspace(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+	return workspace.File("marker.txt").Contents(ctx)
 }
 
 func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changeset {
@@ -171,9 +171,9 @@ func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changese
 	return after.Changes(before)
 }
 
-func (m *Files) ChangeCurrentWorkspace() *dagger.Changeset {
-	before := dag.CurrentWorkspace().Directory(".")
-	after := before.WithNewFile("current-workspace.txt", "changed through current workspace")
+func (m *Files) ChangeDeclaredWorkspace(workspace *dagger.Workspace) *dagger.Changeset {
+	before := workspace.Directory(".")
+	after := before.WithNewFile("declared-workspace.txt", "changed through declared workspace")
 	return after.Changes(before)
 }
 
@@ -347,33 +347,34 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		require.NoError(t, err)
 	})
 
-	t.Run("local-only workspace mutations reject a remote selected workspace at execution time", func(ctx context.Context, t *testctx.T) {
+	t.Run("remote workspace builders only fail at the export boundary", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceSelectionSimpleWorkspaceDir(c, "remote", "Remote", "remote workspace"))
 
 		for _, tc := range []struct {
-			name  string
-			query string
+			name    string
+			query   string
+			wantErr string
 		}{
 			{
-				name:  "init",
-				query: `{currentWorkspace{init}}`,
+				name:    "config value",
+				query:   `{currentWorkspace{withConfigValue(key:"modules.demo.source", value:"demo"){export}}}`,
+				wantErr: "cannot export a remote Git workspace",
 			},
 			{
-				name:  "configWrite",
-				query: `{currentWorkspace{configWrite(key:"modules.demo.source", value:"demo")}}`,
+				name:    "new file",
+				query:   `{currentWorkspace{withNewFile(path:"demo.txt", contents:"demo"){export}}}`,
+				wantErr: "cannot export a remote Git workspace",
 			},
 			{
-				name:  "moduleInit",
-				query: `{currentWorkspace{moduleInit(name:"demo")}}`,
+				name:    "lock update",
+				query:   `{currentWorkspace{withUpdatedLock{export}}}`,
+				wantErr: "cannot export a remote Git workspace",
 			},
 			{
-				name:  "update",
-				query: `{currentWorkspace{update{isEmpty}}}`,
-			},
-			{
-				name:  "migrate",
-				query: `{currentWorkspace{migrate{steps{id}}}}`,
+				name:    "migrate",
+				query:   `{currentWorkspace{migrate{steps{id}}}}`,
+				wantErr: "workspace migration is local-only",
 			},
 		} {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -383,7 +384,7 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 					With(workspaceSelectionDaggerQueryFail(tc.query, "-W", remoteRef)).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, "local-only")
+				require.Contains(t, out, tc.wantErr)
 				require.NotContains(t, out, "--workspace must be a local path")
 			})
 		}
@@ -536,7 +537,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		require.NoError(t, err)
 		require.Equal(t, want, strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-current-workspace")...)
+		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-declared-workspace")...)
 		require.NoError(t, err)
 		require.Equal(t, want, strings.TrimSpace(string(out)))
 	}
@@ -548,7 +549,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		require.Error(t, err)
 		require.Contains(t, strings.ToLower(string(out)+err.Error()), "workspace")
 
-		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-current-workspace")...)
+		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-declared-workspace")...)
 		require.Error(t, err)
 		require.Contains(t, strings.ToLower(string(out)+err.Error()), "workspace")
 	}
@@ -569,10 +570,10 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 				want:     "changed through workspace arg",
 			},
 			{
-				name:     "Changeset from dag.CurrentWorkspace",
-				args:     []string{"change-current-workspace"},
-				hostFile: "current-workspace.txt",
-				want:     "changed through current workspace",
+				name:     "Changeset from declared Workspace",
+				args:     []string{"change-declared-workspace"},
+				hostFile: "declared-workspace.txt",
+				want:     "changed through declared workspace",
 			},
 		}
 

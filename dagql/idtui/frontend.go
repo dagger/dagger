@@ -113,8 +113,55 @@ type Frontend interface {
 	// Populate the sidebar with content.
 	SetSidebarContent(SidebarSection)
 
+	// SetStatusLine updates the compact status line with LLM
+	// token/cost/context data.
+	SetStatusLine(StatusLineData)
+
+	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
+	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
+
 	prompt.PromptHandler
 }
+
+// TraceFrontend is the optional interface 'dagger trace' drives for
+// incremental loading and report zooming: snapshot import, lazy span/log
+// providers, surfaced-failure prefetch, and name-based zoom targets. Only the
+// pretty frontend implements it; other frontends receive a plain OTLP
+// span/log stream instead.
+type TraceFrontend interface {
+	// SetTraceID lets the frontend point surfaced failure logs at
+	// 'dagger cloud logs <trace> <span>' for the full output.
+	SetTraceID(string)
+	// ImportSnapshots folds Cloud span snapshots (carrying ChildCount and
+	// Partial, which OTLP drops) into the frontend's DB.
+	ImportSnapshots([]dagui.SpanSnapshot)
+	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
+	// span is expanded or a failure is surfaced.
+	SetLogProvider(func(id dagui.SpanID, descendants bool))
+	SetSpanProvider(func(id dagui.SpanID))
+	// SurfacedFailedCheckSpans lists the failed checks' spans (plus their
+	// error origins and links) whose subtrees the report needs prefetched.
+	SurfacedFailedCheckSpans() []dagui.SpanID
+	// RequestSurfacedLogs makes the frontend request logs for the failures it
+	// surfaces, so a single final report render includes their detail.
+	RequestSurfacedLogs()
+	// SetFetchWaiter lets the console block a request on in-flight fetches.
+	SetFetchWaiter(func())
+	// SetCIContext records the trace's source commit so the report can
+	// suggest commit-scoped re-run commands.
+	SetCIContext(commit string, isNativeCI bool)
+	// ResolveSpanTarget resolves a --check/--test name against the loaded
+	// view, matching the selection rules the report rendered with.
+	ResolveSpanTarget(check, test string) (dagui.SpanID, bool)
+	// ZoomToSpan scopes the view to a span; RequestZoomLogs fetches the
+	// logs the zoomed report will render.
+	ZoomToSpan(dagui.SpanID)
+	RequestZoomLogs(id dagui.SpanID, descendants bool)
+}
+
+// The pretty frontend must keep satisfying the trace capabilities --
+// a signature drift here would otherwise silently disable them.
+var _ TraceFrontend = (*frontendPretty)(nil)
 
 type extendedError interface {
 	error
@@ -201,6 +248,16 @@ func (sec SidebarSection) Body(width int) string {
 
 // ShellHandler defines the interface for handling shell interactions.
 // All methods are called on the UI goroutine unless noted otherwise.
+// BranchSummary controls how the conversation is summarized when branching.
+type BranchSummary struct {
+	// Summarize indicates whether to summarize the old conversation.
+	Summarize bool
+	// CustomPrompt is an optional custom summarization prompt. Only used
+	// when Summarize is true. If empty, the default summarization prompt
+	// is used.
+	CustomPrompt string
+}
+
 type ShellHandler interface {
 	// Handle processes submitted shell input.
 	Handle(ctx context.Context, input string) error
@@ -240,6 +297,12 @@ type ShellHandler interface {
 	SaveBeforeHistory()
 	// RestoreAfterHistory restores the mode saved before history navigation.
 	RestoreAfterHistory()
+
+	// BranchFromID branches the LLM conversation from the state identified by
+	// the encoded DAG ID, optionally summarizing the abandoned branch first.
+	// It returns an async function that performs the branch (may be nil), to
+	// be run by the caller in a goroutine.
+	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
 }
 
 type Dump struct {
@@ -677,13 +740,34 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) 
 	if space {
 		fmt.Fprint(out, out.String(" "))
 	}
-	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
+	// When a row spent material time provably blocked on other ops, show
+	// the time it actually spent executing, not the wall-clock it was
+	// blocked or dormant for.
+	hb := span.TimeBreakdown(r.now)
+	// "Blocked right now" only means something while the run is still going:
+	// a final render has no "now", and a failed or canceled row's story is
+	// its error, not whatever it was waiting on when things went wrong.
+	var blocked dagui.TimeSegment
+	var blockedNow bool
+	if !r.final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		blocked, blockedNow = hb.BlockedNow(r.now)
+	}
+	shown := span.Activity.Duration(r.now)
+	if hb.Material || blockedNow {
+		shown = hb.Self
+	}
+	duration := out.String(dagui.FormatDuration(shown))
 	if span.IsRunningOrEffectsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
+	// While the row is blocked, say on what; once it is done waiting there
+	// is nothing extra to show.
+	if blockedNow && blocked.Label != "" {
+		fmt.Fprint(out, out.String(" ⋯ waiting on "+blocked.Label).Faint())
+	}
 }
 
 var metricsVerbosity = map[string]int{
@@ -874,7 +958,26 @@ func humanizeTokens(v int64) string {
 // }
 
 func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
+	return replayPrimaryOutput(w, db, true)
+}
+
+// replayPrimaryOutput replays the primary span's log records to the CLI's
+// stdout/stderr. With includeStderr false only the stdout stream is replayed:
+// report mode uses this for failed runs, whose stderr stream carries the
+// engine-wrapped failure output the rendered report already covers, while
+// stdout still carries the command's own results (e.g. a shell script's
+// output from before it failed).
+func replayPrimaryOutput(w io.Writer, db *dagui.DB, includeStderr bool) error {
 	logs := db.PrimaryLogs[db.PrimarySpan]
+	if !includeStderr {
+		var stdout []sdklog.Record
+		for _, l := range logs {
+			if primaryLogStream(l) == 1 {
+				stdout = append(stdout, l)
+			}
+		}
+		logs = stdout
+	}
 	if len(logs) == 0 {
 		return nil
 	}
@@ -883,15 +986,7 @@ func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 
 	for _, l := range logs {
 		data := l.Body().AsString()
-		var stream int
-		l.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == telemetry.StdioStreamAttr {
-				stream = int(attr.Value.AsInt64())
-				return false
-			}
-			return true
-		})
-		switch stream {
+		switch primaryLogStream(l) {
 		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
 				return err
@@ -917,6 +1012,20 @@ func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 	return nil
 }
 
+// primaryLogStream returns the stdio stream a primary log record was written
+// to: 1 for stdout, 2 for stderr, 0 when unmarked.
+func primaryLogStream(l sdklog.Record) int {
+	var stream int
+	l.WalkAttributes(func(attr log.KeyValue) bool {
+		if attr.Key == telemetry.StdioStreamAttr {
+			stream = int(attr.Value.AsInt64())
+			return false
+		}
+		return true
+	})
+	return stream
+}
+
 func skipLoggedOutTraceMsg() bool {
 	for _, env := range SkipLoggedOutTraceMsgEnvs {
 		if os.Getenv(env) != "" {
@@ -924,4 +1033,14 @@ func skipLoggedOutTraceMsg() bool {
 		}
 	}
 	return false
+}
+
+// displayDuration is the duration a row should report: its self time when
+// it spent material time blocked on other ops, its activity time otherwise.
+func displayDuration(span *dagui.Span, now time.Time) time.Duration {
+	hb := span.TimeBreakdown(now)
+	if _, blockedNow := hb.BlockedNow(now); hb.Material || blockedNow {
+		return hb.Self
+	}
+	return span.Activity.Duration(now)
 }

@@ -358,6 +358,54 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Create an OCI registry configuration file and use it safely with tools, like Helm or Oras.\n\nTools interacting with an OCI registry usually have their own way to authenticate.\nHelm, for example, provides a command to \"login\" into a registry, which stores the credentials in a file.\nThat is, however, not a safe way to store credentials, especially not in Dagger.\nCredentials persisted in the filesystem make their way into Dagger's layer cache.\n\nThis module creates a configuration file and returns it as a Secret that can be mounted safely into a Container.\n\nBe advised that using the tool's built-in authentication mechanism may not work with the configuration file (since it's read only).\n\nYou can read more about the topic in the readme: https://github.com/sagikazarmark/daggerverse/tree/main/registry-config#resources\n").
+			WithObject(
+				dag.TypeDef().WithObject("RegistryConfig", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 22, 6)}).
+					WithFunction(
+						dag.Function("Secret",
+							dag.TypeDef().WithObject("Secret")).
+							WithDescription("Create the registry configuration.").
+							WithSourceMap(dag.SourceMap("main.go", 54, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Customize the name of the secret.", SourceMap: dag.SourceMap("main.go", 60, 2)})).
+					WithFunction(
+						dag.Function("SecretMount",
+							dag.TypeDef().WithObject("SecretMount")).
+							WithDescription("Create a SecretMount that can be used to mount the registry configuration into a container.").
+							WithSourceMap(dag.SourceMap("main.go", 71, 1)).
+							WithArg("path", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Path to mount the secret into (a common path is ~/.docker/config.json).", SourceMap: dag.SourceMap("main.go", 73, 2)}).
+							WithArg("secretName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Name of the secret to create and mount.", SourceMap: dag.SourceMap("main.go", 78, 2)}).
+							WithArg("skipOnEmpty", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Skip mounting the secret if it's empty.", SourceMap: dag.SourceMap("main.go", 83, 2)}).
+							WithArg("owner", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "A user:group to set for the mounted secret.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user.", SourceMap: dag.SourceMap("main.go", 92, 2)}).
+							WithArg("mode", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Permission given to the mounted secret (e.g., 0600).\n\nThis option requires an owner to be set to be active.", SourceMap: dag.SourceMap("main.go", 99, 2)})).
+					WithFunction(
+						dag.Function("WithRegistryAuth",
+							dag.TypeDef().WithObject("RegistryConfig")).
+							WithDescription("Add credentials for a registry.").
+							WithSourceMap(dag.SourceMap("main.go", 34, 1)).
+							WithArg("address", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 34, 43)}).
+							WithArg("username", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 34, 59)}).
+							WithArg("secret", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 34, 76)})).
+					WithFunction(
+						dag.Function("WithoutRegistryAuth",
+							dag.TypeDef().WithObject("RegistryConfig")).
+							WithDescription("Removes credentials for a registry.").
+							WithSourceMap(dag.SourceMap("main.go", 45, 1)).
+							WithArg("address", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 45, 46)}))).
+			WithObject(
+				dag.TypeDef().WithObject("SecretMount", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 111, 6)}).
+					WithFunction(
+						dag.Function("Mount",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 133, 1)).
+							WithArg("container", dag.TypeDef().WithObject("Container"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 50)})).
+					WithField("Path", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Path to mount the secret into (a common path is ~/.docker/config.json).", SourceMap: dag.SourceMap("main.go", 113, 2)}).
+					WithField("SecretName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Name of the secret to create and mount.", SourceMap: dag.SourceMap("main.go", 116, 2)}).
+					WithField("SkipOnEmpty", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Skip mounting the secret if it's empty.", SourceMap: dag.SourceMap("main.go", 119, 2)}).
+					WithField("Owner", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "A user:group to set for the mounted secret.", SourceMap: dag.SourceMap("main.go", 122, 2)}).
+					WithField("Mode", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{Description: "Permission given to the mounted secret (e.g., 0600).", SourceMap: dag.SourceMap("main.go", 125, 2)}).
+					WithField("RegistryConfig", dag.TypeDef().WithObject("RegistryConfig"), dagger.TypeDefWithFieldOpts{Description: "DO NOT USE\nMade public until https://github.com/dagger/dagger/pull/8149 is fixed.\nprivate", SourceMap: dag.SourceMap("main.go", 130, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

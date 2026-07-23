@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -19,46 +20,31 @@ type workspaceInstallArgs struct {
 	AsSdkName string `default:""`
 }
 
-func (s *workspaceSchema) install(
-	ctx context.Context,
-	parent *core.Workspace,
+type workspaceInstallConfigPlan struct {
+	Changed bool
+	Added   bool
+}
+
+func planWorkspaceInstallConfig(
+	cfg *workspace.Config,
 	args workspaceInstallArgs,
-) (dagql.String, error) {
-	if err := unsupportedSyntheticWorkspaceFeature(parent, "module installation"); err != nil {
-		return "", err
-	}
-	if err := requireLocalWorkspace(parent, "module installation"); err != nil {
-		return "", err
-	}
-	if parent.CompatWorkspace() != nil {
-		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
-	}
-	if args.AsSdkName != "" && !args.AsSdk {
-		return "", fmt.Errorf("asSdkName requires asSdk")
-	}
-
-	name, sourcePath, err := s.resolveWorkspaceInstall(ctx, parent, args.Ref, args.Name, args.Here)
-	if err != nil {
-		return "", err
-	}
-
-	cfg, initialized, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
-	if err != nil {
-		return "", err
+	name string,
+	sourcePath string,
+) (workspaceInstallConfigPlan, error) {
+	plan := workspaceInstallConfigPlan{}
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
 
 	if existing, ok := cfg.Modules[name]; ok {
 		if existing.Source != sourcePath {
-			return "", fmt.Errorf(
+			return plan, fmt.Errorf(
 				"module %q already exists in workspace config with source %q (new source %q)",
 				name,
 				existing.Source,
 				sourcePath,
 			)
 		}
-		// Idempotent re-install: same source already there. If --as-sdk was
-		// passed and the install isn't already marked, stamp the marker so a
-		// plain `install` followed by `sdk install` upgrades it in place.
 		if args.AsSdk && (existing.AsSDK == nil || existing.AsSDK.Name == "" && args.AsSdkName != "") {
 			if existing.AsSDK == nil {
 				existing.AsSDK = &workspace.ModuleAsSDK{}
@@ -67,50 +53,34 @@ func (s *workspaceSchema) install(
 				existing.AsSDK.Name = args.AsSdkName
 			}
 			cfg.Modules[name] = existing
-			if err := writeWorkspaceConfigWithHints(ctx, parent, cfg, nil); err != nil {
-				return "", err
-			}
-			return dagql.String(fmt.Sprintf("Marked %q as an SDK", name)), nil
+			plan.Changed = true
+			return plan, nil
 		}
 		if args.AsSdk && args.AsSdkName != "" && existing.AsSDK.Name != args.AsSdkName {
-			return "", fmt.Errorf(
+			return plan, fmt.Errorf(
 				"module %q is already marked as SDK %q (new SDK name %q)",
 				name,
 				existing.AsSDK.Name,
 				args.AsSdkName,
 			)
 		}
-		return dagql.String(fmt.Sprintf("Module %q is already installed", name)), nil
+		return plan, nil
 	}
 
-	entry := workspace.ModuleEntry{
-		Source: sourcePath,
-	}
+	entry := workspace.ModuleEntry{Source: sourcePath}
 	if args.AsSdk {
-		// Presence marks this install as an SDK. AsSdkName optionally provides
-		// the user-facing name those init commands dispatch on.
 		entry.AsSDK = &workspace.ModuleAsSDK{Name: args.AsSdkName}
 	}
 	cfg.Modules[name] = entry
-	hints := s.collectWorkspaceSettingsHints(ctx, parent, map[string]string{name: args.Ref})
-	if err := writeWorkspaceConfigWithHints(ctx, parent, cfg, hints); err != nil {
-		return "", err
-	}
+	plan.Changed = true
+	plan.Added = true
+	return plan, nil
+}
 
-	cfgPath, err := configHostPath(parent)
-	if err != nil {
-		return "", err
-	}
-
-	verb := "Installed module"
-	if args.AsSdk {
-		verb = "Installed SDK"
-	}
-	msg := fmt.Sprintf("%s %q in %s", verb, name, cfgPath)
-	if initialized {
-		msg = fmt.Sprintf("Created workspace config in %s\n%s", filepath.Dir(cfgPath), msg)
-	}
-	return dagql.String(msg), nil
+type workspaceInstallResolution struct {
+	Name         string
+	ConfigSource string
+	ModuleSource dagql.ObjectResult[*core.ModuleSource]
 }
 
 func (s *workspaceSchema) resolveWorkspaceInstall(
@@ -119,58 +89,196 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 	ref string,
 	name string,
 	here bool,
-) (string, string, error) {
-	var err error
-	ctx, err = withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return "", "", err
-	}
+) (workspaceInstallResolution, error) {
+	var resolved workspaceInstallResolution
 	ctx = workspaceInstallLookupContext(ctx)
 
-	srv, err := core.CurrentDagqlServer(ctx)
+	configDir := workspaceConfigDirectoryForWrite(ws, here)
+	src, sourcePath, err := s.resolveWorkspaceInstallSource(ctx, ws, ref, configDir)
 	if err != nil {
-		return "", "", fmt.Errorf("dagql server: %w", err)
-	}
-
-	var src dagql.ObjectResult[*core.ModuleSource]
-	if err := srv.Select(ctx, srv.Root(), &src, workspaceInstallModuleSourceSelector(ref)); err != nil {
-		return "", "", fmt.Errorf("load module source: %w", err)
+		return resolved, err
 	}
 	source := src.Self()
 	if source == nil {
-		return "", "", fmt.Errorf("load module source: empty result")
+		return resolved, fmt.Errorf("load module source: empty result")
 	}
 	if !source.ConfigExists {
-		return "", "", fmt.Errorf("ref %q does not point to an initialized module", ref)
+		return resolved, fmt.Errorf("ref %q does not point to an initialized module", ref)
 	}
 	if name == "" {
 		name = source.ModuleName
 	}
 	if name == "" {
-		return "", "", fmt.Errorf("ref %q does not point to an initialized module", ref)
+		return resolved, fmt.Errorf("ref %q does not point to an initialized module", ref)
 	}
 
-	sourcePath := ref
-	if source.Kind != core.ModuleSourceKindLocal {
-		return name, sourcePath, nil
-	}
-	if source.Local == nil {
-		return "", "", fmt.Errorf("resolve local module source %q: missing local metadata", ref)
-	}
+	resolved.Name = name
+	resolved.ConfigSource = filepath.ToSlash(sourcePath)
+	resolved.ModuleSource = src
+	return resolved, nil
+}
 
-	workspaceConfigDirRel := workspaceConfigDirectoryForWrite(ws, here)
-	workspaceConfigPath, err := workspaceHostPath(ws, workspaceConfigDirRel, workspace.ConfigFileName)
+func (s *workspaceSchema) resolveWorkspaceInstallSource(
+	ctx context.Context,
+	ws *core.Workspace,
+	ref string,
+	configDir string,
+) (dagql.ObjectResult[*core.ModuleSource], string, error) {
+	var src dagql.ObjectResult[*core.ModuleSource]
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return "", "", err
+		return src, "", fmt.Errorf("dagql server: %w", err)
 	}
-	workspaceConfigDir := filepath.Dir(workspaceConfigPath)
 
-	depAbsPath := filepath.Join(source.Local.ContextDirectoryPath, source.SourceRootSubpath)
-	sourcePath, err = filepath.Rel(workspaceConfigDir, depAbsPath)
-	if err != nil {
-		return "", "", fmt.Errorf("compute relative install path: %w", err)
+	kind := core.FastModuleSourceKindCheck(ref, "")
+	var workspaceRoot dagql.ObjectResult[*core.Directory]
+	if kind == "" {
+		workspaceRoot, err = s.workspaceOverlayRootfs(ctx, ws)
+		if err != nil {
+			return src, "", err
+		}
+		parsed, err := core.ParseRefString(ctx, &core.DirectoryStatFS{Dir: workspaceRoot}, ref, "")
+		if err != nil {
+			return src, "", fmt.Errorf("parse module ref %q: %w", ref, err)
+		}
+		kind = parsed.Kind
 	}
-	return name, sourcePath, nil
+
+	if kind == core.ModuleSourceKindGit {
+		if err := srv.Select(ctx, srv.Root(), &src, workspaceInstallModuleSourceSelector(ref)); err != nil {
+			return src, "", fmt.Errorf("load module source: %w", err)
+		}
+		return src, ref, nil
+	}
+
+	if filepath.IsAbs(ref) {
+		hostRoot, ok := ws.LocalSourceHostPath()
+		if !ok {
+			return src, "", fmt.Errorf("absolute local module ref %q requires a local workspace source", ref)
+		}
+		workspacePath, inside, err := relativePathWithinRoot(hostRoot, ref)
+		if err != nil {
+			return src, "", err
+		}
+		if !inside {
+			return s.resolveExternalWorkspaceInstallSource(ctx, ws, ref, hostRoot, configDir)
+		}
+		return s.resolveWorkspaceInstallSourceFromRoot(ctx, srv, ws, workspaceRoot, ref, workspacePath, configDir)
+	}
+
+	resolvedPath, err := resolveWorkspacePath(ref, ws.Cwd)
+	if err != nil {
+		return src, "", err
+	}
+	return s.resolveWorkspaceInstallSourceFromRoot(ctx, srv, ws, workspaceRoot, ref, resolvedPath, configDir)
+}
+
+func (s *workspaceSchema) resolveWorkspaceInstallSourceFromRoot(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws *core.Workspace,
+	root dagql.ObjectResult[*core.Directory],
+	ref string,
+	resolvedPath string,
+	configDir string,
+) (dagql.ObjectResult[*core.ModuleSource], string, error) {
+	var src dagql.ObjectResult[*core.ModuleSource]
+	var err error
+	if root.Self() == nil {
+		root, err = s.workspaceOverlayRootfs(ctx, ws)
+		if err != nil {
+			return src, "", err
+		}
+	}
+	_, found, err := moduleConfigInDir(ctx, &core.DirectoryStatFS{Dir: root}, filepath.ToSlash(resolvedPath))
+	if err != nil {
+		return src, "", fmt.Errorf("check module source %q: %w", ref, err)
+	}
+	if !found {
+		return src, "", fmt.Errorf("ref %q does not point to an initialized module", ref)
+	}
+	if err := srv.Select(ctx, root, &src, dagql.Selector{
+		Field: "asModuleSource",
+		Args: []dagql.NamedInput{
+			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+		},
+	}); err != nil {
+		return src, "", fmt.Errorf("load module source: %w", err)
+	}
+	sourcePath, err := filepath.Rel(configDir, resolvedPath)
+	if err != nil {
+		return src, "", fmt.Errorf("compute relative install path: %w", err)
+	}
+	return src, sourcePath, nil
+}
+
+func (s *workspaceSchema) resolveExternalWorkspaceInstallSource(
+	ctx context.Context,
+	ws *core.Workspace,
+	ref string,
+	hostRoot string,
+	configDir string,
+) (dagql.ObjectResult[*core.ModuleSource], string, error) {
+	var src dagql.ObjectResult[*core.ModuleSource]
+	lockMode := ""
+	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		lockMode = clientMetadata.LockMode
+	}
+	ctx, err := withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return src, "", err
+	}
+	if lockMode != "" {
+		ctx = workspaceInstallContextWithLockMode(ctx, workspace.LockMode(lockMode))
+	}
+	ctx = workspaceInstallLookupContext(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return src, "", fmt.Errorf("dagql server: %w", err)
+	}
+	if err := srv.Select(ctx, srv.Root(), &src, workspaceInstallModuleSourceSelector(ref)); err != nil {
+		return src, "", fmt.Errorf("load module source: %w", err)
+	}
+	sourcePath, err := filepath.Rel(filepath.Join(hostRoot, configDir), filepath.Clean(ref))
+	if err != nil {
+		return src, "", fmt.Errorf("compute relative install path: %w", err)
+	}
+	return src, sourcePath, nil
+}
+
+func relativePathWithinRoot(root, target string) (string, bool, error) {
+	rel, err := filepath.Rel(root, filepath.Clean(target))
+	if err != nil {
+		return "", false, fmt.Errorf("resolve absolute module path: %w", err)
+	}
+	outside := rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return rel, !outside, nil
+}
+
+func (s *workspaceSchema) resolveWorkspaceInstallForOverlay(
+	ctx context.Context,
+	ws *core.Workspace,
+	ref string,
+	name string,
+	here bool,
+) (workspaceInstallResolution, error) {
+	return s.resolveWorkspaceInstall(
+		workspaceInstallContextWithLockMode(ctx, workspace.LockModePinned),
+		ws,
+		ref,
+		name,
+		here,
+	)
+}
+
+func workspaceInstallContextWithLockMode(ctx context.Context, mode workspace.LockMode) context.Context {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return ctx
+	}
+	updated := *clientMetadata
+	updated.LockMode = string(mode)
+	return engine.ContextWithClientMetadata(ctx, &updated)
 }
 
 func workspaceInstallLookupContext(ctx context.Context) context.Context {

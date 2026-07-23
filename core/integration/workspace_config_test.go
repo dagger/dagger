@@ -538,23 +538,25 @@ service = %s
 }
 
 func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t *testctx.T) {
-	t.Run("CurrentWorkspace.Init creates config for the repo", func(ctx context.Context, t *testctx.T) {
+	t.Run("Workspace.WithConfigValue creates config for the repo", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
-		require.NoError(t, os.WriteFile(
-			filepath.Join(workdir, "query.graphql"),
-			[]byte(`{ currentWorkspace { init } }`),
-			0o644,
-		))
-
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", "query.graphql")
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
+		updated := c.CurrentWorkspace().WithConfigValue(
+			"modules.example.source",
+			"github.com/dagger/example",
+		)
+		added, err := updated.Changes().AddedPaths(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, fmt.Sprintf(`{"currentWorkspace":{"init":%q}}`, workdir), string(out))
+		require.Equal(t, []string{workspace.ConfigFileName}, added)
+		require.NoError(t, updated.Export(ctx))
 
 		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
 		require.NoError(t, err)
-		require.Contains(t, string(configContents), "[modules]")
-		require.Contains(t, string(configContents), "check-generated = true")
+		require.Contains(t, string(configContents), "[modules.example]")
+		// check-generated is not written by default; an absent setting already
+		// behaves as check-generated = true.
+		require.NotContains(t, string(configContents), "check-generated")
 	})
 
 	t.Run("workspace config detects the nearest config", func(ctx context.Context, t *testctx.T) {

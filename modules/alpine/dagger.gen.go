@@ -327,6 +327,36 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A Dagger Module to integrate with Alpine Linux\n").
+			WithObject(
+				dag.TypeDef().WithObject("Alpine", dagger.TypeDefWithObjectOpts{Description: "An Alpine Linux configuration", SourceMap: dag.SourceMap("main.go", 85, 6)}).
+					WithFunction(
+						dag.Function("Container",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Build an Alpine Linux container").
+							WithSourceMap(dag.SourceMap("main.go", 105, 1))).
+					WithField("Distro", dag.TypeDef().WithEnum("Distro"), dagger.TypeDefWithFieldOpts{Description: "The distro to use", SourceMap: dag.SourceMap("main.go", 87, 2)}).
+					WithField("Arch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The hardware architecture to build for", SourceMap: dag.SourceMap("main.go", 89, 2)}).
+					WithField("Branch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The Alpine branch to download packages from", SourceMap: dag.SourceMap("main.go", 91, 2)}).
+					WithField("Packages", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "The APK packages to install", SourceMap: dag.SourceMap("main.go", 93, 2)}).
+					WithField("ExtraRepositories", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Extra repositories to add to the package resolver", SourceMap: dag.SourceMap("main.go", 95, 2)}).
+					WithField("ExtraKeyURLs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Where to download additional keys from", SourceMap: dag.SourceMap("main.go", 97, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Alpine")).
+							WithSourceMap(dag.SourceMap("main.go", 29, 1)).
+							WithArg("arch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Hardware architecture to build for", SourceMap: dag.SourceMap("main.go", 32, 2)}).
+							WithArg("branch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Alpine branch to download packages from", SourceMap: dag.SourceMap("main.go", 36, 2), DefaultValue: dagger.JSON("\"edge\"")}).
+							WithArg("packages", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "APK packages to install", SourceMap: dag.SourceMap("main.go", 39, 2)}).
+							WithArg("extraRepositories", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra repositories to add to the package resolver", SourceMap: dag.SourceMap("main.go", 42, 2)}).
+							WithArg("extraKeyURLs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra keys needed to authenticate the extra repositories", SourceMap: dag.SourceMap("main.go", 45, 2)}).
+							WithArg("distro", dag.TypeDef().WithEnum("Distro").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Alpine distribution to use", SourceMap: dag.SourceMap("main.go", 50, 2), DefaultValue: dagger.JSON("\"Alpine\"")}))).
+			WithEnum(
+				dag.TypeDef().WithEnum("Distro", dagger.TypeDefWithEnumOpts{SourceMap: dag.SourceMap("main.go", 22, 6)}).
+					WithEnumMember("Alpine", dagger.TypeDefWithEnumMemberOpts{Value: "ALPINE", SourceMap: dag.SourceMap("main.go", 25, 2)}).
+					WithEnumMember("Wolfi", dagger.TypeDefWithEnumMemberOpts{Value: "WOLFI", SourceMap: dag.SourceMap("main.go", 26, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Workspace environments can now add modules, not just override the settings of installed ones. An `[env.<name>.modules.<mod>]` entry with a `source` (and optional `pin`) installs a module that only exists when that environment is selected.
+time: 2026-07-21T23:57:21Z
+custom:
+  Author: vito
+  PR: 13708

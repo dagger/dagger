@@ -116,6 +116,10 @@ func handleTraces(rw http.ResponseWriter, r *http.Request) {
 					"endNs":    span.EndTimeUnixNano,
 					"attrs":    attrsToMap(span.Attributes),
 					"scope":    ss.Scope.GetName(),
+					// DroppedLinksCount lets consumers (e.g. the wcprof OTel
+					// loader's structural gate) detect silently-evicted links
+					// when a span's link count exceeds the SDK LinkCountLimit.
+					"droppedLinks": span.DroppedLinksCount,
 				}
 				if span.Status != nil && span.Status.Code != 0 {
 					rec["status"] = span.Status.Code.String()
@@ -128,6 +132,10 @@ func handleTraces(rw http.ResponseWriter, r *http.Request) {
 							"traceId": hex.EncodeToString(l.TraceId),
 							"spanId":  hex.EncodeToString(l.SpanId),
 							"attrs":   attrsToMap(l.Attributes),
+							// DroppedAttributesCount lets consumers detect
+							// link attributes evicted by AttributePerLinkCountLimit
+							// (e.g. a wait edge losing its wcprof.wait.* timing).
+							"droppedAttrs": l.DroppedAttributesCount,
 						})
 					}
 					rec["links"] = links

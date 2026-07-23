@@ -76,6 +76,48 @@ func TestInstalledSDKSourceAmbiguousAlias(t *testing.T) {
 	require.Empty(t, source)
 }
 
+func TestWorkspaceSDKEntryPaths(t *testing.T) {
+	t.Parallel()
+
+	entry := workspace.ModuleEntry{
+		Source: "../sdk",
+		Pin:    "sha256:abc",
+		AsSDK: &workspace.ModuleAsSDK{
+			Name: "custom",
+			Modules: []workspace.SDKManagedModule{
+				{Path: ".dagger/modules/demo"},
+			},
+		},
+	}
+
+	require.Equal(t, "apps/sdk@sha256:abc", resolvedModuleEntrySourceWithPin("apps/demo", entry))
+	require.Equal(t, "../../../apps/sdk@sha256:abc", mustModuleEntrySourceWithPinRelativeTo(t, "apps/demo", ".dagger/modules/new", entry))
+
+	sdk := workspaceSDKFromEntry("apps/demo", "custom-sdk", entry)
+	require.Equal(t, "custom", sdk.Name)
+	require.Equal(t, "apps/sdk@sha256:abc", sdk.Ref)
+	require.Len(t, sdk.Modules, 1)
+	require.Equal(t, "demo", sdk.Modules[0].Name)
+	require.Equal(t, ".dagger/modules/demo", sdk.Modules[0].Source)
+}
+
+func TestModuleEntrySourceWithPinRelativeToLeavesGitRefsCanonical(t *testing.T) {
+	t.Parallel()
+
+	entry := workspace.ModuleEntry{
+		Source: "github.com/acme/sdk",
+		Pin:    "v1.2.3",
+	}
+	require.Equal(t, "github.com/acme/sdk@v1.2.3", mustModuleEntrySourceWithPinRelativeTo(t, "apps/demo", ".dagger/modules/new", entry))
+}
+
+func mustModuleEntrySourceWithPinRelativeTo(t *testing.T, configDir, targetDir string, entry workspace.ModuleEntry) string {
+	t.Helper()
+	ref, err := moduleEntrySourceWithPinRelativeTo(configDir, targetDir, entry)
+	require.NoError(t, err)
+	return ref
+}
+
 func TestRemoveClientEntryAtPathPreservesSDKMarker(t *testing.T) {
 	t.Parallel()
 

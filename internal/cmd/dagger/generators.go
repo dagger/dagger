@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,13 +13,16 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
 
 var (
-	generateListMode bool
+	generateListMode    bool
+	generateRequireLoad bool
+	generateNoApply     bool
 )
 
 //go:embed generators.graphql
@@ -26,6 +30,8 @@ var loadGeneratorsQuery string
 
 func init() {
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
+	generateCmd.Flags().BoolVar(&generateRequireLoad, "require-load", false, "Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)")
+	generateCmd.Flags().BoolVar(&generateNoApply, "no-apply", false, "Compute and show a summary of generated changes without applying them")
 }
 
 var generateCmd = &cobra.Command{
@@ -36,11 +42,17 @@ var generateCmd = &cobra.Command{
 Examples:
   dagger generate                            # Generate all assets
   dagger generate -l                         # List all available generators
+  dagger generate --no-apply                 # Show generated changes without applying them
   dagger generate go:bin                     # Generate by selecting the generator function
   dagger -W github.com/acme/ws generate go:bin  # Generate against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		disposition, err := generateChangesetDisposition(generateListMode, autoApply, generateNoApply, idtui.RunningInAgent())
+		if err != nil {
+			return err
+		}
+
 		params := client.Params{
 			LoadWorkspaceModules: true,
 		}
@@ -56,13 +68,84 @@ Examples:
 				} else {
 					generators = ws.Generators()
 				}
+				// Loading is best-effort: a module that fails to load is skipped
+				// and surfaced in telemetry (engine-side, rendered like a check
+				// that did not pass) while the rest still generate. --require-load
+				// opts back into strict: fail before running or applying if any
+				// workspace module could not be loaded.
+				if generateRequireLoad {
+					loadFailures, err := generatorGroupLoadFailures(ctx, dag, args)
+					if err != nil {
+						return err
+					}
+					if len(loadFailures) > 0 {
+						return fmt.Errorf("%d workspace module(s) could not be loaded (--require-load)", len(loadFailures))
+					}
+				}
 				if generateListMode {
 					return listGenerators(ctx, dag, generators, cmd)
 				}
-				return runGenerators(ctx, dag, generators, cmd, len(args) == 0)
+				return runGenerators(ctx, dag, generators, cmd, disposition)
 			},
 		)
 	},
+}
+
+func generateChangesetDisposition(list, apply, noApply, runningInAgent bool) (changesetDisposition, error) {
+	if apply && noApply {
+		return changesetDispositionPrompt, errors.New("--auto-apply and --no-apply cannot be used together")
+	}
+	if list {
+		return changesetDispositionPrompt, nil
+	}
+	if apply {
+		return changesetDispositionApply, nil
+	}
+	if noApply {
+		return changesetDispositionNoApply, nil
+	}
+	if runningInAgent {
+		return changesetDispositionPrompt, errors.New(`dagger generate requires an explicit changeset choice when run by a coding agent:
+  pass -y/--auto-apply to apply generated changes
+  pass --no-apply to show generated changes without applying them
+
+For an up-to-date check that fails on pending changes, use dagger check --generate`)
+	}
+	return changesetDispositionPrompt, nil
+}
+
+// generatorGroupLoadFailures reads the best-effort per-module load failures for
+// the given include patterns. It roots the query at currentWorkspace — a core
+// root field the request peek recognizes as demanding no modules — so this
+// fetch never re-triggers a strict entrypoint load. Resolving generators still
+// performs the best-effort module load, so the returned messages cover both the
+// ambient demand and any explicitly-selected module that could not load, which
+// --require-load then turns fatal.
+func generatorGroupLoadFailures(ctx context.Context, dag *dagger.Client, include []string) ([]string, error) {
+	var res struct {
+		CurrentWorkspace struct {
+			Generators struct {
+				LoadFailures []string
+			}
+		}
+	}
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `query GeneratorGroupLoadFailures($include: [String!]) {
+  currentWorkspace {
+    generators(include: $include) {
+      loadFailures
+    }
+  }
+}`,
+		OpName:    "GeneratorGroupLoadFailures",
+		Variables: map[string]any{"include": include},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.CurrentWorkspace.Generators.LoadFailures, nil
 }
 
 func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup) (*GeneratorGroupInfo, error) {
@@ -114,11 +197,20 @@ func listGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dag
 }
 
 // 'dagger generators' (runs by default)
-func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup, _ *cobra.Command, includeClients bool) (rerr error) {
+func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup, cmd *cobra.Command, disposition changesetDisposition) (rerr error) {
 	ctx, zoomSpan := Tracer().Start(ctx, "generators", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+	previewOut := cmd.ErrOrStderr()
+	if disposition == changesetDispositionNoApply {
+		// SetPrimary above focuses rendering on the generators span. Attach the
+		// preview to that span too; command stderr is attached to the root span
+		// and would otherwise be hidden by plain/report progress frontends.
+		previewStdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		defer previewStdio.Close()
+		previewOut = previewStdio.Stderr
+	}
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
@@ -132,19 +224,9 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagg
 	if err != nil {
 		return err
 	}
-	if includeClients {
-		clientChanges := dag.CurrentWorkspace().ClientGenerate()
-		cs, err = dag.Changeset().
-			WithChangesets(
-				[]*dagger.Changeset{cs, clientChanges},
-				dagger.ChangesetWithChangesetsOpts{
-					OnConflict: dagger.ChangesetsMergeConflictFailEarly,
-				},
-			).
-			Sync(ctx)
-		if err != nil {
-			return err
-		}
+	err = handleChangesetResponseWithDisposition(ctx, dag, cs, disposition, previewOut)
+	if errors.Is(err, idtui.ErrNonInteractive) {
+		return fmt.Errorf("%w; pass -y/--auto-apply to apply changes, or --no-apply to show them without applying", idtui.ErrNonInteractive)
 	}
-	return handleChangesetResponse(ctx, dag, cs, autoApply)
+	return err
 }

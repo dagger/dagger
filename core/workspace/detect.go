@@ -19,11 +19,17 @@ const (
 
 // Workspace represents a detected workspace boundary and selected files within
 // it. ConfigFile and LockFile are deliberately separate: dagger.toml may be
-// absent or projected from compat dagger.json, while the lockfile is a local
-// writable binding selected from the workspace tree.
+// absent or projected from compat dagger.json, while lockfile read/write
+// capabilities depend on the workspace source.
 type Workspace struct {
-	// Root is the workspace boundary: the detected git root.
+	// Root is the workspace boundary: the detected Git root, or an explicit
+	// boundary supplied for a remote or legacy workspace.
 	Root string
+
+	// HasGitRoot records whether local detection found the boundary by walking
+	// up to .git. An explicit legacy boundary remains useful for reading files,
+	// but must not be treated as an exportable Git workspace.
+	HasGitRoot bool
 
 	// Cwd is the detection start location stored as a clean path relative to Root.
 	Cwd string
@@ -66,7 +72,12 @@ func Detect(
 		return nil, nil
 	}
 
-	return DetectInRoot(ctx, pathExists, cwd, gitDir)
+	ws, err := DetectInRoot(ctx, pathExists, cwd, gitDir)
+	if err != nil {
+		return nil, err
+	}
+	ws.HasGitRoot = true
+	return ws, nil
 }
 
 // DetectInRoot detects the workspace cwd and selected files within an already

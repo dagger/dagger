@@ -330,6 +330,15 @@ type TestIndex struct {
 	version      uint64
 	builtVersion uint64
 
+	// perSpanViews memoizes ViewForSpan per root for the current index
+	// version and DB mutation count. Render passes read the same roots
+	// several times per frame (claims seeding, row predicates, rollups);
+	// without the memo each read rescans every known test span.
+	perSpanViews    map[SpanID]*TestView
+	perSpanVersion  uint64
+	perSpanDBEpoch  uint64
+	perSpanMemoInit bool
+
 	initialScanCount       int
 	structuralRebuildCount int
 }
@@ -377,6 +386,23 @@ func (idx *TestIndex) ViewForSpan(root *Span) *TestView {
 	}
 	idx.View()
 
+	// Serve repeated same-frame reads from the memo; any index change or DB
+	// span add/update (which can extend an ancestor chain) invalidates it.
+	if !idx.perSpanMemoInit || idx.perSpanVersion != idx.version || idx.perSpanDBEpoch != idx.db.mutations {
+		idx.perSpanViews = make(map[SpanID]*TestView)
+		idx.perSpanVersion = idx.version
+		idx.perSpanDBEpoch = idx.db.mutations
+		idx.perSpanMemoInit = true
+	}
+	if view, ok := idx.perSpanViews[root.ID]; ok {
+		return view
+	}
+	view := idx.buildViewForSpan(root)
+	idx.perSpanViews[root.ID] = view
+	return view
+}
+
+func (idx *TestIndex) buildViewForSpan(root *Span) *TestView {
 	nodesBySpan := make(map[SpanID]*TestNode)
 	for id, span := range idx.knownTestSpans {
 		if span == nil {
@@ -573,6 +599,67 @@ func buildTestView(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) *TestVie
 	})
 
 	return view
+}
+
+// FilterCases returns a deep-cloned view containing only the case nodes for
+// which keep returns true. Suites (real or virtual) left without surviving
+// descendants are pruned, and aggregates/counts are recomputed. When keep
+// accepts every case the result is structurally equivalent to v. Spans are
+// shared (read-only); only the node tree is cloned.
+func (v *TestView) FilterCases(keep func(*TestNode) bool) *TestView {
+	if v == nil {
+		return nil
+	}
+	var cloneNode func(*TestNode) *TestNode
+	cloneNode = func(n *TestNode) *TestNode {
+		if n == nil {
+			return nil
+		}
+		var kids []*TestNode
+		for _, child := range n.Children {
+			if c := cloneNode(child); c != nil {
+				kids = append(kids, c)
+			}
+		}
+		keepSelf := n.Kind == TestNodeCase && keep(n)
+		// A FAILING suite with no cases of its own -- e.g. a test package that
+		// failed to compile -- has no case children to carry its status, so it
+		// must survive on its own or the failure vanishes from the view.
+		// Failing only: a skipped case-less suite (a package with no test
+		// files) is noise, and a running one shows up once its cases do.
+		caselessSuite := n.Kind != TestNodeCase && len(n.Children) == 0
+		if caselessSuite && n.Category == TestCategoryFailing && keep(n) {
+			keepSelf = true
+		}
+		if !keepSelf && len(kids) == 0 {
+			return nil
+		}
+		clone := *n
+		clone.Parent = nil
+		clone.Children = kids
+		if clone.Kind != TestNodeCase && !caselessSuite {
+			// Re-derive suite status from the retained cases rather than the
+			// backing span: a suite kept only for its surviving (e.g. passing)
+			// cases must not inherit the failing status contributed by sibling
+			// cases that were filtered out. A case-less suite (kept above) is
+			// exempt: its own span IS its status, and summaries need the span
+			// to render it.
+			clone.Kind = TestNodeVirtualSuite
+			clone.Span = nil
+			clone.RepresentativeSpan = nil
+		}
+		for _, child := range kids {
+			child.Parent = &clone
+		}
+		return &clone
+	}
+	var roots []*TestNode
+	for _, root := range v.Roots {
+		if c := cloneNode(root); c != nil {
+			roots = append(roots, c)
+		}
+	}
+	return buildTestView(roots, nil)
 }
 
 func addTestNameIndex(index map[string][]*TestNode, node *TestNode) {

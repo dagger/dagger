@@ -7,7 +7,7 @@ slug: /reference/configuration/modules
 ---
 
 
-Modules can be configured by editing their `dagger-module.toml` file. It contains module metadata: the module name, runtime, source directory, file filters, and module code dependencies. Workspace commands such as `dagger install`, `dagger config`, and `dagger settings` update `dagger.toml`; they do not update a module's `dagger-module.toml`.
+Modules can be configured by editing their `dagger-module.toml` file. It contains module metadata: the module name, runtime, source directory, file filters, and module code dependencies. Workspace commands such as `dagger install`, `dagger workspace config`, and `dagger settings` update `dagger.toml`; they do not update a module's `dagger-module.toml`.
 
 For more information, refer to the [schema for the Dagger module configuration file](https://docs.dagger.io/reference/dagger-module.schema.json).
 
@@ -123,8 +123,8 @@ The module's `source` field must reference the same directory as the `deno.json`
 
 When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the files in the module source directory.
 
-- If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
-- In the absence of the lock files mentioned above, if a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime. Alternatively, if a `deno.json`, or `deno.lock`, file is present, Dagger will choose `deno` as the runtime.
+- If a `bun.lock` or `bun.lockb` file is present, Dagger chooses `bun` as the runtime (Bun is checked first because it can also emit a `yarn.lock`). Alternatively, if a `deno.json`, or `deno.lock`, file is present, Dagger will choose `deno` as the runtime.
+- Otherwise, if Dagger finds any of the following lock files: `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
 - If no or only unknown lock files are present, `node` is chosen.
 
 :::warning
@@ -145,7 +145,7 @@ Set the `packageManager` property to `npm` to use the `npm` package manager. You
   "packageManager": "npm@10.8.2"
 ```
 
-If no version is specified, `npm@10.7.0` is used by default.
+If no version is specified, `npm@11.8.0` is used by default.
 
 #### Yarn
 
@@ -184,8 +184,8 @@ packages:
 
 When a package manager is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate package manager by examining the module source directory's lock files.
 
-- If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects the corresponding package manager with a predefined default version: `npm@10.7.0`, `yarn@1.22.22` or `pnpm@8.15.4`.
-- If none of the above mentioned lock files are present, but a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime and package manager with a predefined default version: `bun@1.0.11`.
+- If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects the corresponding package manager with a predefined default version: `npm@11.8.0`, `yarn@1.22.22` or `pnpm@8.15.4`.
+- If a `bun.lock` or `bun.lockb` file is present (checked before the node lock files, since Bun can also emit a `yarn.lock`), Dagger will choose `bun` as the runtime and package manager with a predefined default version: `bun@1.3.0`.
 - `yarn@1.22.22` is the last default, when nothing mentioned above applies.
 
 :::warning
@@ -242,7 +242,7 @@ rm -rf ./sdk
 npm pkg set "dependencies[@dagger.io/dagger]=./sdk"
 
 # Verify the module still loads with the new dependency layout
-dagger -m . functions
+dagger -m . api functions
 ```
 
 This configuration uses the SDK as a vendored library and expects the `tsconfig.json` import paths below.
@@ -269,5 +269,5 @@ rm -rf ./sdk
 npm pkg delete "dependencies[@dagger.io/dagger]"
 
 # Verify the module still loads with the bundled SDK layout
-dagger -m . functions
+dagger -m . api functions
 ```

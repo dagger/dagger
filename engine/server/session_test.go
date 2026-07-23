@@ -5,17 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
@@ -25,6 +29,19 @@ import (
 type fakeSessionCaller struct {
 	id   string
 	conn *grpc.ClientConn
+}
+
+func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+
+	client := &daggerClient{keepAliveTelemetryDB: db}
+	require.NoError(t, client.closeKeepAliveTelemetryDB())
+	require.Nil(t, client.keepAliveTelemetryDB)
+	// A cleanup and teardown path converging on the same client is a no-op
+	// after the first path transfers the pointer.
+	require.NoError(t, client.closeKeepAliveTelemetryDB())
 }
 
 func (caller *fakeSessionCaller) Supports(string) bool {
@@ -351,6 +368,204 @@ func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 	}
 }
 
+// newTeardownTestServer builds a Server with just enough real state for
+// removeDaggerSession to run: an empty in-memory dagql cache, a live wcprof
+// counter, and a stubbed GC callback (scheduled via time.AfterFunc at the end
+// of teardown).
+func newTeardownTestServer(t *testing.T) *Server {
+	t.Helper()
+	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
+	require.NoError(t, err)
+	return &Server{
+		daggerSessions:  map[string]*daggerSession{},
+		engineCache:     cache,
+		wcprofSpanCount: newWcprofSpanCounter(),
+		throttledGC:     func() {},
+	}
+}
+
+// newTeardownTestSession publishes an initialized session whose main client
+// has the given number of active connections. dagqlInFlight starts at 1 so
+// teardown deterministically blocks in the in-flight drain until
+// releaseTeardownDrain is called.
+func newTeardownTestSession(srv *Server, sessionID, mainClientID string, activeCount int) (*daggerSession, *daggerClient) {
+	client := &daggerClient{
+		clientID:    mainClientID,
+		activeCount: activeCount,
+	}
+	sess := &daggerSession{
+		sessionID:          sessionID,
+		mainClientCallerID: mainClientID,
+		clients:            map[string]*daggerClient{mainClientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		shutdownCh:         make(chan struct{}),
+	}
+	client.daggerSession = sess
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.dagqlInFlight = 1
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	sess.state.Store(sessionStateInitialized)
+
+	srv.daggerSessionsMu.Lock()
+	srv.daggerSessions[sessionID] = sess
+	srv.daggerSessionsMu.Unlock()
+	return sess, client
+}
+
+func releaseTeardownDrain(sess *daggerSession) {
+	sess.dagqlMu.Lock()
+	sess.dagqlInFlight = 0
+	sess.dagqlCond.Broadcast()
+	sess.dagqlMu.Unlock()
+}
+
+func sessionInRegistry(srv *Server, sessionID string) bool {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	_, ok := srv.daggerSessions[sessionID]
+	return ok
+}
+
+func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
+	t.Parallel()
+
+	// Regression for the client-side `shutdown: ... context deadline exceeded`
+	// timeout: the main client's last connection cleanup runs in the request
+	// handler before the /shutdown response is flushed, so it must only
+	// SCHEDULE teardown, never run it. Teardown here is deterministically
+	// blocked in the in-flight dagql drain; the cleanup must return anyway.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.releaseClientConnection(context.Background(), sess, client)
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("last-connection cleanup blocked on session teardown")
+	}
+
+	// The background reap marks the session removed (tombstone) but stays
+	// blocked in the drain, so the registry entry must survive for now.
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond, "background teardown never started")
+	require.True(t, sessionInRegistry(srv, "s"), "tombstone dropped before teardown finished")
+
+	releaseTeardownDrain(sess)
+
+	require.Eventually(t, func() bool {
+		return !sessionInRegistry(srv, "s")
+	}, 10*time.Second, 10*time.Millisecond, "session never finished background teardown")
+	select {
+	case <-sess.shutdownCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("session shutdownCh never closed by background teardown")
+	}
+}
+
+func TestSameIDConnectDuringBackgroundTeardownGetsRetryable(t *testing.T) {
+	t.Parallel()
+
+	// While a background reap is mid-teardown (removed tombstone in the
+	// registry, lifecycleMu held), a same-id getOrInitClient must bail out
+	// fast with a retryable error instead of blocking on the teardown.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	require.NoError(t, srv.releaseClientConnection(context.Background(), sess, client))
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond)
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+			ClientMetadata: &engine.ClientMetadata{
+				SessionID:         "s",
+				ClientID:          "m",
+				ClientSecretToken: "token",
+			},
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		var retryable flightcontrol.RetryableError
+		require.ErrorAs(t, err, &retryable)
+	case <-time.After(10 * time.Second):
+		t.Fatal("same-id getOrInitClient blocked on background teardown")
+	}
+
+	releaseTeardownDrain(sess)
+	require.Eventually(t, func() bool {
+		return !sessionInRegistry(srv, "s")
+	}, 10*time.Second, 10*time.Millisecond)
+}
+
+func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
+	t.Parallel()
+
+	// A new main-client connection can land between the last disconnect and
+	// the scheduled reap running. The reap re-checks activeCount under
+	// lifecycleMu and must leave the now-live session alone.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	// Simulate the reconnect winning the race: activeCount is back above zero
+	// by the time the reap runs.
+	client.stateMu.Lock()
+	client.activeCount = 1
+	client.stateMu.Unlock()
+
+	srv.reapDaggerSession(context.Background(), sess, client)
+
+	require.Equal(t, sessionStateInitialized, sess.state.Load())
+	require.True(t, sessionInRegistry(srv, "s"))
+	select {
+	case <-sess.shutdownCh:
+		t.Fatal("reap tore down a session with a live main client")
+	default:
+	}
+}
+
+func TestConcurrentReapsSingleTeardown(t *testing.T) {
+	t.Parallel()
+
+	// Duplicate reaps can be scheduled (disconnect, reconnect, disconnect).
+	// Whichever acquires lifecycleMu first tears down; the loser must observe
+	// the removed state and no-op (double teardown would double-close
+	// shutdownCh and panic).
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 0)
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			srv.reapDaggerSession(context.Background(), sess, client)
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond)
+	releaseTeardownDrain(sess)
+	wg.Wait()
+
+	require.False(t, sessionInRegistry(srv, "s"))
+	select {
+	case <-sess.shutdownCh:
+	default:
+		t.Fatal("session shutdownCh not closed after teardown")
+	}
+}
+
 func TestPendingLegacyModule(t *testing.T) {
 	t.Parallel()
 
@@ -508,6 +723,153 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"loadSomethingFromID"})
 		require.Equal(t, mods, filtered)
 	})
+}
+
+func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
+	t.Parallel()
+
+	foo := pendingModule{Kind: moduleLoadKindAmbient, Name: "foo"}
+	barBaz := pendingModule{Kind: moduleLoadKindAmbient, Name: "barBaz"}
+	entry := pendingModule{Kind: moduleLoadKindAmbient, Name: "entry", Entrypoint: true}
+	mods := []pendingModule{foo, barBaz, entry}
+
+	t.Run("no scope delegates to root-field demand", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "", false)
+		require.False(t, applied)
+		require.Equal(t, mods, selected)
+	})
+
+	t.Run("scoped typedefs loads target plus entrypoint", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "foo", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{foo, entry}, selected)
+	})
+
+	t.Run("kebab-case token matches declared module name", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "bar-baz", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{barBaz, entry}, selected)
+	})
+
+	t.Run("unknown token loads pending entrypoint alone", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "greet", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{entry}, selected)
+	})
+
+	t.Run("unknown token without entrypoint loads all", func(t *testing.T) {
+		t.Parallel()
+
+		noEntry := []pendingModule{foo, barBaz}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(noEntry, nil, []string{"currentTypeDefs"}, "greet", false)
+		require.True(t, applied)
+		require.Equal(t, noEntry, selected)
+	})
+
+	t.Run("another full-schema field loads all without consuming", func(t *testing.T) {
+		t.Parallel()
+
+		for _, field := range []string{"env", "__schema", "currentModule"} {
+			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", field}, "foo", false)
+			require.False(t, applied, field)
+			require.Equal(t, mods, selected, field)
+		}
+	})
+
+	t.Run("no typedefs field delegates without consuming", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"foo"}, "barBaz", false)
+		require.False(t, applied)
+		require.Equal(t, []pendingModule{foo}, selected)
+	})
+
+	t.Run("typedefs plus module field unions both demands", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", "foo"}, "bar-baz", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{foo, barBaz, entry}, selected)
+	})
+
+	t.Run("served target contributes nothing to load", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"my-mod": {}}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, served, []string{"currentTypeDefs"}, "myMod", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{entry}, selected)
+	})
+
+	t.Run("unknown token with served entrypoint loads no siblings", func(t *testing.T) {
+		t.Parallel()
+
+		// A prior selective request may have loaded the entrypoint without
+		// consuming the scope. The later typedefs request is then already
+		// satisfied by that served entrypoint and must not fall back to every
+		// still-pending workspace module.
+		served := map[string]struct{}{"entry": {}}
+		pending := []pendingModule{foo, barBaz}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(pending, served, []string{"currentTypeDefs"}, "greet", true)
+		require.True(t, applied)
+		require.Empty(t, selected)
+	})
+}
+
+func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
+	client := &daggerClient{
+		clientID: "client",
+		clientMetadata: &engine.ClientMetadata{
+			WorkspaceModuleScope: "good",
+		},
+		pendingModules: []pendingModule{
+			{Kind: moduleLoadKindAmbient, Name: "bad"},
+		},
+		servedWorkspaceModuleNames: map[string]struct{}{"good": {}},
+	}
+	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{ currentTypeDefs { name } }"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	postLoad := make(chan struct{})
+	resume := make(chan struct{})
+	var resumeOnce sync.Once
+	release := func() { resumeOnce.Do(func() { close(resume) }) }
+	t.Cleanup(release)
+
+	loadDone := make(chan error, 1)
+	go func() {
+		loadDone <- (&Server{}).ensureRequestModulesLoadedWithPostLoad(context.Background(), client, req, func() {
+			close(postLoad)
+			<-resume
+		})
+	}()
+
+	select {
+	case <-postLoad:
+	case <-time.After(10 * time.Second):
+		t.Fatal("module loading did not return")
+	}
+
+	client.modulesMu.Lock()
+	observedScope := client.pendingWorkspaceModuleScopeLocked()
+	client.modulesMu.Unlock()
+
+	release()
+	require.Empty(t, observedScope, "the one-shot scope was visible after the successful load released modulesMu")
+	select {
+	case err := <-loadDone:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("request module loading did not finish")
+	}
 }
 
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
@@ -942,7 +1304,7 @@ func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *test
 	require.Equal(t, extra, client.pendingExtraModules)
 }
 
-func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *testing.T) {
+func TestDetectAndLoadWorkspaceCreatesRootlessWorkspaceWithoutInferringModule(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -989,7 +1351,10 @@ func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *test
 		true,
 	)
 	require.NoError(t, err)
-	require.Nil(t, client.workspace)
+	require.NotNil(t, client.workspace)
+	require.Equal(t, "/tmp/mymod", client.workspace.HostPath())
+	_, ok := client.workspace.Source().(*core.WorkspaceSourceRootlessLocal)
+	require.True(t, ok)
 	require.Empty(t, client.pendingModules)
 }
 
@@ -1218,6 +1583,60 @@ func TestEnsureWorkspaceLoadedInheritsParentWorkspace(t *testing.T) {
 	require.Same(t, bound, child.workspace)
 }
 
+// TestEnsureWorkspaceLoadedDoesNotInheritBetweenFunctionCallRuntimes verifies
+// currentWorkspace inheritance stops when a module function calls another module
+// function. The boundary is the active function call, not module context.
+func TestEnsureWorkspaceLoadedDoesNotInheritBetweenFunctionCallRuntimes(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	bound := &core.Workspace{
+		ClientID: "root-client",
+	}
+
+	root := &daggerClient{
+		workspace: bound,
+	}
+	moduleParent := &daggerClient{
+		workspace: bound,
+		parents:   []*daggerClient{root},
+		fnCall:    &core.FunctionCall{Name: "parent"},
+	}
+	child := &daggerClient{
+		parents: []*daggerClient{root, moduleParent},
+		fnCall:  &core.FunctionCall{Name: "child"},
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Nil(t, child.workspace)
+}
+
+// TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent keeps the
+// new boundary narrow: regular nested clients still inherit a parent workspace.
+func TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	bound := &core.Workspace{
+		ClientID: "root-client",
+	}
+
+	root := &daggerClient{
+		workspace: bound,
+	}
+	moduleParent := &daggerClient{
+		workspace: bound,
+		parents:   []*daggerClient{root},
+		mod:       sessionTestModuleResult(t, "parent"),
+	}
+	child := &daggerClient{
+		parents: []*daggerClient{root, moduleParent},
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Same(t, bound, child.workspace)
+}
+
 func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	t.Parallel()
 
@@ -1364,6 +1783,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
 			Root:       "/repo",
+			HasGitRoot: true,
 			Cwd:        filepath.Join("services", "payment", "src"),
 			ConfigFile: filepath.Join("services", "payment", workspace.ConfigFileName),
 			LockFile:   filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName),
@@ -1380,13 +1800,30 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 		t.Parallel()
 
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
-			Root:     "/repo",
-			Cwd:      ".",
-			LockFile: filepath.Join(workspace.LockDirName, workspace.LockFileName),
+			Root:       "/repo",
+			HasGitRoot: true,
+			Cwd:        ".",
+			LockFile:   filepath.Join(workspace.LockDirName, workspace.LockFileName),
 		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
 		require.NoError(t, err)
 		require.Empty(t, ws.ConfigFile)
 		require.Equal(t, filepath.Join(workspace.LockDirName, workspace.LockFileName), ws.LockFile)
+	})
+
+	t.Run("local boundary without Git is rootless", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root:     "/repo",
+			Cwd:      ".",
+			LockFile: workspace.LockFileName,
+		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
+		require.NoError(t, err)
+		require.Equal(t, "/repo", ws.HostPath())
+		_, ok := ws.Source().(*core.WorkspaceSourceRootlessLocal)
+		require.True(t, ok)
+		_, err = ws.ExportHostPath()
+		require.ErrorContains(t, err, "requires a local Git workspace")
 	})
 }
 
@@ -1414,6 +1851,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			LockMode:              string(workspace.LockModeFrozen),
 			Workspace:             stringPtr("github.com/dagger/base@main"),
 			WorkspaceEnv:          stringPtr("parent-ci"),
+			WorkspaceModuleScope:  "parent-scope",
 			UseRecipeIDsByDefault: true,
 		}
 	}
@@ -1439,6 +1877,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.False(t, md.EagerRuntime)
 		require.Nil(t, md.Workspace)
 		require.Nil(t, md.WorkspaceEnv)
+		require.Empty(t, md.WorkspaceModuleScope)
 		require.True(t, md.UseRecipeIDsByDefault)
 
 		base.AllowedLLMModules[0] = "mutated"
@@ -1472,6 +1911,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			LockMode:                       string(workspace.LockModeLive),
 			Workspace:                      &workspaceRef,
 			WorkspaceEnv:                   &workspaceEnv,
+			WorkspaceModuleScope:           "good-mod",
 		}
 
 		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
@@ -1492,6 +1932,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.True(t, md.SuppressCompatWorkspaceWarning)
 		require.Equal(t, "github.com/dagger/dagger@main", *md.Workspace)
 		require.Equal(t, "ci", *md.WorkspaceEnv)
+		require.Equal(t, "good-mod", md.WorkspaceModuleScope)
 		require.Equal(t, []engine.ExtraModule{{
 			Ref:        "github.com/dagger/mod",
 			Entrypoint: true,

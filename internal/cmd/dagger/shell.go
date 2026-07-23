@@ -52,7 +52,10 @@ var shellCmd = &cobra.Command{
 			err := handler.RunAll(ctx, args)
 
 			// Wrap exit status in ExitError so the TUI preserves the exit code
-			// and doesn't print a redundant error message.
+			// and doesn't print a redundant error message. Non-TTY runs keep
+			// the raw error: main prints it (and derives the exit code from
+			// interp.ExitStatus) unless the frontend already rendered it, in
+			// which case FinalRender preserves the code (see hasShownRootError).
 			var es interp.ExitStatus
 			if handler.tty && errors.As(err, &es) {
 				return idtui.ExitError{OriginalCode: int(es), Original: err}
@@ -129,8 +132,85 @@ type shellCallHandler struct {
 	mode      interpreterMode
 	savedMode interpreterMode // for coming back from history
 
+	// initialPrompt is the first prompt of the current session, used to name
+	// the auto-saved session file. sessionUUID is the file UUID being updated
+	// in-place; empty until the first save (or reset on branch/resume).
+	initialPrompt string
+	sessionUUID   string
+
+	// queuedMsg carries a message the user submitted while the LLM was running,
+	// to be interjected as the next prompt.
+	queuedMsg   string
+	queuedMsgMu sync.Mutex
+
 	// cancel interrupts the entire shell session
 	cancel func()
+}
+
+// QueueMessage stores a message submitted while the LLM is running, to be
+// interjected as the next prompt once the current turn finishes.
+func (h *shellCallHandler) QueueMessage(msg string) {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	h.queuedMsg = msg
+}
+
+// DequeueMessage returns and clears any queued interject message.
+func (h *shellCallHandler) DequeueMessage() string {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	msg := h.queuedMsg
+	h.queuedMsg = ""
+	return msg
+}
+
+// BranchFromID branches the LLM conversation to the state identified by the
+// encoded DAG ID (an LLM.withPrompt/withResponse call, located by the TUI from
+// a span's LLMCallDigest). When summary.Summarize is set, the conversation
+// being abandoned is summarized first and the summary injected into the branch
+// target so context carries forward.
+func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, summary idtui.BranchSummary) func() {
+	return func() {
+		s, err := h.llm(ctx)
+		if err != nil {
+			slog.Error("failed to initialize LLM for branch", "error", err)
+			return
+		}
+
+		// Load the target LLM state (the point we're branching to).
+		loadedLLM := dagger.Ref[*dagger.LLM](h.dag, dagger.ID(encodedID))
+
+		// If the user requested summarization, summarize the OLD branch (the
+		// current conversation being abandoned) and inject the summary into the
+		// branch target, providing context when continuing from the earlier
+		// point.
+		if summary.Summarize {
+			summaryText, err := s.BranchSummary(ctx, summary.CustomPrompt)
+			if err != nil {
+				slog.Error("failed to summarize old branch", "error", err)
+				// Fall through to branch without summary.
+			} else {
+				loadedLLM = loadedLLM.WithPrompt(fmt.Sprintf(
+					"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
+					summaryText,
+				))
+			}
+		}
+
+		if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+			slog.Error("failed to update LLM for branch", "error", err)
+			return
+		}
+		if err := s.updateSidebar(loadedLLM); err != nil {
+			slog.Error("failed to update sidebar for branch", "error", err)
+		}
+		// Branching creates a new session; clear the save identity so the next
+		// prompt generates a fresh save file rather than overwriting the
+		// original, and switch to prompt mode for a new prompt.
+		h.sessionUUID = ""
+		h.initialPrompt = ""
+		h.mode = modePrompt
+	}
 }
 
 func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
@@ -378,6 +458,19 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		llm, err := h.llm(ctx)
 		if err != nil {
 			return err
+		}
+		if h.initialPrompt == "" {
+			h.initialPrompt = line
+		}
+		// Auto-save the session after each step, updating the same file
+		// in-place so a conversation maps to a single session file.
+		llm.onStep = func(s *LLMSession) {
+			savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+			if err != nil {
+				slog.Warn("failed to auto-save session", "error", err)
+				return
+			}
+			h.sessionUUID = savedUUID
 		}
 		newLLM, err := llm.WithPrompt(ctx, line)
 		if err != nil {

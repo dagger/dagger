@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
+	"strings"
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -82,10 +84,15 @@ type WorkspaceSource interface {
 
 type WorkspaceSourceClientLocal struct {
 	HostPath string
-	ClientID string
 }
 
 func (*WorkspaceSourceClientLocal) workspaceSource() {}
+
+type WorkspaceSourceRootlessLocal struct {
+	HostPath string
+}
+
+func (*WorkspaceSourceRootlessLocal) workspaceSource() {}
 
 type WorkspaceSourceDirectory struct {
 	Root dagql.ObjectResult[*Directory]
@@ -95,22 +102,38 @@ func (*WorkspaceSourceDirectory) workspaceSource() {}
 
 type WorkspaceSourceGitRef struct {
 	Ref dagql.Result[*GitRef]
+	// ExplicitCommit distinguishes a workspace requested by immutable commit SHA
+	// from a mutable ref that happens to resolve to the same commit.
+	ExplicitCommit bool
 }
 
 func (*WorkspaceSourceGitRef) workspaceSource() {}
 
 type WorkspaceSourceOverlay struct {
-	Base    WorkspaceSource
-	Root    dagql.ObjectResult[*Directory]
-	Changes dagql.ObjectResult[*Changeset]
+	Base WorkspaceSource
+	// TouchedPaths is the cumulative set of workspace-relative paths the
+	// overlay's edits affect. Set only for host-backed (client-local) overlays,
+	// where it sizes the sparse diff base: Changes.After is the accumulated
+	// edits applied to an empty base (the delta root — it never references the
+	// host tree) and Changes.Before is host.directory including only these
+	// paths, so forcing the changeset syncs just the touched files instead of
+	// uploading the whole workspace. Value/git/rootless overlays leave this nil
+	// and diff full in-engine trees (nothing to upload).
+	TouchedPaths []string
+	Changes      dagql.ObjectResult[*Changeset]
 }
 
 func (*WorkspaceSourceOverlay) workspaceSource() {}
 
-func NewWorkspaceSourceClientLocal(hostPath, clientID string) WorkspaceSource {
+func NewWorkspaceSourceClientLocal(hostPath string) WorkspaceSource {
 	return &WorkspaceSourceClientLocal{
 		HostPath: hostPath,
-		ClientID: clientID,
+	}
+}
+
+func NewWorkspaceSourceRootlessLocal(hostPath string) WorkspaceSource {
+	return &WorkspaceSourceRootlessLocal{
+		HostPath: hostPath,
 	}
 }
 
@@ -120,17 +143,27 @@ func NewWorkspaceSourceDirectory(root dagql.ObjectResult[*Directory]) WorkspaceS
 	}
 }
 
-func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef]) WorkspaceSource {
+func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef], explicitCommit bool) WorkspaceSource {
 	return &WorkspaceSourceGitRef{
-		Ref: ref,
+		Ref:            ref,
+		ExplicitCommit: explicitCommit,
 	}
 }
 
-func NewWorkspaceSourceOverlay(base WorkspaceSource, root dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) WorkspaceSource {
+func NewWorkspaceSourceOverlay(
+	base WorkspaceSource,
+	touchedPaths []string,
+	changes dagql.ObjectResult[*Changeset],
+) WorkspaceSource {
+	if overlay, ok := base.(*WorkspaceSourceOverlay); ok {
+		base = overlay.Base
+	}
+	// The caller accumulates TouchedPaths (union with the parent overlay's)
+	// before constructing, so they are already cumulative here.
 	return &WorkspaceSourceOverlay{
-		Base:    base,
-		Root:    root,
-		Changes: changes,
+		Base:         base,
+		TouchedPaths: touchedPaths,
+		Changes:      changes,
 	}
 }
 
@@ -142,7 +175,7 @@ func (ws *Workspace) Source() WorkspaceSource {
 		return ws.source
 	}
 	if ws.hostPath != "" {
-		return NewWorkspaceSourceClientLocal(ws.hostPath, ws.ClientID)
+		return NewWorkspaceSourceClientLocal(ws.hostPath)
 	}
 	if ws.rootfs.Self() != nil {
 		return NewWorkspaceSourceDirectory(ws.rootfs)
@@ -168,8 +201,15 @@ func (ws *Workspace) SourceDirectory() (dagql.ObjectResult[*Directory], bool) {
 			return ws.rootfs, true
 		}
 	case *WorkspaceSourceOverlay:
-		if src.Root.Self() != nil {
-			return src.Root, true
+		if _, local := src.Base.(*WorkspaceSourceClientLocal); local {
+			// Host-backed overlays store no full tree: Changes.After is the
+			// edits applied to an empty base (sparse), not host + edits.
+			// Reads resolve per-call against the host instead (see
+			// schema.resolveHostOverlayRootfs).
+			return dagql.ObjectResult[*Directory]{}, false
+		}
+		if changes := src.Changes.Self(); changes != nil && changes.After.Self() != nil {
+			return changes.After, true
 		}
 	}
 	if ws.rootfs.Self() != nil {
@@ -201,6 +241,105 @@ func (ws *Workspace) OverlayChanges() (dagql.ObjectResult[*Changeset], bool) {
 		return dagql.ObjectResult[*Changeset]{}, false
 	}
 	return overlay.Changes, true
+}
+
+// ClientLocalBase reports whether the workspace's base source is the client's
+// local git-rooted host directory. False for rootless local workspaces (which
+// also carry a host path but must not read through it) and for value/git
+// workspaces.
+func (ws *Workspace) ClientLocalBase() bool {
+	if ws == nil {
+		return false
+	}
+	_, ok := ws.BaseSource().(*WorkspaceSourceClientLocal)
+	return ok
+}
+
+// OverlayDeltaRoot returns a host-backed overlay's accumulated edits applied to
+// an empty base — the changeset's After side, which never references the host
+// tree — or false if this workspace has no such overlay (a pristine workspace,
+// or a value/git/rootless overlay whose After is a full tree).
+func (ws *Workspace) OverlayDeltaRoot() (dagql.ObjectResult[*Directory], bool) {
+	if !ws.ClientLocalBase() {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	changes := overlay.Changes.Self()
+	if changes == nil || changes.After.Self() == nil {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	return changes.After, true
+}
+
+// OverlayTouchedPaths returns the cumulative set of workspace-relative paths the
+// overlay's edits affect, used to size the sparse diff base.
+func (ws *Workspace) OverlayTouchedPaths() []string {
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok {
+		return nil
+	}
+	return overlay.TouchedPaths
+}
+
+// OverlayPathTouched reports whether the overlay's edits affect the given
+// workspace-relative path, either directly or via a touched parent directory.
+func (ws *Workspace) OverlayPathTouched(p string) bool {
+	p = path.Clean(filepath.ToSlash(p))
+	for _, touched := range ws.OverlayTouchedPaths() {
+		touched = path.Clean(filepath.ToSlash(touched))
+		if p == touched || strings.HasPrefix(p, touched+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (ws *Workspace) BaseSource() WorkspaceSource {
+	src := ws.Source()
+	if overlay, ok := src.(*WorkspaceSourceOverlay); ok {
+		return overlay.Base
+	}
+	return src
+}
+
+func (ws *Workspace) LocalSourceHostPath() (string, bool) {
+	if ws == nil {
+		return "", false
+	}
+	switch src := ws.BaseSource().(type) {
+	case *WorkspaceSourceClientLocal:
+		return src.HostPath, src.HostPath != ""
+	case *WorkspaceSourceRootlessLocal:
+		return src.HostPath, src.HostPath != ""
+	default:
+		return "", false
+	}
+}
+
+func (ws *Workspace) ExportHostPath() (string, error) {
+	if ws == nil {
+		return "", fmt.Errorf("workspace is required")
+	}
+	switch src := ws.BaseSource().(type) {
+	case *WorkspaceSourceClientLocal:
+		if src.HostPath == "" {
+			return "", fmt.Errorf("workspace export requires a local Git workspace")
+		}
+		return src.HostPath, nil
+	case *WorkspaceSourceRootlessLocal:
+		return "", fmt.Errorf("workspace export requires a local Git workspace")
+	case *WorkspaceSourceGitRef:
+		return "", fmt.Errorf("cannot export a remote Git workspace")
+	case *WorkspaceSourceDirectory:
+		return "", fmt.Errorf("cannot export a synthetic workspace")
+	case nil:
+		return "", fmt.Errorf("workspace export requires a local Git workspace")
+	default:
+		return "", fmt.Errorf("cannot export workspace source %T", src)
+	}
 }
 
 func (ws *Workspace) IsValueWorkspace() bool {
@@ -286,12 +425,16 @@ type persistedWorkspaceSource struct {
 	Kind           string                    `json:"kind"`
 	RootResultID   uint64                    `json:"rootResultID,omitempty"`
 	GitRefResultID uint64                    `json:"gitRefResultID,omitempty"`
+	ExplicitCommit bool                      `json:"explicitCommit,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
+	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
+	HostPath       string                    `json:"hostPath,omitempty"`
 	Base           *persistedWorkspaceSource `json:"base,omitempty"`
 }
 
 const (
 	persistedWorkspaceSourceClientLocal = "clientLocal"
+	persistedWorkspaceSourceRootless    = "rootlessLocal"
 	persistedWorkspaceSourceDirectory   = "directory"
 	persistedWorkspaceSourceGitRef      = "gitRef"
 	persistedWorkspaceSourceOverlay     = "overlay"
@@ -301,6 +444,11 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 	switch src := src.(type) {
 	case *WorkspaceSourceClientLocal:
 		return &persistedWorkspaceSource{Kind: persistedWorkspaceSourceClientLocal}, nil
+	case *WorkspaceSourceRootlessLocal:
+		return &persistedWorkspaceSource{
+			Kind:     persistedWorkspaceSourceRootless,
+			HostPath: src.HostPath,
+		}, nil
 	case *WorkspaceSourceDirectory:
 		payload := &persistedWorkspaceSource{Kind: persistedWorkspaceSourceDirectory}
 		if src.Root.Self() != nil {
@@ -319,6 +467,7 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 		return &persistedWorkspaceSource{
 			Kind:           persistedWorkspaceSourceGitRef,
 			GitRefResultID: refID,
+			ExplicitCommit: src.ExplicitCommit,
 		}, nil
 	case *WorkspaceSourceOverlay:
 		payload := &persistedWorkspaceSource{Kind: persistedWorkspaceSourceOverlay}
@@ -329,13 +478,7 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 			}
 			payload.Base = base
 		}
-		if src.Root.Self() != nil {
-			rootID, err := encodePersistedObjectRef(cache, src.Root, "workspace overlay root")
-			if err != nil {
-				return nil, err
-			}
-			payload.RootResultID = rootID
-		}
+		payload.TouchedPaths = src.TouchedPaths
 		if src.Changes.Self() != nil {
 			changesID, err := encodePersistedObjectRef(cache, src.Changes, "workspace overlay changes")
 			if err != nil {
@@ -355,14 +498,19 @@ func decodePersistedWorkspaceSource(
 	persisted *persistedWorkspaceSource,
 	rootfs dagql.ObjectResult[*Directory],
 	hostPath string,
-	clientID string,
 ) (WorkspaceSource, error) {
 	if persisted == nil {
 		return nil, nil
 	}
 	switch persisted.Kind {
 	case persistedWorkspaceSourceClientLocal:
-		return NewWorkspaceSourceClientLocal(hostPath, clientID), nil
+		return NewWorkspaceSourceClientLocal(hostPath), nil
+	case persistedWorkspaceSourceRootless:
+		rootlessHostPath := persisted.HostPath
+		if rootlessHostPath == "" {
+			rootlessHostPath = hostPath
+		}
+		return NewWorkspaceSourceRootlessLocal(rootlessHostPath), nil
 	case persistedWorkspaceSourceDirectory:
 		root := rootfs
 		if persisted.RootResultID != 0 {
@@ -381,18 +529,11 @@ func decodePersistedWorkspaceSource(
 		if err != nil {
 			return nil, err
 		}
-		return NewWorkspaceSourceGitRef(ref.Result), nil
+		return NewWorkspaceSourceGitRef(ref.Result, persisted.ExplicitCommit), nil
 	case persistedWorkspaceSourceOverlay:
-		base, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Base, rootfs, hostPath, clientID)
+		base, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Base, rootfs, hostPath)
 		if err != nil {
 			return nil, err
-		}
-		root := rootfs
-		if persisted.RootResultID != 0 {
-			root, err = loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.RootResultID, "workspace overlay root")
-			if err != nil {
-				return nil, err
-			}
 		}
 		var changes dagql.ObjectResult[*Changeset]
 		if persisted.ChangesID != 0 {
@@ -401,7 +542,7 @@ func decodePersistedWorkspaceSource(
 				return nil, err
 			}
 		}
-		return NewWorkspaceSourceOverlay(base, root, changes), nil
+		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, changes), nil
 	default:
 		return nil, fmt.Errorf("decode persisted workspace source: unsupported source kind %q", persisted.Kind)
 	}
@@ -490,7 +631,7 @@ func (*Workspace) DecodePersistedObject(
 		hostPath:        persisted.HostPath,
 	}
 	if persisted.Source != nil {
-		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath, persisted.ClientID)
+		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
 		if err != nil {
 			return nil, err
 		}
@@ -537,7 +678,7 @@ func attachWorkspaceSource(
 	src WorkspaceSource,
 ) ([]dagql.AnyResult, error) {
 	switch src := src.(type) {
-	case nil, *WorkspaceSourceClientLocal:
+	case nil, *WorkspaceSourceClientLocal, *WorkspaceSourceRootlessLocal:
 		return nil, nil
 	case *WorkspaceSourceDirectory:
 		if src.Root.Self() == nil {
@@ -578,18 +719,6 @@ func attachWorkspaceSource(
 			return nil, err
 		}
 		deps = append(deps, baseDeps...)
-		if src.Root.Self() != nil {
-			attached, err := attach(src.Root)
-			if err != nil {
-				return nil, fmt.Errorf("attach workspace overlay root: %w", err)
-			}
-			root, ok := attached.(dagql.ObjectResult[*Directory])
-			if !ok {
-				return nil, fmt.Errorf("attach workspace overlay root: unexpected result %T", attached)
-			}
-			src.Root = root
-			deps = append(deps, root)
-		}
 		if src.Changes.Self() != nil {
 			attached, err := attach(src.Changes)
 			if err != nil {
@@ -649,4 +778,58 @@ func (wg *WorkspaceGit) AttachDependencyResults(
 	}
 	wg.Workspace = typed
 	return []dagql.AnyResult{typed}, nil
+}
+
+var (
+	_ dagql.PersistedObject        = (*WorkspaceGit)(nil)
+	_ dagql.PersistedObjectDecoder = (*WorkspaceGit)(nil)
+)
+
+// persistedWorkspaceGitPayload is the on-disk encoding of a WorkspaceGit. Its
+// only state is a reference to the Workspace it wraps, which is itself
+// persistable, so persistence reduces to encoding that one ref.
+type persistedWorkspaceGitPayload struct {
+	WorkspaceResultID uint64 `json:"workspaceResultID,omitempty"`
+}
+
+func (wg *WorkspaceGit) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if wg == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace git: nil workspace git")
+	}
+	var payload persistedWorkspaceGitPayload
+	if wg.Workspace.Self() != nil {
+		wsID, err := encodePersistedObjectRef(cache, wg.Workspace, "workspace git workspace")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.WorkspaceResultID = wsID
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted workspace git payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payloadBytes), nil
+}
+
+func (*WorkspaceGit) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ uint64,
+	_ *dagql.ResultCall,
+	payload json.RawMessage,
+) (dagql.Typed, error) {
+	var persisted persistedWorkspaceGitPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted workspace git payload: %w", err)
+	}
+	wg := &WorkspaceGit{}
+	if persisted.WorkspaceResultID != 0 {
+		ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.WorkspaceResultID, "workspace git workspace")
+		if err != nil {
+			return nil, err
+		}
+		wg.Workspace = ws
+	}
+	return wg, nil
 }

@@ -24,6 +24,7 @@ import (
 type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
 	dag              *dagql.Server
+	mainClient       *engine.ClientMetadata
 	workspaceLock    *workspace.Lock
 	workspaceLockOK  bool
 	workspaceLockErr error
@@ -53,8 +54,8 @@ func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Wor
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string) error {
-	return nil
+func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string, bool) ([]string, error) {
+	return nil, nil
 }
 
 func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.SchemaBuilder, error) {
@@ -62,6 +63,9 @@ func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.Sc
 }
 
 func (s *currentTypeDefsTestServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
+	if s.mainClient != nil {
+		return s.mainClient, nil
+	}
 	return &engine.ClientMetadata{}, nil
 }
 
@@ -142,6 +146,10 @@ func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error
 	return nil
 }
 
+func (s *currentTypeDefsTestServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	return context.WithoutCancel(ctx), nil
+}
+
 func (s *currentTypeDefsTestServer) ClientTelemetry(context.Context, string, string) (*clientdb.DB, error) {
 	return nil, nil
 }
@@ -156,7 +164,7 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 
 func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
 
-func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context) (*workspace.Lock, bool, error) {
+func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) (*workspace.Lock, bool, error) {
 	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
 }
 

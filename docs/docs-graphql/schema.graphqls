@@ -86,6 +86,9 @@ type Address implements Node {
 
   """The address value"""
   value: String!
+
+  """Load a volume from the address."""
+  volume: Volume!
 }
 
 type Binding implements Node {
@@ -152,6 +155,12 @@ type Binding implements Node {
   """Retrieve the binding value, as type JSONValue"""
   asJSONValue: JSONValue!
 
+  """Retrieve the binding value, as type LLMContentBlock"""
+  asLLMContentBlock: LLMContentBlock!
+
+  """Retrieve the binding value, as type LLMMessage"""
+  asLLMMessage: LLMMessage!
+
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
@@ -191,6 +200,9 @@ type Binding implements Node {
   """Retrieve the binding value, as type UpGroup"""
   asUpGroup: UpGroup!
 
+  """Retrieve the binding value, as type Volume"""
+  asVolume: Volume!
+
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
@@ -208,6 +220,9 @@ type Binding implements Node {
 
   """Retrieve the binding value, as type WorkspaceModuleSetting"""
   asWorkspaceModuleSetting: WorkspaceModuleSetting!
+
+  """Retrieve the binding value, as type WorkspaceSDK"""
+  asWorkspaceSDK: WorkspaceSDK!
 
   """Returns the digest of the binding value"""
   digest: String!
@@ -1454,6 +1469,24 @@ type Container implements Exportable & Node & Syncer {
     expand: Boolean = false
   ): Container!
 
+  """Retrieves this container plus a volume mounted at the given path."""
+  withMountedVolume(
+    """Location of the volume mount (e.g., "/mnt/volume")."""
+    path: String!
+
+    """Identifier of the volume to mount."""
+    volume: ID! @expectedType(name: "Volume")
+
+    """Mount the volume read-only."""
+    readOnly: Boolean = false
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
   """
   Return a new container snapshot, with a file added to its filesystem with text content
   """
@@ -1874,6 +1907,11 @@ type CurrentModuleAsSDKClient implements Node {
   The module the client is bound to (workspace-relative path or canonical ref).
   """
   module: String!
+
+  """
+  The resolved module source this client is bound to, including its dependency closure and pinned version.
+  """
+  moduleSource: ModuleSource!
 
   """Workspace-root-relative path of the generated client."""
   path: String!
@@ -3051,6 +3089,50 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """Create or update a binding of type LLMContentBlock in the environment"""
+  withLLMContentBlockInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMContentBlock value to assign to the binding"""
+    value: ID! @expectedType(name: "LLMContentBlock")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired LLMContentBlock output to be assigned in the environment
+  """
+  withLLMContentBlockOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type LLMMessage in the environment"""
+  withLLMMessageInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMMessage value to assign to the binding"""
+    value: ID! @expectedType(name: "LLMMessage")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired LLMMessage output to be assigned in the environment"""
+  withLLMMessageOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """
   Sets the main module for this environment (the project being worked on)
 
@@ -3348,6 +3430,27 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """Create or update a binding of type Volume in the environment"""
+  withVolumeInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Volume value to assign to the binding"""
+    value: ID! @expectedType(name: "Volume")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Volume output to be assigned in the environment"""
+  withVolumeOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Returns a new environment with the provided workspace"""
   withWorkspace(
     """The directory to set as the host filesystem"""
@@ -3489,6 +3592,29 @@ type Env implements Node {
 
   """Declare a desired Workspace output to be assigned in the environment"""
   withWorkspaceOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type WorkspaceSDK in the environment"""
+  withWorkspaceSDKInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceSDK value to assign to the binding"""
+    value: ID! @expectedType(name: "WorkspaceSDK")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceSDK output to be assigned in the environment
+  """
+  withWorkspaceSDKOutput(
     """The name of the binding"""
     name: String!
 
@@ -4118,6 +4244,16 @@ type GeneratorGroup implements Node {
   """Return a list of individual generators and their details"""
   list: [Generator!]!
 
+  """
+  Load failures tolerated while collecting the generators.
+
+  Empty unless a workspace module could not be loaded during an unscoped 'dagger
+  generate' (no selector), where load failures are tolerated so the modules that
+  do load still generate. Each entry is a human-readable error message. An
+  explicit selector keeps failing hard instead.
+  """
+  loadFailures: [String!]!
+
   """Execute all selected generators"""
   run: GeneratorGroup!
 }
@@ -4500,57 +4636,117 @@ type JSONValue implements Node {
   ): JSONValue!
 }
 
+"""
+A conversation with a large language model (LLM): queue prompts, expose tools,
+and step the model until it completes its turn.
+"""
 type LLM implements Node & Syncer {
-  """create a branch in the LLM's history"""
-  attempt(number: Int!): LLM!
-
   """returns the type of the current state"""
   bindResult(name: String!): Binding
+
+  """
+  The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
+  """
+  contextWindow: Int
 
   """return the LLM's current environment"""
   env: Env!
 
   """
-  Indicates whether there are any queued prompts or tool results to send to the model
+  Fork the conversation, so that otherwise-identical follow-ups evaluate
+  independently instead of deduplicating to a single cached result.
   """
-  hasPrompt: Boolean!
+  fork(
+    """
+    A label distinguishing this fork from its siblings, e.g. "attempt-2" when retrying a flaky evaluation.
+    """
+    label: String!
+  ): LLM!
 
-  """return the llm message history"""
-  history: [String!]!
-
-  """return the raw llm message history as json"""
-  historyJSON: JSON!
+  """
+  Report whether anything is queued to send to the model: an unsent prompt or
+  unevaluated tool results. When true, another step will do work; when false,
+  the turn is complete.
+  """
+  hasPending: Boolean!
 
   """A unique identifier for this LLM."""
   id: ID!
 
-  """return the last llm reply from the history"""
+  """The text of the model's most recent reply."""
   lastReply: String!
 
   """
-  Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
+  Send the queued prompt and step the model against the available tools, until
+  it ends its turn: a reply with no tool calls and nothing left queued.
   """
-  loop: LLM!
+  loop(
+    """
+    Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+    """
+    maxSteps: Int
 
-  """return the model used by the llm"""
+    """
+    Cap the model's output tokens on each step. Defaults to the model's maximum.
+    """
+    maxTokens: Int
+  ): LLM!
+
+  """The full message history, as structured messages."""
+  messages: [LLMMessage!]!
+
+  """
+  The model the conversation is running against, after resolving any configured default.
+  """
   model: String!
 
-  """return the provider used by the llm"""
+  """
+  A portable, self-contained ID for the conversation that node() can resolve in
+  any session. Unlike id, which may return an engine-local runtime handle valid
+  only within the current session, this returns the recipe form suitable for
+  persisting and later restoring the conversation.
+  """
+  portableID: ID!
+
+  """
+  The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
+  """
   provider: String!
 
   """
-  Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+  Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
   """
-  step: ID! @expectedType(name: "LLM")
+  replay: ID! @expectedType(name: "LLM")
 
-  """synchronize LLM state"""
+  """
+  Advance the conversation by a single step: send the queued prompt or tool
+  results to the model, evaluate any tool calls it makes, and queue their
+  results. Use loop to step until the model ends its turn.
+  """
+  step(
+    """
+    Cap the model's output tokens for this step. Defaults to the model's maximum.
+    """
+    maxTokens: Int
+  ): LLM!
+
+  """
+  Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
+  """
   sync: ID! @expectedType(name: "LLM")
 
-  """returns the token usage of the current state"""
+  """
+  The cumulative token usage, summed across every API call in the conversation.
+  """
   tokenUsage: LLMTokenUsage!
 
-  """print documentation for available tools"""
+  """Render documentation for the tools currently exposed to the model."""
   tools: String!
+
+  """
+  The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+  """
+  transcript: String!
 
   """
   Return a new LLM with the specified function no longer exposed as a tool
@@ -4579,22 +4775,67 @@ type LLM implements Node & Syncer {
     service: ID! @expectedType(name: "Service")
   ): LLM!
 
-  """swap out the llm model"""
+  """
+  Change the model for the rest of the conversation. The message history is
+  preserved; the new model takes effect on the next step.
+  """
   withModel(
-    """The model to use"""
+    """The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4"."""
     model: String!
+
+    """
+    The provider serving the model, e.g. "openai". Overrides the provider
+    otherwise inferred from the model name — useful when the name matches no
+    known pattern (e.g. a fine-tune), or matches the wrong one.
+    """
+    provider: String
   ): LLM!
 
-  """append a prompt to the llm context"""
+  """Track an object so the LLM can reference it in subsequent tool calls."""
+  withObject(
+    """
+    Arbitrary string tag for the object, typically in TypeName#Number format
+    """
+    tag: String!
+
+    """The object to track, as a generic ID"""
+    object: ID!
+  ): LLM!
+
+  """Queue a user prompt, to be sent to the model on the next step or loop."""
   withPrompt(
     """The prompt to send"""
     prompt: String!
   ): LLM!
 
-  """append the contents of a file to the llm context"""
+  """Queue a file's contents as a user prompt, like withPrompt."""
   withPromptFile(
     """The file to read the prompt from"""
     file: ID! @expectedType(name: "File")
+  ): LLM!
+
+  """
+  Append an assistant response to the message history without calling the model,
+  e.g. to reconstruct a conversation from another source.
+  """
+  withResponse(
+    """The response content"""
+    content: [LLMContentBlockInput!]!
+
+    """Uncached input tokens sent"""
+    inputTokens: Int = 0
+
+    """Tokens received from the model, including text and tool calls"""
+    outputTokens: Int = 0
+
+    """Cached input tokens read"""
+    cachedTokenReads: Int = 0
+
+    """Cached input tokens written"""
+    cachedTokenWrites: Int = 0
+
+    """Total tokens consumed by this response"""
+    totalTokens: Int = 0
   ): LLM!
 
   """
@@ -4602,34 +4843,155 @@ type LLM implements Node & Syncer {
   """
   withStaticTools: LLM!
 
-  """Add a system prompt to the LLM's environment"""
+  """
+  Add a system prompt, instructing the model across the whole conversation.
+  """
   withSystemPrompt(
     """The system prompt to send"""
     prompt: String!
   ): LLM!
 
+  """Append the result of a tool call to the message history."""
+  withToolResult(
+    """The ID of the tool call this result responds to"""
+    callId: String!
+
+    """The content returned by the tool"""
+    content: String!
+
+    """Whether the tool call resulted in an error"""
+    errored: Boolean!
+  ): LLM!
+
   """Disable the default system prompt"""
   withoutDefaultSystemPrompt: LLM!
 
-  """Clear the message history, leaving only the system prompts"""
+  """Clear the message history, keeping only the system prompts."""
   withoutMessageHistory: LLM!
 
-  """Clear the system prompts, leaving only the default system prompt"""
+  """
+  Clear the user-added system prompts, keeping only the default system prompt.
+  """
   withoutSystemPrompts: LLM!
 }
 
+"""A single piece of content within an LLM message."""
+type LLMContentBlock implements Node {
+  """The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind)."""
+  arguments: JSON!
+
+  """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
+  callId: String!
+
+  """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
+  errored: Boolean!
+
+  """A unique identifier for this LLMContentBlock."""
+  id: ID!
+
+  """
+  The kind of content block, which determines the other populated fields.
+  """
+  kind: LLMContentBlockKind!
+
+  """
+  Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+  """
+  signature: String!
+
+  """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
+  text: String!
+
+  """The name of the tool called (for TOOL_CALL kind)."""
+  toolName: String!
+}
+
+"""A content block within an LLM message."""
+input LLMContentBlockInput {
+  """The kind of content block."""
+  kind: LLMContentBlockKind!
+
+  """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
+  text: String = ""
+
+  """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
+  callId: String = ""
+
+  """The name of the tool to call (for TOOL_CALL kind)."""
+  toolName: String = ""
+
+  """The arguments to pass to the tool (for TOOL_CALL kind)."""
+  arguments: JSON
+
+  """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
+  errored: Boolean = false
+
+  """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
+  signature: String = ""
+}
+
+"""The kind of content in a message block."""
+enum LLMContentBlockKind {
+  """Plain text content."""
+  TEXT
+
+  """Model thinking/reasoning content (e.g. Anthropic extended thinking)."""
+  THINKING
+
+  """A tool/function call from the model."""
+  TOOL_CALL
+
+  """A tool/function result."""
+  TOOL_RESULT
+}
+
+"""A single message in an LLM conversation."""
+type LLMMessage implements Node {
+  """The message's content blocks, in the order the model produced them."""
+  content: [LLMContentBlock!]!
+
+  """A unique identifier for this LLMMessage."""
+  id: ID!
+
+  """The role that produced this message."""
+  role: LLMMessageRole!
+
+  """
+  Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+  """
+  tokenUsage: LLMTokenUsage!
+}
+
+"""The role that generated a message."""
+enum LLMMessageRole {
+  """A user prompt or tool response."""
+  USER
+
+  """A reply from the model."""
+  ASSISTANT
+
+  """A system prompt."""
+  SYSTEM
+}
+
+"""A count of tokens consumed by LLM API calls."""
 type LLMTokenUsage implements Node {
+  """Input tokens served from the provider's prompt cache."""
   cachedTokenReads: Int!
 
+  """Input tokens written to the provider's prompt cache."""
   cachedTokenWrites: Int!
 
   """A unique identifier for this LLMTokenUsage."""
   id: ID!
 
+  """Uncached input tokens sent to the model."""
   inputTokens: Int!
 
+  """Tokens received from the model, including text and tool calls."""
   outputTokens: Int!
 
+  """Total tokens consumed, as reported by the provider."""
   totalTokens: Int!
 }
 
@@ -4809,6 +5171,17 @@ type ModuleSource implements Node & Syncer {
 
   """The blueprint referenced by the module source."""
   blueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
+
+  """
+  The client-facing introspection schema JSON file for this module source.
+
+  This is the schema consumed by client codegen: unlike introspectionSchemaJSON
+  (the module-facing schema), it hides no core types and installs this module
+  (reached via dag.<moduleName>) so a generated client can bind it. The module's
+  dependencies are excluded: a client is generated for a single module plus
+  core, not its dependency graph.
+  """
+  clientSchemaIntrospectionJSON: File!
 
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
@@ -5398,13 +5771,19 @@ type Query implements Node {
   """Initialize a JSON value"""
   json: JSONValue!
 
-  """Initialize a Large Language Model (LLM)"""
+  """Initialize a new LLM conversation."""
   llm(
-    """Model to use"""
+    """
+    The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
+    """
     model: String
 
-    """Cap the number of API calls for this LLM"""
-    maxAPICalls: Int
+    """
+    The provider serving the model, e.g. "openai". Overrides the provider
+    otherwise inferred from the model name — useful when the name matches no
+    known pattern (e.g. a fine-tune), or matches the wrong one.
+    """
+    provider: String
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
   """Create a new module."""
@@ -5491,6 +5870,37 @@ type Query implements Node {
     """The column number within the line."""
     column: Int!
   ): SourceMap!
+
+  """Constructs an SSHFS volume."""
+  sshfsVolume(
+    """SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path."""
+    endpoint: String!
+
+    """Private key secret used to authenticate to the remote host."""
+    privateKey: ID! @expectedType(name: "Secret")
+
+    """
+    known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+    """
+    knownHosts: ID @expectedType(name: "Secret")
+
+    """
+    Optional cache equivalence key. If set, volumes with the same cacheKey may
+    be considered equivalent for cache lookups, still subject to their resource
+    dependencies.
+    """
+    cacheKey: String
+
+    """
+    Disable SSH host key verification. This is insecure and must be explicitly opted into.
+    """
+    insecureSkipHostKeyCheck: Boolean = false
+
+    """
+    Service to use as the SSHFS network endpoint while verifying the original host key.
+    """
+    experimentalServiceHost: ID @expectedType(name: "Service")
+  ): Volume!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -6085,6 +6495,12 @@ A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
 
+"""A filesystem volume that can be mounted into containers."""
+type Volume implements Node {
+  """A unique identifier for this Volume."""
+  id: ID!
+}
+
 """
 A Dagger workspace detected from the current working directory or constructed from a Directory.
 """
@@ -6094,11 +6510,8 @@ type Workspace implements Node {
   """
   address: String!
 
-  """Return the changes from another workspace to this workspace."""
-  changes(
-    """Workspace to compare from."""
-    other: ID! @expectedType(name: "Workspace")
-  ): Changeset!
+  """Return this workspace's pending overlay changes."""
+  changes: Changeset!
 
   """Return all checks from modules loaded in the workspace."""
   checks(
@@ -6120,35 +6533,6 @@ type Workspace implements Node {
   ): CheckGroup!
 
   """
-  Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
-  """
-  clientGenerate: Changeset!
-
-  """
-  Plan the workspace changes for initializing a generated API client: generated
-  client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in
-  dagger.toml. Returns the resulting Changeset for the caller to preview and
-  apply.
-  """
-  clientInit(
-    """Workspace-relative output directory for the generated client."""
-    path: String!
-
-    """Workspace SDK name or module entry name to use."""
-    sdk: String!
-
-    """
-    Workspace-relative path or canonical ref for the module the client binds to.
-    """
-    module: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    args: JSON
-  ): Changeset!
-
-  """
   Selected native workspace config file relative to the workspace root, if any.
   """
   configFile: String!
@@ -6165,20 +6549,6 @@ type Workspace implements Node {
   configRead(
     """Dotted key path (e.g. modules.greeter.source). Empty for full config."""
     key: String = ""
-  ): String!
-
-  """Write a configuration value to dagger.toml."""
-  configWrite(
-    """Dotted key path (e.g. modules.greeter.source)."""
-    key: String!
-
-    """
-    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-    """
-    value: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
   ): String!
 
   """
@@ -6217,26 +6587,11 @@ type Workspace implements Node {
     gitignore: Boolean = false
   ): Directory!
 
-  """Create a named workspace environment if it does not already exist."""
-  envCreate(
-    """Environment name."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
   """List named environments defined in the workspace configuration."""
   envList: [String!]!
 
-  """Remove a named workspace environment."""
-  envRemove(
-    """Environment name."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
+  """Write this workspace's pending changes to its local Git workspace."""
+  export: Void!
 
   """
   Returns a File from the workspace.
@@ -6283,39 +6638,18 @@ type Workspace implements Node {
   """
   git: WorkspaceGit!
 
+  """
+  Returns a list of files and directories that match the given pattern.
+
+  Patterns match paths relative to the workspace root.
+  """
+  glob(
+    """Pattern to match (e.g., "*.md")."""
+    pattern: String!
+  ): [String!]!
+
   """A unique identifier for this Workspace."""
   id: ID!
-
-  """Initialize workspace config, creating dagger.toml."""
-  init(
-    """
-    Create the workspace config directory at the workspace cwd instead of using the default write target.
-    """
-    here: Boolean = false
-  ): String!
-
-  """Install a module into the workspace, writing dagger.toml to the host."""
-  install(
-    """Module reference to install."""
-    ref: String!
-
-    """Override name for the installed module entry."""
-    name: String = ""
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    """
-    Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that
-    dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
-    """
-    asSdk: Boolean = false
-
-    """
-    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
-    """
-    asSdkName: String = ""
-  ): String!
 
   """
   Plan the explicit migration needed for the current workspace.
@@ -6324,44 +6658,82 @@ type Workspace implements Node {
   """
   migrate: WorkspaceMigration!
 
-  """
-  Plan the workspace changes for initializing a new module: dagger-module.toml +
-  SDK codegen output at `path`, the authoring entry under
-  [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>].
-  The SDK must already be installed as an SDK. Returns the resulting Changeset
-  for the caller to preview and apply.
-  """
-  moduleInit(
-    """Name of the new module."""
+  """Return a module defined in the workspace configuration."""
+  module(
+    """Module name to inspect."""
     name: String!
+  ): WorkspaceModule!
 
-    """Workspace SDK name or module entry name to use."""
-    sdk: String = ""
+  """
+  Load a module source from a path within the workspace.
 
+  Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths
+  (e.g., "/foo") resolve from the workspace root.
+
+  Fails if the path does not point to an initialized module.
+  """
+  moduleSource(
     """
-    Workspace-relative path for the new module. Defaults to
-    ".dagger/modules/<name>"; using the default also installs the module in
-    [modules.<name>].
+    Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.
     """
-    path: String = ""
-
-    """Source subpath within the new module."""
-    source: String = ""
-
-    """Additional include patterns for the module."""
-    include: [String!] = []
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    args: JSON
-  ): Changeset!
+    path: String!
+  ): ModuleSource!
 
   """List modules defined in the workspace configuration."""
-  moduleList(
-    """Optional module alias to inspect."""
-    module: String = ""
-  ): [WorkspaceModule!]!
+  modules: [WorkspaceModule!]!
+
+  """An installed SDK, by name."""
+  sdk(
+    """SDK name to look up."""
+    name: String!
+  ): WorkspaceSDK!
+
+  """Installed SDKs."""
+  sdks: [WorkspaceSDK!]!
+
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+
+  Runs ripgrep on the client host, falling back to grep if unavailable.
+  """
+  search(
+    """Directory or file paths to search"""
+    paths: [String!] = []
+
+    """Glob patterns to match (e.g., "*.md")"""
+    globs: [String!] = []
+
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    insensitive: Boolean = false
+
+    """Honor .gitignore, .ignore, and .rgignore files."""
+    skipIgnored: Boolean = false
+
+    """Skip hidden files (files starting with .)."""
+    skipHidden: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+  ): [SearchResult!]!
 
   """Return all services from modules loaded in the workspace."""
   services(
@@ -6370,29 +6742,95 @@ type Workspace implements Node {
   ): UpGroup!
 
   """
-  Uninstall a module from the workspace, writing dagger.toml to the host.
-  """
-  uninstall(
-    """Name of the installed module entry to remove."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
-  """
-  Refresh workspace-managed state and return the resulting changeset.
-
-  Currently this refreshes existing lockfile entries only.
-  """
-  update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
-
-  """
   Return this workspace with a changeset applied, without mutating the source.
   """
   withChanges(
     """Changes to apply."""
     changes: ID! @expectedType(name: "Changeset")
+  ): Workspace!
+
+  """Return this workspace with a named config environment created."""
+  withConfigEnv(
+    """Environment name."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a configuration value written."""
+  withConfigValue(
+    """Dotted key path."""
+    key: String!
+
+    """
+    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    """
+    value: String!
+
+    """
+    List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+    """
+    values: [String!]
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a generated API client initialized."""
+  withInitClient(
+    """Workspace-relative output directory for the generated client."""
+    path: String!
+
+    """Workspace SDK name or module entry name to use."""
+    sdk: String!
+
+    """
+    Workspace-relative path or canonical ref for the module the client binds to.
+    """
+    module: String!
+
+    """SDK-specific init arguments."""
+    args: JSON
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a new module initialized."""
+  withInitModule(
+    """Name of the new module."""
+    name: String!
+
+    """Workspace SDK name or module entry name to use."""
+    sdk: String!
+
+    """Workspace-relative path for the new module."""
+    path: String = ""
+
+    """Source subpath within the new module."""
+    source: String = ""
+
+    """Additional include patterns for the module."""
+    include: [String!] = []
+
+    """SDK-specific init arguments."""
+    args: JSON
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a module installed in its config."""
+  withModule(
+    """Module reference to install."""
+    ref: String!
+
+    """Override name for the installed module entry."""
+    name: String = ""
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): Workspace!
 
   """
@@ -6420,6 +6858,66 @@ type Workspace implements Node {
 
     """Permissions of the new file."""
     permissions: Int = 420
+  ): Workspace!
+
+  """Return this workspace with an SDK installed in its config."""
+  withSDK(
+    """SDK module reference to install."""
+    ref: String!
+
+    """Override name for the installed SDK entry."""
+    name: String = ""
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+
+    """
+    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    """
+    asSdkName: String = ""
+  ): Workspace!
+
+  """Return this workspace with refreshed lockfile state."""
+  withUpdatedLock: Workspace!
+
+  """Return this workspace with a named config environment removed."""
+  withoutConfigEnv(
+    """Environment name."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """
+  Return this workspace with a configuration value removed.
+
+  Errors when the key is not currently set.
+  """
+  withoutConfigValue(
+    """Dotted key path (e.g. modules.greeter.settings.greeting)."""
+    key: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a module removed from its config."""
+  withoutModule(
+    """Name of the installed module entry to remove."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with an SDK removed from its config."""
+  withoutSDK(
+    """Name of the installed SDK entry to remove."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): Workspace!
 }
 
@@ -6495,6 +6993,9 @@ type WorkspaceModuleSetting implements Node {
   """A unique identifier for this WorkspaceModuleSetting."""
   id: ID!
 
+  """Whether the setting accepts a list of values."""
+  isList: Boolean!
+
   """The setting key."""
   key: String!
 
@@ -6502,5 +7003,25 @@ type WorkspaceModuleSetting implements Node {
   The configured value after applying the selected workspace environment, or empty when unset.
   """
   value: String!
+}
+
+"""
+An installed SDK: a module marked for scaffolding other modules and clients.
+"""
+type WorkspaceSDK implements Node {
+  """Clients generated with this SDK."""
+  clients: [WorkspaceModule!]!
+
+  """A unique identifier for this WorkspaceSDK."""
+  id: ID!
+
+  """Modules authored with this SDK."""
+  modules: [WorkspaceModule!]!
+
+  """The user-facing SDK name."""
+  name: String!
+
+  """The module reference this SDK was installed from."""
+  ref: String!
 }
 

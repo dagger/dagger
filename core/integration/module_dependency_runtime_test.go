@@ -104,6 +104,32 @@ func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, fixture string) *dag
 	return moduleFixture(t, c, fixture)
 }
 
+// TestRuntimeDependencyDoesNotInheritWorkspace covers the A -> B runtime
+// boundary: A receives the caller's contextual workspace, but dependency module
+// B only receives it when A passes it explicitly.
+func (ModuleSuite) TestRuntimeDependencyDoesNotInheritWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen := moduleFixture(t, c, "go/runtime-workspace-isolation").
+		WithNewFile("marker.txt", "workspace marker")
+
+	// A can still share its workspace with B when it passes the value explicitly.
+	t.Run("explicit workspace pass succeeds", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerQueryAt(".", `{explicitWorkspaceArg}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"explicitWorkspaceArg":"workspace marker"}`, out)
+	})
+
+	// B must not receive A's contextual workspace through an omitted argument.
+	t.Run("workspace argument is not auto-injected into dependency", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.With(daggerQueryAt(".", `{implicitWorkspaceArg}`)).Stdout(ctx)
+		requireErrOut(t, err, "workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly")
+	})
+
+	// The currentWorkspace vector is closed at the schema level: currentWorkspace
+	// is no longer exposed to module SDKs at all (#13659, covered by
+	// TestCurrentWorkspaceError), so a dependency cannot reach it to inherit one.
+}
+
 func (ModuleSuite) TestUseLocalMulti(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk     string

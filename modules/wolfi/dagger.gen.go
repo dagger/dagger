@@ -237,6 +237,21 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A Dagger Module to integrate with Wolfi Linux\n\nWolfi is a container-native Linux distribution with an emphasis on security.\nhttps://wolfi.dev\n").
+			WithObject(
+				dag.TypeDef().WithObject("Wolfi", dagger.TypeDefWithObjectOpts{Description: "A Wolfi Linux configuration", SourceMap: dag.SourceMap("main.go", 10, 6)}).
+					WithFunction(
+						dag.Function("Container",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Build a Wolfi Linux container").
+							WithSourceMap(dag.SourceMap("main.go", 13, 1)).
+							WithArg("packages", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "APK packages to install", SourceMap: dag.SourceMap("main.go", 16, 2)}).
+							WithArg("arch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Hardware architecture to target", SourceMap: dag.SourceMap("main.go", 19, 2)}).
+							WithArg("extraRepositories", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra repositories to add to the package resolver", SourceMap: dag.SourceMap("main.go", 22, 2)}).
+							WithArg("extraKeyURLs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra keys needed to authenticate the extra repositories", SourceMap: dag.SourceMap("main.go", 25, 2)}).
+							WithArg("overlays", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Container")).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Overlay images to merge on top of the base.\nSee https://twitter.com/ibuildthecloud/status/1721306361999597884", SourceMap: dag.SourceMap("main.go", 29, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

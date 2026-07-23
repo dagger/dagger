@@ -147,6 +147,16 @@ type ClientMetadata struct {
 	// this client. When unset, no environment overlay is applied.
 	WorkspaceEnv *string `json:"workspace_env,omitempty"`
 
+	// WorkspaceModuleScope hints at the workspace module this client's first
+	// schema introspection targets: the leading CLI command token, unresolved
+	// (it may name a module, an entrypoint-proxied function, or a typo). The
+	// engine may use it to defer loading unrelated workspace modules for the
+	// first request whose only full-schema demand is currentTypeDefs. An
+	// unrecognized token falls back to the entrypoint module when one is
+	// configured, else to loading everything; deferred modules load on demand
+	// from later requests.
+	WorkspaceModuleScope string `json:"workspace_module_scope,omitempty"`
+
 	// UseRecipeIDsByDefault asks id() to return recipe-form IDs unless the
 	// request explicitly passes a recipe argument. This is engine-internal
 	// nested-client state and must not be forwarded through client headers.
@@ -237,17 +247,19 @@ func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules 
 }
 
 type LocalImportOpts struct {
-	Path               string   `json:"path"`
-	UseGitIgnore       bool     `json:"use_gitignore"`
-	IncludePatterns    []string `json:"include_patterns"`
-	ExcludePatterns    []string `json:"exclude_patterns"`
-	FollowPaths        []string `json:"follow_paths"`
-	ReadSingleFileOnly bool     `json:"read_single_file_only"`
-	MaxFileSize        int64    `json:"max_file_size"`
-	StatPathOnly       bool     `json:"stat_path_only"`
-	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
-	StatResolvePath    bool     `json:"stat_resolve_path"`
-	GetAbsPathOnly     bool     `json:"get_abs_path_only"`
+	Path               string           `json:"path"`
+	UseGitIgnore       bool             `json:"use_gitignore"`
+	IncludePatterns    []string         `json:"include_patterns"`
+	ExcludePatterns    []string         `json:"exclude_patterns"`
+	FollowPaths        []string         `json:"follow_paths"`
+	ReadSingleFileOnly bool             `json:"read_single_file_only"`
+	MaxFileSize        int64            `json:"max_file_size"`
+	StatPathOnly       bool             `json:"stat_path_only"`
+	StatReturnAbsPath  bool             `json:"stat_return_abs_path"`
+	StatResolvePath    bool             `json:"stat_resolve_path"`
+	GetAbsPathOnly     bool             `json:"get_abs_path_only"`
+	GlobPattern        string           `json:"glob_pattern"`
+	SearchOpts         *LocalSearchOpts `json:"search_opts,omitempty"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
@@ -309,6 +321,37 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 		return nil, err
 	}
 	return opts, nil
+}
+
+// LocalSearchResult is a search match returned from a client-side search.
+type LocalSearchResult struct {
+	FilePath       string                `json:"file_path"`
+	LineNumber     int                   `json:"line_number"`
+	AbsoluteOffset int                   `json:"absolute_offset"`
+	MatchedLines   string                `json:"matched_lines"`
+	Submatches     []LocalSearchSubmatch `json:"submatches,omitempty"`
+}
+
+// LocalSearchSubmatch is a sub-match within a search result.
+type LocalSearchSubmatch struct {
+	Text  string `json:"text"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// LocalSearchOpts configures a client-side search (ripgrep/grep).
+type LocalSearchOpts struct {
+	Pattern     string   `json:"pattern"`
+	Literal     bool     `json:"literal,omitempty"`
+	Multiline   bool     `json:"multiline,omitempty"`
+	Dotall      bool     `json:"dotall,omitempty"`
+	Insensitive bool     `json:"insensitive,omitempty"`
+	SkipIgnored bool     `json:"skip_ignored,omitempty"`
+	SkipHidden  bool     `json:"skip_hidden,omitempty"`
+	FilesOnly   bool     `json:"files_only,omitempty"`
+	Limit       *int     `json:"limit,omitempty"`
+	Paths       []string `json:"paths,omitempty"`
+	Globs       []string `json:"globs,omitempty"`
 }
 
 type LocalExportOpts struct {
