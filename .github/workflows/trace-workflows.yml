@@ -27,7 +27,7 @@ jobs:
     if: ${{ github.repository == 'dagger/dagger' }}
     steps:
       - name: Export Workflow Trace
-        uses: inception-health/otel-export-trace-action@latest
+        uses: inception-health/otel-export-trace-action@7eabc7de1f4753f0b45051b44bb0ba46d05a21ef # v1.8.0
         with:
           otlpEndpoint: grpc://api.honeycomb.io:443/
           otlpHeaders: ${{ secrets.HONEYCOMB_GITHUB_ACTIONS_WORKFLOWS }}
