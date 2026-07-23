@@ -267,6 +267,7 @@ region = "us-west-2"
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" is not defined`)
+		requireErrOut(t, err, `create it by writing a setting`)
 	})
 
 	t.Run("unknown setting fails clearly and does not expose non-setting metadata", func(ctx context.Context, t *testctx.T) {
@@ -337,6 +338,40 @@ region = "us-west-2"
 		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
+	})
+
+	t.Run("env-scoped writes create a missing env with a notice", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=staging", "settings", "aws", "region", "us-east-1")
+		require.NoError(t, err)
+		require.Contains(t, string(out), `Created env "staging"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "us-west-2", cfg.Modules["aws"].Settings["region"])
+		require.Equal(t, "us-east-1", cfg.Env["staging"].Modules["aws"].Settings["region"])
+
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=staging", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
+
+		// Writing again into the now-existing env doesn't repeat the notice.
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=staging", "settings", "aws", "region", "eu-west-3")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "Created env")
+
+		// Typed writes still validate the setting exists, even for a new env,
+		// and a rejected write doesn't create the env as a side effect.
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=another", "settings", "aws", "nope", "x")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "aws" has no setting "nope"`)
+		cfg = readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Env, "another")
 	})
 
 	t.Run("typed writes use the same coercion rules as config writes", func(ctx context.Context, t *testctx.T) {

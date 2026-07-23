@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dagger/testctx"
@@ -124,10 +126,34 @@ region = "us-west-2"
 		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" is not defined`)
+		requireErrOut(t, err, `create it by writing a setting`)
 
 		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" is not defined`)
+	})
+
+	t.Run("missing env read error names the defined envs", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
+source = "github.com/dagger/aws"
+
+[env.ci]
+
+[env.prod]
+`)
+
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=prdo", "workspace", "config")
+		require.Error(t, err)
+		requireErrOut(t, err, `workspace env "prdo" is not defined (defined envs: ci, prod)`)
+	})
+
+	t.Run("selecting an env without a dagger.toml fails instead of printing nothing", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config")
+		require.Error(t, err)
+		requireErrOut(t, err, `workspace env "ci" requires dagger.toml`)
 	})
 }
 
@@ -200,20 +226,50 @@ source = "github.com/dagger/aws"
 		}
 	})
 
-	t.Run("env-scoped writes reject missing envs and unknown module aliases", func(ctx context.Context, t *testctx.T) {
+	t.Run("env-scoped writes create missing envs with a notice", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
+source = "github.com/dagger/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+`)
+
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=staging", "workspace", "config", "modules.aws.settings.region", "us-east-1")
+		require.NoError(t, err)
+		require.Contains(t, string(out), `Created env "staging"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "us-west-2", cfg.Modules["aws"].Settings["region"])
+		require.Equal(t, "us-east-1", cfg.Env["staging"].Modules["aws"].Settings["region"])
+
+		// A write into the now-existing env doesn't repeat the notice.
+		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=staging", "workspace", "config", "modules.aws.settings.region", "eu-west-3")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "Created env")
+	})
+
+	t.Run("env-scoped writes reject unknown module aliases", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
 source = "github.com/dagger/aws"
 
 [env.ci]
 `)
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=missing", "workspace", "config", "modules.aws.settings.region", "us-east-1")
-		require.Error(t, err)
-		requireErrOut(t, err, `workspace env "missing" is not defined`)
-
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.missing.settings.region", "us-east-1")
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.missing.settings.region", "us-east-1")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" cannot set settings for unknown module "missing"`)
+	})
+
+	t.Run("env-scoped unsets still require the env to exist", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
+source = "github.com/dagger/aws"
+
+[env.ci]
+`)
+
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=missing", "workspace", "config", "--unset", "modules.aws.settings.region")
+		require.Error(t, err)
+		requireErrOut(t, err, `workspace env "missing" is not defined`)
 	})
 }
 
@@ -246,11 +302,43 @@ region = "us-east-1"
 source = "github.com/dagger/aws"
 `)
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "workspace", "config", "env.ci.modules.aws.settings.region", "us-east-1")
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "workspace", "config", "env.ci.modules.aws.settings.region", "us-east-1")
 		require.NoError(t, err)
+		require.Contains(t, string(out), `Created env "ci"`)
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Equal(t, "us-east-1", cfg.Env["ci"].Modules["aws"].Settings["region"])
+
+		out, err = hostDaggerEnvExec(ctx, t, workdir, "workspace", "config", "env.ci.modules.aws.settings.format", "json")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "Created env")
+	})
+
+	t.Run("--here creation notice is detected against the here-targeted config", func(ctx context.Context, t *testctx.T) {
+		// The workspace root already defines env.staging, but the subdirectory
+		// config the --here write targets does not. The Created-env notice must
+		// be detected against the --here target, not the selected (root) config,
+		// so it still prints when --here creates the env in the subdir.
+		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
+source = "github.com/dagger/aws"
+
+[env.staging]
+`)
+		subdir := filepath.Join(workdir, "sub")
+		require.NoError(t, os.MkdirAll(subdir, 0o755))
+
+		out, err := hostDaggerEnvExec(ctx, t, subdir, "workspace", "config", "env.staging.modules.aws.settings.region", "us-east-1", "--here")
+		require.NoError(t, err)
+		require.Contains(t, string(out), `Created env "staging"`)
+
+		cfg := readInstalledWorkspaceConfig(t, subdir)
+		require.Equal(t, "us-east-1", cfg.Env["staging"].Modules["aws"].Settings["region"])
+
+		// A second --here write into the now-existing subdir env doesn't repeat
+		// the notice.
+		out, err = hostDaggerEnvExec(ctx, t, subdir, "workspace", "config", "env.staging.modules.aws.settings.format", "json", "--here")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "Created env")
 	})
 
 	t.Run("explicit env-prefixed keys remain raw even when a current env is selected", func(ctx context.Context, t *testctx.T) {

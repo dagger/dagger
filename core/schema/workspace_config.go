@@ -178,6 +178,9 @@ func (s *workspaceSchema) configRead(
 	args configReadArgs,
 ) (dagql.String, error) {
 	if parent.ConfigFile == "" {
+		if envName, ok := selectedWorkspaceEnv(ctx); ok {
+			return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
+		}
 		result, err := workspace.ReadConfigValue(nil, args.Key)
 		if err != nil {
 			return "", err
@@ -248,12 +251,17 @@ func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string) ([]byt
 	return workspace.SerializeConfig(applied), nil
 }
 
-func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, error) {
+// envScopedConfigKey maps a modules.<name>.settings.* key into the selected
+// env's overlay storage. Under workspaceConfigInitIfMissing a missing env is
+// created by the write (writing a setting is the gesture that creates an env);
+// under workspaceConfigMustExist a missing env is rejected, so unsets keep
+// requiring the env to exist.
+func envScopedConfigKey(cfg *workspace.Config, envName, key string, policy workspaceConfigMutationPolicy) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
 	}
-	if _, ok := cfg.Env[envName]; !ok {
-		return "", fmt.Errorf("workspace env %q is not defined", envName)
+	if _, ok := cfg.Env[envName]; !ok && policy == workspaceConfigMustExist {
+		return "", workspace.UndefinedEnvError(cfg, envName)
 	}
 
 	parts, err := workspace.SplitConfigPath(key)

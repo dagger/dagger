@@ -884,7 +884,16 @@ func TestApplyEnvOverlay(t *testing.T) {
 		t.Parallel()
 
 		_, err := ApplyEnvOverlay(&Config{}, "ci")
-		require.EqualError(t, err, `workspace env "ci" is not defined`)
+		require.EqualError(t, err, `workspace env "ci" is not defined (no envs defined); create it by writing a setting: dagger settings --env="ci" <module> <setting> <value>`)
+	})
+
+	t.Run("missing env error lists defined envs", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := ApplyEnvOverlay(&Config{
+			Env: map[string]EnvOverlay{"ci": {}, "prod": {}},
+		}, "prdo")
+		require.ErrorContains(t, err, `workspace env "prdo" is not defined (defined envs: ci, prod)`)
 	})
 
 	t.Run("rejects unknown module alias", func(t *testing.T) {

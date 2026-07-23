@@ -141,7 +141,7 @@ func (s *workspaceSchema) withConfigValue(
 
 	writeKey := args.Key
 	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
-		writeKey, err = envScopedConfigKey(staged.Config, envName, args.Key)
+		writeKey, err = envScopedConfigKey(staged.Config, envName, args.Key, workspaceConfigInitIfMissing)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
@@ -178,7 +178,7 @@ func (s *workspaceSchema) withoutConfigValue(
 
 	unsetKey := args.Key
 	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
-		unsetKey, err = envScopedConfigKey(staged.Config, envName, args.Key)
+		unsetKey, err = envScopedConfigKey(staged.Config, envName, args.Key, workspaceConfigMustExist)
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
