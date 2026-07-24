@@ -2467,69 +2467,6 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	return convert(response), nil
 }
 
-// ContainerLayerOpts contains options for Container.Layer
-type ContainerLayerOpts struct {
-	// Force each layer of the image to use the specified compression algorithm.
-	//
-	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-	ForcedCompression ImageLayerCompression
-	// Media types to use for image layers. Defaults to OCI.
-	//
-	// Default: OCIMediaTypes
-	MediaTypes ImageMediaTypes
-}
-
-// Returns the image layer or configuration blob with the given digest as a File.
-func (r *Container) Layer(id string, opts ...ContainerLayerOpts) *File {
-	q := r.query.Select("layer")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `forcedCompression` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
-			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
-		}
-		// `mediaTypes` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
-			q = q.Arg("mediaTypes", opts[i].MediaTypes)
-		}
-	}
-	q = q.Arg("id", id)
-
-	return &File{
-		query: q,
-	}
-}
-
-// ContainerManifestOpts contains options for Container.Manifest
-type ContainerManifestOpts struct {
-	// Force each layer of the image to use the specified compression algorithm.
-	//
-	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
-	ForcedCompression ImageLayerCompression
-	// Media types to use for image layers. Defaults to OCI.
-	//
-	// Default: OCIMediaTypes
-	MediaTypes ImageMediaTypes
-}
-
-// Computes and returns the manifest for this container as a File.
-func (r *Container) Manifest(opts ...ContainerManifestOpts) *File {
-	q := r.query.Select("manifest")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `forcedCompression` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
-			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
-		}
-		// `mediaTypes` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
-			q = q.Arg("mediaTypes", opts[i].MediaTypes)
-		}
-	}
-
-	return &File{
-		query: q,
-	}
-}
-
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	q := r.query.Select("mounts")
@@ -4039,23 +3976,11 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
-// CurrentModuleAsSDKOpts contains options for CurrentModule.AsSDK
-type CurrentModuleAsSDKOpts struct {
-	// The workspace to resolve SDK-role data against. Defaults to the current workspace.
-	Workspace *Workspace
-}
-
-// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
+// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
 //
 // Errors if the current module is not installed as an SDK in this workspace.
-func (r *CurrentModule) AsSDK(opts ...CurrentModuleAsSDKOpts) *CurrentModuleAsSDK {
+func (r *CurrentModule) AsSDK() *CurrentModuleAsSDK {
 	q := r.query.Select("asSDK")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
-		}
-	}
 
 	return &CurrentModuleAsSDK{
 		query: q,
