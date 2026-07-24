@@ -1,0 +1,7 @@
+kind: Deprecated
+body: |
+  The `--mod` and `--no-mod` flags are deprecated in favor of `--load-module` and `--no-load-module`. The old names keep working as hidden aliases so existing scripts and shebangs (e.g. `dagger shell --no-mod`) do not break, but they now print a notice pointing at the new name.
+time: 2026-07-23T01:49:00Z
+custom:
+  Author: vito
+  PR: 13721
