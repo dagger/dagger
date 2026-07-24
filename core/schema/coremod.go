@@ -175,7 +175,6 @@ func (m *CoreMod) WithView(view call.View) *CoreMod {
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.InstallOpts) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{},
-		&environmentSchema{}, // install environment middleware first
 		&directorySchema{},
 		&fileSchema{},
 		&gitSchema{},
@@ -201,6 +200,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&checksSchema{},
 		&generatorsSchema{},
 		&upSchema{},
+		&agentsSchema{},
 		&workspaceSchema{},
 	} {
 		schema.Install(dag)

@@ -245,6 +245,44 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(
 	requireNoEntry(t, afterBaseEntries, "new.txt")
 }
 
+// TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource asserts the
+// functional-remove contract mirrors Directory.withoutFile /
+// Directory.withoutDirectory: removing from a Workspace returns an overlay
+// Workspace whose reads reflect the removal, while the base source remains
+// readable and unchanged.
+func (WorkspaceSuite) TestOverlayWorkspaceFunctionalRemovesDoNotMutateBaseSource(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ws := c.Directory().
+		WithNewFile("app/keep.txt", "keep").
+		WithNewFile("app/drop.txt", "drop").
+		WithNewFile("app/sub/inner.txt", "inner").
+		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
+
+	withoutFile := ws.WithoutFile("drop.txt")
+	fileEntries, err := withoutFile.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, fileEntries, "keep.txt")
+	requireNoEntry(t, fileEntries, "drop.txt")
+
+	removed, err := withoutFile.Changes().RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Contains(t, removed, "app/drop.txt")
+
+	withoutDir := ws.WithoutDirectory("sub")
+	dirEntries, err := withoutDir.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, dirEntries, "keep.txt")
+	requireNoEntry(t, dirEntries, "sub")
+
+	// The base source is untouched by either removal.
+	baseEntries, err := ws.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, baseEntries, "keep.txt")
+	requireEntry(t, baseEntries, "drop.txt")
+	requireEntry(t, baseEntries, "sub")
+}
+
 // TestOverlayWorkspaceFunctionalWritesRoundTripFromID asserts that each
 // functional write returns a real Workspace ID. Loading the ID should show the
 // file introduced by that one write.

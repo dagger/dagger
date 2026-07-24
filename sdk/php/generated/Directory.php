@@ -470,20 +470,26 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Retrieves this directory with the given Git-compatible patch applied.
      */
-    public function withPatch(string $patch): Directory
+    public function withPatch(string $patch, ?PatchConflict $onConflict = null): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatch');
         $innerQueryBuilder->setArgument('patch', $patch);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Retrieves this directory with the given Git-compatible patch file applied.
      */
-    public function withPatchFile(File $patch): Directory
+    public function withPatchFile(File $patch, ?PatchConflict $onConflict = null): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
         $innerQueryBuilder->setArgument('patch', $patch);
+        if (null !== $onConflict) {
+        $innerQueryBuilder->setArgument('onConflict', $onConflict);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

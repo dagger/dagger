@@ -5,7 +5,87 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/muesli/termenv"
 )
+
+// renderToolArgsSummary renders a compact, styled summary of an LLM tool
+// call's recognized arguments for the span header line, e.g.
+//
+//	Read path/to/file
+//	Grep some pattern
+//	Bash echo hi …
+//
+// Recognized args are rendered according to their argStyle:
+//   - argStylePath:    cyan file path
+//   - argStyleDesc:    faint description, first line only
+//   - argStyleContent: faint italic content, first line only
+//
+// It returns true if it rendered anything, in which case the caller should
+// skip the default first-arg rendering. Unrecognized tools/args return false
+// so the existing fallback rendering is preserved.
+func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bool {
+	fields := toolArgFields(span)
+	if len(fields) == 0 {
+		return false
+	}
+
+	rendered := false
+	for _, f := range fields {
+		style := toolArgStyle(toolName, f.Key)
+		if style == argStyleNone {
+			continue
+		}
+		val := sanitizeSummary(firstLine(f.Value))
+		if strings.TrimSpace(val) == "" {
+			continue
+		}
+		fmt.Fprint(out, " ")
+		switch style {
+		case argStylePath:
+			fmt.Fprint(out, out.String(val).Foreground(termenv.ANSICyan))
+		case argStyleDesc:
+			fmt.Fprint(out, out.String(val).Faint())
+		case argStyleContent:
+			fmt.Fprint(out, out.String(val).Faint().Italic())
+		}
+		rendered = true
+	}
+	return rendered
+}
+
+// firstLine returns the first line of s, appending an ellipsis if the value
+// spanned multiple lines (or was otherwise truncated).
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		trimmed := strings.TrimRight(s[:i], " \t\r")
+		return trimmed + " …"
+	}
+	return s
+}
+
+// sanitizeSummary makes a value safe to render inline on the span header line.
+//
+// The header is laid out (and the sidebar overlay is composited onto it) using
+// ansi.StringWidth, which counts a tab as ZERO columns — but terminals expand
+// tabs to 8-column tab stops. A raw tab in the summary therefore renders wider
+// than the layout believes, shoving everything after it (and the overlaid
+// "Changes" box) out of alignment. Edit tool excerpts are literal source code
+// and routinely start with tab indentation, so this bites the Edit tool in
+// particular. Replace tabs with a single space and drop any other control
+// characters so the rendered width always matches the computed width. (The
+// unified diff below the header already expands tabs; see diffTabWidth.)
+func sanitizeSummary(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t':
+			return ' '
+		case r < 0x20 || r == 0x7f:
+			return -1 // drop other control chars (stray CR, escapes, etc.)
+		default:
+			return r
+		}
+	}, s)
+}
 
 // renderToolArgs renders any additional content for an LLM tool-call row that
 // is best shown below the title line. Currently this is only a unified diff for

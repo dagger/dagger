@@ -1,0 +1,97 @@
+# delegate: let a Dagger coding agent hand a self-contained subtask to a fresh
+# sub-agent and get back only the distilled result.
+#
+# The motivating case (from a real session retro): a noisy, context-heavy loop
+# — "build the CLI, boot the engine, run the agent, poke the TUI, report just
+# the final screen and whether it panicked" — dumps thousands of lines of build
+# and boot output into the parent's context for two useful bits of signal. A
+# sub-agent absorbs all that: it runs the loop in ITS OWN conversation (rolled
+# up under this tool call in the TUI, see the conversation nesting in
+# dagql/dagui/conversation.go) and hands back a single concise report.
+#
+# Modeled on ./modules/tui-qa (the @agent-tools shape). The sub-agent is a fresh
+# root `llm` conversation (Query.llm — inherits the session's default model and
+# auth) bound to the same Workspace as the parent (auto-filled; see
+# core/llm_object_tools.go), so it has the same tools. It runs to completion via
+# `loop` and we surface its `lastReply`.
+#
+# Scope: this is for investigative / QA / analysis legwork that reports back in
+# text. The sub-agent's own workspace edits are NOT merged into yours (the tool
+# returns a String, not a Changeset) — delegate the looking, not the editing.
+"""
+Offload a self-contained subtask to a fresh sub-agent and get back only its
+final report.
+"""
+type Delegate {
+  """
+  Compose the delegate tool onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Delegate a self-contained subtask to a fresh sub-agent and return only its
+  final answer.
+
+  The sub-agent starts a brand-new conversation bound to your workspace (so it
+  has the same tools you do), works the task autonomously to completion, and
+  hands back a single concise result — all of its intermediate tool calls and
+  chatter stay in the sub-agent's own context (rolled up under this call)
+  instead of flooding yours. Reach for it to offload noisy, context-heavy, or
+  well-scoped legwork — e.g. "build and run the agent, drive the TUI, and report
+  just the final screen and whether it panicked" — and keep your own context
+  focused. Note: the sub-agent's own workspace edits are not merged back, so use
+  this for investigation/QA/analysis, not for making edits.
+  """
+  delegate(
+    """
+    The subtask for the sub-agent. Be specific about what to do AND exactly what
+    to report back, since only its final reply returns to you.
+    """
+    task: String!,
+    source: Workspace!,
+    """
+    Cap the sub-agent's steps so a runaway task can't loop forever. The call
+    fails if the cap is hit before the sub-agent finishes.
+    """
+    maxSteps: Int! = 40,
+  ): String! {
+    source
+      .agents
+      .compose(llm)
+      .withWorkspace(source)
+      .withSystemPrompt(subAgentPrompt)
+      .withPrompt(task)
+      .loop(maxSteps: maxSteps)
+      .lastReply
+  }
+
+  # Instructions for the PARENT agent holding this tool.
+  let systemPrompt: String! = """
+    You can hand a self-contained subtask to a fresh sub-agent with the
+    `delegate` tool. The sub-agent runs in its own conversation with the same
+    tools you have and returns only its final report, so its intermediate work
+    never enters your context.
+
+    Delegate when a subtask is noisy (dumps a lot of output), context-heavy, or
+    cleanly scoped — e.g. reproducing a bug end-to-end, exploring an unfamiliar
+    subtree, or running a build/QA loop — and phrase the task so it says both
+    what to do and exactly what to report back. Keep doing the work yourself
+    when it's small, needs your accumulated context, or must edit files (a
+    sub-agent's edits are not merged back to your workspace).
+  """
+
+  # Instructions for the SUB-agent spawned by `delegate`.
+  let subAgentPrompt: String! = """
+    You are a sub-agent handling one self-contained task for another agent.
+    Work autonomously to completion using the available tools — do not ask
+    follow-up questions. When done, reply with a single concise report covering
+    exactly what was asked and nothing more: the outcome, the key evidence
+    (relevant output, not raw dumps), and any errors, panics, or surprises.
+    Your reply is the ONLY thing that returns to the caller, so make it
+    self-contained.
+  """
+}

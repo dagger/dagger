@@ -1,0 +1,12 @@
+name = "wolfi"
+engineVersion = "v0.21.7"
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "alpine"
+  source = "../alpine"
+
+[codegen]
+  automaticGitignore = false

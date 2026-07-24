@@ -985,6 +985,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		})
 		schema.Directives = map[string]*ast.DirectiveDefinition{}
 		sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
+			if d.ViewFilter != nil && !d.ViewFilter.Contains(view) {
+				return
+			}
 			schema.Directives[n] = d.DirectiveDefinition(view)
 		})
 		h := xxh3.New()
@@ -1425,7 +1428,12 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return state.srv.loadNthValue(callCtx, parent, nth, true)
 	}
 
-	inputIDs := directRecipeInputIDs(id)
+	// Structural-only args (e.g. LLM.withTools(object:)) are carried by
+	// reference: not evaluated here, and reconstructed into the frame/selector
+	// as unevaluated recipe IDs. Computed once and threaded through.
+	structural := state.structuralArgNames(id)
+
+	inputIDs := state.directRecipeInputIDs(id, structural)
 	loadedInputs := make(map[string]AnyResult, len(inputIDs))
 	var loadedMu sync.Mutex
 	eg, _ := errgroup.WithContext(state.ctx)
@@ -1459,12 +1467,12 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load %s: instantiate base: %w", idInputDebugString(id), err)
 	}
-	frame, err := state.loadedResultCallFromRecipeID(id, loadedInputs)
+	frame, err := state.loadedResultCallFromRecipeID(id, loadedInputs, structural)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: build result call: %w", idInputDebugString(id), err)
 	}
 	callCtx = ContextWithCall(callCtx, frame)
-	sel, err := selectorFromLoadedCall(callCtx, frame, baseObj)
+	sel, err := selectorFromLoadedCall(callCtx, frame, baseObj, id, structural)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
 	}
@@ -1477,7 +1485,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	return baseObj.Select(callCtx, state.srv, sel)
 }
 
-func directRecipeInputIDs(id *call.ID) []*call.ID {
+func (state *recipeLoadState) directRecipeInputIDs(id *call.ID, structural map[string]bool) []*call.ID {
 	if id == nil || id.IsHandle() {
 		return nil
 	}
@@ -1493,6 +1501,13 @@ func directRecipeInputIDs(id *call.ID) []*call.ID {
 		if arg == nil {
 			continue
 		}
+		if structural[arg.Name()] {
+			// A structural-only argument is carried by reference, not
+			// evaluated: skip gathering the IDs it depends on so loading the
+			// receiver never re-runs the (possibly side-effecting, possibly
+			// now-unreproducible) call that produced it.
+			continue
+		}
 		gatherRecipeLiteralInputIDs(arg.Value(), &inputIDs)
 	}
 	for _, input := range id.ImplicitInputs() {
@@ -1502,6 +1517,46 @@ func directRecipeInputIDs(id *call.ID) []*call.ID {
 		gatherRecipeLiteralInputIDs(input.Value(), &inputIDs)
 	}
 	return inputIDs
+}
+
+// structuralArgNames returns the set of the call's argument names that are
+// marked StructuralOnly in the schema, resolved from the receiver's type
+// without evaluating anything. Best-effort: if the field or its type can't be
+// resolved from the schema (e.g. a module type not currently installed), the
+// arguments are treated as normal (evaluated), preserving prior behavior.
+func (state *recipeLoadState) structuralArgNames(id *call.ID) map[string]bool {
+	if id == nil || id.IsHandle() || len(id.Args()) == 0 {
+		return nil
+	}
+	var parentType string
+	if receiver := id.Receiver(); receiver != nil {
+		if t := receiver.Type(); t != nil {
+			parentType = t.NamedType()
+		}
+	} else {
+		parentType = "Query"
+	}
+	if parentType == "" {
+		return nil
+	}
+	objType, ok := state.srv.ObjectType(parentType)
+	if !ok {
+		return nil
+	}
+	fieldSpec, ok := objType.FieldSpec(id.Field(), id.View())
+	if !ok {
+		return nil
+	}
+	var structural map[string]bool
+	for _, argSpec := range fieldSpec.Args.Inputs(id.View()) {
+		if argSpec.StructuralOnly {
+			if structural == nil {
+				structural = make(map[string]bool)
+			}
+			structural[argSpec.Name] = true
+		}
+	}
+	return structural
 }
 
 func gatherRecipeLiteralInputIDs(lit call.Literal, inputIDs *[]*call.ID) {
@@ -1522,7 +1577,7 @@ func gatherRecipeLiteralInputIDs(lit call.Literal, inputIDs *[]*call.ID) {
 	}
 }
 
-func (state *recipeLoadState) loadedResultCallFromRecipeID(id *call.ID, loadedInputs map[string]AnyResult) (*ResultCall, error) {
+func (state *recipeLoadState) loadedResultCallFromRecipeID(id *call.ID, loadedInputs map[string]AnyResult, structural map[string]bool) (*ResultCall, error) {
 	if id == nil {
 		return nil, nil
 	}
@@ -1563,7 +1618,28 @@ func (state *recipeLoadState) loadedResultCallFromRecipeID(id *call.ID, loadedIn
 		}
 	}
 	for _, arg := range id.Args() {
-		converted, err := state.loadedResultCallArgFromRecipeArgument(arg, loadedInputs)
+		var (
+			converted *ResultCallArg
+			err       error
+		)
+		if structural[arg.Name()] {
+			// A structural-only argument was not evaluated, so it has no loaded
+			// result to reference. Carry it through in pure recipe form so the
+			// frame keeps the full argument structure (preserving call
+			// identity) without requiring — or triggering — evaluation.
+			value, litErr := resultCallLiteralFromRecipeLiteral(state.ctx, arg.Value(), nil)
+			if litErr != nil {
+				err = litErr
+			} else {
+				converted = &ResultCallArg{
+					Name:        arg.Name(),
+					IsSensitive: arg.IsSensitive(),
+					Value:       value,
+				}
+			}
+		} else {
+			converted, err = state.loadedResultCallArgFromRecipeArgument(arg, loadedInputs)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", arg.Name(), err)
 		}
@@ -1675,7 +1751,7 @@ func (state *recipeLoadState) loadedResultCallLiteralFromRecipeLiteral(lit call.
 	}
 }
 
-func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyObjectResult) (Selector, error) {
+func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyObjectResult, recipeID *call.ID, structural map[string]bool) (Selector, error) {
 	if frame == nil {
 		return Selector{}, fmt.Errorf("nil result call")
 	}
@@ -1684,8 +1760,36 @@ func selectorFromLoadedCall(ctx context.Context, frame *ResultCall, baseObj AnyO
 	if !ok {
 		return Selector{}, fmt.Errorf("field %q not found on %s", frame.Field, baseObj.Type().Name())
 	}
+	// Structural-only args are decoded straight from the recipe ID's literals
+	// (yielding unevaluated recipe IDs) instead of from the frame, since the
+	// frame's ref would resolve to an evaluated result that was intentionally
+	// never produced.
+	var recipeArgLiterals map[string]call.Literal
+	if recipeID != nil && len(structural) > 0 {
+		recipeArgLiterals = make(map[string]call.Literal, len(structural))
+		for _, arg := range recipeID.Args() {
+			if arg != nil && structural[arg.Name()] {
+				recipeArgLiterals[arg.Name()] = arg.Value()
+			}
+		}
+	}
 	args := make([]NamedInput, 0, len(frame.Args))
 	for _, argSpec := range fieldSpec.Args.Inputs(view) {
+		if structural[argSpec.Name] {
+			lit, ok := recipeArgLiterals[argSpec.Name]
+			if !ok {
+				continue
+			}
+			// ToInput keeps IDs in unevaluated recipe form, so the structural
+			// arg decodes to a recipe ID rather than resolving to an evaluated
+			// result that was intentionally never produced.
+			input, err := argSpec.Type.Decoder().DecodeInput(lit.ToInput())
+			if err != nil {
+				return Selector{}, fmt.Errorf("request structural arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+			}
+			args = append(args, NamedInput{Name: argSpec.Name, Value: input})
+			continue
+		}
 		var frameArg *ResultCallArg
 		for _, arg := range frame.Args {
 			if arg != nil && arg.Name == argSpec.Name {

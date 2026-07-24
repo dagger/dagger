@@ -1063,6 +1063,15 @@ func handleChangesetResponseWithApply(
 
 // startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
 func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
+	return startInteractivePromptModeWithResume(ctx, dag, response, "", false)
+}
+
+// startInteractivePromptModeWithResume is like startInteractivePromptMode but
+// optionally resumes a previously saved session before entering the interactive
+// loop. When resume is true and sessionID is empty, an interactive picker is
+// shown; when sessionID is non-empty, that session is resumed directly. The
+// resumed conversation replaces the composed LLM as the starting point.
+func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Client, response any, sessionID string, resume bool) error {
 	// Extract the LLM ID from the response
 	var llmID string
 	switch v := response.(type) {
@@ -1092,8 +1101,26 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 	if _, err := handler.llm(ctx); err != nil { // init llmSession
 		return err
 	}
-	if err := handler.llmSession.updateLLMAndAgentVar(llm); err != nil {
+	// Remember the composed agent group as the base to reset to on .clear, so
+	// clearing history returns to the initially selected agents rather than a
+	// blank LLM.
+	handler.llmSession.initialLLM = llm
+	if err := handler.llmSession.updateLLM(llm); err != nil {
 		return err
+	}
+
+	// Optionally resume a previously saved session, replacing the composed LLM
+	// as the starting point. With no session id, present the interactive picker.
+	if resume {
+		if sessionID != "" {
+			if err := handler.llmSession.LoadSession(ctx, ctx, sessionID); err != nil {
+				return err
+			}
+			handler.initialPrompt = ""
+			handler.sessionUUID = ""
+		} else if err := handler.resumeSessionInteractive(ctx); err != nil {
+			return err
+		}
 	}
 
 	// Start interactive mode

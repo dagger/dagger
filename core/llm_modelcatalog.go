@@ -2,76 +2,22 @@ package core
 
 import (
 	"encoding/json"
-	"regexp"
-	"strings"
-	"sync"
 
 	"charm.land/catwalk/pkg/catwalk"
-	"charm.land/catwalk/pkg/embedded"
+
+	"github.com/dagger/dagger/core/modelcatalog"
 )
 
-// llmCatalogProviders maps LLM providers to catwalk catalog IDs. Providers
-// left out (local, other, ...) serve arbitrary models with no reliable
-// catalog entry.
-var llmCatalogProviders = map[LLMProvider]catwalk.InferenceProvider{
-	Anthropic:   catwalk.InferenceProviderAnthropic,
-	OpenAI:      catwalk.InferenceProviderOpenAI,
-	OpenAICodex: catwalk.InferenceProviderOpenAI,
-	Google:      catwalk.InferenceProviderGemini,
-}
-
-var (
-	llmCatalogOnce sync.Once
-	llmCatalog     map[catwalk.InferenceProvider]map[string]catwalk.Model
-)
-
-func loadLLMCatalog() map[catwalk.InferenceProvider]map[string]catwalk.Model {
-	llmCatalogOnce.Do(func() {
-		llmCatalog = make(map[catwalk.InferenceProvider]map[string]catwalk.Model)
-		for _, p := range embedded.GetAll() {
-			models := make(map[string]catwalk.Model, len(p.Models))
-			for _, m := range p.Models {
-				key := normalizeModelID(m.ID)
-				// Catalogs list newest models first; keep the first when a
-				// dated and an undated ID normalize to the same key.
-				if _, ok := models[key]; !ok {
-					models[key] = m
-				}
-			}
-			llmCatalog[p.ID] = models
-		}
-	})
-	return llmCatalog
-}
-
-// llmModelDateSuffix matches release-date model suffixes like "-20250929".
-var llmModelDateSuffix = regexp.MustCompile(`-20\d{6}$`)
-
-// normalizeModelID reduces a model name to a catalog key so user-supplied
-// variants ("claude-sonnet-4-5-20250929", "claude-sonnet-4-5",
-// "anthropic/claude-sonnet-4-5", "claude-fable-5[1m]") all resolve to the
-// same entry.
+// normalizeModelID reduces a model name to a catalog key. See
+// modelcatalog.NormalizeModelID.
 func normalizeModelID(id string) string {
-	if i := strings.LastIndexByte(id, '/'); i >= 0 {
-		id = id[i+1:]
-	}
-	if i := strings.IndexByte(id, '['); i >= 0 {
-		id = id[:i]
-	}
-	id = strings.TrimSuffix(id, "-latest")
-	id = llmModelDateSuffix.ReplaceAllString(id, "")
-	return id
+	return modelcatalog.NormalizeModelID(id)
 }
 
 // lookupCatalogModel returns catwalk's metadata (default max output tokens,
 // context window) for a provider's model, if known.
 func lookupCatalogModel(provider LLMProvider, model string) (catwalk.Model, bool) {
-	cwID, ok := llmCatalogProviders[provider]
-	if !ok {
-		return catwalk.Model{}, false
-	}
-	m, ok := loadLLMCatalog()[cwID][normalizeModelID(model)]
-	return m, ok
+	return modelcatalog.Lookup(string(provider), model)
 }
 
 const (

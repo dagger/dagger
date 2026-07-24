@@ -1,17 +1,22 @@
 pub description = "A module to generate changelog"
 
 type Changelog {
-  let source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
-    "**",
-    "!**/.changes/",
-    "!CHANGELOG.md",
-    "!**/.changie.yaml",
-  ])
+  let source: Directory!
+
+  new(ws: Workspace!) {
+    self.source = ws.directory("/", exclude: [
+      "**",
+      "!**/.changes/",
+      "!CHANGELOG.md",
+      "!**/.changie.yaml",
+    ])
+    self
+  }
 
   """
   Generate the changelog with 'changie merge'. Only run this manually, at release time.
   """
-  pub generate: Changeset @generate {
+  generate: Changeset @generate {
     let changieVersion = "1.21.0"
     container(platform: "linux/amd64")
       .from("ghcr.io/miniscruff/changie:v" + changieVersion)
@@ -25,7 +30,7 @@ type Changelog {
   """
   Lookup the change notes file for the given component and version
   """
-  pub lookupEntry(
+  lookupEntry(
     """
     The component to look up change notes for
     Example: "sdk/php"

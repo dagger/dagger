@@ -36,6 +36,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	core.ExistsTypes.Install(srv)
 	core.FileTypes.Install(srv)
+	core.PatchConflicts.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.Fields[*core.Stat]{}.Install(srv)
 
 	dagql.Fields[*core.Directory]{
@@ -271,6 +272,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this directory with the given Git-compatible patch applied.`).
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
+				dagql.Arg("onConflict").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`),
 			),
 		dagql.NodeFunc("withPatchFile", s.withPatchFile).
 			IsPersistable().
@@ -278,6 +282,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this directory with the given Git-compatible patch file applied.`).
 			Args(
 				dagql.Arg("patch").Doc(`File containing the patch to apply`),
+				dagql.Arg("onConflict").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`),
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
@@ -747,7 +754,8 @@ func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[
 }
 
 type withPatchArgs struct {
-	Patch string
+	Patch      string
+	OnConflict core.PatchConflict `default:"FAIL"`
 }
 
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -769,9 +777,10 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.DirectoryWithPatchFileLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Patch:     patchFile,
+			LazyState:  core.NewLazyState(),
+			Parent:     parent,
+			Patch:      patchFile,
+			OnConflict: args.OnConflict,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
@@ -783,10 +792,10 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 }
 
 type withPatchFileArgs struct {
-	Patch core.FileID
+	Patch      core.FileID
+	OnConflict core.PatchConflict `default:"FAIL"`
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withChanges; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchFileArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -801,9 +810,10 @@ func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.Object
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.DirectoryWithPatchFileLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Patch:     patchFile,
+			LazyState:  core.NewLazyState(),
+			Parent:     parent,
+			Patch:      patchFile,
+			OnConflict: args.OnConflict,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
@@ -1288,7 +1298,6 @@ type withChangesArgs struct {
 	Changes dagql.ID[*core.Changeset]
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withPatchFile; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withChangesArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

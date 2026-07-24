@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -210,15 +211,48 @@ func (r *LLMResponse) ToolCalls() []*LLMContentBlock {
 }
 
 type LLMTokenUsage struct {
+	// InputTokens is uncached input/prompt tokens. Cached input is accounted for
+	// separately in CachedTokenReads/CachedTokenWrites so the buckets are
+	// additive for cost and context accounting.
 	InputTokens       int64 `field:"true" json:"input_tokens" doc:"Uncached input tokens sent to the model."`
 	OutputTokens      int64 `field:"true" json:"output_tokens" doc:"Tokens received from the model, including text and tool calls."`
 	CachedTokenReads  int64 `field:"true" json:"cached_token_reads" doc:"Input tokens served from the provider's prompt cache."`
 	CachedTokenWrites int64 `field:"true" json:"cached_token_writes" doc:"Input tokens written to the provider's prompt cache."`
-	TotalTokens       int64 `field:"true" json:"total_tokens" doc:"Total tokens consumed, as reported by the provider."`
+	// TotalTokens is the provider-reported total tokens for a single call when
+	// available, otherwise the sum of the additive buckets above.
+	TotalTokens int64 `field:"true" json:"total_tokens" doc:"Total tokens consumed, as reported by the provider."`
 }
 
 func (*LLMTokenUsage) TypeDescription() string {
 	return "A count of tokens consumed by LLM API calls."
+}
+
+func (usage LLMTokenUsage) hasTokens() bool {
+	return usage.InputTokens != 0 ||
+		usage.OutputTokens != 0 ||
+		usage.CachedTokenReads != 0 ||
+		usage.CachedTokenWrites != 0 ||
+		usage.TotalTokens != 0
+}
+
+// contextTokens returns the number of tokens represented by this usage record
+// for context-window purposes. Providers should fill TotalTokens as the sum of
+// uncached input, output, cache reads, and cache writes, but using the max keeps
+// native provider totals that include extra categories (e.g. reasoning/tool-use
+// accounting) from being truncated.
+func (usage LLMTokenUsage) contextTokens() int64 {
+	components := usage.InputTokens + usage.OutputTokens + usage.CachedTokenReads + usage.CachedTokenWrites
+	return max(usage.TotalTokens, components)
+}
+
+func uncachedInputTokens(promptTokens, cachedTokens int64) int64 {
+	if cachedTokens <= 0 {
+		return promptTokens
+	}
+	if promptTokens >= cachedTokens {
+		return promptTokens - cachedTokens
+	}
+	return promptTokens
 }
 
 var _ dagql.PersistedObject = (*LLMTokenUsage)(nil)
@@ -397,6 +431,32 @@ func (m *LLMMessage) TextContent() string {
 		}
 	}
 	return sb.String()
+}
+
+// estimateTokens returns a conservative token estimate for a message when the
+// provider has not reported exact usage yet. It mirrors Pi's chars/4 fallback
+// and is only used for messages after the last provider usage record (usually
+// tool results queued for the next call) or before the first model call.
+func (m *LLMMessage) estimateTokens() int64 {
+	var chars int
+	for _, b := range m.Content {
+		chars += len(b.Text)
+		chars += len(b.CallID)
+		chars += len(b.ToolName)
+		chars += len(b.Arguments)
+	}
+	return estimateTextTokens(chars)
+}
+
+// estimateTextTokens turns a character count into a conservative token estimate
+// using the same chars/4 heuristic as LLMMessage.estimateTokens. It backs the
+// per-tool-call result size the TUI surfaces so an inordinate result is easy to
+// spot even though providers only report usage per API call, not per result.
+func estimateTextTokens(chars int) int64 {
+	if chars == 0 {
+		return 0
+	}
+	return int64((chars + 3) / 4)
 }
 
 // ToolCalls returns the tool-call content blocks.
@@ -965,24 +1025,33 @@ func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error
 	if err != nil {
 		return nil, err
 	}
-	var env dagql.ObjectResult[*Env]
-	if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
-		Field: "env",
-	}); err != nil {
+	mcp := newMCP()
+	// Bind the current workspace by default so the LLM's schema derives from its
+	// own workspace (see MCP.Server), matching the CLI's view. Best-effort: a
+	// context with no loaded workspace (ErrNoCurrentWorkspace) leaves the LLM
+	// unbound and MCP.Server falls back to the current client's served deps. The
+	// direct pre-check keeps the "no workspace" case from failing LLM creation
+	// while still surfacing a genuine Select error. This is imperative (not
+	// recorded as a .withWorkspace selector on the LLM ID), so it re-resolves to
+	// the current workspace on history replay; an explicit LLM.withWorkspace still
+	// pins a specific workspace via the ID.
+	if _, err := q.CurrentWorkspace(ctx); err == nil {
+		var ws dagql.ObjectResult[*Workspace]
+		if err := srv.Select(ctx, srv.Root(), &ws, dagql.Selector{
+			Field: "currentWorkspace",
+		}); err != nil {
+			return nil, err
+		}
+		mcp.workspace = ws
+	} else if !errors.Is(err, ErrNoCurrentWorkspace) {
 		return nil, err
 	}
 	return &LLM{
 		model:       model,
 		provider:    provider,
-		mcp:         newMCP(env),
+		mcp:         mcp,
 		endpointMtx: &sync.Mutex{},
 	}, nil
-}
-
-func (llm *LLM) WithStaticTools() *LLM {
-	llm = llm.Clone()
-	llm.mcp.staticTools = true
-	return llm
 }
 
 // loadLLMRouter creates an LLM router that routes to the root client
@@ -1016,6 +1085,72 @@ func (llm *LLM) Clone() *LLM {
 	cp.endpoint = llm.endpoint
 	cp.endpointMtx = &sync.Mutex{}
 	return &cp
+}
+
+var _ dagql.HasDependencyResults = (*LLM)(nil)
+
+// AttachDependencyResults declares the results the LLM value embeds outside
+// its call structure: the workspace it is bound to (captured imperatively by
+// NewLLM and rebound by workspace-mutating tool results) and the objects bound
+// as tools when a tool result rebound them mid-step (a withTools arg is
+// already a structural dependency, but a rebind happens inside step execution).
+// Declaring these edges lets the cache retain the embedded results and
+// propagate their session-resource requirements — in particular, a
+// client-owned workspace gates results embedding it to the session that
+// created them (see WorkspaceClientHandle), so a new session re-resolves its
+// own workspace instead of inheriting a dead client binding from cache.
+func (llm *LLM) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if llm == nil || llm.mcp == nil {
+		return nil, nil
+	}
+	var deps []dagql.AnyResult
+	if llm.mcp.workspace.Self() != nil {
+		attached, err := attach(llm.mcp.workspace)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm workspace: %w", err)
+		}
+		ws, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach llm workspace: unexpected result %T", attached)
+		}
+		llm.mcp.workspace = ws
+		deps = append(deps, attached)
+	}
+	for i, bound := range llm.mcp.boundTools {
+		if bound.object == nil {
+			// A lazy binding (restored from a persisted session) has no loaded
+			// object to attach; it is loaded on first dispatch instead.
+			continue
+		}
+		attached, err := attach(bound.object)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm bound tool object: %w", err)
+		}
+		obj, ok := attached.(dagql.AnyObjectResult)
+		if !ok {
+			return nil, fmt.Errorf("attach llm bound tool object: unexpected result %T", attached)
+		}
+		llm.mcp.boundTools[i].object = obj
+		deps = append(deps, attached)
+	}
+	for i, skillDir := range llm.mcp.skillDirs {
+		attached, err := attach(skillDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm skill directory: %w", err)
+		}
+		dir, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach llm skill directory: unexpected result %T", attached)
+		}
+		llm.mcp.skillDirs[i] = dir
+		deps = append(deps, attached)
+	}
+	return deps, nil
 }
 
 func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
@@ -1111,13 +1246,6 @@ func (llm *LLM) WithPrompt(
 	// The prompt message.
 	prompt string,
 ) *LLM {
-	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.env.Self().Input(key); found {
-			return binding.String()
-		}
-		// leave unexpanded, perhaps it refers to an object var
-		return fmt.Sprintf("$%s", key)
-	})
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role: LLMMessageRoleUser,
@@ -1205,11 +1333,22 @@ func (llm *LLM) WithToolResult(callID, content string, errored bool) *LLM {
 	return llm
 }
 
-// WithObject tracks an object so the LLM can reference it in subsequent tool
-// calls, re-registering it under the given tag after a history rebuild.
-func (llm *LLM) WithObject(objectID string, id dagql.AnyID) *LLM {
+// WithTools binds an object so every eligible method becomes a tool
+// (hack/designs/workspace-agents.md). A tool that returns the bound object's own type rebinds
+// it as the new agent state; except lists method names to exclude (e.g. the
+// module's own entrypoint).
+func (llm *LLM) WithTools(obj dagql.AnyObjectResult, except []string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithObject(objectID, id)
+	llm.mcp = llm.mcp.WithTools(obj, except)
+	return llm
+}
+
+// WithLazyTools binds an object's methods as tools from its unevaluated ID,
+// without loading it — the object is loaded only when a tool is invoked on it.
+// See MCP.WithLazyTools.
+func (llm *LLM) WithLazyTools(id *call.ID, objType dagql.ObjectType, except []string) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithLazyTools(id, objType, except)
 	return llm
 }
 
@@ -1229,15 +1368,6 @@ func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 	return llm
 }
 
-// Disable the default system prompt
-func (llm *LLM) WithBlockedFunction(ctx context.Context, typeName, funcName string) (*LLM, error) {
-	llm = llm.Clone()
-	if err := llm.mcp.BlockFunction(ctx, typeName, funcName); err != nil {
-		return nil, err
-	}
-	return llm, nil
-}
-
 // Add an external MCP server to the LLM
 func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LLM {
 	llm = llm.Clone()
@@ -1246,6 +1376,22 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 		Service: svc,
 	})
 	return llm
+}
+
+// WithSkills installs a directory of skills — each a subdirectory holding a
+// SKILL.md — surfaced to the model through list_skills/read_skill alongside
+// the engine-embedded and workspace-discovered skills.
+func (llm *LLM) WithSkills(dir dagql.ObjectResult[*Directory]) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithSkills(dir)
+	return llm
+}
+
+// Skills returns the discovery index of every skill visible to the model — the
+// same list the list_skills tool serves, across all sources with the same
+// precedence.
+func (llm *LLM) Skills(ctx context.Context) ([]*LLMSkill, error) {
+	return listSkills(ctx, llm.mcp.skillSources())
 }
 
 // Return the last message sent by the agent
@@ -1308,13 +1454,14 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	llm = llm.Clone()
 
-	// Snapshot the object registry before anything can ingest into this step's
-	// transient MCP clone - building the tool list already registers env input
-	// objects. Everything ingested during the step must be re-registered onto
-	// the materialized state via withObject, or later steps will re-ingest it
-	// under a fresh tag, corrupting the tag counter and aliasing existing tags
-	// to the wrong objects.
-	snapshot := llm.mcp.Snapshot()
+	// Capture the bound state entering this step before anything can mutate it
+	// on this step's transient MCP clone - building the tool list already
+	// touches the bindings. Anything that changes during the step must be
+	// re-recorded onto the materialized state via withWorkspace/withTools, or
+	// later steps will rebuild history from the stale bindings and silently
+	// revert it.
+	wsBefore, _ := llm.mcp.WorkspaceID()
+	toolsBefore, _ := llm.mcp.BoundToolBindings()
 
 	tools, err := llm.mcp.Tools(ctx)
 	if err != nil {
@@ -1326,14 +1473,15 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		return inst, err
 	}
 
-	// Compute the LLM call digest for prompt/response span metadata. inst.ID()
-	// is the LLM state entering step() (typically ends in withPrompt). Its
-	// digest lets the TUI identify and branch from this point. Handle-form IDs
-	// (post-evaluation cache handles) have no recipe digest, so skip the branch
-	// attribute for them rather than panicking in Digest().
+	// Compute the LLM call digest for prompt/response span metadata. inst is the
+	// LLM state entering step() (typically the result of withPrompt). Its recipe
+	// digest matches the dagql call span's digest (dagger.io/dag.digest), so the
+	// TUI can locate that call and branch from this point. Note that inst.ID()
+	// returns a post-evaluation runtime handle with no recipe digest, so derive
+	// the recipe digest directly instead.
 	var llmCallDigest string
-	if id, idErr := inst.ID(); idErr == nil && !id.IsHandle() {
-		llmCallDigest = id.Digest().String()
+	if dig, digErr := inst.RecipeDigest(ctx); digErr == nil {
+		llmCallDigest = dig.String()
 	}
 
 	emitNewMessageSpans(ctx, messagesToSend, llmCallDigest)
@@ -1383,26 +1531,49 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 			},
 		})
 	}
-	newObjs := llm.mcp.NewObjects(snapshot)
-	sort.Strings(newObjs)
-	for _, objID := range newObjs {
-		id, ok := llm.mcp.IDForLLMID(objID)
-		if !ok {
-			continue
-		}
+
+	// Persist an in-step workspace change (e.g. a tool returned a Changeset that
+	// was overlaid onto the bound workspace) so the edit survives the LLM history
+	// rebuild — a rebuild otherwise re-binds the original workspace (via NewLLM or
+	// the last recorded withWorkspace) and loses the overlay. Handle-safe compare
+	// (post-eval IDs are handle-form).
+	if wsAfter, err := llm.mcp.WorkspaceID(); err == nil && wsAfter != nil &&
+		stableIDDigest(wsAfter) != stableIDDigest(wsBefore) {
 		sels = append(sels, dagql.Selector{
-			Field: "withObject",
+			Field: "withWorkspace",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "tag",
-					Value: dagql.NewString(objID),
-				},
-				{
-					Name:  "object",
-					Value: dagql.NewAnyID(id),
+					Name:  "workspace",
+					Value: dagql.NewID[*Workspace](wsAfter),
 				},
 			},
 		})
+	}
+
+	// Persist an in-step state transition: a tool that returned its bound object's
+	// own type rebinds it (hack/designs/workspace-agents.md). Re-emit a withTools selector for
+	// each binding whose object changed, so the new state survives the history
+	// rebuild — the same shape as the withWorkspace persist above.
+	if toolsAfter, err := llm.mcp.BoundToolBindings(); err == nil {
+		for i, after := range toolsAfter {
+			if i < len(toolsBefore) &&
+				stableIDDigest(after.ID) == stableIDDigest(toolsBefore[i].ID) {
+				continue
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withTools",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "object",
+						Value: dagql.NewAnyID(after.ID),
+					},
+					{
+						Name:  "except",
+						Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(after.Except...)),
+					},
+				},
+			})
+		}
 	}
 
 	// Tool-call display spans were already ended by CallBatch as each tool
@@ -1444,7 +1615,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 	}
 	slices.Reverse(newMessages)
 	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest)
+		emitMessageSpan(ctx, msg, llmCallDigest, nil)
 	}
 }
 
@@ -1500,6 +1671,13 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 // responseSelector builds the withResponse selector that records the model's
 // reply - its content blocks and token usage - as a new node in the LLM DAG.
 func responseSelector(res *LLMResponse) (dagql.Selector, error) {
+	return responseSelectorFromBlocks(res.Content, res.TokenUsage)
+}
+
+// responseSelectorFromBlocks builds a withResponse selector from raw content
+// blocks and token usage. Used for fresh responses (responseSelector) and for
+// re-emitting recorded assistant messages (WithResetWorkspace).
+func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
 	// Build content block input objects for the withResponse selector.
 	// An InputObject's fields are only populated by decoding a map through
 	// its Decoder; a bare struct literal leaves them nil and panics when the
@@ -1510,8 +1688,8 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 	// to nil and is omitted from the literal entirely, so the field must have
 	// a default tag or reloading the serialized ID fails with "missing
 	// required input field".
-	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
-	for i, block := range res.Content {
+	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(blocks))
+	for i, block := range blocks {
 		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
 			"kind":      string(block.Kind),
 			"text":      block.Text,
@@ -1536,34 +1714,34 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 			Value: contentInputs,
 		},
 	}
-	if res.TokenUsage.InputTokens != 0 {
+	if tokenUsage.InputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "inputTokens",
-			Value: dagql.NewInt(res.TokenUsage.InputTokens),
+			Value: dagql.NewInt(tokenUsage.InputTokens),
 		})
 	}
-	if res.TokenUsage.OutputTokens != 0 {
+	if tokenUsage.OutputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "outputTokens",
-			Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+			Value: dagql.NewInt(tokenUsage.OutputTokens),
 		})
 	}
-	if res.TokenUsage.CachedTokenReads != 0 {
+	if tokenUsage.CachedTokenReads != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenReads",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+			Value: dagql.NewInt(tokenUsage.CachedTokenReads),
 		})
 	}
-	if res.TokenUsage.CachedTokenWrites != 0 {
+	if tokenUsage.CachedTokenWrites != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenWrites",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+			Value: dagql.NewInt(tokenUsage.CachedTokenWrites),
 		})
 	}
-	if res.TokenUsage.TotalTokens != 0 {
+	if tokenUsage.TotalTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "totalTokens",
-			Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			Value: dagql.NewInt(tokenUsage.TotalTokens),
 		})
 	}
 	return dagql.Selector{
@@ -1591,28 +1769,6 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxStep
 		llm := inst.Self()
 
 		if !llm.HasPending() {
-			if llm.HasMissingOutputs() {
-				// There's no prompt, and yet there are outputs unfulfilled. This means
-				// future calls to Env.Output may fail, so we should interject to help
-				// the LLM along.
-				if newLLM, interjected, interjectErr := llm.Interject(ctx, inst); interjectErr != nil {
-					if ctx.Err() != nil {
-						// Context was cancelled (user interrupt). Return the last
-						// successfully recorded state so that the prompt and any
-						// prior progress are preserved in history.
-						return inst, nil //nolint:nilerr // deliberate: interrupts are not errors
-					}
-					return inst, interjectErr
-				} else if interjected {
-					inst = newLLM
-					// interjected - continue
-					continue
-				} else {
-					// no interjection - user gave up?
-					break
-				}
-			}
-
 			// nothing to do - either never prompted, or naturally reached the end of
 			// the loop (e.g. LLM reply with no additional tool calls)
 			return inst, nil
@@ -1637,8 +1793,6 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxStep
 			return inst, err
 		}
 	}
-
-	return inst, nil
 }
 
 func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], bool, error) {
@@ -1658,10 +1812,10 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 		return self, false, err
 	}
 	var selfDigest string
-	if id, idErr := self.ID(); idErr == nil && !id.IsHandle() {
-		selfDigest = id.Digest().String()
+	if dig, digErr := self.RecipeDigest(ctx); digErr == nil {
+		selfDigest = dig.String()
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
@@ -1714,18 +1868,6 @@ func (llm *LLM) HasPending() bool {
 	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == LLMMessageRoleUser
 }
 
-func (llm *LLM) HasMissingOutputs() bool {
-	if id, err := llm.Env().ID(); err != nil || id == nil {
-		return false
-	}
-	for _, out := range llm.Env().Self().outputsByName {
-		if out.Value == nil {
-			return false
-		}
-	}
-	return true
-}
-
 func (llm *LLM) allowed(ctx context.Context) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1767,13 +1909,16 @@ func (llm *LLM) allowed(ctx context.Context) error {
 
 // emitMessageSpan creates a telemetry span for a single LLM message. This is
 // used both during live step() execution and during replay. callDigest is the
-// DAG digest enabling TUI branching from that point.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+// DAG digest enabling TUI branching from that point. resultTokens maps a tool
+// call's ID to the estimated token size of the result it produced (populated
+// only during replay, where the whole conversation is known up front), so a
+// replayed tool-call span carries the same result-size badge as a live one.
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
 	case LLMMessageRoleAssistant:
-		emitAssistantMessageSpan(ctx, msg, callDigest)
+		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens)
 	}
 }
 
@@ -1788,15 +1933,13 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.UIActorEmojiAttr, emoji),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-		attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
+		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
 	}
 	if callDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
-		telemetry.Reveal(),
-		trace.WithAttributes(attrs...))
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(attrs...))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
@@ -1804,7 +1947,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	fmt.Fprint(stdio.Stdout, msg.TextContent())
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -1827,6 +1970,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 		}
 	}
 
+	toolAnchorCtx := ctx
 	for _, g := range groups {
 		func() {
 			var name string
@@ -1838,36 +1982,70 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 					attribute.Bool("llm.thinking", true),
 				)
 			case LLMContentToolCall:
 				block := g.blocks[0]
 				name = block.ToolName
 				contentType = "application/json"
+				var toolArgNames []string
+				var toolArgValues []string
+				var args map[string]any
+				if len(block.Arguments) > 0 {
+					if err := json.Unmarshal(block.Arguments.Bytes(), &args); err == nil {
+						for _, name := range slices.Sorted(maps.Keys(args)) {
+							val, ok := args[name]
+							if !ok {
+								continue
+							}
+							if str, ok := val.(string); ok {
+								toolArgNames = append(toolArgNames, name)
+								toolArgValues = append(toolArgValues, str)
+							}
+						}
+					}
+				}
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.Bool(telemetry.UIBoundaryAttr, true),
 					attribute.String(telemetry.LLMToolAttr, block.ToolName),
+					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
+					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
+				// Mirror the live tool-call span's result-size badge: the result
+				// itself lives in a later user (tool-result) message, so replay
+				// looks it up by call ID from the pre-scanned conversation.
+				if tokens := resultTokens[block.CallID]; tokens > 0 {
+					extraAttrs = append(extraAttrs,
+						attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
+					)
+				}
 			default:
 				name = "LLM response"
 				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				)
 			}
 			attrs := []attribute.KeyValue{
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			}
 			attrs = append(attrs, extraAttrs...)
 			if callDigest != "" {
 				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 			}
-			ctx, span := Tracer(ctx).Start(ctx, name,
-				telemetry.Reveal(),
-				trace.WithAttributes(attrs...))
+			startCtx := ctx
+			if g.kind == LLMContentToolCall {
+				startCtx = toolAnchorCtx
+			}
+			spanCtx, span := Tracer(startCtx).Start(startCtx, name, trace.WithAttributes(attrs...))
+			if g.kind != LLMContentToolCall {
+				toolAnchorCtx = spanCtx
+			}
 			defer span.End()
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+			stdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary,
 				log.String(telemetry.ContentTypeAttr, contentType))
 			defer stdio.Close()
 			for _, block := range g.blocks {
@@ -1885,10 +2063,21 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 // Replay re-emits telemetry spans for all messages in the conversation history.
 // This allows the TUI to display the conversation after loading a saved session.
 func (llm *LLM) Replay(ctx context.Context) {
+	// Pre-scan for each tool result's estimated size, keyed by call ID, so a
+	// replayed tool-call span carries the same result-size badge the live path
+	// stamps in endToolCallDisplay (the result lives in a later user message).
+	resultTokens := map[string]int64{}
+	for _, msg := range llm.Messages {
+		for _, block := range msg.Content {
+			if block.Kind == LLMContentToolResult && block.CallID != "" {
+				resultTokens[block.CallID] = estimateTextTokens(len(block.Text))
+			}
+		}
+	}
 	for _, msg := range llm.Messages {
 		// We don't have per-message call digests for replay, so pass empty.
 		// The TUI will still display the messages, just without branch support.
-		emitMessageSpan(ctx, msg, "")
+		emitMessageSpan(ctx, msg, "", resultTokens)
 	}
 }
 
@@ -1950,14 +2139,238 @@ func (llm *LLM) Transcript() string {
 	return strings.Join(parts, "\n\n")
 }
 
-func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
+func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
 	llm = llm.Clone()
-	llm.mcp.env = env
+	llm.mcp.workspace = ws
 	return llm
 }
 
-func (llm *LLM) Env() dagql.ObjectResult[*Env] {
-	return llm.mcp.env
+func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
+	return llm.mcp.workspace
+}
+
+// WithResetWorkspace returns a new LLM whose recipe is re-emitted as a flat,
+// data-only chain rooted at Query.llm: the conversation, model, config, MCP
+// servers, and tool bindings are replayed as selectors, and the workspace
+// binding is reset to the first Workspace that was ever bound — dropping every
+// overlay accumulated from workspace-mutating tool calls (Changeset overlays,
+// withNewFile, and any other Workspace→Workspace edit).
+//
+// This exists for session persistence. After the workspace's changes are
+// exported to disk (Workspace.export), the overlay derivations in the LLM's
+// recipe describe edits that are already applied: replaying them on a later
+// load fails (e.g. withReplaced no longer finds its search text) or silently
+// re-applies them. Resetting re-roots the recipe at the live workspace, whose
+// on-disk content the export just made equal to the overlay result. It also
+// keeps persisted IDs (globalID) from growing with every recorded edit.
+//
+// The re-emitted recipe carries exactly the state that survives a save/load
+// round trip (selector-expressible state); transient state such as open MCP
+// sessions or the last tool result is not carried, same as save/load.
+func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	// The llm(maxAPICalls:) legacy knob is deliberately not carried: it is only
+	// settable through pre-v1 views, and this field only exists in v1+.
+	root := dagql.Selector{Field: "llm"}
+	if llm.model != "" {
+		root.Args = append(root.Args, dagql.NamedInput{
+			Name:  "model",
+			Value: dagql.Opt(dagql.NewString(llm.model)),
+		})
+	}
+	sels := []dagql.Selector{root}
+
+	if llm.disableDefaultSystemPrompt {
+		sels = append(sels, dagql.Selector{Field: "withoutDefaultSystemPrompt"})
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(llm.mcp.mcpServers)) {
+		cfg := llm.mcp.mcpServers[name]
+		svcID, err := cfg.Service.ID()
+		if err != nil {
+			return res, fmt.Errorf("mcp server %q service ID: %w", name, err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withMCPServer",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(name)},
+				{Name: "service", Value: dagql.NewID[*Service](svcID)},
+			},
+		})
+	}
+
+	for _, dir := range llm.mcp.skillDirs {
+		dirID, err := dir.ID()
+		if err != nil {
+			return res, fmt.Errorf("skill directory ID: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withSkills",
+			Args: []dagql.NamedInput{
+				{Name: "directory", Value: dagql.NewID[*Directory](dirID)},
+			},
+		})
+	}
+
+	bindings, err := llm.mcp.BoundToolBindings()
+	if err != nil {
+		return res, fmt.Errorf("bound tool bindings: %w", err)
+	}
+	for _, b := range bindings {
+		sels = append(sels, dagql.Selector{
+			Field: "withTools",
+			Args: []dagql.NamedInput{
+				{Name: "object", Value: dagql.NewAnyID(b.ID)},
+				{Name: "except", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(b.Except...))},
+			},
+		})
+	}
+
+	// Reset the workspace to the first Workspace that was ever bound, dropping
+	// every overlay accumulated on top of it. If no workspace was ever
+	// explicitly bound — the LLM only carries NewLLM's imperative
+	// currentWorkspace default — omit the selector entirely so the re-emitted
+	// recipe simply inherits the live workspace on replay, exactly like a fresh
+	// session.
+	if base, bound, err := baseWorkspaceBinding(ctx, llm.mcp.workspace); err != nil {
+		return res, err
+	} else if bound {
+		sels = append(sels, dagql.Selector{
+			Field: "withWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "workspace", Value: dagql.NewID[*Workspace](base)},
+			},
+		})
+	}
+
+	// Replay the conversation in message order. Every message shape the engine
+	// can produce maps to a selector; anything else is an error rather than
+	// silent data loss.
+	for i, msg := range llm.Messages {
+		switch msg.Role {
+		case LLMMessageRoleSystem:
+			sels = append(sels, dagql.Selector{
+				Field: "withSystemPrompt",
+				Args: []dagql.NamedInput{
+					{Name: "prompt", Value: dagql.NewString(msg.TextContent())},
+				},
+			})
+		case LLMMessageRoleAssistant:
+			var usage LLMTokenUsage
+			if msg.TokenUsage != nil {
+				usage = *msg.TokenUsage
+			}
+			sel, err := responseSelectorFromBlocks(msg.Content, usage)
+			if err != nil {
+				return res, fmt.Errorf("message %d: %w", i, err)
+			}
+			sels = append(sels, sel)
+		case LLMMessageRoleUser:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					sels = append(sels, dagql.Selector{
+						Field: "withToolResult",
+						Args: []dagql.NamedInput{
+							{Name: "callId", Value: dagql.NewString(block.CallID)},
+							{Name: "content", Value: dagql.NewString(block.Text)},
+							{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
+						},
+					})
+				case LLMContentText:
+					sels = append(sels, dagql.Selector{
+						Field: "withPrompt",
+						Args: []dagql.NamedInput{
+							{Name: "prompt", Value: dagql.NewString(block.Text)},
+						},
+					})
+				default:
+					return res, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)
+				}
+			}
+		default:
+			return res, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)
+		}
+	}
+
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("re-emit session recipe: %w", err)
+	}
+
+	// Reads through host-backed workspaces are cached per client for the
+	// client's whole lifetime (dagql.PerClientInput), so within a single
+	// long-lived session — a `dagger agent` conversation — a file read earlier
+	// in the session keeps returning its original snapshot. A reset means the
+	// agent's edits were just exported to disk (ctrl+s) or discarded (ctrl+u),
+	// either way the base workspace's on-disk content changed out from under
+	// those cached reads. Bump the client's workspace read epoch so subsequent
+	// reads land in a fresh per-client cache namespace and re-read the live
+	// host instead of a stale snapshot. Best-effort like export's
+	// InvalidateCurrentWorkspace: a bookkeeping failure must not fail the
+	// reset, it only falls back to the prior (stale) read behavior.
+	if err := BumpWorkspaceReadEpoch(ctx); err != nil {
+		slog.Warn("could not bump workspace read epoch after reset", "error", err)
+	}
+	return res, nil
+}
+
+// baseWorkspaceBinding resolves the workspace a reset should restore: the first
+// Workspace that was ever bound, before any overlay edits accumulated on top of
+// it.
+//
+// It walks the bound workspace's recipe back to its base call — the deepest
+// call that still returns a Workspace but whose receiver is not itself a
+// Workspace. Everything above it is a Workspace→Workspace transform (the
+// overlays an agent builds via withChanges, withNewFile, withNewDirectory,
+// withConfigValue, and so on) and is dropped. Walking by receiver type rather
+// than an allowlist of mutator names means every overlay is stripped, including
+// ones added later, instead of silently leaking a stale overlay into the reset.
+//
+// The three results are:
+//   - no workspace bound at all: (zero, false, nil).
+//   - the base is the bare currentWorkspace (NewLLM's imperative default, never
+//     explicitly set): (zero, false, nil) — the caller omits the binding so the
+//     reset re-inherits the live workspace on replay.
+//   - an explicitly bound base (e.g. loadWorkspaceFromID, a git-derived
+//     workspace, or a non-bare currentWorkspace chain): (baseID, true, nil).
+func baseWorkspaceBinding(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*call.ID, bool, error) {
+	if ws.Self() == nil {
+		return nil, false, nil
+	}
+	wsID, err := ws.RecipeID(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("workspace recipe ID: %w", err)
+	}
+	base := workspaceRecipeBase(wsID)
+	// A bare currentWorkspace base was never explicitly bound, so it is not
+	// carried into the reset recipe: replay re-resolves the live workspace.
+	if base.Field() == "currentWorkspace" && base.Receiver() == nil {
+		return nil, false, nil
+	}
+	return base, true, nil
+}
+
+// workspaceRecipeBase walks a workspace recipe ID back to its base call: the
+// deepest call that still returns a Workspace but whose receiver is not itself a
+// Workspace (e.g. Query.currentWorkspace or Query.loadWorkspaceFromID). Every
+// Workspace→Workspace transform above it — the overlay edits an agent
+// accumulates via withChanges, withNewFile, withNewDirectory, withConfigValue,
+// and so on — is peeled off. Walking by receiver type rather than an allowlist
+// of mutator names strips every overlay, including ones added later.
+func workspaceRecipeBase(wsID *call.ID) *call.ID {
+	const workspaceType = "Workspace"
+	for wsID.Type().NamedType() == workspaceType {
+		recv := wsID.Receiver()
+		if recv == nil || recv.Type().NamedType() != workspaceType {
+			break
+		}
+		wsID = recv
+	}
+	return wsID
 }
 
 // A variable in the LLM environment
@@ -2000,20 +2413,6 @@ func (*LLMVariable) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 	return &v, nil
 }
 
-func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
-	var res dagql.Nullable[*Binding]
-	if llm.mcp.LastResult() == nil {
-		return res, nil
-	}
-	res.Value = &Binding{
-		Key:          name,
-		Value:        llm.mcp.LastResult(),
-		ExpectedType: llm.mcp.LastResult().Type().Name(),
-	}
-	res.Valid = true
-	return res, nil
-}
-
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
 	var res LLMTokenUsage
 	for _, msg := range llm.Messages {
@@ -2027,4 +2426,36 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 		res.TotalTokens += msg.TokenUsage.TotalTokens
 	}
 	return &res, nil
+}
+
+// ContextTokens returns the estimated number of tokens currently occupying the
+// context window. Unlike TokenUsage, this is not cumulative over the whole
+// session: it uses the last provider-reported assistant usage as a baseline and
+// estimates any trailing messages (for example tool results) that have been
+// appended since that response and will be sent with the next request.
+func (llm *LLM) ContextTokens(ctx context.Context, dag *dagql.Server) (int, error) {
+	_ = dag
+	messages, err := llm.messagesWithSystemPrompt(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return int(estimateOccupiedContextTokens(messages)), nil
+}
+
+func estimateOccupiedContextTokens(messages []*LLMMessage) int64 {
+	lastUsageIndex := -1
+	var tokens int64
+	for i := len(messages) - 1; i >= 0; i-- {
+		usage := messages[i].TokenUsage
+		if usage != nil && usage.hasTokens() {
+			lastUsageIndex = i
+			tokens = usage.contextTokens()
+			break
+		}
+	}
+
+	for i := lastUsageIndex + 1; i < len(messages); i++ {
+		tokens += messages[i].estimateTokens()
+	}
+	return tokens
 }

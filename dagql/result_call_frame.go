@@ -76,12 +76,27 @@ type ResultCallModule struct {
 	Pin       string         `json:"pin,omitempty"`
 }
 
+// resultCallCloneMemo makes clone() DAG-preserving. Frames are stored as shared
+// DAGs (see recipeCallMemo), so a naive deep clone re-expands the shared sub-DAG
+// into a tree — one clone of a large shared frame exploded to ~3.3e8 objects and
+// ~28GB in a runaway. Keyed by the source *ResultCall (the only shared join
+// point; the Arg/Literal/Ref wrappers above each ResultCall are not themselves
+// shared), so each distinct source frame is cloned once and reused. The copy is
+// still fully independent of the original (distinct nodes); only sharing *within*
+// one clone is preserved, which is safe because frames are frozen provenance
+// (never mutated in place below the top-level spine).
+type resultCallCloneMemo = map[*ResultCall]*ResultCall
+
 func (mod *ResultCallModule) clone() *ResultCallModule {
+	return mod.cloneWith(resultCallCloneMemo{})
+}
+
+func (mod *ResultCallModule) cloneWith(memo resultCallCloneMemo) *ResultCallModule {
 	if mod == nil {
 		return nil
 	}
 	return &ResultCallModule{
-		ResultRef: mod.ResultRef.clone(),
+		ResultRef: mod.ResultRef.cloneWith(memo),
 		Name:      mod.Name,
 		Ref:       mod.Ref,
 		Pin:       mod.Pin,
@@ -94,14 +109,14 @@ type ResultCallArg struct {
 	Value       *ResultCallLiteral `json:"value,omitempty"`
 }
 
-func (arg *ResultCallArg) clone() *ResultCallArg {
+func (arg *ResultCallArg) cloneWith(memo resultCallCloneMemo) *ResultCallArg {
 	if arg == nil {
 		return nil
 	}
 	return &ResultCallArg{
 		Name:        arg.Name,
 		IsSensitive: arg.IsSensitive,
-		Value:       arg.Value.clone(),
+		Value:       arg.Value.cloneWith(memo),
 	}
 }
 
@@ -137,7 +152,7 @@ type ResultCallLiteral struct {
 	ObjectFields []*ResultCallArg     `json:"objectFields,omitempty"`
 }
 
-func (lit *ResultCallLiteral) clone() *ResultCallLiteral {
+func (lit *ResultCallLiteral) cloneWith(memo resultCallCloneMemo) *ResultCallLiteral {
 	if lit == nil {
 		return nil
 	}
@@ -150,18 +165,18 @@ func (lit *ResultCallLiteral) clone() *ResultCallLiteral {
 		EnumValue:            lit.EnumValue,
 		DigestedStringValue:  lit.DigestedStringValue,
 		DigestedStringDigest: lit.DigestedStringDigest,
-		ResultRef:            lit.ResultRef.clone(),
+		ResultRef:            lit.ResultRef.cloneWith(memo),
 	}
 	if len(lit.ListItems) > 0 {
 		cp.ListItems = make([]*ResultCallLiteral, 0, len(lit.ListItems))
 		for _, item := range lit.ListItems {
-			cp.ListItems = append(cp.ListItems, item.clone())
+			cp.ListItems = append(cp.ListItems, item.cloneWith(memo))
 		}
 	}
 	if len(lit.ObjectFields) > 0 {
 		cp.ObjectFields = make([]*ResultCallArg, 0, len(lit.ObjectFields))
 		for _, field := range lit.ObjectFields {
-			cp.ObjectFields = append(cp.ObjectFields, field.clone())
+			cp.ObjectFields = append(cp.ObjectFields, field.cloneWith(memo))
 		}
 	}
 	return cp
@@ -222,8 +237,15 @@ type ResultCallStructuralInputRef struct {
 }
 
 func (frame *ResultCall) clone() *ResultCall {
+	return frame.cloneWith(resultCallCloneMemo{})
+}
+
+func (frame *ResultCall) cloneWith(memo resultCallCloneMemo) *ResultCall {
 	if frame == nil {
 		return nil
+	}
+	if cp := memo[frame]; cp != nil {
+		return cp
 	}
 	cp := &ResultCall{
 		Kind:         frame.Kind,
@@ -234,20 +256,23 @@ func (frame *ResultCall) clone() *ResultCall {
 		Nth:          frame.Nth,
 		EffectIDs:    slices.Clone(frame.EffectIDs),
 		ExtraDigests: slices.Clone(frame.ExtraDigests),
-		Receiver:     frame.Receiver.clone(),
-		Module:       frame.Module.clone(),
 		ProfileSkip:  frame.ProfileSkip,
 	}
+	// Register before recursing so a shared (or, defensively, cyclic) sub-DAG
+	// resolves to this same clone instead of being re-expanded into a tree.
+	memo[frame] = cp
+	cp.Receiver = frame.Receiver.cloneWith(memo)
+	cp.Module = frame.Module.cloneWith(memo)
 	if len(frame.Args) > 0 {
 		cp.Args = make([]*ResultCallArg, 0, len(frame.Args))
 		for _, arg := range frame.Args {
-			cp.Args = append(cp.Args, arg.clone())
+			cp.Args = append(cp.Args, arg.cloneWith(memo))
 		}
 	}
 	if len(frame.ImplicitInputs) > 0 {
 		cp.ImplicitInputs = make([]*ResultCallArg, 0, len(frame.ImplicitInputs))
 		for _, arg := range frame.ImplicitInputs {
-			cp.ImplicitInputs = append(cp.ImplicitInputs, arg.clone())
+			cp.ImplicitInputs = append(cp.ImplicitInputs, arg.cloneWith(memo))
 		}
 	}
 	return cp
@@ -411,8 +436,30 @@ func (frame *ResultCall) RecipeID(ctx context.Context) (*call.ID, error) {
 	return frame.recipeID(ctx, c)
 }
 
+// recipeIDMemo deduplicates recipe-ID *reconstruction* (frame -> *call.ID) within
+// a single top-level rebuild — the inverse direction of recipeCallMemo. The
+// visiting map is only a cycle guard (it deletes each entry as it unwinds), so
+// without this a shared node reached via N paths rebuilds its entire *call.ID
+// subtree N times, unrolling the DAG into a tree (~2.6e8 objects / tens of GB on a
+// resumed agent/LLM session). call.IDs are immutable and content-addressed —
+// Append already shares receiver pointers and ToProto serializes to a
+// digest-keyed DAG — so reusing one *call.ID per shared node is safe and matches
+// the canonical form. Keyed by sharedResultID for by-ID refs (the dominant shared
+// case) and by *ResultCall identity for inline frames.
+type recipeIDMemo struct {
+	byResult map[sharedResultID]*call.ID
+	byFrame  map[*ResultCall]*call.ID
+}
+
+func newRecipeIDMemo() *recipeIDMemo {
+	return &recipeIDMemo{
+		byResult: map[sharedResultID]*call.ID{},
+		byFrame:  map[*ResultCall]*call.ID{},
+	}
+}
+
 func (frame *ResultCall) recipeID(ctx context.Context, c *Cache) (*call.ID, error) {
-	return frame.recipeIDWithVisiting(ctx, c, map[sharedResultID]struct{}{})
+	return frame.recipeIDWithVisiting(ctx, c, map[sharedResultID]struct{}{}, newRecipeIDMemo())
 }
 
 func (frame *ResultCall) CallPB(ctx context.Context) (*callpbv1.Call, error) {
@@ -972,13 +1019,13 @@ func (ref ResultCallStructuralInputRef) inputDigest(c *Cache) (digest.Digest, er
 	}
 }
 
-func (ref *ResultCallRef) clone() *ResultCallRef {
+func (ref *ResultCallRef) cloneWith(memo resultCallCloneMemo) *ResultCallRef {
 	if ref == nil {
 		return nil
 	}
 	return &ResultCallRef{
 		ResultID: ref.ResultID,
-		Call:     ref.Call.clone(),
+		Call:     ref.Call.cloneWith(memo),
 		shared:   ref.shared,
 	}
 }
@@ -1410,9 +1457,14 @@ func (c *Cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	return res.loadResultCall()
 }
 
-func (frame *ResultCall) recipeIDWithVisiting(ctx context.Context, c *Cache, visiting map[sharedResultID]struct{}) (*call.ID, error) {
+func (frame *ResultCall) recipeIDWithVisiting(ctx context.Context, c *Cache, visiting map[sharedResultID]struct{}, memo *recipeIDMemo) (*call.ID, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("rebuild recipe ID: nil frame")
+	}
+	if memo != nil {
+		if cached, ok := memo.byFrame[frame]; ok {
+			return cached, nil
+		}
 	}
 	field := frame.Field
 	if frame.Kind == ResultCallKindSynthetic {
@@ -1427,7 +1479,7 @@ func (frame *ResultCall) recipeIDWithVisiting(ctx context.Context, c *Cache, vis
 		mod        *call.Module
 	)
 	if frame.Receiver != nil {
-		id, err := frame.resolveRefRecipeID(ctx, c, frame.Receiver, visiting)
+		id, err := frame.resolveRefRecipeID(ctx, c, frame.Receiver, visiting, memo)
 		if err != nil {
 			return nil, fmt.Errorf("receiver: %w", err)
 		}
@@ -1437,18 +1489,18 @@ func (frame *ResultCall) recipeIDWithVisiting(ctx context.Context, c *Cache, vis
 		if frame.Module.ResultRef == nil {
 			return nil, fmt.Errorf("module: missing result ref")
 		}
-		modID, err := frame.resolveRefRecipeID(ctx, c, frame.Module.ResultRef, visiting)
+		modID, err := frame.resolveRefRecipeID(ctx, c, frame.Module.ResultRef, visiting, memo)
 		if err != nil {
 			return nil, fmt.Errorf("module: %w", err)
 		}
 		mod = call.NewModule(modID, frame.Module.Name, frame.Module.Ref, frame.Module.Pin)
 	}
 
-	args, err := frame.callArgs(ctx, c, frame.Args, visiting)
+	args, err := frame.callArgs(ctx, c, frame.Args, visiting, memo)
 	if err != nil {
 		return nil, fmt.Errorf("args: %w", err)
 	}
-	implicitInputs, err := frame.callArgs(ctx, c, frame.ImplicitInputs, visiting)
+	implicitInputs, err := frame.callArgs(ctx, c, frame.ImplicitInputs, visiting, memo)
 	if err != nil {
 		return nil, fmt.Errorf("implicit inputs: %w", err)
 	}
@@ -1473,20 +1525,28 @@ func (frame *ResultCall) recipeIDWithVisiting(ctx context.Context, c *Cache, vis
 		}
 		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
 	}
+	if memo != nil {
+		memo.byFrame[frame] = rebuilt
+	}
 	return rebuilt, nil
 }
 
-func (frame *ResultCall) resolveRefRecipeID(ctx context.Context, c *Cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (*call.ID, error) {
+func (frame *ResultCall) resolveRefRecipeID(ctx context.Context, c *Cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}, memo *recipeIDMemo) (*call.ID, error) {
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
 	if ref.Call != nil {
-		return ref.Call.recipeIDWithVisiting(ctx, c, visiting)
+		return ref.Call.recipeIDWithVisiting(ctx, c, visiting, memo)
 	}
 	if c == nil {
 		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
 	}
 	refID := sharedResultID(ref.ResultID)
+	if memo != nil {
+		if cached, ok := memo.byResult[refID]; ok {
+			return cached, nil
+		}
+	}
 	refFrame := ref.loadSharedCall()
 	if refFrame == nil {
 		refFrame = c.resultCallByResultID(refID)
@@ -1500,7 +1560,14 @@ func (frame *ResultCall) resolveRefRecipeID(ctx context.Context, c *Cache, ref *
 	}
 	visiting[refID] = struct{}{}
 	defer delete(visiting, refID)
-	return refFrame.recipeIDWithVisiting(ctx, c, visiting)
+	id, err := refFrame.recipeIDWithVisiting(ctx, c, visiting, memo)
+	if err != nil {
+		return nil, err
+	}
+	if memo != nil {
+		memo.byResult[refID] = id
+	}
+	return id, nil
 }
 
 func (frame *ResultCall) callArgs(
@@ -1508,6 +1575,7 @@ func (frame *ResultCall) callArgs(
 	c *Cache,
 	frameArgs []*ResultCallArg,
 	visiting map[sharedResultID]struct{},
+	memo *recipeIDMemo,
 ) ([]*call.Argument, error) {
 	if len(frameArgs) == 0 {
 		return nil, nil
@@ -1517,7 +1585,7 @@ func (frame *ResultCall) callArgs(
 		if frameArg == nil || frameArg.Value == nil {
 			continue
 		}
-		lit, err := frame.callLiteral(ctx, c, frameArg.Value, visiting)
+		lit, err := frame.callLiteral(ctx, c, frameArg.Value, visiting, memo)
 		if err != nil {
 			return nil, err
 		}
@@ -1531,6 +1599,7 @@ func (frame *ResultCall) callLiteral(
 	c *Cache,
 	frameLit *ResultCallLiteral,
 	visiting map[sharedResultID]struct{},
+	memo *recipeIDMemo,
 ) (call.Literal, error) {
 	if frameLit == nil {
 		return nil, fmt.Errorf("missing literal")
@@ -1551,7 +1620,7 @@ func (frame *ResultCall) callLiteral(
 	case ResultCallLiteralKindDigestedString:
 		return call.NewLiteralDigestedString(frameLit.DigestedStringValue, frameLit.DigestedStringDigest), nil
 	case ResultCallLiteralKindResultRef:
-		id, err := frame.resolveRefRecipeID(ctx, c, frameLit.ResultRef, visiting)
+		id, err := frame.resolveRefRecipeID(ctx, c, frameLit.ResultRef, visiting, memo)
 		if err != nil {
 			return nil, err
 		}
@@ -1559,7 +1628,7 @@ func (frame *ResultCall) callLiteral(
 	case ResultCallLiteralKindList:
 		items := make([]call.Literal, 0, len(frameLit.ListItems))
 		for _, item := range frameLit.ListItems {
-			lit, err := frame.callLiteral(ctx, c, item, visiting)
+			lit, err := frame.callLiteral(ctx, c, item, visiting, memo)
 			if err != nil {
 				return nil, err
 			}
@@ -1572,7 +1641,7 @@ func (frame *ResultCall) callLiteral(
 			if field == nil || field.Value == nil {
 				continue
 			}
-			lit, err := frame.callLiteral(ctx, c, field.Value, visiting)
+			lit, err := frame.callLiteral(ctx, c, field.Value, visiting, memo)
 			if err != nil {
 				return nil, err
 			}

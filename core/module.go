@@ -144,20 +144,84 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 	return nil, false
 }
 
-func functionRequiresArgs(fn *Function) bool {
+// argRequired reports whether an argument must be supplied by the caller.
+// NOTE: we count on user defaults already merged in the schema at this point.
+func argRequired(arg *FunctionArg) bool {
+	// "regular optional" -> not required
+	if arg.TypeDef.Self().Optional {
+		return false
+	}
+	// "contextual optional" -> not required
+	if arg.DefaultPath != "" {
+		return false
+	}
+	// default value -> not required
+	if arg.DefaultValue != nil {
+		return false
+	}
+	return true
+}
+
+// agentBaseArgName is the conventional name for an @agent middleware's base
+// argument, used only as a fallback when the actual LLM! argument can't be
+// resolved. The base is identified by *type* — a single required LLM! arg — not
+// by name, so authors may call it `base`, `llm`, etc. (hack/designs/workspace-agents.md §3). The
+// compose fold (AgentGroup.Compose) fills that argument with the running
+// accumulator explicitly.
+const agentBaseArgName = "base"
+
+// isCoreLLMArg reports whether an argument is of the core LLM type. Like
+// IsWorkspace, the SourceModuleName guard keeps it to the core LLM (functions
+// can't currently accept types from other modules, but be explicit anyway).
+func isCoreLLMArg(arg *FunctionArg) bool {
+	typeDef := arg.TypeDef.Self()
+	return typeDef.Kind == TypeDefKindObject &&
+		typeDef.AsObject.Value.Self().Name == "LLM" &&
+		typeDef.AsObject.Value.Self().SourceModuleName == ""
+}
+
+// validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
+// §3): the function must return LLM!, and its only required argument may be a
+// single LLM! (the base the compose fold supplies, whatever it is named). Any
+// other required argument, or a non-LLM! return, is a hard error at module load.
+func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
+	ret := fn.ReturnType.Self()
+	if ret.Optional ||
+		ret.Kind != TypeDefKindObject ||
+		ret.AsObject.Value.Self().Name != "LLM" {
+		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
+			obj.OriginalName, fn.OriginalName)
+	}
+	baseExempted := false
 	for _, argRes := range fn.Args {
 		arg := argRes.Self()
-		// NOTE: we count on user defaults already merged in the schema at this point
-		// "regular optional" -> ok
-		if arg.TypeDef.Self().Optional {
+		if !argRequired(arg) {
 			continue
 		}
-		// "contextual optional" -> ok
-		if arg.DefaultPath != "" {
+		if !baseExempted && isCoreLLMArg(arg) {
+			baseExempted = true
 			continue
 		}
-		// default value -> ok
-		if arg.DefaultValue != nil {
+		return fmt.Errorf("object %q function %q is marked @agent but declares required argument %q; an @agent function may only require a single LLM! argument (the base the compose fold supplies)",
+			obj.OriginalName, fn.OriginalName, arg.OriginalName)
+	}
+	return nil
+}
+
+// functionRequiresArgsExceptAgentBase reports whether a function has required
+// arguments, except that for an @agent function it exempts a single required
+// LLM! argument — the base the compose fold supplies explicitly
+// (hack/designs/workspace-agents.md §3). Any *other* required argument still
+// disqualifies the function from no-arg enumeration.
+func functionRequiresArgsExceptAgentBase(fn *Function) bool {
+	baseExempted := false
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if !argRequired(arg) {
+			continue
+		}
+		if fn.IsAgent && !baseExempted && isCoreLLMArg(arg) {
+			baseExempted = true
 			continue
 		}
 		return true
@@ -1190,6 +1254,7 @@ func (mod *Module) validateTypeDef(ctx context.Context, typeDef dagql.ObjectResu
 	return nil
 }
 
+//nolint:gocyclo // one validation pass per field kind; splitting it obscures the checklist
 func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
 	// check whether this is a pre-existing object from core or another module
 	modType, ok, err := mod.lookupValidationModType(ctx, typeDef, state)
@@ -1240,6 +1305,11 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 	for fn := range obj.functions() {
 		if gqlFieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+		}
+		if fn.IsAgent {
+			if err := validateAgentFunction(obj, fn); err != nil {
+				return err
+			}
 		}
 		// Check if this is a type from another (non-core) module
 		retType, ok, err := mod.lookupValidationModType(ctx, fn.ReturnType, state)

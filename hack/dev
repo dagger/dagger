@@ -10,5 +10,8 @@ export HACK="$(cd $(dirname $(realpath "${BASH_SOURCE[0]}")) && pwd)"
 # HACK: dagger shell can't get docker context info, so we need to
 export DOCKER_HOST=${DOCKER_HOST:-$(docker context inspect -f '{{.Endpoints.docker.Host}}')}
 
-$HACK/build
+# Build from the repo root so the workspace (dagger.toml) is discovered
+# regardless of where hack/dev was invoked from. Kept in a subshell so
+# with-dev still runs in the caller's working directory.
+(cd "$HACK/.." && "$HACK/build")
 $HACK/with-dev $@

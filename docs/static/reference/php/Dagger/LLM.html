@@ -143,12 +143,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
+                    int
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_bindResult">bindResult</a>(string $name)
+                    <a href="#method_contextTokens">contextTokens</a>()
         
-                                            <p><p>returns the type of the current state</p></p>                </div>
+                                            <p><p>estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -159,16 +159,6 @@
                     <a href="#method_contextWindow">contextWindow</a>()
         
                                             <p><p>The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_env">env</a>()
-        
-                                            <p><p>return the LLM's current environment</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -273,6 +263,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_skills">skills</a>()
+        
+                                            <p><p>The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -326,26 +326,6 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withBlockedFunction">withBlockedFunction</a>(string $typeName, string $function)
-        
-                                            <p><p>Return a new LLM with the specified function no longer exposed as a tool</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withEnv">withEnv</a>(<a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a> $env)
-        
-                                            <p><p>allow the LLM to interact with an environment via MCP</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
                     <a href="#method_withMCPServer">withMCPServer</a>(string $name, <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a> $service)
         
                                             <p><p>Add an external MCP server to the LLM</p></p>                </div>
@@ -359,16 +339,6 @@
                     <a href="#method_withModel">withModel</a>(string $model, string|null $provider = null)
         
                                             <p><p>Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withObject">withObject</a>(string $tag, <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $object)
-        
-                                            <p><p>Track an object so the LLM can reference it in subsequent tool calls.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -396,6 +366,16 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_withResetWorkspace">withResetWorkspace</a>()
+        
+                                            <p><p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_withResponse">withResponse</a>(array $content, int|null $inputTokens = 0, int|null $outputTokens = 0, int|null $cachedTokenReads = 0, int|null $cachedTokenWrites = 0, int|null $totalTokens = 0)
         
                                             <p><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></p>                </div>
@@ -406,9 +386,9 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withStaticTools">withStaticTools</a>()
+                    <a href="#method_withSkills">withSkills</a>(<a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> $directory)
         
-                                            <p><p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p></p>                </div>
+                                            <p><p>Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -429,6 +409,26 @@
                     <a href="#method_withToolResult">withToolResult</a>(string $callId, string $content, bool $errored)
         
                                             <p><p>Append the result of a tool call to the message history.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withTools">withTools</a>(<a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a> $object, array|null $except = [])
+        
+                                            <p><p>Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withWorkspace">withWorkspace</a>(<a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> $workspace)
+        
+                                            <p><p>Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -459,6 +459,16 @@
                     <a href="#method_withoutSystemPrompts">withoutSystemPrompts</a>()
         
                                             <p><p>Clear the user-added system prompts, keeping only the default system prompt.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_workspace">workspace</a>()
+        
+                                            <p><p>Return the workspace the LLM is bound to.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -557,10 +567,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_bindResult">
+                    <h3 id="method_contextTokens">
         <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
-    <strong>bindResult</strong>(string $name)
+        <code>                    int
+    <strong>contextTokens</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -568,25 +578,15 @@
             
 
         <div class="method-description">
-                            <p><p>returns the type of the current state</p></p>                        
+                            <p><p>estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></td>
+            <td>int</td>
             <td></td>
         </tr>
     </table>
@@ -600,7 +600,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_contextWindow">
-        <div class="location">at line 29</div>
+        <div class="location">at line 28</div>
         <code>                    int
     <strong>contextWindow</strong>()
         </code>
@@ -631,40 +631,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_env">
-        <div class="location">at line 38</div>
-        <code>                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
-    <strong>env</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>return the LLM's current environment</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_fork">
-        <div class="location">at line 47</div>
+        <div class="location">at line 37</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>fork</strong>(string $label)
         </code>
@@ -706,7 +674,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_hasPending">
-        <div class="location">at line 57</div>
+        <div class="location">at line 47</div>
         <code>                    bool
     <strong>hasPending</strong>()
         </code>
@@ -738,7 +706,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 66</div>
+        <div class="location">at line 56</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -770,7 +738,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_lastReply">
-        <div class="location">at line 75</div>
+        <div class="location">at line 65</div>
         <code>                    string
     <strong>lastReply</strong>()
         </code>
@@ -802,7 +770,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loop">
-        <div class="location">at line 84</div>
+        <div class="location">at line 74</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>loop</strong>(int|null $maxSteps = null, int|null $maxTokens = null)
         </code>
@@ -849,7 +817,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_messages">
-        <div class="location">at line 99</div>
+        <div class="location">at line 89</div>
         <code>                    array
     <strong>messages</strong>()
         </code>
@@ -881,7 +849,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_model">
-        <div class="location">at line 108</div>
+        <div class="location">at line 98</div>
         <code>                    string
     <strong>model</strong>()
         </code>
@@ -913,7 +881,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_portableID">
-        <div class="location">at line 117</div>
+        <div class="location">at line 107</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>portableID</strong>()
         </code>
@@ -945,7 +913,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_provider">
-        <div class="location">at line 126</div>
+        <div class="location">at line 116</div>
         <code>                    string
     <strong>provider</strong>()
         </code>
@@ -977,7 +945,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_replay">
-        <div class="location">at line 135</div>
+        <div class="location">at line 125</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>replay</strong>()
         </code>
@@ -1008,8 +976,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_skills">
+        <div class="location">at line 135</div>
+        <code>                    array
+    <strong>skills</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_step">
-        <div class="location">at line 145</div>
+        <div class="location">at line 144</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>step</strong>(int|null $maxTokens = null)
         </code>
@@ -1051,7 +1051,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 157</div>
+        <div class="location">at line 156</div>
         <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -1083,7 +1083,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tokenUsage">
-        <div class="location">at line 167</div>
+        <div class="location">at line 166</div>
         <code>                    <a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a>
     <strong>tokenUsage</strong>()
         </code>
@@ -1115,7 +1115,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tools">
-        <div class="location">at line 176</div>
+        <div class="location">at line 175</div>
         <code>                    string
     <strong>tools</strong>()
         </code>
@@ -1147,7 +1147,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_transcript">
-        <div class="location">at line 185</div>
+        <div class="location">at line 184</div>
         <code>                    string
     <strong>transcript</strong>()
         </code>
@@ -1178,97 +1178,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withBlockedFunction">
-        <div class="location">at line 194</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withBlockedFunction</strong>(string $typeName, string $function)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Return a new LLM with the specified function no longer exposed as a tool</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$typeName</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string</td>
-                <td>$function</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withEnv">
-        <div class="location">at line 205</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withEnv</strong>(<a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a> $env)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>allow the LLM to interact with an environment via MCP</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></td>
-                <td>$env</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_withMCPServer">
-        <div class="location">at line 215</div>
+        <div class="location">at line 193</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withMCPServer</strong>(string $name, <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a> $service)
         </code>
@@ -1315,7 +1226,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModel">
-        <div class="location">at line 226</div>
+        <div class="location">at line 204</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withModel</strong>(string $model, string|null $provider = null)
         </code>
@@ -1361,55 +1272,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withObject">
-        <div class="location">at line 239</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withObject</strong>(string $tag, <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $object)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Track an object so the LLM can reference it in subsequent tool calls.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$tag</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
-                <td>$object</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_withPrompt">
-        <div class="location">at line 250</div>
+        <div class="location">at line 217</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withPrompt</strong>(string $prompt)
         </code>
@@ -1451,7 +1315,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPromptFile">
-        <div class="location">at line 260</div>
+        <div class="location">at line 227</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withPromptFile</strong>(<a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a> $file)
         </code>
@@ -1492,8 +1356,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withResetWorkspace">
+        <div class="location">at line 237</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>withResetWorkspace</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withResponse">
-        <div class="location">at line 270</div>
+        <div class="location">at line 246</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withResponse</strong>(array $content, int|null $inputTokens = 0, int|null $outputTokens = 0, int|null $cachedTokenReads = 0, int|null $cachedTokenWrites = 0, int|null $totalTokens = 0)
         </code>
@@ -1559,10 +1455,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withStaticTools">
-        <div class="location">at line 301</div>
+                    <h3 id="method_withSkills">
+        <div class="location">at line 277</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withStaticTools</strong>()
+    <strong>withSkills</strong>(<a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> $directory)
         </code>
     </h3>
     <div class="details">    
@@ -1570,9 +1466,19 @@
             
 
         <div class="method-description">
-                            <p><p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p></p>                        
+                            <p><p>Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+                <td>$directory</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -1592,7 +1498,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSystemPrompt">
-        <div class="location">at line 310</div>
+        <div class="location">at line 287</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withSystemPrompt</strong>(string $prompt)
         </code>
@@ -1634,7 +1540,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withToolResult">
-        <div class="location">at line 320</div>
+        <div class="location">at line 297</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withToolResult</strong>(string $callId, string $content, bool $errored)
         </code>
@@ -1663,6 +1569,95 @@
                     <tr>
                 <td>bool</td>
                 <td>$errored</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withTools">
+        <div class="location">at line 309</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>withTools</strong>(<a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a> $object, array|null $except = [])
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a></td>
+                <td>$object</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$except</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withWorkspace">
+        <div class="location">at line 322</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>withWorkspace</strong>(<a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> $workspace)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></td>
+                <td>$workspace</td>
                 <td></td>
             </tr>
             </table>
@@ -1769,6 +1764,38 @@
                     <table class="table table-condensed">
         <tr>
             <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_workspace">
+        <div class="location">at line 359</div>
+        <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
+    <strong>workspace</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return the workspace the LLM is bound to.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></td>
             <td></td>
         </tr>
     </table>

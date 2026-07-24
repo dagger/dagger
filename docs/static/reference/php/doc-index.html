@@ -109,7 +109,9 @@
     <h2 id="letterA">A</h2>
         <dl id="indexA"><dt><a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.</p></dd><dt><a href="Dagger/AddressId.html"><abbr title="Dagger\AddressId">AddressId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Binding.html#method_asAddress">
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/AgentGroup.html"><abbr title="Dagger\AgentGroup">AgentGroup</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/Binding.html#method_asAddress">
 <abbr title="Dagger\Binding">Binding</abbr>::asAddress</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type Address</p></dd><dt><a href="Dagger/Binding.html#method_asCacheVolume">
 <abbr title="Dagger\Binding">Binding</abbr>::asCacheVolume</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -276,7 +278,9 @@
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::asScalar</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.</p></dd><dt><a href="Dagger/Workspace.html#method_address">
 <abbr title="Dagger\Workspace">Workspace</abbr>::address</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p></dd>        </dl><h2 id="letterB">B</h2>
+                    <dd><p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p></dd><dt><a href="Dagger/Workspace.html#method_agents">
+<abbr title="Dagger\Workspace">Workspace</abbr>::agents</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return all agent middlewares from modules loaded in the workspace.</p></dd>        </dl><h2 id="letterB">B</h2>
         <dl id="indexB"><dt><a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/BindingId.html"><abbr title="Dagger\BindingId">BindingId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/BuildArg.html"><abbr title="Dagger\BuildArg">BuildArg</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -286,14 +290,14 @@
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branch</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Returns details of a branch.</p></dd><dt><a href="Dagger/GitRepository.html#method_branches">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branches</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>branches that match any of the given glob patterns.</p></dd><dt><a href="Dagger/LLM.html#method_bindResult">
-<abbr title="Dagger\LLM">LLM</abbr>::bindResult</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>returns the type of the current state</p></dd><dt><a href="Dagger/ModuleSource.html#method_blueprint">
+                    <dd><p>branches that match any of the given glob patterns.</p></dd><dt><a href="Dagger/ModuleSource.html#method_blueprint">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::blueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The blueprint referenced by the module source.</p></dd>        </dl><h2 id="letterC">C</h2>
         <dl id="indexC"><dt><a href="Dagger/Address.html#method_container">
 <abbr title="Dagger\Address">Address</abbr>::container</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
-                    <dd><p>Load a container from the address.</p></dd><dt><a href="Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Load a container from the address.</p></dd><dt><a href="Dagger/AgentGroup.html#method_compose">
+<abbr title="Dagger\AgentGroup">AgentGroup</abbr>::compose</a>() &mdash; <em>Method in class <a href="Dagger/AgentGroup.html"><abbr title="Dagger\AgentGroup">AgentGroup</abbr></a></em></dt>
+                    <dd><p>Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.</p></dd><dt><a href="Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A directory whose contents persist across runs.</p></dd><dt><a href="Dagger/CacheVolumeId.html"><abbr title="Dagger\CacheVolumeId">CacheVolumeId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A comparison between two directories representing changes that can be applied.</p></dd><dt><a href="Dagger/ChangesetDiffStatEntry.html"><abbr title="Dagger\ChangesetDiffStatEntry">ChangesetDiffStatEntry</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -320,13 +324,13 @@
 <abbr title="Dagger\Client">Client</abbr>::codegenBase</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Client.html#method_container">
 <abbr title="Dagger\Client">Client</abbr>::container</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Creates a scratch container, with no image or metadata.</p></dd><dt><a href="Dagger/Client.html#method_currentEnv">
-<abbr title="Dagger\Client">Client</abbr>::currentEnv</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Returns the current environment</p></dd><dt><a href="Dagger/Client.html#method_currentFunctionCall">
+                    <dd><p>Creates a scratch container, with no image or metadata.</p></dd><dt><a href="Dagger/Client.html#method_currentFunctionCall">
 <abbr title="Dagger\Client">Client</abbr>::currentFunctionCall</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The FunctionCall context that the SDK caller is currently executing in.</p></dd><dt><a href="Dagger/Client.html#method_currentModule">
 <abbr title="Dagger\Client">Client</abbr>::currentModule</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>The module currently being served in the session, if any.</p></dd><dt><a href="Dagger/Client.html#method_currentTypeDefs">
+                    <dd><p>The module currently being served in the session, if any.</p></dd><dt><a href="Dagger/Client.html#method_currentNode">
+<abbr title="Dagger\Client">Client</abbr>::currentNode</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p></dd><dt><a href="Dagger/Client.html#method_currentTypeDefs">
 <abbr title="Dagger\Client">Client</abbr>::currentTypeDefs</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The TypeDef representations of the objects currently being served in the session.</p></dd><dt><a href="Dagger/Client.html#method_currentWorkspace">
 <abbr title="Dagger\Client">Client</abbr>::currentWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -392,7 +396,9 @@
 <abbr title="Dagger\Host">Host</abbr>::containerImage</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>Accesses a container image on the host.</p></dd><dt><a href="Dagger/JsonValue.html#method_contents">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::contents</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
-                    <dd><p>Return the value encoded as json</p></dd><dt><a href="Dagger/LLM.html#method_contextWindow">
+                    <dd><p>Return the value encoded as json</p></dd><dt><a href="Dagger/LLM.html#method_contextTokens">
+<abbr title="Dagger\LLM">LLM</abbr>::contextTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session</p></dd><dt><a href="Dagger/LLM.html#method_contextWindow">
 <abbr title="Dagger\LLM">LLM</abbr>::contextWindow</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).</p></dd><dt><a href="Dagger/LLMContentBlock.html#method_callId">
 <abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr>::callId</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlock.html"><abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr></a></em></dt>
@@ -449,7 +455,9 @@
                     <dd><p>Clients generated with this SDK.</p></dd>        </dl><h2 id="letterD">D</h2>
         <dl id="indexD"><dt><a href="Dagger/Address.html#method_directory">
 <abbr title="Dagger\Address">Address</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
-                    <dd><p>Load a directory from the address.</p></dd><dt><a href="Dagger/Attribute/DaggerFunction.html"><abbr title="Dagger\Attribute\DaggerFunction">DaggerFunction</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
+                    <dd><p>Load a directory from the address.</p></dd><dt><a href="Dagger/Agent.html#method_description">
+<abbr title="Dagger\Agent">Agent</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>The description of the agent</p></dd><dt><a href="Dagger/Attribute/DaggerFunction.html"><abbr title="Dagger\Attribute\DaggerFunction">DaggerFunction</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Attribute/DaggerObject.html"><abbr title="Dagger\Attribute\DaggerObject">DaggerObject</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Attribute/DefaultPath.html"><abbr title="Dagger\Attribute\DefaultPath">DefaultPath</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Attribute/Doc.html"><abbr title="Dagger\Attribute\Doc">Doc</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
@@ -524,7 +532,9 @@
 <abbr title="Dagger\Host">Host</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>Accesses a directory on the host.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_description">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
-                    <dd><p>The doc string for the interface, if any.</p></dd><dt><a href="Dagger/Module.html#method_dependencies">
+                    <dd><p>The doc string for the interface, if any.</p></dd><dt><a href="Dagger/LLMSkill.html#method_description">
+<abbr title="Dagger\LLMSkill">LLMSkill</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/LLMSkill.html"><abbr title="Dagger\LLMSkill">LLMSkill</abbr></a></em></dt>
+                    <dd><p>The one-line description from the SKILL.md frontmatter.</p></dd><dt><a href="Dagger/Module.html#method_dependencies">
 <abbr title="Dagger\Module">Module</abbr>::dependencies</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The dependencies of the module.</p></dd><dt><a href="Dagger/Module.html#method_description">
 <abbr title="Dagger\Module">Module</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -561,9 +571,7 @@
 <abbr title="Dagger\Check">Check</abbr>::error</a>() &mdash; <em>Method in class <a href="Dagger/Check.html"><abbr title="Dagger\Check">Check</abbr></a></em></dt>
                     <dd><p>If the check failed, this is the error</p></dd><dt><a href="Dagger/Client.html#method_engine">
 <abbr title="Dagger\Client">Client</abbr>::engine</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>The Dagger engine container configuration and state</p></dd><dt><a href="Dagger/Client.html#method_env">
-<abbr title="Dagger\Client">Client</abbr>::env</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Initializes a new environment</p></dd><dt><a href="Dagger/Client.html#method_envFile">
+                    <dd><p>The Dagger engine container configuration and state</p></dd><dt><a href="Dagger/Client.html#method_envFile">
 <abbr title="Dagger\Client">Client</abbr>::envFile</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Initialize an environment file</p></dd><dt><a href="Dagger/Client.html#method_error">
 <abbr title="Dagger\Client">Client</abbr>::error</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -632,9 +640,7 @@
                     <dd></dd><dt><a href="Dagger/ExportableId.html"><abbr title="Dagger\ExportableId">ExportableId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/File.html#method_export">
 <abbr title="Dagger\File">File</abbr>::export</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
-                    <dd><p>Writes the file to a file path on the host.</p></dd><dt><a href="Dagger/LLM.html#method_env">
-<abbr title="Dagger\LLM">LLM</abbr>::env</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>return the LLM's current environment</p></dd><dt><a href="Dagger/LLMContentBlock.html#method_errored">
+                    <dd><p>Writes the file to a file path on the host.</p></dd><dt><a href="Dagger/LLMContentBlock.html#method_errored">
 <abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr>::errored</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlock.html"><abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr></a></em></dt>
                     <dd><p>Whether the tool call resulted in an error (for TOOL_RESULT kind).</p></dd><dt><a href="Dagger/ListTypeDef.html#method_elementTypeDef">
 <abbr title="Dagger\ListTypeDef">ListTypeDef</abbr>::elementTypeDef</a>() &mdash; <em>Method in class <a href="Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a></em></dt>
@@ -793,7 +799,11 @@
                     <dd><p>The checked-out HEAD of this workspace.</p></dd>        </dl><h2 id="letterI">I</h2>
         <dl id="indexI"><dt><a href="Dagger/Address.html#method_id">
 <abbr title="Dagger\Address">Address</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this Address.</p></dd><dt><a href="Dagger/Attribute/Ignore.html"><abbr title="Dagger\Attribute\Ignore">Ignore</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
+                    <dd><p>A unique identifier for this Address.</p></dd><dt><a href="Dagger/Agent.html#method_id">
+<abbr title="Dagger\Agent">Agent</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this Agent.</p></dd><dt><a href="Dagger/AgentGroup.html#method_id">
+<abbr title="Dagger\AgentGroup">AgentGroup</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/AgentGroup.html"><abbr title="Dagger\AgentGroup">AgentGroup</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this AgentGroup.</p></dd><dt><a href="Dagger/Attribute/Ignore.html"><abbr title="Dagger\Attribute\Ignore">Ignore</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt>$<a href="Dagger/Attribute/Ignore.html#property_ignore">
 <abbr title="Dagger\Attribute\Ignore">Ignore</abbr>#ignore</a> &mdash; <em>Property in class <a href="Dagger/Attribute/Ignore.html"><abbr title="Dagger\Attribute\Ignore">Ignore</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Binding.html#method_id">
@@ -924,7 +934,9 @@
 <abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMContentBlock.html"><abbr title="Dagger\LLMContentBlock">LLMContentBlock</abbr></a></em></dt>
                     <dd><p>A unique identifier for this LLMContentBlock.</p></dd><dt><a href="Dagger/LLMMessage.html#method_id">
 <abbr title="Dagger\LLMMessage">LLMMessage</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this LLMMessage.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_id">
+                    <dd><p>A unique identifier for this LLMMessage.</p></dd><dt><a href="Dagger/LLMSkill.html#method_id">
+<abbr title="Dagger\LLMSkill">LLMSkill</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMSkill.html"><abbr title="Dagger\LLMSkill">LLMSkill</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this LLMSkill.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_id">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
                     <dd><p>A unique identifier for this LLMTokenUsage.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_inputTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::inputTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
@@ -1026,7 +1038,9 @@
                     <dd><p>The kind of type this is (e.g. primitive, list, object).</p></dd><dt><a href="Dagger/WorkspaceModuleSetting.html#method_key">
 <abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr>::key</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceModuleSetting.html"><abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr></a></em></dt>
                     <dd><p>The setting key.</p></dd>        </dl><h2 id="letterL">L</h2>
-        <dl id="indexL"><dt><a href="Dagger/Attribute/ListOfType.html"><abbr title="Dagger\Attribute\ListOfType">ListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
+        <dl id="indexL"><dt><a href="Dagger/AgentGroup.html#method_list">
+<abbr title="Dagger\AgentGroup">AgentGroup</abbr>::list</a>() &mdash; <em>Method in class <a href="Dagger/AgentGroup.html"><abbr title="Dagger\AgentGroup">AgentGroup</abbr></a></em></dt>
+                    <dd><p>Return a list of individual agents and their details</p></dd><dt><a href="Dagger/Attribute/ListOfType.html"><abbr title="Dagger\Attribute\ListOfType">ListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Changeset.html#method_layer">
 <abbr title="Dagger\Changeset">Changeset</abbr>::layer</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Return a snapshot containing only the created and modified files</p></dd><dt><a href="Dagger/CheckGroup.html#method_list">
@@ -1058,7 +1072,8 @@
                     <dd><p>A single piece of content within an LLM message.</p></dd><dt><a href="Dagger/LLMContentBlockInput.html"><abbr title="Dagger\LLMContentBlockInput">LLMContentBlockInput</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A content block within an LLM message.</p></dd><dt><a href="Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A single message in an LLM conversation.</p></dd><dt><a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A single message in an LLM conversation.</p></dd><dt><a href="Dagger/LLMSkill.html"><abbr title="Dagger\LLMSkill">LLMSkill</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.</p></dd><dt><a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A count of tokens consumed by LLM API calls.</p></dd><dt><a href="Dagger/LLMTokenUsageId.html"><abbr title="Dagger\LLMTokenUsageId">LLMTokenUsageId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A simple key value object that represents a label.</p></dd><dt><a href="Dagger/LabelId.html"><abbr title="Dagger\LabelId">LabelId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1132,7 +1147,9 @@
                     <dd><p>List modules defined in the workspace configuration.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_modules">
 <abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr>::modules</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a></em></dt>
                     <dd><p>Modules authored with this SDK.</p></dd>        </dl><h2 id="letterN">N</h2>
-        <dl id="indexN"><dt><a href="Dagger/Binding.html#method_name">
+        <dl id="indexN"><dt><a href="Dagger/Agent.html#method_name">
+<abbr title="Dagger\Agent">Agent</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>Return the fully qualified name of the agent</p></dd><dt><a href="Dagger/Binding.html#method_name">
 <abbr title="Dagger\Binding">Binding</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Returns the binding name</p></dd><dt><a href="Dagger/Check.html#method_name">
 <abbr title="Dagger\Check">Check</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Check.html"><abbr title="Dagger\Check">Check</abbr></a></em></dt>
@@ -1184,7 +1201,9 @@
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::newInteger</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
                     <dd><p>Encode an integer to json</p></dd><dt><a href="Dagger/JsonValue.html#method_newString">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::newString</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
-                    <dd><p>Encode a string to json</p></dd><dt><a href="Dagger/Label.html#method_name">
+                    <dd><p>Encode a string to json</p></dd><dt><a href="Dagger/LLMSkill.html#method_name">
+<abbr title="Dagger\LLMSkill">LLMSkill</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/LLMSkill.html"><abbr title="Dagger\LLMSkill">LLMSkill</abbr></a></em></dt>
+                    <dd><p>The skill name, as passed to read_skill.</p></dd><dt><a href="Dagger/Label.html#method_name">
 <abbr title="Dagger\Label">Label</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a></em></dt>
                     <dd><p>The label name.</p></dd><dt><a href="Dagger/Module.html#method_name">
 <abbr title="Dagger\Module">Module</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -1207,7 +1226,9 @@
                     <dd><p>The module name.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_name">
 <abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a></em></dt>
                     <dd><p>The user-facing SDK name.</p></dd>        </dl><h2 id="letterO">O</h2>
-        <dl id="indexO"><dt><a href="Dagger/Check.html#method_originalModule">
+        <dl id="indexO"><dt><a href="Dagger/Agent.html#method_originalModule">
+<abbr title="Dagger\Agent">Agent</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>The original module in which the agent has been defined</p></dd><dt><a href="Dagger/Check.html#method_originalModule">
 <abbr title="Dagger\Check">Check</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/Check.html"><abbr title="Dagger\Check">Check</abbr></a></em></dt>
                     <dd><p>The original module in which the check has been defined</p></dd><dt><a href="Dagger/DiffStat.html#method_oldPath">
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::oldPath</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
@@ -1230,7 +1251,9 @@
                     <dd><p>Whether this type can be set to null. Defaults to false.</p></dd><dt><a href="Dagger/Up.html#method_originalModule">
 <abbr title="Dagger\Up">Up</abbr>::originalModule</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>The original module in which the service has been defined</p></dd>        </dl><h2 id="letterP">P</h2>
-        <dl id="indexP"><dt><a href="Dagger/ChangesetDiffStatEntry.html#method_path">
+        <dl id="indexP"><dt><a href="Dagger/Agent.html#method_path">
+<abbr title="Dagger\Agent">Agent</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/Agent.html"><abbr title="Dagger\Agent">Agent</abbr></a></em></dt>
+                    <dd><p>The path of the agent within its module</p></dd><dt><a href="Dagger/ChangesetDiffStatEntry.html#method_path">
 <abbr title="Dagger\ChangesetDiffStatEntry">ChangesetDiffStatEntry</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/ChangesetDiffStatEntry.html"><abbr title="Dagger\ChangesetDiffStatEntry">ChangesetDiffStatEntry</abbr></a></em></dt>
                     <dd><p>Path of the changed file or directory.</p></dd><dt><a href="Dagger/Check.html#method_passed">
 <abbr title="Dagger\Check">Check</abbr>::passed</a>() &mdash; <em>Method in class <a href="Dagger/Check.html"><abbr title="Dagger\Check">Check</abbr></a></em></dt>
@@ -1421,7 +1444,9 @@
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
                     <dd><p>The location of this interface declaration.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_sourceModuleName">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::sourceModuleName</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
-                    <dd><p>If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/LLM.html#method_step">
+                    <dd><p>If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/LLM.html#method_skills">
+<abbr title="Dagger\LLM">LLM</abbr>::skills</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p></dd><dt><a href="Dagger/LLM.html#method_step">
 <abbr title="Dagger\LLM">LLM</abbr>::step</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.</p></dd><dt><a href="Dagger/LLM.html#method_sync">
 <abbr title="Dagger\LLM">LLM</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -1960,7 +1985,9 @@
 <abbr title="Dagger\File">File</abbr>::withReplaced</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
                     <dd><p>Retrieves the file with content replaced with the given text.</p></dd><dt><a href="Dagger/File.html#method_withTimestamps">
 <abbr title="Dagger\File">File</abbr>::withTimestamps</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
-                    <dd><p>Retrieves this file with its created/modified timestamps set to the given time.</p></dd><dt><a href="Dagger/Function_.html#method_withArg">
+                    <dd><p>Retrieves this file with its created/modified timestamps set to the given time.</p></dd><dt><a href="Dagger/Function_.html#method_withAgent">
+<abbr title="Dagger\Function_">Function_</abbr>::withAgent</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
+                    <dd><p>Returns the function with a flag indicating it is an agent middleware.</p></dd><dt><a href="Dagger/Function_.html#method_withArg">
 <abbr title="Dagger\Function_">Function_</abbr>::withArg</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
                     <dd><p>Returns the function with the provided argument</p></dd><dt><a href="Dagger/Function_.html#method_withCachePolicy">
 <abbr title="Dagger\Function_">Function_</abbr>::withCachePolicy</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
@@ -1984,35 +2011,37 @@
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::withContents</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
                     <dd><p>Return a new json value, decoded from the given content</p></dd><dt><a href="Dagger/JsonValue.html#method_withField">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::withField</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
-                    <dd><p>Set a new field at the given path</p></dd><dt><a href="Dagger/LLM.html#method_withBlockedFunction">
-<abbr title="Dagger\LLM">LLM</abbr>::withBlockedFunction</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Return a new LLM with the specified function no longer exposed as a tool</p></dd><dt><a href="Dagger/LLM.html#method_withEnv">
-<abbr title="Dagger\LLM">LLM</abbr>::withEnv</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>allow the LLM to interact with an environment via MCP</p></dd><dt><a href="Dagger/LLM.html#method_withMCPServer">
+                    <dd><p>Set a new field at the given path</p></dd><dt><a href="Dagger/LLM.html#method_withMCPServer">
 <abbr title="Dagger\LLM">LLM</abbr>::withMCPServer</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Add an external MCP server to the LLM</p></dd><dt><a href="Dagger/LLM.html#method_withModel">
 <abbr title="Dagger\LLM">LLM</abbr>::withModel</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.</p></dd><dt><a href="Dagger/LLM.html#method_withObject">
-<abbr title="Dagger\LLM">LLM</abbr>::withObject</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Track an object so the LLM can reference it in subsequent tool calls.</p></dd><dt><a href="Dagger/LLM.html#method_withPrompt">
+                    <dd><p>Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.</p></dd><dt><a href="Dagger/LLM.html#method_withPrompt">
 <abbr title="Dagger\LLM">LLM</abbr>::withPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Queue a user prompt, to be sent to the model on the next step or loop.</p></dd><dt><a href="Dagger/LLM.html#method_withPromptFile">
 <abbr title="Dagger\LLM">LLM</abbr>::withPromptFile</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
+                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withResetWorkspace">
+<abbr title="Dagger\LLM">LLM</abbr>::withResetWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
 <abbr title="Dagger\LLM">LLM</abbr>::withResponse</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></dd><dt><a href="Dagger/LLM.html#method_withStaticTools">
-<abbr title="Dagger\LLM">LLM</abbr>::withStaticTools</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p></dd><dt><a href="Dagger/LLM.html#method_withSystemPrompt">
+                    <dd><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></dd><dt><a href="Dagger/LLM.html#method_withSkills">
+<abbr title="Dagger\LLM">LLM</abbr>::withSkills</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.</p></dd><dt><a href="Dagger/LLM.html#method_withSystemPrompt">
 <abbr title="Dagger\LLM">LLM</abbr>::withSystemPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Add a system prompt, instructing the model across the whole conversation.</p></dd><dt><a href="Dagger/LLM.html#method_withToolResult">
 <abbr title="Dagger\LLM">LLM</abbr>::withToolResult</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Append the result of a tool call to the message history.</p></dd><dt><a href="Dagger/LLM.html#method_withoutDefaultSystemPrompt">
+                    <dd><p>Append the result of a tool call to the message history.</p></dd><dt><a href="Dagger/LLM.html#method_withTools">
+<abbr title="Dagger\LLM">LLM</abbr>::withTools</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.</p></dd><dt><a href="Dagger/LLM.html#method_withWorkspace">
+<abbr title="Dagger\LLM">LLM</abbr>::withWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.</p></dd><dt><a href="Dagger/LLM.html#method_withoutDefaultSystemPrompt">
 <abbr title="Dagger\LLM">LLM</abbr>::withoutDefaultSystemPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Disable the default system prompt</p></dd><dt><a href="Dagger/LLM.html#method_withoutMessageHistory">
 <abbr title="Dagger\LLM">LLM</abbr>::withoutMessageHistory</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Clear the message history, keeping only the system prompts.</p></dd><dt><a href="Dagger/LLM.html#method_withoutSystemPrompts">
 <abbr title="Dagger\LLM">LLM</abbr>::withoutSystemPrompts</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Clear the user-added system prompts, keeping only the default system prompt.</p></dd><dt><a href="Dagger/Module.html#method_withDescription">
+                    <dd><p>Clear the user-added system prompts, keeping only the default system prompt.</p></dd><dt><a href="Dagger/LLM.html#method_workspace">
+<abbr title="Dagger\LLM">LLM</abbr>::workspace</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Return the workspace the LLM is bound to.</p></dd><dt><a href="Dagger/Module.html#method_withDescription">
 <abbr title="Dagger\Module">Module</abbr>::withDescription</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>Retrieves the module with the given description</p></dd><dt><a href="Dagger/Module.html#method_withEnum">
 <abbr title="Dagger\Module">Module</abbr>::withEnum</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>

@@ -1,18 +1,19 @@
 package daggercmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
@@ -145,6 +146,14 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+
+	// cmdParentCtx is the context active just above the per-command span
+	// created in Handle. Builtins whose telemetry should surface as siblings of
+	// the command itself -- rather than nested under the command's own span --
+	// replay against this instead of the command ctx (e.g. .resume, whose
+	// replayed conversation belongs at the top level, not buried under the
+	// ".resume" span).
+	cmdParentCtx context.Context
 }
 
 // QueueMessage stores a message submitted while the LLM is running, to be
@@ -197,12 +206,10 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 			}
 		}
 
-		if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+		// updateLLM also refreshes the status line for the branched-to state.
+		if err := s.updateLLM(loadedLLM); err != nil {
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
-		}
-		if err := s.updateSidebar(loadedLLM); err != nil {
-			slog.Error("failed to update sidebar for branch", "error", err)
 		}
 		// Branching creates a new session; clear the save identity so the next
 		// prompt generates a fresh save file rather than overwriting the
@@ -259,7 +266,12 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	// Use stdin only when no file paths are provided
 	if len(args) == 0 {
 		// Example: `dagger shell`
-		if isatty.IsTerminal(os.Stdin.Fd()) {
+		//
+		// Go interactive when stdin is a terminal, or when the TUI console
+		// (DAGGER_TUI_CONSOLE) is serving the prompt over HTTP -- there the
+		// input arrives via injected keys, not stdin, so there's no stdin tty
+		// to detect, but the REPL/prompt is exactly what we want to drive.
+		if isatty.IsTerminal(os.Stdin.Fd()) || os.Getenv("DAGGER_TUI_CONSOLE") != "" {
 			return h.runInteractive(ctx)
 		}
 		// Example: `echo 'container | workdir' | dagger shell`
@@ -415,10 +427,11 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	defer cancel()
 	h.cancel = cancel
 
-	// give ourselves a blank slate by zooming into a passthrough span
-	ctx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
-	defer shellSpan.End()
-	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
+	// The REPL's spans (and any LLM conversation) parent directly under the run's
+	// root span and surface at the top level on their own: an LLM conversation via
+	// promoteConversationLocked (the message analog of promoteChecksLocked). There
+	// used to be a passthrough `shell` span here that we manually zoomed into for a
+	// blank slate; that's obsolete now, so it's gone.
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
 	// Start the shell loop (either in LLM mode or normal shell mode)
@@ -441,44 +454,44 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 
 	// Empty input
 	if line == "" {
-		// add an immediately-canceled blank span, to emulate submitting blank shell
-		// commands to space things apart
-		_, span := Tracer().Start(ctx, "",
-			telemetry.Reveal(),
-			trace.WithAttributes(attribute.Bool(telemetry.CanceledAttr, true)))
-		span.End()
 		return nil
 	}
 
+	// shellLine is the shell script actually executed below. In shell mode it
+	// is the line as typed; in prompt mode a "/command" is rewritten to its
+	// builtin equivalent (".command") so it runs through the same path. The
+	// span's content type follows suit so a command renders as a command rather
+	// than as markdown.
+	shellLine := line
+	contentType := h.mode.ContentType()
+
 	// Handle based on mode
 	if h.mode == modePrompt {
-		// NB: no span in this case, just let the LLM APIs create the user/assistant
-		// message spans
+		if cmd, ok := h.slashCommand(line); ok {
+			// A prompt-mode "/command" invokes the matching builtin without
+			// leaving prompt mode, so session commands (e.g. /resume, /clear,
+			// /compact) are available natively in the agent prompt.
+			shellLine = cmd
+			contentType = modeShell.ContentType()
+		} else {
+			// NB: no span in this case, just let the LLM APIs create the user/assistant
+			// message spans
 
-		llm, err := h.llm(ctx)
-		if err != nil {
-			return err
-		}
-		if h.initialPrompt == "" {
-			h.initialPrompt = line
-		}
-		// Auto-save the session after each step, updating the same file
-		// in-place so a conversation maps to a single session file.
-		llm.onStep = func(s *LLMSession) {
-			savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+			llm, err := h.llm(ctx)
 			if err != nil {
-				slog.Warn("failed to auto-save session", "error", err)
-				return
+				return err
 			}
-			h.sessionUUID = savedUUID
+			if h.initialPrompt == "" {
+				h.initialPrompt = line
+			}
+			newLLM, err := llm.WithPrompt(ctx, line)
+			if err != nil {
+				return err
+			}
+			h.llmSession = newLLM
+			h.llmModel = newLLM.model
+			return nil
 		}
-		newLLM, err := llm.WithPrompt(ctx, line)
-		if err != nil {
-			return err
-		}
-		h.llmSession = newLLM
-		h.llmModel = newLLM.model
-		return nil
 	}
 
 	// Ensure we always see new telemetry for shell commands, rather than
@@ -487,12 +500,17 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
 
+	// Remember the context above the per-command span so builtins that replay
+	// conversation telemetry (.resume) can surface it at this level rather than
+	// nested under their own command span.
+	h.cmdParentCtx = ctx
+
 	// Create a new span for this command
 	var span trace.Span
 	ctx, span = Tracer().Start(ctx, line,
 		telemetry.Reveal(),
 		trace.WithAttributes(
-			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
+			attribute.String(telemetry.ContentTypeAttr, contentType),
 		))
 	var telemetryErr error
 	defer telemetry.EndWithCause(span, &telemetryErr)
@@ -528,7 +546,37 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	}
 
 	// Run shell command
-	return h.run(ctx, strings.NewReader(line), "")
+	return h.run(ctx, strings.NewReader(shellLine), "")
+}
+
+// PromptMode reports whether the handler is currently in LLM prompt mode, so
+// the frontend can frame the input to mirror the shaded user-message styling in
+// scrollback. It satisfies the optional interface the pretty frontend probes.
+func (h *shellCallHandler) PromptMode() bool {
+	return h.mode == modePrompt
+}
+
+// slashCommand maps a prompt-mode "/command" line to its equivalent ".command"
+// builtin invocation, returning the rewritten line and true when the leading
+// token names a real builtin. This lets agent-prompt users run session
+// commands (e.g. "/resume", "/compact") without switching to shell mode. Lines
+// that don't name a builtin -- including a bare "/" or ordinary prose that just
+// happens to start with a slash -- are left alone for the LLM.
+func (h *shellCallHandler) slashCommand(line string) (string, bool) {
+	name, ok := strings.CutPrefix(line, "/")
+	if !ok {
+		return "", false
+	}
+	if i := strings.IndexAny(name, " \t"); i >= 0 {
+		name = name[:i]
+	}
+	if name == "" {
+		return "", false
+	}
+	if cmd, _ := h.BuiltinCommand("." + name); cmd == nil {
+		return "", false
+	}
+	return "." + line[1:], true
 }
 
 func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
@@ -548,24 +596,19 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	case modePrompt:
-		// initialize LLM session if not already initialized
+		// initialize LLM session if not already initialized. The prompt is empty
+		// in this mode: the framed prompt input (see PromptFrame) frames the input
+		// with over/underline rules and keeps it flush to the edge, and the model
+		// is shown on the status line.
 		llm, err := h.llmMaybe()
 		if err != nil {
 			sb.WriteString(out.String("error").Bold().Foreground(termenv.ANSIRed).String())
 			sb.WriteString(out.String(" ").String())
-			fg = termenv.ANSIRed
-		} else if llm != nil {
-			sb.WriteString(out.String(llm.model).Bold().Foreground(termenv.ANSICyan).String())
-			sb.WriteString(out.String(" ").String())
-		} else {
-			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
-			sb.WriteString(out.String(" ").String())
+		} else if llm == nil {
 			init = func() {
 				h.llm(ctx) //nolint:errcheck
 			}
 		}
-		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
-		sb.WriteString(out.String(out.String(" ").String()).String())
 	}
 
 	return sb.String(), init
@@ -583,6 +626,29 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 		before := input[:cursorPos]
 		wordStart := strings.LastIndexAny(before, " \t\n") + 1
 		word := before[wordStart:]
+		// Slash-command completion: a leading "/" at the very start of the line
+		// offers the session builtins, shown without their "." prefix (e.g.
+		// "/resume"), mirroring how they run in prompt mode.
+		if wordStart == 0 && strings.HasPrefix(word, "/") {
+			prefix := word[1:]
+			var items []tuist.Completion
+			for _, c := range h.Builtins() {
+				name := strings.TrimPrefix(c.Name(), ".")
+				if strings.HasPrefix(name, prefix) {
+					items = append(items, tuist.Completion{
+						Label:  "/" + name,
+						Detail: c.Short(),
+					})
+				}
+			}
+			slices.SortFunc(items, func(a, b tuist.Completion) int {
+				return cmp.Compare(a.Label, b.Label)
+			})
+			return tuist.CompletionResult{
+				Items:       items,
+				ReplaceFrom: wordStart,
+			}
+		}
 		if after, ok := strings.CutPrefix(word, "$"); ok {
 			vars := h.runner.Vars
 			var items []tuist.Completion
@@ -596,6 +662,15 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 			}
 			return tuist.CompletionResult{
 				Items:       items,
+				ReplaceFrom: wordStart,
+			}
+		}
+		// Path completion: a word starting with "@" references a host path to
+		// hand to the agent (see attachReferences). Complete it against the host
+		// filesystem, expanding a leading "~".
+		if strings.HasPrefix(word, "@") {
+			return tuist.CompletionResult{
+				Items:       completeReferencePath(word[1:]),
 				ReplaceFrom: wordStart,
 			}
 		}
@@ -645,6 +720,18 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	}
 	h.llmSession = s
 	h.llmModel = s.model
+	// Auto-save the session after each step (and after ctrl+s exports/resets the
+	// workspace), updating the same file in-place so a conversation maps to a
+	// single session file. Set here at init so it is available even before the
+	// first prompt (e.g. ctrl+s on a freshly loaded session).
+	s.onStep = func(s *LLMSession) {
+		savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+		if err != nil {
+			slog.Warn("failed to auto-save session", "error", err)
+			return
+		}
+		h.sessionUUID = savedUUID
+	}
 	return h.llmSession, h.llmErr
 }
 
@@ -663,11 +750,6 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 			key.WithKeys(">"),
 			key.WithHelp(">", "run prompt"),
 			idtui.KeyEnabled(h.mode == modeShell),
-		),
-		key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("ctrl+u", "upload changes"),
-			idtui.KeyEnabled(h.mode == modePrompt),
 		),
 		key.NewBinding(
 			key.WithKeys("ctrl+x"),
@@ -694,14 +776,17 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 		}
 	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
-			h.llmSession.ToggleAutocompact()
-			return noop
+			// Run async: ToggleAutocompact refreshes the status line, which
+			// makes engine round-trips we don't want on the input goroutine.
+			return func() {
+				h.llmSession.ToggleAutocompact()
+			}
 		}
 	case key.MatchString("ctrl+s"):
 		if h.llmSession != nil {
 			return func() {
-				if err := h.llmSession.SyncToLocal(ctx); err != nil {
-					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
+				if err := h.llmSession.ExportChanges(ctx); err != nil {
+					slog.Error("failed to export changes to local filesystem", "error", err.Error())
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
@@ -712,11 +797,11 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 	case key.MatchString("ctrl+u"):
 		if h.llmSession != nil {
 			return func() {
-				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
-					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
+				if err := h.llmSession.ResetWorkspace(ctx); err != nil {
+					slog.Error("failed to reset agent workspace", "error", err.Error())
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
-						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+						Content: termenv.String("RESET ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
 			}

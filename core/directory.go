@@ -12,7 +12,10 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -367,10 +370,43 @@ type DirectoryWithDirectoryDockerfileCompatLazy struct {
 	AlwaysReplaceExistingDestPaths   bool
 }
 
+// PatchConflict configures how withPatch handles hunks that no longer apply
+// to the target content.
+type PatchConflict string
+
+var PatchConflicts = dagql.NewEnum[PatchConflict]()
+
+var (
+	PatchConflictFail = PatchConflicts.Register("FAIL",
+		"Fail the operation if any part of the patch does not apply.")
+	PatchConflictLeaveMarkers = PatchConflicts.Register("LEAVE_CONFLICT_MARKERS",
+		"Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing.")
+)
+
+func (PatchConflict) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "PatchConflict",
+		NonNull:   true,
+	}
+}
+
+func (t PatchConflict) TypeDescription() string {
+	return "How to handle patch hunks that no longer apply to the target content."
+}
+
+func (t PatchConflict) Decoder() dagql.InputDecoder {
+	return PatchConflicts
+}
+
+func (t PatchConflict) ToLiteral() call.Literal {
+	return PatchConflicts.Literal(t)
+}
+
 type DirectoryWithPatchFileLazy struct {
 	LazyState
-	Parent dagql.ObjectResult[*Directory]
-	Patch  dagql.ObjectResult[*File]
+	Parent     dagql.ObjectResult[*Directory]
+	Patch      dagql.ObjectResult[*File]
+	OnConflict PatchConflict
 }
 
 type DirectoryWithNewFileLazy struct {
@@ -471,8 +507,9 @@ type persistedDirectoryWithDirectoryDockerfileCompatLazy struct {
 }
 
 type persistedDirectoryWithPatchFileLazy struct {
-	ParentResultID uint64 `json:"parentResultID"`
-	PatchResultID  uint64 `json:"patchResultID"`
+	ParentResultID uint64        `json:"parentResultID"`
+	PatchResultID  uint64        `json:"patchResultID"`
+	OnConflict     PatchConflict `json:"onConflict,omitempty"`
 }
 
 type persistedDirectoryWithNewFileLazy struct {
@@ -700,7 +737,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, lazyKi
 		if err != nil {
 			return nil, err
 		}
-		return &DirectoryWithPatchFileLazy{LazyState: NewLazyState(), Parent: parent, Patch: patch}, nil
+		return &DirectoryWithPatchFileLazy{LazyState: NewLazyState(), Parent: parent, Patch: patch, OnConflict: persisted.OnConflict}, nil
 	case persistedDirectoryLazyKindWithNewFile:
 		var persisted persistedDirectoryWithNewFileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -938,7 +975,7 @@ func (lazy *DirectoryWithDirectoryDockerfileCompatLazy) EncodePersisted(ctx cont
 
 func (lazy *DirectoryWithPatchFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return lazy.LazyState.Evaluate(ctx, "Directory.withPatchFile", func(ctx context.Context) error {
-		return dir.applyPatchFileResult(ctx, lazy.Parent, lazy.Patch)
+		return dir.applyPatchFileResult(ctx, lazy.Parent, lazy.Patch, lazy.OnConflict)
 	})
 }
 
@@ -965,7 +1002,7 @@ func (lazy *DirectoryWithPatchFileLazy) EncodePersisted(ctx context.Context, cac
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(persistedDirectoryWithPatchFileLazy{ParentResultID: parentID, PatchResultID: patchID})
+	return json.Marshal(persistedDirectoryWithPatchFileLazy{ParentResultID: parentID, PatchResultID: patchID, OnConflict: lazy.OnConflict})
 }
 
 func (lazy *DirectoryWithNewFileLazy) Evaluate(ctx context.Context, dir *Directory) error {
@@ -1572,7 +1609,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, parent dagql.ObjectResult
 	return nil
 }
 
-func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcache.ImmutableRef, dirPath string, patch dagql.ObjectResult[*File]) (bkcache.ImmutableRef, error) {
+func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcache.ImmutableRef, dirPath string, patch dagql.ObjectResult[*File], onConflict PatchConflict) (bkcache.ImmutableRef, error) {
 	reopenParent := func() (bkcache.ImmutableRef, error) {
 		if parentRef == nil {
 			return nil, nil
@@ -1645,7 +1682,7 @@ func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcach
 				return fmt.Errorf("open patch file: %w", err)
 			}
 			defer patchFile.Close()
-			return applyGitPatch(ctx, resolvedDir, patchFile, stdio)
+			return applyGitPatch(ctx, resolvedDir, patchFile, stdio, onConflict)
 		}, mountRefAsReadOnly)
 	})
 	if err != nil {
@@ -1719,7 +1756,7 @@ func (dir *Directory) withoutPathsFromSnapshot(ctx context.Context, parentSnapsh
 	return snapshot, anyPathsRemoved, nil
 }
 
-func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.ObjectResult[*Directory], patch dagql.ObjectResult[*File]) error {
+func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.ObjectResult[*Directory], patch dagql.ObjectResult[*File], onConflict PatchConflict) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -1736,7 +1773,7 @@ func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return err
 	}
-	snap, err := dir.applyPatchToSnapshot(ctx, parentRef, parentDir, patch)
+	snap, err := dir.applyPatchToSnapshot(ctx, parentRef, parentDir, patch, onConflict)
 	if err != nil {
 		return err
 	}
@@ -1753,19 +1790,165 @@ func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.Obj
 	return nil
 }
 
-func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telemetry.SpanStreams) error {
-	apply := exec.CommandContext(ctx, "git", "apply", "--allow-empty", "-")
+func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telemetry.SpanStreams, onConflict PatchConflict) error {
+	leaveMarkers := onConflict == PatchConflictLeaveMarkers
+	args := []string{"apply", "--allow-empty"}
+	var preexisting map[string]bool
+	if leaveMarkers {
+		// --reject applies every hunk that fits and writes the rest to
+		// <file>.rej; the rejects are converted to conflict markers below.
+		args = append(args, "--reject")
+		var err error
+		preexisting, err = findRejectFiles(dir)
+		if err != nil {
+			return err
+		}
+	}
+	args = append(args, "-")
+	apply := exec.CommandContext(ctx, "git", args...)
 	apply.Dir = dir
 	apply.Stdin = patch
 	apply.Stdout = stdio.Stdout
 	apply.Stderr = stdio.Stderr
-	if err := apply.Run(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("git apply: %w", err)
+	runErr := apply.Run()
+	if runErr != nil && ctx.Err() != nil {
+		return ctx.Err()
 	}
+	if !leaveMarkers {
+		if runErr != nil {
+			return fmt.Errorf("git apply: %w", runErr)
+		}
+		return nil
+	}
+	rejects, err := findRejectFiles(dir)
+	if err != nil {
+		return err
+	}
+	conflicted := make([]string, 0, len(rejects))
+	for rej := range rejects {
+		if !preexisting[rej] {
+			conflicted = append(conflicted, rej)
+		}
+	}
+	if len(conflicted) == 0 {
+		// No rejects written: a non-zero exit is a hard failure (bad patch,
+		// not a content conflict).
+		if runErr != nil {
+			return fmt.Errorf("git apply: %w", runErr)
+		}
+		return nil
+	}
+	sort.Strings(conflicted)
+	conflictedTargets := make([]string, 0, len(conflicted))
+	for _, rej := range conflicted {
+		target := strings.TrimSuffix(rej, ".rej")
+		if err := convertRejectToMarkers(filepath.Join(dir, target), filepath.Join(dir, rej)); err != nil {
+			return fmt.Errorf("convert %s to conflict markers: %w", rej, err)
+		}
+		if err := os.Remove(filepath.Join(dir, rej)); err != nil {
+			return err
+		}
+		conflictedTargets = append(conflictedTargets, target)
+	}
+	fmt.Fprintf(stdio.Stderr, "WARNING: %d file(s) no longer match the patch; conflict markers were left in: %s\n",
+		len(conflictedTargets), strings.Join(conflictedTargets, ", "))
 	return nil
+}
+
+// findRejectFiles returns the set of *.rej paths under dir, relative to dir.
+func findRejectFiles(dir string) (map[string]bool, error) {
+	rejects := map[string]bool{}
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".rej") {
+			rel, err := filepath.Rel(dir, path)
+			if err != nil {
+				return err
+			}
+			rejects[rel] = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rejects, nil
+}
+
+// rejectHunk is one hunk from a git-apply reject file: the 1-based line in
+// the pre-image where it wanted to apply, and the post-image lines (context
+// plus additions) it wanted to produce.
+type rejectHunk struct {
+	oldStart int
+	theirs   []string
+}
+
+var rejectHunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@`)
+
+// convertRejectToMarkers folds a git-apply .rej file into its target as
+// git-style conflict markers: the surrounding content is left in place (the
+// "workspace" side) and each rejected hunk's intended result is inserted at
+// its recorded pre-image position (the "patch" side). Best-effort placement:
+// the content has drifted from what the hunk expected — that is why it was
+// rejected — so the markers flag the intent for a human or agent to resolve
+// rather than reproduce the edit exactly.
+func convertRejectToMarkers(targetPath, rejPath string) error {
+	rejBytes, err := os.ReadFile(rejPath)
+	if err != nil {
+		return err
+	}
+	var hunks []rejectHunk
+	for _, line := range strings.Split(string(rejBytes), "\n") {
+		if m := rejectHunkHeader.FindStringSubmatch(line); m != nil {
+			oldStart, err := strconv.Atoi(m[1])
+			if err != nil {
+				return fmt.Errorf("parse hunk header %q: %w", line, err)
+			}
+			hunks = append(hunks, rejectHunk{oldStart: oldStart})
+			continue
+		}
+		if len(hunks) == 0 {
+			continue // file header
+		}
+		h := &hunks[len(hunks)-1]
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "+") {
+			h.theirs = append(h.theirs, line[1:])
+		}
+	}
+	if len(hunks) == 0 {
+		return nil
+	}
+
+	var lines []string
+	trailingNewline := true
+	if targetBytes, err := os.ReadFile(targetPath); err == nil {
+		content := string(targetBytes)
+		trailingNewline = content == "" || strings.HasSuffix(content, "\n")
+		lines = strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	// Insert from the bottom up so earlier insertions don't shift later
+	// positions.
+	sort.Slice(hunks, func(i, j int) bool { return hunks[i].oldStart > hunks[j].oldStart })
+	for _, h := range hunks {
+		at := min(max(h.oldStart-1, 0), len(lines))
+		block := make([]string, 0, len(h.theirs)+3)
+		block = append(block, "<<<<<<< workspace")
+		block = append(block, "=======")
+		block = append(block, h.theirs...)
+		block = append(block, fmt.Sprintf(">>>>>>> patch (rejected hunk at line %d)", h.oldStart))
+		lines = append(lines[:at], append(block, lines[at:]...)...)
+	}
+
+	out := strings.Join(lines, "\n")
+	if trailingNewline {
+		out += "\n"
+	}
+	return os.WriteFile(targetPath, []byte(out), 0o644)
 }
 
 func (dir *Directory) Search(ctx context.Context, self dagql.ObjectResult[*Directory], opts SearchOpts, verbose bool, paths []string, globs []string) ([]*SearchResult, error) {

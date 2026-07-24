@@ -42,6 +42,47 @@ func (src *ModuleSource) resolveGitPointer(
 	dag *dagql.Server,
 	dir dagql.ObjectResult[*Directory],
 ) (dagql.ObjectResult[*Directory], error) {
+	if src.Kind != ModuleSourceKindLocal {
+		st, err := dir.Self().Stat(ctx, dir, dag, ".git", true)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return dir, ErrNoGitContext
+			}
+			return dir, err
+		}
+		if st.FileType != FileTypeRegular {
+			// A normal .git directory; nothing to resolve.
+			return dir, nil
+		}
+		// Non-local sources have no client host to resolve the pointer
+		// against, so leave the pointer file in place.
+		return dir, nil
+	}
+	return FlattenGitPointer(ctx, dag, dir, src.Local.ContextDirectoryPath, src.loadClientDir)
+}
+
+// LoadHostDirFunc loads an absolute path from a client host as a Directory. It
+// abstracts over the differing client-metadata routing used by module sources
+// and workspaces.
+type LoadHostDirFunc func(ctx context.Context, dag *dagql.Server, hostPath string) (dagql.ObjectResult[*Directory], error)
+
+// FlattenGitPointer follows a .git pointer file (a "gitfile") at the root of
+// dir and reassembles it into a standalone .git directory in the snapshot.
+// contextPath is the client host path of dir's root, used to resolve relative
+// gitdir targets; loadHostDir loads absolute host paths (which for gitfile
+// targets legitimately live outside the context).
+//
+// A missing .git reports ErrNoGitContext (a legitimate "no git checkout"
+// state, degradable by callers); a plain .git directory is returned unchanged;
+// a .git pointer file that exists but can't be resolved into a usable git
+// directory is a hard error.
+func FlattenGitPointer(
+	ctx context.Context,
+	dag *dagql.Server,
+	dir dagql.ObjectResult[*Directory],
+	contextPath string,
+	loadHostDir LoadHostDirFunc,
+) (dagql.ObjectResult[*Directory], error) {
 	st, err := dir.Self().Stat(ctx, dir, dag, ".git", true)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -51,9 +92,6 @@ func (src *ModuleSource) resolveGitPointer(
 	}
 	if st.FileType != FileTypeRegular {
 		// A normal .git directory; nothing to resolve.
-		return dir, nil
-	}
-	if src.Kind != ModuleSourceKindLocal {
 		return dir, nil
 	}
 
@@ -66,14 +104,13 @@ func (src *ModuleSource) resolveGitPointer(
 		return dir, notAGitRepo("malformed .git pointer file %q", strings.TrimSpace(string(pointer)))
 	}
 	// A relative gitdir is relative to the directory containing the pointer
-	// file, i.e. the context root, which for a local source is a client host
-	// path.
+	// file, i.e. the context root, which is a client host path.
 	hostGitDir := strings.TrimSpace(target)
 	if !filepath.IsAbs(hostGitDir) {
-		hostGitDir = filepath.Join(src.Local.ContextDirectoryPath, hostGitDir)
+		hostGitDir = filepath.Join(contextPath, hostGitDir)
 	}
 
-	gitDir, err := src.loadClientDir(ctx, dag, hostGitDir)
+	gitDir, err := loadHostDir(ctx, dag, hostGitDir)
 	if err != nil {
 		return dir, notAGitRepo("load .git pointer target %q: %s", hostGitDir, err)
 	}
@@ -94,7 +131,7 @@ func (src *ModuleSource) resolveGitPointer(
 		if !filepath.IsAbs(hostCommonDir) {
 			hostCommonDir = filepath.Join(hostGitDir, hostCommonDir)
 		}
-		commonDir, err := src.loadClientDir(ctx, dag, hostCommonDir)
+		commonDir, err := loadHostDir(ctx, dag, hostCommonDir)
 		if err != nil {
 			return dir, notAGitRepo("load git common dir %q: %s", hostCommonDir, err)
 		}

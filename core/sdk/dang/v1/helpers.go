@@ -32,9 +32,8 @@ func (r *runtime) eval(
 	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
-	envContext dagql.ObjectResult[*core.Env],
 ) ([]byte, error) {
-	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, envContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
+	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
 		return dang.RunDir(ctx, modSrcDir, false)
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
@@ -72,11 +71,10 @@ func evalDangSource(
 	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
-	envContext dagql.ObjectResult[*core.Env],
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
-	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, envContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
+	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response
 		f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
 		if err != nil {
@@ -528,7 +526,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 }
 
 // functionDirectiveSelectors converts function-level directives (@check,
-// @generate, @up, @cache) into dagql selectors.
+// @generate, @up, @agent, @cache) into dagql selectors.
 func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, directives []*dang.DirectiveApplication) ([]dagql.Selector, error) {
 	var sels []dagql.Selector
 	for _, directive := range directives {
@@ -539,6 +537,8 @@ func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, direct
 			sels = append(sels, dagql.Selector{Field: "withGenerator"})
 		case "up":
 			sels = append(sels, dagql.Selector{Field: "withUp"})
+		case "agent":
+			sels = append(sels, dagql.Selector{Field: "withAgent"})
 		case "cache":
 			sel, err := cacheDirectiveSelector(ctx, env, directive)
 			if err != nil {

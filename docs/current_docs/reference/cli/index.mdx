@@ -41,6 +41,7 @@ dagger [options] [subcommand | file...]
 ### SEE ALSO
 
 * [dagger activity](#dagger-activity)	 - Show recent activity (runs, traces, etc.) for this workspace
+* [dagger agent](#dagger-agent)	 - Compose your installed agent modules and drop into an interactive prompt.
 * [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
 * [dagger check](#dagger-check)	 - Verify your project — tests, linters, type checks, security scans, etc.
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
@@ -71,6 +72,61 @@ dagger activity
 
 ```
   -a, --all   Show activity from all remotes in the current workspace
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger agent
+
+Compose your installed agent modules and drop into an interactive prompt.
+
+### Synopsis
+
+Compose your installed agent modules — their tools and system prompts — onto a base LLM, and drop into the interactive prompt with them all live.
+
+Each installed module that exposes an @agent function contributes its toolset and
+system prompt. With no arguments, every installed agent is composed, in
+alphabetical order. Name one or more agents to compose only those.
+
+Examples:
+  dagger agent                    # Compose all installed agents and start the prompt
+  dagger agent -l                 # List all available agents
+  dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
+  dagger agent -r                 # Resume a saved session (interactive picker)
+  dagger agent -r <session>       # Resume a specific saved session
+
+
+```
+dagger agent [options] [name...]
+```
+
+### Options
+
+```
+  -l, --list            List available agents
+  -r, --resume string   Resume a saved session (interactive picker if no id given)
 ```
 
 ### Options inherited from parent commands

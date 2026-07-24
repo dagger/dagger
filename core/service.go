@@ -852,7 +852,6 @@ func (svc *Service) startContainer(
 			nestedClientMetadata,
 			svc.ModuleContext,
 			nil,
-			dagql.ObjectResult[*Env]{},
 		)
 		runErr <- err
 	}()

@@ -35,6 +35,7 @@ type ModTreeNode struct {
 	IsCheck        bool
 	IsGenerator    bool
 	IsUp           bool
+	IsAgent        bool
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -153,7 +154,6 @@ func (node *ModTreeNode) runAsCheck(
 				}
 			}
 			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
-				telemetry.Reveal(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
@@ -323,7 +323,6 @@ func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, p
 		func(n *ModTreeNode) bool { return n.IsUp },
 		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
-				telemetry.Reveal(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.String(ServiceNameAttr, n.PathString()),
@@ -463,7 +462,6 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		readyName = "ready " + strings.Join(urls, " ")
 	}
 	_, readySpan := Tracer(ctx).Start(ctx, readyName,
-		telemetry.Reveal(),
 		trace.WithAttributes(
 			attribute.StringSlice("service.urls", urls),
 		),
@@ -478,7 +476,6 @@ func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []st
 		func(n *ModTreeNode) bool { return n.IsGenerator },
 		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) (rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
-				telemetry.Reveal(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
@@ -633,6 +630,14 @@ func (node *ModTreeNode) Clone() *ModTreeNode {
 }
 
 func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
+	return node.dagqlValue(ctx, dest, nil)
+}
+
+// dagqlValue selects the node's value, passing leafArgs as arguments to the
+// final Select (the leaf function). Parent objects are always auto-constructed
+// with defaults (no leafArgs), so leafArgs only ever fill the leaf itself — e.g.
+// the @agent fold supplies `base` here (see RunAgent).
+func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []dagql.NamedInput) error {
 	// We can't direct-select the dagql path, because Select() doesn't support traversing
 	// lists
 	// FIXME: as an optimization, one-shot when possible?
@@ -646,7 +651,7 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 		if mod == nil {
 			return fmt.Errorf("%q: get value: missing module", node.PathString())
 		}
-		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(mod.Name())})
+		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(mod.Name()), Args: leafArgs})
 	}
 	// 2. Is parent an object?
 	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
@@ -654,9 +659,49 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
 			return err
 		}
-		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{Field: node.Name})
+		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{Field: node.Name, Args: leafArgs})
 	}
 	return fmt.Errorf("%q: get value: parent is not an object", node.PathString())
+}
+
+// RunAgent evaluates an @agent leaf, threading the accumulator LLM explicitly
+// as the required `base` argument, and returns the resulting composed LLM. This
+// is the per-leaf step of AgentGroup.Compose (hack/designs/workspace-agents.md §3): the owning
+// object is auto-constructed with defaults and the leaf is selected with
+// base = acc.
+func (node *ModTreeNode) RunAgent(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+	var result dagql.ObjectResult[*LLM]
+	baseID, err := base.ID()
+	if err != nil {
+		return result, fmt.Errorf("%q: agent base id: %w", node.PathString(), err)
+	}
+	err = node.dagqlValue(ctx, &result, []dagql.NamedInput{
+		{Name: node.agentBaseArg(), Value: dagql.NewID[*LLM](baseID)},
+	})
+	return result, err
+}
+
+// agentBaseArg returns the name of this @agent function's LLM! argument (the
+// base the fold fills). It is identified by type, so it works whatever the
+// author named it (`base`, `llm`, …). Falls back to agentBaseArgName if the
+// function or its LLM arg can't be resolved.
+func (node *ModTreeNode) agentBaseArg() string {
+	if node.Parent != nil {
+		if pot := node.Parent.ObjectType(); pot != nil {
+			for _, fnRes := range pot.Functions {
+				fn := fnRes.Self()
+				if fn.Name != node.Name || !fn.IsAgent {
+					continue
+				}
+				for _, argRes := range fn.Args {
+					if arg := argRes.Self(); isCoreLLMArg(arg) {
+						return arg.Name
+					}
+				}
+			}
+		}
+	}
+	return agentBaseArgName
 }
 
 func debugTrace(ctx context.Context, msg string, args ...any) {
@@ -723,6 +768,13 @@ func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, 
 func (node *ModTreeNode) RollupUp(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
 	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
 		return n.IsUp
+	}, include, exclude)
+}
+
+// Walk the tree and return all agent nodes, with include and exclude filters applied.
+func (node *ModTreeNode) RollupAgents(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
+	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
+		return n.IsAgent
 	}, include, exclude)
 }
 
@@ -893,7 +945,10 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 		nodeType := objType.Name
 		for _, fnRes := range objType.Functions {
 			fn := fnRes.Self()
-			if functionRequiresArgs(fn) {
+			// @agent functions declare a required `base: LLM!` that the compose
+			// fold supplies explicitly; exempt that one arg so agent leaves are
+			// not dropped. Any *other* required arg still disqualifies.
+			if functionRequiresArgsExceptAgentBase(fn) {
 				continue
 			}
 			returnType := fn.ReturnType.Self().ToType().Name()
@@ -907,6 +962,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				IsCheck:        fn.IsCheck,
 				IsGenerator:    fn.IsGenerator,
 				IsUp:           fn.IsUp,
+				IsAgent:        fn.IsAgent,
 				Description:    fn.Description,
 			})
 			// if the type returned by the function is an object, also add the object subtree
@@ -924,6 +980,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 						IsCheck:        false,
 						IsGenerator:    false,
 						IsUp:           false,
+						IsAgent:        false,
 						Description:    subType.Self().AsObject.Value.Self().Description,
 					})
 				}
@@ -941,6 +998,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				IsCheck:        false,
 				IsGenerator:    false,
 				IsUp:           false,
+				IsAgent:        false,
 				Description:    field.Description,
 			})
 		}
@@ -999,6 +1057,7 @@ type persistedModTreeNode struct {
 	IsCheck                bool   `json:"isCheck,omitempty"`
 	IsGenerator            bool   `json:"isGenerator,omitempty"`
 	IsUp                   bool   `json:"isUp,omitempty"`
+	IsAgent                bool   `json:"isAgent,omitempty"`
 }
 
 type persistedModTreeEncoder struct {
@@ -1044,6 +1103,7 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 		IsCheck:     node.IsCheck,
 		IsGenerator: node.IsGenerator,
 		IsUp:        node.IsUp,
+		IsAgent:     node.IsAgent,
 	}
 	if node.Module.Self() != nil {
 		moduleID, err := encodePersistedObjectRef(enc.cache, node.Module, "mod tree module")
@@ -1088,6 +1148,7 @@ func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persist
 			IsCheck:     persisted.IsCheck,
 			IsGenerator: persisted.IsGenerator,
 			IsUp:        persisted.IsUp,
+			IsAgent:     persisted.IsAgent,
 		}
 		if persisted.ModuleResultID != 0 {
 			module, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleResultID, "mod tree module")

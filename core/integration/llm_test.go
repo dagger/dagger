@@ -27,18 +27,15 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"gotest.tools/v3/golden"
 )
 
-/* NOTE: To update golden test examples, run the tests on the host against a
-dev engine (so -update writes the goldens back into the worktree), with an env
-file containing live provider credentials:
-
-	env DAGGER_LLM_TEST_ENV=$PWD/.env ./hack/with-dev go test ./core/integration/ -run TestLLM -count=1 -update
-
-(engine-dev test --update runs -update inside the test container and discards
-the recorded goldens.)
-*/
+/* NOTE: These tests use canned conversations rather than live providers: each
+test constructs the exact message history it needs through the LLM API itself
+(withPrompt/withResponse/withToolResult), exports it with the same messages
+selection a real recording would use, and replays it via a replay/ model (see
+cannedReplayModel). Deriving the recording from the engine on every run keeps
+it in lockstep with the export/decode format by construction — there are no
+stored recordings to go stale, and no API keys are needed. */
 
 type LLMSuite struct{}
 
@@ -50,6 +47,9 @@ type LLMTestCase struct {
 	Ref   string
 	Name  string
 	Flags []LLMTestCaseFlag
+	// Conversation constructs the canned message history this case replays,
+	// through the LLM API itself (no live provider).
+	Conversation func(*dagger.Client) *dagger.LLM
 }
 
 type LLMTestCaseFlag struct {
@@ -124,9 +124,9 @@ func messagesGolden(t *testctx.T, queryOutput string, path string) []byte {
 	return data
 }
 
-// recordMessages runs a raw GraphQL query that drives a conversation against
-// live providers and renders the messages export at the given gjson path as a
-// replay recording. The query should select messages{llmMessagesSelection}.
+// recordMessages runs a raw GraphQL query that drives a conversation and
+// renders the messages export at the given gjson path as a replay recording.
+// The query should select messages{llmMessagesSelection}.
 func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[string]any, path string) []byte {
 	t.Helper()
 	var opts *testutil.QueryOptions
@@ -140,12 +140,20 @@ func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[strin
 	return messagesGolden(t, string(raw), path)
 }
 
-func writeRecording(t *testctx.T, path string, data []byte) {
+// cannedReplayModel derives a replay/ model from a conversation constructed
+// through the LLM API itself (withPrompt/withResponse/withToolResult) — no
+// live provider involved. The recording round-trips through the same messages
+// export a real conversation would use, so its shape cannot drift from what
+// the replay decoder expects: both come from the engine under test.
+func cannedReplayModel(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) string {
 	t.Helper()
-	if dir := filepath.Dir(path); dir != "." {
-		require.NoError(t, os.MkdirAll(dir, 0755))
-	}
-	require.NoError(t, os.WriteFile(path, data, 0644))
+	llmID, err := llm.ID(ctx)
+	require.NoError(t, err)
+	recording := recordMessages(t, c,
+		fmt.Sprintf(`query($llm: ID!){node(id:$llm){... on LLM{messages{%s}}}}`, llmMessagesSelection),
+		map[string]any{"llm": llmID},
+		"node.messages")
+	return "replay/" + base64.StdEncoding.EncodeToString(recording)
 }
 
 func (flag LLMTestCaseFlag) ToCall() []string {
@@ -170,6 +178,39 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 					Value: "write a hello world program",
 				},
 			},
+			// Mirrors the conversation GoProgrammer.drive starts: the first
+			// user message must match the module's withPrompt text byte for
+			// byte (the replayer diffs TEXT blocks), while tool results are
+			// placeholders — the real read/write/build tools run during
+			// replay and their live results flow through.
+			Conversation: func(c *dagger.Client) *dagger.LLM {
+				return c.LLM().
+					WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
+						"Use the read, write, build tools to complete the following assignment.\n"+
+						"Do not try to access the container directly.\n"+
+						"Don't stop until your code builds.\n"+
+						"\n"+
+						"Assignment: write a hello world program\n").
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "Let me check the current main.go first."},
+						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read"},
+					}).
+					WithToolResult("call_1", `workspace file "main.go": stat main.go: no such file or directory`, true).
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "No main.go yet, so I'll write a hello world program."},
+						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "write",
+							Arguments: dagger.JSON(`{"content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"}`)},
+					}).
+					WithToolResult("call_2", "", false).
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "Now let me build it to make sure it compiles."},
+						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "build"},
+					}).
+					WithToolResult("call_3", "", false).
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "Done: main.go builds and prints Hello, World!"},
+					})
+			},
 		},
 	}
 	for _, tc := range tcs {
@@ -187,30 +228,13 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 				flags = append(flags, flag.ToCall()...)
 			}
 
-			recording := fmt.Sprintf("llmtest/%s.golden", tc.Name)
-			if golden.FlagUpdate() {
-				var args []string
-				for _, flag := range tc.Flags {
-					args = append(args, fmt.Sprintf("%s: %q", flag.Key, flag.Value))
-				}
-				out, err := ctr.
-					With(daggerForwardSecrets(c)).
-					With(daggerQueryAt(".", `{agent(%s){messages{%s}}}`,
-						strings.Join(args, ", "), llmMessagesSelection)).
-					Stdout(ctx)
-				require.NoError(t, err)
-
-				writeRecording(t, recording, messagesGolden(t, out, "agent.messages"))
-			}
-
-			replayData, err := os.ReadFile(recording)
-			require.NoError(t, err)
-			model := "replay/" + base64.StdEncoding.EncodeToString(replayData)
+			model := cannedReplayModel(ctx, t, c, tc.Conversation(c))
 
 			t.Run("call", func(ctx context.Context, t *testctx.T) {
+				// run drives the replayed conversation and returns the final
+				// main.go contents from the LLM's workspace.
 				cmd := []string{"--model=" + model, "run"}
 				cmd = append(cmd, flags...)
-				cmd = append(cmd, "file", "--path=main.go", "contents")
 				out, err := ctr.With(daggerCallAt(".", cmd...)).Stdout(ctx)
 				require.NoError(t, err)
 				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
@@ -222,7 +246,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 					flags = append(flags, flag.ToShell()...)
 				}
 				out, err := ctr.
-					With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | run %s | file main.go | contents`, model, strings.Join(flags, " ")))).
+					With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | run %s`, model, strings.Join(flags, " ")))).
 					Stdout(ctx)
 				require.NoError(t, err)
 				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
@@ -231,50 +255,98 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 	}
 }
 
+// TestGeneratorSeesOverlayEdits locks in that the LLM's bound (overlaid)
+// Workspace propagates through a module's `generate` tool into the generator
+// leaves it rolls up and runs. Regression test for the rebase break where an
+// auto-injected Workspace! on a generator leaf — resolved while running inside
+// the module runtime — was rejected by loadWorkspaceArg's
+// callerInModuleFunction guard *before* it consulted the seeded bound
+// workspace, so the generator read stale (frozen) source and the agent's edit
+// had no effect (see hack/designs/workspace-agents.md §4).
+//
+// The gen-agent fixture's generator reads input.txt and writes
+// output.txt = "generated from: <input>". The canned conversation edits
+// input.txt to "B-OVERLAY" via the write tool (overlaying the bound
+// workspace), then calls the generate tool. run returns output.txt, so if the
+// overlay reached the generator it reads "generated from: B-OVERLAY" rather
+// than the frozen "generated from: A".
+func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/gen-agent/")
+	require.NoError(t, err)
+	// The generator is discovered via Workspace.generators, so the fixture
+	// must be a detected workspace: a git root with the dagger.toml the
+	// fixture ships. goGitBase already `git init`s /work; copy the fixture in
+	// (WithDirectory, so the repo's .git survives) and commit it so detection
+	// succeeds.
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithDirectory(".", c.Host().Directory(srcPath)).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	// The write tool overlays input.txt=B-OVERLAY onto the bound workspace,
+	// then the generate tool runs the workspace generators against that
+	// overlay. The tool results are placeholders — the real write/generate
+	// tools run during replay and their live results flow through.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent operating on a workspace.\n"+
+			"Use the write tool to edit input.txt, then the generate tool to run the workspace generators.\n"+
+			"\n"+
+			"Assignment: set input.txt to B-OVERLAY and regenerate\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Editing input.txt."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
+				Arguments: dagger.JSON(`{"content":"B-OVERLAY"}`)},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Now running the generators."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "generate"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: regenerated output.txt from the edited input.txt."},
+		}))
+
+	out, err := ctr.
+		With(daggerCall("gen-agent", "--model="+model, "run", "--assignment", "set input.txt to B-OVERLAY and regenerate")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	// The generator observed the overlay edit, not the frozen "A".
+	require.Contains(t, out, "generated from: B-OVERLAY")
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// maxSteps is a loop() argument: the limit caps the loop invocation
-	// rather than the LLM as a whole.
+	// rather than the LLM as a whole. Binding a container's methods as tools
+	// gives the recorded conversation a tool call, so the loop needs a second
+	// API call and trips the limit.
 	ctrFn := func(llmFlags, loopFlags string) dagger.WithContainerFunc {
-		return daggerShell(fmt.Sprintf(`llm %s | with-env $(env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | transcript`, llmFlags, loopFlags))
+		return daggerShell(fmt.Sprintf(`llm %s | with-tools $(container | from alpine) | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | transcript`, llmFlags, loopFlags))
 	}
 
-	recording := "llmtest/api-limit.golden"
-	if golden.FlagUpdate() {
-		// Drive the same conversation as the shell pipeline below, minus the
-		// step limit, and export its messages as the recording.
-		ctrRes, err := testutil.QueryWithClient[struct {
-			Container struct {
-				From struct {
-					ID string
-				}
-			}
-		}](c, t, `{container{from(address:"alpine"){id}}}`, nil)
-		require.NoError(t, err)
+	// One tool-call turn: step 1 answers with the envVariable call (which
+	// really dispatches against the bound alpine container), leaving its
+	// result pending, so a --max-steps=1 loop trips the limit before the
+	// closing text turn.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("tell me the value of PATH").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindThinking, Text: "Retrieving the PATH environment variable."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "envVariable",
+				Arguments: dagger.JSON(`{"name":"PATH"}`)},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "The value of PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin."},
+		}))
+	llmFlags := fmt.Sprintf("--model=%q", model)
 
-		envRes, err := testutil.QueryWithClient[struct {
-			Env struct {
-				WithContainerInput struct {
-					ID string
-				}
-			}
-		}](c, t, `query($ctr: ID!){env{withContainerInput(name:"alpine",value:$ctr,description:"an alpine linux container"){id}}}`,
-			&testutil.QueryOptions{Variables: map[string]any{"ctr": ctrRes.Container.From.ID}})
-		require.NoError(t, err)
-
-		out := recordMessages(t, c,
-			fmt.Sprintf(`query($env: ID!){llm{withEnv(env:$env){withPrompt(prompt:"tell me the value of PATH"){loop{withPrompt(prompt:"now tell me the value of TERM"){messages{%s}}}}}}}`, llmMessagesSelection),
-			map[string]any{"env": envRes.Env.WithContainerInput.ID},
-			"llm.withEnv.withPrompt.loop.withPrompt.messages")
-		writeRecording(t, recording, out)
-	}
-
-	replayData, err := os.ReadFile(recording)
-	require.NoError(t, err)
-	llmFlags := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
-
-	_, err = daggerCliBase(t, c).
+	_, err := daggerCliBase(t, c).
 		With(ctrFn(llmFlags, "--max-steps=1")).
 		Stdout(ctx)
 	requireErrOut(t, err, "reached step limit: 1")
@@ -283,24 +355,14 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	recording := "llmtest/allow-llm.golden"
-	if golden.FlagUpdate() {
-		// shared recording amongst subtests, they all drive the same conversation
-		out, err := daggerCliBase(t, c).
-			With(daggerForwardSecrets(c)).
-			WithExec([]string{"dagger", "query", "-m", directModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
-				Stdin: fmt.Sprintf(`{agent(stringArg:"greet me", cacheBuster:%q){messages{%s}}}`,
-					identity.NewID(), llmMessagesSelection),
-				ExperimentalPrivilegedNesting: true,
-			}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		writeRecording(t, recording, messagesGolden(t, out, "agent.messages"))
-	}
-
-	replayData, err := os.ReadFile(recording)
-	require.NoError(t, err)
-	modelFlag := fmt.Sprintf("--model=replay/%s", base64.StdEncoding.EncodeToString(replayData))
+	// A canned conversation shared amongst subtests: they all drive the same
+	// "greet me" prompt through the llm/direct module.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("greet me").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Hello! How can I help you today?"},
+		}))
+	modelFlag := "--model=" + model
 
 	t.Run("allowed calls", func(ctx context.Context, t *testctx.T) {
 		tcs := []struct {
@@ -486,39 +548,6 @@ func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program 
 	require.Regexp(t, re, out)
 }
 
-func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		envPath := os.Getenv("DAGGER_LLM_TEST_ENV")
-		if envPath == "" {
-			envPath = "/dagger.env"
-		}
-		return ctr.WithMountedSecret(".env", dag.Secret("file://"+envPath))
-	}
-
-	// 	return func(ctr *dagger.Container) *dagger.Container {
-	// 		propagate := func(env string) {
-	// 			if v, ok := os.LookupEnv(env); ok {
-	// 				ctr = ctr.WithSecretVariable(env, dag.SetSecret(env, v))
-	// 			}
-	// 		}
-
-	// 		propagate("ANTHROPIC_API_KEY")
-	// 		propagate("ANTHROPIC_BASE_URL")
-	// 		propagate("ANTHROPIC_MODEL")
-
-	// 		propagate("OPENAI_API_KEY")
-	// 		propagate("OPENAI_AZURE_VERSION")
-	// 		propagate("OPENAI_BASE_URL")
-	// 		propagate("OPENAI_MODEL")
-
-	// 		propagate("GEMINI_API_KEY")
-	// 		propagate("GEMINI_BASE_URL")
-	// 		propagate("GEMINI_MODEL")
-
-	//		return ctr
-	//	}
-}
-
 // TestPortableID verifies that llm.portableID returns a portable,
 // recipe-form ID that node() can resolve in any session, whereas llm.id
 // returns an engine-local runtime handle. `dagger llm` session save/resume
@@ -581,4 +610,169 @@ func (LLMSuite) TestPortableIDWithResponse(ctx context.Context, t *testctx.T) {
 	reply, err := reloaded.LastReply(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)
+}
+
+// TestWithResetWorkspace verifies that withResetWorkspace re-emits the session
+// as a flat, data-only recipe: the conversation survives byte-for-byte, but
+// the workspace overlays recorded during the session (withWorkspace nodes with
+// withChanges derivations) are dropped, so a persisted globalID no longer
+// replays workspace edits when loaded. This is what makes ctrl+s (export +
+// reset) durable: replaying an edit chain against already-updated files fails
+// with "search string not found" or silently re-applies.
+func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM().
+		WithModel("openai/gpt-4o").
+		WithSystemPrompt("be helpful").
+		WithPrompt("hello").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
+		}).
+		WithToolResult("call_1", "file contents", false)
+
+	// Overlay a changeset onto the LLM's workspace, mimicking what a
+	// workspace-mutating tool call records mid-session.
+	base := c.Directory().WithNewFile("a.txt", "before")
+	edited := base.WithNewFile("a.txt", "after")
+	llmEdited := llm.WithWorkspace(llm.Workspace().WithChanges(edited.Changes(base)))
+
+	reset := llmEdited.WithResetWorkspace()
+
+	// The conversation is preserved exactly.
+	origHist, err := llmEdited.Transcript(ctx)
+	require.NoError(t, err)
+	resetHist, err := reset.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, resetHist)
+
+	// The persisted recipe is flat: no withResetWorkspace node, and no
+	// workspace rebind carrying overlay derivations on the spine.
+	globalID, err := reset.PortableID(ctx)
+	require.NoError(t, err)
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(globalID)))
+	for cur := gid; cur != nil; cur = cur.Receiver() {
+		require.NotEqual(t, "withResetWorkspace", cur.Field(),
+			"reset must re-emit the recipe, not append to it")
+		require.NotEqual(t, "withWorkspace", cur.Field(),
+			"a currentWorkspace-based binding must be dropped from the recipe "+
+				"so replay re-resolves the live workspace")
+	}
+
+	// The reset session reloads with the conversation intact.
+	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
+	reply, err := reloaded.LastReply(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello world", reply)
+	reloadedHist, err := reloaded.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, reloadedHist)
+}
+
+// TestWithResetWorkspaceStripsNonChangesOverlays verifies that
+// withResetWorkspace drops workspace overlays applied through mutators other
+// than withChanges — e.g. the withNewFile / withNewDirectory calls the built-in
+// filesystem tools use. Previously the reset only peeled a trailing withChanges
+// chain, so a workspace edited via withNewFile stayed pinned with its overlay:
+// the reset LLM still reported the (already-exported) edit as a pending change,
+// which is what made `dagger agent`'s ctrl+s leave a stale "Changes" bubble and
+// re-diff already-saved files as deletions on the next turn.
+func (LLMSuite) TestWithResetWorkspaceStripsNonChangesOverlays(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM().
+		WithModel("openai/gpt-4o").
+		WithSystemPrompt("be helpful").
+		WithPrompt("hello").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+		})
+
+	// Overlay edits via workspace mutators (not withChanges), mimicking the
+	// built-in write tool: currentWorkspace().withNewFile(...).withNewFile(...).
+	edited := llm.WithWorkspace(
+		llm.Workspace().
+			WithNewFile("added.txt", "one").
+			WithNewFile("another.txt", "two"),
+	)
+
+	// Sanity check: before reset the overlay reports the edits as pending.
+	editedEmpty, err := edited.Workspace().Changes().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, editedEmpty, "overlaid workspace should report pending changes")
+
+	reset := edited.WithResetWorkspace()
+
+	// After reset the overlay is gone: the workspace re-roots at its base, so it
+	// reports no pending changes.
+	resetEmpty, err := reset.Workspace().Changes().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, resetEmpty,
+		"reset workspace must drop overlay edits so no pending changes remain")
+
+	// The re-emitted recipe carries no workspace rebind or mutator: the
+	// currentWorkspace base is dropped so replay re-resolves the live workspace.
+	globalID, err := reset.PortableID(ctx)
+	require.NoError(t, err)
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(globalID)))
+	for cur := gid; cur != nil; cur = cur.Receiver() {
+		require.NotEqual(t, "withResetWorkspace", cur.Field(),
+			"reset must re-emit the recipe, not append to it")
+		require.NotEqual(t, "withWorkspace", cur.Field(),
+			"a currentWorkspace-based binding must be dropped from the recipe")
+		require.NotEqual(t, "withNewFile", cur.Field(),
+			"overlay mutators must be stripped from the reset recipe")
+	}
+
+	// The conversation survives the reset byte-for-byte.
+	origHist, err := edited.Transcript(ctx)
+	require.NoError(t, err)
+	resetHist, err := reset.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, resetHist)
+}
+
+// TestWithResetWorkspaceBustsStaleHostReads verifies that withResetWorkspace
+// invalidates the session's cached host reads, so an agent that saves its
+// changes to disk (ctrl+s: export then reset) observes the saved content on its
+// next read instead of a stale snapshot cached earlier in the same session.
+//
+// Host-backed workspace reads (Workspace.file) resolve through host.directory,
+// which is cached per client for the client's whole lifetime. Within a single
+// long-lived `dagger agent` session that meant a file read early in the
+// conversation kept returning its original contents even after the agent's
+// edits were exported to disk and the workspace was reset. Here the read after
+// the reset must observe the exported "NEW" contents rather than the "OLD" ones
+// cached by the earlier read.
+func (LLMSuite) TestWithResetWorkspaceBustsStaleHostReads(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("OLD"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	// Prime the per-client host.directory cache with the original contents,
+	// exactly as the agent reading the file before editing it would.
+	before, err := c.CurrentWorkspace().File("x.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "OLD", before)
+
+	// Save: export the edited contents to the local Git workspace on disk, as
+	// ctrl+s does before resetting.
+	require.NoError(t, c.CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
+
+	// Reset re-roots the LLM at the live workspace, dropping the overlay; the
+	// file on disk now holds "NEW".
+	reset := c.LLM().
+		WithWorkspace(c.CurrentWorkspace().WithNewFile("x.txt", "NEW")).
+		WithResetWorkspace()
+
+	// The next read must observe the exported contents, not the snapshot the
+	// earlier read cached for the session.
+	after, err := reset.Workspace().File("x.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "NEW", after)
 }

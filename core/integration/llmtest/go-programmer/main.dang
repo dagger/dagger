@@ -1,48 +1,52 @@
 """
-An expert Go programmer micro-agent, driven by the LLM integration tests
-to record and replay conversations.
+An expert Go programmer driven by an LLM, for replay golden tests.
 """
 type GoProgrammer {
   model: String = null
 
   """
-  Complete the assignment and return the resulting workspace's container.
+  Complete the assignment and return the resulting main.go contents.
   """
-  run(assignment: String!): Container! {
-    agent(assignment)
-      .env
-      .output("result")
-      .asToyWorkspace
-      .container
+  run(assignment: String!): String! {
+    self.drive(assignment).loop.workspace.file("main.go").contents
   }
 
   """
-  Complete the assignment and return the conversation itself, so that a
-  caller can inspect it (e.g. the integration tests export its messages
-  to record a replay).
+  Set up the programmer's LLM with its tools and assignment.
   """
-  agent(assignment: String!): LLM! {
+  drive(assignment: String!): LLM! {
     llm(model: model)
-      .withEnv(
-        env
-          .withToyWorkspaceInput(
-            "workspace",
-            toyWorkspace,
-            "A toy workspace that can edit files and run 'go build'",
-          )
-          .withToyWorkspaceOutput(
-            "result",
-            "The workspace after running the assignment",
-          )
-      )
-      .withPrompt(
-        "You are an expert go programmer. You have access to a workspace.\n" +
-        "Use the read, write, build tools to complete the following assignment.\n" +
-        "Do not try to access the container directly.\n" +
-        "Don't stop until your code builds.\n" +
-        "\n" +
-        "Assignment: " + assignment + "\n"
-      )
-      .loop
+      .withTools(currentNode, except: ["run", "drive"])
+      .withPrompt("You are an expert go programmer. You have access to a workspace.\n" + "Use the read, write, build tools to complete the following assignment.\n" + "Do not try to access the container directly.\n" + "Don't stop until your code builds.\n" + "\n" + "Assignment: " + assignment + "\n")
+  }
+
+  """
+  Read the current contents of main.go.
+  """
+  read(ws: Workspace!): String! {
+    ws.file("main.go").contents
+  }
+
+  """
+  Write main.go with the given contents.
+  """
+  write(content: String!, ws: Workspace!): Workspace! {
+    ws.withNewFile("main.go", content)
+  }
+
+  """
+  Compile the workspace's Go code with 'go build'.
+  """
+  build(ws: Workspace!): Void {
+    container
+      .from("golang")
+      .withMountedCache("/go/pkg/mod", cacheVolume("go_mod_cache"))
+      .withWorkdir("/app")
+      .withDirectory(".", ws.directory(".", include: ["main.go"]))
+      .withExec(["go", "mod", "init", "main"])
+      .withExec(["go", "build", "./..."])
+      .sync
+
+    null
   }
 }

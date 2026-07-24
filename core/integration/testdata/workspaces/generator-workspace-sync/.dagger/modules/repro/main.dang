@@ -1,0 +1,13 @@
+type Repro {
+  """
+  Read input.txt from the workspace and write output.txt derived from it.
+
+  Proves whether a generator run via `Workspace.generators` sees the workspace
+  it was called on (including overlay edits) or a frozen session workspace.
+  """
+  pub gen(ws: Workspace!): Changeset! @generate {
+    let input = ws.file("input.txt").contents
+    let root = ws.directory("/")
+    root.withNewFile("output.txt", "generated from: " + input).changes(root)
+  }
+}

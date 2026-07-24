@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -59,15 +60,44 @@ func resultCallRefFromResult(ctx context.Context, res AnyResult) (*ResultCallRef
 	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }
 
-func resultCallRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallRef, error) {
+// recipeCallMemo deduplicates recipe-ID expansion within a single top-level
+// decode. Call IDs are content-addressed and acyclic, and a given digest always
+// denotes the exact same recipe, so the expanded *ResultCall for a digest can be
+// shared across every reference to it within one build: frames are treated as
+// frozen provenance (cloned/forked before any mutation), so sharing is safe and
+// collapses a heavily-shared ID DAG back into a DAG instead of unrolling it into
+// an exponentially larger tree. Without it, resuming a long agent/LLM session —
+// whose accumulated state is one big DAG with a base object referenced by a long
+// receiver chain and many args — expands to ~10^8 frames and tens of GB. The memo
+// is created fresh per top-level decode and used single-threaded down the
+// synchronous expansion, matching the plain visiting maps already threaded
+// through the digest helpers (e.g. recipeDigestWithVisiting).
+type recipeCallMemo map[digest.Digest]*ResultCall
+
+func resultCallRefFromIDInput(ctx context.Context, id *call.ID, memo recipeCallMemo) (*ResultCallRef, error) {
 	if id == nil {
 		return nil, fmt.Errorf("nil ID input")
 	}
+	if memo == nil {
+		memo = recipeCallMemo{}
+	}
 	if !id.IsHandle() {
-		frame, err := resultCallFromRecipeIDInput(ctx, id)
+		// A recipe (inline) ID inlines its entire sub-DAG. Without memoization a
+		// shared node (a base object reached via a long receiver chain and many
+		// args) is re-expanded once per path, unrolling the DAG into a tree. Expand
+		// each distinct recipe digest once and share the resulting frame.
+		dig := id.Digest()
+		if frame, ok := memo[dig]; ok {
+			if frame == nil {
+				return nil, nil
+			}
+			return &ResultCallRef{Call: frame}, nil
+		}
+		frame, err := resultCallFromRecipeIDInput(ctx, id, memo)
 		if err != nil {
 			return nil, err
 		}
+		memo[dig] = frame
 		if frame == nil {
 			return nil, nil
 		}
@@ -103,7 +133,7 @@ func resultCallRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallRef,
 	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }
 
-func resultCallFromRecipeIDInput(ctx context.Context, id *call.ID) (*ResultCall, error) {
+func resultCallFromRecipeIDInput(ctx context.Context, id *call.ID, memo recipeCallMemo) (*ResultCall, error) {
 	if id == nil {
 		return nil, nil
 	}
@@ -126,14 +156,14 @@ func resultCallFromRecipeIDInput(ctx context.Context, id *call.ID) (*ResultCall,
 	}
 
 	if receiver := id.Receiver(); receiver != nil {
-		receiverRef, err := resultCallRefFromIDInput(ctx, receiver)
+		receiverRef, err := resultCallRefFromIDInput(ctx, receiver, memo)
 		if err != nil {
 			return nil, fmt.Errorf("receiver: %w", err)
 		}
 		frame.Receiver = receiverRef
 	}
 	if mod := id.Module(); mod != nil {
-		modRef, err := resultCallRefFromIDInput(ctx, mod.ID())
+		modRef, err := resultCallRefFromIDInput(ctx, mod.ID(), memo)
 		if err != nil {
 			return nil, fmt.Errorf("module: %w", err)
 		}
@@ -145,14 +175,14 @@ func resultCallFromRecipeIDInput(ctx context.Context, id *call.ID) (*ResultCall,
 		}
 	}
 	for _, arg := range id.Args() {
-		converted, err := resultCallArgFromRecipeArgument(ctx, arg)
+		converted, err := resultCallArgFromRecipeArgument(ctx, arg, memo)
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", arg.Name(), err)
 		}
 		frame.Args = append(frame.Args, converted)
 	}
 	for _, input := range id.ImplicitInputs() {
-		converted, err := resultCallArgFromRecipeArgument(ctx, input)
+		converted, err := resultCallArgFromRecipeArgument(ctx, input, memo)
 		if err != nil {
 			return nil, fmt.Errorf("implicit input %q: %w", input.Name(), err)
 		}
@@ -161,11 +191,11 @@ func resultCallFromRecipeIDInput(ctx context.Context, id *call.ID) (*ResultCall,
 	return frame, nil
 }
 
-func resultCallArgFromRecipeArgument(ctx context.Context, arg *call.Argument) (*ResultCallArg, error) {
+func resultCallArgFromRecipeArgument(ctx context.Context, arg *call.Argument, memo recipeCallMemo) (*ResultCallArg, error) {
 	if arg == nil {
 		return nil, nil
 	}
-	value, err := resultCallLiteralFromRecipeLiteral(ctx, arg.Value())
+	value, err := resultCallLiteralFromRecipeLiteral(ctx, arg.Value(), memo)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +207,7 @@ func resultCallArgFromRecipeArgument(ctx context.Context, arg *call.Argument) (*
 }
 
 //nolint:dupl // symmetric with resultCallLiteralFromCallLiteral; the two differ in how structural input digests get resolved
-func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal) (*ResultCallLiteral, error) {
+func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal, memo recipeCallMemo) (*ResultCallLiteral, error) {
 	switch v := lit.(type) {
 	case nil:
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
@@ -200,7 +230,7 @@ func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal) (
 			DigestedStringDigest: v.Digest(),
 		}, nil
 	case *call.LiteralID:
-		ref, err := resultCallRefFromIDInput(ctx, v.Value())
+		ref, err := resultCallRefFromIDInput(ctx, v.Value(), memo)
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +241,7 @@ func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal) (
 	case *call.LiteralList:
 		items := make([]*ResultCallLiteral, 0, v.Len())
 		for _, item := range v.Values() {
-			converted, err := resultCallLiteralFromRecipeLiteral(ctx, item)
+			converted, err := resultCallLiteralFromRecipeLiteral(ctx, item, memo)
 			if err != nil {
 				return nil, err
 			}
@@ -224,7 +254,7 @@ func resultCallLiteralFromRecipeLiteral(ctx context.Context, lit call.Literal) (
 	case *call.LiteralObject:
 		fields := make([]*ResultCallArg, 0, v.Len())
 		for _, field := range v.Args() {
-			converted, err := resultCallLiteralFromRecipeLiteral(ctx, field.Value())
+			converted, err := resultCallLiteralFromRecipeLiteral(ctx, field.Value(), memo)
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", field.Name(), err)
 			}
@@ -267,7 +297,7 @@ func resultCallLiteralFromInput(ctx context.Context, input Input) (*ResultCallLi
 		if err != nil {
 			return nil, fmt.Errorf("ID input %T is invalid: %w", input, err)
 		}
-		ref, err := resultCallRefFromIDInput(ctx, id)
+		ref, err := resultCallRefFromIDInput(ctx, id, recipeCallMemo{})
 		if err != nil {
 			return nil, err
 		}
@@ -343,7 +373,7 @@ func resultCallLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*R
 			DigestedStringDigest: v.Digest(),
 		}, nil
 	case *call.LiteralID:
-		ref, err := resultCallRefFromIDInput(ctx, v.Value())
+		ref, err := resultCallRefFromIDInput(ctx, v.Value(), recipeCallMemo{})
 		if err != nil {
 			return nil, err
 		}

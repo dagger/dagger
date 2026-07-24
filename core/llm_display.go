@@ -38,6 +38,12 @@ type displayPhases struct {
 	parentCtx  context.Context
 	callDigest string
 
+	// toolAnchorCtx is the most recent non-tool assistant content phase. Tool
+	// calls are parented beneath it so they read as details of the reply that
+	// introduced them instead of as unrelated top-level messages. Parallel tool
+	// calls share the same anchor.
+	toolAnchorCtx context.Context
+
 	mu     sync.Mutex
 	phases map[int64]*displayPhase
 
@@ -83,13 +89,13 @@ func (dp *displayPhases) StartText(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "LLM response",
-		telemetry.Reveal(),
 		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 		})...),
 	)
+	dp.toolAnchorCtx = phaseCtx
 	p := &displayPhase{
 		ctx:  phaseCtx,
 		span: span,
@@ -109,7 +115,6 @@ func (dp *displayPhases) StartThinking(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "thinking",
-		telemetry.Reveal(),
 		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "💭"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
@@ -117,6 +122,7 @@ func (dp *displayPhases) StartThinking(idx int64) *displayPhase {
 			attribute.Bool("llm.thinking", true),
 		})...),
 	)
+	dp.toolAnchorCtx = phaseCtx
 	p := &displayPhase{
 		ctx:  phaseCtx,
 		span: span,
@@ -138,12 +144,17 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 	if p, ok := dp.phases[idx]; ok {
 		return p
 	}
-	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, toolName,
-		telemetry.Reveal(),
+	parentCtx := dp.parentCtx
+	if dp.toolAnchorCtx != nil {
+		parentCtx = dp.toolAnchorCtx
+	}
+	phaseCtx, span := Tracer(parentCtx).Start(parentCtx, toolName,
 		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			attribute.String(telemetry.LLMToolAttr, toolName),
+			// attribute.String(telemetry.LLMToolServerAttr, dp.???),
+			attribute.Bool(telemetry.UIBoundaryAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 		})...),

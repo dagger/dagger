@@ -1,0 +1,17 @@
+name = "php-sdk-dev"
+engineVersion = "v0.21.7"
+include = ["../../go.sum", "../../go.mod", "../../util/parallel"]
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "dagger-engine"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "git-releaser"
+  source = "../../modules/git-releaser"
+
+[codegen]
+  automaticGitignore = false

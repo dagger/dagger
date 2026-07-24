@@ -34,6 +34,22 @@ type StatusLineData struct {
 	AutoCompact bool
 }
 
+// LLMCostFunc computes the dollar cost of a model's token usage. The CLI
+// registers one (closing over the model catalog) so the frontend can price the
+// live metric rollup without depending on the catalog package.
+type LLMCostFunc func(provider, model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
+
+// StatusLineLive carries the aggregate token/cost rollup across all models and
+// sub-agents, recomputed from live metrics at render time so the status line
+// stays current between turns instead of freezing on the last per-step push.
+type StatusLineLive struct {
+	InputTokens  int
+	OutputTokens int
+	CacheReads   int
+	CacheWrites  int
+	TotalCost    float64
+}
+
 // StatusLine renders a compact, single-line status bar showing LLM token
 // usage, cost, context window utilisation and the active model name:
 //
@@ -43,6 +59,13 @@ type StatusLine struct {
 
 	profile termenv.Profile
 	data    StatusLineData
+	// liveStats, when set, is consulted on every render to source the token
+	// rollup and cost from live metrics (all models + sub-agents). It returns
+	// false before any metrics have arrived, falling back to data.
+	liveStats func() (StatusLineLive, bool)
+	// inFlight reports whether the shell is currently processing a request.
+	// Empty streaming message spans stay hidden; this is their compact cue.
+	inFlight func() bool
 }
 
 var _ tuist.Component = (*StatusLine)(nil)
@@ -58,12 +81,27 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 		return
 	}
 
+	// Override the token rollup and cost with live metrics so they reflect the
+	// latest turn (and any sub-agents) without waiting for the next per-step push.
+	if sl.liveStats != nil {
+		if live, ok := sl.liveStats(); ok {
+			d.InputTokens = live.InputTokens
+			d.OutputTokens = live.OutputTokens
+			d.CacheReads = live.CacheReads
+			d.CacheWrites = live.CacheWrites
+			d.TotalCost = live.TotalCost
+		}
+	}
+
 	width := max(ctx.Width, 20)
 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(sl.profile))
 
 	// -- left side: token stats + cost + context --------------------------
 	var parts []string
+	if sl.inFlight != nil && sl.inFlight() {
+		parts = append(parts, "● working")
+	}
 
 	if d.InputTokens > 0 {
 		parts = append(parts, "↑"+formatTokenCount(d.InputTokens))
@@ -111,6 +149,11 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 		case d.ContextPercent > 70:
 			ctxPart = out.String(ctxPart).Foreground(termenv.ANSIYellow).String()
 		}
+		// Prepend a gauge when the usage is known, so it's obvious at a glance
+		// how close the conversation is to the context limit.
+		if d.ContextPercent >= 0 {
+			ctxPart = renderContextBar(out, d.ContextPercent) + " " + ctxPart
+		}
 		parts = append(parts, ctxPart)
 	}
 
@@ -144,6 +187,31 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 	dimLine := out.String(line).Foreground(termenv.ANSIBrightBlack).String()
 
 	ctx.Lines(dimLine)
+}
+
+// contextBarWidth is the fixed cell width of the status-line context gauge.
+const contextBarWidth = 10
+
+// renderContextBar draws a compact, fixed-width gauge visualising how much of
+// the model's context window is occupied, making it obvious at a glance when the
+// conversation is nearing the context limit. The fill colour tracks the same
+// thresholds as the percentage text (yellow past 70%, red past 90%). percent may
+// exceed 100 (an overflowing context), in which case the bar reads full. It
+// reuses the shared progressTrack renderer so it matches the trees' progress
+// bars, gap-free partial cells and all.
+func renderContextBar(out *termenv.Output, percent float64) string {
+	frac := max(min(percent/100, 1), 0)
+	eighths := int(frac * contextBarWidth * 8)
+
+	color := termenv.ANSIGreen
+	switch {
+	case percent > 90:
+		color = termenv.ANSIRed
+	case percent > 70:
+		color = termenv.ANSIYellow
+	}
+
+	return progressTrack(out, contextBarWidth, eighths, color, termenv.ANSIBrightBlack)
 }
 
 // formatTokenCount formats a token count in a compact human-readable form.
