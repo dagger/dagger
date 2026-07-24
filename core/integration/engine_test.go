@@ -38,9 +38,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type EngineSuite struct{}
-type CachePersistenceSuite struct{}
-type LocalCacheSuite struct{}
+type (
+	EngineSuite           struct{}
+	CachePersistenceSuite struct{}
+	LocalCacheSuite       struct{}
+)
 
 func TestEngine(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(EngineSuite{})
@@ -659,7 +661,8 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		Sync(ctx)
 	require.NoError(t, err)
-	ctr = ctr.WithExec([]string{"sh", "-c",
+	ctr = ctr.WithExec([]string{
+		"sh", "-c",
 		// request http://srv:$PORT/ in a loop until it returns "done"
 		"until [ \"$(curl -s http://srv:$PORT/)\" = \"done\" ]; do sleep 1; done",
 	})

@@ -50,7 +50,16 @@ var (
 
 var (
 	presemverModuleVersion = "v0.11.9"
+
+	versionOverridden bool
 )
+
+func FullVersion() string {
+	if versionOverridden {
+		return Version
+	}
+	return iversion.Version(iversion.WithV(), iversion.WithCommit())
+}
 
 func init() {
 	if Version == "" {
@@ -62,6 +71,7 @@ func init() {
 	// why it's okay to skip the previous validation
 	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
 		Version = cleanVersion(v)
+		versionOverridden = true
 	}
 	if Tag == "" {
 		Tag = Version
