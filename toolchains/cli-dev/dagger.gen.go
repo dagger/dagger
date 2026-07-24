@@ -451,19 +451,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		return dag.Module().
 			WithDescription("Develop the Dagger CLI\n").
 			WithObject(
-				dag.TypeDef().WithObject("CliDev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 97, 6)}).
+				dag.TypeDef().WithObject("CliDev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 113, 6)}).
 					WithFunction(
 						dag.Function("Binary",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Build the dagger CLI binary for a single platform").
-							WithSourceMap(dag.SourceMap("main.go", 105, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 107, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 121, 1)).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 123, 2)})).
 					WithFunction(
 						dag.Function("DevBinaries",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Build dev CLI binaries\nTODO: remove this").
-							WithSourceMap(dag.SourceMap("main.go", 118, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 120, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 134, 1)).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 136, 2)})).
 					WithFunction(
 						dag.Function("Publish",
 							dag.TypeDef().WithObject("Directory")).
@@ -500,19 +500,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithDescription("Verify that the CLI builds without actually publishing anything").
 							WithSourceMap(dag.SourceMap("publish.go", 174, 1)).
 							WithCheck()).
-					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 98, 2)}).
-					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 99, 2)}).
+					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 114, 2)}).
+					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 115, 2)}).
 					WithConstructor(
 						dag.Function("New",
 							dag.TypeDef().WithObject("CliDev")).
-							WithSourceMap(dag.SourceMap("main.go", 12, 1)).
-							WithArg("runnerHost", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 16, 2)}).
-							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 38, 2), DefaultPath: "/", Ignore: []string{"*", ".*", "!cmd/dagger/*", "!internal/cmd/dagger/**", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**/VERSION", "!vendor/**/*", "!**.graphql", "!.changes", "!LICENSE", "!install.sh", "!install.ps1", "!**/*.sql", "!core/prompts/*.md"}}).
-							WithArg("base", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Base image for go build environment", SourceMap: dag.SourceMap("main.go", 42, 2)}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Version of the Dagger CLI being built. Surfaced as CliDev.Version and\nconsumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,\nsemver release-gating). The built binary self-reports its own version\nfrom the embedded internal/version/VERSION file regardless of what's\npassed here; this is for publish-time metadata only.", SourceMap: dag.SourceMap("main.go", 50, 2)}).
-							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace whose git info stamps the CLI's VCS metadata. Auto-injected\nwhen cli-dev is called directly; a parent toolchain (e.g. engine-dev)\ninstead resolves it to the scalar vcsCommit/vcsDirty below and forwards\nthose, so the session-scoped Workspace never taints the cached build.", SourceMap: dag.SourceMap("main.go", 57, 2)}).
-							WithArg("vcsCommit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes\nprecedence over ws.", SourceMap: dag.SourceMap("main.go", 62, 2)}).
-							WithArg("vcsDirty", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Resolved VCS dirty state to stamp, paired with vcsCommit.", SourceMap: dag.SourceMap("main.go", 66, 2)}))), nil
+							WithSourceMap(dag.SourceMap("main.go", 13, 1)).
+							WithArg("runnerHost", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 17, 2)}).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 39, 2), DefaultPath: "/", Ignore: []string{"*", ".*", "!cmd/dagger/*", "!internal/cmd/dagger/**", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**/VERSION", "!vendor/**/*", "!**.graphql", "!.changes", "!LICENSE", "!install.sh", "!install.ps1", "!**/*.sql", "!core/prompts/*.md"}}).
+							WithArg("base", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Base image for go build environment", SourceMap: dag.SourceMap("main.go", 43, 2)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Version of the Dagger CLI being built. Surfaced as CliDev.Version and\nconsumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,\nsemver release-gating). The built binary self-reports its own version\nfrom the embedded internal/version/VERSION file regardless of what's\npassed here, but this decides which engine the binary provisions by\ndefault: a valid semver means a tag build (embedded VERSION already\nmatches, enforced by the publish workflow guard); anything else is a\ncommit build, whose default engine tag is pinned to the commit.", SourceMap: dag.SourceMap("main.go", 54, 2)}).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace whose git info stamps the CLI's VCS metadata and pins the\ndefault engine tag on commit builds. Auto-injected when cli-dev is\ncalled directly; a parent toolchain (e.g. engine-dev) instead resolves\nit to the scalar vcsCommit/vcsDirty below and forwards those, so the\nsession-scoped Workspace never taints the cached build.", SourceMap: dag.SourceMap("main.go", 62, 2)}).
+							WithArg("vcsCommit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes\nprecedence over ws.", SourceMap: dag.SourceMap("main.go", 67, 2)}).
+							WithArg("vcsDirty", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Resolved VCS dirty state to stamp, paired with vcsCommit.", SourceMap: dag.SourceMap("main.go", 71, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

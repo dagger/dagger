@@ -264,12 +264,16 @@ type CliDevOpts struct {
 	// consumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,
 	// semver release-gating). The built binary self-reports its own version
 	// from the embedded internal/version/VERSION file regardless of what's
-	// passed here; this is for publish-time metadata only.
+	// passed here, but this decides which engine the binary provisions by
+	// default: a valid semver means a tag build (embedded VERSION already
+	// matches, enforced by the publish workflow guard); anything else is a
+	// commit build, whose default engine tag is pinned to the commit.
 	Version string
-	// Workspace whose git info stamps the CLI's VCS metadata. Auto-injected
-	// when cli-dev is called directly; a parent toolchain (e.g. engine-dev)
-	// instead resolves it to the scalar vcsCommit/vcsDirty below and forwards
-	// those, so the session-scoped Workspace never taints the cached build.
+	// Workspace whose git info stamps the CLI's VCS metadata and pins the
+	// default engine tag on commit builds. Auto-injected when cli-dev is
+	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
+	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
+	// session-scoped Workspace never taints the cached build.
 	Ws *Workspace
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over ws.
