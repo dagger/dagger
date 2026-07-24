@@ -6834,7 +6834,9 @@ func (ContainerSuite) TestLayersConcurrent(ctx context.Context, t *testctx.T) {
 
 	var manifest ocispecs.Manifest
 	require.NoError(t, json.Unmarshal([]byte(manifestContents), &manifest))
-	descriptors := append(manifest.Layers, manifest.Config)
+	descriptors := make([]ocispecs.Descriptor, 0, len(manifest.Layers)+1)
+	descriptors = append(descriptors, manifest.Layers...)
+	descriptors = append(descriptors, manifest.Config)
 	require.Greater(t, len(descriptors), 2)
 
 	sizes := make([]int, len(descriptors))
