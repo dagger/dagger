@@ -67,9 +67,13 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- end }}
 
 {{- /* Method implementations on the query-builder struct */ -}}
+{{- if $field.Description }}
 {{ $field.Description | Comment }}
 {{- if $field.IsDeprecated }}
 //
+{{- end }}
+{{- end }}
+{{- if $field.IsDeprecated }}
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
 {{- $convertID := $field | ConvertID }}

@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/internal/bootstrap"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
@@ -16,7 +16,7 @@ var currentSchema *introspection.Schema
 func init() {
 	ctx := context.Background()
 
-	c, err := dagger.Connect(ctx)
+	c, err := bootstrap.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}

@@ -14,9 +14,10 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/sdkfs"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
+	"github.com/dagger/dagger/cmd/codegen/internal/bootstrap"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
@@ -156,8 +157,8 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 			depsJSON = string(data)
 		}
 		merged, err := g.Config.Dag.
-			Schema(dagger.JSON(depsJSON)).
-			Merge(dagger.JSON(moduleTypesJSON), moduleName).
+			Schema(bootstrap.JSON(depsJSON)).
+			Merge(bootstrap.JSON(moduleTypesJSON), moduleName).
 			Contents(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("merge module types into schema: %w", err)
@@ -235,7 +236,7 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		return nil, false, fmt.Errorf("could not read go.sum: %w", err)
 	}
 	sum = append(sum, '\n')
-	sum = append(sum, dagger.GoSum...)
+	sum = append(sum, sdkfs.GoSum...)
 
 	modBody, err := goMod.Format()
 	if err != nil {
@@ -275,7 +276,7 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	}
 
 	// use Go SDK's embedded go.mod as basis for pinning versions
-	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
+	sdkMod, err := modfile.Parse("go.mod", sdkfs.GoMod, nil)
 	if err != nil {
 		return fmt.Errorf("parse embedded go.mod: %w", err)
 	}

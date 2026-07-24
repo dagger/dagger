@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger"
+	"github.com/dagger/dagger/cmd/codegen/internal/bootstrap"
 )
 
 // Introspect gets the Dagger Schema
-func Introspect(ctx context.Context, dag *dagger.Client) (*Schema, string, error) {
+func Introspect(ctx context.Context, dag *bootstrap.Client) (*Schema, string, error) {
 	var introspectionResp Response
-	err := dag.Do(ctx, &dagger.Request{
+	err := dag.Do(ctx, &bootstrap.Request{
 		Query:  Query,
 		OpName: "IntrospectionQuery",
-	}, &dagger.Response{
+	}, &bootstrap.Response{
 		Data: &introspectionResp,
 	})
 	if err != nil {

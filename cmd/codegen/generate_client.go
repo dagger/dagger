@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/internal/bootstrap"
 	"github.com/spf13/cobra"
 
 	telemetry "github.com/dagger/otel-go"
@@ -60,14 +60,14 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 		}
 
 		err := cfg.Dag.Do(ctx,
-			&dagger.Request{
+			&bootstrap.Request{
 				Query:  loadModuleSourceDepsQuery,
 				OpName: "ModuleSourceDependencies",
 				Variables: map[string]any{
-					"source": dagger.ID(moduleSourceID),
+					"source": bootstrap.ID(moduleSourceID),
 				},
 			},
-			&dagger.Response{
+			&bootstrap.Response{
 				Data: &res,
 			})
 		if err != nil {

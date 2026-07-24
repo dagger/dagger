@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/internal/bootstrap"
 )
 
 var (
@@ -39,7 +39,7 @@ func getGlobalConfig(ctx context.Context, alwaysConnect bool) (generator.Config,
 	// If a module source ID is provided or no introspection JSON is provided, we will query
 	// the engine so we can create a connection here.
 	if moduleSourceID != "" || introspectionJSONPath == "" || alwaysConnect {
-		dag, err := dagger.Connect(ctx)
+		dag, err := bootstrap.Connect(ctx)
 		if err != nil {
 			return generator.Config{}, fmt.Errorf("failed to connect to engine: %w", err)
 		}
