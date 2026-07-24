@@ -230,10 +230,14 @@ impl Selection {
                 continue;
             }
 
-            if let Some(o) = data.as_object() {
+            // take ownership of the subtree instead of cloning it: Value::clone
+            // is stack-recursive, so cloning the remaining deep tree at every
+            // level would overflow on long chains
+            if let serde_json::Value::Object(o) = &mut data {
                 let key = sel.alias.as_ref().or(sel.name.as_ref());
                 if let Some(key) = key {
-                    data = o.get(key).cloned().unwrap_or(serde_json::Value::Null);
+                    let next = o.remove(key.as_str()).unwrap_or(serde_json::Value::Null);
+                    data = next;
                 }
             }
         }
@@ -453,6 +457,33 @@ mod tests {
 
         let result: Option<String> = root.unpack_resp(resp).unwrap();
         assert_eq!(result, Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_unpack_deeply_nested_response() {
+        // responses nest one level per chained call; parsing and unpacking must
+        // survive chains far past serde_json's default 128-level recursion limit
+        let depth = 500;
+
+        let mut root = query();
+        for _ in 0..depth {
+            root = root.select("a");
+        }
+        root = root.select("stdout");
+
+        let mut body = String::from(r#"{"data":"#);
+        for _ in 0..depth {
+            body.push_str(r#"{"a":"#);
+        }
+        body.push_str(r#"{"stdout":"ok"}"#);
+        body.push_str(&"}".repeat(depth));
+        body.push('}');
+
+        let resp = crate::core::gql_client::parse_graphql_response::<serde_json::Value>(&body)
+            .expect("deeply nested response should parse");
+
+        let result: Option<String> = root.unpack_resp(resp.data).unwrap();
+        assert_eq!(result, Some("ok".to_string()));
     }
 
     #[tokio::test]
