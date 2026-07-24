@@ -1,5 +1,5 @@
-charm.land/catwalk v0.50.3 h1:HtE4Xzf/kWGs2blO8GlRJsZc2VVtMStbWYRTDBger/c=
-charm.land/catwalk v0.50.3/go.mod h1:5xsIaxJYt/wLPh/F3B5PDx1T9FaME0FQbHKr2JjSNm0=
+charm.land/catwalk v0.51.1 h1:qU6vUPbymWV71/qR1pJihvNkrRYcUeWjzSECWDHT+2s=
+charm.land/catwalk v0.51.1/go.mod h1:5xsIaxJYt/wLPh/F3B5PDx1T9FaME0FQbHKr2JjSNm0=
 charm.land/lipgloss/v2 v2.0.2 h1:xFolbF8JdpNkM2cEPTfXEcW1p6NRzOWTSamRfYEw8cs=
 charm.land/lipgloss/v2 v2.0.2/go.mod h1:KjPle2Qd3YmvP1KL5OMHiHysGcNwq6u83MUjYkFvEkM=
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
