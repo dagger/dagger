@@ -984,6 +984,13 @@ export type ContainerWithoutUnixSocketOpts = {
   expand?: boolean
 }
 
+export type CurrentModuleAsSdkOpts = {
+  /**
+   * The workspace to resolve SDK-role data against. Defaults to the current workspace.
+   */
+  workspace?: Workspace
+}
+
 export type CurrentModuleGeneratorsOpts = {
   /**
    * Only include generators matching the specified patterns
@@ -5849,10 +5856,10 @@ export class CurrentModule extends BaseClient {
    * Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
    *
    * Errors if the current module is not installed as an SDK in this workspace.
-   * @param workspace The workspace to resolve SDK-role data against.
+   * @param opts.workspace The workspace to resolve SDK-role data against. Defaults to the current workspace.
    */
-  asSDK = (workspace: Workspace): CurrentModuleAsSDK => {
-    const ctx = this._ctx.select("asSDK", { workspace })
+  asSDK = (opts?: CurrentModuleAsSdkOpts): CurrentModuleAsSDK => {
+    const ctx = this._ctx.select("asSDK", { ...opts })
     return new CurrentModuleAsSDK(ctx)
   }
 

@@ -18,10 +18,12 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Errors if the current module is not installed as an SDK in this workspace.
      */
-    public function asSDK(Workspace $workspace): CurrentModuleAsSDK
+    public function asSDK(?Workspace $workspace = null): CurrentModuleAsSDK
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSDK');
+        if (null !== $workspace) {
         $innerQueryBuilder->setArgument('workspace', $workspace);
+        }
         return new \Dagger\CurrentModuleAsSDK($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

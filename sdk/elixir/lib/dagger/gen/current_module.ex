@@ -20,12 +20,15 @@ defmodule Dagger.CurrentModule do
 
   Errors if the current module is not installed as an SDK in this workspace.
   """
-  @spec as_sdk(t(), Dagger.Workspace.t()) :: Dagger.CurrentModuleAsSDK.t()
-  def as_sdk(%__MODULE__{} = current_module, workspace) do
+  @spec as_sdk(t(), [{:workspace, Dagger.Workspace.t() | nil}]) :: Dagger.CurrentModuleAsSDK.t()
+  def as_sdk(%__MODULE__{} = current_module, optional_args \\ []) do
     query_builder =
       current_module.query_builder
       |> QB.select("asSDK")
-      |> QB.put_arg("workspace", Dagger.ID.id!(workspace))
+      |> QB.maybe_put_arg(
+        "workspace",
+        if(optional_args[:workspace], do: Dagger.ID.id!(optional_args[:workspace]), else: nil)
+      )
 
     %Dagger.CurrentModuleAsSDK{
       query_builder: query_builder,

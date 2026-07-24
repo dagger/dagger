@@ -1799,8 +1799,10 @@ type CurrentModule implements Node {
   Errors if the current module is not installed as an SDK in this workspace.
   """
   asSDK(
-    """The workspace to resolve SDK-role data against."""
-    workspace: ID! @expectedType(name: "Workspace")
+    """
+    The workspace to resolve SDK-role data against. Defaults to the current workspace.
+    """
+    workspace: ID @expectedType(name: "Workspace")
   ): CurrentModuleAsSDK!
 
   """The dependencies of the module."""
