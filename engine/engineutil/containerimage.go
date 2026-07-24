@@ -1,6 +1,7 @@
 package engineutil
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -37,6 +38,7 @@ type PreparedContainerImage struct {
 type ContainerImageBlob struct {
 	descriptor specs.Descriptor
 	provider   content.Provider
+	contents   []byte
 }
 
 func (blob ContainerImageBlob) Descriptor() specs.Descriptor {
@@ -44,6 +46,11 @@ func (blob ContainerImageBlob) Descriptor() specs.Descriptor {
 }
 
 func (blob ContainerImageBlob) WriteTo(ctx context.Context, dst io.Writer) error {
+	if blob.contents != nil {
+		_, err := io.Copy(dst, bytes.NewReader(blob.contents))
+		return err
+	}
+
 	reader, err := content.BlobReadSeeker(ctx, blob.provider, blob.descriptor)
 	if err != nil {
 		return err
@@ -61,12 +68,12 @@ func (image *PreparedContainerImage) Manifest() ContainerImageBlob {
 func (image *PreparedContainerImage) Blob(id string) (ContainerImageBlob, error) {
 	dgst := digest.Digest(id)
 	if err := dgst.Validate(); err != nil {
-		return ContainerImageBlob{}, fmt.Errorf("invalid layer digest %q: %w", id, err)
+		return ContainerImageBlob{}, fmt.Errorf("invalid image blob digest %q: %w", id, err)
 	}
 
 	blob, ok := image.blobs[dgst]
 	if !ok {
-		return ContainerImageBlob{}, fmt.Errorf("layer %q not found in manifest", id)
+		return ContainerImageBlob{}, fmt.Errorf("image blob %q not found in manifest", id)
 	}
 	return blob, nil
 }
@@ -336,18 +343,27 @@ func (c *Client) PrepareContainerImage(
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
 
+	configBlob, err := content.ReadBlob(ctx, exported.Provider, manifest.Config)
+	if err != nil {
+		return nil, fmt.Errorf("read image config: %w", err)
+	}
+
 	prepared := &PreparedContainerImage{
 		manifest: ContainerImageBlob{
 			descriptor: exported.RootDesc,
-			provider:   exported.Provider,
+			contents:   manifestBlob,
 		},
 		blobs: make(map[digest.Digest]ContainerImageBlob, len(manifest.Layers)+1),
 	}
-	for _, desc := range append(manifest.Layers, manifest.Config) {
+	for _, desc := range manifest.Layers {
 		prepared.blobs[desc.Digest] = ContainerImageBlob{
 			descriptor: desc,
 			provider:   exported.Provider,
 		}
+	}
+	prepared.blobs[manifest.Config.Digest] = ContainerImageBlob{
+		descriptor: manifest.Config,
+		contents:   configBlob,
 	}
 	return prepared, nil
 }
