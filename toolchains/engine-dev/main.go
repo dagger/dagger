@@ -16,34 +16,9 @@ import (
 	"dagger/engine-dev/internal/dagger"
 )
 
-// TODO: updating filter for engine restart test, probably go back to original
 func New(
 	ctx context.Context,
-	// +defaultPath="/"
-	// +ignore=[
-	// "*",
-	// "!.git",
-	// "!dagger.json",
-	// "!**/dagger.json",
-	// "!**/go.*",
-	// "!**/*.dang",
-	// "!core",
-	// "!engine",
-	// "!util",
-	// "!network",
-	// "!dagql",
-	// "!analytics",
-	// "!auth",
-	// "!cmd",
-	// "!internal",
-	// "!sdk",
-	// "sdk/**/examples",
-	// "!cmd",
-	// "!modules",
-	// "!toolchains",
-	// "!.changes"
-	// ]
-	source *dagger.Directory,
+	ws *dagger.Workspace,
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
 	// +default=89
@@ -52,25 +27,41 @@ func New(
 	// to ensure they can access private registries
 	// +optional
 	clientDockerConfig *dagger.Secret,
-
-	// Workspace whose git HEAD commit and dirty state stamp the built
-	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
-	// when it's a dependency the caller must forward it. It is resolved to
-	// scalar commit/dirty values here and never stored: keeping a Workspace
-	// field would taint the cache key of every EngineDev method (a
-	// session-scoped resource), which would break disk-cache reuse across
-	// engine restarts.
-	// +optional
-	ws *dagger.Workspace,
 ) *EngineDev {
 	commit, dirty := vcsInfo(ctx, ws)
 	return &EngineDev{
-		Source:             source,
+		Ws: ws,
+		Source: ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+			Exclude: []string{
+				"*",
+				"!.git",
+				"!dagger.json",
+				"!**/dagger.json",
+				"!dagger.toml",
+				"!**/dagger.toml",
+				"!**/go.*",
+				"!**/*.dang",
+				"!core",
+				"!engine",
+				"!util",
+				"!network",
+				"!dagql",
+				"!analytics",
+				"!auth",
+				"!cmd",
+				"!internal",
+				"!sdk",
+				"sdk/**/examples",
+				"!cmd",
+				"!modules",
+				"!toolchains",
+				"!.changes",
+			},
+		}),
 		VCSCommit:          commit,
 		VCSDirty:           dirty,
 		SubnetNumber:       subnetNumber,
 		ClientDockerConfig: clientDockerConfig,
-		Ws:                 ws,
 	}
 }
 

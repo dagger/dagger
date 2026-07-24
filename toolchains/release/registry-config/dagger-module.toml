@@ -1,0 +1,9 @@
+name = "registry-config"
+engineVersion = "v0.21.7"
+include = ["!../.direnv", "!../.devenv", "!../go.work", "!../go.work.sum"]
+
+[runtime]
+  source = "go"
+
+[codegen]
+  automaticGitignore = false

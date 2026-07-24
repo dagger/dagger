@@ -1,0 +1,283 @@
+[modules.changelog]
+source = "toolchains/changelog"
+legacy-default-path = true
+
+# settings.source = "./path"
+
+[modules.ci]
+source = "toolchains/ci"
+legacy-default-path = true
+
+[modules.cli]
+source = "toolchains/cli-dev"
+legacy-default-path = true
+
+# settings.runnerHost = ""
+# settings.source = "./path"
+# Base image for go build environment
+# settings.base = "alpine:latest"
+# Version of the Dagger CLI being built. Surfaced as CliDev.Version and
+# consumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,
+# semver release-gating). The built binary self-reports its own version
+# from the embedded internal/version/VERSION file regardless of what's
+# passed here; this is for publish-time metadata only.
+# settings.version = ""
+# Git repository for VCS info injection.
+# settings.repo = "https://github.com/owner/repo"
+
+[modules.docs]
+source = "toolchains/docs-dev"
+legacy-default-path = true
+
+# settings.source = "./path"
+# settings.nginxConfig = "./file"
+
+[modules.elixir-sdk]
+source = "toolchains/elixir-sdk-dev"
+legacy-default-path = true
+
+# settings.baseImage = ""
+# settings.workspaceDir = "./path"
+# settings.sourcePath = ""
+
+[modules.engine-dev]
+source = "toolchains/engine-dev"
+legacy-default-path = true
+
+# settings.source = "./path"
+# A configurable part of the IP subnet managed by the engine
+# Change this to allow nested dagger engines
+# settings.subnetNumber = 89
+# A docker config file with credentials to install on clients,
+# to ensure they can access private registries
+# settings.clientDockerConfig = "env://MY_SECRET"
+
+[modules.go-sdk]
+source = "toolchains/go-sdk-dev"
+legacy-default-path = true
+
+# Workspace with all the files needed to develop the SDK
+# settings.workspaceDir = "./path"
+# Path of the Go SDK source within the workspace
+# settings.sourcePath = ""
+
+[modules.golang]
+source = "github.com/dagger/go@5683fb4f7e2e909a453eba727fb982077d5d11b5"
+legacy-default-path = true
+
+[modules.golang.settings]
+generate = "docs/current_docs/reference"
+lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
+test = "e2e/**"
+
+# Go version used for the default Go base image.
+# version = ""
+# Base image used for Go test, generate, and helper containers.
+# Mutually exclusive with version.
+# base = "alpine:latest"
+# Extra workspace-root include patterns mounted for each module's Go commands.
+# Use this for fixtures, generator inputs, or other files not covered by the
+# built-in Go patterns.
+# includeExtraFiles = [""]
+
+[modules.helm]
+source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
+legacy-default-path = true
+
+# The version of Helm to use.
+# settings.version = ""
+# Glob for chart values files to check as extra matrix dimensions.
+# settings.valuesGlob = ""
+
+[modules.java-sdk]
+source = "toolchains/java-sdk-dev"
+legacy-default-path = true
+
+# Workspace with all the files needed to develop the SDK.
+# settings.workspaceDir = "./path"
+# The path of the SDK in the workspace
+# settings.sourcePath = ""
+
+[modules.markdown-lint]
+source = "modules/markdownlint"
+legacy-default-path = true
+
+# The version of markdownlint to use.
+# settings.version = ""
+
+[modules.php-sdk]
+source = "toolchains/php-sdk-dev"
+legacy-default-path = true
+
+# A directory with all the files needed to develop the SDK
+# settings.workspaceDir = "./path"
+# The path of the SDK source in the workspace
+# settings.sourcePath = "sdk/php"
+# The path of the doctum config in the workspace
+# settings.doctumConfigPath = "docs/doctum-config.php"
+# A docker config file with credentials to install on clients.
+# settings.clientDockerConfig = "env://MY_SECRET"
+
+[modules.ps-analyzer]
+source = "github.com/dagger/PsScriptAnalyzer@d87a12883dccd495bee98da9d2c20eb44b6f608d"
+legacy-default-path = true
+
+# PSScriptAnalyzer version to install
+# settings.version = ""
+# PowerShell script paths to exclude from checking
+# settings.exclude = [""]
+# Extra non-PowerShell file paths to include for scripts that need project context
+# settings.includeExtraFiles = [""]
+
+[modules.python-sdk]
+source = "toolchains/python-sdk-dev"
+legacy-default-path = true
+
+# A workspace containing the SDK source code and other relevant files
+# settings.workspaceDir = "./path"
+# settings.sourcePath = "sdk/python"
+# A docker config file with credentials to install on clients.
+# settings.clientDockerConfig = "env://MY_SECRET"
+
+[modules.release]
+source = "toolchains/release"
+legacy-default-path = true
+
+[modules.rust-sdk]
+source = "toolchains/rust-sdk-dev"
+legacy-default-path = true
+
+# The path of the SDK source in the workspace
+# settings.sourcePath = "sdk/rust"
+# A docker config file with credentials to install on clients.
+# settings.clientDockerConfig = "env://MY_SECRET"
+
+[modules.security]
+source = "toolchains/security"
+legacy-default-path = true
+
+[modules.security.settings]
+# Paths to exclude from the source tree before scanning.
+ignore = [
+  "bin",
+  ".git",
+  "docs",
+  "sdk/rust/examples",
+  "sdk/rust/crates/dagger-sdk/examples",
+  "core/integration/testdata",
+  "dagql/idtui/viztest",
+]
+
+[modules.shellcheck]
+source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
+legacy-default-path = true
+
+# Shell script paths to exclude from checking
+# settings.exclude = [""]
+
+[modules.test-split]
+source = "toolchains/test-split"
+legacy-default-path = true
+
+[modules.typescript-sdk]
+source = "toolchains/typescript-sdk-dev"
+legacy-default-path = true
+
+# settings.nodeVersionPrevLts = ""
+# settings.nodeVersionLts = ""
+# settings.bunVersion = ""
+# settings.workspaceDir = "./path"
+# settings.sourcePath = ""
+
+[modules.dagger-dang-sdk]
+source = "github.com/dagger/dang-sdk"
+
+[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[modules.dagger-dang-sdk.as-sdk]
+name = "dang"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "cmd/codegen"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "modules/markdownlint"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/changelog"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/ci"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/dotnet-sdk-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/elixir-sdk-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/go-sdk-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/java-sdk-dev"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/security"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/test-split"
+
+[[modules.dagger-dang-sdk.as-sdk.modules]]
+path = "toolchains/typescript-sdk-dev"
+
+[modules.dagger-go-sdk.as-sdk]
+name = "go"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "modules/alpine"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "modules/git-releaser"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "modules/wolfi"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/cli-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/docs-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/docs-dev/docusaurus"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/engine-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/engine-dev/notify"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/php-sdk-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/python-sdk-dev"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/python-sdk-dev/dockerd"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/release/apko"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/release"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/release/gh"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/release/registry-config"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = "toolchains/rust-sdk-dev"

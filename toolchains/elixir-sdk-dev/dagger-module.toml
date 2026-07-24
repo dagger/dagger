@@ -1,0 +1,13 @@
+name = "elixir-sdk-dev"
+engineVersion = "v0.21.7"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "dagger-engine"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "go"
+  source = "../go"

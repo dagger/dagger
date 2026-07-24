@@ -1,0 +1,10 @@
+name = "codegen"
+engineVersion = "v0.21.7"
+source = ".dagger"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "go"
+  source = "../../toolchains/go"

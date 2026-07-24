@@ -1,1 +1,7 @@
-{"name":"cwd","engineVersion":"v0.21.5","sdk":{"source":"dang"}}
+{
+  "name": "cwd",
+  "engineVersion": "v0.21.5",
+  "sdk": {
+    "source": "dang"
+  }
+}

@@ -1,0 +1,24 @@
+name = "docs-dev"
+engineVersion = "v0.21.7"
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "dagger-cli"
+  source = "../cli-dev"
+
+[[dependencies]]
+  name = "docusaurus"
+  source = "docusaurus"
+
+[[dependencies]]
+  name = "engine-dev"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "go"
+  source = "../go"
+
+[codegen]
+  automaticGitignore = false

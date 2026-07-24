@@ -1,0 +1,9 @@
+name = "docusaurus"
+engineVersion = "v0.21.7"
+source = "dagger"
+
+[runtime]
+  source = "go"
+
+[codegen]
+  automaticGitignore = false
