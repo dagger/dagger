@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/engine"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -32,10 +33,12 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
 	"github.com/dagger/dagger/util/containerutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/llbtodagger"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
+	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -6570,6 +6573,117 @@ func (container *Container) Publish(
 		return "", fmt.Errorf("with digest: %w", err)
 	}
 	return withDig.String(), nil
+}
+
+func (container *Container) Manifest(
+	ctx context.Context,
+	containerDigest digest.Digest,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+) (f *File, rerr error) {
+	image, err := container.prepareContainerImage(ctx, containerDigest, forcedCompression, mediaTypes)
+	if err != nil {
+		return nil, err
+	}
+
+	return containerImageBlobFile(ctx, image.Manifest(), "manifest.json")
+}
+
+func (container *Container) prepareContainerImage(
+	ctx context.Context,
+	containerDigest digest.Digest,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+) (*engineutil.PreparedContainerImage, error) {
+	variants := filterEmptyContainers([]*Container{container})
+	inputByPlatform, err := getVariantRefs(ctx, variants)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("prepare container image session metadata: %w", err)
+	}
+	cacheKey := hashutil.HashStrings(
+		"prepare-container-image",
+		clientMetadata.SessionID,
+		containerDigest.String(),
+		string(forcedCompression),
+		string(mediaTypes),
+	).String()
+	cacheRes, err := cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
+		return bk.PrepareContainerImage(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	image, ok := cacheRes.Value().(*engineutil.PreparedContainerImage)
+	if !ok {
+		return nil, fmt.Errorf("invalid prepared container image cache result %T", cacheRes.Value())
+	}
+	return image, nil
+}
+
+func (container *Container) Layer(
+	ctx context.Context,
+	containerDigest digest.Digest,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+	id string,
+) (f *File, rerr error) {
+	image, err := container.prepareContainerImage(ctx, containerDigest, forcedCompression, mediaTypes)
+	if err != nil {
+		return nil, err
+	}
+	blob, err := image.Blob(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return containerImageBlobFile(ctx, blob, containerImageBlobName(blob))
+}
+
+func containerImageBlobName(blob engineutil.ContainerImageBlob) string {
+	desc := blob.Descriptor()
+	name := desc.Digest.Encoded()
+	if images.IsConfigType(desc.MediaType) {
+		return name + ".json"
+	}
+
+	switch desc.MediaType {
+	case specs.MediaTypeImageLayer,
+		specs.MediaTypeImageLayerNonDistributable, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2Layer,
+		images.MediaTypeDockerSchema2LayerForeign:
+		return name + ".tar"
+	case specs.MediaTypeImageLayerGzip,
+		specs.MediaTypeImageLayerNonDistributableGzip, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2LayerGzip,
+		images.MediaTypeDockerSchema2LayerForeignGzip:
+		return name + ".tar.gz"
+	case specs.MediaTypeImageLayerZstd,
+		specs.MediaTypeImageLayerNonDistributableZstd, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2LayerZstd:
+		return name + ".tar.zst"
+	default:
+		return name
+	}
 }
 
 type ExportOpts struct {

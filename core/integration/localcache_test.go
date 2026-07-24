@@ -8,6 +8,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -915,6 +917,79 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 
 	afterDigest := tarballDigest(t, pinned)
 	require.Equal(t, beforeDigest, afterDigest)
+}
+
+func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetadata(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	newNestedClient := func() *dagger.Client {
+		t.Helper()
+
+		client, err := dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+		return client
+	}
+
+	producer := newNestedClient()
+	t.Cleanup(func() { _ = producer.Close() })
+
+	metadataValue := identity.NewID()
+	ctr := producer.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("PREPARED_IMAGE_METADATA", metadataValue).
+		WithExec([]string{"sh", "-c", "echo prepared > /prepared"})
+
+	manifestContents, err := ctr.Manifest(dagger.ContainerManifestOpts{
+		ForcedCompression: dagger.ImageLayerCompressionGzip,
+	}).Contents(ctx)
+	require.NoError(t, err)
+
+	var manifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal([]byte(manifestContents), &manifest))
+	require.NotEmpty(t, manifest.Config.Digest)
+
+	ballastClient := newNestedClient()
+	_, err = ballastClient.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("PREPARED_IMAGE_PRUNE_BALLAST", identity.NewID()).
+		WithExec([]string{"sh", "-c", "echo ballast > /ballast"}).
+		Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, ballastClient.Close())
+
+	pruneClient := newNestedClient()
+	err = pruneClient.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		UseDefaultPolicy: false,
+		MaxUsedSpace:     "1",
+		ReservedSpace:    "0",
+		MinFreeSpace:     "0",
+		TargetSpace:      "1",
+	})
+	require.NoError(t, err)
+	require.NoError(t, pruneClient.Close())
+
+	configContents, err := ctr.Layer(manifest.Config.Digest.String(), dagger.ContainerLayerOpts{
+		ForcedCompression: dagger.ImageLayerCompressionGzip,
+	}).Contents(ctx)
+	require.NoError(t, err)
+
+	var config ocispecs.Image
+	require.NoError(t, json.Unmarshal([]byte(configContents), &config))
+	require.Contains(t, config.Config.Env, "PREPARED_IMAGE_METADATA="+metadataValue)
 }
 
 func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx context.Context, t *testctx.T) {

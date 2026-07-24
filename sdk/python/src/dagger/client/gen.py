@@ -2354,6 +2354,68 @@ class Container(Type):
         _ctx = self._select("labels", _args)
         return await _ctx.execute_object_list(Label)
 
+    def layer(
+        self,
+        id: str,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Returns the image layer or configuration blob with the given digest as
+        a File.
+
+        Parameters
+        ----------
+        id:
+            Digest of the layer or configuration blob (e.g.
+            "sha256:abc123...").
+        forced_compression:
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("id", id),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("layer", _args)
+        return File(_ctx)
+
+    def manifest(
+        self,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Computes and returns the manifest for this container as a File.
+
+        Parameters
+        ----------
+        forced_compression:
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("manifest", _args)
+        return File(_ctx)
+
     async def mounts(self) -> list[str]:
         """Retrieves the list of paths where a directory is mounted.
 

@@ -15,6 +15,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -28,6 +29,56 @@ import (
 type LoadedImportedImage struct {
 	Image  bkcache.ImportedImage
 	Config dockerspec.DockerOCIImage
+}
+
+func containerImageBlobFile(
+	ctx context.Context,
+	blob engineutil.ContainerImageBlob,
+	filePath string,
+) (f *File, rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bkref, err := query.SnapshotManager().New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("dagop.fs container.imageBlob "+filePath),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+
+	err = MountRef(ctx, bkref, func(out string, _ *mount.Mount) error {
+		file, err := os.OpenFile(filepath.Join(out, filePath), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		return blob.WriteTo(ctx, file)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("write container image blob: %w", err)
+	}
+
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bkref = nil
+	f = &File{
+		Platform: query.Platform(),
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+	}
+	f.File.setValue(filePath)
+	f.Snapshot.setValue(snap)
+	return f, nil
 }
 
 type ContainerFromImageRefLazy struct {

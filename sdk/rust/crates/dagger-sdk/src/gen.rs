@@ -1680,6 +1680,26 @@ pub struct ContainerImportOpts<'a> {
     pub tag: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerLayerOpts {
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Media types to use for image layers. Defaults to OCI.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerManifestOpts {
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Media types to use for image layers. Defaults to OCI.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
     /// Force each layer of the published image to use the specified compression algorithm.
     /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
@@ -2603,6 +2623,74 @@ impl Container {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
+    }
+    /// Returns the image layer or configuration blob with the given digest as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn layer(&self, id: impl Into<String>) -> File {
+        let mut query = self.selection.select("layer");
+        query = query.arg("id", id.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the image layer or configuration blob with the given digest as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn layer_opts(&self, id: impl Into<String>, opts: ContainerLayerOpts) -> File {
+        let mut query = self.selection.select("layer");
+        query = query.arg("id", id.into());
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg("mediaTypes", media_types);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Computes and returns the manifest for this container as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn manifest(&self) -> File {
+        let query = self.selection.select("manifest");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Computes and returns the manifest for this container as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn manifest_opts(&self, opts: ContainerManifestOpts) -> File {
+        let mut query = self.selection.select("manifest");
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg("mediaTypes", media_types);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Retrieves the list of paths where a directory is mounted.
     pub async fn mounts(&self) -> Result<Vec<String>, DaggerError> {
