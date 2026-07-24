@@ -1974,12 +1974,12 @@
 		},
 		{
 			"t": "M",
-<<<<<<< HEAD
 			"n": "Dagger\\Address::volume",
 			"p": "Dagger/Address.html#method_volume",
 			"d": "<p>Load a volume from the address.</p>"
-||||||| parent of 40d7e56930 (regen docs + sdk)
-=======
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Agent::description",
 			"p": "Dagger/Agent.html#method_description",
 			"d": "<p>The description of the agent</p>"
@@ -2025,7 +2025,6 @@
 			"n": "Dagger\\AgentGroup::list",
 			"p": "Dagger/AgentGroup.html#method_list",
 			"d": "<p>Return a list of individual agents and their details</p>"
->>>>>>> 40d7e56930 (regen docs + sdk)
 		},
 		{
 			"t": "M",
@@ -7285,6 +7284,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withMountedCache",
+			"p": "Dagger/Workspace.html#method_withMountedCache",
+			"d": "<p>Return this workspace with a cache volume mounted at a path.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withNewDirectory",
 			"p": "Dagger/Workspace.html#method_withNewDirectory",
 			"d": "<p>Return this workspace with a directory added, without mutating the source.</p>"
@@ -7294,6 +7299,18 @@
 			"n": "Dagger\\Workspace::withNewFile",
 			"p": "Dagger/Workspace.html#method_withNewFile",
 			"d": "<p>Return this workspace with a new or replaced file, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withReferenceDirectory",
+			"p": "Dagger/Workspace.html#method_withReferenceDirectory",
+			"d": "<p>Return this workspace with a directory mounted read-only under the reserved references prefix.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withReferenceFile",
+			"p": "Dagger/Workspace.html#method_withReferenceFile",
+			"d": "<p>Return this workspace with a file mounted read-only under the reserved references prefix.</p>"
 		},
 		{
 			"t": "M",
@@ -7321,9 +7338,27 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withoutDirectory",
+			"p": "Dagger/Workspace.html#method_withoutDirectory",
+			"d": "<p>Return this workspace with a directory removed, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutFile",
+			"p": "Dagger/Workspace.html#method_withoutFile",
+			"d": "<p>Return this workspace with a file removed, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withoutModule",
 			"p": "Dagger/Workspace.html#method_withoutModule",
 			"d": "<p>Return this workspace with a module removed from its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutMount",
+			"p": "Dagger/Workspace.html#method_withoutMount",
+			"d": "<p>Return this workspace with a previously mounted cache volume removed.</p>"
 		},
 		{
 			"t": "M",

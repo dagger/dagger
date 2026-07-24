@@ -9,39 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type RustSdkDev
-func (r *Binding) AsRustSDKDev() *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:29:6)
-	q := r.query.Select("asRustSdkDev")
-
-	return &RustSDKDev{
-		query: q,
-	}
-}
-
-// Create or update a binding of type RustSdkDev in the environment
-func (r *Env) WithRustSDKDevInput(name string, value *RustSDKDev, description string) *Env { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:29:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withRustSdkDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired RustSdkDev output to be assigned in the environment
-func (r *Env) WithRustSDKDevOutput(name string, description string) *Env { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:29:6)
-	q := r.query.Select("withRustSdkDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // RustSDKDevOpts contains options for Query.RustSDKDev
 type RustSDKDevOpts struct {
 	//

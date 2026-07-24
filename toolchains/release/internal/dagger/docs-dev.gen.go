@@ -9,15 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type DocsDev
-func (r *Binding) AsDocsDev() *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
-	q := r.query.Select("asDocsDev")
-
-	return &DocsDev{
-		query: q,
-	}
-}
-
 type DocsDev struct { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
 	query *querybuilder.Selection
 
@@ -201,30 +192,6 @@ func (r *DocsDev) Source() *Directory { // docs-dev (../../../../toolchains/docs
 func (r *DocsDev) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
-	}
-}
-
-// Create or update a binding of type DocsDev in the environment
-func (r *Env) WithDocsDevInput(name string, value *DocsDev, description string) *Env { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withDocsDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired DocsDev output to be assigned in the environment
-func (r *Env) WithDocsDevOutput(name string, description string) *Env { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
-	q := r.query.Select("withDocsDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
 	}
 }
 

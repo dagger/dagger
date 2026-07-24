@@ -14744,6 +14744,18 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a cache volume mounted at a path.
+   *
+   * The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+   * @param path Mount path. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+   * @param cache Cache volume to mount.
+   */
+  withMountedCache = (path: string, cache: CacheVolume): Workspace => {
+    const ctx = this._ctx.select("withMountedCache", { path, cache })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a directory added, without mutating the source.
    * @param path Path of the added directory. Relative paths resolve from the workspace cwd.
    * @param source Directory to add.
@@ -14765,6 +14777,30 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source Directory to mount read-only.
+   */
+  withReferenceDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withReferenceDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source File to mount read-only.
+   */
+  withReferenceFile = (path: string, source: File): Workspace => {
+    const ctx = this._ctx.select("withReferenceFile", { path, source })
     return new Workspace(ctx)
   }
 
@@ -14817,6 +14853,24 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a directory removed, without mutating the source.
+   * @param path Path of the directory to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutDirectory = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutDirectory", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file removed, without mutating the source.
+   * @param path Path of the file to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutFile = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutFile", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a module removed from its config.
    * @param name Name of the installed module entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -14826,6 +14880,15 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithoutModuleOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withoutModule", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a previously mounted cache volume removed.
+   * @param path Mount path to remove. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+   */
+  withoutMount = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutMount", { path })
     return new Workspace(ctx)
   }
 

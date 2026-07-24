@@ -7,19 +7,19 @@
   "dependencies": [
     {
       "name": "gochild",
-      "source": "./gochild"
+      "source": "gochild"
     },
     {
       "name": "pychild",
-      "source": "./pychild"
+      "source": "pychild"
     },
     {
       "name": "tschild",
-      "source": "./tschild"
+      "source": "tschild"
     },
     {
       "name": "dangchild",
-      "source": "./dangchild"
+      "source": "dangchild"
     }
   ],
   "disableDefaultFunctionCaching": true

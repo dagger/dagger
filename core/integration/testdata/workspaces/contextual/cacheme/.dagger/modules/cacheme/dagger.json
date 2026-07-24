@@ -1,1 +1,7 @@
-{"name":"cacheme","sdk":{"source":"dang"},"engineVersion":"latest"}
+{
+  "name": "cacheme",
+  "engineVersion": "v1.0.0-beta.7",
+  "sdk": {
+    "source": "dang"
+  }
+}

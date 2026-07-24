@@ -16050,6 +16050,20 @@ func (r *Workspace) WithModule(ref string, opts ...WorkspaceWithModuleOpts) *Wor
 	}
 }
 
+// Return this workspace with a cache volume mounted at a path.
+//
+// The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+func (r *Workspace) WithMountedCache(path string, cache *CacheVolume) *Workspace {
+	assertNotNil("cache", cache)
+	q := r.query.Select("withMountedCache")
+	q = q.Arg("path", path)
+	q = q.Arg("cache", cache)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // Return this workspace with a directory added, without mutating the source.
 func (r *Workspace) WithNewDirectory(path string, source *Directory) *Workspace {
 	assertNotNil("source", source)
@@ -16240,6 +16254,16 @@ func (r *Workspace) WithoutModule(name string, opts ...WorkspaceWithoutModuleOpt
 		}
 	}
 	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a previously mounted cache volume removed.
+func (r *Workspace) WithoutMount(path string) *Workspace {
+	q := r.query.Select("withoutMount")
+	q = q.Arg("path", path)
 
 	return &Workspace{
 		query: q,

@@ -9,39 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type GoSdkDev
-func (r *Binding) AsGoSDKDev() *GoSDKDev { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("asGoSdkDev")
-
-	return &GoSDKDev{
-		query: q,
-	}
-}
-
-// Create or update a binding of type GoSdkDev in the environment
-func (r *Env) WithGoSDKDevInput(name string, value *GoSDKDev, description string) *Env { // go-sdk-dev (../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withGoSdkDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired GoSdkDev output to be assigned in the environment
-func (r *Env) WithGoSDKDevOutput(name string, description string) *Env { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("withGoSdkDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 type GoSDKDev struct { // go-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 

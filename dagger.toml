@@ -190,7 +190,7 @@ legacy-default-path = true
 # settings.sourcePath = ""
 
 [modules.dagger-dang-sdk]
-source = "github.com/dagger/dang-sdk"
+source = "github.com/dagger/dang-sdk@fix-generate"
 
 [modules.dagger-go-sdk]
 source = "github.com/dagger/go-sdk"

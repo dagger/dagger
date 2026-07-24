@@ -9,39 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type Pytest
-func (r *Binding) AsPytest() *Pytest { // pytest (../../../../:0:0)
-	q := r.query.Select("asPytest")
-
-	return &Pytest{
-		query: q,
-	}
-}
-
-// Create or update a binding of type Pytest in the environment
-func (r *Env) WithPytestInput(name string, value *Pytest, description string) *Env { // pytest (../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withPytestInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired Pytest output to be assigned in the environment
-func (r *Env) WithPytestOutput(name string, description string) *Env { // pytest (../../../../:0:0)
-	q := r.query.Select("withPytestOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 type Pytest struct { // pytest (../../../../:0:0)
 	query *querybuilder.Selection
 

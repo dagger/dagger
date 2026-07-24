@@ -5713,6 +5713,22 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with a cache volume mounted at a path.
+
+  The mounted cache shadows base workspace content at that path, is excluded
+  from Workspace.changes, and is committed into the volume on export.
+  """
+  withMountedCache(
+    """
+    Mount path. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+    """
+    path: String!
+
+    """Cache volume to mount."""
+    cache: ID! @expectedType(name: "CacheVolume")
+  ): Workspace!
+
+  """
   Return this workspace with a directory added, without mutating the source.
   """
   withNewDirectory(
@@ -5838,6 +5854,14 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a previously mounted cache volume removed."""
+  withoutMount(
+    """
+    Mount path to remove. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+    """
+    path: String!
   ): Workspace!
 
   """Return this workspace with an SDK removed from its config."""

@@ -9,15 +9,6 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type ElixirSdkDev
-func (r *Binding) AsElixirSDKDev() *ElixirSDKDev { // elixir-sdk-dev (../../../../:0:0)
-	q := r.query.Select("asElixirSdkDev")
-
-	return &ElixirSDKDev{
-		query: q,
-	}
-}
-
 type ElixirSDKDev struct { // elixir-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -247,30 +238,6 @@ func (r *ElixirSDKDev) WorkspaceDir() *Directory { // elixir-sdk-dev (../../../.
 func (r *ElixirSDKDev) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
-	}
-}
-
-// Create or update a binding of type ElixirSdkDev in the environment
-func (r *Env) WithElixirSDKDevInput(name string, value *ElixirSDKDev, description string) *Env { // elixir-sdk-dev (../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withElixirSdkDevInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ElixirSdkDev output to be assigned in the environment
-func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env { // elixir-sdk-dev (../../../../:0:0)
-	q := r.query.Select("withElixirSdkDevOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
 	}
 }
 

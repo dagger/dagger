@@ -31,6 +31,7 @@ Run `git status` / review the diff. Pending changes:
 
 Note: two pre-existing failures in `dagql/idtui` are unrelated to this work and
 fail on the untouched tree too:
+
 - `TestConversationReportNestsSubAgent` — supplies message spans with no
   logs/`Message`, so their names never render (fails on original code).
 - `TestTelemetry/TestGolden` — `git: not found` in the sandbox.
@@ -102,7 +103,7 @@ decoration to soft-wrapped continuation lines, nor reserve width for it.
    report's depth indent.
 
 5. **Cosmetic:** `#` H1 is styled (marker stripped) but `##`/`###` render their
-   literal `## `/`### ` markers; list continuation lines hang-indent to the
+   literal `##`/`###` markers; list continuation lines hang-indent to the
    bullet column rather than the text column.
 
 ## Suggested starting points for the fix session

@@ -567,6 +567,25 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a cache volume mounted at a path.
+
+  The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+  """
+  @spec with_mounted_cache(t(), String.t(), Dagger.CacheVolume.t()) :: Dagger.Workspace.t()
+  def with_mounted_cache(%__MODULE__{} = workspace, path, cache) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withMountedCache")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("cache", Dagger.ID.id!(cache))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a directory added, without mutating the source.
   """
   @spec with_new_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
@@ -595,6 +614,44 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("path", path)
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a directory mounted read-only under the reserved references prefix.
+
+  Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+  """
+  @spec with_reference_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
+  def with_reference_directory(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withReferenceDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a file mounted read-only under the reserved references prefix.
+
+  Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+  """
+  @spec with_reference_file(t(), String.t(), Dagger.File.t()) :: Dagger.Workspace.t()
+  def with_reference_file(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withReferenceFile")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -676,6 +733,34 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a directory removed, without mutating the source.
+  """
+  @spec without_directory(t(), String.t()) :: Dagger.Workspace.t()
+  def without_directory(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutDirectory") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a file removed, without mutating the source.
+  """
+  @spec without_file(t(), String.t()) :: Dagger.Workspace.t()
+  def without_file(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutFile") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a module removed from its config.
   """
   @spec without_module(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
@@ -685,6 +770,20 @@ defmodule Dagger.Workspace do
       |> QB.select("withoutModule")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a previously mounted cache volume removed.
+  """
+  @spec without_mount(t(), String.t()) :: Dagger.Workspace.t()
+  def without_mount(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutMount") |> QB.put_arg("path", path)
 
     %Dagger.Workspace{
       query_builder: query_builder,
