@@ -44,7 +44,7 @@ dependency closure leaf-first**, and for each dep invokes **that dep's dang SDK
 deps overlaid. It accumulates each dep's artifacts and returns the closure
 changeset; the module's own `@generate` overlays it, then generates itself.
 
-```
+```text
 dagger generate
   └─ dang SDK @generate(workspace: ws)               # ws.cwd = X; auto-injected at top level
        ├─ deps = X.generateLocalDependencies(ws)
