@@ -185,3 +185,54 @@ func moduleSourceObjectResult(t *testing.T, dag *dagql.Server, op string, self *
 	require.NoError(t, err)
 	return res
 }
+
+func TestLocalDepClosureLeafFirst(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dag, err := dagql.NewServer(ctx, &core.Query{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.ModuleSource]{Typed: &core.ModuleSource{}}))
+
+	mk := func(path string, kind core.ModuleSourceKind, deps ...dagql.ObjectResult[*core.ModuleSource]) dagql.ObjectResult[*core.ModuleSource] {
+		return moduleSourceObjectResult(t, dag, path, &core.ModuleSource{
+			Kind:              kind,
+			SourceRootSubpath: path,
+			Dependencies:      dagql.ObjectResultArray[*core.ModuleSource](deps),
+		})
+	}
+	paths := func(srcs []dagql.ObjectResult[*core.ModuleSource]) []string {
+		out := make([]string, len(srcs))
+		for i, s := range srcs {
+			out[i] = s.Self().SourceRootSubpath
+		}
+		return out
+	}
+	local := core.ModuleSourceKindLocal
+
+	t.Run("leaf-first chain, excludes the receiver", func(t *testing.T) {
+		a := mk("a", local)
+		b := mk("b", local, a)
+		c := mk("c", local, b)
+		require.Equal(t, []string{"a", "b"}, paths(localDepClosureLeafFirst(c)))
+	})
+
+	t.Run("diamond dedups the shared leaf", func(t *testing.T) {
+		a := mk("a", local)
+		b := mk("b", local, a)
+		c := mk("c", local, a)
+		d := mk("d", local, b, c)
+		require.Equal(t, []string{"a", "b", "c"}, paths(localDepClosureLeafFirst(d)))
+	})
+
+	t.Run("skips git dependencies", func(t *testing.T) {
+		gitDep := mk("remote", core.ModuleSourceKindGit)
+		a := mk("a", local)
+		b := mk("b", local, gitDep, a)
+		require.Equal(t, []string{"a"}, paths(localDepClosureLeafFirst(b)))
+	})
+
+	t.Run("no local deps yields empty", func(t *testing.T) {
+		require.Empty(t, localDepClosureLeafFirst(mk("a", local)))
+	})
+}

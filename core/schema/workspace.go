@@ -1130,8 +1130,14 @@ func (s *workspaceSchema) withCwd(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	// Public schema surface: keep the cwd inside the workspace root. cleanWorkspaceRelPath
+	// is only filepath.Clean, so reject absolute paths and anything escaping via "..".
+	cwd := cleanWorkspaceRelPath(args.Path)
+	if filepath.IsAbs(args.Path) || cwd == ".." || strings.HasPrefix(cwd, ".."+string(filepath.Separator)) {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace cwd %q must be a relative path within the workspace root", args.Path)
+	}
 	ws := parent.Self().Clone()
-	ws.Cwd = cleanWorkspaceRelPath(args.Path)
+	ws.Cwd = cwd
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
