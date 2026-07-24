@@ -6823,6 +6823,95 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheArbitraryAbandonedInitializationReleases(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+
+	cacheIface, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+
+	const (
+		key       = "arbitrary-abandoned-initialization"
+		sessionID = "test-session"
+	)
+	callerCtx, cancelCaller := context.WithCancel(ctx)
+	defer cancelCaller()
+
+	initStarted := make(chan struct{})
+	allowInitReturn := make(chan struct{})
+	initCause := make(chan error, 1)
+	var releaseCalls atomic.Int32
+
+	callerDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitArbitrary(callerCtx, sessionID, key, func(callCtx context.Context) (any, error) {
+			close(initStarted)
+			<-allowInitReturn
+			initCause <- context.Cause(callCtx)
+			return cacheTestOpaqueValue{
+				value: "abandoned",
+				onRelease: func(context.Context) error {
+					releaseCalls.Add(1)
+					return nil
+				},
+			}, nil
+		})
+		callerDone <- err
+	}()
+
+	select {
+	case <-initStarted:
+	case <-t.Context().Done():
+		t.Fatal("initializer did not start")
+	}
+
+	c.callsMu.Lock()
+	abandoned := c.ongoingArbitraryCalls[key]
+	assert.Assert(t, abandoned != nil)
+	initDone := abandoned.waitCh
+	c.callsMu.Unlock()
+
+	// The initializer deliberately ignores its canceled context until the test
+	// allows it to return. First make the last waiter detach the unfinished entry.
+	cancelCaller()
+	select {
+	case err := <-callerDone:
+		assert.Assert(t, is.ErrorIs(err, context.Canceled))
+	case <-t.Context().Done():
+		t.Fatal("canceled caller did not return")
+	}
+
+	c.callsMu.Lock()
+	assert.Equal(t, 0, abandoned.waiters)
+	assert.Equal(t, 0, abandoned.ownerSessionCount)
+	assert.Assert(t, c.ongoingArbitraryCalls[key] != abandoned)
+	assert.Assert(t, c.completedArbitraryCalls[key] != abandoned)
+	c.callsMu.Unlock()
+	assert.Equal(t, 0, c.Size())
+
+	c.sessionMu.Lock()
+	_, tracked := c.sessionArbitraryCallKeysBySession[sessionID][key]
+	c.sessionMu.Unlock()
+	assert.Assert(t, !tracked)
+
+	// Now let the detached initializer successfully return an OnReleaser. Once
+	// waitCh closes, publication and abandonment cleanup must both be complete.
+	close(allowInitReturn)
+	select {
+	case <-initDone:
+	case <-t.Context().Done():
+		t.Fatal("initializer did not finish")
+	}
+	assert.Assert(t, is.ErrorIs(<-initCause, context.Canceled))
+	assert.Equal(t, int32(1), releaseCalls.Load())
+	assert.Equal(t, 0, c.Size())
+
+	// No session or cache path may retain a second claim on the abandoned value.
+	assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+	assert.Equal(t, int32(1), releaseCalls.Load())
+}
+
 func TestCacheArbitraryRecursiveCall(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
