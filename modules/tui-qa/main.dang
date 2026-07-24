@@ -75,7 +75,7 @@ type TuiQa {
     let srcDir = source.directory("/")
 
     # build the dagger CLI from source
-    let cli = cliDev(source: srcDir).binary
+    let cli = cliDev(ws: source, source: srcDir).binary
 
     # a client container with a from-source engine already bound + the released
     # dagger CLI installed; we overwrite the CLI with our from-source build.
