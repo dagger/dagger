@@ -1,0 +1,7 @@
+{
+  "name": "cred",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}
