@@ -404,6 +404,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		defer span.End()
 		warmup := exec.Command(daggerBin, daggerArgs...)
 		warmup.Env = goldenCmdEnv(s.Home)
+		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
 		warmup.Env = append(warmup.Env, ex.Env...)
 
 		// still try use docker credentials even though we overrode HOME, lest we get rate limited
@@ -435,6 +436,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		fmt.Sprintf("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://%s/v1/traces", otlpL.Addr().String()),
 		fmt.Sprintf("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://%s/v1/logs", otlpL.Addr().String()),
 	)
+	cmd.Env = append(cmd.Env, telemetry.PropagationEnv(ctx)...)
 	cmd.Env = append(cmd.Env, ex.Env...)
 
 	// still try use docker credentials even though we overrode HOME, lest we get rate limited
