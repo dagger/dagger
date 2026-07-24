@@ -417,8 +417,10 @@ func (m *Markdown) View() string {
 		glamour.WithEmoji(),
 	}
 	if m.Width != 0 {
+		// Subtract 2 for a margin on the right edge, matching the prefix
+		// margin on the left.
 		glamourOpts = append(glamourOpts,
-			glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)))
+			glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)-2))
 	}
 	renderer, err := glamour.NewTermRenderer(glamourOpts...)
 	if err != nil {
