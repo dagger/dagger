@@ -471,7 +471,7 @@ func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T)
   }
 }`), 0o644))
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+	out, err := hostDaggerExec(ctx, t, workdir, "--progress=plain", "call", "greet")
 	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), "No workspace config found, inferring from dagger.json.\nRun 'dagger setup' when ready.")
 	require.Contains(t, string(out), "hello from blueprint")

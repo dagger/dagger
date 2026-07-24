@@ -94,6 +94,10 @@ type ClientMetadata struct {
 	// SSH auth socket path
 	SSHAuthSocketPath string `json:"ssh_auth_socket_path"`
 
+	// Path to the dagger config file on the client's filesystem.
+	// Used for writing back OAuth token refreshes.
+	CredentialsPath string `json:"config_path,omitempty"`
+
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
 
@@ -102,6 +106,10 @@ type ClientMetadata struct {
 
 	// If set, the auth for cloud requests; used for PARC and scale-out
 	CloudAuth *auth.Cloud `json:"cloud_auth,omitempty"`
+
+	// If set, the Dagger Cloud API URL the client is configured with, so
+	// engine-side telemetry exports to the same endpoint as the client.
+	CloudURL string `json:"cloud_url,omitempty"`
 
 	// If true, this client enables scaling checks out to cloud engines
 	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
