@@ -20,7 +20,7 @@ The end state: you can guide every step of the way in a hierarchy of agents.
 - [Current Architecture](#current-architecture)
 - [Design](#design)
   - [1. Conversation identity (telemetry)](#1-conversation-identity-telemetry)
-  - [2. Loop control plane (engine)](#2-loop-control-plane-engine)
+  - [2. Loop control (session layer)](#2-loop-control-session-layer)
   - [3. Focus-anchored prompt (frontend)](#3-focus-anchored-prompt-frontend)
   - [4. Focus-anchored status (frontend + telemetry)](#4-focus-anchored-status-frontend--telemetry)
   - [5. Targeting, keybindings, and escalation](#5-targeting-keybindings-and-escalation)
@@ -277,7 +277,7 @@ Grounding for the design; all paths relative to repo root.
 ## Design
 
 Four layers, separable and independently shippable: telemetry identity →
-engine control plane → anchored prompt → anchored status.
+session loop control → anchored prompt → anchored status.
 
 ### 1. Conversation identity (telemetry)
 
@@ -305,66 +305,47 @@ Give every LLM conversation a stable identity so the UI can address it.
   (ancestry + `Boundary`) still works for *display*; only *control* needs the
   ID.
 
-### 2. Loop control plane (engine)
+### 2. Loop control (session layer)
 
-A session-scoped registry of running conversations, with a small state
-machine per loop: `running ⇄ paused → done`.
+Pause/steer/resume with **zero GraphQL schema changes**. dagql keeps
+modeling conversations as immutable values; `Loop()` keeps its existing
+contract — on cancellation it returns, successfully, whatever it appended.
+The control plane lives where Dagger's other interactive affordances live:
+the session.
 
-**Registry.** The per-session server (the state shared by the main client and
-all nested module clients) gains an `LLMLoopRegistry`. Each `Loop` execution
-registers `{conversationID, label, parentID, state, cancelStep, mailbox}` on
-entry and deregisters on exit. Nested module calls share the session server,
-so a sub-agent loop deep inside module sandboxes is still reachable from the
-top-level CLI client.
+**Why a hold at all.** Interrupt-and-return alone leaves a gap: the moment a
+child's `Loop()` returns, the spawning tool call completes and the parent
+acts on the partial answer — steering the child afterwards is talking to a
+ghost. *Something* must keep the outer conversation from returning while a
+sub-agent is paused. That something is the loop itself, parked engine-side
+until the user decides.
 
-**API.** Impure, uncached fields, restricted to the session's main client
-(same trust posture as `terminal`):
+**Prior art, revived.** The engine already knows how to park a running LLM
+on human input: `LLM.Interject` (`core/llm.go:1797-1853`) is unwired code
+that blocks on `bk.PromptHumanHelp(...)` — a prompt over the session that
+suspends the loop until the client answers. It was engine-prompted (fired
+when the model produced no output); v2 scraps it for parts and flips the
+trigger to user-initiated from the TUI. The engine-initiated trigger stays
+vestigial: neither revived nor deleted.
 
-```graphql
-extend type Query {
-  """Conversations (LLM loops) currently running in this session."""
-  llmConversations: [LLMConversation!]!
-}
+**Mechanics.**
 
-"""A handle to a running LLM conversation loop."""
-type LLMConversation {
-  conversationId: String!
-  label: String!
-  parentId: String
-  state: LLMConversationState!
-
-  """
-  Pause the loop: cancel the in-flight provider call (that step's partial
-  output is discarded; nothing is lost from history) and hold before the
-  next step, awaiting resume/interject/abort. The caller's tool call simply
-  blocks; nothing upstream is cancelled.
-  """
-  pause: Void
-
-  """
-  Resume a paused loop. The held step re-runs from history — resuming
-  without interjecting is a clean no-op on the transcript.
-  """
-  resume: Void
-
-  """
-  Append a user message to the conversation. On a paused loop it lands
-  immediately and implies resume. On a running loop it queues and is
-  consumed at the next step boundary (drive-by steering; no pause needed).
-  """
-  interject(prompt: String!): Void
-
-  """
-  End the loop now, returning its accumulated state to its caller.
-  """
-  abort: Void
-}
-
-enum LLMConversationState {
-  RUNNING
-  PAUSED
-}
-```
+- *Registry — engine-internal, invisible to the schema.* The per-session
+  server keeps `conversationID → {stepCancel, holdGate, mailbox}`,
+  registered by each `Loop` on entry, dropped on exit. Nested module
+  clients share the session server, so a loop deep inside module sandboxes
+  is still reachable from the top-level CLI client.
+- *Upstream verbs — client → engine.* Three unsolicited session messages,
+  `pause(id)` / `interject(id, msg)` / `abort(id)`, carried by a session
+  attachable. `interject` on a running loop is the drive-by steer: dropped
+  in the mailbox, drained at the next step boundary, no pause involved.
+- *The hold — engine → client.* On `pause`, the loop cancels its
+  step-scoped ctx (safe-point rules below) and enters a blocking prompt in
+  the `PromptHumanHelp` shape — "paused; what now?" — whose *response*
+  carries the decision: text = interject & resume, empty = resume,
+  sentinel = abort. The TUI answers it from the anchored prompt. The entire
+  pause dialogue is one blocked round-trip on the session: no polling, no
+  reconciliation, no state object anywhere.
 
 **Loop changes** (`core/llm.go:1756`):
 
@@ -386,13 +367,23 @@ enum LLMConversationState {
 - Before each step (and while paused), drain the mailbox — interjected
   prompts append as user messages, rendering as `🧑` spans inside the nested
   transcript exactly like top-level prompts.
-- While paused, the loop blocks on a resume/interject/abort signal (or
+- While paused, the loop is parked on the prompt round-trip (or unblocks on
   ancestor ctx cancellation — a paused loop still dies cleanly if the whole
-  turn or session goes away). The tool-call span stays running; a
-  `dagger.io/llm.conversation.paused` span event (or status attr) lets the
-  TUI mark the pause without polling.
+  turn or session goes away, returning its accumulated state). The
+  tool-call span stays running; a `dagger.io/llm.conversation.paused` span
+  event lets the TUI badge the pause.
 - `abort` returns accumulated state to the caller — the tool call gets the
   child's last reply so far.
+
+**"At rest", honestly.** A paused loop is a parked goroutine plus an open
+call chain — exactly as alive as a slow tool call (a two-hour test suite
+holds the same resources open), which Dagger sessions carry routinely. The
+goroutine guards nothing precious: every committed step is
+content-addressed state, auto-saved at the top level. If the session dies
+while paused — laptop closed, engine restarted — semantics degrade to a
+plain interrupt: loops return what they had, the turn unwinds, and recovery
+is ordinary session resume (`-r`). Pause therefore waits forever *by
+design*, and forever is safe.
 
 **Invisible steering.** Interjections and pauses leave *no annotation* on
 the tool result the parent sees. The child simply obeys and its final answer
@@ -401,9 +392,27 @@ interjected message is still visible to *you* in the child's transcript, and
 persists in the child's history for resume — it is only the parent that is
 kept unaware.)
 
-**Version skew.** CLI probes for `Query.llmConversations`; absent → the
-anchored prompt still renders, but child-targeted verbs degrade (interject →
-top-level queue, Ctrl+C → whole-turn interrupt) with a status-line notice.
+**Version skew.** CLI probes for the control attachable during session
+setup; absent (older engine) → the anchored prompt still renders, but
+child-targeted verbs degrade (interject → top-level queue, Ctrl+C →
+whole-turn interrupt) with a status-line notice.
+
+**Alternatives considered.**
+
+- *Schema control plane* — `Query.llmConversations` returning mutable
+  handles with pause/resume verbs. Reifies runtime control as mutable API
+  state, fighting dagql's immutable-value model. Rejected.
+- *Pure interrupt-and-return* — no hold anywhere: the parent consumes the
+  partial answer the instant the child returns, and steering afterwards is
+  talking to a ghost. Rejected: something must keep the outer conversation
+  from returning while a sub-agent is paused.
+- *Unwind-to-cache + replay* — pause cancels the whole turn; resume
+  re-drives it, fast-forwarding through cached steps, with interjections
+  keyed by state digest. Fully "at rest" and maximally content-addressed,
+  but pausing one child quiesces the entire turn (parallel siblings stop,
+  their in-flight steps re-run on resume) and deterministic replay demands
+  two-phase step commits. Rejected for the pause path; the digest-keyed
+  replay idea remains interesting for crash recovery.
 
 ### 3. Focus-anchored prompt (frontend)
 
@@ -602,15 +611,16 @@ Today the top-level turn is a *client-driven* loop
   and holds before issuing the next step; resume just steps again, since
   `HasPending` is still true.
 - **B (later): top level becomes an engine Loop too.** The CLI starts the
-  turn as `loop` and controls it exclusively via the control plane; queued
+  turn as `loop` and controls it exclusively via the same session control
+  channel; queued
   messages, and eventually auto-compact, move engine-side. One mechanism
   everywhere, and `dagger agent` turns become pausable/steerable by
   *other* tooling (Cloud, IDEs) via the same API. Requires solving per-step
   client callbacks (auto-save via `onStep`, status refresh) — likely via the
   existing step-wise telemetry plus a `PortableID` checkpoint per step.
 
-Recommendation: A for the MVP, B as a follow-up once the control plane is
-proven on sub-agents.
+Recommendation: A for the MVP, B as a follow-up once the session control
+channel is proven on sub-agents.
 
 ## Phases
 
@@ -635,10 +645,12 @@ Anchored context gauge time-travel using Phase 0 attrs (with
 `MetricsBySpan` fallback); per-step growth display; context-blame inline
 markers.
 
-**Phase 3 — Loop control plane + child targeting.**
-Engine registry; `pause`/`resume`/`interject`/`abort` API with the
-safe-point rules; loop mailbox drain; CLI wires submit/Ctrl+C to the focused
-conversation with state-based escalation. **This is the magic trick.**
+**Phase 3 — Loop control via the session + child targeting.**
+Engine-internal registry; `pause`/`interject`/`abort` session verbs; the
+`PromptHumanHelp`-style hold, reviving the vestigial `LLM.Interject`
+machinery; safe-point rules; CLI wires submit/Ctrl+C to the focused
+conversation with state-based escalation. Zero schema changes. **This is
+the magic trick.**
 
 **Phase 4 — The conversation tree.**
 Branch-from-anchor with confirm; reword-recall (`alt+↑` on history); `⑂ N`
@@ -658,12 +670,13 @@ attrs.
   shows the conversation finished and offers to requeue the message to the
   parent (or the top level) rather than dropping it.
 - **Paused-loop liveness.** A paused child blocks its parent's tool call
-  indefinitely — that is the feature, but the UI must make paused loops
-  loud (anchored `⏸ paused` badge + a global-footer indicator listing any
-  paused conversations, so one is never forgotten off-screen). Paused loops
-  still die cleanly with ancestor cancellation and session close. Provider
-  calls are not held open across a pause (the step is cancelled), so
-  nothing upstream times out.
+  indefinitely — by design: it waits forever, with no timeout and no
+  auto-resume. The UI keeps paused loops loud (anchored `⏸ paused` badge +
+  a global-footer indicator listing paused conversations, so one is never
+  forgotten off-screen), and the hold degrades safely: ancestor
+  cancellation or session death unblocks the loop, which returns its
+  accumulated state (auto-saved). Provider calls are never held open across
+  a pause (the step is cancelled first), so nothing upstream times out.
 - **Parallel sub-agents.** Multiple loops run concurrently under one turn
   (parallel tool calls). Focus disambiguates naturally; the registry lists
   all; the breadcrumb prevents mis-sends.
@@ -674,9 +687,9 @@ attrs.
   re-spends that step's tokens on resume (accepted: instant pause is worth
   it). Tool side effects are protected by the safe-point rule (§2): the
   tool batch completes before the hold, so tools never re-run due to pause.
-- **Trust boundary.** Control verbs must be main-client-only; module code
-  must not steer, pause, or kill sibling conversations. Same enforcement
-  pattern as `terminal`/interactive.
+- **Trust boundary.** Control rides the main client's session attachable,
+  so module code has no path to steer, pause, or kill sibling
+  conversations — the capability is structural, not enforced per-field.
 - **Renderer regressions.** The splice must keep the flowing-mode contract
   (no mouse handlers, over-tall frames, cursor math via
   `RenderResult.Cursor`). Golden tests exist for the pretty frontend
@@ -712,27 +725,42 @@ Answers folded into the sections above, recorded here for traceability:
 8. **The full conversation tree is preserved and always visible** — session
    format v2 stores the tree; recipe-ID prefix sharing is dedupe enough;
    explicit delta encoding is a non-goal. (§6)
+9. **Zero schema changes for control** — conversations stay immutable dagql
+   values; `pause`/`interject`/`abort` are session-layer messages and the
+   hold is a blocked `PromptHumanHelp`-style round-trip, reviving the
+   vestigial `LLM.Interject` machinery. (§2)
+10. **Something must hold** — a paused sub-agent must keep the outer
+    conversation from returning; the tool call stays open for the duration
+    of the pause. (§2)
+11. **Engine-initiated interjection stays vestigial** — scrapped for parts;
+    the trigger is user-initiated only. (§2)
+12. **Safe-point pause** — instant cancel during provider streaming; hold
+    after the in-flight tool batch completes. (§2)
+13. **Abort = escalation at root + `/abort`** — no dedicated key. (§5)
+14. **`[` / `]` for branch switching; jump-to-type lands in Phase 5.**
+    (§5, §6)
+15. **Paused waits forever** — no timeout, no auto-resume; loud UI plus
+    safe degradation on session death instead. (§2, Risks)
 
 ## Open Questions
 
-Smaller, next-round questions; resolutions get folded into the sections
-above.
+Prototype-time details; resolutions get folded into the sections above.
 
-1. **Pause safe-point rule.** Proposed: cancel instantly during provider
-   streaming, hold after the in-flight tool batch otherwise (§2). OK, or
-   should pause also rip through running tools (accepting re-runs)?
-2. **Abort reachability.** Escalation-at-root plus a `/abort` command, with
-   no dedicated abort key — hard enough to hit accidentally, easy enough
-   when needed?
-3. **Branch-switch keys.** `[` / `]` for sibling switching (free in both
-   modes today) — any conflict with planned bindings?
-4. **Jump-to-type timing.** Phase 5 as planned, or pull into Phase 1 so the
-   paradigm launches with the merged mode from day one?
-5. **Paused-loop guardrail.** Should a paused sub-agent left unattended
-   (e.g. > N minutes) surface a reminder, auto-resume, or just sit there
-   forever by design?
+1. **Transport shape.** Session attachable vs. an existing side-channel
+   (client metadata / engine HTTP) for the three upstream verbs. The design
+   only requires: main-client-only, unsolicited, addressed by conversation
+   ID.
+2. **Force-pause through a long tool.** The safe-point holds after the
+   in-flight tool batch; should a second `ctrl+c` during `⏸ pausing…` rip
+   through the running tools instead (accepting tool re-runs on resume)?
+   The gesture is free — escalation only triggers on an *already-paused*
+   target.
+3. **Label derivation.** `conversation.label` for module-spawned loops —
+   the spawning tool's name, the agent module's name, or caller-provided?
+   Drives the breadcrumb.
 
 ## Status
 
-Draft v2 — first-round decisions folded in; open questions are refinements,
-not blockers. No implementation started.
+Draft v3 — UX pinned and mechanism agreed: session-layer hold, zero schema
+changes. Remaining questions are prototype-time details. No implementation
+started.
