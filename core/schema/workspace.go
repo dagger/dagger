@@ -138,6 +138,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
 			),
+		dagql.NodeFunc("withCwd", s.withCwd).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with its cwd pointed at the given workspace-relative path.").
+			Args(
+				dagql.Arg("path").Doc("Workspace-relative path to use as the cwd."),
+			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a module installed in its config.").
@@ -1113,6 +1119,28 @@ func (s *workspaceSchema) withChanges(
 	}, nil)
 }
 
+func (s *workspaceSchema) withCwd(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Path string
+	},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	// Public schema surface: keep the cwd inside the workspace root. cleanWorkspaceRelPath
+	// is only filepath.Clean, so reject absolute paths and anything escaping via "..".
+	cwd := cleanWorkspaceRelPath(args.Path)
+	if filepath.IsAbs(args.Path) || cwd == ".." || strings.HasPrefix(cwd, ".."+string(filepath.Separator)) {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace cwd %q must be a relative path within the workspace root", args.Path)
+	}
+	ws := parent.Self().Clone()
+	ws.Cwd = cwd
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
 func (s *workspaceSchema) changes(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -1877,6 +1905,11 @@ func (s *workspaceSchema) generators(
 	parent *core.Workspace,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		// WithWorkspace runs the discovered generators against this workspace
+		// instead of the client's ambient one — used by
+		// ModuleSource.generateLocalDependencies to hand each dependency's SDK a
+		// scoped/overlaid workspace. Internal: not part of the public schema.
+		WithWorkspace dagql.Optional[dagql.ID[*core.Workspace]] `internal:"true"`
 	},
 ) (*core.GeneratorGroup, error) {
 	if isSyntheticWorkspace(parent) {
@@ -1997,11 +2030,23 @@ func (s *workspaceSchema) generators(
 		allGenerators = append(allGenerators, filtered...)
 	}
 
-	return &core.GeneratorGroup{
+	gg := &core.GeneratorGroup{
 		Generators:        allGenerators,
 		LoadFailures:      loadFailures,
 		WorkspaceClientID: parent.ClientID,
-	}, nil
+	}
+	if args.WithWorkspace.Valid {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		override, err := args.WithWorkspace.Value.Load(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("load workspace override: %w", err)
+		}
+		gg.WorkspaceOverride = override
+	}
+	return gg, nil
 }
 
 func (s *workspaceSchema) services(

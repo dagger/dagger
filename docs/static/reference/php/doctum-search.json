@@ -6114,6 +6114,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::generateLocalDependencies",
+			"p": "Dagger/ModuleSource.html#method_generateLocalDependencies",
+			"d": "<p>Generate this module's transitive local dependency closure, leaf-first, and return the accumulated changeset.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::generatedContextChangeset",
 			"p": "Dagger/ModuleSource.html#method_generatedContextChangeset",
 			"d": "<p>The generated files and directories made on top of the module source's context directory, returned as a Changeset.</p>"
@@ -7155,6 +7161,12 @@
 			"n": "Dagger\\Workspace::withConfigValue",
 			"p": "Dagger/Workspace.html#method_withConfigValue",
 			"d": "<p>Return this workspace with a configuration value written.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withCwd",
+			"p": "Dagger/Workspace.html#method_withCwd",
+			"d": "<p>Return this workspace with its cwd pointed at the given workspace-relative path.</p>"
 		},
 		{
 			"t": "M",
