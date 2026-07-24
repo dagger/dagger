@@ -12,12 +12,11 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	iversion "github.com/dagger/dagger/internal/version"
 )
 
-type querySchema struct {
-}
+type querySchema struct{}
 
 var _ SchemaResolvers = &querySchema{}
 
@@ -123,7 +122,7 @@ func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pip
 }
 
 func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (string, error) {
-	return engine.Version, nil
+	return iversion.Version(iversion.WithV(), iversion.WithCommit()), nil
 }
 
 func (s *querySchema) remoteGitMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args remoteGitMirrorArgs) (dagql.Result[*core.RemoteGitMirror], error) {
@@ -207,7 +206,7 @@ func (s *querySchema) schemaJSONFile(
 	args schemaJSONArgs,
 ) (inst dagql.ObjectResult[*core.File], rerr error) {
 	const schemaJSONFilename = "schema.json"
-	const perm fs.FileMode = 0644
+	const perm fs.FileMode = 0o644
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
