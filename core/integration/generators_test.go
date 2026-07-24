@@ -359,7 +359,7 @@ type ClientGeneratorFixture struct{}
 
 // +generate
 func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
-	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
+	clients, err := dag.CurrentModule().AsSDK(dagger.CurrentModuleAsSDKOpts{Workspace: ws}).Clients(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +438,7 @@ source = ".dagger/modules/consumer"
 entrypoint = true
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk@fix-generate" # FIXME: repoint to main
+source = "github.com/dagger/go-sdk"
 
 [modules.go-sdk.as-sdk]
 name = "go"

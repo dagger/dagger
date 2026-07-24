@@ -18,22 +18,35 @@ func (s *moduleSchema) currentModuleAsSDK(
 	ctx context.Context,
 	curMod *core.CurrentModule,
 	args struct {
-		Workspace dagql.ID[*core.Workspace]
+		// FIXME: optional for now to ease the rollout; make it required. See the
+		// fallback below.
+		Workspace dagql.Optional[dagql.ID[*core.Workspace]]
 	},
 ) (*core.CurrentModuleAsSDK, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// The workspace is passed explicitly: a module resolving its SDK role — as a
-	// dependency driven by another module, or as a generator run by the framework
-	// — hands in the workspace it was given rather than inheriting the caller's
-	// ambient one. Config reads route through that workspace's own rootfs/owner
-	// client, so there is no sandbox concern, and a synthetic (value) workspace
-	// that carries config is honored just like a detected one.
-	wsResult, err := args.Workspace.Load(ctx, srv)
-	if err != nil {
-		return nil, fmt.Errorf("load workspace argument: %w", err)
+	// The workspace is meant to be passed explicitly: a module resolving its SDK
+	// role — as a dependency driven by another module, or as a generator run by
+	// the framework — hands in the workspace it was given rather than inheriting
+	// the caller's ambient one. Config reads route through that workspace's own
+	// rootfs/owner client, so there is no sandbox concern, and a synthetic (value)
+	// workspace that carries config is honored just like a detected one.
+	//
+	// FIXME: the workspace should be required. For now it's optional and, when
+	// omitted, falls back to the ambient current workspace, as asSDK did before
+	// the argument existed. Drop this fallback once the argument is required.
+	var wsResult dagql.ObjectResult[*core.Workspace]
+	if args.Workspace.Valid {
+		wsResult, err = args.Workspace.Value.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("load workspace argument: %w", err)
+		}
+	} else if err := srv.Select(ctx, srv.Root(), &wsResult,
+		dagql.Selector{Field: "currentWorkspace"},
+	); err != nil {
+		return nil, fmt.Errorf("get current workspace: %w", err)
 	}
 	ws := wsResult.Self()
 	if ws.ConfigFile == "" {
