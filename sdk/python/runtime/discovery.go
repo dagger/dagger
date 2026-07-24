@@ -292,6 +292,11 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 	// These paths should be in "exclude" in dagger.json.
 	// Let's remove them just in case, to avoid conflicts.
 	for _, exclude := range DirExcludes {
+		if m.TrustedSource && exclude == GenDir {
+			// The committed vendored sdk is the trusted codegen output;
+			// it won't be re-vendored so keep it.
+			continue
+		}
 		if d.HasFile(exclude) {
 			m.ContextDir = m.ContextDir.WithoutDirectory(
 				path.Join(m.SubPath, exclude),

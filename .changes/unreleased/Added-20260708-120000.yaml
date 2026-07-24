@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  The Python SDK adopts the config-format runtime-codegen rule: for modules on
+  `dagger-module.toml`, `dagger call` builds the runtime from the module's
+  committed generated files (run `dagger generate` and commit them) instead of
+  regenerating the client bindings in-container, and dependencies are synced
+  with `uv sync --frozen`. Modules on legacy `dagger.json` are unaffected.
+time: 2026-07-08T12:00:00Z
+custom:
+  Author: eunomie
+  PR: 13593
