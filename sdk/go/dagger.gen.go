@@ -2383,7 +2383,9 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 // ContainerLayerOpts contains options for Container.Layer
 type ContainerLayerOpts struct {
-	// Compression to use for image layers. Defaults to Gzip.
+	// Force each layer of the image to use the specified compression algorithm.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
 	// Media types to use for image layers. Defaults to OCI.
 	//
@@ -2391,7 +2393,7 @@ type ContainerLayerOpts struct {
 	MediaTypes ImageMediaTypes
 }
 
-// Returns the layer with the given digest as a File.
+// Returns the image layer or configuration blob with the given digest as a File.
 func (r *Container) Layer(id string, opts ...ContainerLayerOpts) *File {
 	q := r.query.Select("layer")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2413,7 +2415,9 @@ func (r *Container) Layer(id string, opts ...ContainerLayerOpts) *File {
 
 // ContainerManifestOpts contains options for Container.Manifest
 type ContainerManifestOpts struct {
-	// Compression to use for image layers. Defaults to Gzip.
+	// Force each layer of the image to use the specified compression algorithm.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
 	// Media types to use for image layers. Defaults to OCI.
 	//

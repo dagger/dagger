@@ -6663,7 +6663,11 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 
 	// Note that the manifest's ForcedCompression must match the layer's,
 	// else the layer will not be found in the Container nor in its export.
-	for _, forcedCompression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionUncompressed, dagger.ImageLayerCompressionGzip} {
+	for _, forcedCompression := range []dagger.ImageLayerCompression{
+		dagger.ImageLayerCompressionUncompressed,
+		dagger.ImageLayerCompressionGzip,
+		dagger.ImageLayerCompressionZstd,
+	} {
 		t.Run(fmt.Sprintf("forcedCompression=%q", forcedCompression), func(ctx context.Context, t *testctx.T) {
 			manifestFile := ctr.Manifest(dagger.ContainerManifestOpts{
 				ForcedCompression: forcedCompression,
@@ -6683,6 +6687,9 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 			require.NotEmpty(t, manifest.Config.Digest)
 			configFile := ctr.Layer(manifest.Config.Digest.String())
 			require.NotEmpty(t, configFile)
+			configName, err := configFile.Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, manifest.Config.Digest.Encoded()+".json", configName)
 
 			// Assert that the config layer is valid and has some of the expected contents.
 			configContents, err := configFile.Contents(ctx)
@@ -6703,6 +6710,16 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 				ForcedCompression: forcedCompression,
 			})
 			require.NotEmpty(t, layerFile)
+			layerName, err := layerFile.Name(ctx)
+			require.NoError(t, err)
+			switch forcedCompression {
+			case dagger.ImageLayerCompressionUncompressed:
+				require.Equal(t, layer.Digest.Encoded()+".tar", layerName)
+			case dagger.ImageLayerCompressionGzip:
+				require.Equal(t, layer.Digest.Encoded()+".tar.gz", layerName)
+			case dagger.ImageLayerCompressionZstd:
+				require.Equal(t, layer.Digest.Encoded()+".tar.zst", layerName)
+			}
 
 			// Assert that the layer has the expected size.
 			layerFileSize, err := layerFile.Size(ctx)
@@ -6737,6 +6754,25 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 			exportedLayerBytes := readTarFile(t, tarPath, "blobs/sha256/"+layer.Digest.Encoded())
 			require.Len(t, exportedLayerBytes, layerFileSize)
 		})
+	}
+
+	defaultManifestContents, err := ctr.Manifest().Contents(ctx)
+	require.NoError(t, err)
+	var defaultManifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal([]byte(defaultManifestContents), &defaultManifest))
+	require.NotEmpty(t, defaultManifest.Layers)
+	defaultLayer := defaultManifest.Layers[0]
+	defaultLayerName, err := ctr.Layer(defaultLayer.Digest.String()).Name(ctx)
+	require.NoError(t, err)
+	switch defaultLayer.MediaType {
+	case ocispecs.MediaTypeImageLayer:
+		require.Equal(t, defaultLayer.Digest.Encoded()+".tar", defaultLayerName)
+	case ocispecs.MediaTypeImageLayerGzip:
+		require.Equal(t, defaultLayer.Digest.Encoded()+".tar.gz", defaultLayerName)
+	case ocispecs.MediaTypeImageLayerZstd:
+		require.Equal(t, defaultLayer.Digest.Encoded()+".tar.zst", defaultLayerName)
+	default:
+		require.Equal(t, defaultLayer.Digest.Encoded(), defaultLayerName)
 	}
 }
 

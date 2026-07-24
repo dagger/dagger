@@ -354,7 +354,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Returns the layer with the given digest as a File.
+     * Returns the image layer or configuration blob with the given digest as a File.
      */
     public function layer(
         string $id,

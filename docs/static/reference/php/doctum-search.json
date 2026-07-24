@@ -3008,7 +3008,7 @@
 			"t": "M",
 			"n": "Dagger\\Container::layer",
 			"p": "Dagger/Container.html#method_layer",
-			"d": "<p>Returns the layer with the given digest as a File.</p>"
+			"d": "<p>Returns the image layer or configuration blob with the given digest as a File.</p>"
 		},
 		{
 			"t": "M",

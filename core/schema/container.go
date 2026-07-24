@@ -859,16 +859,28 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`Computes and returns the manifest for this container as a File.`).
 			Args(
-				dagql.Arg("forcedCompression").Doc(`Compression to use for image layers. Defaults to Gzip.`),
+				dagql.Arg("forcedCompression").Doc(
+					`Force each layer of the image to use the specified compression algorithm.`,
+					`If this is unset, then if a layer already has a compressed blob in the
+						engine's cache, that will be used (this can result in a mix of
+						compression algorithms for different layers). If this is unset and a
+						layer has no compressed blob in the engine's cache, then it will be
+						compressed using Gzip.`),
 				dagql.Arg("mediaTypes").Doc(`Media types to use for image layers. Defaults to OCI.`),
 			),
 
 		dagql.NodeFunc("layer", s.layer).
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`Returns the layer with the given digest as a File.`).
+			Doc(`Returns the image layer or configuration blob with the given digest as a File.`).
 			Args(
-				dagql.Arg("id").Doc(`Digest of the layer (e.g. "sha256:abc123...").`),
-				dagql.Arg("forcedCompression").Doc(`Compression to use for image layers. Defaults to Gzip.`),
+				dagql.Arg("id").Doc(`Digest of the layer or configuration blob (e.g. "sha256:abc123...").`),
+				dagql.Arg("forcedCompression").Doc(
+					`Force each layer of the image to use the specified compression algorithm.`,
+					`If this is unset, then if a layer already has a compressed blob in the
+						engine's cache, that will be used (this can result in a mix of
+						compression algorithms for different layers). If this is unset and a
+						layer has no compressed blob in the engine's cache, then it will be
+						compressed using Gzip.`),
 				dagql.Arg("mediaTypes").Doc(`Media types to use for image layers. Defaults to OCI.`),
 			),
 

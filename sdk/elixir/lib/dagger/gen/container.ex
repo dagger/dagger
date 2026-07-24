@@ -455,7 +455,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Returns the layer with the given digest as a File.
+  Returns the image layer or configuration blob with the given digest as a File.
   """
   @spec layer(t(), String.t(), [
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},

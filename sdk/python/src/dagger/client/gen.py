@@ -2361,14 +2361,22 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> "File":
-        """Returns the layer with the given digest as a File.
+        """Returns the image layer or configuration blob with the given digest as
+        a File.
 
         Parameters
         ----------
         id:
-            Digest of the layer (e.g. "sha256:abc123...").
+            Digest of the layer or configuration blob (e.g.
+            "sha256:abc123...").
         forced_compression:
-            Compression to use for image layers. Defaults to Gzip.
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
         media_types:
             Media types to use for image layers. Defaults to OCI.
         """
@@ -2391,7 +2399,13 @@ class Container(Type):
         Parameters
         ----------
         forced_compression:
-            Compression to use for image layers. Defaults to Gzip.
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
         media_types:
             Media types to use for image layers. Defaults to OCI.
         """

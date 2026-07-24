@@ -1681,7 +1681,8 @@ pub struct ContainerImportOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerLayerOpts {
-    /// Compression to use for image layers. Defaults to Gzip.
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
     /// Media types to use for image layers. Defaults to OCI.
@@ -1690,7 +1691,8 @@ pub struct ContainerLayerOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerManifestOpts {
-    /// Compression to use for image layers. Defaults to Gzip.
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
     /// Media types to use for image layers. Defaults to OCI.
@@ -2622,11 +2624,11 @@ impl Container {
             })
             .collect())
     }
-    /// Returns the layer with the given digest as a File.
+    /// Returns the image layer or configuration blob with the given digest as a File.
     ///
     /// # Arguments
     ///
-    /// * `id` - Digest of the layer (e.g. "sha256:abc123...").
+    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn layer(&self, id: impl Into<String>) -> File {
         let mut query = self.selection.select("layer");
@@ -2637,11 +2639,11 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns the layer with the given digest as a File.
+    /// Returns the image layer or configuration blob with the given digest as a File.
     ///
     /// # Arguments
     ///
-    /// * `id` - Digest of the layer (e.g. "sha256:abc123...").
+    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn layer_opts(&self, id: impl Into<String>, opts: ContainerLayerOpts) -> File {
         let mut query = self.selection.select("layer");

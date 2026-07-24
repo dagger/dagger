@@ -6656,19 +6656,34 @@ func (container *Container) Layer(
 		return nil, err
 	}
 
-	before, name, ok := strings.Cut(id, ":")
-	if !ok {
-		name = before
-	}
-	name += ".tar"
-	switch forcedCompression {
-	case CompressionGzip, CompressionEStarGZ:
-		name += ".gz"
-	case CompressionZstd:
-		name += ".zst"
+	return containerImageBlobFile(ctx, blob, containerImageBlobName(blob))
+}
+
+func containerImageBlobName(blob engineutil.ContainerImageBlob) string {
+	desc := blob.Descriptor()
+	name := desc.Digest.Encoded()
+	if images.IsConfigType(desc.MediaType) {
+		return name + ".json"
 	}
 
-	return containerImageBlobFile(ctx, blob, name)
+	switch desc.MediaType {
+	case specs.MediaTypeImageLayer,
+		specs.MediaTypeImageLayerNonDistributable, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2Layer,
+		images.MediaTypeDockerSchema2LayerForeign:
+		return name + ".tar"
+	case specs.MediaTypeImageLayerGzip,
+		specs.MediaTypeImageLayerNonDistributableGzip, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2LayerGzip,
+		images.MediaTypeDockerSchema2LayerForeignGzip:
+		return name + ".tar.gz"
+	case specs.MediaTypeImageLayerZstd,
+		specs.MediaTypeImageLayerNonDistributableZstd, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2LayerZstd:
+		return name + ".tar.zst"
+	default:
+		return name
+	}
 }
 
 type ExportOpts struct {
