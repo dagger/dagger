@@ -171,6 +171,10 @@ type Server interface {
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
 
+	// EngineVolumeState returns the engine-local configuration needed to
+	// resolve operator-managed volumes at exec time.
+	EngineVolumeState() EngineVolumeState
+
 	// Flush telemetry for all clients in the current session.
 	FlushSessionTelemetry(ctx context.Context) error
 

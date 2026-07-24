@@ -2393,6 +2393,13 @@ export type ClientCurrentTypeDefsOpts = {
   hideCore?: boolean
 }
 
+export type ClientEngineVolumeOpts = {
+  /**
+   * Optional existing subdirectory within the volume payload to mount.
+   */
+  subdir?: string
+}
+
 export type ClientEnvOpts = {
   /**
    * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
@@ -14109,6 +14116,16 @@ export class Client extends BaseClient {
   engine = (): Engine => {
     const ctx = this._ctx.select("engine")
     return new Engine(ctx)
+  }
+
+  /**
+   * Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+   * @param name Canonical slash-separated volume name beneath the engine volume namespace.
+   * @param opts.subdir Optional existing subdirectory within the volume payload to mount.
+   */
+  engineVolume = (name: string, opts?: ClientEngineVolumeOpts): Volume => {
+    const ctx = this._ctx.select("engineVolume", { name, ...opts })
+    return new Volume(ctx)
   }
 
   /**

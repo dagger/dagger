@@ -346,6 +346,7 @@ func TestVolumeConstructorsHiddenFromModuleSchema(t *testing.T) {
 
 	require.NotNil(t, moduleSchema.Types.Get("Volume"))
 	require.NotNil(t, schemaField(moduleSchema.Types.Get("Container"), "withMountedVolume"))
+	require.Nil(t, schemaField(moduleSchema.Query(), "engineVolume"))
 	require.Nil(t, schemaField(moduleSchema.Query(), "sshfsVolume"))
 	require.Nil(t, schemaField(moduleSchema.Types.Get("Address"), "volume"))
 
@@ -354,6 +355,7 @@ func TestVolumeConstructorsHiddenFromModuleSchema(t *testing.T) {
 	clientSchema := decodeSchemaResponse(t, clientBytes).Schema
 	require.NotNil(t, clientSchema.Types.Get("Volume"))
 	require.NotNil(t, schemaField(clientSchema.Types.Get("Container"), "withMountedVolume"))
+	require.NotNil(t, schemaField(clientSchema.Query(), "engineVolume"))
 	require.NotNil(t, schemaField(clientSchema.Query(), "sshfsVolume"))
 	require.NotNil(t, schemaField(clientSchema.Types.Get("Address"), "volume"))
 }

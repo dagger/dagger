@@ -832,6 +832,34 @@ func (s *addressSchema) volume(
 		return inst, err
 	}
 
+	u, err := url.Parse(addr)
+	if err != nil {
+		return inst, fmt.Errorf("parse volume address: %w", err)
+	}
+	if u.Scheme == "engine-volume" {
+		parsed, err := parseEngineVolumeAddress(addr)
+		if err != nil {
+			return inst, err
+		}
+		argsList := []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(parsed.Name)},
+		}
+		if parsed.HasSubdir {
+			argsList = append(argsList, dagql.NamedInput{
+				Name:  "subdir",
+				Value: dagql.Opt(dagql.NewString(parsed.Subdir)),
+			})
+		}
+		err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
+			Field: "engineVolume",
+			Args:  argsList,
+		})
+		return inst, err
+	}
+	if u.Scheme != "sshfs" {
+		return inst, fmt.Errorf("unsupported volume address %q: must use sshfs:// or engine-volume://", addr)
+	}
+
 	parsed, err := parseSSHFSVolumeAddress(addr)
 	if err != nil {
 		return inst, err
@@ -885,6 +913,65 @@ func (s *addressSchema) volume(
 		return inst, err
 	}
 	return inst, nil
+}
+
+type engineVolumeAddress struct {
+	Name      string
+	Subdir    string
+	HasSubdir bool
+}
+
+func parseEngineVolumeAddress(addr string) (engineVolumeAddress, error) {
+	var parsed engineVolumeAddress
+	u, err := url.Parse(addr)
+	if err != nil {
+		return parsed, fmt.Errorf("parse volume address: %w", err)
+	}
+	if u.Scheme != "engine-volume" {
+		return parsed, fmt.Errorf("unsupported volume address %q: must use engine-volume://", addr)
+	}
+	if u.Opaque != "" || u.Host == "" {
+		return parsed, fmt.Errorf("engine volume address must put the name after engine-volume://")
+	}
+	if u.User != nil {
+		return parsed, fmt.Errorf("engine volume address must not include user information")
+	}
+	if u.Fragment != "" {
+		return parsed, fmt.Errorf("volume address must not include a fragment")
+	}
+	if u.RawPath != "" {
+		return parsed, fmt.Errorf("engine volume address name must not use percent encoding")
+	}
+	if u.ForceQuery {
+		return parsed, fmt.Errorf("engine volume address must not include an empty query")
+	}
+
+	queryVals, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return parsed, fmt.Errorf("parse engine volume address query: %w", err)
+	}
+	if values, ok := queryVals["subdir"]; ok {
+		if len(values) != 1 {
+			return parsed, fmt.Errorf("engine volume address query parameter %q must be specified once", "subdir")
+		}
+		parsed.HasSubdir = true
+		parsed.Subdir = values[0]
+		delete(queryVals, "subdir")
+	}
+	if len(queryVals) > 0 {
+		return parsed, fmt.Errorf("unsupported volume address query parameter %q", firstQueryKey(queryVals))
+	}
+
+	parsed.Name = u.Host + u.Path
+	if err := core.ValidateEngineVolumeName(parsed.Name); err != nil {
+		return engineVolumeAddress{}, err
+	}
+	if parsed.HasSubdir {
+		if err := core.ValidateEngineVolumeSubdir(parsed.Subdir); err != nil {
+			return engineVolumeAddress{}, err
+		}
+	}
+	return parsed, nil
 }
 
 func currentRootQuery(ctx context.Context) (*core.Query, *dagql.Server, error) {

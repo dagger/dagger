@@ -14375,6 +14375,12 @@ pub struct QueryCurrentTypeDefsOpts {
     pub return_all_types: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryEngineVolumeOpts<'a> {
+    /// Optional existing subdirectory within the volume payload to mount.
+    #[builder(setter(into, strip_option), default)]
+    pub subdir: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvOpts {
     /// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
     #[builder(setter(into, strip_option), default)]
@@ -14718,6 +14724,43 @@ impl Query {
     pub fn engine(&self) -> Engine {
         let query = self.selection.select("engine");
         Engine {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Canonical slash-separated volume name beneath the engine volume namespace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn engine_volume(&self, name: impl Into<String>) -> Volume {
+        let mut query = self.selection.select("engineVolume");
+        query = query.arg("name", name.into());
+        Volume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Canonical slash-separated volume name beneath the engine volume namespace.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn engine_volume_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: QueryEngineVolumeOpts<'a>,
+    ) -> Volume {
+        let mut query = self.selection.select("engineVolume");
+        query = query.arg("name", name.into());
+        if let Some(subdir) = opts.subdir {
+            query = query.arg("subdir", subdir);
+        }
+        Volume {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -673,7 +673,7 @@ func prepareMounts(
 
 		if state.Volume != nil {
 			var err error
-			mountable, err = prepareExecVolumeMount(state.Volume)
+			mountable, err = prepareExecVolumeMount(ctx, state.Volume)
 			if err != nil {
 				return err
 			}
@@ -1484,7 +1484,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			}
 
 			if state.Volume != nil {
-				mountable, err = prepareExecVolumeMount(state.Volume)
+				mountable, err = prepareExecVolumeMount(ctx, state.Volume)
 				if err != nil {
 					return err
 				}
