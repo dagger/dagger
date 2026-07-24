@@ -6823,6 +6823,252 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheArbitraryAbandonedInitializationReleases(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+
+	cacheIface, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+
+	const (
+		key       = "arbitrary-abandoned-initialization"
+		sessionID = "test-session"
+	)
+	callerCtx, cancelCaller := context.WithCancel(ctx)
+	defer cancelCaller()
+
+	initStarted := make(chan struct{})
+	allowInitReturn := make(chan struct{})
+	initCause := make(chan error, 1)
+	var releaseCalls atomic.Int32
+	var releaseCacheSize atomic.Int32
+	releaseCacheSize.Store(-1)
+
+	callerDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitArbitrary(callerCtx, sessionID, key, func(callCtx context.Context) (any, error) {
+			close(initStarted)
+			<-allowInitReturn
+			initCause <- context.Cause(callCtx)
+			return cacheTestOpaqueValue{
+				value: "abandoned",
+				onRelease: func(context.Context) error {
+					releaseCacheSize.Store(int32(c.Size()))
+					releaseCalls.Add(1)
+					return nil
+				},
+			}, nil
+		})
+		callerDone <- err
+	}()
+
+	select {
+	case <-initStarted:
+	case <-t.Context().Done():
+		t.Fatal("initializer did not start")
+	}
+
+	c.callsMu.Lock()
+	abandoned := c.ongoingArbitraryCalls[key]
+	assert.Assert(t, abandoned != nil)
+	initDone := abandoned.waitCh
+	c.callsMu.Unlock()
+
+	// The initializer deliberately ignores its canceled context until the test
+	// allows it to return. First make the last waiter detach the unfinished entry.
+	cancelCaller()
+	select {
+	case err := <-callerDone:
+		assert.Assert(t, is.ErrorIs(err, context.Canceled))
+	case <-t.Context().Done():
+		t.Fatal("canceled caller did not return")
+	}
+
+	c.callsMu.Lock()
+	assert.Equal(t, 0, abandoned.waiters)
+	assert.Equal(t, 0, abandoned.ownerSessionCount)
+	assert.Assert(t, c.ongoingArbitraryCalls[key] != abandoned)
+	assert.Assert(t, c.completedArbitraryCalls[key] != abandoned)
+	c.callsMu.Unlock()
+	assert.Equal(t, 0, c.Size())
+
+	c.sessionMu.Lock()
+	_, tracked := c.sessionArbitraryCallKeysBySession[sessionID][key]
+	c.sessionMu.Unlock()
+	assert.Assert(t, !tracked)
+
+	// Now let the detached initializer successfully return an OnReleaser. Once
+	// waitCh closes, publication and abandonment cleanup must both be complete.
+	close(allowInitReturn)
+	select {
+	case <-initDone:
+	case <-t.Context().Done():
+		t.Fatal("initializer did not finish")
+	}
+	assert.Assert(t, is.ErrorIs(<-initCause, context.Canceled))
+	assert.Equal(t, int32(1), releaseCalls.Load())
+	assert.Equal(t, int32(0), releaseCacheSize.Load())
+	assert.Equal(t, 0, c.Size())
+
+	// No session or cache path may retain a second claim on the abandoned value.
+	assert.NilError(t, c.ReleaseSession(ctx, sessionID))
+	assert.Equal(t, int32(1), releaseCalls.Load())
+}
+
+func TestCacheArbitraryAbandonedInitializationAllowsReentry(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+
+	cacheIface, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+
+	const key = "arbitrary-abandoned-reentry"
+	oldCallerCtx, cancelOldCaller := context.WithCancel(ctx)
+	defer cancelOldCaller()
+
+	oldInitStarted := make(chan struct{})
+	allowOldInitReturn := make(chan struct{})
+	var oldReleaseCalls atomic.Int32
+	var oldReleaseCacheSize atomic.Int32
+	oldReleaseCacheSize.Store(-1)
+
+	oldCallerDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrInitArbitrary(oldCallerCtx, "old-session", key, func(context.Context) (any, error) {
+			close(oldInitStarted)
+			<-allowOldInitReturn
+			return cacheTestOpaqueValue{
+				value: "old",
+				onRelease: func(context.Context) error {
+					oldReleaseCacheSize.Store(int32(c.Size()))
+					oldReleaseCalls.Add(1)
+					return nil
+				},
+			}, nil
+		})
+		oldCallerDone <- err
+	}()
+
+	select {
+	case <-oldInitStarted:
+	case <-t.Context().Done():
+		t.Fatal("old initializer did not start")
+	}
+
+	c.callsMu.Lock()
+	oldEntry := c.ongoingArbitraryCalls[key]
+	assert.Assert(t, oldEntry != nil)
+	oldInitDone := oldEntry.waitCh
+	c.callsMu.Unlock()
+
+	cancelOldCaller()
+	select {
+	case err := <-oldCallerDone:
+		assert.Assert(t, is.ErrorIs(err, context.Canceled))
+	case <-t.Context().Done():
+		t.Fatal("old caller did not return")
+	}
+
+	var newReleaseCalls atomic.Int32
+	newRes, err := c.GetOrInitArbitrary(ctx, "new-session", key, func(context.Context) (any, error) {
+		return cacheTestOpaqueValue{
+			value: "new",
+			onRelease: func(context.Context) error {
+				newReleaseCalls.Add(1)
+				return nil
+			},
+		}, nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !newRes.HitCache())
+	assert.Equal(t, "new", newRes.Value().(cacheTestOpaqueValue).value)
+
+	c.callsMu.Lock()
+	newEntry := c.completedArbitraryCalls[key]
+	assert.Assert(t, newEntry != nil)
+	assert.Assert(t, newEntry != oldEntry)
+	assert.Equal(t, 1, newEntry.ownerSessionCount)
+	c.callsMu.Unlock()
+
+	close(allowOldInitReturn)
+	select {
+	case <-oldInitDone:
+	case <-t.Context().Done():
+		t.Fatal("old initializer did not finish")
+	}
+	assert.Equal(t, int32(1), oldReleaseCalls.Load())
+	assert.Equal(t, int32(1), oldReleaseCacheSize.Load())
+	assert.Equal(t, int32(0), newReleaseCalls.Load())
+	assert.Equal(t, 1, c.Size())
+
+	var replacementInitCalls atomic.Int32
+	hit, err := c.GetOrInitArbitrary(ctx, "new-session", key, func(context.Context) (any, error) {
+		replacementInitCalls.Add(1)
+		return "unexpected", nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, hit.HitCache())
+	assert.Equal(t, "new", hit.Value().(cacheTestOpaqueValue).value)
+	assert.Equal(t, int32(0), replacementInitCalls.Load())
+
+	assert.NilError(t, c.ReleaseSession(ctx, "old-session"))
+	assert.Equal(t, int32(1), oldReleaseCalls.Load())
+	assert.Equal(t, int32(0), newReleaseCalls.Load())
+	assert.Equal(t, 1, c.Size())
+
+	assert.NilError(t, c.ReleaseSession(ctx, "new-session"))
+	assert.Equal(t, int32(1), oldReleaseCalls.Load())
+	assert.Equal(t, int32(1), newReleaseCalls.Load())
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheArbitraryReleaseWaitsForAllSessionOwners(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+
+	cacheIface, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+
+	const key = "arbitrary-multiple-session-owners"
+	var releaseCalls atomic.Int32
+	_, err = c.GetOrInitArbitrary(ctx, "session-a", key, func(context.Context) (any, error) {
+		return cacheTestOpaqueValue{
+			value: "shared",
+			onRelease: func(context.Context) error {
+				releaseCalls.Add(1)
+				return nil
+			},
+		}, nil
+	})
+	assert.NilError(t, err)
+
+	var hitInitCalls atomic.Int32
+	hit, err := c.GetOrInitArbitrary(ctx, "session-b", key, func(context.Context) (any, error) {
+		hitInitCalls.Add(1)
+		return "unexpected", nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, hit.HitCache())
+	assert.Equal(t, int32(0), hitInitCalls.Load())
+
+	c.callsMu.Lock()
+	entry := c.completedArbitraryCalls[key]
+	assert.Assert(t, entry != nil)
+	assert.Equal(t, 2, entry.ownerSessionCount)
+	c.callsMu.Unlock()
+
+	assert.NilError(t, c.ReleaseSession(ctx, "session-a"))
+	assert.Equal(t, int32(0), releaseCalls.Load())
+	assert.Equal(t, 1, c.Size())
+
+	assert.NilError(t, c.ReleaseSession(ctx, "session-b"))
+	assert.Equal(t, int32(1), releaseCalls.Load())
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestCacheArbitraryRecursiveCall(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())

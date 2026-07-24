@@ -678,16 +678,13 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 	return lazyEvalFuncOfResult(res) != nil
 }
 
-func (c *Cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResult) {
+// trackSessionArbitraryLocked records a session owner while the result is
+// protected from concurrent detachment. The caller must hold c.callsMu.
+func (c *Cache) trackSessionArbitraryLocked(sessionID string, res *sharedArbitraryResult) {
 	if c == nil || sessionID == "" || res == nil {
 		return
 	}
-	shared, ok := res.(arbitraryResult)
-	if !ok || shared.shared == nil {
-		return
-	}
 
-	acquired := false
 	c.sessionMu.Lock()
 	if c.sessionArbitraryCallKeysBySession == nil {
 		c.sessionArbitraryCallKeysBySession = make(map[string]map[string]struct{})
@@ -695,17 +692,11 @@ func (c *Cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResul
 	if c.sessionArbitraryCallKeysBySession[sessionID] == nil {
 		c.sessionArbitraryCallKeysBySession[sessionID] = make(map[string]struct{})
 	}
-	if _, found := c.sessionArbitraryCallKeysBySession[sessionID][shared.shared.callKey]; !found {
-		c.sessionArbitraryCallKeysBySession[sessionID][shared.shared.callKey] = struct{}{}
-		acquired = true
+	if _, found := c.sessionArbitraryCallKeysBySession[sessionID][res.callKey]; !found {
+		c.sessionArbitraryCallKeysBySession[sessionID][res.callKey] = struct{}{}
+		res.ownerSessionCount++
 	}
 	c.sessionMu.Unlock()
-
-	if acquired {
-		c.callsMu.Lock()
-		shared.shared.ownerSessionCount++
-		c.callsMu.Unlock()
-	}
 }
 
 func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
@@ -765,15 +756,7 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 			if res.ownerSessionCount < 0 {
 				res.ownerSessionCount = 0
 			}
-			if res.ownerSessionCount == 0 && res.waiters == 0 {
-				if existing := c.ongoingArbitraryCalls[callKey]; existing == res {
-					delete(c.ongoingArbitraryCalls, callKey)
-				}
-				if existing := c.completedArbitraryCalls[callKey]; existing == res {
-					delete(c.completedArbitraryCalls, callKey)
-				}
-				onRelease = res.onRelease
-			}
+			onRelease = c.detachUnownedArbitraryLocked(res)
 		}
 		c.callsMu.Unlock()
 		if onRelease != nil {
