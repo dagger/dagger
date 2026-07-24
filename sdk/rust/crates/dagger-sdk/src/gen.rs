@@ -4541,6 +4541,12 @@ pub struct CurrentModule {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct CurrentModuleAsSdkOpts {
+    /// The workspace to resolve SDK-role data against. Defaults to the current workspace.
+    #[builder(setter(into, strip_option), default)]
+    pub workspace: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleGeneratorsOpts<'a> {
     /// Only include generators matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -4582,10 +4588,31 @@ impl Loadable for CurrentModule {
     }
 }
 impl CurrentModule {
-    /// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
     /// Errors if the current module is not installed as an SDK in this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_sdk(&self) -> CurrentModuleAsSdk {
         let query = self.selection.select("asSDK");
+        CurrentModuleAsSdk {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
+    /// Errors if the current module is not installed as an SDK in this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_sdk_opts(&self, opts: CurrentModuleAsSdkOpts) -> CurrentModuleAsSdk {
+        let mut query = self.selection.select("asSDK");
+        if let Some(workspace) = opts.workspace {
+            query = query.arg("workspace", workspace);
+        }
         CurrentModuleAsSdk {
             proc: self.proc.clone(),
             selection: query,

@@ -3890,11 +3890,23 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
-// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+// CurrentModuleAsSDKOpts contains options for CurrentModule.AsSDK
+type CurrentModuleAsSDKOpts struct {
+	// The workspace to resolve SDK-role data against. Defaults to the current workspace.
+	Workspace *Workspace
+}
+
+// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
 //
 // Errors if the current module is not installed as an SDK in this workspace.
-func (r *CurrentModule) AsSDK() *CurrentModuleAsSDK {
+func (r *CurrentModule) AsSDK(opts ...CurrentModuleAsSDKOpts) *CurrentModuleAsSDK {
 	q := r.query.Select("asSDK")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
+		}
+	}
 
 	return &CurrentModuleAsSDK{
 		query: q,

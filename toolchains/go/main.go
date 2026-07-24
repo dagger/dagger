@@ -626,7 +626,14 @@ func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, err
 			after = after.WithDirectory("", layer)
 		}
 	}
-	return after.Changes(before), nil
+	diff := after.Changes(before)
+	contents, err := diff.AsPatch().Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv")
+	fmt.Print(contents)
+	return diff, nil
 }
 
 func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {
