@@ -39,6 +39,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
 	"dagger.io/dagger"
@@ -6780,4 +6781,41 @@ func (ContainerSuite) TestLayerLargerThanFileContentsLimit(ctx context.Context, 
 	_, err = io.Copy(hash, exported)
 	require.NoError(t, err)
 	require.Equal(t, layer.Digest.Encoded(), hex.EncodeToString(hash.Sum(nil)))
+}
+
+func (ContainerSuite) TestLayersConcurrent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"sh", "-c", "echo one > /one"}).
+		WithExec([]string{"sh", "-c", "echo two > /two"})
+
+	manifestContents, err := ctr.Manifest(dagger.ContainerManifestOpts{
+		ForcedCompression: dagger.ImageLayerCompressionGzip,
+	}).Contents(ctx)
+	require.NoError(t, err)
+
+	var manifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal([]byte(manifestContents), &manifest))
+	descriptors := append(manifest.Layers, manifest.Config)
+	require.Greater(t, len(descriptors), 2)
+
+	sizes := make([]int, len(descriptors))
+	eg, egctx := errgroup.WithContext(ctx)
+	for i, desc := range descriptors {
+		i, desc := i, desc
+		eg.Go(func() error {
+			var err error
+			sizes[i], err = ctr.Layer(desc.Digest.String(), dagger.ContainerLayerOpts{
+				ForcedCompression: dagger.ImageLayerCompressionGzip,
+			}).Size(egctx)
+			return err
+		})
+	}
+	require.NoError(t, eg.Wait())
+
+	for i, desc := range descriptors {
+		require.Equal(t, desc.Size, int64(sizes[i]))
+	}
 }

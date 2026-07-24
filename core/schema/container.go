@@ -4299,7 +4299,11 @@ func (s *containerSchema) manifest(
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return inst, err
 	}
-	f, err := parent.Self().Manifest(ctx, args.ForcedCompression.Value, args.MediaTypes)
+	parentDigest, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	f, err := parent.Self().Manifest(ctx, parentDigest, args.ForcedCompression.Value, args.MediaTypes)
 	if err != nil {
 		return inst, err
 	}
@@ -4332,7 +4336,11 @@ func (s *containerSchema) layer(
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return inst, err
 	}
-	f, err := parent.Self().Layer(ctx, args.ForcedCompression.Value, args.MediaTypes, args.ID)
+	parentDigest, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	f, err := parent.Self().Layer(ctx, parentDigest, args.ForcedCompression.Value, args.MediaTypes, args.ID)
 	if err != nil {
 		return inst, err
 	}
