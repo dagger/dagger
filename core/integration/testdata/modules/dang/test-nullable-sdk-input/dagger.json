@@ -4,13 +4,11 @@
   "sdk": {
     "source": "dang"
   },
-  "include": [
-    "!producer"
-  ],
+  "include": ["!producer"],
   "dependencies": [
     {
       "name": "producer",
-      "source": "producer"
+      "source": "./producer"
     }
   ]
 }

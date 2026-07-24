@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type Docusaurus
+func (r *Binding) AsDocusaurus() *Docusaurus { // docusaurus (../../../../toolchains/docs-dev/docusaurus/dagger/main.go:59:6)
+	q := r.query.Select("asDocusaurus")
+
+	return &Docusaurus{
+		query: q,
+	}
+}
+
 // Docusaurus
 type Docusaurus struct { // docusaurus (../../../../toolchains/docs-dev/docusaurus/dagger/main.go:59:6)
 	query *querybuilder.Selection
@@ -173,6 +182,30 @@ func (r *Docusaurus) Yarn(ctx context.Context) (bool, error) { // docusaurus (..
 func (r *Docusaurus) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
+	}
+}
+
+// Create or update a binding of type Docusaurus in the environment
+func (r *Env) WithDocusaurusInput(name string, value *Docusaurus, description string) *Env { // docusaurus (../../../../toolchains/docs-dev/docusaurus/dagger/main.go:59:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withDocusaurusInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Docusaurus output to be assigned in the environment
+func (r *Env) WithDocusaurusOutput(name string, description string) *Env { // docusaurus (../../../../toolchains/docs-dev/docusaurus/dagger/main.go:59:6)
+	q := r.query.Select("withDocusaurusOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
 	}
 }
 

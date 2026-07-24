@@ -9,6 +9,39 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type TypescriptSdkDev
+func (r *Binding) AsTypescriptSDKDev() *TypescriptSDKDev { // typescript-sdk-dev (../../../../:0:0)
+	q := r.query.Select("asTypescriptSdkDev")
+
+	return &TypescriptSDKDev{
+		query: q,
+	}
+}
+
+// Create or update a binding of type TypescriptSdkDev in the environment
+func (r *Env) WithTypescriptSDKDevInput(name string, value *TypescriptSDKDev, description string) *Env { // typescript-sdk-dev (../../../../:0:0)
+	assertNotNil("value", value)
+	q := r.query.Select("withTypescriptSdkDevInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired TypescriptSdkDev output to be assigned in the environment
+func (r *Env) WithTypescriptSDKDevOutput(name string, description string) *Env { // typescript-sdk-dev (../../../../:0:0)
+	q := r.query.Select("withTypescriptSdkDevOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // TypescriptSDKDevOpts contains options for Query.TypescriptSDKDev
 type TypescriptSDKDevOpts struct {
 	NodeVersionPrevLts string // typescript-sdk-dev (../../../../:0:0)

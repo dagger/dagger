@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type DaggerCli
+func (r *Binding) AsDaggerCli() *DaggerCli { // dagger-cli (../../../../toolchains/cli-dev/main.go:97:6)
+	q := r.query.Select("asDaggerCli")
+
+	return &DaggerCli{
+		query: q,
+	}
+}
+
 type DaggerCli struct { // dagger-cli (../../../../toolchains/cli-dev/main.go:97:6)
 	query *querybuilder.Selection
 
@@ -258,6 +267,30 @@ func (r *DaggerCli) Version(ctx context.Context) (string, error) { // dagger-cli
 func (r *DaggerCli) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
+	}
+}
+
+// Create or update a binding of type DaggerCli in the environment
+func (r *Env) WithDaggerCliInput(name string, value *DaggerCli, description string) *Env { // dagger-cli (../../../../toolchains/cli-dev/main.go:97:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withDaggerCliInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired DaggerCli output to be assigned in the environment
+func (r *Env) WithDaggerCliOutput(name string, description string) *Env { // dagger-cli (../../../../toolchains/cli-dev/main.go:97:6)
+	q := r.query.Select("withDaggerCliOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
 	}
 }
 

@@ -648,6 +648,105 @@ func (r *ApkoConfig) AsNode() Node {
 	}
 }
 
+// Retrieve the binding value, as type Apko
+func (r *Binding) AsApko() *Apko { // apko (../../../../../toolchains/release/apko/main.go:16:6)
+	q := r.query.Select("asApko")
+
+	return &Apko{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ApkoBuildResult
+func (r *Binding) AsApkoBuildResult() *ApkoBuildResult { // apko (../../../../../toolchains/release/apko/main.go:251:6)
+	q := r.query.Select("asApkoBuildResult")
+
+	return &ApkoBuildResult{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ApkoConfig
+func (r *Binding) AsApkoConfig() *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:31:6)
+	q := r.query.Select("asApkoConfig")
+
+	return &ApkoConfig{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ApkoBuildResult in the environment
+func (r *Env) WithApkoBuildResultInput(name string, value *ApkoBuildResult, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:251:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withApkoBuildResultInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ApkoBuildResult output to be assigned in the environment
+func (r *Env) WithApkoBuildResultOutput(name string, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:251:6)
+	q := r.query.Select("withApkoBuildResultOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ApkoConfig in the environment
+func (r *Env) WithApkoConfigInput(name string, value *ApkoConfig, description string) *Env { // apko (../../../../../toolchains/release/apko/config.go:31:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withApkoConfigInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ApkoConfig output to be assigned in the environment
+func (r *Env) WithApkoConfigOutput(name string, description string) *Env { // apko (../../../../../toolchains/release/apko/config.go:31:6)
+	q := r.query.Select("withApkoConfigOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Apko in the environment
+func (r *Env) WithApkoInput(name string, value *Apko, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:16:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withApkoInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Apko output to be assigned in the environment
+func (r *Env) WithApkoOutput(name string, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:16:6)
+	q := r.query.Select("withApkoOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // ApkoOpts contains options for Query.Apko
 type ApkoOpts struct {
 	//

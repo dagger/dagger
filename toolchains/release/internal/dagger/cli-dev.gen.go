@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type CliDev
+func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
+	q := r.query.Select("asCliDev")
+
+	return &CliDev{
+		query: q,
+	}
+}
+
 type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
 	query *querybuilder.Selection
 
@@ -258,6 +267,30 @@ func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../.
 func (r *CliDev) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
+	}
+}
+
+// Create or update a binding of type CliDev in the environment
+func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withCliDevInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CliDev output to be assigned in the environment
+func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
+	q := r.query.Select("withCliDevOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
 	}
 }
 

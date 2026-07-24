@@ -9,6 +9,39 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type Notify
+func (r *Binding) AsNotify() *Notify { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+	q := r.query.Select("asNotify")
+
+	return &Notify{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Notify in the environment
+func (r *Env) WithNotifyInput(name string, value *Notify, description string) *Env { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withNotifyInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Notify output to be assigned in the environment
+func (r *Env) WithNotifyOutput(name string, description string) *Env { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+	q := r.query.Select("withNotifyOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 type Notify struct { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
 	query *querybuilder.Selection
 

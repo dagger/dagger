@@ -9,6 +9,39 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type Go
+func (r *Binding) AsGo() *Go { // go (../../../../toolchains/go/main.go:192:6)
+	q := r.query.Select("asGo")
+
+	return &Go{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Go in the environment
+func (r *Env) WithGoInput(name string, value *Go, description string) *Env { // go (../../../../toolchains/go/main.go:192:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withGoInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Go output to be assigned in the environment
+func (r *Env) WithGoOutput(name string, description string) *Env { // go (../../../../toolchains/go/main.go:192:6)
+	q := r.query.Select("withGoOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // A Go project
 type Go struct { // go (../../../../toolchains/go/main.go:192:6)
 	query *querybuilder.Selection

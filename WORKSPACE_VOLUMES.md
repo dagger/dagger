@@ -263,7 +263,6 @@ if mount, rel, ok := ws.MountForPath(resolvedPath); ok {
 ```
 
 `mountEdit`:
-
 1. `baseline := resolveCacheMountBaseline(mount)`.
 2. `effective := baseline + mount.Changes` (apply current delta).
 3. `edited := editFn(effective)` at `rel` (reuse the same `srv.Select`
@@ -307,7 +306,6 @@ mount edits never land in the base overlay.
 Gating detail: base export errors for non-local workspaces (`ExportHostPath`).
 Mount write-through should **not** be gated on a valid host base — a synthetic /
 git / value workspace can still have cache mounts to flush. Restructure so:
-
 - if there is a base changeset and no host → error (as today);
 - mount flush runs regardless (or provide a dedicated internal used by `export`).
 `export` stays `DoNotCache`.
@@ -328,7 +326,6 @@ dagql.NodeFunc("withMountedCache", s.withMountedCache).
 ```
 
 Handler `withMountedCache(ctx, parent, args{ Path string; Cache core.CacheVolumeID })`:
-
 1. `resolvedPath := resolveWorkspacePath(args.Path, ws.Cwd)`; normalize to
    root-relative Target (strip leading `/`, `""`/`.` ⇒ whole workspace).
 2. Reject Targets under `.refs`; reject obviously invalid paths.

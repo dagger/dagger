@@ -79,7 +79,7 @@ type TuiQa {
 
     # a client container with a from-source engine already bound + the released
     # dagger CLI installed; we overwrite the CLI with our from-source build.
-    let runner = engineDev(source)
+    let runner = engineDev(source: srcDir)
       .playground
       .withFile("/usr/local/bin/dagger", cli)
       .withMountedDirectory(workdir, srcDir)

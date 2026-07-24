@@ -9,6 +9,39 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type PhpSdkDev
+func (r *Binding) AsPhpSDKDev() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:23:6)
+	q := r.query.Select("asPhpSdkDev")
+
+	return &PhpSDKDev{
+		query: q,
+	}
+}
+
+// Create or update a binding of type PhpSdkDev in the environment
+func (r *Env) WithPhpSDKDevInput(name string, value *PhpSDKDev, description string) *Env { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:23:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withPhpSdkDevInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired PhpSdkDev output to be assigned in the environment
+func (r *Env) WithPhpSDKDevOutput(name string, description string) *Env { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:23:6)
+	q := r.query.Select("withPhpSdkDevOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 type PhpSDKDev struct { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:23:6)
 	query *querybuilder.Selection
 

@@ -161,6 +161,39 @@ func (r *Alpine) AsNode() Node {
 	}
 }
 
+// Retrieve the binding value, as type Alpine
+func (r *Binding) AsAlpine() *Alpine { // alpine (../../../../modules/alpine/main.go:85:6)
+	q := r.query.Select("asAlpine")
+
+	return &Alpine{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Alpine in the environment
+func (r *Env) WithAlpineInput(name string, value *Alpine, description string) *Env { // alpine (../../../../modules/alpine/main.go:85:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withAlpineInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Alpine output to be assigned in the environment
+func (r *Env) WithAlpineOutput(name string, description string) *Env { // alpine (../../../../modules/alpine/main.go:85:6)
+	q := r.query.Select("withAlpineOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // AlpineOpts contains options for Query.Alpine
 type AlpineOpts struct {
 	//

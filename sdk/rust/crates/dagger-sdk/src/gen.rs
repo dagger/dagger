@@ -15333,29 +15333,6 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a cache volume mounted at a path.
-    /// The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Mount path. Relative paths resolve from the workspace cwd; absolute from the workspace root.
-    /// * `cache` - Cache volume to mount.
-    pub fn with_mounted_cache(&self, path: impl Into<String>, cache: impl IntoID<Id>) -> Workspace {
-        let mut query = self.selection.select("withMountedCache");
-        query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "cache",
-            Box::new(move || {
-                let cache = cache.clone();
-                Box::pin(async move { cache.into_id().await.unwrap().quote() })
-            }),
-        );
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Return this workspace with a directory added, without mutating the source.
     ///
     /// # Arguments
@@ -15418,60 +15395,6 @@ impl Workspace {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Return this workspace with a directory mounted read-only under the reserved references prefix.
-    /// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Reference-relative mount path under the reserved references prefix.
-    /// * `source` - Directory to mount read-only.
-    pub fn with_reference_directory(
-        &self,
-        path: impl Into<String>,
-        source: impl IntoID<Id>,
-    ) -> Workspace {
-        let mut query = self.selection.select("withReferenceDirectory");
-        query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
-            }),
-        );
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Return this workspace with a file mounted read-only under the reserved references prefix.
-    /// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Reference-relative mount path under the reserved references prefix.
-    /// * `source` - File to mount read-only.
-    pub fn with_reference_file(
-        &self,
-        path: impl Into<String>,
-        source: impl IntoID<Id>,
-    ) -> Workspace {
-        let mut query = self.selection.select("withReferenceFile");
-        query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
-            }),
-        );
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -15606,34 +15529,6 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return this workspace with a directory removed, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the directory to remove. Relative paths resolve from the workspace cwd.
-    pub fn without_directory(&self, path: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withoutDirectory");
-        query = query.arg("path", path.into());
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Return this workspace with a file removed, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the file to remove. Relative paths resolve from the workspace cwd.
-    pub fn without_file(&self, path: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withoutFile");
-        query = query.arg("path", path.into());
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Return this workspace with a module removed from its config.
     ///
     /// # Arguments
@@ -15665,20 +15560,6 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
-        Workspace {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Return this workspace with a previously mounted cache volume removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Mount path to remove. Relative paths resolve from the workspace cwd; absolute from the workspace root.
-    pub fn without_mount(&self, path: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withoutMount");
-        query = query.arg("path", path.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,

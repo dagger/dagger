@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type Changelog
+func (r *Binding) AsChangelog() *Changelog { // changelog (../../../../:0:0)
+	q := r.query.Select("asChangelog")
+
+	return &Changelog{
+		query: q,
+	}
+}
+
 type Changelog struct { // changelog (../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -98,17 +107,41 @@ func (r *Changelog) AsNode() Node {
 	}
 }
 
+// Create or update a binding of type Changelog in the environment
+func (r *Env) WithChangelogInput(name string, value *Changelog, description string) *Env { // changelog (../../../../:0:0)
+	assertNotNil("value", value)
+	q := r.query.Select("withChangelogInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Changelog output to be assigned in the environment
+func (r *Env) WithChangelogOutput(name string, description string) *Env { // changelog (../../../../:0:0)
+	q := r.query.Select("withChangelogOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // ChangelogOpts contains options for Query.Changelog
 type ChangelogOpts struct {
-	Ws *Workspace // changelog (../../../../:0:0)
+	Source *Directory // changelog (../../../../:0:0)
 }
 
 func (r *Query) Changelog(opts ...ChangelogOpts) *Changelog { // changelog (../../../../:0:0)
 	q := r.query.Select("changelog")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
 		}
 	}
 

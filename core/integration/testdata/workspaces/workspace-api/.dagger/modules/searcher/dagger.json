@@ -1,7 +1,1 @@
-{
-  "name": "searcher",
-  "engineVersion": "v1.0.0",
-  "sdk": {
-    "source": "dang"
-  }
-}
+{"name":"searcher","engineVersion":"v1.0.0","sdk":{"source":"dang"}}

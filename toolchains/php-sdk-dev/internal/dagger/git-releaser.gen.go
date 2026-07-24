@@ -9,6 +9,39 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type GitReleaser
+func (r *Binding) AsGitReleaser() *GitReleaser { // git-releaser (../../../../modules/git-releaser/main.go:13:6)
+	q := r.query.Select("asGitReleaser")
+
+	return &GitReleaser{
+		query: q,
+	}
+}
+
+// Create or update a binding of type GitReleaser in the environment
+func (r *Env) WithGitReleaserInput(name string, value *GitReleaser, description string) *Env { // git-releaser (../../../../modules/git-releaser/main.go:13:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withGitReleaserInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired GitReleaser output to be assigned in the environment
+func (r *Env) WithGitReleaserOutput(name string, description string) *Env { // git-releaser (../../../../modules/git-releaser/main.go:13:6)
+	q := r.query.Select("withGitReleaserOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 type GitReleaser struct { // git-releaser (../../../../modules/git-releaser/main.go:13:6)
 	query *querybuilder.Selection
 

@@ -1,7 +1,1 @@
-{
-  "name": "globber",
-  "engineVersion": "v1.0.0",
-  "sdk": {
-    "source": "dang"
-  }
-}
+{"name":"globber","engineVersion":"v1.0.0","sdk":{"source":"dang"}}

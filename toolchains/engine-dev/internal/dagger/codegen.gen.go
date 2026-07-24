@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type Codegen
+func (r *Binding) AsCodegen() *Codegen { // codegen (../../../../:0:0)
+	q := r.query.Select("asCodegen")
+
+	return &Codegen{
+		query: q,
+	}
+}
+
 type Codegen struct { // codegen (../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -91,6 +100,30 @@ func (r *Codegen) Source() *Directory { // codegen (../../../../:0:0)
 func (r *Codegen) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
+	}
+}
+
+// Create or update a binding of type Codegen in the environment
+func (r *Env) WithCodegenInput(name string, value *Codegen, description string) *Env { // codegen (../../../../:0:0)
+	assertNotNil("value", value)
+	q := r.query.Select("withCodegenInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Codegen output to be assigned in the environment
+func (r *Env) WithCodegenOutput(name string, description string) *Env { // codegen (../../../../:0:0)
+	q := r.query.Select("withCodegenOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
 	}
 }
 

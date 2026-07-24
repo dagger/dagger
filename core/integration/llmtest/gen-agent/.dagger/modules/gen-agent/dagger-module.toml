@@ -2,4 +2,4 @@ name = "gen-agent"
 engineVersion = "v1.0.0-0"
 
 [runtime]
-  source = "dang"
+source = "dang"

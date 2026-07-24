@@ -1,7 +1,1 @@
-{
-  "name": "app",
-  "engineVersion": "v0.21.5",
-  "sdk": {
-    "source": "dang"
-  }
-}
+{"name":"app","engineVersion":"v0.21.5","sdk":{"source":"dang"}}

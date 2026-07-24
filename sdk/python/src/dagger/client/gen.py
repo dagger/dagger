@@ -15075,28 +15075,6 @@ class Workspace(Type):
         _ctx = self._select("withModule", _args)
         return Workspace(_ctx)
 
-    def with_mounted_cache(self, path: str, cache: CacheVolume) -> Self:
-        """Return this workspace with a cache volume mounted at a path.
-
-        The mounted cache shadows base workspace content at that path, is
-        excluded from Workspace.changes, and is committed into the volume on
-        export.
-
-        Parameters
-        ----------
-        path:
-            Mount path. Relative paths resolve from the workspace cwd;
-            absolute from the workspace root.
-        cache:
-            Cache volume to mount.
-        """
-        _args = [
-            Arg("path", path),
-            Arg("cache", cache),
-        ]
-        _ctx = self._select("withMountedCache", _args)
-        return Workspace(_ctx)
-
     def with_new_directory(self, path: str, source: Directory) -> Self:
         """Return this workspace with a directory added, without mutating the
         source.
@@ -15142,52 +15120,6 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
-        return Workspace(_ctx)
-
-    def with_reference_directory(self, path: str, source: Directory) -> Self:
-        """Return this workspace with a directory mounted read-only under the
-        reserved references prefix.
-
-        Referenced content is readable through the normal workspace file tools
-        but is excluded from the pending changeset: it never appears in
-        changes and is never exported.
-
-        Parameters
-        ----------
-        path:
-            Reference-relative mount path under the reserved references
-            prefix.
-        source:
-            Directory to mount read-only.
-        """
-        _args = [
-            Arg("path", path),
-            Arg("source", source),
-        ]
-        _ctx = self._select("withReferenceDirectory", _args)
-        return Workspace(_ctx)
-
-    def with_reference_file(self, path: str, source: File) -> Self:
-        """Return this workspace with a file mounted read-only under the reserved
-        references prefix.
-
-        Referenced content is readable through the normal workspace file tools
-        but is excluded from the pending changeset: it never appears in
-        changes and is never exported.
-
-        Parameters
-        ----------
-        path:
-            Reference-relative mount path under the reserved references
-            prefix.
-        source:
-            File to mount read-only.
-        """
-        _args = [
-            Arg("path", path),
-            Arg("source", source),
-        ]
-        _ctx = self._select("withReferenceFile", _args)
         return Workspace(_ctx)
 
     def with_sdk(
@@ -15273,38 +15205,6 @@ class Workspace(Type):
         _ctx = self._select("withoutConfigValue", _args)
         return Workspace(_ctx)
 
-    def without_directory(self, path: str) -> Self:
-        """Return this workspace with a directory removed, without mutating the
-        source.
-
-        Parameters
-        ----------
-        path:
-            Path of the directory to remove. Relative paths resolve from the
-            workspace cwd.
-        """
-        _args = [
-            Arg("path", path),
-        ]
-        _ctx = self._select("withoutDirectory", _args)
-        return Workspace(_ctx)
-
-    def without_file(self, path: str) -> Self:
-        """Return this workspace with a file removed, without mutating the
-        source.
-
-        Parameters
-        ----------
-        path:
-            Path of the file to remove. Relative paths resolve from the
-            workspace cwd.
-        """
-        _args = [
-            Arg("path", path),
-        ]
-        _ctx = self._select("withoutFile", _args)
-        return Workspace(_ctx)
-
     def without_module(
         self,
         name: str,
@@ -15325,21 +15225,6 @@ class Workspace(Type):
             Arg("here", here, False),
         ]
         _ctx = self._select("withoutModule", _args)
-        return Workspace(_ctx)
-
-    def without_mount(self, path: str) -> Self:
-        """Return this workspace with a previously mounted cache volume removed.
-
-        Parameters
-        ----------
-        path:
-            Mount path to remove. Relative paths resolve from the workspace
-            cwd; absolute from the workspace root.
-        """
-        _args = [
-            Arg("path", path),
-        ]
-        _ctx = self._select("withoutMount", _args)
         return Workspace(_ctx)
 
     def without_sdk(

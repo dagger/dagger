@@ -9,6 +9,72 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type RegistryConfig
+func (r *Binding) AsRegistryConfig() *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+	q := r.query.Select("asRegistryConfig")
+
+	return &RegistryConfig{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type RegistryConfigSecretMount
+func (r *Binding) AsRegistryConfigSecretMount() *RegistryConfigSecretMount { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
+	q := r.query.Select("asRegistryConfigSecretMount")
+
+	return &RegistryConfigSecretMount{
+		query: q,
+	}
+}
+
+// Create or update a binding of type RegistryConfig in the environment
+func (r *Env) WithRegistryConfigInput(name string, value *RegistryConfig, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withRegistryConfigInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired RegistryConfig output to be assigned in the environment
+func (r *Env) WithRegistryConfigOutput(name string, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+	q := r.query.Select("withRegistryConfigOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type RegistryConfigSecretMount in the environment
+func (r *Env) WithRegistryConfigSecretMountInput(name string, value *RegistryConfigSecretMount, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withRegistryConfigSecretMountInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired RegistryConfigSecretMount output to be assigned in the environment
+func (r *Env) WithRegistryConfigSecretMountOutput(name string, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
+	q := r.query.Select("withRegistryConfigSecretMountOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create an OCI registry configuration file and use it safely with tools, like Helm or Oras.
 //
 // Tools interacting with an OCI registry usually have their own way to authenticate.

@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type DotnetSdkDev
+func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
+	q := r.query.Select("asDotnetSdkDev")
+
+	return &DotnetSDKDev{
+		query: q,
+	}
+}
+
 type DotnetSDKDev struct { // dotnet-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
@@ -184,6 +193,30 @@ func (r *DotnetSDKDev) WorkspaceDir() *Directory { // dotnet-sdk-dev (../../../.
 func (r *DotnetSDKDev) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
+	}
+}
+
+// Create or update a binding of type DotnetSdkDev in the environment
+func (r *Env) WithDotnetSDKDevInput(name string, value *DotnetSDKDev, description string) *Env { // dotnet-sdk-dev (../../../../:0:0)
+	assertNotNil("value", value)
+	q := r.query.Select("withDotnetSdkDevInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired DotnetSdkDev output to be assigned in the environment
+func (r *Env) WithDotnetSDKDevOutput(name string, description string) *Env { // dotnet-sdk-dev (../../../../:0:0)
+	q := r.query.Select("withDotnetSdkDevOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
 	}
 }
 

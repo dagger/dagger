@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+// Retrieve the binding value, as type Dockerd
+func (r *Binding) AsDockerd() *Dockerd { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+	q := r.query.Select("asDockerd")
+
+	return &Dockerd{
+		query: q,
+	}
+}
+
 // Module for running docker in dagger
 type Dockerd struct { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
 	query *querybuilder.Selection
@@ -122,6 +131,30 @@ func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../
 func (r *Dockerd) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
+	}
+}
+
+// Create or update a binding of type Dockerd in the environment
+func (r *Env) WithDockerdInput(name string, value *Dockerd, description string) *Env { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withDockerdInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Dockerd output to be assigned in the environment
+func (r *Env) WithDockerdOutput(name string, description string) *Env { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+	q := r.query.Select("withDockerdOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
 	}
 }
 
