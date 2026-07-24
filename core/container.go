@@ -6593,30 +6593,12 @@ func (container *Container) Manifest(
 		return nil, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
-	srv, err := query.Server.Server(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
-	}
-
-	content, err := bk.ContainerManifest(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+	image, err := bk.PrepareContainerImage(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
 	if err != nil {
 		return nil, err
 	}
 
-	var newFile dagql.ObjectResult[*File]
-	args := []dagql.NamedInput{
-		{Name: "name", Value: dagql.String("manifest.json")},
-		{Name: "contents", Value: dagql.String(string(content))},
-	}
-	err = srv.Select(ctx, srv.Root(), &newFile, dagql.Selector{
-		Field: "file",
-		Args:  args,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file for manifest: %w", err)
-	}
-
-	return newFile.Self(), nil
+	return containerImageBlobFile(ctx, image.Manifest(), "manifest.json")
 }
 
 func (container *Container) Layer(
@@ -6641,12 +6623,11 @@ func (container *Container) Layer(
 		return nil, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
-	srv, err := query.Server.Server(ctx)
+	image, err := bk.PrepareContainerImage(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return nil, err
 	}
-
-	content, err := bk.ContainerLayer(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression), id)
+	blob, err := image.Blob(id)
 	if err != nil {
 		return nil, err
 	}
@@ -6663,20 +6644,7 @@ func (container *Container) Layer(
 		name += ".zst"
 	}
 
-	var newFile dagql.ObjectResult[*File]
-	args := []dagql.NamedInput{
-		{Name: "name", Value: dagql.String(name)},
-		{Name: "contents", Value: dagql.String(string(content))},
-	}
-	err = srv.Select(ctx, srv.Root(), &newFile, dagql.Selector{
-		Field: "file",
-		Args:  args,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file for layer %s: %w", id, err)
-	}
-
-	return newFile.Self(), nil
+	return containerImageBlobFile(ctx, blob, name)
 }
 
 type ExportOpts struct {

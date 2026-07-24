@@ -29,6 +29,48 @@ type ContainerExport struct {
 	Annotations []containerutil.ContainerAnnotation
 }
 
+type PreparedContainerImage struct {
+	manifest ContainerImageBlob
+	blobs    map[digest.Digest]ContainerImageBlob
+}
+
+type ContainerImageBlob struct {
+	descriptor specs.Descriptor
+	provider   content.Provider
+}
+
+func (blob ContainerImageBlob) Descriptor() specs.Descriptor {
+	return blob.descriptor
+}
+
+func (blob ContainerImageBlob) WriteTo(ctx context.Context, dst io.Writer) error {
+	reader, err := content.BlobReadSeeker(ctx, blob.provider, blob.descriptor)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	_, err = io.Copy(dst, reader)
+	return err
+}
+
+func (image *PreparedContainerImage) Manifest() ContainerImageBlob {
+	return image.manifest
+}
+
+func (image *PreparedContainerImage) Blob(id string) (ContainerImageBlob, error) {
+	dgst := digest.Digest(id)
+	if err := dgst.Validate(); err != nil {
+		return ContainerImageBlob{}, fmt.Errorf("invalid layer digest %q: %w", id, err)
+	}
+
+	blob, ok := image.blobs[dgst]
+	if !ok {
+		return ContainerImageBlob{}, fmt.Errorf("layer %q not found in manifest", id)
+	}
+	return blob, nil
+}
+
 func (c *Client) buildExportRequest(
 	inputByPlatform map[string]ContainerExport,
 ) (*imageexport.ExportRequest, error) {
@@ -264,40 +306,17 @@ func (c *Client) ExportContainerImage(
 	return nil, fmt.Errorf("client has no supported api for loading image")
 }
 
-func (c *Client) ContainerManifest(
+func (c *Client) PrepareContainerImage(
 	ctx context.Context,
 	inputByPlatform map[string]ContainerExport,
 	useOCIMediaTypes bool,
 	forceCompression string,
-) ([]byte, error) {
+) (*PreparedContainerImage, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer cancel(errors.New("container manifest done"))
-
-	exported, err := c.assembleExportedImage(ctx, inputByPlatform, useOCIMediaTypes, forceCompression)
-	if err != nil {
-		return nil, err
-	}
-	return content.ReadBlob(ctx, exported.Provider, exported.RootDesc)
-}
-
-func (c *Client) ContainerLayer(
-	ctx context.Context,
-	inputByPlatform map[string]ContainerExport,
-	useOCIMediaTypes bool,
-	forceCompression string,
-	id string,
-) ([]byte, error) {
-	if err := digest.Digest(id).Validate(); err != nil {
-		return nil, fmt.Errorf("invalid layer digest %q: %w", id, err)
-	}
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel(errors.New("container layer done"))
+	defer cancel(errors.New("prepare container image done"))
 
 	exported, err := c.assembleExportedImage(ctx, inputByPlatform, useOCIMediaTypes, forceCompression)
 	if err != nil {
@@ -310,29 +329,25 @@ func (c *Client) ContainerLayer(
 	}
 
 	var manifest struct {
-		Layers []struct {
-			Digest string `json:"digest"`
-			Size   int64  `json:"size"`
-			// MediaType intentionally omitted
-		} `json:"layers"`
-		Config struct {
-			Digest string `json:"digest"`
-			Size   int64  `json:"size"`
-		} `json:"config"`
+		Layers []specs.Descriptor `json:"layers"`
+		Config specs.Descriptor   `json:"config"`
 	}
 	if err := json.Unmarshal(manifestBlob, &manifest); err != nil {
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
 
-	for _, layer := range append(manifest.Layers, manifest.Config) {
-		if layer.Digest == id {
-			layerDesc := specs.Descriptor{
-				Digest: digest.Digest(layer.Digest),
-				Size:   layer.Size,
-			}
-			return content.ReadBlob(ctx, exported.Provider, layerDesc)
+	prepared := &PreparedContainerImage{
+		manifest: ContainerImageBlob{
+			descriptor: exported.RootDesc,
+			provider:   exported.Provider,
+		},
+		blobs: make(map[digest.Digest]ContainerImageBlob, len(manifest.Layers)+1),
+	}
+	for _, desc := range append(manifest.Layers, manifest.Config) {
+		prepared.blobs[desc.Digest] = ContainerImageBlob{
+			descriptor: desc,
+			provider:   exported.Provider,
 		}
 	}
-
-	return nil, fmt.Errorf("layer %q not found in manifest", id)
+	return prepared, nil
 }

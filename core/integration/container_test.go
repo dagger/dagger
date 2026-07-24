@@ -12,11 +12,13 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -6735,4 +6737,47 @@ func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
 			require.Len(t, exportedLayerBytes, layerFileSize)
 		})
 	}
+}
+
+func (ContainerSuite) TestLayerLargerThanFileContentsLimit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{
+			"sh",
+			"-c",
+			fmt.Sprintf("head -c %d /dev/zero > /large.bin", engineutil.MaxFileContentsSize+1),
+		})
+
+	manifestContents, err := ctr.Manifest(dagger.ContainerManifestOpts{
+		ForcedCompression: dagger.ImageLayerCompressionUncompressed,
+	}).Contents(ctx)
+	require.NoError(t, err)
+
+	var manifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal([]byte(manifestContents), &manifest))
+	require.NotEmpty(t, manifest.Layers)
+	layer := manifest.Layers[len(manifest.Layers)-1]
+	require.Greater(t, layer.Size, int64(engineutil.MaxFileContentsSize))
+
+	layerFile := ctr.Layer(layer.Digest.String(), dagger.ContainerLayerOpts{
+		ForcedCompression: dagger.ImageLayerCompressionUncompressed,
+	})
+	layerFileSize, err := layerFile.Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, layer.Size, int64(layerFileSize))
+
+	exportPath := filepath.Join(t.TempDir(), "layer.tar")
+	_, err = layerFile.Export(ctx, exportPath)
+	require.NoError(t, err)
+
+	exported, err := os.Open(exportPath)
+	require.NoError(t, err)
+	defer exported.Close()
+
+	hash := sha256.New()
+	_, err = io.Copy(hash, exported)
+	require.NoError(t, err)
+	require.Equal(t, layer.Digest.Encoded(), hex.EncodeToString(hash.Sum(nil)))
 }
