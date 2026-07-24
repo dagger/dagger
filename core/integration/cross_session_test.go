@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"dagger.io/dagger"
@@ -230,6 +231,55 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 		require.NotEqual(t, res1.Test.Fn, res2B.Test.Fn)
 	})
+}
+
+// A module object can store another object in a private (undeclared) field.
+// The stored value is an engine-result handle, and the cached parent object
+// state can be reused by later sessions through default function caching, so
+// the handle must keep the referenced result retained for as long as the
+// parent result lives. Previously private-field handles were invisible to
+// dagql dependency tracking: once the referenced result's owning session
+// closed, a later session's function call replayed the dangling handle from
+// cached state and failed with "missing shared result". The referenced
+// credential result here is produced and read only by never-cached functions,
+// so nothing else retains it across sessions.
+func (ModuleSuite) TestCrossSessionPrivateFieldResultRetention(ctx context.Context, t *testctx.T) {
+	// The same seed in both sessions makes the second holder call a cache hit
+	// while keeping this test run isolated from any earlier engine state.
+	seed := identity.NewID()
+	callMod := func(c *dagger.Client, salt string) (string, error) {
+		return moduleFixture(t, c, "go/cross-session-private-field").
+			With(withModuleFixture(t, c, "cred", "go/cross-session-private-field-cred")).
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			With(daggerCall("holder", "--seed", seed, "use", "--salt", salt)).
+			Stdout(ctx)
+	}
+
+	c1 := connect(ctx, t)
+	salt1 := identity.NewID()
+	out1, err := callMod(c1, salt1)
+	require.NoError(t, err)
+	gotSalt1, token1, ok := strings.Cut(strings.TrimSpace(out1), ":")
+	require.True(t, ok, "unexpected output %q", out1)
+	require.Equal(t, salt1, gotSalt1)
+	require.NotEmpty(t, token1)
+
+	// Close the first session so the credential result loses its session
+	// ownership; only the cached holder result's dependency edge can keep it
+	// alive now.
+	require.NoError(t, c1.Close())
+
+	c2 := connect(ctx, t)
+	salt2 := identity.NewID()
+	out2, err := callMod(c2, salt2)
+	require.NoError(t, err)
+	gotSalt2, token2, ok := strings.Cut(strings.TrimSpace(out2), ":")
+	require.True(t, ok, "unexpected output %q", out2)
+	require.Equal(t, salt2, gotSalt2)
+
+	// Same token proves the second session reused the cached holder state and
+	// the private-field credential result was still resolvable.
+	require.Equal(t, token1, token2)
 }
 
 func ptr[T any](v T) *T {

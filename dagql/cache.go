@@ -87,7 +87,11 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "16"
+// 17: module object private-field handles became tracked dependency results
+// persisted as result refs. Older snapshots may hold untracked scalar handle
+// strings whose referents were never retained (and whose IDs may have been
+// reused), so they are wiped rather than imported.
+const cachePersistenceSchemaVersion = "17"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
@@ -4505,6 +4509,20 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	return nil
 }
 
+type attachResolverCtx struct{}
+
+// AttachmentResolverServer returns the dagql server recorded as the resolver
+// for an in-progress dependency-result attachment, if any. It is a
+// last-resort lookup for attachment hooks that need to load stored
+// references when no other server is reachable from the context.
+func AttachmentResolverServer(ctx context.Context) *Server {
+	val := ctx.Value(attachResolverCtx{})
+	if val == nil {
+		return nil
+	}
+	return val.(*Server)
+}
+
 func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
 	if parent == nil || val == nil {
 		return nil
@@ -4513,6 +4531,14 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	withDeps, hasDeps := UnwrapAs[HasDependencyResults](val)
 	if !hasKinds && !hasDeps {
 		return nil
+	}
+	// Attachment hooks may need to load stored references (e.g. module object
+	// private-field handles). Record the resolver as a last-resort server so
+	// those loads work for direct AttachResult / GetOrInitCall users whose
+	// context carries no other usable server; normal server resolution is
+	// unaffected.
+	if srv, ok := resolver.(*Server); ok && srv != nil {
+		ctx = context.WithValue(ctx, attachResolverCtx{}, srv)
 	}
 	self := Result[Typed]{shared: parent}
 	var attachedSelf AnyResult = self

@@ -617,6 +617,41 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Equal(t, randomA, randomB, "unrelated withExec output should survive engine restart after a generator group graph")
 	})
 
+	t.Run("private field handle survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-private-field-handle-state-" + identity.NewID()
+		seed := identity.NewID()
+
+		callHolderUse := func(client *dagger.Client, salt string) (string, error) {
+			return moduleFixture(t, client, "go/cross-session-private-field").
+				With(withModuleFixture(t, client, "cred", "go/cross-session-private-field-cred")).
+				WithEnvVariable("CACHE_BUST", identity.NewID()).
+				With(daggerCall("holder", "--seed", seed, "use", "--salt", salt)).
+				Stdout(ctx)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA, err := callHolderUse(engineClientA, "salt-a-"+identity.NewID())
+		require.NoError(t, err)
+		_, tokenA, ok := strings.Cut(strings.TrimSpace(outA), ":")
+		require.True(t, ok, "unexpected output %q", outA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		outB, err := callHolderUse(engineClientB, "salt-b-"+identity.NewID())
+		require.NoError(t, err)
+		_, tokenB, ok := strings.Cut(strings.TrimSpace(outB), ":")
+		require.True(t, ok, "unexpected output %q", outB)
+		require.Equal(t, tokenA, tokenB, "private-field credential result should survive engine restart with the cached holder state")
+	})
+
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-function-cache-state-" + identity.NewID()
