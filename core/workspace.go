@@ -38,6 +38,57 @@ func InvalidateCurrentWorkspace(ctx context.Context) error {
 	return workspaceInvalidator(ctx)
 }
 
+// workspaceReadEpoch hooks expose the calling client's "workspace read epoch":
+// a monotonically bumped token folded into cached host reads (Workspace.file /
+// Workspace.directory) so a single long-lived session can invalidate them when
+// the workspace's on-disk content changes out from under it.
+//
+// host.directory reads are cached per client for the client's whole lifetime
+// (dagql.PerClientInput), so within one session — such as a `dagger agent`
+// conversation — a file read earlier in the session keeps returning its
+// original snapshot even after the agent's edits are exported to disk. Bumping
+// the epoch on withResetWorkspace gives subsequent reads a fresh per-client
+// cache namespace, so they re-read the (now updated) host instead of the stale
+// snapshot.
+//
+// Both hooks are registered by engine/server (which owns the per-client cache);
+// nil in contexts without a server, where the epoch is empty and bumping is a
+// no-op.
+var (
+	workspaceReadEpochGetter func(context.Context) (string, error)
+	workspaceReadEpochBumper func(context.Context) error
+)
+
+// SetWorkspaceReadEpochHooks registers the getter/bumper used to scope and
+// invalidate a client's cached workspace host reads. Mirrors
+// SetWorkspaceInvalidator.
+func SetWorkspaceReadEpochHooks(
+	get func(context.Context) (string, error),
+	bump func(context.Context) error,
+) {
+	workspaceReadEpochGetter = get
+	workspaceReadEpochBumper = bump
+}
+
+// WorkspaceReadEpoch returns the calling client's current workspace read epoch,
+// or "" when no server has registered the hook (nothing to scope by).
+func WorkspaceReadEpoch(ctx context.Context) (string, error) {
+	if workspaceReadEpochGetter == nil {
+		return "", nil
+	}
+	return workspaceReadEpochGetter(ctx)
+}
+
+// BumpWorkspaceReadEpoch advances the calling client's workspace read epoch so
+// cached host reads made before the bump are no longer served. A no-op when no
+// server has registered the hook.
+func BumpWorkspaceReadEpoch(ctx context.Context) error {
+	if workspaceReadEpochBumper == nil {
+		return nil
+	}
+	return workspaceReadEpochBumper(ctx)
+}
+
 // WorkspaceReferencePrefix is the reserved workspace-relative directory under
 // which externally-referenced paths (e.g. those a user attaches with @ in the
 // agent prompt) are mounted read-only. Content under this prefix is readable

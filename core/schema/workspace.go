@@ -661,7 +661,7 @@ func (s *workspaceSchema) resolveRootfs(
 	}
 
 	if ws.HostPath() != "" {
-		ctx, err = s.withWorkspaceClientContext(ctx, ws)
+		ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 		if err != nil {
 			return inst, err
 		}
@@ -767,7 +767,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	filter core.CopyFilter,
 	gitignore bool,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	hostCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	hostCtx, err := s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
 		return inst, err
 	}
@@ -2257,7 +2257,7 @@ func (s *workspaceSchema) sparseHostBase(
 		includes = append(includes, dagql.String(p), dagql.String(p+"/**"))
 	}
 
-	ctx, err = s.withWorkspaceClientContext(ctx, ws)
+	ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
@@ -3414,6 +3414,26 @@ func filterNodesByInclude[T any](
 // through the correct client session, even when called from a module context.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	return withWorkspaceClientContext(ctx, ws)
+}
+
+// withWorkspaceHostReadContext is withWorkspaceClientContext plus the client's
+// current workspace read epoch folded into the per-client cache namespace, so
+// cached host.directory reads are scoped per epoch. When the epoch is bumped
+// (withResetWorkspace, after the agent's changes are exported to disk or its
+// overlay is discarded), reads issued afterwards land in a fresh namespace and
+// re-read the live host instead of returning a per-client snapshot cached
+// earlier in the same session. Use it for host reads that must reflect on-disk
+// content (Workspace.file / Workspace.directory and the diff base of edits).
+func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	ctx, err := withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	epoch, err := core.WorkspaceReadEpoch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.WithNamedPerClientCacheScope(ctx, epoch), nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the

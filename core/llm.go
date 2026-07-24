@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -2298,6 +2299,21 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("re-emit session recipe: %w", err)
+	}
+
+	// Reads through host-backed workspaces are cached per client for the
+	// client's whole lifetime (dagql.PerClientInput), so within a single
+	// long-lived session — a `dagger agent` conversation — a file read earlier
+	// in the session keeps returning its original snapshot. A reset means the
+	// agent's edits were just exported to disk (ctrl+s) or discarded (ctrl+u),
+	// either way the base workspace's on-disk content changed out from under
+	// those cached reads. Bump the client's workspace read epoch so subsequent
+	// reads land in a fresh per-client cache namespace and re-read the live
+	// host instead of a stale snapshot. Best-effort like export's
+	// InvalidateCurrentWorkspace: a bookkeeping failure must not fail the
+	// reset, it only falls back to the prior (stale) read behavior.
+	if err := BumpWorkspaceReadEpoch(ctx); err != nil {
+		slog.Warn("could not bump workspace read epoch after reset", "error", err)
 	}
 	return res, nil
 }

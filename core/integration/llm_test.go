@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -732,4 +733,46 @@ func (LLMSuite) TestWithResetWorkspaceStripsNonChangesOverlays(ctx context.Conte
 	resetHist, err := reset.Transcript(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origHist, resetHist)
+}
+
+// TestWithResetWorkspaceBustsStaleHostReads verifies that withResetWorkspace
+// invalidates the session's cached host reads, so an agent that saves its
+// changes to disk (ctrl+s: export then reset) observes the saved content on its
+// next read instead of a stale snapshot cached earlier in the same session.
+//
+// Host-backed workspace reads (Workspace.file) resolve through host.directory,
+// which is cached per client for the client's whole lifetime. Within a single
+// long-lived `dagger agent` session that meant a file read early in the
+// conversation kept returning its original contents even after the agent's
+// edits were exported to disk and the workspace was reset. Here the read after
+// the reset must observe the exported "NEW" contents rather than the "OLD" ones
+// cached by the earlier read.
+func (LLMSuite) TestWithResetWorkspaceBustsStaleHostReads(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("OLD"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	// Prime the per-client host.directory cache with the original contents,
+	// exactly as the agent reading the file before editing it would.
+	before, err := c.CurrentWorkspace().File("x.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "OLD", before)
+
+	// Save: export the edited contents to the local Git workspace on disk, as
+	// ctrl+s does before resetting.
+	require.NoError(t, c.CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
+
+	// Reset re-roots the LLM at the live workspace, dropping the overlay; the
+	// file on disk now holds "NEW".
+	reset := c.LLM().
+		WithWorkspace(c.CurrentWorkspace().WithNewFile("x.txt", "NEW")).
+		WithResetWorkspace()
+
+	// The next read must observe the exported contents, not the snapshot the
+	// earlier read cached for the session.
+	after, err := reset.Workspace().File("x.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "NEW", after)
 }

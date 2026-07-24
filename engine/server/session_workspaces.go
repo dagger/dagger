@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
@@ -64,6 +65,38 @@ func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error
 		return nil, fmt.Errorf("%w: workspace not loaded", core.ErrNoCurrentWorkspace)
 	}
 	return client.workspace, nil
+}
+
+// currentWorkspaceReadEpoch returns the calling client's workspace read epoch
+// as a stable string token, folded by the workspace read resolvers into their
+// host reads' per-client cache namespace (see bumpClientWorkspaceReadEpoch).
+// Epoch 0 (never bumped) maps to "" so untouched sessions keep the client's
+// default namespace and share cache entries as before.
+func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	epoch := client.workspaceReadEpoch.Load()
+	if epoch == 0 {
+		return "", nil
+	}
+	return strconv.FormatUint(epoch, 10), nil
+}
+
+// bumpClientWorkspaceReadEpoch advances the calling client's workspace read
+// epoch, so cached host reads (Workspace.file / Workspace.directory) taken
+// before the bump are no longer served for the rest of the session. Triggered
+// from core.WithResetWorkspace, after the agent's changes are exported to disk
+// or its overlay is discarded, so the next read re-reads the live host instead
+// of a stale per-client host.directory snapshot cached earlier in the session.
+func (srv *Server) bumpClientWorkspaceReadEpoch(ctx context.Context) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	client.workspaceReadEpoch.Add(1)
+	return nil
 }
 
 func canonicalModuleReference(src *core.ModuleSource) string {
