@@ -1847,7 +1847,7 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 			continue
 		}
 		for dig := range c.eqClassToDigests[outputEqID] {
-			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix)
+			c.appendDigestResultsLocked(candidates, digest.Digest(dig), nowUnix, nil)
 		}
 	}
 
@@ -3640,9 +3640,17 @@ func (c *Cache) getOrInitCallInner(
 		return nil, fmt.Errorf("call request is nil")
 	}
 	ctx = ContextWithCall(ctx, req.ResultCall)
+	// Cache-evidence carrier for this invocation (nil unless core armed it);
+	// all writes below are plain field writes on the invoking goroutine.
+	ev := req.CacheEvidence
 
 	if req.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
+		if ev != nil {
+			// Identity derivation is skipped on this path, so the outcome is
+			// the only fact recorded.
+			ev.Outcome = CacheOutcomeUncached
+		}
 
 		val, err := fn(ctx)
 		if err != nil {
@@ -3709,6 +3717,17 @@ func (c *Cache) getOrInitCallInner(
 		}
 		requestInputs = append(requestInputs, dig)
 	}
+	if ev != nil {
+		ev.SelfDigest = requestSelf
+		ev.StructuralInputs = requestInputs
+		// Best-effort optional fact: pairing derivation shares the self-digest
+		// code path, so an error here is not realistically reachable when the
+		// derivation above succeeded; if it ever errors, the fact is dropped
+		// rather than failing the call.
+		if pairingDig, pairingErr := req.pairingDigest(c); pairingErr == nil {
+			ev.PairingDigest = pairingDig
+		}
+	}
 	callKey := callDigest.String()
 	profOp.SetIdent(callKey)
 	if ctx.Value(cacheContextKey{callKey}) != nil {
@@ -3724,6 +3743,12 @@ func (c *Cache) getOrInitCallInner(
 		return nil, err
 	}
 	if hit {
+		if ev != nil {
+			// The lookup fact only: a hit on a still-pending lazy shell stays
+			// outcome=hit while dag.pending/dag.cached keep the evaluation
+			// facts (recordStatus is unchanged).
+			ev.Outcome = CacheOutcomeHit
+		}
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
@@ -3742,6 +3767,13 @@ func (c *Cache) getOrInitCallInner(
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
+			if ev != nil {
+				// This invocation's own decision: it deduplicated into the
+				// concurrent identical call. Its earlier lookup-miss facts
+				// stay in the carrier but are stamped only for executed
+				// outcomes (they describe the pre-join probe, not a miss).
+				ev.Outcome = CacheOutcomeJoined
+			}
 			profOp.SetOutcomeHint(wcprof.OutcomeJoined)
 			return c.wait(ctx, sessionID, resolver, oc, req, true)
 		}
@@ -3827,6 +3859,12 @@ func (c *Cache) getOrInitCallInner(
 	}()
 
 	c.callsMu.Unlock()
+	if ev != nil {
+		// The decision fact: the cache chose to execute. It stays recorded even
+		// if the resolver later errors — the span's own error/cancel status
+		// carries that separately.
+		ev.Outcome = CacheOutcomeExecuted
+	}
 	profOp.SetOutcomeHint(wcprof.OutcomeExecuted)
 	return c.wait(ctx, sessionID, resolver, oc, req, false)
 }

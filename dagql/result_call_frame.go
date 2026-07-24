@@ -837,6 +837,20 @@ func (frame *ResultCall) SelfDigestAndInputRefs(ctx context.Context) (digest.Dig
 }
 
 func (frame *ResultCall) selfDigestAndInputRefs(c *Cache) (digest.Digest, []ResultCallStructuralInputRef, error) {
+	return frame.structuralSelfDigestAndInputRefs(c, true)
+}
+
+// pairingDigest is the structural self digest derived with implicit inputs
+// excluded: the engine-authored cross-run pairing anchor
+// (telemetryattrs.CachePairingDigestAttr). Sharing one parameterized derivation
+// with selfDigestAndInputRefs keeps the two digests structurally identical by
+// construction — for a frame with no implicit inputs they are equal.
+func (frame *ResultCall) pairingDigest(c *Cache) (digest.Digest, error) {
+	dig, _, err := frame.structuralSelfDigestAndInputRefs(c, false)
+	return dig, err
+}
+
+func (frame *ResultCall) structuralSelfDigestAndInputRefs(c *Cache, includeImplicitInputs bool) (digest.Digest, []ResultCallStructuralInputRef, error) {
 	if frame == nil {
 		return "", nil, nil
 	}
@@ -883,21 +897,23 @@ func (frame *ResultCall) selfDigestAndInputRefs(c *Cache) (digest.Digest, []Resu
 	}
 	h = h.WithDelim()
 
-	for _, input := range frame.ImplicitInputs {
-		input = redactedCallArgForDigest(input)
-		if input == nil {
-			continue
-		}
-		nextH, nextInputRefs, err := appendResultCallArgSelfRefs(c, input, h, inputRefs)
-		if err != nil {
-			if h != nil {
-				h.Close()
+	if includeImplicitInputs {
+		for _, input := range frame.ImplicitInputs {
+			input = redactedCallArgForDigest(input)
+			if input == nil {
+				continue
 			}
-			return "", nil, fmt.Errorf("result call frame %q implicit inputs: %w", field, err)
+			nextH, nextInputRefs, err := appendResultCallArgSelfRefs(c, input, h, inputRefs)
+			if err != nil {
+				if h != nil {
+					h.Close()
+				}
+				return "", nil, fmt.Errorf("result call frame %q implicit inputs: %w", field, err)
+			}
+			h = nextH
+			inputRefs = nextInputRefs
+			h = h.WithDelim()
 		}
-		h = nextH
-		inputRefs = nextInputRefs
-		h = h.WithDelim()
 	}
 
 	if frame.Module != nil {
