@@ -501,7 +501,7 @@ func execXRelease(ctx context.Context) error {
 	}
 
 	args := xReleaseProcessArgs(os.Args[1:])
-	env := xReleaseProcessEnv(os.Environ())
+	env := xReleaseProcessEnv(os.Environ(), stderr)
 	execArgs := append([]string{binPath}, args...)
 	if err := execCLI(binPath, execArgs, env); err != nil {
 		return fmt.Errorf("exec experimental release CLI: %w", err)
@@ -568,14 +568,16 @@ func xReleaseProcessArgs(args []string) []string {
 	return rewritten
 }
 
-func xReleaseProcessEnv(environ []string) []string {
+func xReleaseProcessEnv(environ []string, warningOutput io.Writer) []string {
 	env := make([]string, 0, len(environ)+1)
 	hasLeaveOldEngine := false
 	for _, kv := range environ {
 		key, _, _ := strings.Cut(kv, "=")
-		switch key {
-		case daggerXReleaseEnv, RunnerHostEnv, RunnerImageLoaderEnv:
+		if key == daggerXReleaseEnv {
 			continue
+		}
+		if key == RunnerHostEnv || key == RunnerImageLoaderEnv {
+			fmt.Fprintln(warningOutput, xReleaseLogLine(fmt.Sprintf("warning: %s is set", key)))
 		}
 		if key == "DAGGER_LEAVE_OLD_ENGINE" {
 			hasLeaveOldEngine = true

@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -53,16 +54,32 @@ func TestXReleaseReleaseRef(t *testing.T) {
 	}
 }
 
-func TestXReleaseProcessEnvClearsRunnerOverrides(t *testing.T) {
+func TestXReleaseProcessEnvPreservesRunnerOverrides(t *testing.T) {
+	var warnings bytes.Buffer
 	env := xReleaseProcessEnv([]string{
 		daggerXReleaseEnv + "=v0.20.8",
 		RunnerHostEnv + "=docker-container://dagger-engine.dev",
 		RunnerImageLoaderEnv + "=docker",
 		"KEEP=1",
-	})
+	}, &warnings)
+
+	require.Equal(t, []string{
+		RunnerHostEnv + "=docker-container://dagger-engine.dev",
+		RunnerImageLoaderEnv + "=docker",
+		"KEEP=1",
+		"DAGGER_LEAVE_OLD_ENGINE=1",
+	}, env)
+	require.Contains(t, warnings.String(), "[dagger x-release] warning: "+RunnerHostEnv+" is set")
+	require.Contains(t, warnings.String(), "[dagger x-release] warning: "+RunnerImageLoaderEnv+" is set")
+}
+
+func TestXReleaseProcessEnvWithoutRunnerOverrides(t *testing.T) {
+	var warnings bytes.Buffer
+	env := xReleaseProcessEnv([]string{"KEEP=1"}, &warnings)
 
 	require.Equal(t, []string{
 		"KEEP=1",
 		"DAGGER_LEAVE_OLD_ENGINE=1",
 	}, env)
+	require.Empty(t, warnings.String())
 }
