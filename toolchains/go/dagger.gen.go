@@ -687,10 +687,10 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("CheckTidy",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check if 'go mod tidy' is up-to-date").
-							WithSourceMap(dag.SourceMap("main.go", 791, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 798, 1)).
 							WithCheck().
-							WithArg("include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 793, 2)}).
-							WithArg("exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 794, 2)})).
+							WithArg("include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 800, 2)}).
+							WithArg("exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 801, 2)})).
 					WithFunction(
 						dag.Function("Download",
 							dag.TypeDef().WithObject("Go")).
@@ -706,8 +706,8 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("GenerateDaggerRuntime",
 							dag.TypeDef().WithObject("Go")).
-							WithSourceMap(dag.SourceMap("main.go", 632, 1)).
-							WithArg("start", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 632, 57)})).
+							WithSourceMap(dag.SourceMap("main.go", 639, 1)).
+							WithArg("start", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 639, 57)})).
 					WithFunction(
 						dag.Function("GenerateDaggerRuntimes",
 							dag.TypeDef().WithObject("Changeset")).
