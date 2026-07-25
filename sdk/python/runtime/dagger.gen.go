@@ -673,16 +673,17 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Codegen",
 							dag.TypeDef().WithObject("GeneratedCode")).
 							WithDescription("Generated code for the Python module").
-							WithSourceMap(dag.SourceMap("main.go", 147, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 149, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 150, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 154, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 156, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 157, 2)}).
+							WithArg("gitCredentials", dag.TypeDef().WithObject("Socket").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Engine-provided git-credential socket for private git+https dependencies", SourceMap: dag.SourceMap("main.go", 160, 2)})).
 					WithFunction(
 						dag.Function("Common",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Common steps for the ModuleRuntime and Codegen functions").
-							WithSourceMap(dag.SourceMap("main.go", 214, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 216, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 218, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 229, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 231, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 233, 2)})).
 					WithFunction(
 						dag.Function("ExtraIndexURL",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
@@ -703,23 +704,24 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Load",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Get all the needed information from the module's metadata and source files").
-							WithSourceMap(dag.SourceMap("main.go", 244, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 244, 47)})).
+							WithSourceMap(dag.SourceMap("main.go", 259, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 259, 47)})).
 					WithFunction(
 						dag.Function("ModuleRuntime",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Container for executing the Python module runtime").
-							WithSourceMap(dag.SourceMap("main.go", 177, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 179, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 180, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 188, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 190, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 191, 2)}).
+							WithArg("gitCredentials", dag.TypeDef().WithObject("Socket").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Engine-provided git-credential socket for private git+https dependencies", SourceMap: dag.SourceMap("main.go", 194, 2)})).
 					WithFunction(
 						dag.Function("ModuleTypesExp",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Container for executing the Python module runtime").
-							WithSourceMap(dag.SourceMap("main.go", 195, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 197, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 198, 2)}).
-							WithArg("outputFilePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 199, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 210, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 212, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 213, 2)}).
+							WithArg("outputFilePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 214, 2)})).
 					WithFunction(
 						dag.Function("Source",
 							dag.TypeDef().WithObject("Directory")).
@@ -749,7 +751,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("WithBase",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Initialize the base Python container\n\nWorkdir is set to the module's source directory.").
-							WithSourceMap(dag.SourceMap("main.go", 263, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 278, 1))).
 					WithFunction(
 						dag.Function("WithBaseImage",
 							dag.TypeDef().WithObject("PythonSdk")).
@@ -766,28 +768,28 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("WithInstall",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Install the module's package and dependencies").
-							WithSourceMap(dag.SourceMap("main.go", 496, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 511, 1))).
 					WithFunction(
 						dag.Function("WithSDK",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Add the SDK package to the source directory\n\nThis includes regenerating the client bindings for the current API schema\n(codegen).").
-							WithSourceMap(dag.SourceMap("main.go", 390, 1)).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 390, 29)})).
+							WithSourceMap(dag.SourceMap("main.go", 405, 1)).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 405, 29)})).
 					WithFunction(
 						dag.Function("WithSource",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Add the module's source code").
-							WithSourceMap(dag.SourceMap("main.go", 442, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 457, 1))).
 					WithFunction(
 						dag.Function("WithTemplate",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Add the template files to skaffold a new module\n\nThe following files are added:\n- /runtime\n- <source>/pyproject.toml\n- <source>/src/<package_name>/__init__.py\n- <source>/src/<package_name>/main.py").
-							WithSourceMap(dag.SourceMap("main.go", 325, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 340, 1))).
 					WithFunction(
 						dag.Function("WithUpdates",
 							dag.TypeDef().WithObject("PythonSdk")).
 							WithDescription("Make any updates to current source").
-							WithSourceMap(dag.SourceMap("main.go", 459, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 474, 1))).
 					WithFunction(
 						dag.Function("WithUv",
 							dag.TypeDef().WithObject("PythonSdk")).

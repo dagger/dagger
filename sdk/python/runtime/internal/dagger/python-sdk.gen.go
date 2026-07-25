@@ -104,11 +104,23 @@ func (r *PythonSDK) BaseImage(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// PythonSDKCodegenOpts contains options for PythonSDK.Codegen
+type PythonSDKCodegenOpts struct {
+	// Engine-provided git-credential socket for private git+https dependencies
+	GitCredentials *Socket
+}
+
 // Generated code for the Python module
-func (r *PythonSDK) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+func (r *PythonSDK) Codegen(modSource *ModuleSource, introspectionJson *File, opts ...PythonSDKCodegenOpts) *GeneratedCode {
 	assertNotNil("modSource", modSource)
 	assertNotNil("introspectionJson", introspectionJson)
 	q := r.query.Select("codegen")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `gitCredentials` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GitCredentials) {
+			q = q.Arg("gitCredentials", opts[i].GitCredentials)
+		}
+	}
 	q = q.Arg("modSource", modSource)
 	q = q.Arg("introspectionJson", introspectionJson)
 
@@ -340,11 +352,23 @@ func (r *PythonSDK) ModSource() *ModuleSource {
 	}
 }
 
+// PythonSDKModuleRuntimeOpts contains options for PythonSDK.ModuleRuntime
+type PythonSDKModuleRuntimeOpts struct {
+	// Engine-provided git-credential socket for private git+https dependencies
+	GitCredentials *Socket
+}
+
 // Container for executing the Python module runtime
-func (r *PythonSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
+func (r *PythonSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File, opts ...PythonSDKModuleRuntimeOpts) *Container {
 	assertNotNil("modSource", modSource)
 	assertNotNil("introspectionJson", introspectionJson)
 	q := r.query.Select("moduleRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `gitCredentials` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GitCredentials) {
+			q = q.Arg("gitCredentials", opts[i].GitCredentials)
+		}
+	}
 	q = q.Arg("modSource", modSource)
 	q = q.Arg("introspectionJson", introspectionJson)
 

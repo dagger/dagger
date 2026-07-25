@@ -24,7 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const gitCredentialSocketDigestVersion = "git-credential-socket-v1"
+const gitCredentialSocketDigestVersion = "git-credential-socket-v1" // #nosec G101 -- digest domain separator, not a credential.
 
 // gitCredentialRequestTimeout bounds a single credential exchange over the
 // socket, including the round-trip to the host's git credential helper (which
@@ -172,8 +172,7 @@ func (socket *Socket) MountGitCredentialSocket(ctx context.Context) (string, fun
 	return sockPath, func() error {
 		cancel()
 		wg.Wait()
-		_ = os.RemoveAll(dir)
-		return nil
+		return os.RemoveAll(dir)
 	}, nil
 }
 

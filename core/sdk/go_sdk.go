@@ -692,7 +692,7 @@ func (sdk *goSDK) moduleDependencyConfigSelectors(ctx context.Context) ([]dagql.
 
 // goSDKGitCredentialSockPath is where the git-credential socket is mounted in
 // the dependency install container; removed before user code runs.
-const goSDKGitCredentialSockPath = "/tmp/dagger-git-credential.sock"
+const goSDKGitCredentialSockPath = "/tmp/dagger-git-credential.sock" // #nosec G101 -- filesystem path, not a credential.
 
 // gitCredentialHostsFromGoPrivate derives the socket's exact-host allowlist
 // from GOPRIVATE-style patterns (e.g. "github.com/myorg/*,gitlab.example.com").

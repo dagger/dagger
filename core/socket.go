@@ -29,7 +29,7 @@ const (
 	SocketKindSSHHandle     SocketKind = "ssh_handle"
 	SocketKindUnixOpaque    SocketKind = "unix_opaque"
 	SocketKindHostIP        SocketKind = "host_ip"
-	SocketKindGitCredential SocketKind = "git_credential"
+	SocketKindGitCredential SocketKind = "git_credential" // #nosec G101 -- socket kind label, not a credential.
 )
 
 type Socket struct {

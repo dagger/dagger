@@ -298,12 +298,15 @@ entrypoint = true
 [modules.foo.settings]
 goprivate = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git"
 `).
-			WithNewFile("/work/.dagger/modules/foo/dagger-module.toml", `name = "foo"
-engineVersion = "latest"
-
-[runtime]
-source = "go"
-`).
+			// Keep this synthetic auth fixture on the legacy runtime-codegen
+			// path. TOML modules require committed generated files before they
+			// can load; that separate contract is covered by RuntimeCodegenSuite.
+			WithNewFile("/work/.dagger/modules/foo/dagger.json", `{
+  "name": "foo",
+  "engineVersion": "latest",
+  "sdk": {"source": "go"},
+  "source": "."
+}`).
 			WithNewFile("/work/.dagger/modules/foo/go.mod", fmt.Sprintf(`module dagger/foo
 
 go 1.21.3
