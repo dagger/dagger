@@ -228,7 +228,6 @@ type ModuleRuntime interface {
 		execMD *engineutil.ExecutionMetadata,
 		fnCall *FunctionCall,
 		moduleContext dagql.ObjectResult[*Module],
-		envContext dagql.ObjectResult[*Env],
 	) error
 }
 
@@ -248,7 +247,6 @@ func (r *ContainerRuntime) Call(
 	execMD *engineutil.ExecutionMetadata,
 	fnCall *FunctionCall,
 	moduleContext dagql.ObjectResult[*Module],
-	envContext dagql.ObjectResult[*Env],
 ) error {
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -298,11 +296,7 @@ func (r *ContainerRuntime) Call(
 		return fmt.Errorf("exec function: %w", err)
 	}
 
-	syncCtx := ctx
-	if envContext.Self() != nil {
-		syncCtx = EnvToContext(syncCtx, envContext)
-	}
-	err = execCtr.Sync(syncCtx)
+	err = execCtr.Sync(ctx)
 	if err != nil {
 		if fnCall.Name == "" {
 			return fmt.Errorf("call constructor: %w", err)
