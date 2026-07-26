@@ -1101,6 +1101,10 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	if _, err := handler.llm(ctx); err != nil { // init llmSession
 		return err
 	}
+	// Remember the composed agent group as the base to reset to on .clear, so
+	// clearing history returns to the initially selected agents rather than a
+	// blank LLM.
+	handler.llmSession.initialLLM = llm
 	if err := handler.llmSession.updateLLM(llm); err != nil {
 		return err
 	}
