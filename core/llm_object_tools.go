@@ -108,6 +108,68 @@ func (m *MCP) BoundToolBindings() ([]boundToolBinding, error) {
 	return out, nil
 }
 
+// bindWorkspaceModuleTools binds each served workspace module's main object as
+// a toolset, constructing it through the canonical server (which serves module
+// constructors even for entrypoint modules, whose sugared schema only carries
+// proxies). `dagger mcp` uses this so a workspace module's methods are served
+// as MCP tools without an explicit withTools: the module entrypoint is "the
+// way in" (hack/designs/workspace-agents.md). Modules whose constructors
+// require arguments (beyond the auto-injected Workspace) are skipped — there
+// is no one to prompt for them.
+func (m *MCP) bindWorkspaceModuleTools(ctx context.Context) (*MCP, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	served, err := query.Server.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current served deps: %w", err)
+	}
+	srv, err := served.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("served schema: %w", err)
+	}
+	canonical := srv.Canonical()
+	for _, primary := range served.PrimaryMods() {
+		mod := primary.ModuleResult().Self()
+		if mod == nil || mod.Name() == ModuleName {
+			continue
+		}
+		ctorName := gqlFieldName(mod.Name())
+		spec, ok := canonical.Root().ObjectType().FieldSpec(ctorName, canonical.View)
+		if !ok {
+			continue
+		}
+		constructible := true
+		for _, arg := range spec.Args.Inputs(canonical.View) {
+			if arg.Internal || arg.Default != nil {
+				continue
+			}
+			if !arg.Type.Type().NonNull {
+				continue
+			}
+			if arg.Type.Type().Name() == workspaceTypeName {
+				// Auto-injected from the current workspace.
+				continue
+			}
+			constructible = false
+			break
+		}
+		if !constructible {
+			continue
+		}
+		var obj dagql.AnyObjectResult
+		if err := canonical.Select(ctx, canonical.Root(), &obj, dagql.Selector{
+			View:  canonical.View,
+			Field: ctorName,
+		}); err != nil {
+			return nil, fmt.Errorf("construct workspace module %q: %w", mod.Name(), err)
+		}
+		m = m.WithTools(obj, nil)
+	}
+	return m, nil
+}
+
 // loadObjectTools registers one tool per eligible method of each bound object.
 // It is called before the builtins so a bound method overrides a builtin of the
 // same name; within the object tools a later withTools binding wins a name

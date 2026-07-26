@@ -82,7 +82,9 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 
 	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 	// The LLM binds the current workspace by default and serves its toolset
-	// over MCP, exposing the workspace's schema.
+	// over MCP, exposing the workspace's schema. The engine binds each
+	// workspace module's main object as tools for the served MCP toolset
+	// (see LLM.MCP / MCP.bindWorkspaceModuleTools).
 	q = q.Root().
 		Select("llm").
 		Select("__mcp")
