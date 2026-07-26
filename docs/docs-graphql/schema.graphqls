@@ -6035,11 +6035,27 @@ type Workspace implements Node {
 
 """Local git state for a workspace."""
 type WorkspaceGit implements Node {
+  """Returns details of a commit in this workspace's repository."""
+  commit(
+    """
+    Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+    """
+    id: String!
+  ): GitCommit!
+
   """The checked-out HEAD of this workspace."""
   head: GitRef!
 
   """A unique identifier for this WorkspaceGit."""
   id: ID!
+
+  """Returns details of a ref in this workspace's repository."""
+  ref(
+    """
+    Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    """
+    name: String!
+  ): GitRef!
 
   """
   Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
