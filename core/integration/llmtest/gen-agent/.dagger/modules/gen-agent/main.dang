@@ -1,0 +1,53 @@
+"""
+An agent that runs a workspace generator, for replay golden tests.
+
+Proves the LLM's bound (overlaid) Workspace propagates through the module's
+`generate` tool into the generator leaves it rolls up and runs: the agent
+edits input.txt, runs generate, and the generator must observe the edit.
+"""
+type GenAgent {
+  model: String = null
+
+  """
+  Complete the assignment and return the resulting output.txt contents (the
+  file the generator writes). If the overlay reached the generator, this
+  reflects the edited input.txt.
+  """
+  run(assignment: String!): String! {
+    self.drive(assignment).loop.workspace.file("output.txt").contents
+  }
+
+  """
+  Set up the agent's LLM with its tools and assignment.
+  """
+  drive(assignment: String!): LLM! {
+    llm(model: model)
+      .withTools(currentNode, except: ["run", "drive", "gen"])
+      .withPrompt("You are an agent operating on a workspace.\n" + "Use the write tool to edit input.txt, then the generate tool to run the workspace generators.\n" + "\n" + "Assignment: " + assignment + "\n")
+  }
+
+  """
+  Write input.txt with the given contents.
+  """
+  write(content: String!, ws: Workspace!): Workspace! {
+    ws.withNewFile("input.txt", content)
+  }
+
+  """
+  Run the workspace's generators against the given workspace and apply their
+  changes. Receives the LLM's bound (possibly overlaid) workspace as an
+  auto-injected argument, mirroring a real coding agent's generate tool.
+  """
+  generate(workspace: Workspace!): Changeset {
+    workspace.generators(include: ["gen-agent"]).run.changes
+  }
+
+  """
+  Read input.txt from the workspace and write output.txt derived from it.
+  """
+  pub gen(ws: Workspace!): Changeset! @generate {
+    let input = ws.file("input.txt").contents
+    let root = ws.directory("/")
+    root.withNewFile("output.txt", "generated from: " + input).changes(root)
+  }
+}
