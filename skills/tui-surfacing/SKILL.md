@@ -17,9 +17,14 @@ confusion comes from conflating them:
    marker attribute and builds a tree from scratch, ignoring `reveal`. Rendered
    as a dedicated section in `renderFinalReport`. This is what `dagger trace`
    and the end-of-run report use.
-2. **Live tree — reveal-driven.** Spans set `reveal=true`; the frontend
-   *promotes* them to the top by marking the root span `passthrough`. Reuses the
-   normal row/tree machinery. This is what the interactive TUI shows mid-run.
+2. **Live tree — promotion-driven.** Spans set `reveal=true` and the frontend
+   *promotes* them to the top by marking the root span `passthrough`; it reuses
+   the normal row/tree machinery, which reads each span's `RevealedSpans` set.
+   Checks still populate `RevealedSpans` via `reveal` bubbling. The LLM
+   conversation no longer sets `reveal` — instead `promoteConversationLocked`
+   wires the reveal-independent `SurfacedConversation` tree into `RevealedSpans`
+   (`DB.PromoteConversationTo`), so the same machinery surfaces it. This is what
+   the interactive TUI shows mid-run.
 
 The flag that switches render paths is `fe.finalRender` (in `frontendPretty.Render`,
 `dagql/idtui/frontend_pretty.go`).
@@ -49,9 +54,11 @@ Where they're emitted:
 
 - Checks: `core/modtree.go` (`CheckName` + `Reveal()` + rollup + `CheckPassed`).
 - LLM messages: `core/llm.go` (`emitMessageSpan` / `emitUserMessageSpan` /
-  `emitAssistantMessageSpan`: `LLMRole` + `Reveal()` + `UIMessage`/emoji; the
-  system prompt is marked `Internal`) and `core/llm_display.go` (`displayPhases`
-  streams the live per-block spans with the same attrs).
+  `emitAssistantMessageSpan`: `LLMRole` + `UIMessage`/emoji; the system prompt
+  is marked `Internal`) and `core/llm_display.go` (`displayPhases` streams the
+  live per-block spans with the same attrs). LLM messages do **not** set
+  `reveal` — the live tree surfaces them via `DB.PromoteConversationTo` instead
+  (see Live promotion).
 
 ## Reveal bubbling (live)
 
@@ -105,14 +112,18 @@ cheap "did any surface" checks used by live promotion.
 
 `promoteChecksLocked` / `promoteConversationLocked` (called from
 `recalculateViewLocked`, `frontend_pretty.go`): when `HasChecks()` /
-`HasConversation()` and the root isn't itself that kind, set
-`db.RootSpan.Passthrough = true` and default the zoom to the primary (root) span.
-Then the passthrough branch of `DB.RowsView` (`dagql/dagui/types.go`) iterates
-`RootSpan.RevealedSpans` **instead of** its children — so the revealed
+`HasConversation()` and the host isn't itself that kind, set
+`Passthrough = true` on the host span and default the zoom to the primary (root)
+span. Then the passthrough branch of `DB.RowsView` (`dagql/dagui/types.go`)
+iterates the host's `RevealedSpans` **instead of** its children — so the revealed
 checks/turns become the top-level rows and the connect/load noise disappears.
-This is the mechanism that replaced `dagger shell`'s old manual `SetPrimary` zoom.
-`zoomKind` (`dagql/idtui/frontend_trace_policy.go`) distinguishes
-zoomRoot/zoomCheck/zoomTest/zoomSpan for the zoomed views.
+Checks reach `RevealedSpans` via `reveal` bubbling; the conversation does not set
+`reveal`, so `promoteConversationLocked` first calls `DB.PromoteConversationTo`
+to wire the reveal-independent `SurfacedConversation` tree into `RevealedSpans`
+(top-level turns under the host, a sub-agent's turns under the tool call that
+spawned them). This is the mechanism that replaced `dagger shell`'s old manual
+`SetPrimary` zoom. `zoomKind` (`dagql/idtui/frontend_trace_policy.go`)
+distinguishes zoomRoot/zoomCheck/zoomTest/zoomSpan for the zoomed views.
 
 ## Recipe: add a new surfaced kind
 
