@@ -796,7 +796,6 @@ type withPatchFileArgs struct {
 	OnConflict core.PatchConflict `default:"FAIL"`
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withChanges; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchFileArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1299,7 +1298,6 @@ type withChangesArgs struct {
 	Changes dagql.ID[*core.Changeset]
 }
 
-//nolint:dupl // symmetric with (*directorySchema).withPatchFile; sharing hides the single-patch vs multi-change specifics
 func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withChangesArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
