@@ -324,6 +324,10 @@ func init() {
 
 	// No real point setting a custom foreground, it just looks weird.
 	MarkdownStyle.Document.Color = nil
+
+	// Render inline code without the default padding spaces on either side.
+	MarkdownStyle.Code.Prefix = ""
+	MarkdownStyle.Code.Suffix = ""
 }
 
 func (term *Vterm) redraw() {
@@ -334,6 +338,9 @@ func (term *Vterm) redraw() {
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
 			glamour.WithStyles(MarkdownStyle),
+			// Constrain rendering to the 16-color ANSI palette.
+			glamour.WithColorProfile(termenv.ANSI),
+			glamour.WithChromaFormatter("terminal16"),
 			glamour.WithPreservedNewLines(),
 			glamour.WithEmoji(),
 		)
@@ -403,6 +410,9 @@ func (m *Markdown) View() string {
 	}
 	glamourOpts := []glamour.TermRendererOption{
 		glamour.WithStyles(st),
+		// Constrain rendering to the 16-color ANSI palette.
+		glamour.WithColorProfile(termenv.ANSI),
+		glamour.WithChromaFormatter("terminal16"),
 		glamour.WithPreservedNewLines(),
 		glamour.WithEmoji(),
 	}
