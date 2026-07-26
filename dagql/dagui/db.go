@@ -183,6 +183,10 @@ type DB struct {
 	surfacedChecksAt   uint64
 	surfacedChecksInit bool
 
+	surfacedConversation     []*MessageNode
+	surfacedConversationAt   uint64
+	surfacedConversationInit bool
+
 	surfacedGenerators     []*GeneratorNode
 	surfacedGeneratorsAt   uint64
 	surfacedGeneratorsInit bool
