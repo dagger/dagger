@@ -1,0 +1,272 @@
+# tui-qa: give a Dagger coding agent the ability to QA its own live TUI.
+#
+# The `tui-qa` skill drives an interactive `dagger` TUI over tmux; but a
+# Dagger-native agent (the `editor` @agent) has no Bash tool, only Dagger-module
+# tools. This module reimplements that QA loop as @agent tools, using the
+# DAGGER_TUI_CONSOLE affordance (see the `tui-console` skill and
+# dagql/idtui/frontend_console.go): a from-source `dagger` CLI serves its live
+# pretty TUI over HTTP, and we drive it with GET /screen + POST /key, /type,
+# /resize, /zoom.
+#
+# Shape of the loop (see `start` for the wiring):
+#   - build the `dagger` CLI from source (cliDev)
+#   - drop it into an engine-dev Playground container (a client with a bound
+#     from-source engine, so `dagger call/check/...` actually run) at a
+#     configurable workdir, with DAGGER_TUI_CONSOLE=:PORT + DAGGER_PROGRESS=tty
+#   - run the command under test as a Service and .start() it (so it persists
+#     across tool calls within this dagger session)
+#   - hold a small curl client container (bound to that service) as session
+#     state; each interaction tool curls the console over HTTP
+#
+# STATUS: loaded & smoke-tested against a from-source engine (start -> console
+# -> curl -> screen returns real frames; the whole session's service persists
+# across many tool calls). The load-bearing gotcha, now handled: every tool that
+# reads/drives the live console is @cache(policy: FunctionCachePolicy.Never) —
+# without it dagql memoizes the result per (object id + field + args) across
+# tool-call queries and the screen freezes on the first frame. See the NOTE on
+# `screen`. Interactive prompt mode (`dagger shell`, and its `.prompt`/agent
+# REPL) IS now driveable via the console: `start(args: ["shell"])` brings up the
+# live prompt, `typeText` fills the editline, and `key enter` submits — proven
+# end to end. This needed a one-line CLI fix (internal/cmd/dagger/shell.go: go
+# interactive when DAGGER_TUI_CONSOLE is set, since input arrives via injected
+# keys, not a stdin tty). A real LLM turn (`.prompt`/agent) also works: the
+# `.asService` runs with experimentalPrivilegedNesting so the command-under-test
+# shares the outer session and inherits its LLM auth (proven: `.prompt` runs real
+# streamed claude-opus-4 turns). No credential mounting needed.
+
+let defaultWorkdir = "/src"
+let defaultPort = 7777
+
+type TuiQa {
+  # ---- session state (private so it isn't exposed as tools; persists across
+  # tool calls the same way editor's `todos` does) --------------------------
+
+  # a minimal curl container bound to the running console service
+  let client: Container! = container
+  # the started console service (kept so `stop` can tear it down)
+  let service: Service = null
+  # base URL of the console inside the client container, e.g. http://tui-qa:7777
+  let url: String! = ""
+
+  """
+  Compose the TUI-QA tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Start a live dagger TUI session and expose it for QA.
+
+  Builds the `dagger` CLI from the workspace source, runs it inside a container
+  that has a from-source engine bound (so real commands execute), and serves its
+  live pretty TUI over HTTP via DAGGER_TUI_CONSOLE. After calling this, use
+  `screen` to read the rendered terminal and `key`/`type`/`resize`/`zoom` to
+  drive it. Call `stop` when done.
+
+  args is the dagger subcommand to run, already tokenized, WITHOUT the leading
+  "dagger" — e.g. ["call", "test"] or ["check"].
+  """
+  start(
+    source: Workspace!,
+    """
+    The dagger subcommand + flags to run, e.g. ["call", "test"]. Omit "dagger".
+    """
+    args: [String!]!,
+    """
+    Working directory inside the container to run the command from. The workspace
+    source is mounted here, so this is usually the repo root.
+    """
+    workdir: String! = defaultWorkdir,
+    """
+    Port the HTTP TUI console listens on inside the container.
+    """
+    port: Int! = defaultPort,
+  ): TuiQa! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): starting a service is a side effect that must actually run
+    # every invocation, not be served stale from the dagql session cache.
+
+    let srcDir = source.directory("/")
+
+    # build the dagger CLI from source
+    let cli = cliDev(source: srcDir).binary
+
+    # a client container with a from-source engine already bound + the released
+    # dagger CLI installed; we overwrite the CLI with our from-source build.
+    let runner = engineDev(source: srcDir)
+      .playground
+      .withFile("/usr/local/bin/dagger", cli)
+      .withMountedDirectory(workdir, srcDir)
+      .withWorkdir(workdir)
+      .withEnvVariable("DAGGER_TUI_CONSOLE", ":" + toString(port))
+      .withEnvVariable("DAGGER_PROGRESS", "tty")
+      .withExposedPort(port)
+
+    # run the command under test as a persistent service serving the console
+    let svc = runner
+      .asService(args: ["dagger"] + args, experimentalPrivilegedNesting: true)
+      .start
+
+    # a tiny client we curl the console from, on every interaction tool
+    let curlCtr = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl"])
+      .withServiceBinding("tui-qa", svc)
+
+    self.client = curlCtr
+    self.service = svc
+    self.url = "http://tui-qa:" + toString(port)
+    self
+  }
+
+  # NOTE: every tool that reads or drives the live console MUST be
+  # @cache(policy: FunctionCachePolicy.Never). Without it, dagql memoizes the
+  # function result by (object id + field + args) across tool-call queries in
+  # the session, so the SECOND call returns the FIRST call's frame — a frozen
+  # screen — and the Dang body (incl. the curl) never re-runs. `Never` mixes a
+  # per-call random value into the call id, forcing a fresh execution each time.
+  """
+  Read the current rendered TUI screen (ANSI-stripped, viewport-clipped exactly
+  like a real terminal). Call repeatedly to observe progress.
+  """
+  screen: String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/screen")
+  }
+
+  """
+  Apply a key script to the TUI and return the resulting screen. Keys are
+  whitespace/comma separated tuist key names (e.g. "down down right", "enter",
+  "esc", "C-c"); a "key*N" token repeats it. Movement/keymap:
+  ←↑↓→ / h j k l move · right/l expand · left/h collapse · enter zoom · esc back ·
+  r error origin · L logs · +/- verbosity · / search · T tests.
+  """
+  key(keys: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/key", keys)
+  }
+
+  """
+  Type a literal string into the TUI (verbatim, not tokenized) — e.g. into the
+  "/" search field. Returns the resulting screen.
+  """
+  typeText(text: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/type", text)
+  }
+
+  """
+  Resize the terminal to "<cols>x<rows>" (e.g. "120x12"). Either dimension may be
+  omitted/0 to keep it (e.g. "x12" changes only rows). Use a small height to
+  reproduce overflow-only rendering. Returns the resulting screen.
+  """
+  resize(size: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/resize", size)
+  }
+
+  """
+  Zoom straight to a span by its hex id (from `spans`). Returns the screen.
+  """
+  zoom(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/zoom", spanHex)
+  }
+
+  """
+  List spans currently loaded in the TUI (id / status / name), optionally
+  filtered by a name substring. Status is ERROR (span errored), FAIL (caused a
+  failure via a link), run, or ok.
+  """
+  spans(query: String! = ""): String! @cache(policy: FunctionCachePolicy.Never) {
+    # URL-encode spaces so multi-word span names (e.g. "load SDK: go") don't
+    # produce a malformed URL that curl rejects (exit 3).
+    let path = if (query == "") { "/spans" } else {
+      "/spans?q=" + query.replace(
+        " ",
+        "%20",
+      )
+    }
+    get(path)
+  }
+
+  """
+  Show the console's own endpoint + keymap help.
+  """
+  help: String! {
+    get("/help")
+  }
+
+  """
+  Stop the TUI session and release the underlying service.
+  """
+  stop: TuiQa! @cache(policy: FunctionCachePolicy.Never) {
+    if (service != null) {
+      # FIXME(dang bug): this _says_ it returns an object but at runtime it's
+      # actually the string ID
+      service.stop
+      print("Stopped TUI session")
+    }
+    self.service = null
+    self.url = ""
+    self.client = container
+    self
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  let get(path: String!): String! {
+    if (url == "") {
+      return "No active TUI session. Call `start` first."
+    }
+    client
+      # bust Dagger's exec cache so each read hits the live console, not a
+      # cached identical curl (the screen changes but the inputs wouldn't)
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", "60",
+        url + path,
+      ])
+      .stdout
+  }
+
+  let post(path: String!, body: String!): String! {
+    if (url == "") {
+      return "No active TUI session. Call `start` first."
+    }
+    client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", "60",
+        "--data-binary", body,
+        url + path,
+      ])
+      .stdout
+  }
+
+  let systemPrompt: String! = """
+    You can QA the live Dagger TUI with the TuiQa tools, which drive a real
+    from-source `dagger` CLI's pretty TUI over HTTP (the DAGGER_TUI_CONSOLE
+    affordance — see the `tui-console` skill).
+
+    Workflow:
+    - `start(args: ["call", "test"])` builds the CLI from the workspace source,
+      runs the command against a from-source engine, and starts serving the TUI.
+    - `screen` reads the current rendered terminal. Poll it to watch progress;
+      startup takes a little while (build + engine connect), and the tools retry
+      the connection for you.
+    - `key`, `typeText`, `resize`, `zoom`, `spans` drive and inspect the TUI,
+      exactly like the endpoints in the `tui-console` skill.
+    - Check for crashes explicitly: grep the screen for "panic:", "fatal error".
+    - `stop` when done.
+
+    Interactive prompt mode works too: `start(args: ["shell"])` brings up the
+    live `dagger shell` prompt (wait for the module to load, then the
+    `<module> ⋈` prompt appears). Drive it by `typeText`-ing a line into the
+    editline and `key enter` to submit; `key esc` toggles nav/input mode.
+    Switching to `.prompt`/agent mode and submitting a prompt runs a real LLM
+    turn — the runner uses experimentalPrivilegedNesting so it inherits the
+    outer session's LLM auth (no credential setup needed).
+  """
+}
