@@ -2775,17 +2775,27 @@ func TestViewsFilterNonObjectTypes(t *testing.T) {
 	class.Implements(iface)
 	srv.InstallObject(class)
 
+	srv.InstallDirective(dagql.DirectiveSpec{
+		Name:        "viewFilteredDirective",
+		Description: "future directive",
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	}.View(dagql.ExactView("future")))
+
 	oldSchema := srv.SchemaForView("old")
 	require.NotContains(t, oldSchema.Types, "ViewFilteredEnum")
 	require.NotContains(t, oldSchema.Types, "ViewFilteredInput")
 	require.NotContains(t, oldSchema.Types, "ViewFilteredInterface")
 	require.NotContains(t, oldSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+	require.NotContains(t, oldSchema.Directives, "viewFilteredDirective")
 
 	futureSchema := srv.SchemaForView("future")
 	require.Equal(t, ast.Enum, futureSchema.Types["ViewFilteredEnum"].Kind)
 	require.Equal(t, ast.InputObject, futureSchema.Types["ViewFilteredInput"].Kind)
 	require.Equal(t, ast.Interface, futureSchema.Types["ViewFilteredInterface"].Kind)
 	require.Contains(t, futureSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+	require.Contains(t, futureSchema.Directives, "viewFilteredDirective")
 }
 
 type CoolInt struct {
