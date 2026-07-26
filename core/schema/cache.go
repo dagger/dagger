@@ -34,7 +34,32 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.CacheVolume]{}.Install(srv)
+	dagql.Fields[*core.CacheVolume]{
+		dagql.NodeFunc("__snapshotDirectory", s.snapshotDirectory).
+			DoNotCache("Reads live mutable cache volume content").
+			Doc("(Internal-only) A point-in-time Directory view of the cache volume's current content."),
+	}.Install(srv)
+}
+
+// snapshotDirectory materializes a live, point-in-time Directory view of the
+// cache volume's mutable content. It is DoNotCache so reads always reflect the
+// volume at call time (like a live host baseline); the resulting Directory's
+// snapshot digest is content-derived, so downstream reads of an unchanged
+// cache still dedup.
+func (s *cacheSchema) snapshotDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.CacheVolume],
+	_ struct{},
+) (dagql.ObjectResult[*core.Directory], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	dir, err := parent.Self().SnapshotDirectory(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 type cacheArgs struct {
