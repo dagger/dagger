@@ -639,9 +639,14 @@ func (r *renderer) renderSpan(
 				fmt.Fprint(out, " ")
 			}
 			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
-			if len(span.LLMToolArgValues) > 0 {
-				// for now, only print the first arg, the rest are likely to be noisy.
-				fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+			// For recognized tools, render a styled summary of the meaningful
+			// args (paths in cyan, descriptions/content faint). Fall back to
+			// dumping the first arg for tools we don't recognize.
+			if !renderToolArgsSummary(out, span.LLMTool, span) {
+				if len(span.LLMToolArgValues) > 0 {
+					// for now, only print the first arg, the rest are likely to be noisy.
+					fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+				}
 			}
 			return nil
 		}
