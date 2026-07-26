@@ -12,9 +12,20 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
 )
+
+// oauthEnvProviders maps the auth-token environment variable the engine
+// resolves against the client to the llmconfig provider that owns it. Used to
+// refresh a subscription OAuth bearer token on demand (see the env refresher
+// registered below), so long-running sessions don't outlive the token.
+var oauthEnvProviders = map[string]string{
+	"ANTHROPIC_AUTH_TOKEN":    "anthropic",
+	"OPENAI_CODEX_AUTH_TOKEN": "openai-codex",
+}
 
 func init() {
 	rootCmd.AddCommand(llmParentCmd)
@@ -31,6 +42,29 @@ func init() {
 	// `dagger llm setup` takes effect for LLM usage (shell, call, etc.). The
 	// engine's LLM router resolves these via env:// against the client.
 	cobra.OnInitialize(applyLLMConfigEnv)
+
+	// Keep subscription OAuth bearer tokens fresh for the life of the session.
+	// applyLLMConfigEnv only refreshes and exports the token once, at startup;
+	// the access token typically expires within the hour, so a long-running
+	// session (dagger agent/shell, or a slow module) would keep sending an
+	// expired token and get 401s. The engine re-resolves the token via
+	// env://<KEY> against the client on each LLM router config load, so hook
+	// that resolution: when the engine asks for an OAuth auth-token var, refresh
+	// it if expired and update the process env before it's read.
+	secretprovider.RegisterEnvRefresher(func(_ context.Context, name string) error {
+		provider, ok := oauthEnvProviders[name]
+		if !ok {
+			return nil
+		}
+		token, err := llmconfig.RefreshOAuthProviderIfNeeded(provider)
+		if err != nil {
+			return err
+		}
+		if token != "" {
+			os.Setenv(name, token)
+		}
+		return nil
+	})
 }
 
 // applyLLMConfigEnv loads the persisted LLM config (written by `dagger llm
@@ -43,8 +77,12 @@ func init() {
 // expired). Anthropic (Claude Code) OAuth is wired end-to-end; Codex is not
 // yet, so its token is not exported.
 func applyLLMConfigEnv() {
-	// Refresh any expired OAuth tokens before exporting them.
-	_ = llmconfig.RefreshOAuthTokensIfNeeded()
+	// Refresh any expired OAuth tokens before exporting them. A failure here is
+	// non-fatal (we fall back to whatever token is persisted), but warn so an
+	// otherwise-silent 401 later on has a breadcrumb.
+	if err := llmconfig.RefreshOAuthTokensIfNeeded(); err != nil {
+		slog.Warn("failed to refresh LLM OAuth tokens", "error", err)
+	}
 	cfg, err := llmconfig.Load()
 	if err != nil || cfg == nil {
 		return
