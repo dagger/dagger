@@ -985,6 +985,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		})
 		schema.Directives = map[string]*ast.DirectiveDefinition{}
 		sortutil.RangeSorted(s.directives, func(n string, d DirectiveSpec) {
+			if d.ViewFilter != nil && !d.ViewFilter.Contains(view) {
+				return
+			}
 			schema.Directives[n] = d.DirectiveDefinition(view)
 		})
 		h := xxh3.New()
