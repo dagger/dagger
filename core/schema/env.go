@@ -32,16 +32,6 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			).Experimental("Programmatic env access is speculative and might be replaced."),
 	}.Install(srv)
 	dagql.Fields[*core.Env]{
-		dagql.Func("inputs", s.inputs).
-			Doc("Returns all input bindings provided to the environment"),
-		dagql.Func("input", s.input).
-			Doc("Retrieves an input binding by name"),
-		dagql.Func("outputs", s.outputs).
-			Doc("Returns all declared output bindings for the environment"),
-		dagql.Func("withoutOutputs", s.withoutOutputs).
-			Doc("Returns a new environment without any outputs"),
-		dagql.Func("output", s.output).
-			Doc("Retrieves an output binding by name"),
 		dagql.Func("withWorkspace", s.withWorkspace).
 			Doc("Returns a new environment with the provided workspace").
 			Args(
@@ -64,19 +54,6 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				"Contextual path arguments will be populated using the environment's workspace.",
 			).
 			Deprecated("Use withMainModule instead"),
-		dagql.Func("withStringInput", s.withStringInput).
-			Doc("Provides a string input binding to the environment").
-			Args(
-				dagql.Arg("name").Doc("The name of the binding"),
-				dagql.Arg("value").Doc("The string value to assign to the binding"),
-				dagql.Arg("description").Doc("The description of the input"),
-			),
-		dagql.Func("withStringOutput", s.withStringOutput).
-			Doc("Declares a desired string output binding").
-			Args(
-				dagql.Arg("name").Doc("The name of the binding"),
-				dagql.Arg("description").Doc("The description of the output"),
-			),
 		dagql.Func("checks", s.envChecks).
 			Experimental("Checks API is highly experimental and may be removed or replaced entirely.").
 			Doc("Return all checks defined by the installed modules").
@@ -98,25 +75,6 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
 	}.Install(srv)
-	dagql.Fields[*core.Binding]{
-		dagql.Func("name", s.bindingName).
-			Doc("Returns the binding name"),
-		dagql.Func("typeName", s.bindingTypeName).
-			Doc("Returns the binding type"),
-		dagql.Func("digest", s.bindingDigest).
-			Doc("Returns the digest of the binding value"),
-		dagql.Func("asString", s.bindingAsString).
-			Doc("Returns the binding's string value"),
-		dagql.Func("isNull", s.bindingIsNull).
-			Doc("Returns true if the binding is null"),
-	}.Install(srv)
-	hook := core.EnvHook{Server: srv}
-	envObjType, ok := srv.ObjectType(new(core.Env).Type().Name())
-	if !ok {
-		panic("environment type not found after dagql install")
-	}
-	hook.ExtendEnvType(envObjType)
-	srv.AddInstallHook(hook)
 }
 
 type environmentArgs struct {
@@ -207,38 +165,6 @@ func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.
 	return env, nil
 }
 
-func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
-	return env.Inputs(), nil
-}
-
-func (s environmentSchema) input(ctx context.Context, env *core.Env, args struct {
-	Name string
-}) (*core.Binding, error) {
-	b, found := env.Input(args.Name)
-	if found {
-		return b, nil
-	}
-	return nil, fmt.Errorf("input not found: %s", args.Name)
-}
-
-func (s environmentSchema) output(ctx context.Context, env *core.Env, args struct {
-	Name string
-}) (*core.Binding, error) {
-	b, found := env.Output(args.Name)
-	if found {
-		return b, nil
-	}
-	return nil, fmt.Errorf("output not found: %s", args.Name)
-}
-
-func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
-	return env.Outputs(), nil
-}
-
-func (s environmentSchema) withoutOutputs(ctx context.Context, env *core.Env, args struct{}) (*core.Env, error) {
-	return env.WithoutOutputs(), nil
-}
-
 func (s environmentSchema) withWorkspace(ctx context.Context, env *core.Env, args struct {
 	Workspace core.DirectoryID
 }) (*core.Env, error) {
@@ -311,45 +237,6 @@ func (s environmentSchema) withCurrentModule(ctx context.Context, env dagql.Obje
 		return res, fmt.Errorf("failed to install current module: %w", err)
 	}
 	return res, nil
-}
-
-func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {
-	Name        string
-	Value       string
-	Description string
-}) (*core.Env, error) {
-	str := dagql.NewString(args.Value)
-	return env.WithInput(args.Name, str, args.Description), nil
-}
-
-func (s environmentSchema) withStringOutput(ctx context.Context, env *core.Env, args struct {
-	Name        string
-	Description string
-}) (*core.Env, error) {
-	return env.WithOutput(args.Name, dagql.String(""), args.Description), nil
-}
-
-func (s environmentSchema) bindingName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
-	return b.Key, nil
-}
-
-func (s environmentSchema) bindingTypeName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
-	return b.TypeName(), nil
-}
-
-func (s environmentSchema) bindingDigest(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
-	return b.Digest().String(), nil
-}
-
-func (s environmentSchema) bindingAsString(ctx context.Context, b *core.Binding, args struct{}) (dagql.Nullable[dagql.String], error) {
-	if str, ok := b.AsString(); ok {
-		return dagql.NonNull[dagql.String](dagql.NewString(str)), nil
-	}
-	return dagql.Null[dagql.String](), nil
-}
-
-func (s environmentSchema) bindingIsNull(ctx context.Context, b *core.Binding, args struct{}) (bool, error) {
-	return b.Value == nil, nil
 }
 
 func (s environmentSchema) envChecks(ctx context.Context, env *core.Env, args struct {
