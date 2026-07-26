@@ -568,6 +568,11 @@ func (WorkspaceAPISuite) TestHostWorkspaceGitLog(ctx context.Context, t *testctx
         log {
           messageHeadline
           authorEmail
+          tree {
+            file(path: "base.txt") {
+              contents
+            }
+          }
         }
       }
     }
@@ -584,6 +589,11 @@ func (WorkspaceAPISuite) TestHostWorkspaceGitLog(ctx context.Context, t *testctx
 					Log []struct {
 						MessageHeadline string `json:"messageHeadline"`
 						AuthorEmail     string `json:"authorEmail"`
+						Tree            struct {
+							File struct {
+								Contents string `json:"contents"`
+							} `json:"file"`
+						} `json:"tree"`
 					} `json:"log"`
 				} `json:"head"`
 			} `json:"git"`
@@ -596,6 +606,11 @@ func (WorkspaceAPISuite) TestHostWorkspaceGitLog(ctx context.Context, t *testctx
 	require.Equal(t, "second", log[0].MessageHeadline)
 	require.Equal(t, "initial", log[1].MessageHeadline)
 	require.Equal(t, "dagger@example.com", log[0].AuthorEmail)
+
+	// a log entry is a full GitCommit, so it checks out the tree as of that
+	// commit, not as of HEAD
+	require.Equal(t, "more", log[0].Tree.File.Contents)
+	require.Equal(t, "base", log[1].Tree.File.Contents)
 }
 
 func runGit(ctx context.Context, t *testctx.T, dir string, args ...string) {
