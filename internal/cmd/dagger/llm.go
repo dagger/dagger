@@ -20,7 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/openrouter"
+	// "github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"

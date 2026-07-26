@@ -858,7 +858,7 @@ func (fe *frontendPretty) llmLiveStats() (StatusLineLive, bool) {
 		live.OutputTokens += int(m.OutputTokens)
 		live.CacheReads += int(m.CachedTokenReads)
 		live.CacheWrites += int(m.CachedTokenWrites)
-		live.TotalCost += fe.llmCostFn(m.Model,
+		live.TotalCost += fe.llmCostFn(m.Provider, m.Model,
 			m.InputTokens, m.OutputTokens, m.CachedTokenReads, m.CachedTokenWrites)
 	}
 	return live, any
