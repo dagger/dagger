@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  Add `GitRef.log` to list the commits reachable from a ref as `GitCommit` values, newest first, starting with the commit the ref resolves to.
+
+  It takes a `limit` (default 10), an optional list of `paths` to restrict the
+  log to commits touching them, and an optional `base` ref whose reachable
+  commits are excluded, i.e. `base..ref`. The base ref may live in a different
+  repository. Reading a log fetches the full history of the refs involved, the
+  same tradeoff `commonAncestor` makes.
+time: 2026-07-26T18:30:00Z
+custom:
+  Author: vito
+  PR: 13088

@@ -584,6 +584,20 @@ func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, erro
 	return meta, nil
 }
 
+// PrefillMetadata seeds the commit's cached metadata, so that reading its
+// fields doesn't have to mount the repository again. Metadata that has already
+// been read wins; it was read from the same commit object either way.
+func (commit *GitCommit) PrefillMetadata(meta *GitCommitMetadata) {
+	if commit == nil || meta == nil {
+		return
+	}
+	commit.metadataMu.Lock()
+	defer commit.metadataMu.Unlock()
+	if commit.metadata == nil {
+		commit.metadata = meta
+	}
+}
+
 func (commit *GitCommit) prefetch(ctx context.Context, depth int, includeTags bool) error {
 	return commit.Mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
 		return nil
@@ -909,6 +923,67 @@ func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error)
 		return nil, err
 	}
 	return &GitRef{Repo: ref1.Repo, Backend: backend, Ref: ref}, nil
+}
+
+type GitLogOptions struct {
+	// Limit is the maximum number of commits to return. Must be at least 1.
+	Limit int
+	// Paths restricts the log to commits touching any of these repo-root-relative
+	// paths.
+	Paths []string
+	// Base excludes commits reachable from this ref, i.e. base..ref.
+	Base *GitRef
+}
+
+// Log returns metadata for the commits reachable from the ref, newest first,
+// starting with the ref's own commit.
+func (ref *GitRef) Log(ctx context.Context, opts GitLogOptions) ([]*GitCommitMetadata, error) {
+	if ref == nil || ref.Ref == nil {
+		return nil, fmt.Errorf("git log: missing ref")
+	}
+	if opts.Limit < 1 {
+		return nil, fmt.Errorf("git log: limit must be at least 1, got %d", opts.Limit)
+	}
+
+	refs := []*GitRef{ref}
+	if opts.Base != nil {
+		refs = append(refs, opts.Base)
+	}
+
+	var commits []*GitCommitMetadata
+	err := mountRefs(ctx, refs, func(git *gitutil.GitCLI, shas []string) error {
+		args := []string{"rev-list", "-n", strconv.Itoa(opts.Limit), shas[0]}
+		if len(shas) > 1 {
+			args = append(args, "^"+shas[1])
+		}
+		if len(opts.Paths) > 0 {
+			args = append(args, "--")
+			args = append(args, opts.Paths...)
+		}
+		out, err := git.Run(ctx, args...)
+		if err != nil {
+			return fmt.Errorf("git rev-list failed: %w", err)
+		}
+
+		// read every commit while the repo is still mounted, rather than leaving
+		// each one to mount again on demand
+		for _, sha := range strings.Fields(string(out)) {
+			raw, err := git.Run(ctx, "cat-file", "commit", sha)
+			if err != nil {
+				return fmt.Errorf("read git commit metadata for %s: %w", sha, err)
+			}
+			meta, err := parseGitCommitMetadata(sha, string(raw))
+			if err != nil {
+				return fmt.Errorf("read git commit metadata for %s: %w", sha, err)
+			}
+			commits = append(commits, meta)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return commits, nil
 }
 
 // refJoin creates a temporary git repository, adds the given refs as remotes,
