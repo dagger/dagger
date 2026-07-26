@@ -1,0 +1,397 @@
+package idtui
+
+import (
+	"fmt"
+	"io"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/muesli/termenv"
+	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/dagger/dagger/dagql/dagui"
+)
+
+// TestConversationReportNestsSubAgent verifies the final report surfaces the LLM
+// conversation under a CONVERSATION heading, in start-time order, with a
+// sub-agent's turns nested one level under the tool call that spawned them.
+func TestConversationReportNestsSubAgent(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	promptID := prettyTestSpanID(2)
+	toolCallID := prettyTestSpanID(3)
+	subPromptID := prettyTestSpanID(4)
+	subResponseID := prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "shell",
+			StartTime: start,
+			EndTime:   end.Add(5 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        promptID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "LLM prompt",
+			LLMRole:   "user",
+			ParentID:  rootID,
+			StartTime: start.Add(time.Second),
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        toolCallID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "spawn-agent",
+			LLMRole:   "assistant",
+			LLMTool:   "spawn-agent",
+			ParentID:  rootID,
+			StartTime: start.Add(2 * time.Second),
+			EndTime:   start.Add(3 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        subPromptID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "sub-prompt",
+			LLMRole:   "user",
+			ParentID:  toolCallID,
+			StartTime: start.Add(3 * time.Second),
+			EndTime:   start.Add(4 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        subResponseID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "sub-response",
+			LLMRole:   "assistant",
+			ParentID:  toolCallID,
+			StartTime: start.Add(4 * time.Second),
+			EndTime:   start.Add(5 * time.Second),
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: 120}, r, false)
+	if len(lines) == 0 {
+		t.Fatal("conversationReport returned no lines")
+	}
+	joined := strings.Join(lines, "\n")
+
+	if !strings.HasPrefix(lines[0], "CONVERSATION") {
+		t.Fatalf("top header = %q, want CONVERSATION heading\n%s", lines[0], joined)
+	}
+
+	// Tool-call names are humanized by renderSpan (spawn-agent -> SpawnAgent), so
+	// match case-insensitively.
+	promptIdx, spawnIdx, subPromptIdx, subResponseIdx := -1, -1, -1, -1
+	for i, l := range lines {
+		ll := strings.ToLower(l)
+		switch {
+		case promptIdx == -1 && strings.Contains(ll, "llm prompt"):
+			promptIdx = i
+		case spawnIdx == -1 && strings.Contains(ll, "spawn"):
+			spawnIdx = i
+		case subPromptIdx == -1 && strings.Contains(ll, "sub-prompt"):
+			subPromptIdx = i
+		case subResponseIdx == -1 && strings.Contains(ll, "sub-response"):
+			subResponseIdx = i
+		}
+	}
+	if promptIdx == -1 || spawnIdx == -1 || subPromptIdx == -1 || subResponseIdx == -1 {
+		t.Fatalf("missing rows (prompt=%d spawn=%d subPrompt=%d subResponse=%d):\n%s",
+			promptIdx, spawnIdx, subPromptIdx, subResponseIdx, joined)
+	}
+	// Conversation order (start time): prompt, then the tool call, then its
+	// sub-agent's turns beneath it.
+	if promptIdx >= spawnIdx || spawnIdx >= subPromptIdx || subPromptIdx >= subResponseIdx {
+		t.Fatalf("rows out of order (prompt=%d spawn=%d subPrompt=%d subResponse=%d):\n%s",
+			promptIdx, spawnIdx, subPromptIdx, subResponseIdx, joined)
+	}
+	// The tool call sits at the margin; its sub-agent turns indent one level under
+	// it (two spaces per depth).
+	if strings.HasPrefix(lines[spawnIdx], " ") {
+		t.Fatalf("tool-call line = %q, want no indent", lines[spawnIdx])
+	}
+	if !strings.HasPrefix(lines[subPromptIdx], "  ") {
+		t.Fatalf("sub-agent line = %q, want two-space indent under the tool call", lines[subPromptIdx])
+	}
+}
+
+// TestConversationReportRendersToolCallArgsAndOutput verifies a tool call in the
+// final report shows both its arguments (the display span's own logs, in full)
+// and the result the LLM saw (the nested exec span's own logs, tail-capped).
+// This is the content that made the bare-name report "sad": Cloud's descendant
+// roll-up doesn't return the exec output, so the report fetches and renders each
+// span's own logs directly.
+func TestConversationReportRendersToolCallArgsAndOutput(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	promptID := prettyTestSpanID(2)
+	toolCallID := prettyTestSpanID(3)
+	execID := prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	end := start.Add(10 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "shell",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:        promptID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "LLM prompt",
+			LLMRole:   "user",
+			ParentID:  rootID,
+			StartTime: start.Add(time.Second),
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			// The tool-call display span: surfaced (LLMRole set), its own logs
+			// carry the streamed arguments.
+			ID:        toolCallID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "dang_eval",
+			LLMRole:   "assistant",
+			LLMTool:   "dang_eval",
+			ParentID:  rootID,
+			StartTime: start.Add(2 * time.Second),
+			EndTime:   start.Add(3 * time.Second),
+			Final:     true,
+		},
+		{
+			// The nested exec span: not surfaced (no LLMRole), its own logs carry
+			// the result the LLM received.
+			ID:        execID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "dang_eval(script: ...)",
+			LLMTool:   "dang_eval",
+			ParentID:  toolCallID,
+			StartTime: start.Add(2 * time.Second),
+			EndTime:   start.Add(3 * time.Second),
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+
+	argLogs := NewVterm(termenv.Ascii)
+	argLogs.SetWidth(120)
+	_, _ = argLogs.Write([]byte(`{"script":"currentWorkspace.id"}` + "\n"))
+	fe.logs.Logs[toolCallID] = argLogs
+
+	// A tall result, so the cap kicks in and hides all but the last
+	// llmLogsLastLines lines.
+	outLogs := NewVterm(termenv.Ascii)
+	outLogs.SetWidth(120)
+	const outputLines = llmLogsLastLines + 12
+	for i := 0; i < outputLines; i++ {
+		_, _ = outLogs.Write([]byte(fmt.Sprintf("result line %02d\n", i)))
+	}
+	fe.logs.Logs[execID] = outLogs
+
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: 120}, r, false)
+	joined := strings.Join(lines, "\n")
+
+	// The arguments render in full (they're short and worth reading verbatim).
+	if !strings.Contains(joined, `{"script":"currentWorkspace.id"}`) {
+		t.Fatalf("tool-call arguments missing from report:\n%s", joined)
+	}
+	// The result's tail renders...
+	if !strings.Contains(joined, fmt.Sprintf("result line %02d", outputLines-1)) {
+		t.Fatalf("tool-call output tail missing from report:\n%s", joined)
+	}
+	// ...capped, with the earliest lines hidden behind a trim header.
+	if strings.Contains(joined, "result line 00") {
+		t.Fatalf("tool-call output should be capped, but the first line is present:\n%s", joined)
+	}
+	if want := fmt.Sprintf("...%d lines hidden...", outputLines-llmLogsLastLines); !strings.Contains(joined, want) {
+		t.Fatalf("missing trim header %q:\n%s", want, joined)
+	}
+}
+
+// TestConversationLogsPreFetchedBeforeFailureFetch is a regression test for the
+// interactive Pretty TUI rendering the conversation as bare tool-call names. The
+// final report's message logs are pre-fetched in recalculateViewLocked; two bugs
+// left a failed tool call's arguments unfetched:
+//
+//  1. the pre-fetch was report-only, so the interactive frontend (a plain TTY,
+//     not AI_AGENT) never fetched them; and
+//  2. a failed tool-call display span is also a failed row, and the report-only
+//     failure fetch -- which ran first -- requested it with the roll-up its
+//     RollUpLogs implies (descendants=true, which Cloud returns empty for),
+//     latching the requestLogs dedup so the descendants=false arguments fetch
+//     never fired.
+//
+// So: the conversation is fetched in BOTH modes, descendants=false, and wins the
+// dedup over the failure fetch.
+func TestConversationLogsPreFetchedBeforeFailureFetch(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(1)
+	toolCallID := prettyTestSpanID(2)
+	execID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	mkDB := func() *dagui.DB {
+		db := dagui.NewDB()
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			{
+				ID:        rootID,
+				TraceID:   prettyTestTraceID(),
+				Name:      "shell",
+				StartTime: start,
+				EndTime:   start.Add(3 * time.Second),
+				Final:     true,
+			},
+			{
+				// A failed tool-call display span: surfaced (Reveal + LLMRole), so
+				// it's a failed row the failure fetch would also claim. RollUpLogs
+				// mirrors the live display span, so requestLogs would roll it up.
+				ID:         toolCallID,
+				TraceID:    prettyTestTraceID(),
+				Name:       "inspect",
+				LLMRole:    "assistant",
+				LLMTool:    "inspect",
+				Reveal:     true,
+				RollUpLogs: true,
+				ParentID:   rootID,
+				StartTime:  start.Add(time.Second),
+				EndTime:    start.Add(2 * time.Second),
+				Status:     sdktrace.Status{Code: codes.Error},
+				Final:      true,
+			},
+			{
+				// Its nested exec span: not surfaced, carries the error the LLM saw.
+				ID:        execID,
+				TraceID:   prettyTestTraceID(),
+				Name:      "inspect(on: Query)",
+				LLMTool:   "inspect",
+				ParentID:  toolCallID,
+				StartTime: start.Add(time.Second),
+				EndTime:   start.Add(2 * time.Second),
+				Status:    sdktrace.Status{Code: codes.Error},
+				Final:     true,
+			},
+		})
+		db.SetPrimarySpan(rootID)
+		return db
+	}
+
+	// Record the descendants flag the log provider is asked for, per span. Only
+	// the first (winning) request per span reaches the provider (requestLogs
+	// dedups), so this captures which fetch won.
+	run := func(reportOnly bool) map[dagui.SpanID]bool {
+		fe := NewWithDB(io.Discard, mkDB())
+		fe.reportOnly = reportOnly
+		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+		got := map[dagui.SpanID]bool{}
+		fe.logProvider = func(id dagui.SpanID, descendants bool) { got[id] = descendants }
+		fe.recalculateViewLocked()
+		return got
+	}
+
+	for _, tc := range []struct {
+		name       string
+		reportOnly bool
+	}{
+		{"interactive", false},
+		{"report", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := run(tc.reportOnly)
+			desc, ok := got[toolCallID]
+			if !ok {
+				t.Fatalf("tool-call display span logs never requested (args would be missing); fetched=%v", got)
+			}
+			if desc {
+				t.Fatalf("tool-call display span requested with descendants=true; the roll-up is empty and swallows the arguments (fetched=%v)", got)
+			}
+			if execDesc, ok := got[execID]; !ok || execDesc {
+				t.Fatalf("exec span logs not requested own-only (ok=%v descendants=%v); the result/error would be missing", ok, execDesc)
+			}
+		})
+	}
+}
+
+// TestPromoteConversationSurfacesMessages verifies the live path: a trace that
+// ran an LLM auto-promotes its conversation to the top level (root marked
+// passthrough, zoom defaulted to root), replacing the shell's old manual zoom,
+// so the revealed message spans render as top-level rows instead of the root's
+// setup children.
+func TestPromoteConversationSurfacesMessages(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	setupID := prettyTestSpanID(2)
+	promptID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "shell",
+			StartTime: start,
+			EndTime:   start.Add(10 * time.Second),
+		},
+		{
+			// bootstrap noise that the promotion should hide.
+			ID:        setupID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "connect",
+			ParentID:  rootID,
+			StartTime: start.Add(time.Second),
+			EndTime:   start.Add(2 * time.Second),
+		},
+		{
+			ID:        promptID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "LLM prompt",
+			LLMRole:   "user",
+			Reveal:    true,
+			ParentID:  rootID,
+			StartTime: start.Add(3 * time.Second),
+			EndTime:   start.Add(4 * time.Second),
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	if !fe.db.RootSpan.Passthrough {
+		t.Fatal("expected promoteConversationLocked to mark the root span passthrough")
+	}
+	if fe.ZoomedSpan != fe.db.PrimarySpan {
+		t.Fatalf("expected zoom to default to the primary span, got %v", fe.ZoomedSpan)
+	}
+	// Top-level rows are the revealed message spans, not the root's setup children.
+	var topSpanIDs []dagui.SpanID
+	for _, tree := range fe.rowsView.Body {
+		topSpanIDs = append(topSpanIDs, tree.Span.ID)
+	}
+	if len(topSpanIDs) != 1 || topSpanIDs[0] != promptID {
+		t.Fatalf("top-level rows = %v, want just the surfaced message %v", topSpanIDs, promptID)
+	}
+}
