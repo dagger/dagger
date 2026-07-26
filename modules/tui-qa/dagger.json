@@ -1,0 +1,17 @@
+{
+  "name": "tui-qa",
+  "engineVersion": "v0.21.5",
+  "sdk": {
+    "source": "dang"
+  },
+  "dependencies": [
+    {
+      "name": "engineDev",
+      "source": "../../toolchains/engine-dev"
+    },
+    {
+      "name": "cliDev",
+      "source": "../../toolchains/cli-dev"
+    }
+  ]
+}
