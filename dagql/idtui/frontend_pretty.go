@@ -415,6 +415,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 				titleLines[i] = highlightANSI(line, s.fe.searchQuery, style)
 			}
 		}
+		titleLines = s.fe.padUserPrompt(row, titleLines)
 		s.selfLineCount += len(titleLines)
 		ctx.Lines(titleLines...)
 	}
@@ -3393,12 +3394,37 @@ func (fe *frontendPretty) syncSpanTreeState() {
 	// (see Render), so the content below isn't indented under it.
 	body := fe.rowsView.Body
 	newTops := make([]*SpanTreeView, 0, len(body))
+	// Tool calls whose turn opened with a thinking/response nest under that
+	// reply, because their spans are parented beneath it (see
+	// core/llm_display.go's toolAnchorCtx). But when the model answers a round
+	// with tool calls alone -- no commentary -- those calls parent under the LLM
+	// step instead, so they surface as top-level conversation rows: the first
+	// call sits indented under its reply while every subsequent chained call
+	// hugs the margin. Track whether the current turn has surfaced an assistant
+	// reply and give these orphan tool-call rows the same one-level reveal
+	// indent, so a chain of tool calls reads consistently even with a response
+	// between them. A user prompt starts a fresh turn and clears the anchor.
+	revealIndent := treePrefix{step: "  ", cont: "  ", forChildren: "  ", contWidth: 2}
+	indentToolCalls := false
 	for i, tree := range body {
-		st := fe.getOrCreateSpanTree(tree.Span.ID)
+		span := tree.Span
+		isToolCall := span.LLMTool != ""
+		prefix := treePrefix{}
+		if isToolCall && indentToolCalls {
+			prefix = revealIndent
+		}
+		st := fe.getOrCreateSpanTree(span.ID)
 		st.parent = nil
 		st.indexInParent = i
-		fe.syncTreeNode(st, treePrefix{})
+		fe.syncTreeNode(st, prefix)
 		newTops = append(newTops, st)
+
+		switch {
+		case span.LLMRole == telemetry.LLMRoleUser:
+			indentToolCalls = false
+		case span.LLMRole == telemetry.LLMRoleAssistant && !isToolCall:
+			indentToolCalls = true
+		}
 	}
 	fe.topTrees = newTops
 }
@@ -3729,6 +3755,31 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 	return offset
 }
 
+// padUserPrompt wraps a user prompt's rendered lines in a shaded blank line
+// above and below, extending its ANSIBrightBlack block by one row each way so
+// the prompt reads as a padded card set apart from the transcript. Only applies
+// in the live shell view; other rows, the final report, and plain mode are
+// unchanged.
+func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []string {
+	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser {
+		return lines
+	}
+	width := fe.contentWidth
+	if width <= 0 {
+		width = fe.window.Width
+	}
+	if width <= 0 {
+		return lines
+	}
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	shaded := out.String(strings.Repeat(" ", width)).Background(termenv.ANSIBrightBlack).String()
+	padded := make([]string, 0, len(lines)+2)
+	padded = append(padded, shaded)
+	padded = append(padded, lines...)
+	padded = append(padded, shaded)
+	return padded
+}
+
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering,
 // using the tree prefix instead of calling fancyIndent.
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
@@ -3738,6 +3789,15 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 		// trace spans stay attached to their parent/preceding message so an agent
 		// session does not become a double-spaced list of implementation details.
 		if row.Depth == 0 && row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleUser {
+			return []string{""}
+		}
+		// A tool call that opens a turn carries no leading blank of its own (an
+		// assistant reply does), so it would sit flush beneath the user's prompt
+		// above it. Add a separating blank so the prompt's shaded card stays
+		// distinct -- a gap we deliberately don't add between a reply and its
+		// tools.
+		if row.Span.LLMTool != "" && row.PreviousVisual != nil &&
+			row.PreviousVisual.Span.LLMRole == telemetry.LLMRoleUser {
 			return []string{""}
 		}
 		return nil
@@ -5568,8 +5628,12 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 				}
 				fmt.Fprint(out, bar)
 			} else {
+				// Conversation turns read as a transcript, so they skip the pipe and
+				// let the reply flow into the duration directly. Align the duration
+				// with the message body's two-column gutter (renderDuration adds one
+				// leading space of its own).
 				r.fancyIndent(out, row, false, false)
-				fmt.Fprint(out, "  ")
+				fmt.Fprint(out, " ")
 			}
 		} else {
 			empty = true
@@ -5658,29 +5722,57 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 	r.fancyIndent(out, row, false, true)
 
 	if !fe.finalRender && fe.shell != nil {
-		if focused {
+		switch {
+		case row.Span.LLMRole == telemetry.LLMRoleUser:
+			// The user's prompt sits on a shaded block; its leading gutter -- or
+			// the focus cue ("❯ ") that stands in for it -- must be shaded too so
+			// line 0 matches the continuation lines, which carry the gutter inside
+			// their background (styleLLMMessageView). Otherwise the cue punches an
+			// unshaded hole in the block. The block is padded to the full content
+			// width, so its right edge is clipped and stays flush.
+			cue := out.String("  ")
+			if focused {
+				cue = out.String(LLMPrompt + " ").Bold()
+			}
+			fmt.Fprint(out, cue.Background(termenv.ANSIBrightBlack))
+		case focused:
 			fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
-		} else {
+		default:
 			fmt.Fprint(out, "  ")
 		}
 	}
 
 	if row.Span.LLMRole != "" {
 		// Conversation turns are distinguished by subtle content styling rather
-		// than a role label (see renderLLMMessageBlock): the user's message sits
-		// on a shaded background, thinking is dim italic, and the assistant's
-		// reply gets no chrome at all -- just a one-space indent so it reads as
-		// plain prose. Tool calls keep a quiet leading cue since their body is a
-		// call, not a message.
+		// than a role label (see styleLLMMessageView): the user's message sits on
+		// a shaded background, thinking is dim italic, and the assistant's reply
+		// gets no chrome at all -- just plain prose flush to the margin. Tool
+		// calls keep a quiet leading cue since their body is a call, not a
+		// message.
 		switch {
 		case row.Span.LLMTool != "":
 			// Tool calls remain fully interactive; a faint dot marks them without
 			// shouting "tool" on every row.
 			fmt.Fprint(out, out.String("• ").Foreground(termenv.ANSIBrightBlack).Faint())
+		case row.Span.LLMRole == telemetry.LLMRoleAssistant:
+			// The assistant's reply and its thinking both get a blank line ahead so
+			// they read as distinct paragraphs in the transcript, and no leading
+			// chrome at all -- just prose flush to the margin. Thinking's dim italic
+			// look is applied to the content in styleLLMMessageView, whose first
+			// line stays flush to match this.
+			fmt.Fprintln(out)
+			r.fancyIndent(out, row, false, true)
+			if !fe.finalRender && fe.shell != nil {
+				if focused {
+					fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
+				} else {
+					fmt.Fprint(out, "  ")
+				}
+			}
 		default:
-			// A single space of indent, matching pi: the assistant's reply has no
-			// special chrome, just breathing room from the margin.
-			fmt.Fprint(out, " ")
+			// The user's prompt renders flush too: its shaded background (applied
+			// in styleLLMMessageView) is the only cue it needs, so it takes no extra
+			// leading space.
 		}
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, focused)
@@ -6119,9 +6211,14 @@ func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, 
 			}
 			b.WriteString(out.String(padded).Background(termenv.ANSIBrightBlack).String())
 		} else {
-			// Thinking: dim italic foreground, no background.
-			body := strings.TrimPrefix(plain, ansi.Strip(logPrefix))
-			b.WriteString(logPrefix)
+			// Thinking: dim italic foreground, no background. The first line renders
+			// inline on the already-indented title line (redraw omits the gutter on
+			// line 0), so keep it flush -- only continuation lines carry the gutter.
+			body := plain
+			if i > 0 {
+				body = strings.TrimPrefix(plain, ansi.Strip(logPrefix))
+				b.WriteString(logPrefix)
+			}
 			b.WriteString(out.String(body).Foreground(termenv.ANSIBrightBlack).Italic().String())
 		}
 	}
