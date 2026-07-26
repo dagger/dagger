@@ -1190,6 +1190,7 @@ func (mod *Module) validateTypeDef(ctx context.Context, typeDef dagql.ObjectResu
 	return nil
 }
 
+//nolint:gocyclo // one validation pass per field kind; splitting it obscures the checklist
 func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
 	// check whether this is a pre-existing object from core or another module
 	modType, ok, err := mod.lookupValidationModType(ctx, typeDef, state)
