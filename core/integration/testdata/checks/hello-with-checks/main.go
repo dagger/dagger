@@ -47,9 +47,9 @@ func (m *HelloWithChecks) FailingContainer() *dagger.Container {
 	return dag.Container().From(m.BaseImage).WithExec([]string{"sh", "-c", "exit 1"})
 }
 
-// Returns the names of all checks visible from the current environment.
-func (m *HelloWithChecks) CurrentEnvChecks(ctx context.Context) ([]string, error) {
-	checks, err := dag.CurrentEnv().Checks().List(ctx)
+// Returns the names of all checks visible from the current workspace.
+func (m *HelloWithChecks) WorkspaceChecks(ctx context.Context, ws *dagger.Workspace) ([]string, error) {
+	checks, err := ws.Checks().List(ctx)
 	if err != nil {
 		return nil, err
 	}
