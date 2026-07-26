@@ -265,6 +265,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
+     */
+    public function withResetWorkspace(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withResetWorkspace');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
      */
     public function withResponse(

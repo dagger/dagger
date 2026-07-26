@@ -124,6 +124,20 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  Returns the function with a flag indicating it is an agent middleware.
+  """
+  @spec with_agent(t()) :: Dagger.Function.t()
+  def with_agent(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("withAgent")
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
   Returns the function with the provided argument
   """
   @spec with_arg(t(), String.t(), Dagger.TypeDef.t(), [
