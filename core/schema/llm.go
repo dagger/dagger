@@ -180,6 +180,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Render documentation for the tools currently exposed to the model."),
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("The cumulative token usage, summed across every API call in the conversation."),
+		dagql.Func("contextTokens", s.contextTokens).
+			Doc("estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session"),
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 	// The content-block message model is only visible to v1+ module views;
@@ -450,6 +452,14 @@ func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (
 		return nil, err
 	}
 	return llm.TokenUsage(ctx, srv)
+}
+
+func (s *llmSchema) contextTokens(ctx context.Context, llm *core.LLM, _ struct{}) (int, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return llm.ContextTokens(ctx, srv)
 }
 
 func (s *llmSchema) withoutMessageHistory(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {
