@@ -1260,6 +1260,104 @@ func (WorkspaceAPISuite) TestHostWorkspaceOverlayReads(ctx context.Context, t *t
 	})
 }
 
+// TestHostWorkspaceOverlaySearchAndGlob verifies that Workspace.search and
+// Workspace.glob see pending overlay edits on a host-backed workspace: the
+// overlay's view of a touched path wholly replaces the host's (modified files
+// serve overlay content, removed files drop out), while untouched paths keep
+// serving host results. Runs through a nested CLI so the client-side host
+// search has ripgrep available.
+func (WorkspaceAPISuite) TestHostWorkspaceOverlaySearchAndGlob(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// A changeset that modifies edited.txt and removes doomed.txt. It is built
+	// from engine-side directories, so its ID replays in the nested session.
+	baseDir := c.Directory().
+		WithNewFile("edited.txt", "needle before edit\n").
+		WithNewFile("doomed.txt", "needle doomed\n")
+	changedDir := c.Directory().WithNewFile("edited.txt", "needle after edit\n")
+	changesID, err := changedDir.Changes(baseDir).ID(ctx)
+	require.NoError(t, err)
+
+	base := workspaceBase(t, c).
+		// The base image only has BusyBox grep; install ripgrep so the
+		// client-side search runs its primary code path.
+		WithExec([]string{"apk", "add", "ripgrep"}).
+		WithNewFile("untouched.txt", "needle in host\n").
+		WithNewFile("edited.txt", "needle before edit\n").
+		WithNewFile("doomed.txt", "needle doomed\n").
+		WithNewFile("docs/notes.md", "needle in docs\n")
+
+	// All reads go through the same overlay: the changeset applied, plus files
+	// created directly (one at the root, one in a subdirectory).
+	overlayQuery := func(t *testctx.T, body string) map[string]any {
+		t.Helper()
+		out, err := base.With(daggerQuery(fmt.Sprintf(`{
+			currentWorkspace {
+				withChanges(changes: %q) {
+					withNewFile(path: "created.txt", contents: "needle created\n") {
+						withNewFile(path: "docs/new.md", contents: "needle new doc\n") {
+							%s
+						}
+					}
+				}
+			}
+		}`, changesID, body))).Stdout(ctx)
+		require.NoError(t, err)
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal([]byte(out), &payload))
+		result := payload
+		for _, key := range []string{"currentWorkspace", "withChanges", "withNewFile", "withNewFile"} {
+			result = result[key].(map[string]any)
+		}
+		return result
+	}
+
+	searchHits := func(got map[string]any) map[string]string {
+		hits := map[string]string{}
+		for _, raw := range got["search"].([]any) {
+			hit := raw.(map[string]any)
+			hits[hit["filePath"].(string)] += hit["matchedLines"].(string)
+		}
+		return hits
+	}
+
+	t.Run("search merges host and overlay per file", func(ctx context.Context, t *testctx.T) {
+		got := overlayQuery(t, `search(pattern: "needle", literal: true) { filePath matchedLines }`)
+		hits := searchHits(got)
+
+		require.Contains(t, hits, "untouched.txt", "untouched host files must keep matching")
+		require.Contains(t, hits, "docs/notes.md")
+		require.Contains(t, hits, "created.txt", "overlay-created files must match")
+		require.Contains(t, hits, "docs/new.md")
+		require.Contains(t, hits["edited.txt"], "needle after edit", "modified files must serve overlay content")
+		require.NotContains(t, hits["edited.txt"], "before", "stale host content must not resurface")
+		require.NotContains(t, hits, "doomed.txt", "removed files must not resurface from the host")
+	})
+
+	t.Run("search paths scope applies to both sides", func(ctx context.Context, t *testctx.T) {
+		got := overlayQuery(t, `search(pattern: "needle", literal: true, paths: ["docs"]) { filePath matchedLines }`)
+		hits := searchHits(got)
+
+		require.Contains(t, hits, "docs/notes.md")
+		require.Contains(t, hits, "docs/new.md")
+		require.NotContains(t, hits, "untouched.txt")
+		require.NotContains(t, hits, "created.txt")
+	})
+
+	t.Run("glob merges host and overlay per path", func(ctx context.Context, t *testctx.T) {
+		got := overlayQuery(t, `txt: glob(pattern: "*.txt") md: glob(pattern: "docs/*.md")`)
+		require.ElementsMatch(t,
+			[]any{"created.txt", "edited.txt", "untouched.txt"},
+			got["txt"],
+			"glob must add overlay files, keep host files, and drop removed ones",
+		)
+		require.ElementsMatch(t,
+			[]any{"docs/notes.md", "docs/new.md"},
+			got["md"],
+		)
+	})
+}
+
 // TestWorkspaceConfigBuildersAfterUnrelatedEdit verifies that config builders
 // still read the host's dagger.toml through an overlay whose edits don't touch
 // it (host overlays store no full read root, so config reads dispatch on the
