@@ -23,6 +23,14 @@ const (
 	// (string)
 	LLMCallDigestAttr = "dagger.io/llm.call.digest"
 
+	// LLMToolResultTokensAttr is set on a tool-call telemetry span with an
+	// estimated token count for the result the tool fed back into the model's
+	// context. It lets the TUI flag tool calls whose (often huge) output is
+	// the biggest driver of context growth, so an inordinate one is easy to
+	// spot in a conversation. The count is an estimate (chars/4), not a
+	// provider-reported figure. (int64)
+	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens"
+
 	// Streaming progress over OTel logs.
 	//
 	// A log record carrying ProgressItemAttr is progress data, not log text:
