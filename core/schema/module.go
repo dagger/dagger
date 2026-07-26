@@ -264,6 +264,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Type:       nodeInterfaceType{},
 			Args:       dagql.NewInputSpecs(),
 			DoNotCache: "Depends on the ambient module function call context.",
+			ViewFilter: AfterVersion("v1.0.0-0"),
 		},
 		func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
 			query, err := core.CurrentQuery(ctx)
