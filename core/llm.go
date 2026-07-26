@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"slices"
@@ -1434,14 +1435,15 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		return inst, err
 	}
 
-	// Compute the LLM call digest for prompt/response span metadata. inst.ID()
-	// is the LLM state entering step() (typically ends in withPrompt). Its
-	// digest lets the TUI identify and branch from this point. Handle-form IDs
-	// (post-evaluation cache handles) have no recipe digest, so skip the branch
-	// attribute for them rather than panicking in Digest().
+	// Compute the LLM call digest for prompt/response span metadata. inst is the
+	// LLM state entering step() (typically the result of withPrompt). Its recipe
+	// digest matches the dagql call span's digest (dagger.io/dag.digest), so the
+	// TUI can locate that call and branch from this point. Note that inst.ID()
+	// returns a post-evaluation runtime handle with no recipe digest, so derive
+	// the recipe digest directly instead.
 	var llmCallDigest string
-	if id, idErr := inst.ID(); idErr == nil && !id.IsHandle() {
-		llmCallDigest = id.Digest().String()
+	if dig, digErr := inst.RecipeDigest(ctx); digErr == nil {
+		llmCallDigest = dig.String()
 	}
 
 	emitNewMessageSpans(ctx, messagesToSend, llmCallDigest)
@@ -1765,8 +1767,8 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 		return self, false, err
 	}
 	var selfDigest string
-	if id, idErr := self.ID(); idErr == nil && !id.IsHandle() {
-		selfDigest = id.Digest().String()
+	if dig, digErr := self.RecipeDigest(ctx); digErr == nil {
+		selfDigest = dig.String()
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
@@ -1931,25 +1933,45 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 					attribute.Bool("llm.thinking", true),
 				)
 			case LLMContentToolCall:
 				block := g.blocks[0]
 				name = block.ToolName
 				contentType = "application/json"
+				var toolArgNames []string
+				var toolArgValues []string
+				var args map[string]any
+				if len(block.Arguments) > 0 {
+					if err := json.Unmarshal(block.Arguments.Bytes(), &args); err == nil {
+						for _, name := range slices.Sorted(maps.Keys(args)) {
+							val, ok := args[name]
+							if !ok {
+								continue
+							}
+							if str, ok := val.(string); ok {
+								toolArgNames = append(toolArgNames, name)
+								toolArgValues = append(toolArgValues, str)
+							}
+						}
+					}
+				}
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 					attribute.String(telemetry.LLMToolAttr, block.ToolName),
+					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
+					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
 			default:
 				name = "LLM response"
 				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				)
 			}
 			attrs := []attribute.KeyValue{
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			}
 			attrs = append(attrs, extraAttrs...)
