@@ -35,11 +35,14 @@ type persistResultSnapshot struct {
 	isObject              bool
 	hasValue              bool
 	sessionResourceHandle SessionResourceHandle
-	persistedEnvelope     *PersistedResultEnvelope
-	snapshotOwnerLinks    []PersistedSnapshotRefLink
-	row                   persistdb.MirrorResult
-	resultDeps            []persistdb.MirrorResultDep
-	resultSnapshotLinks   []persistdb.MirrorResultSnapshotLink
+	// embeddedSessionResources mirrors sharedResult.embeddedSessionResources
+	// for the persistence snapshot.
+	embeddedSessionResources []SessionResourceHandle
+	persistedEnvelope        *PersistedResultEnvelope
+	snapshotOwnerLinks       []PersistedSnapshotRefLink
+	row                      persistdb.MirrorResult
+	resultDeps               []persistdb.MirrorResultDep
+	resultSnapshotLinks      []persistdb.MirrorResultSnapshotLink
 }
 
 type persistStateSnapshot struct {

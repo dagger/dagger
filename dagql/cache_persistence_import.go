@@ -162,15 +162,16 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 
 			res := &sharedResult{
-				id:                    resultID,
-				isObject:              env.Kind == persistedResultKindObject,
-				sessionResourceHandle: env.SessionResourceHandle,
-				expiresAtUnix:         row.ExpiresAtUnix,
-				createdAtUnixNano:     row.CreatedAtUnixNano,
-				lastUsedAtUnixNano:    row.LastUsedAtUnixNano,
-				description:           row.Description,
-				recordType:            row.RecordType,
-				persistedEnvelope:     &env,
+				id:                       resultID,
+				isObject:                 env.Kind == persistedResultKindObject,
+				sessionResourceHandle:    env.SessionResourceHandle,
+				embeddedSessionResources: embeddedSessionResourcesSet(env.EmbeddedSessionResources),
+				expiresAtUnix:            row.ExpiresAtUnix,
+				createdAtUnixNano:        row.CreatedAtUnixNano,
+				lastUsedAtUnixNano:       row.LastUsedAtUnixNano,
+				description:              row.Description,
+				recordType:               row.RecordType,
+				persistedEnvelope:        &env,
 			}
 			res.storeResultCall(frame)
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
