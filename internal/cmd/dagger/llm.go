@@ -20,7 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
-	// "github.com/dagger/dagger/core/openrouter"
+	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
@@ -64,11 +64,10 @@ type LLMSession struct {
 	frontend idtui.Frontend
 
 	// undo       *LLMSession
-	dag    *dagger.Client
-	llm    *dagger.LLM
-	models openrouter.Models
-	model  string
-	shell  *shellCallHandler
+	dag   *dagger.Client
+	llm   *dagger.LLM
+	model string
+	shell *shellCallHandler
 
 	// onStep, if set, is invoked after every step of a prompt turn. It is used
 	// to auto-save the session so it is preserved even if the process is
@@ -122,39 +121,27 @@ func NewLLMSession(
 		s.plumbingSpan.End()
 	}()
 
-	// TODO: cache this
-	models, err := openrouter.FetchModels(ctx)
-	if err != nil {
-		return nil, err
-	}
-	s.models = models
-
 	// Register a pricing function so the frontend can cost the live metric
 	// rollup (all models + sub-agents) at render time, keeping the status line
-	// current between turns instead of the per-step snapshot.
+	// current between turns instead of the per-step snapshot. Pricing comes
+	// from the embedded catwalk catalog (modelcatalog), the single source of
+	// truth shared with the engine.
 	if sink, ok := frontend.(interface {
 		SetLLMCostFunc(idtui.LLMCostFunc)
 	}); ok {
-		costModels := models
-		sink.SetLLMCostFunc(func(model string, input, output, cacheReads, cacheWrites int64) float64 {
-			m := costModels.Lookup(model)
-			if m == nil {
-				return 0
-			}
-			return m.Pricing.Prompt.Cost(int(input)) +
-				m.Pricing.Completion.Cost(int(output)) +
-				m.Pricing.InputCacheRead.Cost(int(cacheReads)) +
-				m.Pricing.InputCacheWrite.Cost(int(cacheWrites))
+		sink.SetLLMCostFunc(func(provider, model string, input, output, cacheReads, cacheWrites int64) float64 {
+			return modelcatalog.Cost(provider, model, input, output, cacheReads, cacheWrites)
 		})
 	}
 
 	s.reset()
 
 	// Grab the model to check for a valid config
-	s.model, err = s.llm.Model(ctx)
+	model, err := s.llm.Model(ctx)
 	if err != nil {
 		return nil, err
 	}
+	s.model = model
 
 	return s, nil
 }
@@ -169,6 +156,14 @@ func (s *LLMSession) ToggleAutocompact() {
 	s.autoCompactL.Lock()
 	s.autoCompact = !s.autoCompact
 	s.autoCompactL.Unlock()
+	// Refresh the status line so its "(auto)" tag reflects the new state.
+	// Done after releasing autoCompactL, since updateStatusLine reads it back
+	// via ShouldAutocompact.
+	if s.llm != nil {
+		if err := s.updateStatusLine(s.llm); err != nil {
+			slog.Error("failed to update status line after toggling auto-compact", "error", err)
+		}
+	}
 }
 
 func (s *LLMSession) reset() {
@@ -225,10 +220,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		}
 
 		if err := s.updateLLM(prompted); err != nil {
-			return s, err
-		}
-
-		if err := s.updateStatusLine(prompted); err != nil {
 			return s, err
 		}
 
@@ -293,7 +284,13 @@ func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
 		return err
 	}
 	s.model = model
-	return nil
+
+	// Refresh the status line (and changes preview) so its token/cost/context
+	// stats stay in sync with the LLM. Routing this through updateLLM means
+	// every operation that swaps the session's LLM -- prompt turns, .clear,
+	// .compact, .model, branching, resuming -- keeps the status line current
+	// without each call site having to remember to refresh it.
+	return s.updateStatusLine(s.llm)
 }
 
 // subscriptionLabel returns a display label for the OAuth subscription type of
@@ -383,11 +380,13 @@ func fmtTokenGrowth(n int) string {
 	}
 }
 
-// updateStatusLine refreshes the compact status line. Token rollups and cost
-// are computed by the frontend from live metrics (all models + sub-agents) at
-// render time, so they stay current between turns; here we supply only the
-// model, subscription label, auto-compact state, and the current context
-// occupancy (top-level conversation) for the context %.
+// updateStatusLine refreshes the compact status line. During a live turn the
+// frontend recomputes the token rollup and cost from live metrics (all models +
+// sub-agents) at render time, so they stay current between turns; here we supply
+// the model, subscription label, auto-compact state, context occupancy, and a
+// token/cost snapshot read from the LLM object itself. That snapshot is the
+// fallback the frontend renders before any metrics arrive — most visibly on
+// load/resume, where the conversation has usage but no live metrics yet.
 func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 	contextTokens, err := llm.ContextTokens(s.plumbingCtx)
 	if err != nil {
@@ -400,10 +399,35 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 		ContextPercent:    -1, // unknown by default
 		AutoCompact:       s.ShouldAutocompact(),
 	}
-	if m := s.models.Lookup(s.model); m != nil {
-		statusData.ContextWindow = int(m.ContextLength)
-		if contextTokens > 0 && m.ContextLength > 0 {
-			statusData.ContextPercent = float64(contextTokens) / float64(m.ContextLength) * 100
+
+	// Seed the cumulative token rollup and cost straight from the LLM object so
+	// the status line is populated immediately on load/resume, before any new
+	// metrics arrive. During a live turn the frontend overrides these with the
+	// live metric rollup (all models + sub-agents); this is the fallback that
+	// keeps a resumed conversation from rendering an empty bar. Best-effort:
+	// stats aren't worth failing a turn over.
+	usage := llm.TokenUsage()
+	statusData.InputTokens, _ = usage.InputTokens(s.plumbingCtx)
+	statusData.OutputTokens, _ = usage.OutputTokens(s.plumbingCtx)
+	statusData.CacheReads, _ = usage.CachedTokenReads(s.plumbingCtx)
+	statusData.CacheWrites, _ = usage.CachedTokenWrites(s.plumbingCtx)
+	if provider, err := llm.Provider(s.plumbingCtx); err == nil {
+		statusData.TotalCost = modelcatalog.Cost(provider, s.model,
+			int64(statusData.InputTokens), int64(statusData.OutputTokens),
+			int64(statusData.CacheReads), int64(statusData.CacheWrites))
+	}
+
+	// The engine is the source of truth for the context window (backed by the
+	// shared catwalk catalog); it reports 0 for uncatalogued/local models or an
+	// older engine without the field.
+	contextWindow, err := llm.ContextWindow(s.plumbingCtx)
+	if err != nil {
+		contextWindow = 0
+	}
+	if contextWindow > 0 {
+		statusData.ContextWindow = contextWindow
+		if contextTokens > 0 {
+			statusData.ContextPercent = float64(contextTokens) / float64(contextWindow) * 100
 		}
 	}
 	s.frontend.SetStatusLine(statusData)
@@ -512,16 +536,16 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr 
 		return nil, err
 	}
 
-	// Check if we know the model's context length
-	m := s.models.Lookup(s.model)
-	if m == nil || m.ContextLength <= 0 {
-		// Can't determine context length, skip auto-compact
+	// The engine reports the model's context window (shared catwalk catalog);
+	// 0 means uncatalogued/local, so we can't determine a threshold — skip.
+	contextWindow, err := s.llm.ContextWindow(s.plumbingCtx)
+	if err != nil || contextWindow <= 0 {
 		return s.llm, nil
 	}
 
-	threshold := int(m.ContextLength) - autoCompactReserveTokens
+	threshold := contextWindow - autoCompactReserveTokens
 	if threshold <= 0 {
-		threshold = int(float64(m.ContextLength) * 0.80)
+		threshold = int(float64(contextWindow) * 0.80)
 	}
 
 	if contextTokens > threshold {
@@ -820,10 +844,8 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 		loadedLLM = loadedLLM.WithSystemPrompt(cue)
 	}
 
-	if err := s.updateLLM(loadedLLM); err != nil {
-		return err
-	}
-	return s.updateStatusLine(loadedLLM)
+	// updateLLM refreshes the status line from the restored conversation's stats.
+	return s.updateLLM(loadedLLM)
 }
 
 // conflictMarkerCue reports whether restoring the session left conflict
