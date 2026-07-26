@@ -5,8 +5,9 @@
 # A Dagger-native agent (the `editor` @agent) has no Bash tool, and the mounted
 # Workspace is a plain snapshot with NO .git (see toolchains/ci/bootstrap.dang),
 # so `git diff` isn't an option. Instead we use the Dagger-native Changeset:
-# `Workspace.changes` is the workspace's pending overlay, and its `.diffStats`
-# and `.asPatch` render a per-file summary and a Git-compatible unified patch.
+# `Workspace.git.uncommitted` is the repo's modified state, and its
+# `.diffStats` and `.asPatch` render a per-file summary and a Git-compatible
+# unified patch.
 #
 # Modeled on ./modules/tui-qa (the @agent-tools shape), but stateless: every
 # tool takes the Workspace — auto-filled by the agent from its bound workspace
@@ -32,7 +33,7 @@ type Review {
   you need the actual hunks.
   """
   status(source: Workspace!): String! {
-    let stats = source.changes.diffStats.{{kind, addedLines, removedLines, path}}
+    let stats = source.git.uncommitted.diffStats.{{kind, addedLines, removedLines, path}}
     if (stats.isEmpty) {
       return "No pending changes."
     }
@@ -61,7 +62,7 @@ type Review {
   work, or to confirm an edit landed as intended).
   """
   diff(source: Workspace!): String! {
-    let changes = source.changes
+    let changes = source.git.uncommitted
     if (changes.isEmpty) {
       return "No pending changes."
     }
