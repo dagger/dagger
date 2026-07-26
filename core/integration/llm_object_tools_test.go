@@ -67,17 +67,36 @@ func (LLMSuite) TestObjectToolset(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// TestParallelChangesetToolsMergeResults locks in that Changeset-returning tools
+// from one model response run as a batch and all of their changes are retained.
+func (LLMSuite) TestParallelChangesetToolsMergeResults(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("make both changes").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "addFirst"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "addSecond"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	out, err := base.With(daggerShell(fmt.Sprintf(
+		`llm --model="%s" | with-tools $(swapper) | with-prompt "make both changes" | loop | workspace | directory "/" | entries`,
+		model,
+	))).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "FIRST.txt")
+	require.Contains(t, out, "SECOND.txt")
+}
+
 // TestToolReturningWorkspaceRebinds locks in that a tool returning a Workspace
 // *replaces* the LLM's current workspace — the sibling of the Changeset overlay
-// convention (routeObjectMethodResult -> applyStateReturn). The swapper module's
-// `swap` tool returns the current workspace with a marker file added; after the
-// model turn that calls it, the LLM's workspace must be that returned one.
-//
-// The replay recording scripts one full turn: prompt -> assistant tool call ->
-// tool result -> a final assistant reply with no tool calls, so `loop`
-// terminates cleanly. The replayer only diffs a message's TEXT blocks, so the
-// tool-result placeholder needs no matching summary text. This is deterministic
-// and needs no live provider.
+// convention (routeObjectMethodResult -> applyStateReturn).
 func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-tool-return")

@@ -10,4 +10,14 @@ type Swapper {
   swap(ws: Workspace!): Workspace! {
     ws.withNewFile("SWAPPED.txt", "swapped by tool")
   }
+
+  addFirst(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("FIRST.txt", "first parallel change").changes(root)
+  }
+
+  addSecond(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("SECOND.txt", "second parallel change").changes(root)
+  }
 }

@@ -275,8 +275,15 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	// so the answer isn't truncated. An explicit maxTokens cap is respected
 	// as-is.
 	var outputConfig anthropic.OutputConfigParam
+	var thinkingConfig anthropic.ThinkingConfigParamUnion
 	if reasoningEnabled {
 		outputConfig.Effort = anthropic.OutputConfigEffort(c.endpoint.ReasoningEffort)
+		// Adaptive thinking pairs with effort-based reasoning; request
+		// summarized display so thinking summaries stream back as visible
+		// thinking blocks rather than being omitted.
+		thinkingConfig.OfAdaptive = &anthropic.ThinkingConfigAdaptiveParam{
+			Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+		}
 		if !userSetMaxTokens && maxTokens < 16384 {
 			maxTokens = 16384
 		}
@@ -293,6 +300,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		Tools:        toolsConfig,
 		System:       systemPrompts,
 		OutputConfig: outputConfig,
+		Thinking:     thinkingConfig,
 	}
 
 	// Start a streaming request.
