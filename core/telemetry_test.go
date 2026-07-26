@@ -48,11 +48,7 @@ type mockServer struct {
 	attachables    map[string]*grpc.ClientConn
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
-}
-
-func (ms *mockServer) CurrentWorkspaceContext(context.Context) (dagql.ObjectResult[*Workspace], error) {
-	return dagql.ObjectResult[*Workspace]{}, nil
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
