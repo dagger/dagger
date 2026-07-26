@@ -6,7 +6,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/iancoleman/strcase"
 )
 
 type llmSchema struct {
@@ -50,10 +49,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Clear the user-added system prompts, keeping only the default system prompt."),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("The text of the model's most recent reply."),
-		dagql.Func("withEnv", s.withEnv).
-			Doc("allow the LLM to interact with an environment via MCP"),
-		dagql.Func("env", s.env).
-			Doc("return the LLM's current environment"),
 		dagql.Func("withWorkspace", s.withWorkspace).
 			Doc("Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.").
 			Args(
@@ -61,8 +56,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("workspace", s.workspace).
 			Doc("Return the workspace the LLM is bound to."),
-		dagql.Func("withStaticTools", s.withStaticTools).
-			Doc("Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration"),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
 			Args(
@@ -113,22 +106,15 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("content").Doc("The content returned by the tool"),
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 			),
-		dagql.Func("withObject", s.withObject).
+		dagql.Func("withTools", s.withTools).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Track an object so the LLM can reference it in subsequent tool calls.").
+			Doc("Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.").
 			Args(
-				dagql.Arg("tag").Doc("Arbitrary string tag for the object, typically in TypeName#Number format"),
-				dagql.Arg("object").Doc("The object to track, as a generic ID"),
-				dagql.Arg("description").Doc("An optional description of the object, surfaced to the model when it lists tracked objects"),
+				dagql.Arg("object").Doc("The object whose methods become tools."),
+				dagql.Arg("except").Doc("Method names to exclude from the toolset (e.g. constructors, entrypoints)."),
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
-		dagql.Func("withBlockedFunction", s.withBlockedFunction).
-			Doc("Return a new LLM with the specified function no longer exposed as a tool").
-			Args(
-				dagql.Arg("typeName").Doc("The type name whose function will be blocked"),
-				dagql.Arg("function").Doc("The function to block", "Will be converted to lowerCamelCase if necessary."),
-			),
 		dagql.Func("withMCPServer", s.withMCPServer).
 			Doc("Add an external MCP server to the LLM").
 			Args(
@@ -202,28 +188,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
-}
-
-func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
-	Env core.EnvID
-}) (*core.LLM, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	env, err := args.Env.Load(ctx, srv)
-	if err != nil {
-		return nil, err
-	}
-	return llm.WithEnv(env), nil
-}
-
-func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.WithStaticTools(), nil
-}
-
-func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
-	return llm.Env(), nil
 }
 
 func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struct {
@@ -333,28 +297,27 @@ func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args stru
 	return llm.WithToolResult(args.CallID, args.Content, args.Errored), nil
 }
 
-func (s *llmSchema) withObject(ctx context.Context, llm *core.LLM, args struct {
-	Tag         string
-	Object      dagql.AnyID
-	Description string `default:""`
+func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
+	Object dagql.AnyID
+	Except []string `default:"[]"`
 }) (*core.LLM, error) {
-	return llm.WithObject(args.Tag, args.Object, args.Description), nil
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := args.Object.ID()
+	if err != nil {
+		return nil, err
+	}
+	obj, err := srv.Load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithTools(obj, args.Except), nil
 }
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.WithoutDefaultSystemPrompt(), nil
-}
-
-func (s *llmSchema) withBlockedFunction(ctx context.Context, llm *core.LLM, args struct {
-	TypeName string
-	Function string
-}) (*core.LLM, error) {
-	return llm.WithBlockedFunction(ctx,
-		args.TypeName,
-		// We're stringly typed, which sucks, but we can at least allow people to
-		// refer to names in their locale (e.g. snake_case in Python.)
-		strcase.ToLowerCamel(args.Function),
-	)
 }
 
 func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struct {
