@@ -8693,6 +8693,18 @@ pub struct GitRefAsWorkspaceOpts<'a> {
     pub cwd: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRefLogOpts<'a> {
+    /// Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+    #[builder(setter(into, strip_option), default)]
+    pub base: Option<Id>,
+    /// Maximum number of commits to return.
+    #[builder(setter(into, strip_option), default)]
+    pub limit: Option<isize>,
+    /// Only include commits touching these paths, relative to the root of the repository.
+    #[builder(setter(into, strip_option), default)]
+    pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
     /// The depth of the tree to fetch.
     #[builder(setter(into, strip_option), default)]
@@ -8791,6 +8803,60 @@ impl GitRef {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn log(&self) -> Result<Vec<GitCommit>, DaggerError> {
+        let query = self.selection.select("log");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| GitCommit {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("GitCommit"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn log_opts<'a>(
+        &self,
+        opts: GitRefLogOpts<'a>,
+    ) -> Result<Vec<GitCommit>, DaggerError> {
+        let mut query = self.selection.select("log");
+        if let Some(limit) = opts.limit {
+            query = query.arg("limit", limit);
+        }
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(base) = opts.base {
+            query = query.arg("base", base);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| GitCommit {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("GitCommit"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// The resolved name of this ref.
     pub async fn name(&self) -> Result<String, DaggerError> {

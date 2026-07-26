@@ -3238,6 +3238,24 @@ type GitRef implements Node {
   """A unique identifier for this GitRef."""
   id: ID!
 
+  """
+  Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+  """
+  log(
+    """Maximum number of commits to return."""
+    limit: Int = 10
+
+    """
+    Only include commits touching these paths, relative to the root of the repository.
+    """
+    paths: [String!]
+
+    """
+    Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+    """
+    base: ID @expectedType(name: "GitRef")
+  ): [GitCommit!]!
+
   """The resolved name of this ref."""
   name: String!
 
