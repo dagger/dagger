@@ -63,6 +63,24 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+     */
+    public function log(?int $limit = 10, ?array $paths = null, ?GitRef $base = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('log');
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $base) {
+        $leafQueryBuilder->setArgument('base', $base);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'log');
+    }
+
+    /**
      * The resolved name of this ref.
      */
     public function name(): string

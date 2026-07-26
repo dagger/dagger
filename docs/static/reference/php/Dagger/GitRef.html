@@ -193,6 +193,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_log">log</a>(int|null $limit = 10, array|null $paths = null, <abbr title="Dagger\Dagger\GitRef">GitRef</abbr>|null $base = null)
+        
+                                            <p><p>Commits reachable from this ref, newest first, starting with the commit this ref resolves to.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     string
                 </div>
                 <div class="col-md-8">
@@ -507,8 +517,60 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_name">
+                    <h3 id="method_log">
         <div class="location">at line 68</div>
+        <code>                    array
+    <strong>log</strong>(int|null $limit = 10, array|null $paths = null, <abbr title="Dagger\Dagger\GitRef">GitRef</abbr>|null $base = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Commits reachable from this ref, newest first, starting with the commit this ref resolves to.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>int|null</td>
+                <td>$limit</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$paths</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\GitRef">GitRef</abbr>|null</td>
+                <td>$base</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_name">
+        <div class="location">at line 86</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -540,7 +602,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_ref">
-        <div class="location">at line 77</div>
+        <div class="location">at line 95</div>
         <code>                    string
     <strong>ref</strong>()
         </code>
@@ -572,7 +634,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_targetCommit">
-        <div class="location">at line 86</div>
+        <div class="location">at line 104</div>
         <code>                    <a href="../Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a>
     <strong>targetCommit</strong>()
         </code>
@@ -604,7 +666,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tree">
-        <div class="location">at line 95</div>
+        <div class="location">at line 113</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>tree</strong>(bool|null $discardGitDir = false, int|null $depth = 1, bool|null $includeTags = false)
         </code>

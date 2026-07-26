@@ -8545,6 +8545,35 @@ class GitRef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    async def log(
+        self,
+        *,
+        limit: int | None = 10,
+        paths: list[str] | None = None,
+        base: "GitRef | None" = None,
+    ) -> list[GitCommit]:
+        """Commits reachable from this ref, newest first, starting with the
+        commit this ref resolves to.
+
+        Parameters
+        ----------
+        limit:
+            Maximum number of commits to return.
+        paths:
+            Only include commits touching these paths, relative to the root of
+            the repository.
+        base:
+            Exclude commits reachable from this ref, i.e. only list commits
+            added on top of it.
+        """
+        _args = [
+            Arg("limit", limit, 10),
+            Arg("paths", paths, None),
+            Arg("base", base, None),
+        ]
+        _ctx = self._select("log", _args)
+        return await _ctx.execute_object_list(GitCommit)
+
     async def name(self) -> str:
         """The resolved name of this ref.
 

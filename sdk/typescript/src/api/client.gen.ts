@@ -1799,6 +1799,23 @@ export type GitRefAsWorkspaceOpts = {
   cwd?: string
 }
 
+export type GitRefLogOpts = {
+  /**
+   * Maximum number of commits to return.
+   */
+  limit?: number
+
+  /**
+   * Only include commits touching these paths, relative to the root of the repository.
+   */
+  paths?: string[]
+
+  /**
+   * Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+   */
+  base?: GitRef
+}
+
 export type GitRefTreeOpts = {
   /**
    * Set to true to discard .git directory.
@@ -9482,6 +9499,26 @@ export class GitRef extends BaseClient {
   commonAncestor = (other: GitRef): GitRef => {
     const ctx = this._ctx.select("commonAncestor", { other })
     return new GitRef(ctx)
+  }
+
+  /**
+   * Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+   * @param opts.limit Maximum number of commits to return.
+   * @param opts.paths Only include commits touching these paths, relative to the root of the repository.
+   * @param opts.base Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+   */
+  log = async (opts?: GitRefLogOpts): Promise<GitCommit[]> => {
+    type log = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("log", { ...opts }).select("id")
+
+    const response: Awaited<log[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new GitCommit(ctx.copy().selectNode(r.id, "GitCommit")),
+    )
   }
 
   /**
