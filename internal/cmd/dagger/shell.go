@@ -12,7 +12,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
@@ -197,11 +196,11 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 			}
 		}
 
-		if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+		if err := s.updateLLM(loadedLLM); err != nil {
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
 		}
-		if err := s.updateSidebar(loadedLLM); err != nil {
+		if err := s.updateStatusLine(loadedLLM); err != nil {
 			slog.Error("failed to update sidebar for branch", "error", err)
 		}
 		// Branching creates a new session; clear the save identity so the next
@@ -415,10 +414,11 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	defer cancel()
 	h.cancel = cancel
 
-	// give ourselves a blank slate by zooming into a passthrough span
-	ctx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
-	defer shellSpan.End()
-	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
+	// The REPL's spans (and any LLM conversation) parent directly under the run's
+	// root span and surface at the top level on their own: an LLM conversation via
+	// promoteConversationLocked (the message analog of promoteChecksLocked). There
+	// used to be a passthrough `shell` span here that we manually zoomed into for a
+	// blank slate; that's obsolete now, so it's gone.
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
 	// Start the shell loop (either in LLM mode or normal shell mode)
@@ -665,11 +665,6 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 			idtui.KeyEnabled(h.mode == modeShell),
 		),
 		key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("ctrl+u", "upload changes"),
-			idtui.KeyEnabled(h.mode == modePrompt),
-		),
-		key.NewBinding(
 			key.WithKeys("ctrl+x"),
 			key.WithHelp("ctrl+x", autoCompactHelp),
 			idtui.KeyEnabled(h.llmSession != nil),
@@ -700,23 +695,11 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 	case key.MatchString("ctrl+s"):
 		if h.llmSession != nil {
 			return func() {
-				if err := h.llmSession.SyncToLocal(ctx); err != nil {
-					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
+				if err := h.llmSession.ExportChanges(ctx); err != nil {
+					slog.Error("failed to export changes to local filesystem", "error", err.Error())
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
-					})
-				}
-			}
-		}
-	case key.MatchString("ctrl+u"):
-		if h.llmSession != nil {
-			return func() {
-				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
-					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
-					Frontend.SetSidebarContent(idtui.SidebarSection{
-						Title:   "Changes",
-						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
 			}
