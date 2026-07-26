@@ -153,6 +153,7 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			attribute.String(telemetry.LLMToolAttr, toolName),
+			// attribute.String(telemetry.LLMToolServerAttr, dp.???),
 			attribute.Bool(telemetry.UIBoundaryAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
