@@ -378,6 +378,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("(Internal-only) The git repository backing this workspace git state."),
 		dagql.NodeFunc("head", s.workspaceGitHead).
 			Doc("The checked-out HEAD of this workspace."),
+		dagql.NodeFunc("ref", s.workspaceGitRef).
+			Doc("Returns details of a ref in this workspace's repository.").
+			Args(
+				dagql.Arg("name").Doc(`Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`),
+			),
+		dagql.NodeFunc("commit", s.workspaceGitCommit).
+			Doc("Returns details of a commit in this workspace's repository.").
+			Args(
+				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
+			),
 		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
 			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
 	}.Install(srv)
@@ -2561,6 +2571,78 @@ func (s *workspaceSchema) workspaceGitHead(
 		return inst, err
 	}
 	return inst, nil
+}
+
+type workspaceGitRefArgs struct {
+	Name string
+}
+
+func (s *workspaceSchema) workspaceGitRef(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	args workspaceGitRefArgs,
+) (dagql.Result[*core.GitRef], error) {
+	var inst dagql.Result[*core.GitRef]
+	repo, err := s.workspaceGitLookupRepository(ctx, parent)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, repo, &inst, dagql.Selector{
+		Field: "ref",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(args.Name)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+type workspaceGitCommitArgs struct {
+	ID string
+}
+
+func (s *workspaceSchema) workspaceGitCommit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	args workspaceGitCommitArgs,
+) (dagql.Result[*core.GitCommit], error) {
+	var inst dagql.Result[*core.GitCommit]
+	repo, err := s.workspaceGitLookupRepository(ctx, parent)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, repo, &inst, dagql.Selector{
+		Field: "commit",
+		Args: []dagql.NamedInput{
+			{Name: "id", Value: dagql.NewString(args.ID)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// workspaceGitLookupRepository resolves the repository that ref/commit lookups
+// run against. A synthetic workspace built from a git ref has no local checkout
+// to inspect, so lookups go to that ref's own repository; every other workspace
+// uses the repository backing its checkout.
+func (s *workspaceSchema) workspaceGitLookupRepository(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+) (dagql.ObjectResult[*core.GitRepository], error) {
+	if ref, ok := parent.Self().Workspace.Self().SourceGitRef(); ok {
+		return ref.Self().Repo, nil
+	}
+	return s.selectWorkspaceGitRepository(ctx, parent)
 }
 
 func (s *workspaceSchema) workspaceGitUncommitted(
