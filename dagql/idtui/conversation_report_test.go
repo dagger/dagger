@@ -426,3 +426,83 @@ func TestPromoteConversationUsesPrimarySpan(t *testing.T) {
 		t.Fatalf("top-level rows = %v, want surfaced prompt %v", fe.rowsView.Body, promptID)
 	}
 }
+
+// TestConversationIndentsChainedToolCalls is a regression test for the live
+// agent view. A turn that opens with a thinking/response nests its tool call
+// beneath that reply (its span is parented under it), so the first tool call
+// reads as a detail of the reply that introduced it. But a later round the
+// model answers with tool calls alone -- no commentary -- parents those calls
+// under the LLM step, so they surface as top-level conversation rows: the first
+// call sat indented while every subsequent chained call hugged the margin.
+// syncSpanTreeState now gives those orphan tool-call rows the same one-level
+// indent, so a chain of tool calls reads consistently.
+func TestConversationIndentsChainedToolCalls(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	promptID := prettyTestSpanID(2)
+	replyID := prettyTestSpanID(3)
+	tool1ID := prettyTestSpanID(4) // opened the turn, nests under the reply
+	tool2ID := prettyTestSpanID(5) // orphan: a tool-only round, parents under root
+	tool3ID := prettyTestSpanID(6) // orphan chained after tool2
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger agent", StartTime: start, EndTime: start.Add(10 * time.Second)},
+		{ID: promptID, TraceID: prettyTestTraceID(), Name: "LLM prompt", LLMRole: "user", ParentID: rootID, StartTime: start.Add(1 * time.Second), EndTime: start.Add(2 * time.Second)},
+		{ID: replyID, TraceID: prettyTestTraceID(), Name: "LLM response", LLMRole: "assistant", ParentID: rootID, StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second)},
+		{ID: tool1ID, TraceID: prettyTestTraceID(), Name: "first_tool", LLMRole: "assistant", LLMTool: "first_tool", ParentID: replyID, StartTime: start.Add(4 * time.Second), EndTime: start.Add(5 * time.Second)},
+		{ID: tool2ID, TraceID: prettyTestTraceID(), Name: "second_tool", LLMRole: "assistant", LLMTool: "second_tool", ParentID: rootID, StartTime: start.Add(6 * time.Second), EndTime: start.Add(7 * time.Second)},
+		{ID: tool3ID, TraceID: prettyTestTraceID(), Name: "third_tool", LLMRole: "assistant", LLMTool: "third_tool", ParentID: rootID, StartTime: start.Add(8 * time.Second), EndTime: start.Add(9 * time.Second)},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.ExpandCompleted = true
+	fe.FrontendOpts.GCThreshold = time.Hour
+	// Focus the prompt, not a tool call: the focus cue ("❯ ") replaces the
+	// leading indent on the focused row, which would skew the measurement.
+	fe.autoFocus = false
+	fe.FocusedSpan = promptID
+
+	// The prompt and reply are messages (no tool): their rows only render once
+	// content arrives, so give them some.
+	for _, id := range []dagui.SpanID{promptID, replyID} {
+		v := NewVterm(termenv.Ascii)
+		v.SetWidth(120)
+		_, _ = v.Write([]byte("hello\n"))
+		fe.logs.Logs[id] = v
+	}
+
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.RenderLines()
+	joined := strings.Join(lines, "\n")
+
+	indentOf := func(needle string) (int, bool) {
+		for _, l := range lines {
+			if strings.Contains(l, needle) {
+				return len(l) - len(strings.TrimLeft(l, " ")), true
+			}
+		}
+		return 0, false
+	}
+
+	// Tool names are humanized by renderSpan (first_tool -> FirstTool).
+	first, ok1 := indentOf("FirstTool")
+	second, ok2 := indentOf("SecondTool")
+	third, ok3 := indentOf("ThirdTool")
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("missing tool-call rows (first=%v second=%v third=%v):\n%s", ok1, ok2, ok3, joined)
+	}
+	// The first tool call indents under the reply that introduced it.
+	if first == 0 {
+		t.Fatalf("first tool call should be indented under its reply, got margin:\n%s", joined)
+	}
+	// The chained tool calls line up with it instead of hugging the margin.
+	if second != first || third != first {
+		t.Fatalf("chained tool calls not indented consistently: first=%d second=%d third=%d\n%s",
+			first, second, third, joined)
+	}
+}
