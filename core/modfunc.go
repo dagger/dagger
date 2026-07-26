@@ -890,17 +890,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		fnCall.parentTyped = obj
 	}
 
-	// Carry the caller's bound Workspace into the nested client session that runs
-	// the function body, so a module function calling another module resolves the
-	// caller's Workspace (via the WorkspaceFromContext server-side fallback) rather
-	// than the frozen session workspace. Nil for ordinary, non-bound calls.
-	var workspaceContext dagql.ObjectResult[*Workspace]
-	if ws, ok, err := WorkspaceFromContext(ctx); err != nil {
-		return nil, fmt.Errorf("resolve function workspace context: %w", err)
-	} else if ok {
-		workspaceContext = ws
-	}
-
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -910,7 +899,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	err = runtime.Call(ctx, &execMD, fnCall, fn.mod, workspaceContext)
+	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr
@@ -1264,16 +1253,26 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	}
 
 	// Prefer a Workspace explicitly bound into the context (an LLM bound via
-	// withWorkspace) over the ambient currentWorkspace, so the agent's
+	// withWorkspace, or a generator/check group threading the workspace it was
+	// rolled up from) over the ambient currentWorkspace, so the agent's
 	// Workspace-typed args resolve against its own workspace.
-	if boundWS, ok, err := WorkspaceFromContext(ctx); err != nil {
-		return nil, fmt.Errorf("resolve bound workspace: %w", err)
-	} else if ok {
+	if boundWS, ok := WorkspaceFromContext(ctx); ok {
 		wsID, err := boundWS.ID()
 		if err != nil {
 			return nil, fmt.Errorf("get bound workspace ID: %w", err)
 		}
 		return dagql.NewID[*Workspace](wsID), nil
+	}
+
+	// Otherwise a Workspace is auto-injected only for calls originating outside a
+	// module function (a direct CLI/SDK client, or a schema-walking flow like
+	// `dagger generate`). A running module function must pass a Workspace to its
+	// dependencies explicitly, so a dependency does not silently inherit its
+	// caller's workspace.
+	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
+		return nil, err
+	} else if inModuleFunction {
+		return nil, fmt.Errorf("%w: workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly", ErrNoCurrentWorkspace)
 	}
 
 	var ws dagql.ObjectResult[*Workspace]

@@ -3,7 +3,3 @@ engineVersion = "v0.21.5"
 
 [runtime]
 source = "dang"
-
-[[dependencies]]
-name = "wsdep"
-source = "../wsdep"
