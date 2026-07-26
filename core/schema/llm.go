@@ -110,7 +110,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.").
 			Args(
-				dagql.Arg("object").Doc("The object whose methods become tools."),
+				// @expectedType(Node) lets a statically typed caller (e.g. Dang) pass
+				// any object where this ID! is wanted, since every object implements
+				// the universal Node interface; the value is conveyed as its id.
+				dagql.Arg("object").Doc("The object whose methods become tools.").
+					Directive(dagql.ExpectedTypeDirective("Node")),
 				dagql.Arg("except").Doc("Method names to exclude from the toolset (e.g. constructors, entrypoints)."),
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
