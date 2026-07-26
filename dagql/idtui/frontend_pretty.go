@@ -114,6 +114,7 @@ type frontendPretty struct {
 	promptErrLabel  *ErrorLabel
 	queuedMsgLabel  *QueuedMessageLabel
 	statusLine      *StatusLine
+	llmCostFn       LLMCostFunc
 	textInput       *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
@@ -740,6 +741,36 @@ func (fe *frontendPretty) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
 	return fe.db.LLMTokenMetrics
 }
 
+// SetLLMCostFunc registers the pricing function used to cost the live metric
+// rollup at render time. Called once by the CLI.
+func (fe *frontendPretty) SetLLMCostFunc(fn LLMCostFunc) {
+	fe.dispatch(func() {
+		fe.llmCostFn = fn
+	})
+}
+
+// llmLiveStats rolls up token usage across all models/sub-agents from the live
+// metrics and prices it via the registered cost function. Returns false until a
+// cost function is set and at least one metric has arrived, so the status line
+// falls back to the last per-step data during the first turn.
+func (fe *frontendPretty) llmLiveStats() (StatusLineLive, bool) {
+	if fe.llmCostFn == nil || fe.db.LLMTokenMetrics == nil {
+		return StatusLineLive{}, false
+	}
+	var live StatusLineLive
+	var any bool
+	for _, m := range fe.db.LLMTokenMetrics.Snapshot() {
+		any = true
+		live.InputTokens += int(m.InputTokens)
+		live.OutputTokens += int(m.OutputTokens)
+		live.CacheReads += int(m.CachedTokenReads)
+		live.CacheWrites += int(m.CachedTokenWrites)
+		live.TotalCost += fe.llmCostFn(m.Model,
+			m.InputTokens, m.OutputTokens, m.CachedTokenReads, m.CachedTokenWrites)
+	}
+	return live, any
+}
+
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.dispatch(func() {
 		fe.startShell(ctx, handler)
@@ -777,7 +808,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// output → error → queued → prompt → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
-	fe.statusLine = &StatusLine{profile: fe.profile}
+	fe.statusLine = &StatusLine{profile: fe.profile, liveStats: fe.llmLiveStats}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)

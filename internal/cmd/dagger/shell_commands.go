@@ -245,7 +245,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				return h.llmSession.updateLLMAndAgentVar(compacted)
+				return h.llmSession.updateLLM(compacted)
 			},
 		},
 		{
