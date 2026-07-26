@@ -1242,20 +1242,18 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
-	// A Workspace is auto-injected only for calls originating outside a module
-	// function (a direct CLI/SDK client, or a schema-walking flow like `dagger
-	// generate`). A running module function must pass a Workspace to its
-	// dependencies explicitly, so they don't silently inherit its workspace.
-	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
-		return nil, err
-	} else if inModuleFunction {
-		return nil, fmt.Errorf("%w: workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly", ErrNoCurrentWorkspace)
-	}
-
 	// Prefer a Workspace explicitly bound into the context (an LLM bound via
 	// withWorkspace, or a generator/check group threading the workspace it was
 	// rolled up from) over the ambient currentWorkspace, so the agent's
 	// Workspace-typed args resolve against its own workspace.
+	//
+	// This bound-workspace preference MUST be checked before the
+	// callerInModuleFunction guard below: a generator/check leaf's
+	// auto-injected Workspace! is resolved while running inside the module
+	// runtime, so gating on callerInModuleFunction first would reject the
+	// seeded overlay and leave the leaf reading stale source. The overlay is
+	// still explicit here — the group threaded it via WorkspaceToContext — so
+	// this does not silently inherit a caller's workspace across modules.
 	if boundWS, ok := WorkspaceFromContext(ctx); ok {
 		wsID, err := boundWS.ID()
 		if err != nil {
