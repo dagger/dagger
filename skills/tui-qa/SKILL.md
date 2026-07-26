@@ -209,3 +209,24 @@ Notes: `send-keys -l` is literal (preserves spaces/quotes); without `-l`, args a
 tmux key names (`Enter`, `Escape`, `C-c`). Poll with separate calls rather than a
 long foreground `sleep`. For timing/hang analysis of the same session, record the
 pane with `asciinema` and feed the `.cast` to `tui_qa.py analyze`.
+
+## Reading the screen reliably
+
+General to any interactive TUI captured over tmux, not just dagger:
+
+- **Un-wrap before parsing.** `capture-pane -p` hard-wraps at the pane width,
+  splitting long lines mid-token so `grep`/`awk` see garbage (a panic stack
+  becomes unreadable). Add `-J` to join wrapped lines when you parse
+  programmatically.
+- **Include scrollback.** The screen you care about — a final report, an error,
+  a summary — often scrolls above the visible viewport. `capture-pane -p -S -<N>`
+  prepends N lines of history; without it you only get the last `-y` rows.
+- **Check for crashes explicitly.** A TUI on the alt-screen can die into a stack
+  trace a naive "final.txt" glance misses. Grep the pane (or redirect the process
+  with `2>err.log`) for `panic:`, `fatal error`, `concurrent map`,
+  `goroutine \d+ \[`.
+- **Exit gracefully, not abruptly.** Use the app's own quit path so its teardown,
+  final render, and flushes run. `tmux kill-session` / SIGKILL skips all of that,
+  so you lose the end-of-run output and any deferred cleanup. Learn the real quit
+  (often EOF/`C-d` on an *empty* input line, a quit key, or an `exit` command) and
+  confirm the process actually exited before reading the "final" screen.
