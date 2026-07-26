@@ -1026,6 +1026,20 @@ type InputSpec struct {
 	// clients, but can't be set in new graphql queries.
 	// This argument will not be exposed in the introspection schema.
 	Internal bool
+
+	// StructuralOnly marks an ID-typed argument whose value is not needed to
+	// reconstruct the receiver's state when an ID is loaded from its recipe.
+	// The recipe loader carries such an argument through as an unevaluated
+	// reference instead of eagerly evaluating it (and everything it depends
+	// on). The field's resolver is responsible for loading the referenced
+	// object lazily, only if and when it actually needs the value.
+	//
+	// This exists so that persisted state referencing an object whose
+	// construction has side effects (or has since become impossible to
+	// reproduce) can still be restored: e.g. LLM.withTools records the bound
+	// object only to expose its type's methods as tools, so restoring the
+	// conversation must not re-run the call that produced that object.
+	StructuralOnly bool
 }
 
 func (spec *InputSpec) merge(other *InputSpec) {
@@ -1057,6 +1071,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	if other.Internal {
 		spec.Internal = other.Internal
 	}
+	if other.StructuralOnly {
+		spec.StructuralOnly = other.StructuralOnly
+	}
 }
 
 type Argument struct {
@@ -1083,6 +1100,14 @@ func (arg Argument) Sensitive() Argument {
 
 func (arg Argument) Internal() Argument {
 	arg.Spec.Internal = true
+	return arg
+}
+
+// StructuralOnly marks an ID-typed argument as carried by reference (not
+// evaluated) when the receiver's ID is reconstructed from its recipe. See
+// InputSpec.StructuralOnly.
+func (arg Argument) StructuralOnly() Argument {
+	arg.Spec.StructuralOnly = true
 	return arg
 }
 
