@@ -81,6 +81,11 @@ type LLMSession struct {
 	autoCompact  bool
 	autoCompactL *sync.Mutex
 
+	// initialLLM is the base LLM to reset to on .clear, e.g. the workspace's
+	// composed agent group as selected on startup (`dagger agent`). When nil,
+	// .clear resets to a plain workspace-bound LLM.
+	initialLLM *dagger.LLM
+
 	// subscriptionLabelCache caches the OAuth subscription label for the status
 	// line, resolved lazily on first use.
 	subscriptionLabelCache string
@@ -167,10 +172,20 @@ func (s *LLMSession) ToggleAutocompact() {
 }
 
 func (s *LLMSession) reset() {
-	// llm() starts unbound; bind the user's workspace explicitly so the LLM's
-	// schema and file-editing surface derive from it, recorded on the ID.
-	s.updateLLM(s.dag.LLM(dagger.LLMOpts{Model: s.model}).
-		WithWorkspace(s.dag.CurrentWorkspace()))
+	// Reset to the initially selected agent group (e.g. `dagger agent`), if any,
+	// so .clear returns to those agents rather than a blank LLM. Preserve the
+	// currently selected model.
+	var llm *dagger.LLM
+	if s.initialLLM != nil {
+		llm = s.initialLLM
+		if s.model != "" {
+			llm = llm.WithModel(s.model)
+		}
+	} else {
+		llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).
+			WithWorkspace(s.dag.CurrentWorkspace())
+	}
+	s.updateLLM(llm)
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -424,6 +439,7 @@ func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
 		},
 		KeyMap: []key.Binding{
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
+			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "reset")),
 		},
 	})
 	return nil
@@ -439,6 +455,49 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	}
 	if err := s.llm.Workspace().Export(ctx); err != nil {
 		return err
+	}
+	// The exported edits now live on disk, so rebind the live workspace: the
+	// overlay the agent accumulated is now redundant with the files
+	// themselves, and carrying it forward would re-diff already-saved content
+	// as pending changes. Rebinding also drops it from the next save —
+	// portableID emits only the current binding. Export bumps the client's
+	// workspace read epoch, so reads after this point see the saved content
+	// rather than a snapshot cached earlier in the session. Sync eagerly so a
+	// failure surfaces here rather than corrupting later saves.
+	rebound, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace()).Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("rebind workspace after export: %w", err)
+	}
+	if err := s.updateLLM(rebound); err != nil {
+		return err
+	}
+	if s.onStep != nil {
+		s.onStep(s)
+	}
+	return s.updateChangesPreview(s.llm)
+}
+
+// ResetWorkspace discards the workspace's pending overlay edits, re-binding the
+// LLM to the live workspace without exporting first.
+// It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
+// "uploads" the host's current state to the agent by throwing away the agent's
+// accumulated changes rather than writing them out. The binding goes through
+// Workspace.reloaded so cached host reads from earlier in the session are
+// invalidated and the agent genuinely re-reads whatever is on disk now. Sync
+// eagerly so a failure surfaces here rather than corrupting later saves.
+func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session active")
+	}
+	reset, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace().Reloaded()).Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("reset workspace: %w", err)
+	}
+	if err := s.updateLLM(reset); err != nil {
+		return err
+	}
+	if s.onStep != nil {
+		s.onStep(s)
 	}
 	return s.updateChangesPreview(s.llm)
 }
@@ -717,8 +776,12 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 	return sessionID, nil
 }
 
-// LoadSession loads an LLM session from disk by UUID.
-func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
+// LoadSession loads an LLM session from disk by UUID. The message history is
+// replayed for telemetry against replayCtx (not ctx), so callers can surface
+// the replayed conversation at the conversation's top level rather than nested
+// under the command span that triggered the load. Pass ctx for replayCtx to
+// replay in place.
+func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID string) error {
 	sessionDir, err := getSessionDir()
 	if err != nil {
 		return err
@@ -745,8 +808,10 @@ func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
 	loadedLLM := dagger.Ref[*dagger.LLM](s.dag, dagger.ID(metadata.LLMID))
 
 	// Replay the message history to emit telemetry spans so the TUI shows the
-	// conversation in its scrollback.
-	if _, err := loadedLLM.Replay(ctx); err != nil {
+	// conversation in its scrollback. Replay against replayCtx so the spans nest
+	// where the caller wants the conversation to appear (e.g. the top level for
+	// .resume) rather than under the triggering command span.
+	if _, err := loadedLLM.Replay(replayCtx); err != nil {
 		slog.Warn("failed to replay session history", "error", err)
 	}
 

@@ -144,6 +144,14 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+
+	// cmdParentCtx is the context active just above the per-command span
+	// created in Handle. Builtins whose telemetry should surface as siblings of
+	// the command itself -- rather than nested under the command's own span --
+	// replay against this instead of the command ctx (e.g. .resume, whose
+	// replayed conversation belongs at the top level, not buried under the
+	// ".resume" span).
+	cmdParentCtx context.Context
 }
 
 // QueueMessage stores a message submitted while the LLM is running, to be
@@ -461,16 +469,6 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		if h.initialPrompt == "" {
 			h.initialPrompt = line
 		}
-		// Auto-save the session after each step, updating the same file
-		// in-place so a conversation maps to a single session file.
-		llm.onStep = func(s *LLMSession) {
-			savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
-			if err != nil {
-				slog.Warn("failed to auto-save session", "error", err)
-				return
-			}
-			h.sessionUUID = savedUUID
-		}
 		newLLM, err := llm.WithPrompt(ctx, line)
 		if err != nil {
 			return err
@@ -485,6 +483,11 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
+
+	// Remember the context above the per-command span so builtins that replay
+	// conversation telemetry (.resume) can surface it at this level rather than
+	// nested under their own command span.
+	h.cmdParentCtx = ctx
 
 	// Create a new span for this command
 	var span trace.Span
@@ -644,6 +647,18 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	}
 	h.llmSession = s
 	h.llmModel = s.model
+	// Auto-save the session after each step (and after ctrl+s exports/resets the
+	// workspace), updating the same file in-place so a conversation maps to a
+	// single session file. Set here at init so it is available even before the
+	// first prompt (e.g. ctrl+s on a freshly loaded session).
+	s.onStep = func(s *LLMSession) {
+		savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+		if err != nil {
+			slog.Warn("failed to auto-save session", "error", err)
+			return
+		}
+		h.sessionUUID = savedUUID
+	}
 	return h.llmSession, h.llmErr
 }
 
@@ -699,6 +714,18 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+			}
+		}
+	case key.MatchString("ctrl+u"):
+		if h.llmSession != nil {
+			return func() {
+				if err := h.llmSession.ResetWorkspace(ctx); err != nil {
+					slog.Error("failed to reset agent workspace", "error", err.Error())
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("RESET ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
 			}
