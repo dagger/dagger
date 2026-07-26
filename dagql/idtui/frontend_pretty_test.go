@@ -1266,6 +1266,145 @@ func TestFlowingModeDoesNotCropOverflowingTree(t *testing.T) {
 	}
 }
 
+// newFlowingNavFrontend builds a live shell (flowing-mode) frontend with a root
+// call and `steps` sibling rows that overflow a `rows`-tall terminal, then
+// enters nav mode (autoFocus off) focused on step `focusStep`. It returns the
+// frontend and the bottom-`rows` visible window that tuist would show.
+func newFlowingNavFrontend(t *testing.T, rows, steps, focusStep int) (*frontendPretty, []string) {
+	t.Helper()
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	snapshots := []dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root call",
+			StartTime: start,
+			EndTime:   start.Add(time.Duration(steps+2) * time.Second),
+			Final:     true,
+		},
+	}
+	for i := range steps {
+		snapshots = append(snapshots, dagui.SpanSnapshot{
+			ID:        prettyTestSpanID(byte(2 + i)),
+			TraceID:   prettyTestTraceID(),
+			Name:      fmt.Sprintf("step %02d", i),
+			StartTime: start.Add(time.Duration(i+1) * time.Second),
+			EndTime:   start.Add(time.Duration(i+2) * time.Second),
+			ParentID:  rootID,
+			Final:     true,
+		})
+	}
+	db.ImportSnapshots(snapshots)
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, rows)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{rootID: true}
+	fe.shell = stubShellHandler{}
+	// Navigate up into the history: leave the bottom (autoFocus off) and focus
+	// the requested row.
+	fe.autoFocus = false
+	fe.FocusedSpan = prettyTestSpanID(byte(2 + focusStep))
+
+	fe.recalculateViewLocked()
+
+	if !fe.flowingMode() {
+		t.Fatal("shell frontend should be in flowing mode")
+	}
+
+	// The visible window is the bottom `rows` lines of the (over-tall) frame --
+	// exactly what tuist shows on the terminal.
+	frameLines := fe.tui.Frame()
+	visibleLines := frameLines
+	if len(frameLines) > rows {
+		visibleLines = frameLines[len(frameLines)-rows:]
+	}
+	return fe, visibleLines
+}
+
+// TestFlowingModeNavKeepsFocusOnscreen is the regression guard for navigating
+// up through the history in flowing (shell/prompt) mode: once the focused item
+// would scroll off the top, the flowing renderer must crop everything below it
+// so it stays onscreen. Without the crop the focused row scrolls off the top of
+// the viewport into scrollback -- moving "up and offscreen" -- because tuist
+// only shows the bottom `height` lines of the over-tall frame.
+func TestFlowingModeNavKeepsFocusOnscreen(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	const rows = 16
+	const steps = 50
+	const focusStep = 25
+
+	fe, visibleLines := newFlowingNavFrontend(t, rows, steps, focusStep)
+	visible := strings.Join(visibleLines, "\n")
+
+	focusRow := fmt.Sprintf("step %02d", focusStep)
+	belowRow := fmt.Sprintf("step %02d", steps-1)
+
+	// The focused row must be onscreen (within the visible window).
+	if !strings.Contains(visible, focusRow) {
+		t.Fatalf("focused row %q scrolled offscreen; visible window:\n%s", focusRow, visible)
+	}
+	// Everything below the focused item is cropped: rows further down must not
+	// appear anywhere in the frame (they've been cropped, not just scrolled
+	// into scrollback).
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	if strings.Contains(frame, belowRow) {
+		t.Fatalf("row %q below the focus was not cropped:\n%s", belowRow, frame)
+	}
+
+	// A "… N lines below …" hint marks the cropped remainder so the user can
+	// tell content was hidden (and watch the count grow as output streams in).
+	hintRe := regexp.MustCompile(`… (\d+) lines below …`)
+	m := hintRe.FindStringSubmatch(visible)
+	if m == nil {
+		t.Fatalf("missing '… N lines below …' hint in visible window:\n%s", visible)
+	}
+	gotBelow, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("bad hint count %q: %v", m[1], err)
+	}
+	if gotBelow <= 0 {
+		t.Fatalf("hint reported %d lines below, want a positive count:\n%s", gotBelow, visible)
+	}
+}
+
+// TestFlowingModeNavNoCropWhenFocusOnscreen verifies the crop only kicks in when
+// it's actually needed: moving up a row or two while the focused item is still
+// within the visible window must NOT crop the newest output or show the "lines
+// below" hint -- that would be jarring.
+func TestFlowingModeNavNoCropWhenFocusOnscreen(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	const rows = 16
+	const steps = 50
+	// A row very close to the bottom: its header stays within the bottom
+	// viewportHeight lines, so nothing needs cropping.
+	const focusStep = steps - 2
+
+	_, visibleLines := newFlowingNavFrontend(t, rows, steps, focusStep)
+	visible := strings.Join(visibleLines, "\n")
+
+	focusRow := fmt.Sprintf("step %02d", focusStep)
+	lastRow := fmt.Sprintf("step %02d", steps-1)
+
+	// The focused row is onscreen without any cropping...
+	if !strings.Contains(visible, focusRow) {
+		t.Fatalf("focused row %q not visible:\n%s", focusRow, visible)
+	}
+	// ...and the newest row below it stays visible (it was NOT cropped away).
+	if !strings.Contains(visible, lastRow) {
+		t.Fatalf("newest row %q was cropped even though the focus was onscreen:\n%s", lastRow, visible)
+	}
+	// No "lines below" hint, since nothing was hidden.
+	if strings.Contains(visible, "lines below") || strings.Contains(visible, "line below") {
+		t.Fatalf("unexpected crop hint when the focus was already onscreen:\n%s", visible)
+	}
+}
 // TestFlowingModeScopedToLiveUnzoomedShell verifies flowingMode is only active
 // for live, un-zoomed shell rendering -- the final report and an explicitly
 // zoomed span keep the viewport-clipped behaviour that's correct for those
@@ -1497,6 +1636,67 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 			t.Fatalf("focused user prompt cue is not shaded; line = %q", visibleEscapes(line))
 		}
 	})
+}
+
+// TestFocusedAssistantMessageSinglePrompt is a regression test for a doubled
+// "❯ " focus cue on a focused assistant message. The assistant's reply/thinking
+// opens with a blank separator line and then renders its content carrying the
+// focus cue; renderStep was emitting the cue twice -- once on that separator
+// line (via the shared shell-mode gutter switch) and again on the content line
+// -- stranding a lone "❯" on the blank line above the message. Only the content
+// line should carry the cue.
+func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	userID := prettyTestSpanID(2)
+	asstID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
+		{
+			ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
+		},
+		{
+			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			Message: "received", LLMRole: "assistant", ParentID: rootID,
+			StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+
+	setLog := func(id dagui.SpanID, text string) {
+		logs := NewVterm(termenv.ANSI)
+		logs.SetWidth(120)
+		_, _ = logs.WriteMarkdown([]byte(text + "\n"))
+		fe.logs.Logs[id] = logs
+	}
+	setLog(userID, "hello there")
+	setLog(asstID, "here is my reply")
+
+	// Focus the assistant reply so it renders with its "❯ " cue; keep the user
+	// prompt unfocused so its own gutter stays plain.
+	fe.autoFocus = false
+	fe.FocusedSpan = asstID
+	fe.recalculateViewLocked()
+
+	lines := strings.Split(strings.Join(fe.tui.RenderLines(), "\n"), "\n")
+	cues := 0
+	for _, l := range lines {
+		cues += strings.Count(stripANSICodes(l), LLMPrompt)
+	}
+	if cues != 1 {
+		t.Fatalf("expected exactly one %q focus cue for the focused assistant message, got %d:\n%s",
+			LLMPrompt, cues, visibleEscapes(strings.Join(lines, "\n")))
+	}
 }
 
 // TestUserPromptPaddedAndSeparatedFromTools verifies the live shell view sets
