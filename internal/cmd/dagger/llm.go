@@ -93,6 +93,11 @@ type LLMSession struct {
 	// growth shown in --debug mode (see reportContextUsage).
 	prevContextTokens int
 	prevStepContext   int
+
+	// references tracks the host paths the user has attached with @ this
+	// session (see attachReferences). They are mounted read-only in the LLM's
+	// workspace, shown in the "References" sidebar, and dropped on .clear.
+	references []referenceInfo
 }
 
 func NewLLMSession(
@@ -194,6 +199,10 @@ func (s *LLMSession) Fork() *LLMSession {
 
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
+
+	// Resolve any @-path references in the prompt, mounting them read-only in
+	// the workspace and annotating the prompt with their workspace locations.
+	input = s.attachReferences(ctx, input)
 
 	resolvedModel, err := s.llm.Model(s.plumbingCtx)
 	if err != nil {
@@ -547,6 +556,8 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr 
 func (s *LLMSession) Clear() *LLMSession {
 	s = s.Fork()
 	s.reset()
+	s.references = nil
+	s.updateReferencesPreview()
 	return s
 }
 
