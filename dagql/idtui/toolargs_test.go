@@ -1,9 +1,13 @@
 package idtui
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dagger/dagger/dagql/dagui"
 )
 
 func TestToolArgStyle(t *testing.T) {
@@ -73,3 +77,55 @@ func TestToolArgStyle(t *testing.T) {
 	assert.False(t, isConventionalArg("Read", "limit"))
 	assert.False(t, isConventionalArg("Read", "description"))
 }
+
+func TestFirstLine(t *testing.T) {
+	assert.Equal(t, "hello", firstLine("hello"))
+	assert.Equal(t, "hello …", firstLine("hello\nworld"))
+	assert.Equal(t, "hello …", firstLine("hello  \nworld"))
+	assert.Equal(t, " …", firstLine("\nworld"))
+}
+
+func renderSummary(t *testing.T, toolName string, names, values []string) string {
+	t.Helper()
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.ANSI))
+	span := &dagui.Span{
+		SpanSnapshot: dagui.SpanSnapshot{
+			LLMTool:          toolName,
+			LLMToolArgNames:  names,
+			LLMToolArgValues: values,
+		},
+	}
+	renderToolArgsSummary(out, toolName, span)
+	return buf.String()
+}
+
+func TestRenderToolArgsSummary(t *testing.T) {
+	// No args => nothing rendered.
+	assert.Empty(t, renderSummary(t, "Read", nil, nil))
+
+	// Unrecognized tool/arg => nothing rendered (caller falls back).
+	assert.Empty(t, renderSummary(t, "SomeCustomTool", []string{"foo"}, []string{"bar"}))
+
+	// Path arg rendered in cyan (SGR 36).
+	got := renderSummary(t, "Read", []string{"path"}, []string{"main.go"})
+	assert.Contains(t, stripANSICodes(got), "main.go")
+	assert.Contains(t, got, "\x1b[36m")
+
+	// Desc arg rendered faint (SGR 2).
+	got = renderSummary(t, "Grep", []string{"pattern"}, []string{"needle"})
+	assert.Contains(t, stripANSICodes(got), "needle")
+	assert.Contains(t, got, "\x1b[2m")
+
+	// Content arg rendered faint italic (SGR 2;3).
+	got = renderSummary(t, "Bash", []string{"command"}, []string{"echo hi"})
+	assert.Contains(t, stripANSICodes(got), "echo hi")
+	assert.Contains(t, got, "\x1b[2;3m")
+
+	// Multi-line content collapses to the first line with an ellipsis.
+	got = renderSummary(t, "Bash", []string{"command"}, []string{"echo hi\nrm -rf /"})
+	plain := stripANSICodes(got)
+	assert.Contains(t, plain, "echo hi …")
+	assert.NotContains(t, plain, "rm -rf /")
+}
+
