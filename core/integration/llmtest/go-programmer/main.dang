@@ -1,42 +1,42 @@
-"""An expert Go programmer driven by an LLM, for replay golden tests."""
+"""
+An expert Go programmer driven by an LLM, for replay golden tests.
+"""
 type GoProgrammer {
   model: String = null
 
-  """Complete the assignment and return the resulting main.go contents."""
+  """
+  Complete the assignment and return the resulting main.go contents.
+  """
   run(assignment: String!): String! {
     self.drive(assignment).loop.workspace.file("main.go").contents
   }
 
-  """Record a live conversation with the model as replayable history JSON."""
-  save(assignment: String!): Dagger.JSON! {
-    self.drive(assignment).loop.historyJSON
-  }
-
-  """Set up the programmer's LLM with its tools and assignment."""
+  """
+  Set up the programmer's LLM with its tools and assignment.
+  """
   drive(assignment: String!): LLM! {
     llm(model: model)
-      .withTools(currentNode, except: ["run", "save", "drive"])
-      .withPrompt(
-        "You are an expert go programmer. You have access to a workspace.\n" +
-        "Use the read, write, build tools to complete the following assignment.\n" +
-        "Do not try to access the container directly.\n" +
-        "Don't stop until your code builds.\n" +
-        "\n" +
-        "Assignment: " + assignment + "\n"
-      )
+      .withTools(currentNode, except: ["run", "drive"])
+      .withPrompt("You are an expert go programmer. You have access to a workspace.\n" + "Use the read, write, build tools to complete the following assignment.\n" + "Do not try to access the container directly.\n" + "Don't stop until your code builds.\n" + "\n" + "Assignment: " + assignment + "\n")
   }
 
-  """Read the current contents of main.go."""
+  """
+  Read the current contents of main.go.
+  """
   read(ws: Workspace!): String! {
     ws.file("main.go").contents
   }
 
-  """Write main.go with the given contents."""
+  """
+  Write main.go with the given contents.
+  """
   write(content: String!, ws: Workspace!): Workspace! {
     ws.withNewFile("main.go", content)
   }
 
-  """Compile the workspace's Go code with 'go build'."""
+  """
+  Compile the workspace's Go code with 'go build'.
+  """
   build(ws: Workspace!): Void {
     container
       .from("golang")
