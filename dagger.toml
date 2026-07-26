@@ -301,3 +301,9 @@ path = "toolchains/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = "toolchains/rust-sdk-dev"
+
+[env.dev.modules.delegate]
+source = "modules/delegate"
+
+[env.dev.modules.review]
+source = "modules/review"
