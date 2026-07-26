@@ -446,12 +446,6 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 
 	// Empty input
 	if line == "" {
-		// add an immediately-canceled blank span, to emulate submitting blank shell
-		// commands to space things apart
-		_, span := Tracer().Start(ctx, "",
-			telemetry.Reveal(),
-			trace.WithAttributes(attribute.Bool(telemetry.CanceledAttr, true)))
-		span.End()
 		return nil
 	}
 

@@ -63,6 +63,9 @@ type StatusLine struct {
 	// rollup and cost from live metrics (all models + sub-agents). It returns
 	// false before any metrics have arrived, falling back to data.
 	liveStats func() (StatusLineLive, bool)
+	// inFlight reports whether the shell is currently processing a request.
+	// Empty streaming message spans stay hidden; this is their compact cue.
+	inFlight func() bool
 }
 
 var _ tuist.Component = (*StatusLine)(nil)
@@ -96,6 +99,9 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 
 	// -- left side: token stats + cost + context --------------------------
 	var parts []string
+	if sl.inFlight != nil && sl.inFlight() {
+		parts = append(parts, "● working")
+	}
 
 	if d.InputTokens > 0 {
 		parts = append(parts, "↑"+formatTokenCount(d.InputTokens))
