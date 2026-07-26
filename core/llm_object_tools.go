@@ -23,7 +23,7 @@ import (
 
 // llmToolLogsMaxLines caps the print output surfaced from a single tool call
 // (object/Void returns), matching ReadLogs' default page size.
-const llmToolLogsMaxLines = 100
+const llmToolLogsMaxLines = 8
 
 // workspaceTypeName is the object type the engine auto-injects into a module
 // function's arguments from the bound Workspace, so such arguments are hidden
@@ -327,6 +327,7 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 			ReadOnly:         retType != typeName && retType != "Changeset" && retType != "Workspace",
 			ReturnsChangeset: retType == "Changeset",
 			Call:             m.callObjectMethod(srv, typeName, field),
+			Server:           typeName,
 		})
 	}
 	return tools, nil
@@ -567,6 +568,13 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 	// returning a patch summary. step() persists the resulting workspace via a
 	// withWorkspace selector.
 	if handled, out, err := m.applyStateReturn(ctx, srv, val); handled {
+		if logs := m.toolLogs(ctx); logs != "" {
+			if out == "" {
+				out = logs
+			} else {
+				out = logs + "\n---\n" + out
+			}
+		}
 		return out, err
 	}
 
