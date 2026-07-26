@@ -83,7 +83,6 @@ func (dp *displayPhases) StartText(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "LLM response",
-		telemetry.Reveal(),
 		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
@@ -109,7 +108,6 @@ func (dp *displayPhases) StartThinking(idx int64) *displayPhase {
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, "thinking",
-		telemetry.Reveal(),
 		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "💭"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
@@ -139,7 +137,6 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 		return p
 	}
 	phaseCtx, span := Tracer(dp.parentCtx).Start(dp.parentCtx, toolName,
-		telemetry.Reveal(),
 		trace.WithAttributes(dp.digestAttrs([]attribute.KeyValue{
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
