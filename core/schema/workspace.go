@@ -27,7 +27,7 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
-	currentWorkspaceField := dagql.Func("currentWorkspace", s.currentWorkspace).
+	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
@@ -461,10 +461,18 @@ func detectWorkspaceFilesInDirectory(
 
 func (s *workspaceSchema) currentWorkspace(
 	ctx context.Context,
-	parent *core.Query,
+	parent dagql.ObjectResult[*core.Query],
 	_ struct{},
-) (*core.Workspace, error) {
-	return parent.Server.CurrentWorkspace(ctx)
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	ws, err := parent.Self().Server.CurrentWorkspace(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
 func (s *workspaceSchema) cwd(

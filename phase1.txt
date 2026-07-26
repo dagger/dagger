@@ -1,0 +1,54 @@
+idtui: focus-anchored prompt (Agent v2, Phase 1)
+
+Move the agent editline out of the pinned bottom chrome and anchor it to
+the focused message, the first half of Phase 1 of AGENT_V2.md (the pause
+paradigm is a separate follow-up). The prompt is now a block rendered
+*inside* the trace body, spliced directly beneath the focused message, so
+navigating the transcript is also navigating the prompt's target.
+
+What changed:
+
+- New dagql/idtui/anchored_prompt.go:
+  - renderPromptBlock stacks the reused prompt components (ErrorLabel,
+    inline QueuedMessageLabel, framed PromptFrame + TextInput, anchored
+    status) via RenderChildResult and returns the editline's cursor
+    relative to the block.
+  - renderAnchoredStatus renders the conversation breadcrumb
+    (⛬ agent ▸ triage, via DB.ConversationBreadcrumb) plus the context
+    gauge as of the focused message. focusedContext reads the Phase 0
+    per-message context attrs, falling back to the most recent reply in
+    the same conversation so scanning up the transcript replays context
+    history.
+  - spliceFlowingPrompt / focusSubtreeEnd insert the block after the
+    focused message's subtree in flowing mode; content below collapses to
+    the existing "… N lines below …" hint. In autoFocus the anchor is the
+    live end, so the prompt hugs the bottom and degrades to (roughly)
+    today's layout.
+
+- frontend_pretty.go:
+  - startShell/stopShell: the error label, inline queued message, and
+    framed editline are no longer bottom siblings; only the global footer
+    (StatusLine) and the keymap stay pinned. Added a promptCursor field;
+    Render re-emits the translated editline cursor via ctx.SetCursor.
+  - Render reserves the block's height only in non-flowing mode (a zoomed
+    span), where it is pinned at the bottom of the cropped body; the empty
+    -conversation case still shows the prompt so the editline never
+    vanishes.
+  - Dropped three now-dead chrome-height estimators (errorLabelHeight,
+    queuedMessageHeight, editlineHeight).
+
+- statusline.go: a `footer` flag renders the status line as the session-
+  wide global footer (token/cost totals) and omits the context gauge —
+  context occupancy is a per-message property that now travels with focus
+  in the anchored status (Agent v2, §4: "the two never show the same
+  number twice").
+
+Verified with new unit tests (TestAnchoredPromptAppearsInBodyBeneathFocus,
+TestAnchoredPromptNavCropsBelow), an updated TestStatusLineSeededFromResume,
+and live QA over DAGGER_TUI_CONSOLE (dagger shell): the editline renders in
+the body, accepts input, and travels with focus on nav with the crop hint
+below it. Pure frontend change; no schema or engine changes.
+
+Deferred to a follow-up: the top-level client-side pause (Ctrl+C = pause /
+hold / empty-⏎ resume / second Ctrl+C abort) in LLMSession.WithPrompt and
+its frontend wiring.
