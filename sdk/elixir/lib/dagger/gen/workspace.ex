@@ -27,6 +27,22 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return all agent middlewares from modules loaded in the workspace.
+  """
+  @spec agents(t(), [{:include, [String.t()]}]) :: Dagger.AgentGroup.t()
+  def agents(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("agents")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.AgentGroup{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace's pending overlay changes.
   """
   @spec changes(t()) :: Dagger.Changeset.t()
