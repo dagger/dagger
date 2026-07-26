@@ -35,7 +35,7 @@ func renderToolArgsSummary(out TermOutput, toolName string, span *dagui.Span) bo
 		if style == argStyleNone {
 			continue
 		}
-		val := firstLine(f.Value)
+		val := sanitizeSummary(firstLine(f.Value))
 		if strings.TrimSpace(val) == "" {
 			continue
 		}
@@ -61,6 +61,30 @@ func firstLine(s string) string {
 		return trimmed + " …"
 	}
 	return s
+}
+
+// sanitizeSummary makes a value safe to render inline on the span header line.
+//
+// The header is laid out (and the sidebar overlay is composited onto it) using
+// ansi.StringWidth, which counts a tab as ZERO columns — but terminals expand
+// tabs to 8-column tab stops. A raw tab in the summary therefore renders wider
+// than the layout believes, shoving everything after it (and the overlaid
+// "Changes" box) out of alignment. Edit tool excerpts are literal source code
+// and routinely start with tab indentation, so this bites the Edit tool in
+// particular. Replace tabs with a single space and drop any other control
+// characters so the rendered width always matches the computed width. (The
+// unified diff below the header already expands tabs; see diffTabWidth.)
+func sanitizeSummary(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t':
+			return ' '
+		case r < 0x20 || r == 0x7f:
+			return -1 // drop other control chars (stray CR, escapes, etc.)
+		default:
+			return r
+		}
+	}, s)
 }
 
 // renderToolArgs renders any additional content for an LLM tool-call row that
