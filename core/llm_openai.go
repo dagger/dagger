@@ -130,6 +130,11 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		return nil, err
 	}
 
+	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
+	if err != nil {
+		return nil, err
+	}
+
 	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
 	if err != nil {
 		return nil, err
@@ -176,9 +181,9 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	var chatCompletion *openai.ChatCompletion
 
 	if len(tools) > 0 && c.disableStreaming {
-		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, attrs, dp)
+		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
 	} else {
-		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, attrs, dp)
+		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
 	}
 	// Close the streamed text response phase (if any) before the tool-call
 	// phases, so spans close in the order the model produced them.
@@ -230,16 +235,46 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	// Convert OpenAI response to generic LLMResponse
 	displaySpans, toolCallDisplays := dp.Response()
 	return &LLMResponse{
-		Content: contentBlocks,
-		TokenUsage: LLMTokenUsage{
-			InputTokens:      chatCompletion.Usage.PromptTokens,
-			OutputTokens:     chatCompletion.Usage.CompletionTokens,
-			CachedTokenReads: chatCompletion.Usage.PromptTokensDetails.CachedTokens,
-			TotalTokens:      chatCompletion.Usage.TotalTokens,
-		},
+		Content:          contentBlocks,
+		TokenUsage:       openAICompletionUsage(chatCompletion.Usage),
 		DisplaySpans:     displaySpans,
 		ToolCallDisplays: toolCallDisplays,
 	}, nil
+}
+
+func openAICompletionUsage(usage openai.CompletionUsage) LLMTokenUsage {
+	cachedTokens := usage.PromptTokensDetails.CachedTokens
+	inputTokens := uncachedInputTokens(usage.PromptTokens, cachedTokens)
+	totalTokens := inputTokens + usage.CompletionTokens + cachedTokens
+	if usage.TotalTokens > totalTokens {
+		totalTokens = usage.TotalTokens
+	}
+	return LLMTokenUsage{
+		InputTokens:      inputTokens,
+		OutputTokens:     usage.CompletionTokens,
+		CachedTokenReads: cachedTokens,
+		TotalTokens:      totalTokens,
+	}
+}
+
+func recordOpenAICompletionUsage(
+	ctx context.Context,
+	usage openai.CompletionUsage,
+	outputTokens metric.Int64Gauge,
+	inputTokens metric.Int64Gauge,
+	inputTokensCacheReads metric.Int64Gauge,
+	attrs []attribute.KeyValue,
+) {
+	normalized := openAICompletionUsage(usage)
+	if normalized.OutputTokens > 0 {
+		outputTokens.Record(ctx, normalized.OutputTokens, metric.WithAttributes(attrs...))
+	}
+	if normalized.InputTokens > 0 {
+		inputTokens.Record(ctx, normalized.InputTokens, metric.WithAttributes(attrs...))
+	}
+	if normalized.CachedTokenReads > 0 {
+		inputTokensCacheReads.Record(ctx, normalized.CachedTokenReads, metric.WithAttributes(attrs...))
+	}
 }
 
 func (c *OpenAIClient) queryWithStreaming(
@@ -247,6 +282,7 @@ func (c *OpenAIClient) queryWithStreaming(
 	params openai.ChatCompletionNewParams,
 	outputTokens metric.Int64Gauge,
 	inputTokens metric.Int64Gauge,
+	inputTokensCacheReads metric.Int64Gauge,
 	attrs []attribute.KeyValue,
 	dp *displayPhases,
 ) (*openai.ChatCompletion, error) {
@@ -270,14 +306,10 @@ func (c *OpenAIClient) queryWithStreaming(
 		res := stream.Current()
 		acc.AddChunk(res)
 
-		// Keep track of the token usage
-		//
-		// NOTE: so far I'm only seeing 0 back from OpenAI - is this not actually supported?
-		if res.Usage.CompletionTokens > 0 {
-			outputTokens.Record(ctx, acc.Usage.CompletionTokens, metric.WithAttributes(attrs...))
-		}
-		if res.Usage.PromptTokens > 0 {
-			inputTokens.Record(ctx, acc.Usage.PromptTokens, metric.WithAttributes(attrs...))
+		// Keep track of token usage. The stream accumulator holds cumulative
+		// usage, and the UI's gauge aggregation keeps the last value per stream.
+		if res.Usage.CompletionTokens > 0 || res.Usage.PromptTokens > 0 {
+			recordOpenAICompletionUsage(ctx, acc.Usage, outputTokens, inputTokens, inputTokensCacheReads, attrs)
 		}
 
 		if len(res.Choices) > 0 {
@@ -299,6 +331,7 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	params openai.ChatCompletionNewParams,
 	outputTokens metric.Int64Gauge,
 	inputTokens metric.Int64Gauge,
+	inputTokensCacheReads metric.Int64Gauge,
 	attrs []attribute.KeyValue,
 	dp *displayPhases,
 ) (*openai.ChatCompletion, error) {
@@ -307,12 +340,7 @@ func (c *OpenAIClient) queryWithoutStreaming(
 		return nil, err
 	}
 
-	if compl.Usage.CompletionTokens > 0 {
-		outputTokens.Record(ctx, compl.Usage.CompletionTokens, metric.WithAttributes(attrs...))
-	}
-	if compl.Usage.PromptTokens > 0 {
-		inputTokens.Record(ctx, compl.Usage.PromptTokens, metric.WithAttributes(attrs...))
-	}
+	recordOpenAICompletionUsage(ctx, compl.Usage, outputTokens, inputTokens, inputTokensCacheReads, attrs)
 
 	if len(compl.Choices) > 0 {
 		if content := compl.Choices[0].Message.Content; content != "" {
