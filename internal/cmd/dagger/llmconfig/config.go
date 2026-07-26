@@ -250,6 +250,28 @@ func Remove() error {
 	return nil
 }
 
+// refreshProviderToken refreshes an expired OAuth provider in place, dispatching
+// to the provider-specific refresh flow. It returns the (possibly updated)
+// provider and whether it changed.
+func refreshProviderToken(name string, provider Provider) (Provider, bool, error) {
+	if !provider.IsOAuth() || !IsTokenExpired(&provider) {
+		return provider, false, nil
+	}
+	var refreshed *Provider
+	var err error
+	switch name {
+	case "openai-codex":
+		refreshed, err = RefreshOpenAIOAuthToken(&provider)
+	default:
+		// Anthropic and other providers use the standard refresh
+		refreshed, err = RefreshOAuthToken(&provider)
+	}
+	if err != nil {
+		return provider, false, fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
+	}
+	return *refreshed, true, nil
+}
+
 // RefreshOAuthTokensIfNeeded checks all OAuth providers in the config and
 // refreshes any expired tokens. This should be called client-side before
 // connecting to the engine.
@@ -261,25 +283,14 @@ func RefreshOAuthTokensIfNeeded() error {
 
 	var changed bool
 	for name, provider := range cfg.LLM.Providers {
-		if !provider.IsOAuth() {
-			continue
-		}
-		if !IsTokenExpired(&provider) {
-			continue
-		}
-		var refreshed *Provider
-		switch name {
-		case "openai-codex":
-			refreshed, err = RefreshOpenAIOAuthToken(&provider)
-		default:
-			// Anthropic and other providers use the standard refresh
-			refreshed, err = RefreshOAuthToken(&provider)
-		}
+		refreshed, didChange, err := refreshProviderToken(name, provider)
 		if err != nil {
-			return fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
+			return err
 		}
-		cfg.LLM.Providers[name] = *refreshed
-		changed = true
+		if didChange {
+			cfg.LLM.Providers[name] = refreshed
+			changed = true
+		}
 	}
 
 	if changed {
@@ -289,4 +300,31 @@ func RefreshOAuthTokensIfNeeded() error {
 	}
 
 	return nil
+}
+
+// RefreshOAuthProviderIfNeeded refreshes a single OAuth provider by name if its
+// token has expired, persisting the result. It returns the current access token
+// for the provider (refreshed or not), or "" if the provider is absent or not
+// an OAuth provider. Used to keep a long-running session's bearer token fresh:
+// the client re-resolves the token on demand rather than only at startup.
+func RefreshOAuthProviderIfNeeded(name string) (string, error) {
+	cfg, err := Load()
+	if err != nil || cfg == nil {
+		return "", err
+	}
+	provider, ok := cfg.LLM.Providers[name]
+	if !ok || !provider.IsOAuth() {
+		return "", nil
+	}
+	refreshed, changed, err := refreshProviderToken(name, provider)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		cfg.LLM.Providers[name] = refreshed
+		if err := cfg.Save(); err != nil {
+			return "", fmt.Errorf("failed to save refreshed tokens: %w", err)
+		}
+	}
+	return refreshed.AuthToken, nil
 }
