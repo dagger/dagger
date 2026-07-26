@@ -1959,6 +1959,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 		}
 	}
 
+	toolAnchorCtx := ctx
 	for _, g := range groups {
 		func() {
 			var name string
@@ -1997,6 +1998,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 					attribute.String(telemetry.LLMToolAttr, block.ToolName),
+					attribute.Bool(telemetry.UIBoundaryAttr, true),
 					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
@@ -2015,9 +2017,16 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			if callDigest != "" {
 				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 			}
-			ctx, span := Tracer(ctx).Start(ctx, name, trace.WithAttributes(attrs...))
+			startCtx := ctx
+			if g.kind == LLMContentToolCall {
+				startCtx = toolAnchorCtx
+			}
+			spanCtx, span := Tracer(startCtx).Start(startCtx, name, trace.WithAttributes(attrs...))
+			if g.kind != LLMContentToolCall {
+				toolAnchorCtx = spanCtx
+			}
 			defer span.End()
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+			stdio := telemetry.SpanStdio(spanCtx, InstrumentationLibrary,
 				log.String(telemetry.ContentTypeAttr, contentType))
 			defer stdio.Close()
 			for _, block := range g.blocks {

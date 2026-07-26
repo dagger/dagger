@@ -900,7 +900,11 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// output → error → queued → prompt → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
-	fe.statusLine = &StatusLine{profile: fe.profile, liveStats: fe.llmLiveStats}
+	fe.statusLine = &StatusLine{
+		profile:   fe.profile,
+		liveStats: fe.llmLiveStats,
+		inFlight:  func() bool { return fe.shellRunning },
+	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
@@ -2441,7 +2445,12 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// ScreenHeight means the height is unknown (RenderLines / the report discovery
 	// render, before a frame sizes the terminal) -- render everything, like the
 	// old behaviour.
-	if h := ctx.ScreenHeight(); h > 0 {
+	//
+	// In flowing (shell/prompt) mode we also render everything: tuist pushes the
+	// overflow into the terminal's native scrollback (see flowingMode), so old
+	// output scrolls off the top like a normal REPL while the pinned live region
+	// -- rendered as siblings below -- stays at the bottom of the frame.
+	if h := ctx.ScreenHeight(); h > 0 && !fe.flowingMode() {
 		if avail := h - reserved - len(zoomHeader); avail > 0 && len(body) > avail {
 			body = body[:avail]
 		}
@@ -2986,6 +2995,36 @@ func (fe *frontendPretty) errorLabelHeight() int {
 	return 1
 }
 
+// flowingMode reports whether the frontend should let completed history flow
+// into the terminal's native scrollback instead of clamping/cropping it to the
+// viewport. This is the shell/prompt REPL behaviour: old output scrolls off the
+// top like a normal terminal, while the pinned live region (spinners, status
+// line, editline/prompt, keymap) -- rendered as tuist siblings below this
+// component -- stays at the bottom of the frame and so remains visible.
+//
+// tuist enables this naturally: with sync output it renders over-tall frames
+// against the terminal's scrollback (see TUI.doRender/applyFrame), showing the
+// bottom `height` lines and pushing the top into scrollback -- provided nothing
+// mounts a mouse handler (which forces the alt-screen/viewport-clipped model).
+// No mouse-handling component is mounted in plain shell mode (the only one,
+// testSidebarView, belongs to the tests view).
+//
+// It is scoped to live, un-zoomed shell rendering: the final report, the log
+// pager, the tests view, and an explicitly zoomed span all keep the
+// viewport-clipped behaviour, which is correct for those focused views.
+func (fe *frontendPretty) flowingMode() bool {
+	if fe.shell == nil || fe.finalRender {
+		return false
+	}
+	// A zoomed span (user pressed enter to inspect one row) keeps the
+	// viewport-clipped, top-anchored behaviour so its header stays pinned.
+	if fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
+		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		return false
+	}
+	return true
+}
+
 // queuedMessageHeight returns the line count of the queued message label. The
 // label always renders as a single line (see QueuedMessageLabel.Render).
 func (fe *frontendPretty) queuedMessageHeight() int {
@@ -3205,24 +3244,35 @@ func (fe *frontendPretty) promoteChecksLocked() {
 }
 
 // promoteConversationLocked is the LLM-message analog of promoteChecksLocked:
-// when a trace ran an LLM, mark the root span passthrough so RowsView surfaces
-// the revealed message spans at the top level instead of the root's setup
-// children (session connect, workspace load). This is what replaces `dagger
-// shell`'s old manual zoom -- the conversation surfaces on its own via the
-// reveal mechanism, exactly as checks do. Messages bubble to the root via reveal
-// (top-level turns reach the root; a sub-agent's turns stop at the tool-call
-// span that spawned them), so this reuses the existing tree/row rendering.
+// when a trace ran an LLM, surface the conversation at the top level instead of
+// the root's setup children (session connect, workspace load). This is what
+// replaces `dagger shell`'s old manual zoom -- and, now that LLM messages no
+// longer set `reveal`, it also wires the surfaced transcript into the host's
+// RevealedSpans (via DB.PromoteConversationTo) so the live tree has something to
+// surface. That derives from the reveal-independent SurfacedConversation tree:
+// top-level turns land under the host and a sub-agent's turns nest under the
+// tool-call span that spawned them, exactly as reveal bubbling used to. Marking
+// the host Passthrough then makes RowsView iterate those revealed spans.
 func (fe *frontendPretty) promoteConversationLocked() {
-	if fe.db == nil || fe.db.RootSpan == nil || !fe.db.HasConversation() {
+	if fe.db == nil || !fe.db.HasConversation() {
 		return
 	}
-	if fe.db.RootSpan.LLMRole != "" {
-		// The root span is itself a message: there's no setup noise above it to
-		// hide, and passing it through would reparent its children to the top
-		// level. Nothing to promote.
+	// SetPrimary explicitly zooms interactive commands to the CLI root, while
+	// RootSpan is merely the first parentless span received and may be a remote
+	// query root. Promote the span RowsView is actually zoomed to.
+	host := fe.db.RootSpan
+	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
+		host = primary
+	}
+	if host == nil {
 		return
 	}
-	fe.db.RootSpan.Passthrough = true
+	if host.LLMRole != "" {
+		// The host is itself a message: there is no setup noise above it to hide.
+		return
+	}
+	fe.db.PromoteConversationTo(host)
+	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
 	}
@@ -3462,6 +3512,14 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		return allLines
 	}
 
+	// In flowing (shell/prompt) mode, don't crop: return every line and let
+	// tuist push the overflow into the terminal's native scrollback, so old
+	// output scrolls off the top like a normal REPL while the newest lines and
+	// the pinned live region below stay onscreen.
+	if fe.flowingMode() {
+		return allLines
+	}
+
 	// Crop to the visible window so the focused span stays onscreen. The
 	// caller composes progress + chrome and the result must fit the screen
 	// exactly: returning more than the viewport (relying on the terminal to
@@ -3603,12 +3661,11 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	trimmedPrefix := strings.TrimRight(gapPrefix, " ")
 	if fe.shell != nil {
-		if row.Depth == 0 && row.Previous != nil {
+		// Conversation turns get one separating line. Tool calls and ordinary
+		// trace spans stay attached to their parent/preceding message so an agent
+		// session does not become a double-spaced list of implementation details.
+		if row.Depth == 0 && row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleUser {
 			return []string{""}
-		}
-		// Gap above each LLM response to visually group RTTT sequences.
-		if row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleAssistant {
-			return []string{trimmedPrefix}
 		}
 		return nil
 	}
@@ -5415,12 +5472,21 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 				// status is always OK.
 				return nil
 			}
-			r.fancyIndent(out, row, false, false)
-			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
-			if focused {
-				bar = hl(bar)
+			if span.LLMRole == "" {
+				// Non-conversation message spans keep the bold-pipe chrome before
+				// their trailing duration/status. Conversation turns read as a
+				// transcript, so they skip the pipe and let the reply flow into the
+				// duration directly.
+				r.fancyIndent(out, row, false, false)
+				bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+				if focused {
+					bar = hl(bar)
+				}
+				fmt.Fprint(out, bar)
+			} else {
+				r.fancyIndent(out, row, false, false)
+				fmt.Fprint(out, "  ")
 			}
-			fmt.Fprint(out, bar)
 		} else {
 			empty = true
 		}
@@ -5494,16 +5560,44 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 }
 
 func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, statusHost statusIconHost, focused bool) error {
+	// Message span names are implementation labels; their logs are the actual
+	// content. Until content arrives, omit the row entirely and let the status
+	// line carry the in-flight cue instead of rendering an empty bubble.
+	if row.Span.LLMRole != "" && row.Span.LLMTool == "" {
+		fe.requestLogsOnRender(row.Span.ID)
+		logs := fe.logs.Logs[row.Span.ID]
+		if logs == nil || strings.TrimSpace(logs.View()) == "" {
+			return nil
+		}
+	}
+
 	r.fancyIndent(out, row, false, true)
 
-	if row.Span.LLMRole != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
-		case telemetry.LLMRoleAssistant:
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+	if !fe.finalRender && fe.shell != nil {
+		if focused {
+			fmt.Fprint(out, out.String("> ").Bold())
+		} else {
+			fmt.Fprint(out, "  ")
 		}
-		fmt.Fprint(out, " ")
+	}
+
+	if row.Span.LLMRole != "" {
+		// Conversation turns are distinguished by subtle content styling rather
+		// than a role label (see renderLLMMessageBlock): the user's message sits
+		// on a shaded background, thinking is dim italic, and the assistant's
+		// reply gets no chrome at all -- just a one-space indent so it reads as
+		// plain prose. Tool calls keep a quiet leading cue since their body is a
+		// call, not a message.
+		switch {
+		case row.Span.LLMTool != "":
+			// Tool calls remain fully interactive; a faint dot marks them without
+			// shouting "tool" on every row.
+			fmt.Fprint(out, out.String("• ").Foreground(termenv.ANSIBrightBlack).Faint())
+		default:
+			// A single space of indent, matching pi: the assistant's reply has no
+			// special chrome, just breathing room from the margin.
+			fmt.Fprint(out, " ")
+		}
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, focused)
 		fmt.Fprint(out, " ")
@@ -5894,8 +5988,63 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	if view == "" {
 		return false
 	}
+	// Give conversation turns their subtle content styling: the user's prompt
+	// on a shaded background, thinking as dim italic. The assistant's reply and
+	// tool output are left untouched (no chrome at all).
+	if styled, ok := fe.styleLLMMessageView(out, row.Span, logPrefix, view); ok {
+		view = styled
+	}
 	fmt.Fprint(out, view)
 	return true
+}
+
+// styleLLMMessageView applies pi-style per-role content styling to a rendered
+// message Vterm view, returning the restyled view (and true) for the roles it
+// handles. The user's prompt is drawn on a shaded (ANSIBrightBlack) background
+// padded to the content width, so it reads as an inset block; thinking is drawn
+// dim and italic. Other roles -- the assistant's reply, tool calls -- are left
+// verbatim, so this returns false for them.
+func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, logPrefix, view string) (string, bool) {
+	if span.LLMRole == "" || span.LLMTool != "" {
+		return "", false
+	}
+	user := span.LLMRole == telemetry.LLMRoleUser
+	if !user && !span.LLMThinking {
+		return "", false
+	}
+
+	width := fe.contentWidth
+	if width <= 0 {
+		width = fe.window.Width
+	}
+
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		// Strip existing SGR so the role styling owns the line; user prompts and
+		// thinking are prose, not richly formatted output, so nothing of value is
+		// lost, and it keeps a background from being punched out by a reset.
+		plain := ansi.Strip(line)
+		if user {
+			padded := plain
+			if width > 0 {
+				padded = padANSI(clipPlain(plain, width), width)
+			}
+			b.WriteString(out.String(padded).Background(termenv.ANSIBrightBlack).String())
+		} else {
+			// Thinking: dim italic foreground, no background.
+			body := strings.TrimPrefix(plain, ansi.Strip(logPrefix))
+			b.WriteString(logPrefix)
+			b.WriteString(out.String(body).Foreground(termenv.ANSIBrightBlack).Italic().String())
+		}
+	}
+	if strings.HasSuffix(view, "\n") {
+		b.WriteByte('\n')
+	}
+	return b.String(), true
 }
 
 // logLinePrefixes builds the per-line prefix applied to a row's inline log
@@ -5912,6 +6061,21 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		dashed = hl(dashed)
 	}
 
+	// Conversation messages read as a transcript, not a span tree: drop the
+	// bold pipe gutter in favour of a plain indent so the body sits flush like
+	// prose. Only LLM message rows are affected; the regular tree keeps its
+	// pipe. Tool-call output keeps a quiet gutter so its result stays visually
+	// attached to the call.
+	llmMessage := span.LLMRole != ""
+	if llmMessage {
+		gutter := "  "
+		if span.LLMTool != "" {
+			gutter = out.String(VertDash3 + " ").Foreground(termenv.ANSIBrightBlack).Faint().String()
+		}
+		pipe = out.String(gutter)
+		dashed = out.String(gutter)
+	}
+
 	if row.Depth == -1 {
 		// clear prefix when zoomed
 		logPrefix = prefix
@@ -5921,7 +6085,9 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
 		fmt.Fprint(indentOut, pipe)
-		fmt.Fprint(indentOut, out.String(" "))
+		if !llmMessage {
+			fmt.Fprint(indentOut, out.String(" "))
+		}
 		logPrefix = pipeBuf.String()
 	}
 
@@ -5930,7 +6096,9 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 	trimOut := NewOutput(trimBuf, termenv.WithProfile(fe.profile))
 	r.fancyIndent(trimOut, row, false, false)
 	fmt.Fprint(trimOut, dashed)
-	fmt.Fprint(trimOut, out.String(" "))
+	if !llmMessage {
+		fmt.Fprint(trimOut, out.String(" "))
+	}
 	trimPrefix = trimBuf.String()
 	return logPrefix, trimPrefix
 }
