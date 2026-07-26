@@ -15,6 +15,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -505,4 +506,52 @@ GEMINI_MODEL=gemini-model`, nil
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+}
+
+// TestWorkspaceRecipeBase verifies the recipe walk that WithResetWorkspace
+// relies on: every Workspace→Workspace transform on the tail is peeled back to
+// the base workspace call — the first Workspace that was ever set — regardless
+// of which mutator produced the overlay. A regression here leaves a reset
+// workspace pinned with stale edits.
+func TestWorkspaceRecipeBase(t *testing.T) {
+	wsType := &ast.Type{NamedType: "Workspace", NonNull: true}
+	dirType := &ast.Type{NamedType: "Directory", NonNull: true}
+
+	base := call.New().Append(wsType, "currentWorkspace")
+
+	t.Run("bare base is returned unchanged", func(t *testing.T) {
+		got := workspaceRecipeBase(base)
+		assert.Equal(t, "currentWorkspace", got.Field())
+		assert.Nil(t, got.Receiver())
+	})
+
+	t.Run("strips a single withChanges overlay", func(t *testing.T) {
+		id := base.Append(wsType, "withChanges")
+		got := workspaceRecipeBase(id)
+		assert.Equal(t, "currentWorkspace", got.Field())
+		assert.Nil(t, got.Receiver())
+	})
+
+	t.Run("strips non-withChanges mutators (withNewFile chains)", func(t *testing.T) {
+		id := base.
+			Append(wsType, "withNewFile").
+			Append(wsType, "withNewDirectory").
+			Append(wsType, "withConfigValue")
+		got := workspaceRecipeBase(id)
+		assert.Equal(t, "currentWorkspace", got.Field())
+		assert.Nil(t, got.Receiver())
+	})
+
+	t.Run("stops at the base workspace call, keeping its receiver", func(t *testing.T) {
+		// A workspace derived from a non-Workspace receiver (e.g.
+		// directory(...).asWorkspace()) must not be peeled past its base.
+		wsBase := call.New().
+			Append(dirType, "directory").
+			Append(wsType, "asWorkspace")
+		id := wsBase.Append(wsType, "withNewFile")
+		got := workspaceRecipeBase(id)
+		assert.Equal(t, "asWorkspace", got.Field())
+		require.NotNil(t, got.Receiver())
+		assert.Equal(t, "directory", got.Receiver().Field())
+	})
 }

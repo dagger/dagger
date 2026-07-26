@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -668,4 +669,110 @@ func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
 	reloadedHist, err := reloaded.Transcript(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origHist, reloadedHist)
+}
+
+// TestWithResetWorkspaceStripsNonChangesOverlays verifies that
+// withResetWorkspace drops workspace overlays applied through mutators other
+// than withChanges — e.g. the withNewFile / withNewDirectory calls the built-in
+// filesystem tools use. Previously the reset only peeled a trailing withChanges
+// chain, so a workspace edited via withNewFile stayed pinned with its overlay:
+// the reset LLM still reported the (already-exported) edit as a pending change,
+// which is what made `dagger agent`'s ctrl+s leave a stale "Changes" bubble and
+// re-diff already-saved files as deletions on the next turn.
+func (LLMSuite) TestWithResetWorkspaceStripsNonChangesOverlays(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM().
+		WithModel("openai/gpt-4o").
+		WithSystemPrompt("be helpful").
+		WithPrompt("hello").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+		})
+
+	// Overlay edits via workspace mutators (not withChanges), mimicking the
+	// built-in write tool: currentWorkspace().withNewFile(...).withNewFile(...).
+	edited := llm.WithWorkspace(
+		llm.Workspace().
+			WithNewFile("added.txt", "one").
+			WithNewFile("another.txt", "two"),
+	)
+
+	// Sanity check: before reset the overlay reports the edits as pending.
+	editedEmpty, err := edited.Workspace().Changes().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, editedEmpty, "overlaid workspace should report pending changes")
+
+	reset := edited.WithResetWorkspace()
+
+	// After reset the overlay is gone: the workspace re-roots at its base, so it
+	// reports no pending changes.
+	resetEmpty, err := reset.Workspace().Changes().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, resetEmpty,
+		"reset workspace must drop overlay edits so no pending changes remain")
+
+	// The re-emitted recipe carries no workspace rebind or mutator: the
+	// currentWorkspace base is dropped so replay re-resolves the live workspace.
+	globalID, err := reset.PortableID(ctx)
+	require.NoError(t, err)
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(globalID)))
+	for cur := gid; cur != nil; cur = cur.Receiver() {
+		require.NotEqual(t, "withResetWorkspace", cur.Field(),
+			"reset must re-emit the recipe, not append to it")
+		require.NotEqual(t, "withWorkspace", cur.Field(),
+			"a currentWorkspace-based binding must be dropped from the recipe")
+		require.NotEqual(t, "withNewFile", cur.Field(),
+			"overlay mutators must be stripped from the reset recipe")
+	}
+
+	// The conversation survives the reset byte-for-byte.
+	origHist, err := edited.Transcript(ctx)
+	require.NoError(t, err)
+	resetHist, err := reset.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, resetHist)
+}
+
+// TestWithResetWorkspaceBustsStaleHostReads verifies that withResetWorkspace
+// invalidates the session's cached host reads, so an agent that saves its
+// changes to disk (ctrl+s: export then reset) observes the saved content on its
+// next read instead of a stale snapshot cached earlier in the same session.
+//
+// Host-backed workspace reads (Workspace.file) resolve through host.directory,
+// which is cached per client for the client's whole lifetime. Within a single
+// long-lived `dagger agent` session that meant a file read early in the
+// conversation kept returning its original contents even after the agent's
+// edits were exported to disk and the workspace was reset. Here the read after
+// the reset must observe the exported "NEW" contents rather than the "OLD" ones
+// cached by the earlier read.
+func (LLMSuite) TestWithResetWorkspaceBustsStaleHostReads(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "x.txt"), []byte("OLD"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	// Prime the per-client host.directory cache with the original contents,
+	// exactly as the agent reading the file before editing it would.
+	before, err := c.CurrentWorkspace().File("x.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "OLD", before)
+
+	// Save: export the edited contents to the local Git workspace on disk, as
+	// ctrl+s does before resetting.
+	require.NoError(t, c.CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
+
+	// Reset re-roots the LLM at the live workspace, dropping the overlay; the
+	// file on disk now holds "NEW".
+	reset := c.LLM().
+		WithWorkspace(c.CurrentWorkspace().WithNewFile("x.txt", "NEW")).
+		WithResetWorkspace()
+
+	// The next read must observe the exported contents, not the snapshot the
+	// earlier read cached for the session.
+	after, err := reset.Workspace().File("x.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "NEW", after)
 }

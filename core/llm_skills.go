@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	dangskills "github.com/vito/dang/v2/.agents/skills"
 	"github.com/vektah/gqlparser/v2/ast"
+	dangskills "github.com/vito/dang/v2/.agents/skills"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dagger/dagger/dagql"
@@ -122,10 +122,7 @@ func (s embeddedSkillSource) read(_ context.Context, name, rel string) (string, 
 	if !s.allowed(name) {
 		return "", errSkillNotFound
 	}
-	rel, err := skillFilePath(rel)
-	if err != nil {
-		return "", err
-	}
+	rel = skillFilePath(rel)
 	content, err := fs.ReadFile(s.fsys, path.Join(name, rel))
 	if err != nil {
 		return "", fmt.Errorf("read %q from skill %q: %w", rel, name, err)
@@ -136,12 +133,12 @@ func (s embeddedSkillSource) read(_ context.Context, name, rel string) (string, 
 // skillFilePath normalizes a caller-supplied path relative to a skill directory,
 // defaulting to SKILL.md and neutralizing any traversal out of the skill's
 // subtree (the leading-slash Clean pins the result inside the directory).
-func skillFilePath(rel string) (string, error) {
+func skillFilePath(rel string) string {
 	rel = strings.TrimPrefix(path.Clean("/"+rel), "/")
 	if rel == "" || rel == "." {
-		return "SKILL.md", nil
+		return "SKILL.md"
 	}
-	return rel, nil
+	return rel
 }
 
 // skillGlob finds skills anywhere in a tree — the bound workspace or an
@@ -300,10 +297,7 @@ func (s workspaceSkillSource) read(ctx context.Context, name, rel string) (strin
 	if !ok {
 		return "", errSkillNotFound
 	}
-	rel, err = skillFilePath(rel)
-	if err != nil {
-		return "", err
-	}
+	rel = skillFilePath(rel)
 	srv, err := s.m.Server(ctx)
 	if err != nil {
 		return "", err
