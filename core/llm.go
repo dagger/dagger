@@ -1990,8 +1990,8 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				}
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-					attribute.String(telemetry.LLMToolAttr, block.ToolName),
 					attribute.Bool(telemetry.UIBoundaryAttr, true),
+					attribute.String(telemetry.LLMToolAttr, block.ToolName),
 					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
