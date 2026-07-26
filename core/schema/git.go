@@ -192,6 +192,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("other").Doc(`The other ref to compare against.`),
 			),
+		dagql.NodeFunc("log", s.log).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Commits reachable from this ref, newest first, starting with the commit this ref resolves to.`).
+			Args(
+				dagql.Arg("limit").Doc(`Maximum number of commits to return.`),
+				dagql.Arg("paths").Doc(`Only include commits touching these paths, relative to the root of the repository.`),
+				dagql.Arg("base").Doc(`Exclude commits reachable from this ref, i.e. only list commits added on top of it.`),
+			),
 		dagql.NodeFunc("asWorkspace", s.gitRefAsWorkspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this git ref.").
@@ -1908,4 +1916,59 @@ func (s *gitSchema) commonAncestor(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, result)
+}
+
+type gitLogArgs struct {
+	Limit int `default:"10"`
+	Paths dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Base  dagql.Optional[core.GitRefID]
+}
+
+func (s *gitSchema) log(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRef],
+	args gitLogArgs,
+) (dagql.ObjectResultArray[*core.GitCommit], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	opts := core.GitLogOptions{Limit: args.Limit}
+	if args.Paths.Valid {
+		for _, path := range args.Paths.Value {
+			opts.Paths = append(opts.Paths, path.String())
+		}
+	}
+	if args.Base.Valid {
+		base, err := args.Base.Value.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		opts.Base = base.Self()
+	}
+
+	metas, err := parent.Self().Log(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// build each element by selecting the repository's commit field, so a log
+	// entry is the same object, with the same ID and cache entry, as the commit
+	// looked up directly by its SHA
+	commits := make(dagql.ObjectResultArray[*core.GitCommit], 0, len(metas))
+	for _, meta := range metas {
+		var commit dagql.ObjectResult[*core.GitCommit]
+		if err := srv.Select(ctx, parent.Self().Repo, &commit, dagql.Selector{
+			Field: "commit",
+			Args: []dagql.NamedInput{
+				{Name: "id", Value: dagql.String(meta.SHA)},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("git log: load commit %s: %w", meta.SHA, err)
+		}
+		commit.Self().PrefillMetadata(meta)
+		commits = append(commits, commit)
+	}
+	return commits, nil
 }

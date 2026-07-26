@@ -549,6 +549,55 @@ func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Cont
 	require.Equal(t, "staged", string(got))
 }
 
+// TestHostWorkspaceGitLog covers workspace.git.head.log against a host
+// checkout: the workspace's git ref is an ordinary GitRef, so it lists commits
+// like any other.
+func (WorkspaceAPISuite) TestHostWorkspaceGitLog(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
+	runGit(ctx, t, workdir, "add", ".")
+	runGit(ctx, t, workdir, "commit", "-m", "initial")
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("more"), 0o644))
+	runGit(ctx, t, workdir, "commit", "-am", "second")
+
+	queryPath := writeQueryDoc(t, workdir, "git-log.graphql", `{
+  currentWorkspace {
+    git {
+      head {
+        log {
+          messageHeadline
+          authorEmail
+        }
+      }
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			Git struct {
+				Head struct {
+					Log []struct {
+						MessageHeadline string `json:"messageHeadline"`
+						AuthorEmail     string `json:"authorEmail"`
+					} `json:"log"`
+				} `json:"head"`
+			} `json:"git"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal(out, &got))
+
+	log := got.CurrentWorkspace.Git.Head.Log
+	require.Len(t, log, 2)
+	require.Equal(t, "second", log[0].MessageHeadline)
+	require.Equal(t, "initial", log[1].MessageHeadline)
+	require.Equal(t, "dagger@example.com", log[0].AuthorEmail)
+}
+
 func runGit(ctx context.Context, t *testctx.T, dir string, args ...string) {
 	t.Helper()
 
