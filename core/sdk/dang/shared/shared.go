@@ -38,7 +38,6 @@ func WithNestedClientServer(
 	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
-	envContext dagql.ObjectResult[*core.Env],
 	fn func(ctx context.Context, gqlClient graphql.Client) ([]byte, error),
 ) ([]byte, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -51,7 +50,7 @@ func WithNestedClientServer(
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall, envContext)
+			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall)
 		}),
 	}
 	defer func() {
