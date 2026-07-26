@@ -1,0 +1,11 @@
+type Probe {
+  showHead(source: Workspace!): String! {
+    let sel = source.git.head.log(limit: 2).{{sha, tree(discardGitDir: true)}}
+    let newer = sel[0]
+    let older = sel[1]
+    if (newer == null or older == null) {
+      return "not enough history"
+    }
+    newer.tree.changes(from: older.tree).asPatch.contents.truncate(800)
+  }
+}
