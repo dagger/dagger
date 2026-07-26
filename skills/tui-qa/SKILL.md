@@ -163,16 +163,15 @@ python3 skills/tui-qa/scripts/tui_qa.py snapshot \
 The `run`/`record` helpers above capture a command; to *drive* an interactive
 TUI (type into a prompt, press keys, watch it react) you need a real pty plus
 keystroke injection. Use `tmux`: `send-keys` injects, `capture-pane -p` reads the
-rendered screen. This is how to QA `dagger shell --model …`, `dagger llm`, or any
+rendered screen. This is how to QA `dagger agent`, `dagger llm`, or any
 interactive prompt.
 
 Two gotchas specific to dagger, both learned the hard way:
 
 - **`DAGGER_PROGRESS=tty` is mandatory.** The CLI calls `idtui.RunningInAgent()`
   (env vars like `CLAUDECODE`), and when true it forces the non-interactive
-  *report* frontend — so the live TUI never engages no matter the tty. Worse,
-  `dagger shell --model` in report mode currently **panics** (nil `keymapBar` in
-  `startShell`). `DAGGER_PROGRESS=tty` is checked before that agent-detection
+  *report* frontend — so the live TUI never engages no matter the tty.
+  `DAGGER_PROGRESS=tty` is checked before that agent-detection
   (`internal/cmd/dagger/main.go`), so it restores the interactive Pretty TUI.
 - **You need a real pty.** `progress=tty` requires `hasTTY`; a tmux pane is a real
   pty (`[ -t 1 ]` is true inside it), so this satisfies it. Bare piped exec does
@@ -186,7 +185,7 @@ Recipe:
 # 1. Launch in a detached pane, in the target workspace, with progress forced.
 tmux new-session -d -s qa -x 200 -y 50
 tmux send-keys -t qa 'cd /path/to/workspace && DAGGER_PROGRESS=tty \
-  /repo/hack/with-dev /repo/bin/dagger shell --model claude-opus-4-8' Enter
+  /repo/hack/with-dev /repo/bin/dagger agent' Enter
 
 # 2. Poll capture-pane until the bowtie prompt (⋈, "esc nav mode · > run prompt")
 #    appears — that means the interactive TUI (not report mode) engaged.

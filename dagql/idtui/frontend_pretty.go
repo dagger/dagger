@@ -116,6 +116,7 @@ type frontendPretty struct {
 	statusLine      *StatusLine
 	llmCostFn       LLMCostFunc
 	textInput       *tuist.TextInput
+	promptFrame     *PromptFrame
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
 	editlineFocused bool
@@ -905,9 +906,10 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 		inFlight:  func() bool { return fe.shellRunning },
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
+	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
-	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.promptFrame)
 	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
@@ -936,7 +938,8 @@ func (fe *frontendPretty) stopShell() {
 		fe.statusLine = nil
 	}
 	if fe.textInput != nil {
-		fe.tui.RemoveChild(fe.textInput)
+		fe.tui.RemoveChild(fe.promptFrame)
+		fe.promptFrame = nil
 		fe.textInput = nil
 	}
 	if fe.notificationOverlay != nil {
@@ -1258,6 +1261,14 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
 	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+	// Cap the form at half the screen so a tall field (e.g. the .resume session
+	// picker's long Select) stays scrollable instead of dominating — or
+	// overflowing — the terminal. huh propagates this to its Selects, which then
+	// scroll within the allotted height. Only applied when the window height is
+	// known (>0); otherwise huh sizes to content as before.
+	if h := fe.window.Height; h > 0 {
+		fe.formModel = fe.formModel.WithHeight(max(h/2, 3))
+	}
 	fe.formWrap = teav1.New(fe.formModel)
 	fe.formSpacer = &blankLine{}
 	wrap := fe.formWrap
@@ -3061,7 +3072,12 @@ func (fe *frontendPretty) editlineHeight() int {
 	}
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
-	return strings.Count(val, "\n") + 1
+	height := strings.Count(val, "\n") + 1
+	// The framed prompt adds a horizontal rule above and below the input.
+	if fe.promptFrame != nil && fe.promptFrame.enabled {
+		height += 2
+	}
+	return height
 }
 
 // formHeight returns the estimated line count of the form wrap
@@ -4643,6 +4659,17 @@ func (fe *frontendPretty) syncPrompt() {
 		prompt, init := fe.shell.Prompt(ctx, promptOut, fe.promptFg)
 		fe.textInput.Prompt = prompt
 		fe.textInput.Update()
+		// Frame the input (bars + shaded background) when the handler reports LLM
+		// prompt mode, so the live prompt mirrors how a submitted user message is
+		// shaded in scrollback (styleLLMMessageView). Handlers that don't
+		// distinguish modes (plain shell) leave it unframed.
+		if fe.promptFrame != nil {
+			promptMode := false
+			if pm, ok := fe.shell.(interface{ PromptMode() bool }); ok {
+				promptMode = pm.PromptMode()
+			}
+			fe.promptFrame.SetEnabled(promptMode)
+		}
 		if init != nil {
 			fe.runShellAsync(init)
 		}
@@ -5632,7 +5659,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 
 	if !fe.finalRender && fe.shell != nil {
 		if focused {
-			fmt.Fprint(out, out.String("> ").Bold())
+			fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
 		} else {
 			fmt.Fprint(out, "  ")
 		}
@@ -6133,6 +6160,20 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		dashed = out.String(gutter)
 	}
 
+	// In shell mode the step title is drawn with a two-cell indent after
+	// fancyIndent (the focus prompt "❯ ", or two spaces when unfocused; see
+	// renderStep). A tool call's output is a separate block beneath the title,
+	// so its gutter has to match that indent to line up under the faint dot
+	// printed in front of the tool name, rather than sitting two columns to its
+	// left. Plain messages (the assistant's reply, thinking, the user's prompt)
+	// render their first line inline on the already-indented title line and
+	// flow their continuation lines through this same gutter, so they must NOT
+	// get the extra indent -- otherwise every line but the first shifts right.
+	shellIndent := ""
+	if !fe.finalRender && fe.shell != nil && span.LLMTool != "" {
+		shellIndent = "  "
+	}
+
 	if row.Depth == -1 {
 		// clear prefix when zoomed
 		logPrefix = prefix
@@ -6141,6 +6182,7 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		fmt.Fprint(pipeBuf, prefix)
 		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
+		fmt.Fprint(indentOut, shellIndent)
 		fmt.Fprint(indentOut, pipe)
 		if !llmMessage {
 			fmt.Fprint(indentOut, out.String(" "))
@@ -6152,6 +6194,7 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 	fmt.Fprint(trimBuf, prefix)
 	trimOut := NewOutput(trimBuf, termenv.WithProfile(fe.profile))
 	r.fancyIndent(trimOut, row, false, false)
+	fmt.Fprint(trimOut, shellIndent)
 	fmt.Fprint(trimOut, dashed)
 	if !llmMessage {
 		fmt.Fprint(trimOut, out.String(" "))
