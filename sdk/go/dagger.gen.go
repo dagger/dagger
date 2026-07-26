@@ -16813,6 +16813,16 @@ func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit
 	}
 }
 
+// Returns details of a commit in this workspace's repository.
+func (r *WorkspaceGit) Commit(id string) *GitCommit {
+	q := r.query.Select("commit")
+	q = q.Arg("id", id)
+
+	return &GitCommit{
+		query: q,
+	}
+}
+
 // The checked-out HEAD of this workspace.
 func (r *WorkspaceGit) Head() *GitRef {
 	q := r.query.Select("head")
@@ -16860,6 +16870,16 @@ func (r *WorkspaceGit) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns details of a ref in this workspace's repository.
+func (r *WorkspaceGit) Ref(name string) *GitRef {
+	q := r.query.Select("ref")
+	q = q.Arg("name", name)
+
+	return &GitRef{
+		query: q,
+	}
 }
 
 // Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
