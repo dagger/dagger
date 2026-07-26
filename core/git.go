@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -842,48 +843,65 @@ func doGitCheckout(
 	return nil
 }
 
-func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
-	ref1RepoDgst, err1 := ref1.Repo.RecipeDigest(ctx)
-	if err1 != nil {
-		return nil, fmt.Errorf("merge-base ref1 repo ID: %w", err1)
+// mountRefs mounts the given refs with their full history and calls fn with a
+// GitCLI positioned in a repository containing all of them, along with their
+// resolved commit SHAs (in the same order as refs).
+//
+// Refs sharing a repository are mounted together; refs from different
+// repositories are joined into a temporary repository via refJoin.
+func mountRefs(ctx context.Context, refs []*GitRef, fn func(git *gitutil.GitCLI, shas []string) error) error {
+	if len(refs) == 0 {
+		return fmt.Errorf("mount refs: no refs given")
 	}
-	ref2RepoDgst, err2 := ref2.Repo.RecipeDigest(ctx)
-	if err2 != nil {
-		return nil, fmt.Errorf("merge-base ref2 repo ID: %w", err2)
+
+	shas := make([]string, len(refs))
+	backends := make([]GitRefBackend, len(refs))
+	sameRepo := true
+	var repoDgst digest.Digest
+	for i, ref := range refs {
+		shas[i] = ref.Ref.SHA
+		backends[i] = ref.Backend
+
+		dgst, err := ref.Repo.RecipeDigest(ctx)
+		if err != nil {
+			return fmt.Errorf("mount refs: ref %d repo ID: %w", i+1, err)
+		}
+		if i == 0 {
+			repoDgst = dgst
+		} else if dgst != repoDgst {
+			sameRepo = false
+		}
 	}
-	if ref1RepoDgst == ref2RepoDgst { // fast-path, just grab both refs from the same repo
-		var mergeBase string
-		err := ref1.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref1.Backend, ref2.Backend}, func(git *gitutil.GitCLI) error {
-			out, err := git.Run(ctx, "merge-base", ref1.Ref.SHA, ref2.Ref.SHA)
-			if err != nil {
-				return fmt.Errorf("git merge-base failed: %w", err)
-			}
-			mergeBase = strings.TrimSpace(string(out))
-			return nil
+
+	if sameRepo { // fast-path, just grab all the refs from the same repo
+		// depth 0 = full fetch, so that history is available
+		return refs[0].Repo.Self().Backend.mount(ctx, 0, false, backends, func(git *gitutil.GitCLI) error {
+			return fn(git, shas)
 		})
-		if err != nil {
-			return nil, err
-		}
-
-		ref := &gitutil.Ref{SHA: mergeBase}
-		backend, err := ref1.Repo.Self().Backend.Get(ctx, ref)
-		if err != nil {
-			return nil, err
-		}
-		return &GitRef{Repo: ref1.Repo, Backend: backend, Ref: ref}, nil
 	}
 
-	git, commits, cleanup, err := refJoin(ctx, []*GitRef{ref1, ref2})
+	git, shas, cleanup, err := refJoin(ctx, refs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer cleanup()
 
-	out, err := git.Run(ctx, append([]string{"merge-base"}, commits...)...)
+	return fn(git, shas)
+}
+
+func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
+	var mergeBase string
+	err := mountRefs(ctx, []*GitRef{ref1, ref2}, func(git *gitutil.GitCLI, shas []string) error {
+		out, err := git.Run(ctx, append([]string{"merge-base"}, shas...)...)
+		if err != nil {
+			return fmt.Errorf("git merge-base failed: %w", err)
+		}
+		mergeBase = strings.TrimSpace(string(out))
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("git merge-base failed: %w", err)
+		return nil, err
 	}
-	mergeBase := strings.TrimSpace(string(out))
 
 	ref := &gitutil.Ref{SHA: mergeBase}
 	backend, err := ref1.Repo.Self().Backend.Get(ctx, ref)
