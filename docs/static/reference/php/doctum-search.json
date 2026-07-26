@@ -1170,7 +1170,7 @@
 			"t": "C",
 			"n": "Dagger\\LLMSkill",
 			"p": "Dagger/LLMSkill.html",
-			"d": "<p>A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.</p>",
+			"d": "<p>A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -5900,7 +5900,7 @@
 			"t": "M",
 			"n": "Dagger\\LLMSkill::name",
 			"p": "Dagger/LLMSkill.html#method_name",
-			"d": "<p>The skill name, as passed to read_skill.</p>"
+			"d": "<p>The skill name, as passed to ReadSkill.</p>"
 		},
 		{
 			"t": "M",
