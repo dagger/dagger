@@ -1154,6 +1154,69 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsChain(ctx context
 	}
 }
 
+// TestHostWorkspaceFunctionalRemoves verifies that withoutFile / withoutDirectory
+// record removals of host files in the overlay changeset without mutating the
+// host, mirroring Directory.withoutFile / Directory.withoutDirectory.
+func (WorkspaceAPISuite) TestHostWorkspaceFunctionalRemoves(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "keep.txt"), []byte("keep"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "drop.txt"), []byte("drop"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "sub", "inner.txt"), []byte("inner"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	for _, tc := range []struct {
+		name        string
+		query       string
+		field       string
+		wantRemoved []string
+	}{
+		{
+			name: "withoutFile",
+			query: `{
+				currentWorkspace {
+					withoutFile(path: "drop.txt") {
+						changes {
+							removedPaths
+						}
+					}
+				}
+			}`,
+			field:       "withoutFile",
+			wantRemoved: []string{"drop.txt"},
+		},
+		{
+			name: "withoutDirectory",
+			query: `{
+				currentWorkspace {
+					withoutDirectory(path: "sub") {
+						changes {
+							removedPaths
+						}
+					}
+				}
+			}`,
+			field:       "withoutDirectory",
+			wantRemoved: []string{"sub/"},
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			raw, err := testutil.QueryWithClient[map[string]any](c, t, tc.query, nil)
+			require.NoError(t, err)
+			ws := (*raw)["currentWorkspace"].(map[string]any)
+			changes := ws[tc.field].(map[string]any)["changes"].(map[string]any)
+			removedAny := changes["removedPaths"].([]any)
+			removed := make([]string, len(removedAny))
+			for i, p := range removedAny {
+				removed[i] = p.(string)
+			}
+			require.ElementsMatch(t, tc.wantRemoved, removed)
+		})
+	}
+}
+
 // TestHostWorkspaceOverlayReads verifies reads through a host overlay: the
 // overlay stores no full read root (materializing one would upload the whole
 // host tree — the perf half is checked by tracing Host.directory for a missing
