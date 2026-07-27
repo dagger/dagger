@@ -110,6 +110,36 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 	return repo, nil
 }
 
+// revisionResolver is implemented by backends that can resolve arbitrary git
+// revision expressions (abbreviated SHAs, "HEAD~1", "main^", ":/msg", ...)
+// against a locally available object graph. Backends that can only see what
+// `git ls-remote` exposes (e.g. remote repositories) don't implement it.
+type revisionResolver interface {
+	resolveRevision(ctx context.Context, name string) (*gitutil.Ref, error)
+}
+
+// ResolveRef resolves a user-provided revision string into a concrete ref.
+//
+// It first consults the ls-remote view (repo.Remote), which handles the common
+// cases: the literal "HEAD", fully-qualified/short ref names, and full commit
+// SHAs. If that fails and the backend can inspect a local object graph, it
+// falls back to git's full rev-parse grammar, so revisions like "HEAD~1",
+// abbreviated SHAs, or "main^" resolve against local repositories (e.g. a
+// workspace checkout) just like they would with the git CLI. The original
+// ls-remote error is preserved when the fallback can't resolve the revision.
+func (repo *GitRepository) ResolveRef(ctx context.Context, name string) (*gitutil.Ref, error) {
+	ref, err := repo.Remote.Lookup(name)
+	if err == nil {
+		return ref, nil
+	}
+	if resolver, ok := repo.Backend.(revisionResolver); ok {
+		if resolved, resolveErr := resolver.resolveRevision(ctx, name); resolveErr == nil {
+			return resolved, nil
+		}
+	}
+	return nil, err
+}
+
 func (*GitRepository) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "GitRepository",

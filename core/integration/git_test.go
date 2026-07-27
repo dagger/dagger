@@ -1344,6 +1344,78 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "refs/tags/v2.1.0-rc.1", directPreRelease)
 }
 
+func (GitSuite) TestGitRefRevParse(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// main: A -> B -> C
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `
+			echo A > file.txt && git add -A && git commit -m A &&
+			echo B >> file.txt && git add -A && git commit -m B &&
+			echo C >> file.txt && git add -A && git commit -m C
+		`})
+
+	revParse := func(rev string) string {
+		t.Helper()
+		out, err := ctr.WithExec([]string{"git", "rev-parse", rev}).Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	shaA := revParse("HEAD~2")
+	shaB := revParse("HEAD~1")
+	shaC := revParse("HEAD")
+
+	git := ctr.Directory(".").AsGit()
+
+	// A local repository has its full object graph available, so ref() resolves
+	// any git rev-parse expression, not just the literal "HEAD", plain ref
+	// names, and full commit SHAs that the ls-remote view can name.
+	t.Run("relative revision", func(ctx context.Context, t *testctx.T) {
+		sha, err := git.Ref("HEAD~1").Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, shaB, sha)
+
+		sha, err = git.Ref("main~2").Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, shaA, sha)
+
+		sha, err = git.Ref("main^").Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, shaB, sha)
+	})
+
+	t.Run("abbreviated sha", func(ctx context.Context, t *testctx.T) {
+		sha, err := git.Ref(shaC[:10]).Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, shaC, sha)
+	})
+
+	t.Run("checks out the resolved commit", func(ctx context.Context, t *testctx.T) {
+		contents, err := git.Ref("HEAD~2").Tree().File("file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "A\n", contents)
+	})
+
+	t.Run("unknown revision still errors", func(ctx context.Context, t *testctx.T) {
+		_, err := git.Ref("HEAD~99").Commit(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "repository does not contain")
+	})
+
+	// A remote repository only knows what ls-remote advertises, so rev-parse
+	// expressions it can't name are not resolvable there.
+	t.Run("remote repository rejects rev-parse expressions", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Git("https://github.com/dagger/dagger-test-modules").Ref("HEAD~1").Commit(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "repository does not contain")
+	})
+}
+
 func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  `GitRepository.ref` (and `WorkspaceGit.ref`, which backs `workspace.git.ref`)
+  now resolves any git rev-parse expression against local repositories, not just
+  the literal `HEAD`, plain ref names, and full commit SHAs. Revisions like
+  `HEAD~1`, `main^`, and abbreviated commit SHAs resolve against a local
+  repository's object graph just like they would with the `git` CLI. Remote
+  repositories are unchanged: they still only resolve what `git ls-remote`
+  advertises.
+time: 2026-07-26T20:00:00Z
+custom:
+  Author: vito
+  PR: 13601
