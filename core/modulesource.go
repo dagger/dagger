@@ -1155,7 +1155,40 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 	return envFile, envFilePath, nil
 }
 
+// runningInsideModule reports whether the caller is module code rather than a
+// client that owns a host session, by comparing the current client against the
+// nearest non-module ancestor.
+func runningInsideModule(ctx context.Context) (bool, error) {
+	current, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	parent, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+	return current.ClientID != parent.ClientID, nil
+}
+
 func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, error) {
+	// The outer env file is the caller's own .env, found by walking their host.
+	// Module code has no host session, so this lookup can only block until the
+	// context deadline; and resolving it through the caller's client instead
+	// would hand a module the caller's .env for any module source it can
+	// synthesize. innerEnvFile already refuses non-local sources "for safety" —
+	// this is the same restriction from the other direction.
+	inModule, err := runningInsideModule(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if inModule {
+		return &EnvFile{}, "", nil
+	}
+
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, "", err
