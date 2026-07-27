@@ -3270,7 +3270,18 @@ func sdkOwnersByModulePathFromConfig(cfg *workspace.Config) (map[string]string, 
 			continue
 		}
 		for _, managed := range entry.AsSDK.Modules {
-			owners[cleanWorkspaceRelPath(managed.Path)] = name
+			path := cleanWorkspaceRelPath(managed.Path)
+			if existing, ok := owners[path]; ok && existing != name {
+				sdkNames := []string{existing, name}
+				slices.Sort(sdkNames)
+				return nil, fmt.Errorf(
+					"module path %q is managed by multiple SDKs: %q and %q",
+					path,
+					sdkNames[0],
+					sdkNames[1],
+				)
+			}
+			owners[path] = name
 		}
 	}
 	return owners, nil
