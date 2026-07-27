@@ -31,7 +31,7 @@ func workspaceMigrationModuleConfigConversions(
 			// when its source is a non-root subdir (a normal toolchain would
 			// otherwise be treated as workspace-shaped). Only a genuine nested
 			// workspace (its own toolchains/blueprint) is left as legacy.
-			if workspace.HasOwnWorkspaceSemantics(compatWorkspace.Config) {
+			if workspaceMigrationLeavesModuleLegacy(compatWorkspace) {
 				continue
 			}
 		} else {
@@ -60,6 +60,15 @@ func workspaceMigrationModuleConfigConversions(
 		return nil, nil
 	}
 	return conversions, nil
+}
+
+// workspaceMigrationLeavesModuleLegacy reports whether migration leaves this
+// module's config in legacy format: a discovered nested workspace (own
+// toolchains/blueprint) is neither converted in place nor routed through
+// PlanMigration.
+func workspaceMigrationLeavesModuleLegacy(compatWorkspace *workspace.CompatWorkspace) bool {
+	return compatWorkspace.DiscoveredLocalModule &&
+		workspace.HasOwnWorkspaceSemantics(compatWorkspace.Config)
 }
 
 func legacyModuleConfigAsCurrent(cfg *modules.ModuleConfig) ([]byte, error) {

@@ -177,6 +177,11 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
 		if compatWorkspace == nil || compatWorkspace.Config == nil || compatWorkspace.Config.SDK == nil {
 			continue
 		}
+		// A module left in legacy format keeps runtime codegen, so its
+		// generated-code ignore rules must stay.
+		if workspaceMigrationLeavesModuleLegacy(compatWorkspace) {
+			continue
+		}
 		cleanup, err := s.workspaceMigrationGitignoreCleanup(ctx, srv, ws, compatWorkspace)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf(
