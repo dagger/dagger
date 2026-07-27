@@ -387,10 +387,11 @@ func TestRemoveForReplaceDirectoryOverOverlayLowerFileMarksOpaque(t *testing.T) 
 	srcInfo, err := os.Stat(filepath.Join(srcRoot, "node"))
 	require.NoError(t, err)
 
-	err = dst.removeForReplace("/node", srcInfo, CopyOptions{
+	realPath, err := dst.removeForReplace("/node", srcInfo, CopyOptions{
 		ReplaceExisting: true,
 	})
 	require.NoError(t, err)
+	require.Equal(t, filepath.Join(upperRoot, "node"), realPath)
 
 	info, err := os.Stat(filepath.Join(upperRoot, "node"))
 	require.NoError(t, err)

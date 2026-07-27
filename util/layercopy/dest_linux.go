@@ -319,35 +319,39 @@ func (d *destination) statView(destPath string) (os.FileInfo, bool, error) {
 	return nil, false, err
 }
 
-func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opts CopyOptions) error {
+// removeForReplace clears a destination path that is about to be replaced. It
+// returns the resolved write-root path whenever it had to resolve one, so that
+// callers needing the same path can reuse it instead of resolving it a second
+// time. An empty string means nothing was resolved and nothing was removed.
+func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opts CopyOptions) (string, error) {
 	if !opts.ReplaceExisting {
-		return nil
+		return "", nil
 	}
 
 	destInfo, exists, err := d.statView(destPath)
 	if err != nil || !exists {
-		return err
+		return "", err
 	}
 	if srcInfo.IsDir() && destInfo.IsDir() {
-		return nil
+		return "", nil
 	}
 
 	realPath, err := d.realPath(destPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.RemoveAll(realPath); err != nil {
-		return err
+		return "", err
 	}
 	if d.overlay && srcInfo.IsDir() && !destInfo.IsDir() {
 		if err := os.Mkdir(realPath, srcInfo.Mode().Perm()); err != nil && !os.IsExist(err) {
-			return err
+			return "", err
 		}
 		if err := d.markOpaque(realPath); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return nil
+	return realPath, nil
 }
 
 func (d *destination) applyMetadataPath(dstPath string, src *sourceEntry, opts CopyOptions) error {
