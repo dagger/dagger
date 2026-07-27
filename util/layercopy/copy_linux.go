@@ -93,7 +93,7 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 		return err
 	}
 	if opts.CopyDirContents && root.Info.IsDir() {
-		if err := c.dest.removeForReplace(destPath, root.Info, opts); err != nil {
+		if _, err := c.dest.removeForReplace(destPath, root.Info, opts); err != nil {
 			return err
 		}
 		if _, _, err := c.dest.ensureDir(destPath, &root, opts, false); err != nil {
@@ -198,7 +198,7 @@ func (c *Copier) copyEntry(
 			if err := c.ensurePending(pending, opts); err != nil {
 				return err
 			}
-			if err := c.dest.removeForReplace(destPath, ent.Info, opts); err != nil {
+			if _, err := c.dest.removeForReplace(destPath, ent.Info, opts); err != nil {
 				return err
 			}
 			rel, _, err := c.dest.ensureDir(destPath, &ent, opts, true)
@@ -252,12 +252,17 @@ func (c *Copier) ensurePending(pending []pendingDir, opts CopyOptions) error {
 }
 
 func (c *Copier) copyNode(ent sourceEntry, destPath string, opts CopyOptions) error {
-	if err := c.dest.removeForReplace(destPath, ent.Info, opts); err != nil {
-		return err
-	}
-	realPath, err := c.dest.realPath(destPath)
+	// removeForReplace already resolves the write-root path when it removes
+	// something; reuse it rather than resolving the same path twice.
+	realPath, err := c.dest.removeForReplace(destPath, ent.Info, opts)
 	if err != nil {
 		return err
+	}
+	if realPath == "" {
+		realPath, err = c.dest.realPath(destPath)
+		if err != nil {
+			return err
+		}
 	}
 
 	mode := ent.Info.Mode()
