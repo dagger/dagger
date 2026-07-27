@@ -22,6 +22,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -1026,17 +1027,40 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 	selectors := []dagql.Selector{
 		{Field: "directory"},
 	}
-	beforeID, err := ch.Before.ID()
-	if err != nil {
-		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("before ID: %w", err)
-	}
-	selectors = append(selectors, withDirectorySelector(beforeID))
-	for _, other := range others {
-		otherBeforeID, err := other.Before.ID()
+	// Changesets merged together are normally diffs taken against a common
+	// base, so their before directories are usually the same directory
+	// repeated. Merging a directory onto itself is a no-op, but each merge
+	// still walks the whole tree, so folding in N identical copies costs N
+	// full-tree copies to produce what the first one already produced.
+	//
+	// Only consecutive repeats are collapsed. Dropping every repeat would
+	// reorder a sequence like A, B, A, where the trailing A is what decides
+	// paths that A and B disagree on.
+	var lastDigest digest.Digest
+	appendBefore := func(before dagql.ObjectResult[*Directory]) error {
+		dgst, err := before.ContentPreferredDigest(ctx)
 		if err != nil {
-			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("other before ID: %w", err)
+			return fmt.Errorf("before content-preferred digest: %w", err)
 		}
-		selectors = append(selectors, withDirectorySelector(otherBeforeID))
+		if dgst == lastDigest {
+			return nil
+		}
+		id, err := before.ID()
+		if err != nil {
+			return fmt.Errorf("before ID: %w", err)
+		}
+		lastDigest = dgst
+		selectors = append(selectors, withDirectorySelector(id))
+		return nil
+	}
+
+	if err := appendBefore(ch.Before); err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	for _, other := range others {
+		if err := appendBefore(other.Before); err != nil {
+			return dagql.ObjectResult[*Directory]{}, err
+		}
 	}
 
 	selectors = append(selectors, dagql.Selector{
