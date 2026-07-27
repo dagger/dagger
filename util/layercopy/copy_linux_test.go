@@ -442,3 +442,47 @@ func requireOpaqueDir(t *testing.T, path string) {
 	require.NoError(t, err)
 	require.Equal(t, []byte{'y'}, val)
 }
+
+// TestMaterializeDeepOverlayAncestors covers materializing several levels of
+// pre-existing view directories into an empty upper in one step. Ancestors are
+// resolved once and then created parent-first; creating them in any other
+// order fails because the parent does not exist yet.
+func TestMaterializeDeepOverlayAncestors(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	viewRoot := filepath.Join(root, "view")
+	upperRoot := filepath.Join(root, "upper")
+	require.NoError(t, os.Mkdir(srcRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "leaf.txt"), []byte("leaf"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(viewRoot, "a", "b", "c", "d"), 0o755))
+	require.NoError(t, os.Mkdir(upperRoot, 0o755))
+
+	copier, err := NewCopier(Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type:    "overlay",
+			Options: []string{"upperdir=" + upperRoot},
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Copy(context.Background(), Mount{Root: srcRoot}, "/", "/a/b/c/d", CopyOptions{
+		CopyDirContents: true,
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	for _, dir := range []string{"a", "a/b", "a/b/c", "a/b/c/d"} {
+		info, err := os.Lstat(filepath.Join(upperRoot, dir))
+		require.NoErrorf(t, err, "ancestor %q was not materialized", dir)
+		require.True(t, info.IsDir())
+	}
+	got, err := os.ReadFile(filepath.Join(upperRoot, "a", "b", "c", "d", "leaf.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "leaf", string(got))
+}

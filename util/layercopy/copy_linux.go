@@ -274,14 +274,14 @@ func (c *Copier) copyNode(ent sourceEntry, destPath string, opts CopyOptions) er
 		if err != nil {
 			return err
 		}
-		if err := os.RemoveAll(realPath); err != nil {
+		if err := c.dest.removeAll(realPath, !opts.ReplaceExisting); err != nil {
 			return err
 		}
 		if err := os.Symlink(target, realPath); err != nil {
 			return err
 		}
 	case mode&os.ModeDevice != 0, mode&os.ModeNamedPipe != 0, mode&os.ModeSocket != 0:
-		if err := os.RemoveAll(realPath); err != nil {
+		if err := c.dest.removeAll(realPath, !opts.ReplaceExisting); err != nil {
 			return err
 		}
 		if err := mknod(realPath, ent.Info); err != nil {
@@ -302,7 +302,7 @@ func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions)
 	if !opts.DisableHardlinks {
 		ino = statInode(st)
 		if linkSrc, ok := c.dest.sourceLinks[ino]; ok {
-			if err := os.RemoveAll(realPath); err != nil {
+			if err := c.dest.removeAll(realPath, !opts.ReplaceExisting); err != nil {
 				return err
 			}
 			if err := os.Link(linkSrc, realPath); err != nil && !isHardlinkFallback(err) {
@@ -314,7 +314,7 @@ func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions)
 	}
 
 	if !opts.DisableHardlinks && !opts.DisableSourceHardlinks && opts.Chown == nil && opts.Mode == nil {
-		if err := os.RemoveAll(realPath); err != nil {
+		if err := c.dest.removeAll(realPath, !opts.ReplaceExisting); err != nil {
 			return err
 		}
 		if err := os.Link(ent.RealPath, realPath); err == nil {
