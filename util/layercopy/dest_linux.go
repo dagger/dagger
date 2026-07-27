@@ -350,6 +350,48 @@ func (d *destination) removeAll(realPath string, mayBeDir bool) error {
 	return nil
 }
 
+// resolvedParent carries the destination directory an entry is being copied
+// into, once it has already been resolved and materialized. Entries inside it
+// then need no resolution of their own: their parent is known to be
+// symlink-free, so only their final component can still be a symlink. ok is
+// false when the parent is not known yet, and paths are resolved from the
+// destination root as before.
+type resolvedParent struct {
+	rel string
+	ok  bool
+}
+
+// realPathIn returns the write-root path for destPath, using a known parent
+// directory when there is one. realPath resolves only the parent and appends
+// the final component, so this is the same answer without the walk.
+func (d *destination) realPathIn(destPath string, parent resolvedParent) (string, error) {
+	if !parent.ok {
+		return d.realPath(destPath)
+	}
+	base := filepath.Base(cleanContainerPath(destPath))
+	return filepath.Join(d.writeRoot, parent.rel, base), nil
+}
+
+// statViewIn stats destPath in the view, using a known parent directory when
+// there is one. Only the final component can still be a symlink there, so an
+// lstat settles the common case and the bounded resolution below is only
+// needed when it turns out to be one.
+func (d *destination) statViewIn(destPath string, parent resolvedParent) (os.FileInfo, bool, error) {
+	if parent.ok {
+		base := filepath.Base(cleanContainerPath(destPath))
+		info, err := os.Lstat(filepath.Join(d.viewRoot, parent.rel, base))
+		switch {
+		case err == nil && info.Mode()&os.ModeSymlink == 0:
+			return info, true, nil
+		case err != nil && (os.IsNotExist(err) || isNotDir(err)):
+			return nil, false, nil
+		case err != nil:
+			return nil, false, err
+		}
+	}
+	return d.statView(destPath)
+}
+
 func (d *destination) realPath(destPath string) (string, error) {
 	destPath = cleanContainerPath(destPath)
 	parentRel, err := d.ensureParent(destPath)
@@ -382,12 +424,12 @@ func (d *destination) statView(destPath string) (os.FileInfo, bool, error) {
 // returns the resolved write-root path whenever it had to resolve one, so that
 // callers needing the same path can reuse it instead of resolving it a second
 // time. An empty string means nothing was resolved and nothing was removed.
-func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opts CopyOptions) (string, error) {
+func (d *destination) removeForReplace(destPath string, parent resolvedParent, srcInfo os.FileInfo, opts CopyOptions) (string, error) {
 	if !opts.ReplaceExisting {
 		return "", nil
 	}
 
-	destInfo, exists, err := d.statView(destPath)
+	destInfo, exists, err := d.statViewIn(destPath, parent)
 	if err != nil || !exists {
 		return "", err
 	}
@@ -395,7 +437,7 @@ func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opt
 		return "", nil
 	}
 
-	realPath, err := d.realPath(destPath)
+	realPath, err := d.realPathIn(destPath, parent)
 	if err != nil {
 		return "", err
 	}
