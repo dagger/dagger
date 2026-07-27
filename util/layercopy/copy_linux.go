@@ -93,18 +93,20 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 		return err
 	}
 	if opts.CopyDirContents && root.Info.IsDir() {
-		if _, err := c.dest.removeForReplace(destPath, root.Info, opts); err != nil {
+		if _, err := c.dest.removeForReplace(destPath, resolvedParent{}, root.Info, opts); err != nil {
 			return err
 		}
-		if _, _, err := c.dest.ensureDir(destPath, &root, opts, false); err != nil {
+		rel, _, err := c.dest.ensureDir(destPath, &root, opts, false)
+		if err != nil {
 			return err
 		}
 		entries, err := src.readDir("")
 		if err != nil {
 			return err
 		}
+		parent := resolvedParent{rel: rel, ok: true}
 		for _, ent := range entries {
-			if err := c.copyEntry(ctx, src, matcher, ent, filepath.Join(destPath, filepath.Base(ent.Rel)), opts, matchState{}, nil); err != nil {
+			if err := c.copyEntry(ctx, src, matcher, ent, filepath.Join(destPath, filepath.Base(ent.Rel)), opts, matchState{}, nil, parent); err != nil {
 				return err
 			}
 		}
@@ -123,7 +125,7 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 	} else if destExists && destInfo.IsDir() {
 		destPath = filepath.Join(destPath, filepath.Base(src.baseView))
 	}
-	return c.copyEntry(ctx, src, matcher, root, destPath, opts, matchState{}, nil)
+	return c.copyEntry(ctx, src, matcher, root, destPath, opts, matchState{}, nil, resolvedParent{})
 }
 
 func (c *Copier) copyFile(ctx context.Context, src *source, srcPath, destPath string, opts CopyOptions) error {
@@ -157,7 +159,7 @@ func (c *Copier) copyFile(ctx context.Context, src *source, srcPath, destPath st
 		RealPath: src.baseReal,
 		Info:     src.baseInfo,
 	}
-	return c.copyNode(ent, destPath, opts)
+	return c.copyNode(ent, destPath, resolvedParent{}, opts)
 }
 
 func (c *Copier) copyEntry(
@@ -169,6 +171,7 @@ func (c *Copier) copyEntry(
 	opts CopyOptions,
 	parentState matchState,
 	pending []pendingDir,
+	parent resolvedParent,
 ) error {
 	select {
 	case <-ctx.Done():
@@ -193,18 +196,20 @@ func (c *Copier) copyEntry(
 
 	if ent.Info.IsDir() {
 		childPending := pending
+		childParent := resolvedParent{}
 		var realDirPath string
 		if include {
 			if err := c.ensurePending(pending, opts); err != nil {
 				return err
 			}
-			if _, err := c.dest.removeForReplace(destPath, ent.Info, opts); err != nil {
+			if _, err := c.dest.removeForReplace(destPath, parent, ent.Info, opts); err != nil {
 				return err
 			}
 			rel, _, err := c.dest.ensureDir(destPath, &ent, opts, true)
 			if err != nil {
 				return err
 			}
+			childParent = resolvedParent{rel: rel, ok: true}
 			realDirPath = filepath.Join(c.dest.writeRoot, rel)
 		} else {
 			childPending = append(childPending, pendingDir{entry: ent, destPath: destPath})
@@ -223,7 +228,7 @@ func (c *Copier) copyEntry(
 		}
 		for _, child := range children {
 			childDest := filepath.Join(destPath, filepath.Base(child.Rel))
-			if err := c.copyEntry(ctx, src, matcher, child, childDest, opts, state, childPending); err != nil {
+			if err := c.copyEntry(ctx, src, matcher, child, childDest, opts, state, childPending, childParent); err != nil {
 				return err
 			}
 		}
@@ -239,7 +244,7 @@ func (c *Copier) copyEntry(
 	if err := c.ensurePending(pending, opts); err != nil {
 		return err
 	}
-	return c.copyNode(ent, destPath, opts)
+	return c.copyNode(ent, destPath, parent, opts)
 }
 
 func (c *Copier) ensurePending(pending []pendingDir, opts CopyOptions) error {
@@ -251,15 +256,15 @@ func (c *Copier) ensurePending(pending []pendingDir, opts CopyOptions) error {
 	return nil
 }
 
-func (c *Copier) copyNode(ent sourceEntry, destPath string, opts CopyOptions) error {
+func (c *Copier) copyNode(ent sourceEntry, destPath string, parent resolvedParent, opts CopyOptions) error {
 	// removeForReplace already resolves the write-root path when it removes
 	// something; reuse it rather than resolving the same path twice.
-	realPath, err := c.dest.removeForReplace(destPath, ent.Info, opts)
+	realPath, err := c.dest.removeForReplace(destPath, parent, ent.Info, opts)
 	if err != nil {
 		return err
 	}
 	if realPath == "" {
-		realPath, err = c.dest.realPath(destPath)
+		realPath, err = c.dest.realPathIn(destPath, parent)
 		if err != nil {
 			return err
 		}

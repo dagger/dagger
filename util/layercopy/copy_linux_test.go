@@ -233,7 +233,7 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 			ViewPath: "/src/gone.txt",
 			RealPath: "/src/gone.txt",
 			StatErr:  missingErr,
-		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil)
+		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{})
 		require.NoError(t, err)
 	})
 
@@ -250,7 +250,7 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 			ViewPath: "/src/gone.txt",
 			RealPath: "/src/gone.txt",
 			StatErr:  missingErr,
-		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil)
+		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil, resolvedParent{})
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
 }
@@ -387,7 +387,7 @@ func TestRemoveForReplaceDirectoryOverOverlayLowerFileMarksOpaque(t *testing.T) 
 	srcInfo, err := os.Stat(filepath.Join(srcRoot, "node"))
 	require.NoError(t, err)
 
-	realPath, err := dst.removeForReplace("/node", srcInfo, CopyOptions{
+	realPath, err := dst.removeForReplace("/node", resolvedParent{}, srcInfo, CopyOptions{
 		ReplaceExisting: true,
 	})
 	require.NoError(t, err)
