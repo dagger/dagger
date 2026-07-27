@@ -758,17 +758,18 @@ func applyWorkspaceMigrationGitignoreCleanups(
 		return dir, err
 	}
 	for _, cleanup := range cleanups {
-		stat, err := dir.Self().Stat(ctx, dir, srv, cleanup.Path, true)
+		cleanupPath := path.Clean(filepath.ToSlash(cleanup.Path))
+		stat, err := dir.Self().Stat(ctx, dir, srv, cleanupPath, true)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return dir, fmt.Errorf("stat legacy gitignore %q: %w", cleanup.Path, err)
+			return dir, fmt.Errorf("stat legacy gitignore %q: %w", cleanupPath, err)
 		}
 
-		contents, err := core.DirectoryReadFile(ctx, dir, cleanup.Path)
+		contents, err := core.DirectoryReadFile(ctx, dir, cleanupPath)
 		if err != nil {
-			return dir, fmt.Errorf("read legacy gitignore %q: %w", cleanup.Path, err)
+			return dir, fmt.Errorf("read legacy gitignore %q: %w", cleanupPath, err)
 		}
 		updatedContents := removeWorkspaceMigrationGitignoreEntries(contents, cleanup.Entries)
 		if bytes.Equal(contents, updatedContents) {
@@ -776,12 +777,12 @@ func applyWorkspaceMigrationGitignoreCleanups(
 		}
 
 		dir, err = workspaceMigrationSelectDirectory(ctx, dir, "withNewFile", []dagql.NamedInput{
-			{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(cleanup.Path)))},
+			{Name: "path", Value: dagql.NewString(cleanupPath)},
 			{Name: "contents", Value: dagql.String(updatedContents)},
 			{Name: "permissions", Value: dagql.Int(stat.Permissions)},
 		})
 		if err != nil {
-			return dir, fmt.Errorf("rewrite legacy gitignore %q: %w", cleanup.Path, err)
+			return dir, fmt.Errorf("rewrite legacy gitignore %q: %w", cleanupPath, err)
 		}
 	}
 	return dir, nil
