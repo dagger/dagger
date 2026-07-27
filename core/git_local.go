@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
@@ -34,6 +35,32 @@ func (repo *LocalGitRepository) Get(ctx context.Context, ref *gitutil.Ref) (GitR
 		Ref:  ref,
 		repo: repo,
 	}, nil
+}
+
+var _ revisionResolver = (*LocalGitRepository)(nil)
+
+// resolveRevision resolves an arbitrary git revision expression against the
+// local object graph via rev-parse, so revisions the ls-remote view can't name
+// (abbreviated SHAs, "HEAD~1", "main^", ...) still resolve to a concrete
+// commit. The revision is peeled to a commit so annotated tags resolve to the
+// commit they point at.
+func (repo *LocalGitRepository) resolveRevision(ctx context.Context, name string) (*gitutil.Ref, error) {
+	var sha string
+	err := repo.mount(ctx, 0, false, nil, func(git *gitutil.GitCLI) error {
+		out, err := git.Run(ctx, "rev-parse", "--verify", "--quiet", "--end-of-options", name+"^{commit}")
+		if err != nil {
+			return err
+		}
+		sha = strings.TrimSpace(string(out))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !gitutil.IsCommitSHA(sha) {
+		return nil, fmt.Errorf("revision %q did not resolve to a commit", name)
+	}
+	return &gitutil.Ref{SHA: sha}, nil
 }
 
 func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, error) {

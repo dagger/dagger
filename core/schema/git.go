@@ -1000,7 +1000,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		args.LockOperation = lockGitRefOperation
 		args.LockPolicy = string(workspace.PolicyFloat)
 		args.LockName = args.Name
-		ref, err := repo.Remote.Lookup(args.Name)
+		ref, err := repo.ResolveRef(ctx, args.Name)
 		if err != nil {
 			return inst, err
 		}
@@ -1051,7 +1051,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		}
 	}
 
-	ref, err := repo.Remote.Lookup(args.Name)
+	ref, err := repo.ResolveRef(ctx, args.Name)
 	if err != nil {
 		return inst, err
 	}
