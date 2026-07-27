@@ -31,6 +31,13 @@ type destination struct {
 
 	sourceLinks map[inode]string
 	crossLinks  map[inode]struct{}
+
+	// materializedDirs records resolved relative paths already known to exist
+	// as directories in the write root, so repeated copies into the same
+	// subtree stop re-stat'ing every ancestor. It holds an invariant relied on
+	// when walking ancestors: if a path is present, so are all of its parents.
+	// Directory removals drop the whole set; file removals cannot invalidate it.
+	materializedDirs map[string]struct{}
 }
 
 func newDestination(m Mount) (*destination, error) {
@@ -39,10 +46,11 @@ func newDestination(m Mount) (*destination, error) {
 	}
 
 	d := &destination{
-		viewRoot:    m.Root,
-		writeRoot:   m.Root,
-		sourceLinks: map[inode]string{},
-		crossLinks:  map[inode]struct{}{},
+		viewRoot:         m.Root,
+		writeRoot:        m.Root,
+		sourceLinks:      map[inode]string{},
+		crossLinks:       map[inode]struct{}{},
+		materializedDirs: map[string]struct{}{},
 	}
 	if m.Mount == nil {
 		return d, nil
@@ -83,7 +91,7 @@ func (d *destination) mkdir(destPath string, opts CopyOptions) error {
 			if err != nil {
 				return err
 			}
-			if err := os.RemoveAll(realPath); err != nil {
+			if err := d.removeAll(realPath, false); err != nil {
 				return err
 			}
 			if d.overlay {
@@ -160,12 +168,10 @@ func (d *destination) ensureExistingDir(destPath string, src *sourceEntry, opts 
 		return "", false, err
 	}
 	rel = cleanRel(rel)
-	// Recurse on the parent of the resolved path, not destPath, to handle
-	// symlinks on dest paths.
-	if parent := filepath.Dir(cleanContainerPath(rel)); parent != "/" && parent != "." {
-		if _, _, err := d.ensureDir(parent, nil, CopyOptions{}, false); err != nil {
-			return "", false, err
-		}
+	// Materialize the ancestors of the resolved path, not of destPath, to
+	// handle symlinks on dest paths.
+	if err := d.materializeAncestors(rel); err != nil {
+		return "", false, err
 	}
 	realPath, materialized, err := d.materializeExistingDir(rel, viewPath)
 	if err != nil {
@@ -230,6 +236,7 @@ func (d *destination) createDir(destPath string, src *sourceEntry, opts CopyOpti
 	if err := d.applyMetadataPath(realPath, src, opts); err != nil {
 		return "", false, err
 	}
+	d.markMaterialized(cleanRel(rel))
 	return rel, true, nil
 }
 
@@ -244,7 +251,7 @@ func (d *destination) replaceCreateDir(realPath string, mode os.FileMode, opts C
 	if info.IsDir() {
 		return nil
 	}
-	if err := os.RemoveAll(realPath); err != nil {
+	if err := d.removeAll(realPath, false); err != nil {
 		return err
 	}
 	if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
@@ -267,12 +274,44 @@ func mkdirMode(src *sourceEntry, opts CopyOptions) os.FileMode {
 	return mode
 }
 
+// materializeAncestors ensures every ancestor of rel exists in the write root.
+//
+// rel is produced by rootPath, so every component of it is already resolved:
+// none of its ancestors can be a symlink and none of them need resolving
+// again. Walking them directly avoids re-resolving the whole path from the
+// destination root once per level, which made ensuring a directory cost work
+// quadratic in its depth. The walk stops at the first ancestor known to be
+// materialized, since everything above it must be materialized too.
+func (d *destination) materializeAncestors(rel string) error {
+	var ancestors []string
+	for p := filepath.Dir(cleanContainerPath(rel)); p != "/" && p != "."; p = filepath.Dir(p) {
+		ancRel := cleanRel(p)
+		if _, ok := d.materializedDirs[ancRel]; ok {
+			break
+		}
+		ancestors = append(ancestors, ancRel)
+	}
+	// Materialize top-down so each parent exists before its child, preserving
+	// the materializedDirs invariant.
+	slices.Reverse(ancestors)
+	for _, ancRel := range ancestors {
+		if _, _, err := d.materializeExistingDir(ancRel, filepath.Join(d.viewRoot, ancRel)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool, error) {
 	realPath := filepath.Join(d.writeRoot, rel)
+	if _, ok := d.materializedDirs[rel]; ok {
+		return realPath, false, nil
+	}
 	if info, err := os.Lstat(realPath); err == nil {
 		if !info.IsDir() {
 			return "", false, fmt.Errorf("destination upper path %q exists and is not a directory", realPath)
 		}
+		d.markMaterialized(rel)
 		return realPath, false, nil
 	} else if !os.IsNotExist(err) {
 		return "", false, err
@@ -288,7 +327,27 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil, false); err != nil {
 		return "", false, err
 	}
+	d.markMaterialized(rel)
 	return realPath, true, nil
+}
+
+func (d *destination) markMaterialized(rel string) {
+	if rel != "" {
+		d.materializedDirs[rel] = struct{}{}
+	}
+}
+
+// removeAll removes a path from the write root. mayBeDir reports whether the
+// caller cannot rule out that the path is a directory; removing a directory
+// invalidates the materialized set, whereas removing a file never can.
+func (d *destination) removeAll(realPath string, mayBeDir bool) error {
+	if err := os.RemoveAll(realPath); err != nil {
+		return err
+	}
+	if mayBeDir {
+		clear(d.materializedDirs)
+	}
+	return nil
 }
 
 func (d *destination) realPath(destPath string) (string, error) {
@@ -340,7 +399,7 @@ func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opt
 	if err != nil {
 		return "", err
 	}
-	if err := os.RemoveAll(realPath); err != nil {
+	if err := d.removeAll(realPath, destInfo.IsDir()); err != nil {
 		return "", err
 	}
 	if d.overlay && srcInfo.IsDir() && !destInfo.IsDir() {
