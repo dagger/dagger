@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type CliDev
-func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
+func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:113:6)
 	q := r.query.Select("asCliDev")
 
 	return &CliDev{
@@ -18,7 +18,7 @@ func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-de
 	}
 }
 
-type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
+type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:113:6)
 	query *querybuilder.Selection
 
 	id              *ID
@@ -36,11 +36,11 @@ func (r *CliDev) WithGraphQLQuery(q *querybuilder.Selection) *CliDev {
 
 // CliDevBinaryOpts contains options for CliDev.Binary
 type CliDevBinaryOpts struct {
-	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:107:2)
+	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:123:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:105:1)
+func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:121:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -56,12 +56,12 @@ func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../.
 
 // CliDevDevBinariesOpts contains options for CliDev.DevBinaries
 type CliDevDevBinariesOpts struct {
-	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:120:2)
+	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:136:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/main.go:118:1)
+func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/main.go:134:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -238,7 +238,7 @@ func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../..
 	return q.Execute(ctx)
 }
 
-func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:99:2)
+func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:115:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -250,7 +250,7 @@ func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:98:2)
+func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:114:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -271,7 +271,7 @@ func (r *CliDev) AsNode() Node {
 }
 
 // Create or update a binding of type CliDev in the environment
-func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
+func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:113:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withCliDevInput")
 	q = q.Arg("name", name)
@@ -284,7 +284,7 @@ func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *E
 }
 
 // Declare a desired CliDev output to be assigned in the environment
-func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:97:6)
+func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:113:6)
 	q := r.query.Select("withCliDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -296,41 +296,45 @@ func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-de
 
 // CliDevOpts contains options for Query.CliDev
 type CliDevOpts struct {
-	RunnerHost string // cli-dev (../../../../toolchains/cli-dev/main.go:16:2)
+	RunnerHost string // cli-dev (../../../../toolchains/cli-dev/main.go:17:2)
 
-	Source *Directory // cli-dev (../../../../toolchains/cli-dev/main.go:38:2)
+	Source *Directory // cli-dev (../../../../toolchains/cli-dev/main.go:39:2)
 	//
 	// Base image for go build environment
 	//
-	Base *Container // cli-dev (../../../../toolchains/cli-dev/main.go:42:2)
+	Base *Container // cli-dev (../../../../toolchains/cli-dev/main.go:43:2)
 	//
 	// Version of the Dagger CLI being built. Surfaced as CliDev.Version and
 	// consumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,
 	// semver release-gating). The built binary self-reports its own version
 	// from the embedded internal/version/VERSION file regardless of what's
-	// passed here; this is for publish-time metadata only.
+	// passed here, but this decides which engine the binary provisions by
+	// default: a valid semver means a tag build (embedded VERSION already
+	// matches, enforced by the publish workflow guard); anything else is a
+	// commit build, whose default engine tag is pinned to the commit.
 	//
-	Version string // cli-dev (../../../../toolchains/cli-dev/main.go:50:2)
+	Version string // cli-dev (../../../../toolchains/cli-dev/main.go:54:2)
 	//
-	// Workspace whose git info stamps the CLI's VCS metadata. Auto-injected
-	// when cli-dev is called directly; a parent toolchain (e.g. engine-dev)
-	// instead resolves it to the scalar vcsCommit/vcsDirty below and forwards
-	// those, so the session-scoped Workspace never taints the cached build.
+	// Workspace whose git info stamps the CLI's VCS metadata and pins the
+	// default engine tag on commit builds. Auto-injected when cli-dev is
+	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
+	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
+	// session-scoped Workspace never taints the cached build.
 	//
-	Ws *Workspace // cli-dev (../../../../toolchains/cli-dev/main.go:57:2)
+	Ws *Workspace // cli-dev (../../../../toolchains/cli-dev/main.go:62:2)
 	//
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over ws.
 	//
-	VcsCommit string // cli-dev (../../../../toolchains/cli-dev/main.go:62:2)
+	VcsCommit string // cli-dev (../../../../toolchains/cli-dev/main.go:67:2)
 	//
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	//
-	VcsDirty bool // cli-dev (../../../../toolchains/cli-dev/main.go:66:2)
+	VcsDirty bool // cli-dev (../../../../toolchains/cli-dev/main.go:71:2)
 }
 
 // Develop the Dagger CLI
-func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:12:1)
+func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:13:1)
 	q := r.query.Select("cliDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runnerHost` optional argument

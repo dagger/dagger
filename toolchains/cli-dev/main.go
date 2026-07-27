@@ -7,6 +7,7 @@ import (
 	"dagger/cli-dev/internal/dagger"
 
 	"github.com/containerd/platforms"
+	"golang.org/x/mod/semver"
 )
 
 func New(
@@ -45,14 +46,18 @@ func New(
 	// consumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,
 	// semver release-gating). The built binary self-reports its own version
 	// from the embedded internal/version/VERSION file regardless of what's
-	// passed here; this is for publish-time metadata only.
+	// passed here, but this decides which engine the binary provisions by
+	// default: a valid semver means a tag build (embedded VERSION already
+	// matches, enforced by the publish workflow guard); anything else is a
+	// commit build, whose default engine tag is pinned to the commit.
 	// +optional
 	version string,
 
-	// Workspace whose git info stamps the CLI's VCS metadata. Auto-injected
-	// when cli-dev is called directly; a parent toolchain (e.g. engine-dev)
-	// instead resolves it to the scalar vcsCommit/vcsDirty below and forwards
-	// those, so the session-scoped Workspace never taints the cached build.
+	// Workspace whose git info stamps the CLI's VCS metadata and pins the
+	// default engine tag on commit builds. Auto-injected when cli-dev is
+	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
+	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
+	// session-scoped Workspace never taints the cached build.
 	// +optional
 	ws *dagger.Workspace,
 
@@ -69,11 +74,25 @@ func New(
 		return nil, err
 	}
 
+	if vcsCommit == "" && ws != nil {
+		git := ws.Git()
+		if commit, err := git.Head().Commit(ctx); err == nil {
+			vcsCommit = commit
+			if clean, err := git.Uncommitted().IsEmpty(ctx); err == nil {
+				vcsDirty = !clean
+			}
+		}
+	}
+
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
 	var values []string
 	if runnerHost != "" {
-		values = append(values, "main.RunnerHost="+runnerHost)
+		values = append(values, "github.com/dagger/dagger/internal/cmd/dagger.RunnerHost="+runnerHost)
+	}
+
+	if !semver.IsValid(version) && vcsCommit != "" {
+		values = append(values, "github.com/dagger/dagger/engine.Tag="+vcsCommit)
 	}
 
 	return &CliDev{
@@ -83,11 +102,8 @@ func New(
 			Source: source,
 			Base:   base,
 			Values: values,
-			// Forward VCS info for stamping. Prefer the scalars a parent
-			// resolved for us; fall back to the auto-injected workspace on a
-			// direct call. The go toolchain resolves ws to scalars internally,
-			// so this never taints the build cache.
-			Ws:        ws,
+			Ws:     ws,
+			// VCS info for stamping, already resolved to scalars above.
 			VcsCommit: vcsCommit,
 			VcsDirty:  vcsDirty,
 		}),

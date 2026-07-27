@@ -1,0 +1,92 @@
+---
+title: "Module Wiring"
+slug: /using-dagger/module-wiring
+description: "Connect installed modules by wiring one module's output into another's settings"
+---
+
+# Module Wiring
+
+Modules in a workspace can be connected to each other through settings: a
+setting whose value is a `"<module>:<function>"` string — a **module
+reference** — injects the value returned by a function on another installed
+module. This is how generic modules compose without knowing about each other,
+and without you writing a glue module.
+
+## Wire a service into a module
+
+A test-runner module accepts an optional `Service`; your app module has a
+function that returns one. Connect them in `dagger.toml`:
+
+```toml
+[modules.myapp]
+source = "./ci/myapp"
+
+[modules.playwright]
+source = "github.com/dagger/playwright"
+
+[modules.playwright.settings]
+service = "myapp:serve"
+```
+
+Now `dagger check playwright:test` runs the browser tests against your app —
+Dagger resolves the reference when the playwright module is constructed and
+passes the running service in.
+
+To find functions you can wire, run `dagger up -l`: it lists every
+service-returning function in the workspace, in exactly the
+`module:function` form a setting accepts. (Any function returning the right
+type works, whether or not it appears there.)
+
+## Wire a container
+
+References aren't service-specific — a `Container` argument wires the same
+way:
+
+```toml
+[modules.playwright.settings]
+baseCtr = "base-images:chromium"
+```
+
+## Use a reference on the command line
+
+A module reference is an ordinary address string, so it also works as a CLI
+flag for any object-typed constructor argument:
+
+```shell
+dagger api call playwright --service=myapp:serve test
+```
+
+## How references resolve
+
+- The leading segment is a module's **install name** — the `[modules.X]` key
+  in this `dagger.toml`. The second segment is a zero-arg function on it
+  whose return type matches the argument.
+- **Commit on match:** if the first segment names an installed module, the
+  string *is* a module reference — a missing function or mismatched type is
+  a hard error, never a silent fallback to an image or URL. If no install
+  name matches, the string keeps its ordinary address meaning (an OCI ref
+  for a `Container`, a `tcp://` URL for a `Service`).
+- Core names (`host`, `git`, `secret`, `container`, `http`, `module`, …) are
+  reserved and never resolve as module references, so `git:2.40` stays an
+  image ref.
+
+The full resolution rules are in the
+[workspace configuration reference](../reference/configuration/workspace.mdx#module-wiring).
+
+## Design your module for wiring
+
+If you author modules, wiring changes how you shape a constructor:
+
+- **Accept collaborators as optional constructor arguments.** An optional
+  `Service` or `Container` argument is a wiring point. Without one, users
+  need a glue module to connect yours to anything.
+- **Put workspace-level configuration on the constructor, not on function
+  arguments.** Settings map to constructor arguments — a shard count, a
+  service, a base image belong there if the workspace should configure them
+  once.
+- **Degrade gracefully.** When nothing is wired, do something sensible —
+  skip the service binding, fall back to a default image — rather than
+  failing. The workspace may have nothing to wire yet.
+
+The [Playwright module](../modules/playwright.mdx) is a worked example of all
+three.

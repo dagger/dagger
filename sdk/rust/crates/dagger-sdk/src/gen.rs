@@ -1680,6 +1680,26 @@ pub struct ContainerImportOpts<'a> {
     pub tag: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerLayerOpts {
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Media types to use for image layers. Defaults to OCI.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerManifestOpts {
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Media types to use for image layers. Defaults to OCI.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
     /// Force each layer of the published image to use the specified compression algorithm.
     /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
@@ -2603,6 +2623,74 @@ impl Container {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
+    }
+    /// Returns the image layer or configuration blob with the given digest as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn layer(&self, id: impl Into<String>) -> File {
+        let mut query = self.selection.select("layer");
+        query = query.arg("id", id.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the image layer or configuration blob with the given digest as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn layer_opts(&self, id: impl Into<String>, opts: ContainerLayerOpts) -> File {
+        let mut query = self.selection.select("layer");
+        query = query.arg("id", id.into());
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg("mediaTypes", media_types);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Computes and returns the manifest for this container as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn manifest(&self) -> File {
+        let query = self.selection.select("manifest");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Computes and returns the manifest for this container as a File.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn manifest_opts(&self, opts: ContainerManifestOpts) -> File {
+        let mut query = self.selection.select("manifest");
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg("mediaTypes", media_types);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Retrieves the list of paths where a directory is mounted.
     pub async fn mounts(&self) -> Result<Vec<String>, DaggerError> {
@@ -4541,6 +4629,12 @@ pub struct CurrentModule {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct CurrentModuleAsSdkOpts {
+    /// The workspace to resolve SDK-role data against. Defaults to the current workspace.
+    #[builder(setter(into, strip_option), default)]
+    pub workspace: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleGeneratorsOpts<'a> {
     /// Only include generators matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -4582,10 +4676,31 @@ impl Loadable for CurrentModule {
     }
 }
 impl CurrentModule {
-    /// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
     /// Errors if the current module is not installed as an SDK in this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_sdk(&self) -> CurrentModuleAsSdk {
         let query = self.selection.select("asSDK");
+        CurrentModuleAsSdk {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
+    /// Errors if the current module is not installed as an SDK in this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_sdk_opts(&self, opts: CurrentModuleAsSdkOpts) -> CurrentModuleAsSdk {
+        let mut query = self.selection.select("asSDK");
+        if let Some(workspace) = opts.workspace {
+            query = query.arg("workspace", workspace);
+        }
         CurrentModuleAsSdk {
             proc: self.proc.clone(),
             selection: query,
@@ -13650,6 +13765,27 @@ impl ModuleSource {
         let query = self.selection.select("engineVersion");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Generate this module's transitive local dependency closure, leaf-first, and return the accumulated changeset.
+    /// Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace` - The workspace to generate the local dependencies against.
+    pub fn generate_local_dependencies(&self, workspace: impl IntoID<Id>) -> Changeset {
+        let mut query = self.selection.select("generateLocalDependencies");
+        query = query.arg_lazy(
+            "workspace",
+            Box::new(move || {
+                let workspace = workspace.clone();
+                Box::pin(async move { workspace.into_id().await.unwrap().quote() })
+            }),
+        );
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
     pub fn generated_context_changeset(&self) -> Changeset {
         let query = self.selection.select("generatedContextChangeset");
@@ -17954,6 +18090,20 @@ impl Workspace {
     /// Return this workspace with refreshed lockfile state.
     pub fn with_updated_lock(&self) -> Workspace {
         let query = self.selection.select("withUpdatedLock");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with its working directory pointed at the given workspace-relative path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Workspace-relative path to use as the working directory.
+    pub fn with_workdir(&self, path: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withWorkdir");
+        query = query.arg("path", path.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,

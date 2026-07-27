@@ -624,6 +624,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with its working directory pointed at the given workspace-relative path.
+  """
+  @spec with_workdir(t(), String.t()) :: Dagger.Workspace.t()
+  def with_workdir(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withWorkdir") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a named config environment removed.
   """
   @spec without_config_env(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()

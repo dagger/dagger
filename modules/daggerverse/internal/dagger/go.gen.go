@@ -202,13 +202,13 @@ func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../toolcha
 
 // GoCheckTidyOpts contains options for Go.CheckTidy
 type GoCheckTidyOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:793:2)
+	Include []string // go (../../../../toolchains/go/main.go:800:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:794:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:801:2)
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:791:1)
+func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:798:1)
 	if r.checkTidy != nil {
 		return nil
 	}
@@ -278,7 +278,7 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:632:1)
+func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:639:1)
 	q := r.query.Select("generateDaggerRuntime")
 	q = q.Arg("start", start)
 
