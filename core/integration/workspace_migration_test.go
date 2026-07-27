@@ -129,21 +129,66 @@ type Myapp {
 // must therefore remove the ignore rules written for the legacy runtime-codegen
 // model while leaving the user's own rules alone.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateGeneratedCodeGitignore(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	t.Run("migrated module ignores are cleaned", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-	ctr := legacySDKOnlyGoSource(t, c, "hello after migration").
-		WithNewFile(".gitignore", "# user-owned rules\n*.log\n").
-		With(materializeModuleFiles(".")).
-		WithExec([]string{"grep", "-Fx", "/dagger.gen.go", ".gitignore"}).
-		With(daggerExec("setup", "--auto-apply"))
+		ctr := legacySDKOnlyGoSource(t, c, "hello after migration").
+			WithNewFile(".gitignore", "# user-owned rules\n*.log\n").
+			With(materializeModuleFiles(".")).
+			WithExec([]string{"grep", "-Fx", "/dagger.gen.go", ".gitignore"}).
+			With(daggerExec("setup", "--auto-apply"))
 
-	gitignore, err := ctr.File(".gitignore").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "# user-owned rules\n*.log\n/.env\n", gitignore)
+		gitignore, err := ctr.File(".gitignore").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "# user-owned rules\n*.log\n/.env\n", gitignore)
 
-	out, err := ctr.With(daggerCallAt(".", "greet")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello after migration", strings.TrimSpace(out))
+		out, err := ctr.With(daggerCallAt(".", "greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello after migration", strings.TrimSpace(out))
+	})
+
+	t.Run("nested-workspace dependency keeps its ignores", func(ctx context.Context, t *testctx.T) {
+		// A dependency with its own toolchains stays legacy and keeps runtime
+		// codegen, so its generated-code ignore rules must survive the
+		// migration happening around it.
+		c := connect(ctx, t)
+
+		nestedGitignore := "# nested rules\n/dagger.gen.go\n/internal/dagger\n/internal/telemetry\n"
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci",
+  "dependencies": [{"name": "nested", "source": "./nested"}]
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! { "hello from root" }
+}
+`).
+				WithNewFile("nested/dagger.json", `{"name":"nested","sdk":{"source":"go"},"toolchains":[{"name":"x","source":"./x"}]}`).
+				WithNewFile("nested/main.go", `package main
+
+type Nested struct{}
+
+func (m *Nested) Message() string {
+	return "nested"
+}
+`).
+				WithNewFile("nested/.gitignore", nestedGitignore).
+				With(legacyDangModule("nested/x", "x", "X", "hello from toolchain"))
+		}).With(daggerExec("setup", "--auto-apply"))
+
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		_, err = ctr.WithExec([]string{"test", "-f", "nested/dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "the nested workspace dependency should stay legacy")
+
+		gitignore, err := ctr.File("nested/.gitignore").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, nestedGitignore, gitignore, "a module left in legacy format keeps runtime codegen; its ignore rules must stay")
+	})
 }
 
 // TestWorkspaceMigrateOutcomes should cover the main result classes of a
