@@ -64,12 +64,13 @@ func (ProvisionSuite) TestImageDriver(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name()})
 				dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
-				// HACK: pre-download builtin image tag (since the original might not
-				// actually have been pushed to the registry)
-				dockerc, err := doLoadEngine(ctx, c, dockerc, tc.name, "registry.dagger.io/engine:"+engine.Tag)
+				// HACK: pre-load the image tag the CLI defaults to (since the
+				// original might not actually have been pushed to the registry)
+				dockerc, err := doLoadEngine(ctx, c, dockerc, tc.name, defaultCLIEngineImage(ctx, t, dockerc))
 				require.NoError(t, err)
 
-				require.True(t, semver.IsValid(detectEngineVersion(ctx, t, dockerc)))
+				detected := detectEngineVersion(ctx, t, dockerc)
+				require.True(t, semver.IsValid(detected), "invalid version %q", detected)
 			})
 
 			t.Run("specified image", func(ctx context.Context, t *testctx.T) {
@@ -92,7 +93,11 @@ func (ProvisionSuite) TestImageDriver(ctx context.Context, t *testctx.T) {
 				dockerc = dockerc.
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:dev")
 
-				require.Equal(t, engine.Version, detectEngineVersion(ctx, t, dockerc))
+				// the engine self-reports commit provenance as build metadata;
+				// the test binary's engine.Version carries none, so compare
+				// with the metadata stripped
+				detected := detectEngineVersion(ctx, t, dockerc)
+				require.Equal(t, engine.Version, strings.TrimSuffix(detected, semver.Build(detected)))
 			})
 		})
 	}
@@ -248,6 +253,14 @@ func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, 
 			})
 		})
 	}
+}
+
+func defaultCLIEngineImage(ctx context.Context, t *testctx.T, ctr *dagger.Container) string {
+	out, err := ctr.WithExec([]string{"dagger", "version"}).Stdout(ctx)
+	require.NoError(t, err)
+	match := regexp.MustCompile(`runner-host:\s+\S+?://([^?\s]+)`).FindStringSubmatch(out)
+	require.NotEmptyf(t, match, "no runner-host in dagger version output: %s", out)
+	return match[1]
 }
 
 func detectEngineVersion(ctx context.Context, t *testctx.T, ctr *dagger.Container) string {
@@ -490,7 +503,8 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	// can't rely on network health checks atm
 	_, err = ctr.
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
-		WithExec([]string{"sh", "-c", `
+		WithExec([]string{
+			"sh", "-c", `
 			for i in $(seq 1 30); do
 				if stat /run/containerd/containerd.sock; then
 					exit 0
@@ -524,9 +538,11 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 func dockerLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, engineTag string) (*dagger.Container, error) {
 	return doLoadEngine(ctx, dag, ctr, "docker", engineTag)
 }
+
 func nerdctlLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, engineTag string) (*dagger.Container, error) {
 	return doLoadEngine(ctx, dag, ctr, "nerdctl", engineTag)
 }
+
 func doLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, cli string, engineTag string) (*dagger.Container, error) {
 	var tarPath string
 	if v, ok := os.LookupEnv("_DAGGER_TESTS_ENGINE_TAR"); ok {
