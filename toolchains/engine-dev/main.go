@@ -460,12 +460,12 @@ var targets = []struct {
 		Platforms: []dagger.Platform{"linux/amd64", "linux/arm64"},
 	},
 	// comment out nvidia variant for the moment to fix publish steps
-	//{
-	//Name:       "wolfi with nvidia variant",
-	//Tag:        "%s-gpu",
-	//Platforms:  []dagger.Platform{"linux/amd64"},
-	//GPUSupport: true,
-	//},
+	// {
+	// 	Name:       "wolfi with nvidia variant",
+	// 	Tag:        "%s-gpu",
+	// 	Platforms:  []dagger.Platform{"linux/amd64"},
+	// 	GPUSupport: true,
+	// },
 }
 
 type targetResult struct {
