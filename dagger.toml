@@ -326,3 +326,6 @@ source = "modules/delegate"
 
 [env.dev.modules.review]
 source = "modules/review"
+
+[env.dev.modules.git]
+source = "modules/git"

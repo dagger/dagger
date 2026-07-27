@@ -1,0 +1,129 @@
+# git: give a Dagger coding agent read-only insight into its workspace's git
+# history — the "what's the history / what changed in this commit?" view a shell
+# agent gets from `git log` and `git show`.
+#
+# Handing the raw `git` CLI to an agent is expensive (a whole exec per command)
+# and risky (it's a huge, side-effecting surface). Instead we wrap the native
+# git API as a couple of focused, read-only tools: GitRef.log for the commit
+# list, GitRepository.commit + GitCommit metadata for a single commit, and the
+# Changeset diff machinery (Directory.changes + Changeset.asPatch) to render the
+# patch a commit introduced.
+#
+# Modeled on ./modules/review (the stateless @agent-tools shape): every tool
+# takes the Workspace — auto-filled by the agent from its bound workspace (see
+# core/llm_object_tools.go, which fills Workspace!-typed args and hides them from
+# the model) — and reads its git repository. Nothing to start or stop.
+"""
+Read-only git history tools: browse commits (`git log`) and inspect a single
+commit with its diff (`git show`).
+"""
+type Git {
+  """
+  Compose the git tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  List commits reachable from a revision, newest first — like `git log`.
+
+  One line per commit: short SHA, authored date, author, and subject. Narrow
+  the output with `limit`, `paths`, or a starting `revision`.
+  """
+  log(
+    source: Workspace!,
+    """
+    Revision (branch, tag, or commit SHA) to start from. Defaults to HEAD.
+    """
+    revision: String! = "",
+    """
+    Maximum number of commits to list.
+    """
+    limit: Int! = 20,
+    """
+    Only include commits that touched any of these paths, relative to the
+    repository root. Empty means no path filter.
+    """
+    paths: [String!]! = [],
+  ): String! {
+    let commits = refFor(source, revision)
+      .log(limit: limit, paths: paths).{{shortSha, authoredDate, authorName, messageHeadline}}
+    if (commits.isEmpty) {
+      return "No commits found."
+    }
+    commits.map { c =>
+      `${c.shortSha}  ${c.authoredDate}  ${c.authorName}  ${c.messageHeadline}`
+    }.join("\n")
+  }
+
+  """
+  Show a single commit — its metadata and full unified diff — like `git show`.
+
+  The diff is the change the commit introduced relative to its first parent (or,
+  for a root commit with no parent, everything it added). The .git directory is
+  excluded from the diff.
+  """
+  show(
+    source: Workspace!,
+    """
+    Revision (branch, tag, or commit SHA) to show. Defaults to HEAD.
+    """
+    revision: String! = "",
+  ): String! {
+    let commit = refFor(source, revision).targetCommit
+    let meta = commit.{{sha, authorName, authorEmail, authoredDate, message, parentShas}}
+
+    # diff against the first parent; a root commit has none, so diff against an
+    # empty tree — every file then shows as added, like `git show` of a root
+    # commit. discardGitDir keeps .git noise out of the patch.
+    let firstParent = meta.parentShas[0]
+    let before = if (firstParent != null) {
+      source.git.commit(firstParent).tree(discardGitDir: true)
+    } else {
+      directory
+    }
+    let patch = commit.tree(discardGitDir: true).changes(from: before).asPatch.contents
+
+    let body = meta.message.split("\n").map { line => "    " + line }.join("\n")
+    let header = ```
+      commit ${meta.sha}
+      Author: ${meta.authorName} <${meta.authorEmail}>
+      Date:   ${meta.authoredDate}
+
+      ${body}
+    ```
+    if (patch == "") {
+      header
+    } else {
+      header + "\n" + patch
+    }
+  }
+
+  # Resolve a revision string to a GitRef: an empty string or "HEAD" uses the
+  # repository head; anything else is looked up as a branch, tag, or commit SHA.
+  let refFor(source: Workspace!, revision: String!): GitRef! {
+    if (revision == "" or revision == "HEAD") {
+      source.git.head
+    } else {
+      source.git.ref(revision)
+    }
+  }
+
+  let systemPrompt: String! = """
+    You can inspect your workspace's git history (read-only) with the git tools:
+
+    - `log` — commits reachable from a revision (default HEAD), newest first,
+      like `git log`. One line per commit: short SHA, date, author, subject.
+      Narrow with `limit`, `paths` (only commits touching those paths), or a
+      `revision` (branch/tag/SHA).
+    - `show` — a single commit's metadata plus the full unified diff it
+      introduced relative to its first parent, like `git show`. Pass a
+      `revision` (branch/tag/SHA); it defaults to HEAD.
+
+    These read committed history only. To see your own uncommitted edits, use
+    the review tools instead. The raw `git` CLI is intentionally unavailable.
+  """
+}
