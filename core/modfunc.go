@@ -1242,6 +1242,19 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
+	// The generator framework can hand the SDK a specific workspace to inject
+	// (GeneratorGroup.WorkspaceOverride) — e.g. a scoped/overlaid workspace built
+	// by ModuleSource.generateLocalDependencies. It wins over both the
+	// module-function guard and the ambient currentWorkspace so nested generator
+	// runs receive exactly the workspace the engine constructed.
+	if override, ok := WorkspaceOverrideFromContext(ctx); ok {
+		overrideID, err := override.ID()
+		if err != nil {
+			return nil, fmt.Errorf("workspace override id: %w", err)
+		}
+		return dagql.NewID[*Workspace](overrideID), nil
+	}
+
 	// A Workspace is auto-injected only for calls originating outside a module
 	// function (a direct CLI/SDK client, or a schema-walking flow like `dagger
 	// generate`). A running module function must pass a Workspace to its
