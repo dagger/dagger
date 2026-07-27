@@ -3128,7 +3128,21 @@ func (s *moduleSourceSchema) generateOneLocalDependency(
 	return depChanges, nil
 }
 
-func validateDependencyGeneratorGroup(string, string, *core.GeneratorGroup) error {
+func validateDependencyGeneratorGroup(owner, depPath string, generators *core.GeneratorGroup) error {
+	if len(generators.LoadFailures) > 0 {
+		return fmt.Errorf(
+			"load owning SDK %q generators: %s",
+			owner,
+			strings.Join(generators.LoadFailures, "; "),
+		)
+	}
+	if len(generators.Generators) == 0 {
+		return fmt.Errorf(
+			"owning SDK %q exposes no generators for dependency %q",
+			owner,
+			depPath,
+		)
+	}
 	return nil
 }
 
