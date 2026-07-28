@@ -1177,10 +1177,20 @@ func runningInsideModule(ctx context.Context) (bool, error) {
 func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, error) {
 	// The outer env file is the caller's own .env, found by walking their host.
 	// Module code has no host session, so this lookup can only block until the
-	// context deadline; and resolving it through the caller's client instead
-	// would hand a module the caller's .env for any module source it can
-	// synthesize. innerEnvFile already refuses non-local sources "for safety" —
-	// this is the same restriction from the other direction.
+	// context deadline.
+	//
+	// This only reaches dir- and git-kind sources: LoadUserDefaults swaps in the
+	// non-module parent's client metadata for local sources before getting here,
+	// so those still resolve against the caller's host as they always have.
+	// Extending that to dir/git would be a wider grant — it would hand a module
+	// the caller's .env for any module source it can synthesize — so they get an
+	// empty one instead. innerEnvFile already refuses non-local sources "for
+	// safety"; this is the same restriction from the other direction.
+	//
+	// core/schema/git.go runs the same check for host git credentials and pairs
+	// it with an IsModuleDependencyResolution escape hatch. There is nothing to
+	// escape to here: findUp from a nested client only ever timed out, so there
+	// is no working behavior to preserve.
 	inModule, err := runningInsideModule(ctx)
 	if err != nil {
 		return nil, "", err
