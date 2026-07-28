@@ -159,7 +159,7 @@ require (
 	github.com/vito/dang/v2 v2.1.2-0.20260721205602-bfe66140e738
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
-	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
+	github.com/vito/midterm v0.2.5-0.20260728152709-9f5888c96c1f
 	github.com/vito/tuist v0.0.10
 	github.com/vito/tuist/teav1 v0.0.0-20260728151937-82e472c0ece3
 	github.com/zeebo/xxh3 v1.1.0
