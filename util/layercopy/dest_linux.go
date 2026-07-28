@@ -37,6 +37,11 @@ type destination struct {
 	// subtree stop re-stat'ing every ancestor. It holds an invariant relied on
 	// when walking ancestors: if a path is present, so are all of its parents.
 	// Directory removals drop the whole set; file removals cannot invalidate it.
+	//
+	// This assumes the write root is only mutated through the Copier for its
+	// lifetime. Callers that reach around it — core/directory.go's withChanges
+	// removes changeset paths with a plain RemoveAll — must do so before the
+	// first copy, while the set is still empty.
 	materializedDirs map[string]struct{}
 }
 
