@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -200,6 +200,58 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 		return nil, err
 	}
 	return result, nil
+}
+
+// maxGitPathSpecBytes bounds the pathspecs appended to a git diff. They only
+// narrow work that would otherwise be correct anyway, and argv has a hard size
+// limit, so the list gets collapsed or dropped rather than allowed to grow
+// until exec fails.
+const maxGitPathSpecBytes = 128 << 10
+
+// gitDiffPathSpecs returns pathspecs limiting a diff to the paths that
+// actually changed. Renamed paths need no entry of their own: ChangesetPaths
+// records them under both their old and new names, in Removed and Added.
+//
+// An empty result means "diff everything". Too many paths to pass are first
+// collapsed to their parent directories, which still match everything beneath
+// them, and given up on entirely once even those don't fit.
+func gitDiffPathSpecs(paths *ChangesetPaths) []string {
+	specs := slices.Concat(paths.Added, paths.Removed, paths.Modified)
+	for pathSpecsSize(specs) > maxGitPathSpecBytes {
+		specs = collapsePathSpecsToParents(specs)
+		if len(specs) == 0 {
+			return nil
+		}
+	}
+	return specs
+}
+
+func pathSpecsSize(specs []string) int {
+	var size int
+	for _, spec := range specs {
+		size += len(spec) + 1 // NUL terminator in argv
+	}
+	return size
+}
+
+// collapsePathSpecsToParents replaces each pathspec with its parent directory,
+// which matches everything the original did and then some. Returns nil once
+// any entry sits at the tree root, since its parent is the whole tree.
+func collapsePathSpecsToParents(specs []string) []string {
+	seen := make(map[string]struct{}, len(specs))
+	collapsed := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		parent := path.Dir(path.Clean(spec))
+		if parent == "." || parent == "/" {
+			return nil
+		}
+		if _, ok := seen[parent]; ok {
+			continue
+		}
+		seen[parent] = struct{}{}
+		collapsed = append(collapsed, parent)
+	}
+	return collapsed
 }
 
 func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*ChangesetPaths, error) {
@@ -657,11 +709,8 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compute paths: %w", err)
 	}
-	var pathSpecs []string
-	pathSpecs = append(pathSpecs, paths.Added...)
-	pathSpecs = append(pathSpecs, paths.Removed...)
-	pathSpecs = append(pathSpecs, paths.Modified...)
-	pathSpecs = append(pathSpecs, slices.Sorted(maps.Keys(paths.Renamed))...)
+	noChanges := changesetPathsEmpty(paths)
+	pathSpecs := gitDiffPathSpecs(paths)
 
 	err = MountRef(ctx, beforeRef, func(before string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(before, beforeSelector)
@@ -699,7 +748,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer patchFile.Close()
 
-				if len(pathSpecs) == 0 {
+				if noChanges {
 					// No paths actually changed (no-op Changeset) - just return early rather than
 					// computing an expensive no-op diff.
 					return nil
@@ -711,10 +760,18 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				// filename"). Emitting renames as delete+add avoids the mismatch;
 				// with --binary the result is identical.
 				args := []string{"diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b"}
-				args = append(args, pathSpecs...)
-				fmt.Fprint(stdio.Stdout, "running git", args)
+				if len(pathSpecs) > 0 {
+					// -- so a path starting with - isn't parsed as a flag, and
+					// GIT_LITERAL_PATHSPECS below so one starting with : isn't
+					// parsed as pathspec magic. Either would otherwise fail the
+					// diff or silently drop the path from the patch.
+					args = append(args, "--")
+					args = append(args, pathSpecs...)
+				}
+				fmt.Fprintln(stdio.Stdout, "running git", strings.Join(args, " "))
 				cmd := exec.CommandContext(ctx, "git", args...)
 				cmd.Dir = root
+				cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
 				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
 				cmd.Stderr = stdio.Stderr
 				if err := cmd.Run(); err != nil {
