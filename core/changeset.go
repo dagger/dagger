@@ -25,7 +25,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
@@ -618,7 +617,6 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 
