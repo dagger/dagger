@@ -27,7 +27,6 @@ import (
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1621,7 +1620,6 @@ func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcach
 		return nil, err
 	}
 
-	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 
@@ -1797,8 +1795,6 @@ func (dir *Directory) Search(ctx context.Context, self dagql.ObjectResult[*Direc
 	if err != nil {
 		return nil, err
 	}
-
-	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
 
 	results := []*SearchResult{}
 	err = MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
