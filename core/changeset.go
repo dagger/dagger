@@ -23,11 +23,11 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
-	"golang.org/x/sync/errgroup"
 )
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
@@ -1052,6 +1052,21 @@ func (ch *Changeset) WithChangeset(
 	return newChangesetFromMerge(ctx, before, afterDir)
 }
 
+// maxParallelChangesets bounds how many changesets are worked on at once.
+// Each job mounts both of a changeset's snapshots and walks them, so this is
+// I/O bound work holding real resources for its duration, not something to fan
+// out one goroutine per changeset over.
+const maxParallelChangesets = 8
+
+// changesetJobs returns a job pool for per-changeset work, capped so that a
+// merge of many changesets doesn't mount all of them at once.
+func changesetJobs() parallel.Jobs {
+	return parallel.New().
+		WithContextualTracer(true).
+		WithInternal(true).
+		WithLimit(maxParallelChangesets)
+}
+
 // WithChangesets merges multiple changesets into this one using git's octopus merge strategy.
 // The onConflictStrategy determines how conflicts are handled:
 //   - FailEarlyOnConflicts: fail before merge if file-level conflicts are detected
@@ -1061,27 +1076,31 @@ func (ch *Changeset) WithChangesets(
 	others []*Changeset,
 	onConflictStrategy WithChangesetsMergeConflict,
 ) (*Changeset, error) {
-	// Before wasting any effort, remove any changesets that are empty
+	// Before wasting any effort, remove any changesets that are empty.
+	//
+	// This asks ComputePaths rather than IsEmpty: every surviving changeset
+	// needs its paths computed anyway and ComputePaths memoizes, whereas
+	// IsEmpty would mount and walk both trees all over again for each one. It
+	// also counts directory-only changes, which IsEmpty deliberately ignores
+	// the way `git diff --quiet` does.
 	filtered := make([]*Changeset, len(others))
-	eg := new(errgroup.Group)
+	jobs := changesetJobs()
 	for i, other := range others {
-		eg.Go(func() error {
-			isEmpty, err := other.IsEmpty(ctx)
+		jobs = jobs.WithJob(fmt.Sprintf("changeset %d paths", i), func(ctx context.Context) error {
+			paths, err := other.ComputePaths(ctx)
 			if err != nil {
-				return err
+				return fmt.Errorf("compute paths for changeset %d: %w", i, err)
 			}
-			if !isEmpty {
+			if !changesetPathsEmpty(paths) {
 				filtered[i] = other
 			}
 			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	if err := jobs.Run(ctx); err != nil {
 		return nil, err
 	}
-	filtered = slices.DeleteFunc(filtered, func(cs *Changeset) bool { return cs == nil })
-
-	others = filtered
+	others = slices.DeleteFunc(filtered, func(cs *Changeset) bool { return cs == nil })
 
 	if len(others) == 0 {
 		return ch, nil
@@ -1113,18 +1132,29 @@ func (ch *Changeset) WithChangesets(
 		return nil, err
 	}
 
-	ourPatch, err := enginetel.TaskRet(ctx, "self asPatch", ch.AsPatch)
-	if err != nil {
-		return nil, fmt.Errorf("get our patch: %w", err)
-	}
-
+	// Each patch is an independent mount-and-diff, so take them all at once.
+	var ourPatch *File
 	otherPatches := make([]*File, len(others))
-	for i, other := range others {
-		patch, err := enginetel.TaskRet(ctx, "other asPatch", other.AsPatch)
+	patchJobs := changesetJobs().WithJob("self asPatch", func(ctx context.Context) error {
+		patch, err := ch.AsPatch(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("get patch for changeset %d: %w", i, err)
+			return fmt.Errorf("get our patch: %w", err)
 		}
-		otherPatches[i] = patch
+		ourPatch = patch
+		return nil
+	})
+	for i, other := range others {
+		patchJobs = patchJobs.WithJob(fmt.Sprintf("changeset %d asPatch", i), func(ctx context.Context) error {
+			patch, err := other.AsPatch(ctx)
+			if err != nil {
+				return fmt.Errorf("get patch for changeset %d: %w", i, err)
+			}
+			otherPatches[i] = patch
+			return nil
+		})
+	}
+	if err := patchJobs.Run(ctx); err != nil {
+		return nil, err
 	}
 
 	afterDir, err := enginetel.TaskRet(ctx, "octopus merge", func(ctx context.Context) (*Directory, error) {
@@ -1263,9 +1293,9 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 	}
 
 	otherPaths := make([]*ChangesetPaths, len(others))
-	eg := new(errgroup.Group)
+	jobs := changesetJobs()
 	for i, other := range others {
-		eg.Go(func() error {
+		jobs = jobs.WithJob(fmt.Sprintf("changeset %d paths", i), func(ctx context.Context) error {
 			paths, err := other.ComputePaths(ctx)
 			if err != nil {
 				return fmt.Errorf("compute paths for changeset %d: %w", i, err)
@@ -1274,7 +1304,7 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	if err := jobs.Run(ctx); err != nil {
 		return err
 	}
 
