@@ -27,6 +27,7 @@ func TestPushImageRetriesThrottledUpload(t *testing.T) {
 	img, store, expectedBlobs := newTestPushImage(t, ctx, 10)
 	registry := newThrottledPushRegistry(t, expectedBlobs)
 	t.Cleanup(registry.Close)
+	defer registry.releaseUploads()
 	registryHost := strings.TrimPrefix(registry.URL, "http://")
 
 	rslvr := New(Opts{
@@ -66,8 +67,13 @@ func TestPushImageRetriesThrottledUpload(t *testing.T) {
 	}()
 
 	select {
-	case <-registry.allUploadsStarted:
-	case <-time.After(250 * time.Millisecond):
+	case <-registry.uploadLimitReached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for concurrent uploads")
+	}
+	if rslvr.pushLimiter.TryAcquire(1) {
+		rslvr.pushLimiter.Release(1)
+		t.Fatal("registry uploads did not hold all limiter slots")
 	}
 	registry.releaseUploads()
 
@@ -79,6 +85,7 @@ func TestPushImageRetriesThrottledUpload(t *testing.T) {
 	}
 	require.NoError(t, registry.err())
 	require.Equal(t, 2, registry.throttledAttempts())
+	require.Equal(t, len(expectedBlobs), registry.firstUploadCount())
 	require.LessOrEqual(t, registry.maxConcurrentUploads(), maxConcurrentRegistryUploads)
 }
 
@@ -137,10 +144,10 @@ type throttledPushRegistry struct {
 
 	expectedBlobs map[digest.Digest][]byte
 
-	allUploadsStarted chan struct{}
-	uploadsReleased   chan struct{}
-	releaseOnce       sync.Once
-	allStartedOnce    sync.Once
+	uploadLimitReached chan struct{}
+	uploadsReleased    chan struct{}
+	releaseOnce        sync.Once
+	limitReachedOnce   sync.Once
 
 	mu                sync.Mutex
 	firstErr          error
@@ -156,10 +163,10 @@ func newThrottledPushRegistry(t *testing.T, expectedBlobs map[digest.Digest][]by
 	t.Helper()
 
 	registry := &throttledPushRegistry{
-		expectedBlobs:     expectedBlobs,
-		allUploadsStarted: make(chan struct{}),
-		uploadsReleased:   make(chan struct{}),
-		attempts:          map[digest.Digest]int{},
+		expectedBlobs:      expectedBlobs,
+		uploadLimitReached: make(chan struct{}),
+		uploadsReleased:    make(chan struct{}),
+		attempts:           map[digest.Digest]int{},
 	}
 	registry.Server = httptest.NewServer(http.HandlerFunc(registry.serveHTTP))
 	return registry
@@ -217,15 +224,15 @@ func (r *throttledPushRegistry) serveBlobUpload(w http.ResponseWriter, req *http
 	if r.activeUploads > r.maxActiveUploads {
 		r.maxActiveUploads = r.activeUploads
 	}
+	if r.activeUploads == maxConcurrentRegistryUploads {
+		r.limitReachedOnce.Do(func() {
+			close(r.uploadLimitReached)
+		})
+	}
 	r.attempts[dgst]++
 	attempt := r.attempts[dgst]
 	if attempt == 1 {
 		r.firstUploads++
-		if r.firstUploads == len(r.expectedBlobs) {
-			r.allStartedOnce.Do(func() {
-				close(r.allUploadsStarted)
-			})
-		}
 	}
 	if r.throttledDigest == "" {
 		r.throttledDigest = dgst
@@ -294,6 +301,12 @@ func (r *throttledPushRegistry) throttledAttempts() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.attempts[r.throttledDigest]
+}
+
+func (r *throttledPushRegistry) firstUploadCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.firstUploads
 }
 
 func (r *throttledPushRegistry) maxConcurrentUploads() int {
