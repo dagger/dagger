@@ -306,12 +306,23 @@ func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
 	for target, aliases := range state.execMD.HostAliases {
 		var ips []net.IP
 		var errs error
+		// The FQDN the running service actually registered under, when core
+		// knew it (see ExecutionMetadata.HostAliasFQDNs). It is tried first
+		// because a service scoped to another module's domain is unreachable
+		// via the search domains installed for this exec.
+		candidates := []string{}
+		if fqdn := state.execMD.HostAliasFQDNs[target]; fqdn != "" {
+			candidates = append(candidates, fqdn)
+		}
 		for _, domain := range append([]string{""}, extraSearchDomains...) {
 			qualified := target
 			if domain != "" {
 				qualified += "." + domain
 			}
+			candidates = append(candidates, qualified)
+		}
 
+		for _, qualified := range candidates {
 			var err error
 			ips, err = net.LookupIP(qualified)
 			if err == nil {
