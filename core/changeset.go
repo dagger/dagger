@@ -156,14 +156,19 @@ func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uin
 // metadata and git diffs.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
 	ch.pathsOnce.Do(func() {
-		enginetel.Task(ctx, "computing paths", func(ctx context.Context) error {
+		_ = enginetel.Task(ctx, "computing paths", func(ctx context.Context) error {
 			ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
-			out := telemetry.SpanStdio(ctx, InstrumentationLibrary).Stdout
-			fmt.Fprintln(out, "added:", ch.cachedPaths.Added)
-			fmt.Fprintln(out, "removed:", ch.cachedPaths.Removed)
-			fmt.Fprintln(out, "modified:", ch.cachedPaths.Modified)
-			fmt.Fprintln(out, "renamed:", ch.cachedPaths.Renamed)
-			return ch.pathsErr
+			if ch.pathsErr != nil {
+				// nothing to report; cachedPaths is nil on error
+				return ch.pathsErr
+			}
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			defer stdio.Close()
+			fmt.Fprintln(stdio.Stdout, "added:", ch.cachedPaths.Added)
+			fmt.Fprintln(stdio.Stdout, "removed:", ch.cachedPaths.Removed)
+			fmt.Fprintln(stdio.Stdout, "modified:", ch.cachedPaths.Modified)
+			fmt.Fprintln(stdio.Stdout, "renamed:", ch.cachedPaths.Renamed)
+			return nil
 		})
 	})
 	return ch.cachedPaths, ch.pathsErr
@@ -628,6 +633,9 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+	defer stdio.Close()
+
 	newRef, err := query.SnapshotManager().New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("Changeset.asPatch"))
@@ -704,15 +712,12 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				// with --binary the result is identical.
 				args := []string{"diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b"}
 				args = append(args, pathSpecs...)
-				if err := enginetel.Task(ctx, strings.Join(args, " "), func(context.Context) error {
-					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
-					defer stdio.Close()
-					cmd := exec.CommandContext(ctx, "git", args...)
-					cmd.Dir = root
-					cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
-					cmd.Stderr = stdio.Stderr
-					return cmd.Run()
-				}); err != nil {
+				fmt.Fprint(stdio.Stdout, "running git", args)
+				cmd := exec.CommandContext(ctx, "git", args...)
+				cmd.Dir = root
+				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
+				cmd.Stderr = stdio.Stderr
+				if err := cmd.Run(); err != nil {
 					var exitErr *exec.ExitError
 					// Check if it's exit code 1, which is expected for git diff when files differ
 					if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
