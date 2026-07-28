@@ -956,7 +956,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 			repo := engineClient.Host().Directory(repoDir).AsGit()
 			ref := repo.Head()
-			commitFromRef, err := ref.Commit(ctx)
+			commitFromRef, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
 
 			ctr := engineClient.

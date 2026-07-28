@@ -205,7 +205,7 @@ func requireStrictCommit(ctx context.Context, t *testctx.T, repo *dagger.GitRepo
 
 func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
 	ref := repo.Tag(refStr)
-	_, err := ref.Commit(ctx)
+	_, err := ref.CommitSHA(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "repository does not contain")
 	requireErrOut(t, err, "refs/tags/")
@@ -214,7 +214,7 @@ func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitReposit
 
 func requireStrictBranch(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
 	ref := repo.Branch(refStr)
-	_, err := ref.Commit(ctx)
+	_, err := ref.CommitSHA(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "repository does not contain")
 	requireErrOut(t, err, "refs/heads/")
@@ -331,7 +331,7 @@ func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("local empty", func(ctx context.Context, t *testctx.T) {
 		repo := c.Directory().AsGit()
-		_, err := repo.Head().Commit(ctx)
+		_, err := repo.Head().CommitSHA(ctx)
 		require.ErrorContains(t, err, "not a git repository")
 		_, err = repo.Tags(ctx)
 		require.ErrorContains(t, err, "not a git repository")
@@ -1231,7 +1231,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 
 	// resolve the commit now (by syncing it), but don't clone it
 	ref := c.Git(url).Tag("v1.0")
-	result, err := ref.Commit(ctx)
+	result, err := ref.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, result)
 
@@ -1289,10 +1289,10 @@ func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
 
 	git := ctr.Directory(".").AsGit()
 
-	ref, err := git.LatestVersion().Ref(ctx)
+	ref, err := git.LatestVersion().Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.0", ref)
-	commit, err := git.LatestVersion().Commit(ctx)
+	commit, err := git.LatestVersion().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, v2commit, commit)
 }
@@ -1533,10 +1533,10 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 
 	// test the common ancestor between two branches
 	mergeBase := git.Branch("branch1").CommonAncestor(git.Branch("branch2"))
-	commit, err := mergeBase.Commit(ctx)
+	commit, err := mergeBase.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, commit)
-	ref, err := mergeBase.Ref(ctx)
+	ref, err := mergeBase.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, ref)
 
@@ -1547,10 +1547,10 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 
 	// test the common ancestor between two branches from different refs
 	mergeBase = git.Branch("branch1").CommonAncestor(git2.Branch("branch3"))
-	commit, err = mergeBase.Commit(ctx)
+	commit, err = mergeBase.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, commit)
-	ref, err = mergeBase.Ref(ctx)
+	ref, err = mergeBase.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, ref)
 }
@@ -1663,18 +1663,18 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 	const repoURL = "https://github.com/dagger/dagger-test-modules"
 	repo := c.Git(repoURL)
 
-	commit, err := repo.Head().Commit(ctx)
+	commit, err := repo.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, commit)
 
-	branchCommit, err := repo.Branch("main").Commit(ctx)
+	branchCommit, err := repo.Branch("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, branchCommit, "both selections should resolve the same commit in a single session")
 
 	// Resolve the same ref through a fresh Git node so the second call exercises the
 	// per-session ls-remote cache (the first one warmed it).
 	repo2 := c.Git(repoURL, dagger.GitOpts{KeepGitDir: true})
-	commit2, err := repo2.Head().Commit(ctx)
+	commit2, err := repo2.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, commit2)
 }
