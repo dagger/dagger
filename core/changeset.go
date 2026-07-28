@@ -1097,21 +1097,25 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 	// Only consecutive repeats are collapsed. Dropping every repeat would
 	// reorder a sequence like A, B, A, where the trailing A is what decides
 	// paths that A and B disagree on.
+	// haveLast rather than comparing against the zero digest: an empty digest
+	// would otherwise read as a repeat of nothing and drop the first before
+	// directory, silently changing the merge base.
 	var lastDigest digest.Digest
+	var haveLast bool
 	appendBefore := func(before dagql.ObjectResult[*Directory]) error {
 		return enginetel.Task(ctx, "append before", func(ctx context.Context) error {
 			dgst, err := before.ContentPreferredDigest(ctx)
 			if err != nil {
 				return fmt.Errorf("before content-preferred digest: %w", err)
 			}
-			if dgst == lastDigest {
+			if haveLast && dgst == lastDigest {
 				return nil
 			}
 			id, err := before.ID()
 			if err != nil {
 				return fmt.Errorf("before ID: %w", err)
 			}
-			lastDigest = dgst
+			lastDigest, haveLast = dgst, true
 			selectors = append(selectors, withDirectorySelector(id))
 			return nil
 		})
