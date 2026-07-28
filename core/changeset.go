@@ -685,9 +685,6 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
-	defer stdio.Close()
-
 	newRef, err := query.SnapshotManager().New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("Changeset.asPatch"))
@@ -768,23 +765,32 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 					args = append(args, "--")
 					args = append(args, pathSpecs...)
 				}
-				fmt.Fprintln(stdio.Stdout, "running git", strings.Join(args, " "))
-				cmd := exec.CommandContext(ctx, "git", args...)
-				cmd.Dir = root
-				cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
-				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
-				cmd.Stderr = stdio.Stderr
-				if err := cmd.Run(); err != nil {
-					var exitErr *exec.ExitError
-					// Check if it's exit code 1, which is expected for git diff when files differ
-					if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
+				return enginetel.Task(ctx, "git diff", func(ctx context.Context) error {
+					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+					defer stdio.Close()
+					// The span is named for the command rather than the whole
+					// argv, which the pathspecs make unbounded; log those.
+					fmt.Fprintln(stdio.Stdout, "running git", strings.Join(args, " "))
+					cmd := exec.CommandContext(ctx, "git", args...)
+					cmd.Dir = root
+					cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
+					cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
+					cmd.Stderr = stdio.Stderr
+					if err := cmd.Run(); err != nil {
+						var exitErr *exec.ExitError
+						// Exit code 1 just means the trees differ, which is the
+						// whole point; returning it would end the span in error
+						// for every patch that isn't empty.
+						if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+							return nil
+						}
 						// NB: we could technically populate an ExecError here, but that
 						// feels like it leaks implementation details; "exit status 128" isn't
 						// exactly clear
 						return fmt.Errorf("failed to generate patch: %w", err)
 					}
-				}
-				return nil
+					return nil
+				})
 			})
 		}, mountRefAsReadOnly)
 	}, mountRefAsReadOnly)
