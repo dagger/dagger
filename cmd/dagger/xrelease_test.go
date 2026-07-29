@@ -53,14 +53,26 @@ func TestXReleaseReleaseRef(t *testing.T) {
 	}
 }
 
-func TestXReleaseProcessEnvClearsRunnerOverrides(t *testing.T) {
-	env := xReleaseProcessEnv([]string{
+func TestXReleaseProcessEnvPreservesRunnerHost(t *testing.T) {
+	env, hasRunnerHost := xReleaseProcessEnv([]string{
 		daggerXReleaseEnv + "=v0.20.8",
 		RunnerHostEnv + "=docker-container://dagger-engine.dev",
 		RunnerImageLoaderEnv + "=docker",
 		"KEEP=1",
 	})
 
+	require.True(t, hasRunnerHost)
+	require.Equal(t, []string{
+		RunnerHostEnv + "=docker-container://dagger-engine.dev",
+		"KEEP=1",
+		"DAGGER_LEAVE_OLD_ENGINE=1",
+	}, env)
+}
+
+func TestXReleaseProcessEnvWithoutRunnerHost(t *testing.T) {
+	env, hasRunnerHost := xReleaseProcessEnv([]string{"KEEP=1"})
+
+	require.False(t, hasRunnerHost)
 	require.Equal(t, []string{
 		"KEEP=1",
 		"DAGGER_LEAVE_OLD_ENGINE=1",

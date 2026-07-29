@@ -456,7 +456,14 @@ func execXRelease(ctx context.Context) error {
 	}
 
 	args := xReleaseProcessArgs(os.Args[1:])
-	env := xReleaseProcessEnv(os.Environ())
+	env, hasRunnerHost := xReleaseProcessEnv(os.Environ())
+	if hasRunnerHost {
+		fmt.Fprintln(stderr, xReleaseLogLine(fmt.Sprintf(
+			"warning: --x-release or %s is being used with %s",
+			daggerXReleaseEnv,
+			RunnerHostEnv,
+		)))
+	}
 	execArgs := append([]string{binPath}, args...)
 	if err := execCLI(binPath, execArgs, env); err != nil {
 		return fmt.Errorf("exec experimental release CLI: %w", err)
@@ -523,14 +530,18 @@ func xReleaseProcessArgs(args []string) []string {
 	return rewritten
 }
 
-func xReleaseProcessEnv(environ []string) []string {
+func xReleaseProcessEnv(environ []string) ([]string, bool) {
 	env := make([]string, 0, len(environ)+1)
 	hasLeaveOldEngine := false
+	hasRunnerHost := false
 	for _, kv := range environ {
 		key, _, _ := strings.Cut(kv, "=")
 		switch key {
-		case daggerXReleaseEnv, RunnerHostEnv, RunnerImageLoaderEnv:
+		case daggerXReleaseEnv, RunnerImageLoaderEnv:
 			continue
+		}
+		if key == RunnerHostEnv {
+			hasRunnerHost = true
 		}
 		if key == "DAGGER_LEAVE_OLD_ENGINE" {
 			hasLeaveOldEngine = true
@@ -540,7 +551,7 @@ func xReleaseProcessEnv(environ []string) []string {
 	if !hasLeaveOldEngine {
 		env = append(env, "DAGGER_LEAVE_OLD_ENGINE=1")
 	}
-	return env
+	return env, hasRunnerHost
 }
 
 func shouldCleanupOldEngines() bool {
