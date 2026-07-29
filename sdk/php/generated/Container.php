@@ -25,6 +25,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
+        ?bool $experimentalDockerCompatibility = false,
     ): Service {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asService');
         if (null !== $args) {
@@ -44,6 +45,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $noInit) {
         $innerQueryBuilder->setArgument('noInit', $noInit);
+        }
+        if (null !== $experimentalDockerCompatibility) {
+        $innerQueryBuilder->setArgument('experimentalDockerCompatibility', $experimentalDockerCompatibility);
         }
         return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -507,6 +511,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?array $cmd = [],
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
+        ?bool $experimentalDockerCompatibility = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {
@@ -517,6 +522,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        if (null !== $experimentalDockerCompatibility) {
+        $innerQueryBuilder->setArgument('experimentalDockerCompatibility', $experimentalDockerCompatibility);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -535,6 +543,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
+        ?bool $experimentalDockerCompatibility = false,
     ): void {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('up');
         if (null !== $random) {
@@ -560,6 +569,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $noInit) {
         $leafQueryBuilder->setArgument('noInit', $noInit);
+        }
+        if (null !== $experimentalDockerCompatibility) {
+        $leafQueryBuilder->setArgument('experimentalDockerCompatibility', $experimentalDockerCompatibility);
         }
         $this->queryLeaf($leafQueryBuilder, 'up');
     }
@@ -751,6 +763,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
         ?bool $noInit = false,
+        ?bool $experimentalDockerCompatibility = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExec');
         $innerQueryBuilder->setArgument('args', $args);
@@ -783,6 +796,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $noInit) {
         $innerQueryBuilder->setArgument('noInit', $noInit);
+        }
+        if (null !== $experimentalDockerCompatibility) {
+        $innerQueryBuilder->setArgument('experimentalDockerCompatibility', $experimentalDockerCompatibility);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

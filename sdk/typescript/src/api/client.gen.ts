@@ -273,6 +273,7 @@ export type ContainerAsServiceOpts = {
    * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   noInit?: boolean
+  experimentalDockerCompatibility?: boolean
 }
 
 export type ContainerAsTarballOpts = {
@@ -500,6 +501,13 @@ export type ContainerTerminalOpts = {
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
+
+  /**
+   * Bind a Docker-compatible API listener inside the container during this terminal session and set DOCKER_HOST to point at it.
+   *
+   * This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+   */
+  experimentalDockerCompatibility?: boolean
 }
 
 export type ContainerUpOpts = {
@@ -548,6 +556,7 @@ export type ContainerUpOpts = {
    * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   noInit?: boolean
+  experimentalDockerCompatibility?: boolean
 }
 
 export type ContainerWithDefaultTerminalCmdOpts = {
@@ -699,6 +708,13 @@ export type ContainerWithExecOpts = {
    * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
    */
   noInit?: boolean
+
+  /**
+   * Bind a Docker-compatible API listener inside the container during this exec and set DOCKER_HOST to point at it.
+   *
+   * This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+   */
+  experimentalDockerCompatibility?: boolean
 }
 
 export type ContainerWithExposedPortOpts = {
@@ -1302,6 +1318,7 @@ export type DirectoryTerminalOpts = {
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
+  experimentalDockerCompatibility?: boolean
 }
 
 export type DirectoryWithDirectoryOpts = {
@@ -5113,6 +5130,9 @@ export class Container extends BaseClient {
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * @param opts.experimentalDockerCompatibility Bind a Docker-compatible API listener inside the container during this terminal session and set DOCKER_HOST to point at it.
+   *
+   * This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
    */
   terminal = (opts?: ContainerTerminalOpts): Container => {
     const ctx = this._ctx.select("terminal", { ...opts })
@@ -5305,6 +5325,9 @@ export class Container extends BaseClient {
    * @param opts.noInit Skip the automatic init process injected into containers by default.
    *
    * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
+   * @param opts.experimentalDockerCompatibility Bind a Docker-compatible API listener inside the container during this exec and set DOCKER_HOST to point at it.
+   *
+   * This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
     const metadata = {

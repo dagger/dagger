@@ -1573,6 +1573,8 @@ pub struct ContainerAsServiceOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_docker_compatibility: Option<bool>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -1736,6 +1738,10 @@ pub struct ContainerTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
+    /// Bind a Docker-compatible API listener inside the container during this terminal session and set DOCKER_HOST to point at it.
+    /// This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_docker_compatibility: Option<bool>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -1752,6 +1758,8 @@ pub struct ContainerUpOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_docker_compatibility: Option<bool>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -1848,6 +1856,10 @@ pub struct ContainerWithExecOpts<'a> {
     /// Exit codes this command is allowed to exit with without error
     #[builder(setter(into, strip_option), default)]
     pub expect: Option<ReturnType>,
+    /// Bind a Docker-compatible API listener inside the container during this exec and set DOCKER_HOST to point at it.
+    /// This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_docker_compatibility: Option<bool>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -2160,6 +2172,12 @@ impl Container {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(experimental_docker_compatibility) = opts.experimental_docker_compatibility {
+            query = query.arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+            );
         }
         Service {
             proc: self.proc.clone(),
@@ -2853,6 +2871,12 @@ impl Container {
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
+        if let Some(experimental_docker_compatibility) = opts.experimental_docker_compatibility {
+            query = query.arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+            );
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2903,6 +2927,12 @@ impl Container {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(experimental_docker_compatibility) = opts.experimental_docker_compatibility {
+            query = query.arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+            );
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -3320,6 +3350,12 @@ impl Container {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
+        }
+        if let Some(experimental_docker_compatibility) = opts.experimental_docker_compatibility {
+            query = query.arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+            );
         }
         Container {
             proc: self.proc.clone(),
@@ -5245,6 +5281,8 @@ pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the default container used for the terminal.
     #[builder(setter(into, strip_option), default)]
     pub container: Option<Id>,
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_docker_compatibility: Option<bool>,
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
@@ -5884,6 +5922,12 @@ impl Directory {
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
+        if let Some(experimental_docker_compatibility) = opts.experimental_docker_compatibility {
+            query = query.arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+            );
         }
         Directory {
             proc: self.proc.clone(),

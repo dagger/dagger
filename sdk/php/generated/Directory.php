@@ -339,6 +339,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         ?array $cmd = [],
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
+        ?bool $experimentalDockerCompatibility = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $container) {
@@ -352,6 +353,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        if (null !== $experimentalDockerCompatibility) {
+        $innerQueryBuilder->setArgument('experimentalDockerCompatibility', $experimentalDockerCompatibility);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

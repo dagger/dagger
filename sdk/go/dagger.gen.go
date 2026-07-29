@@ -1789,6 +1789,8 @@ type ContainerAsServiceOpts struct {
 	//
 	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
 	NoInit bool
+
+	ExperimentalDockerCompatibility bool
 }
 
 // Turn the container into a Service.
@@ -1820,6 +1822,10 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {
 			q = q.Arg("noInit", opts[i].NoInit)
+		}
+		// `experimentalDockerCompatibility` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalDockerCompatibility) {
+			q = q.Arg("experimentalDockerCompatibility", opts[i].ExperimentalDockerCompatibility)
 		}
 	}
 
@@ -2621,6 +2627,10 @@ type ContainerTerminalOpts struct {
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
+	// Bind a Docker-compatible API listener inside the container during this terminal session and set DOCKER_HOST to point at it.
+	//
+	// This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+	ExperimentalDockerCompatibility bool
 }
 
 // Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
@@ -2638,6 +2648,10 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
 			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+		// `experimentalDockerCompatibility` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalDockerCompatibility) {
+			q = q.Arg("experimentalDockerCompatibility", opts[i].ExperimentalDockerCompatibility)
 		}
 	}
 
@@ -2670,6 +2684,8 @@ type ContainerUpOpts struct {
 	//
 	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
 	NoInit bool
+
+	ExperimentalDockerCompatibility bool
 }
 
 // Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
@@ -2712,6 +2728,10 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {
 			q = q.Arg("noInit", opts[i].NoInit)
+		}
+		// `experimentalDockerCompatibility` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalDockerCompatibility) {
+			q = q.Arg("experimentalDockerCompatibility", opts[i].ExperimentalDockerCompatibility)
 		}
 	}
 
@@ -2990,6 +3010,10 @@ type ContainerWithExecOpts struct {
 	//
 	// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
 	NoInit bool
+	// Bind a Docker-compatible API listener inside the container during this exec and set DOCKER_HOST to point at it.
+	//
+	// This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+	ExperimentalDockerCompatibility bool
 }
 
 // Execute a command in the container, and return a new snapshot of the container state after execution.
@@ -3035,6 +3059,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {
 			q = q.Arg("noInit", opts[i].NoInit)
+		}
+		// `experimentalDockerCompatibility` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalDockerCompatibility) {
+			q = q.Arg("experimentalDockerCompatibility", opts[i].ExperimentalDockerCompatibility)
 		}
 	}
 	q = q.Arg("args", args)
@@ -5196,6 +5224,8 @@ type DirectoryTerminalOpts struct {
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
+
+	ExperimentalDockerCompatibility bool
 }
 
 // Opens an interactive terminal in new container with this directory mounted inside.
@@ -5217,6 +5247,10 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
 			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+		// `experimentalDockerCompatibility` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalDockerCompatibility) {
+			q = q.Arg("experimentalDockerCompatibility", opts[i].ExperimentalDockerCompatibility)
 		}
 	}
 

@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Add `Container.terminal(experimentalDockerCompatibility: true)` and
+  `Container.withExec(args, experimentalDockerCompatibility: true)` to expose
+  a Docker-compatible API over TCP and direct nested Docker clients to it via
+  the DOCKER_HOST environment variable to provide Docker-in-Dagger without
+  needing to run the entire Docker engine as a Service.
+time: 2026-07-28T02:16:22Z
+custom:
+  Author: frantjc
+  PR: 00000

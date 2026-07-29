@@ -662,6 +662,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Skip the automatic init process injected into containers by default.`,
 					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
+				dagql.Arg("experimentalDockerCompatibility").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(
+						`Bind a Docker-compatible API listener inside the container during this exec and set DOCKER_HOST to point at it.`,
+						`This allows Docker CLI tooling to work inside the container without Docker-in-Docker.`,
+					),
 			),
 
 		dagql.NodeFunc("stdout", s.stdout).
@@ -955,6 +961,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				"--privileged" flag. Containerization does not provide any security
 				guarantees when using this option. It should only be used when
 				absolutely necessary and only with trusted commands.`),
+				dagql.Arg("experimentalDockerCompatibility").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(
+						`Bind a Docker-compatible API listener inside the container during this terminal session and set DOCKER_HOST to point at it.`,
+						`This allows Docker CLI tooling to work inside the container without Docker-in-Docker.`,
+					),
 			),
 		dagql.NodeFunc("terminal", s.terminalLegacy).
 			View(BeforeVersion("v0.12.0")).

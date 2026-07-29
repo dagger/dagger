@@ -838,6 +838,7 @@ func (srv *Server) initializeDaggerClient(
 	engineUtilOpts.GetHostServiceCaller = client.getHostServiceCaller
 	engineUtilOpts.GetMainClientCaller = client.getMainClientCaller
 	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
+	engineUtilOpts.SnapshotAccessor = srv.CacheAccessor()
 	engineUtilOpts.Interactive = client.daggerSession.interactive
 	engineUtilOpts.InteractiveCommand = client.daggerSession.interactiveCommand
 	client.engineUtilClient, err = engineutil.NewClient(ctx, &engineUtilOpts)
