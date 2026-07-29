@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -3106,41 +3107,66 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 		return out, err
 	}
 
+	// Stage and generate the direct dependencies concurrently: each job is
+	// I/O- and container-bound (module loading, SDK generator runs) and
+	// independent of its siblings. Sibling closures that share transitive
+	// dependencies converge on the same memoized dagql calls, so concurrency
+	// joins in-flight work rather than repeating it, and each recursion level
+	// builds its own pool, so there is no shared semaphore to deadlock on.
+	type depGen struct {
+		staging dagql.ObjectResult[*core.Changeset]
+		changes dagql.ObjectResult[*core.Changeset]
+	}
+	depGens := make([]depGen, len(depPaths))
+	jobs := parallel.New().
+		WithContextualTracer(true).
+		WithInternal(true).
+		WithLimit(maxParallelDepGeneration)
+	for i, depPath := range depPaths {
+		jobs = jobs.WithJob("stage local dependency "+depPath, func(ctx context.Context) error {
+			// Canonical dependency source: selecting through the workspace keys
+			// the recursive call below by (dependency path, workspace) alone, so
+			// every walk that reaches this dependency shares one cached result.
+			var depSrc dagql.ObjectResult[*core.ModuleSource]
+			if err := dag.Select(ctx, workspace, &depSrc, dagql.Selector{
+				Field: "moduleSource",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/" + depPath)}},
+			}); err != nil {
+				return fmt.Errorf("resolve local dependency %q: %w", depPath, err)
+			}
+
+			// The dependency's own transitive staging, memoized per
+			// (dependency, workspace).
+			var depDeps dagql.ObjectResult[*core.Changeset]
+			if err := dag.Select(ctx, depSrc, &depDeps, dagql.Selector{
+				Field: "generateLocalDependencies",
+				Args:  []dagql.NamedInput{{Name: "workspace", Value: args.Workspace}},
+			}); err != nil {
+				return fmt.Errorf("stage local dependency %q closure: %w", depPath, err)
+			}
+
+			depChanges, err := s.generateOneLocalDependency(ctx, dag, workspace, depPath, depDeps, owners)
+			if err != nil {
+				return fmt.Errorf("generate local dependency %q: %w", depPath, err)
+			}
+			depGens[i] = depGen{staging: depDeps, changes: depChanges}
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return res, err
+	}
+
+	// Fold the overlays in declaration order, off the parallel path, so the
+	// resulting changeset is deterministic regardless of completion order.
+	// Sibling closures share transitive dependencies, but their changesets
+	// carry identical content for them, so overlaying converges.
 	stagedCtx := origCtx
-	for _, depPath := range depPaths {
-		// Canonical dependency source: selecting through the workspace keys the
-		// recursive call below by (dependency path, workspace) alone, so every
-		// walk that reaches this dependency shares one cached result.
-		var depSrc dagql.ObjectResult[*core.ModuleSource]
-		if err := dag.Select(ctx, workspace, &depSrc, dagql.Selector{
-			Field: "moduleSource",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/" + depPath)}},
-		}); err != nil {
-			return res, fmt.Errorf("resolve local dependency %q: %w", depPath, err)
-		}
-
-		// The dependency's own transitive staging, memoized per
-		// (dependency, workspace).
-		var depDeps dagql.ObjectResult[*core.Changeset]
-		if err := dag.Select(ctx, depSrc, &depDeps, dagql.Selector{
-			Field: "generateLocalDependencies",
-			Args:  []dagql.NamedInput{{Name: "workspace", Value: args.Workspace}},
-		}); err != nil {
+	for i, depPath := range depPaths {
+		if stagedCtx, err = overlay(stagedCtx, depGens[i].staging); err != nil {
 			return res, fmt.Errorf("stage local dependency %q closure: %w", depPath, err)
 		}
-
-		depChanges, err := s.generateOneLocalDependency(ctx, dag, workspace, depPath, depDeps, owners)
-		if err != nil {
-			return res, fmt.Errorf("generate local dependency %q: %w", depPath, err)
-		}
-
-		// Overlay the dependency's transitive staging, then its own generated
-		// changes. Sibling closures share transitive dependencies, but their
-		// changesets carry identical content for them, so overlaying converges.
-		if stagedCtx, err = overlay(stagedCtx, depDeps); err != nil {
-			return res, fmt.Errorf("stage local dependency %q closure: %w", depPath, err)
-		}
-		if stagedCtx, err = overlay(stagedCtx, depChanges); err != nil {
+		if stagedCtx, err = overlay(stagedCtx, depGens[i].changes); err != nil {
 			return res, fmt.Errorf("stage local dependency %q changes: %w", depPath, err)
 		}
 	}
@@ -3157,6 +3183,13 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 	}
 	return res, nil
 }
+
+// maxParallelDepGeneration bounds how many direct local dependencies are
+// staged and generated at once per generateLocalDependencies call. Each job
+// loads a module and runs its SDK generator — real containers and I/O — so
+// this matches the cap used for parallel changeset work (see
+// core.maxParallelChangesets) rather than fanning out per dependency.
+const maxParallelDepGeneration = 8
 
 // localDepCycle returns a dependency-path cycle among src's local dependencies,
 // or nil when the local dependency graph is acyclic.
