@@ -72,6 +72,17 @@ type Workspace struct {
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by workspace filesystem operations that need host access.
 	hostPath string
+
+	// GeneratedDepsStaged marks a workspace built by
+	// ModuleSource.generateLocalDependencies staging: the module's transitive
+	// local dependency codegen is already applied to it. A nested
+	// generateLocalDependencies call on such a workspace short-circuits to an
+	// empty changeset — without this, a dependency's SDK generator re-stages
+	// its own dependency closure, and generation fans out exponentially over
+	// the dependency DAG. Set only via the internal stageGeneratedDeps arg on
+	// Workspace.withChanges; carried through Clone so derived workspaces keep
+	// it.
+	GeneratedDepsStaged bool
 }
 
 // WorkspaceSource is the private backing source for a Workspace.
@@ -416,6 +427,8 @@ type persistedWorkspacePayload struct {
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
 
+	GeneratedDepsStaged bool `json:"generatedDepsStaged,omitempty"`
+
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
 	LegacyConfigPath string `json:"configPath,omitempty"`
@@ -555,13 +568,14 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		CompatWorkspace: ws.compatWorkspace,
-		Address:         ws.Address,
-		Cwd:             ws.Cwd,
-		ConfigFile:      ws.ConfigFile,
-		LockFile:        ws.LockFile,
-		ClientID:        ws.ClientID,
-		HostPath:        ws.hostPath,
+		CompatWorkspace:     ws.compatWorkspace,
+		Address:             ws.Address,
+		Cwd:                 ws.Cwd,
+		ConfigFile:          ws.ConfigFile,
+		LockFile:            ws.LockFile,
+		ClientID:            ws.ClientID,
+		HostPath:            ws.hostPath,
+		GeneratedDepsStaged: ws.GeneratedDepsStaged,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -621,14 +635,15 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		rootfs:          rootfs,
-		compatWorkspace: persisted.CompatWorkspace,
-		Address:         persisted.Address,
-		Cwd:             cwd,
-		ConfigFile:      configFile,
-		LockFile:        lockFile,
-		ClientID:        persisted.ClientID,
-		hostPath:        persisted.HostPath,
+		rootfs:              rootfs,
+		compatWorkspace:     persisted.CompatWorkspace,
+		Address:             persisted.Address,
+		Cwd:                 cwd,
+		ConfigFile:          configFile,
+		LockFile:            lockFile,
+		ClientID:            persisted.ClientID,
+		hostPath:            persisted.HostPath,
+		GeneratedDepsStaged: persisted.GeneratedDepsStaged,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)

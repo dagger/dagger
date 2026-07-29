@@ -1086,10 +1086,20 @@ func (s *workspaceSchema) withNewDirectory(
 	}, nil)
 }
 
+type workspaceWithChangesArgs struct {
+	Changes dagql.ID[*core.Changeset]
+	// StageGeneratedDeps marks the resulting workspace as carrying its
+	// module's staged generated dependency codegen, so a nested
+	// ModuleSource.generateLocalDependencies call short-circuits instead of
+	// re-staging (see core.Workspace.GeneratedDepsStaged). Internal: set only
+	// by the engine's dependency-staging path.
+	StageGeneratedDeps bool `internal:"true" default:"false"`
+}
+
 func (s *workspaceSchema) withChanges(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args withChangesArgs,
+	args workspaceWithChangesArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1107,6 +1117,10 @@ func (s *workspaceSchema) withChanges(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	var mutate func(*core.Workspace)
+	if args.StageGeneratedDeps {
+		mutate = func(ws *core.Workspace) { ws.GeneratedDepsStaged = true }
+	}
 	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
@@ -1116,7 +1130,7 @@ func (s *workspaceSchema) withChanges(
 			},
 		})
 		return updated, err
-	}, nil)
+	}, mutate)
 }
 
 func (s *workspaceSchema) withWorkdir(
