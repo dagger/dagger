@@ -78,6 +78,17 @@ func runnerHostForEngineVersion(version string) string {
 
 type runClientCallback func(context.Context, *client.Client) error
 
+type disableFrontendTelemetryKey struct{}
+
+func withoutFrontendTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, disableFrontendTelemetryKey{}, true)
+}
+
+func frontendTelemetryDisabled(ctx context.Context) bool {
+	disabled, _ := ctx.Value(disableFrontendTelemetryKey{}).(bool)
+	return disabled
+}
+
 func withEngine(
 	ctx context.Context,
 	params client.Params,
@@ -310,16 +321,23 @@ var skipSharedTelemetryExporters bool
 // Such sessions render to a discard frontend and have no reason to export to
 // Cloud, so they simply skip the shared exporters.
 func engineTelemetryConfig(ctx context.Context) telemetry.Config {
+	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
+}
+
+type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
+
+func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) telemetry.Config {
 	cfg := telemetry.Config{
 		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
-
-		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
-		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
-		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
+	}
+	if !frontendTelemetryDisabled(ctx) {
+		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
+		cfg.LiveLogExporters = append(cfg.LiveLogExporters, Frontend.LogExporter())
+		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
 	if !skipSharedTelemetryExporters {
-		if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
+		if spans, logs, metrics, ok := configuredCloudExporters(ctx); ok {
 			// Wrap the Cloud span exporter in a LARGE-queue live processor instead of
 			// letting telemetry.Init wrap it with the default 2048-slot BSP, so the
 			// CLI→Cloud hop does not silently drop spans on a big burst — a cold engine

@@ -16,6 +16,26 @@ func TestSessionCmdWorkspaceFlag(t *testing.T) {
 	require.Equal(t, "W", flag.Shorthand)
 }
 
+func TestSilentFromEnv(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "unset", value: "", want: false},
+		{name: "true", value: "true", want: true},
+		{name: "one", value: "1", want: true},
+		{name: "false", value: "false", want: false},
+		{name: "zero", value: "0", want: false},
+		{name: "invalid", value: "not-a-bool", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("DAGGER_SILENT", test.value)
+			require.Equal(t, test.want, silentFromEnv())
+		})
+	}
+}
+
 // TestSessionClientParamsWorkspace verifies that the session command forwards
 // its explicit workspace selection into engine client params.
 func TestSessionClientParamsWorkspace(t *testing.T) {

@@ -8,6 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
@@ -28,9 +32,31 @@ func main() {
 		}
 		defer eventsF.Close()
 
-		_, err = io.Copy(eventsF, r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			panic(err)
+		}
+		if _, err := eventsF.Write(body); err != nil {
+			panic(err)
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/v1/traces") {
+			var req coltracepb.ExportTraceServiceRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				panic(err)
+			}
+			namesF, err := os.OpenFile(eventsFp+".names", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			if err != nil {
+				panic(err)
+			}
+			defer namesF.Close()
+			for _, resourceSpans := range req.ResourceSpans {
+				for _, scopeSpans := range resourceSpans.ScopeSpans {
+					for _, span := range scopeSpans.Spans {
+						fmt.Fprintln(namesF, span.Name)
+					}
+				}
+			}
 		}
 
 		w.WriteHeader(http.StatusCreated)
