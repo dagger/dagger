@@ -1,1 +1,1 @@
-pub const DAGGER_ENGINE_VERSION: &str = "0.21.7";
+pub const DAGGER_ENGINE_VERSION: &str = "0.21.8";

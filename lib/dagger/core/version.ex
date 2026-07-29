@@ -1,7 +1,7 @@
 defmodule Dagger.Core.Version do
   @moduledoc false
 
-  @dagger_cli_version "v0.21.7"
+  @dagger_cli_version "v0.21.8"
 
   def engine_version(), do: @dagger_cli_version
 end
