@@ -44,6 +44,10 @@ func NewNodeRuntime(
 }
 
 func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, error) {
+	if n.introspectionJSON == nil {
+		return n.setupContainerWithoutCodegen(ctx)
+	}
+
 	var tsConfig *dagger.File
 	var sdkLibrary *dagger.Directory
 	var runtimeWithDep *NodeRuntime
@@ -126,6 +130,54 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		// Merge source code directory with current directory
 		WithDirectory(".", n.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, generatedEntrypoint).
+		WithEntrypoint([]string{
+			"tsx", "--no-deprecation", "--tsconfig", n.cfg.tsConfigPath(), entrypointPath,
+		})
+
+	if n.cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
+	return ctr, nil
+}
+
+// setupContainerWithoutCodegen builds the runtime container when the module
+// opts out of runtime codegen (introspectionJSON not passed): it trusts the
+// committed generated files (sdk/, __dagger.entrypoint.ts, package.json,
+// tsconfig.json, lockfile), installs dependencies and runs the committed
+// entrypoint — no lib generation, no entrypoint generation, no config rewrite.
+func (n *NodeRuntime) setupContainerWithoutCodegen(ctx context.Context) (*dagger.Container, error) {
+	if err := n.cfg.requireGeneratedFiles(ctx); err != nil {
+		return nil, err
+	}
+	if n.cfg.packageJSONConfig == nil {
+		return nil, fmt.Errorf(
+			"module %q has runtime codegen disabled but no package.json is committed",
+			n.cfg.name)
+	}
+
+	// Trust the committed package.json as-is (no rewrite).
+	n.ctr = n.ctr.WithFile("package.json", n.cfg.source.File("package.json"))
+
+	pkgManager := n.createPkgManagerCtr()
+	runtimeWithDep, err := pkgManager.
+		withSetupPackageManager().
+		withInstalledDependencies().
+		sync(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entrypointPath := filepath.Join(n.cfg.modulePath(), EntrypointExecutableFile)
+
+	ctr := runtimeWithDep.ctr.
+		// Overlay the committed tree (sdk/, __dagger.entrypoint.ts,
+		// tsconfig.json, user sources); node_modules is reinstalled above.
+		WithDirectory(".", n.cfg.source, dagger.ContainerWithDirectoryOpts{
+			Exclude: []string{NodeModulesDir},
+		}).
+		// Make @dagger.io/dagger resolve to the committed bindings.
+		WithMountedDirectory("node_modules/@dagger.io/dagger", n.cfg.source.Directory(GenDir)).
 		WithEntrypoint([]string{
 			"tsx", "--no-deprecation", "--tsconfig", n.cfg.tsConfigPath(), entrypointPath,
 		})
