@@ -1,0 +1,13 @@
+name = "dev"
+engineVersion = "v1.0.0-0"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "engine-dev"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "cli-dev"
+  source = "../cli-dev"
