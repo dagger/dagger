@@ -24,6 +24,11 @@ func EntrypointTemplateFuncs(module *TypedefModule, opts EntrypointOptions) temp
 		"renderTypeDef":        c.renderTypeDef,
 		"renderArgCall":        c.renderArgCall,
 		"renderFunctionExpr":   c.renderFunctionExpr,
+		"renderObjectDef":      c.renderObjectDef,
+		"renderFieldCall":      c.renderFieldCall,
+		"renderEnumDef":        c.renderEnumDef,
+		"renderEnumMemberCall": c.renderEnumMemberCall,
+		"renderInterfaceDef":   c.renderInterfaceDef,
 		"classRuntimeRef":      c.classRuntimeRef,
 		"classTypeRef":         c.classTypeRef,
 		"isExportedClass":      c.isExportedClass,
@@ -241,7 +246,9 @@ func (c *entrypointFuncCtx) renderArgCall(arg *TypedefArgument) string {
 	if arg.IsOptional {
 		td += ".withOptional(true)"
 	}
-	if hasDefault(arg) {
+	// An explicit `null` default must still be registered as the arg's default
+	// (unlike the coercion path's hasDefault, which excludes null on purpose).
+	if len(arg.DefaultValue) > 0 {
 		dv, ok := c.resolveDefaultValue(arg)
 		if !ok {
 			if !arg.IsOptional {
@@ -252,7 +259,85 @@ func (c *entrypointFuncCtx) renderArgCall(arg *TypedefArgument) string {
 			opts["defaultValue"] = fmt.Sprintf("JSON.stringify(%s) as string & { __JSON: never }", string(b))
 		}
 	}
+	if sm := sourceMapExpr(arg.Location); sm != "" {
+		opts["sourceMap"] = sm
+	}
 	return fmt.Sprintf(".withArg(%s, %s%s)", jsString(arg.Name), td, optsLit(opts))
+}
+
+// sourceMapExpr renders a `dag.sourceMap(path, line, col)` expression for a
+// location captured at codegen time, or "" when absent. The static entrypoint
+// replays these baked values at runtime so no-codegen modules keep the same
+// source-map comments in dependents' bindings as codegen-at-runtime modules.
+func sourceMapExpr(loc *TypedefLocation) string {
+	if loc == nil {
+		return ""
+	}
+	return fmt.Sprintf("dag.sourceMap(%s, %d, %d)", jsString(loc.Filepath), loc.Line, loc.Column)
+}
+
+func (c *entrypointFuncCtx) renderObjectDef(obj *TypedefObject) string {
+	opts := map[string]string{}
+	if obj.Description != "" {
+		opts["description"] = jsString(obj.Description)
+	}
+	if obj.Deprecated != "" {
+		opts["deprecated"] = jsString(obj.Deprecated)
+	}
+	if sm := sourceMapExpr(obj.Location); sm != "" {
+		opts["sourceMap"] = sm
+	}
+	return fmt.Sprintf("dag.typeDef().withObject(%s%s)", jsString(obj.Name), optsLit(opts))
+}
+
+func (c *entrypointFuncCtx) renderFieldCall(prop *TypedefProperty) string {
+	opts := map[string]string{}
+	if prop.Description != "" {
+		opts["description"] = jsString(prop.Description)
+	}
+	if prop.Deprecated != "" {
+		opts["deprecated"] = jsString(prop.Deprecated)
+	}
+	if sm := sourceMapExpr(prop.Location); sm != "" {
+		opts["sourceMap"] = sm
+	}
+	return fmt.Sprintf(".withField(%s, %s%s)", jsString(propFieldName(prop)), c.renderTypeDef(prop.Type), optsLit(opts))
+}
+
+func (c *entrypointFuncCtx) renderEnumDef(e *TypedefEnum) string {
+	opts := map[string]string{}
+	if e.Description != "" {
+		opts["description"] = jsString(e.Description)
+	}
+	if sm := sourceMapExpr(e.Location); sm != "" {
+		opts["sourceMap"] = sm
+	}
+	return fmt.Sprintf("dag.typeDef().withEnum(%s%s)", jsString(e.Name), optsLit(opts))
+}
+
+func (c *entrypointFuncCtx) renderEnumMemberCall(v *TypedefEnumValue) string {
+	opts := map[string]string{"value": jsString(v.Value)}
+	if v.Description != "" {
+		opts["description"] = jsString(v.Description)
+	}
+	if v.Deprecated != "" {
+		opts["deprecated"] = jsString(v.Deprecated)
+	}
+	if sm := sourceMapExpr(v.Location); sm != "" {
+		opts["sourceMap"] = sm
+	}
+	return fmt.Sprintf(".withEnumMember(%s%s)", jsString(v.Name), optsLit(opts))
+}
+
+func (c *entrypointFuncCtx) renderInterfaceDef(iface *TypedefInterface) string {
+	opts := map[string]string{}
+	if iface.Description != "" {
+		opts["description"] = jsString(iface.Description)
+	}
+	if sm := sourceMapExpr(iface.Location); sm != "" {
+		opts["sourceMap"] = sm
+	}
+	return fmt.Sprintf("dag.typeDef().withInterface(%s%s)", jsString(iface.Name), optsLit(opts))
 }
 
 func (c *entrypointFuncCtx) resolveDefaultValue(arg *TypedefArgument) (any, bool) {
@@ -287,6 +372,9 @@ func (c *entrypointFuncCtx) renderFunctionExpr(fn *TypedefFunction) string {
 	parts := []string{fmt.Sprintf("dag.function_(%s, %s)", jsString(fnName), c.renderTypeDef(fn.ReturnType))}
 	if fn.Description != "" {
 		parts = append(parts, fmt.Sprintf(".withDescription(%s)", jsString(fn.Description)))
+	}
+	if sm := sourceMapExpr(fn.Location); sm != "" {
+		parts = append(parts, fmt.Sprintf(".withSourceMap(%s)", sm))
 	}
 	for _, arg := range fn.Arguments {
 		parts = append(parts, c.renderArgCall(arg))
