@@ -77,6 +77,17 @@ func runnerHostForEngineVersion(version string) string {
 
 type runClientCallback func(context.Context, *client.Client) error
 
+type disableFrontendTelemetryKey struct{}
+
+func withoutFrontendTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, disableFrontendTelemetryKey{}, true)
+}
+
+func frontendTelemetryDisabled(ctx context.Context) bool {
+	disabled, _ := ctx.Value(disableFrontendTelemetryKey{}).(bool)
+	return disabled
+}
+
 func withEngine(
 	ctx context.Context,
 	params client.Params,
@@ -185,22 +196,32 @@ func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
 	return string(mode), nil
 }
 
-func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
-	// Setup telemetry config
-	telemetryCfg := telemetry.Config{
+func engineTelemetryConfig(ctx context.Context) telemetry.Config {
+	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
+}
+
+type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
+
+func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) telemetry.Config {
+	cfg := telemetry.Config{
 		Detect:   true,
 		Resource: Resource(ctx),
+	}
+	if !frontendTelemetryDisabled(ctx) {
+		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
+		cfg.LiveLogExporters = append(cfg.LiveLogExporters, Frontend.LogExporter())
+		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
+	}
+	if spans, logs, metrics, ok := configuredCloudExporters(ctx); ok {
+		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, spans)
+		cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+	}
+	return cfg
+}
 
-		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
-		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
-		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
-	}
-	if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
-		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
-		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
-		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, metrics)
-	}
-	ctx = telemetry.Init(ctx, telemetryCfg)
+func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
+	ctx = telemetry.Init(ctx, engineTelemetryConfig(ctx))
 	// telemetry.Init extracts inherited OTel baggage from the environment.
 	// Re-apply explicit local process settings afterward so a nested Dagger
 	// command's own NO_COLOR/debug request wins over parent baggage.

@@ -61,7 +61,7 @@ var (
 
 	workdir string
 
-	silent                   bool
+	silent                   = silentFromEnv()
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
 	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
@@ -93,6 +93,12 @@ var (
 const daggerXReleaseEnv = "DAGGER_X_RELEASE"
 
 var githubCommitAPI = "https://api.github.com/repos/dagger/dagger/commits/"
+
+func silentFromEnv() bool {
+	// DAGGER_SILENT is the environment equivalent of --silent.
+	silent, _ := strconv.ParseBool(os.Getenv("DAGGER_SILENT"))
+	return silent
+}
 
 func init() {
 	// allow user explicitly setting progress via env, but default it to "auto"
