@@ -1279,6 +1279,17 @@ var gitEphemeralConfig = []string{
 	"-c", "maintenance.autoDetach=false",
 	"-c", "gc.auto=0",
 	"-c", "gc.autoDetach=false",
+	// Snapshots share file contents via hardlinks, so a file's ctime, inode
+	// and device can all change out from under us (e.g. when a concurrent
+	// snapshot hardlinks the same inode) without the content changing.
+	//
+	// Left alone, git sees these as stat-dirty entries, and `git merge`'s
+	// internal `git stash create` fails with a bewildering "fatal: stash
+	// failed".
+	//
+	// 'minimal' compares only mtime + size, which is all we can trust here.
+	"-c", "core.checkStat=minimal",
+	"-c", "core.trustctime=false",
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
