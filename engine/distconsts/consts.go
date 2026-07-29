@@ -16,6 +16,11 @@ const (
 	DaggerInitPath = "/usr/local/bin/dagger-init"
 	TiniPath       = "/usr/local/bin/tini"
 
+	// GitCredentialHelperInContainerPath is where the engine bind-mounts its
+	// git credential helper (the dagger-init binary, which dispatches on
+	// argv[0]) inside containers that mount a git-credential socket.
+	GitCredentialHelperInContainerPath = "/.git-credential" // #nosec G101 -- filesystem path, not a credential.
+
 	EngineDefaultStateDir = "/var/lib/dagger"
 
 	EngineContainerBuiltinContentDir   = "/usr/local/share/dagger/content"

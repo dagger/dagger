@@ -40,14 +40,26 @@ func (r *TypescriptSDK) WithGraphQLQuery(q *querybuilder.Selection) *TypescriptS
 	}
 }
 
+// TypescriptSDKCodegenOpts contains options for TypescriptSDK.Codegen
+type TypescriptSDKCodegenOpts struct {
+	// Engine-provided git-credential socket for private git+https dependencies
+	GitCredentials *Socket
+}
+
 // Codegen implements the `Codegen` method from the SDK module interface.
 //
 // It returns the generated API client based on user's module as well as
 // ignore directive regarding the generated content.
-func (r *TypescriptSDK) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+func (r *TypescriptSDK) Codegen(modSource *ModuleSource, introspectionJson *File, opts ...TypescriptSDKCodegenOpts) *GeneratedCode {
 	assertNotNil("modSource", modSource)
 	assertNotNil("introspectionJson", introspectionJson)
 	q := r.query.Select("codegen")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `gitCredentials` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GitCredentials) {
+			q = q.Arg("gitCredentials", opts[i].GitCredentials)
+		}
+	}
 	q = q.Arg("modSource", modSource)
 	q = q.Arg("introspectionJson", introspectionJson)
 
@@ -120,6 +132,12 @@ func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// TypescriptSDKModuleRuntimeOpts contains options for TypescriptSDK.ModuleRuntime
+type TypescriptSDKModuleRuntimeOpts struct {
+	// Engine-provided git-credential socket for private git+https dependencies
+	GitCredentials *Socket
+}
+
 // ModuleRuntime implements the `ModuleRuntime` method from the SDK module interface.
 //
 // It returns a ready to call container with the correct node, bun or deno runtime setup.
@@ -128,10 +146,16 @@ func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
 //
 // The returned container has the codegen freshly generated and any necessary dependency
 // installed.
-func (r *TypescriptSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
+func (r *TypescriptSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File, opts ...TypescriptSDKModuleRuntimeOpts) *Container {
 	assertNotNil("modSource", modSource)
 	assertNotNil("introspectionJson", introspectionJson)
 	q := r.query.Select("moduleRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `gitCredentials` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GitCredentials) {
+			q = q.Arg("gitCredentials", opts[i].GitCredentials)
+		}
+	}
 	q = q.Arg("modSource", modSource)
 	q = q.Arg("introspectionJson", introspectionJson)
 

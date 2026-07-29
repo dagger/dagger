@@ -218,7 +218,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
 				}
 			}
-			return (*TypescriptSdk).Codegen(&parent, ctx, modSource, introspectionJson)
+			var gitCredentials *dagger.Socket
+			if inputArgs["gitCredentials"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitCredentials"]), &gitCredentials)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitCredentials", err))
+				}
+			}
+			return (*TypescriptSdk).Codegen(&parent, ctx, modSource, introspectionJson, gitCredentials)
 		case "GenerateClient":
 			var parent TypescriptSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -267,7 +274,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
 				}
 			}
-			return (*TypescriptSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson)
+			var gitCredentials *dagger.Socket
+			if inputArgs["gitCredentials"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitCredentials"]), &gitCredentials)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitCredentials", err))
+				}
+			}
+			return (*TypescriptSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson, gitCredentials)
 		case "ModuleTypes":
 			var parent TypescriptSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -328,36 +342,38 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Codegen",
 							dag.TypeDef().WithObject("GeneratedCode")).
 							WithDescription("Codegen implements the `Codegen` method from the SDK module interface.\n\nIt returns the generated API client based on user's module as well as\nignore directive regarding the generated content.").
-							WithSourceMap(dag.SourceMap("main.go", 97, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 99, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 100, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 100, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 102, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 103, 2)}).
+							WithArg("gitCredentials", dag.TypeDef().WithObject("Socket").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Engine-provided git-credential socket for private git+https dependencies", SourceMap: dag.SourceMap("main.go", 106, 2)})).
 					WithFunction(
 						dag.Function("GenerateClient",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Returns a directory with a standalone generated client and any necessary configuration\nfiles that are required to work.").
-							WithSourceMap(dag.SourceMap("main.go", 184, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 186, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 187, 2)}).
-							WithArg("outputDir", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 188, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 190, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 192, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 193, 2)}).
+							WithArg("outputDir", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 194, 2)})).
 					WithFunction(
 						dag.Function("ModuleRuntime",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("ModuleRuntime implements the `ModuleRuntime` method from the SDK module interface.\n\nIt returns a ready to call container with the correct node, bun or deno runtime setup.\nOn call, this will trigger the entrypoint that will either intropect and register the\nmodule in the Dagger engine or execute a function of that module.\n\nThe returned container has the codegen freshly generated and any necessary dependency\ninstalled.").
 							WithSourceMap(dag.SourceMap("main.go", 47, 1)).
 							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 49, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 50, 2)})).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 50, 2)}).
+							WithArg("gitCredentials", dag.TypeDef().WithObject("Socket").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Engine-provided git-credential socket for private git+https dependencies", SourceMap: dag.SourceMap("main.go", 53, 2)})).
 					WithFunction(
 						dag.Function("ModuleTypes",
 							dag.TypeDef().WithObject("Container")).
-							WithSourceMap(dag.SourceMap("main.go", 69, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 71, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 72, 2)}).
-							WithArg("outputFilePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 73, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 72, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 74, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 75, 2)}).
+							WithArg("outputFilePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 76, 2)})).
 					WithFunction(
 						dag.Function("RequiredClientGenerationFiles",
 							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
 							WithDescription("Returns the list of files that are copied from the host when generating the client.").
-							WithSourceMap(dag.SourceMap("main.go", 174, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 180, 1))).
 					WithField("SDKSourceDir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 23, 2)}).
 					WithConstructor(
 						dag.Function("New",

@@ -84,6 +84,14 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("source").Doc(`Optional source socket to scope. If not set, uses the caller's SSH_AUTH_SOCK.`),
 			),
 
+		dagql.NodeFunc("_gitCredential", s.gitCredentialSocket).
+			WithInput(dagql.PerCallInput).
+			Doc(`Returns a socket that answers git's credential-helper protocol by relaying to the session's host git credential helper, restricted to the given hosts.`,
+				`The user's credentials are only resolved in trusted engine-driven SDK/dependency installs; any other caller gets its own scope.`).
+			Args(
+				dagql.Arg("hosts").Doc(`Exact hostnames the socket is allowed to serve credentials for.`),
+			),
+
 		dagql.Func("tunnel", s.tunnel).
 			WithInput(dagql.PerClientInput).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
@@ -480,6 +488,90 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 	}
 	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteSelf); err != nil {
 		return inst, err
+	}
+
+	return inst, nil
+}
+
+type hostGitCredentialArgs struct {
+	Hosts []string
+}
+
+func (s *hostSchema) gitCredentialSocket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostGitCredentialArgs) (inst dagql.Result[*core.Socket], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dagql cache: %w", err)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
+	hosts := core.NormalizeGitCredentialHosts(args.Hosts)
+	if len(hosts) == 0 {
+		return inst, errors.New("at least one allowed host is required")
+	}
+
+	// Identity is derived from ctx, never from the call, following the same
+	// candidate rules as the git resolver's implicit HTTPS auth (git.go): the
+	// non-module parent client's credentials by default, plus the session's
+	// originating client under trusted module dependency/SDK resolution. A
+	// module client calling this directly only gets its own scope. One
+	// session resource binding per candidate; resolution at exec time picks
+	// the first client that can answer.
+	parentClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get non-module parent client metadata: %w", err)
+	}
+	isTrustedDepResolution := core.IsModuleDependencyResolution(ctx)
+	srcClientMetadatas := []*engine.ClientMetadata{parentClientMetadata}
+	if clientMetadata.ClientID != parentClientMetadata.ClientID && !isTrustedDepResolution {
+		srcClientMetadatas = []*engine.ClientMetadata{clientMetadata}
+	} else if isTrustedDepResolution {
+		mainClientMetadata, err := query.MainClientCallerMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get main client metadata: %w", err)
+		}
+		if mainClientMetadata.ClientID != parentClientMetadata.ClientID {
+			srcClientMetadatas = append(srcClientMetadatas, mainClientMetadata)
+		}
+	}
+
+	srcClientIDs := make([]string, len(srcClientMetadatas))
+	for i, md := range srcClientMetadatas {
+		srcClientIDs[i] = md.ClientID
+	}
+	handle := core.ScopedGitCredentialSocketHandle(query.SecretSalt(), srcClientIDs, hosts)
+
+	handleVal := &core.Socket{
+		Kind:   core.SocketKindGitCredential,
+		Handle: handle,
+	}
+	inst, err = dagql.NewResultForCurrentCall(ctx, handleVal)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	inst, err = inst.WithContentDigest(ctx, digest.Digest(handle))
+	if err != nil {
+		return inst, err
+	}
+	inst, err = inst.WithSessionResourceHandle(ctx, handle)
+	if err != nil {
+		return inst, err
+	}
+
+	for _, md := range srcClientMetadatas {
+		if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, md.ClientID, handle, &core.Socket{
+			Kind:               core.SocketKindGitCredential,
+			SourceClientID:     md.ClientID,
+			GitCredentialHosts: hosts,
+		}); err != nil {
+			return inst, err
+		}
 	}
 
 	return inst, nil
