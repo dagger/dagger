@@ -75,6 +75,12 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 
 	ctx := cmd.Context()
+	if silent {
+		// SDK callers with no progress consumer use silent sessions. Keep the
+		// frontend lifecycle, but do not install its retaining dagui exporters;
+		// independent exporters such as Dagger Cloud remain configured.
+		ctx = withoutFrontendTelemetry(ctx)
+	}
 
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
