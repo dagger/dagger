@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
@@ -234,5 +235,76 @@ func TestLocalDepClosureLeafFirst(t *testing.T) {
 
 	t.Run("no local deps yields empty", func(t *testing.T) {
 		require.Empty(t, localDepClosureLeafFirst(mk("a", local)))
+	})
+}
+
+func TestValidateDependencyGeneratorGroup(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects SDK load failures", func(t *testing.T) {
+		err := validateDependencyGeneratorGroup("go-sdk", "modules/dep", &core.GeneratorGroup{
+			LoadFailures: []string{"failed to load go-sdk", "missing dependency"},
+		})
+		require.EqualError(t, err, `load owning SDK "go-sdk" generators: failed to load go-sdk; missing dependency`)
+	})
+
+	t.Run("rejects an empty generator group", func(t *testing.T) {
+		err := validateDependencyGeneratorGroup("go-sdk", "modules/dep", &core.GeneratorGroup{})
+		require.EqualError(t, err, `owning SDK "go-sdk" exposes no generators for dependency "modules/dep"`)
+	})
+
+	t.Run("accepts a populated generator group", func(t *testing.T) {
+		err := validateDependencyGeneratorGroup("go-sdk", "modules/dep", &core.GeneratorGroup{
+			Generators: []*core.Generator{{}},
+		})
+		require.NoError(t, err)
+	})
+}
+
+func TestSDKOwnersByModulePathFromConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("maps normalized module paths", func(t *testing.T) {
+		owners, err := sdkOwnersByModulePathFromConfig(&workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"go-sdk": {
+					AsSDK: &workspace.ModuleAsSDK{
+						Modules: []workspace.SDKManagedModule{
+							{Path: "./modules/go"},
+							{Path: "modules/go"},
+						},
+					},
+				},
+				"typescript-sdk": {
+					AsSDK: &workspace.ModuleAsSDK{
+						Modules: []workspace.SDKManagedModule{{Path: "modules/typescript"}},
+					},
+				},
+				"plain-module": {},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{
+			"modules/go":         "go-sdk",
+			"modules/typescript": "typescript-sdk",
+		}, owners)
+	})
+
+	t.Run("rejects paths managed by multiple SDKs", func(t *testing.T) {
+		_, err := sdkOwnersByModulePathFromConfig(&workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"go-sdk": {
+					AsSDK: &workspace.ModuleAsSDK{
+						Modules: []workspace.SDKManagedModule{{Path: "./modules/shared"}},
+					},
+				},
+				"typescript-sdk": {
+					AsSDK: &workspace.ModuleAsSDK{
+						Modules: []workspace.SDKManagedModule{{Path: "modules/shared"}},
+					},
+				},
+			},
+		})
+		require.EqualError(t, err, `module path "modules/shared" is managed by multiple SDKs: "go-sdk" and "typescript-sdk"`)
 	})
 }
