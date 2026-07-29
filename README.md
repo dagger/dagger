@@ -10,7 +10,7 @@ brew install dagger/tap/dagger
 
 ## Why Dagger?
 
-Dagger makes your software delivery *programmable*, *local-first*, *repeatable* and *observable*.
+Dagger makes your software delivery _programmable_, _local-first_, _repeatable_ and _observable_.
 
 **Programmable**. Shell scripts and proprietary YAML are no longer acceptable for automating software delivery. Dagger provides: a complete execution engine and system API; SDKs for 8 languages; an interactive REPL; a rich ecosystem of reusable modules; and more.
 
