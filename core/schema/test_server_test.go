@@ -24,6 +24,7 @@ import (
 type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
 	dag              *dagql.Server
+	mainClient       *engine.ClientMetadata
 	workspaceLock    *workspace.Lock
 	workspaceLockOK  bool
 	workspaceLockErr error
@@ -62,6 +63,9 @@ func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.Sc
 }
 
 func (s *currentTypeDefsTestServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
+	if s.mainClient != nil {
+		return s.mainClient, nil
+	}
 	return &engine.ClientMetadata{}, nil
 }
 
@@ -160,7 +164,7 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 
 func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
 
-func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context) (*workspace.Lock, bool, error) {
+func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) (*workspace.Lock, bool, error) {
 	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
 }
 

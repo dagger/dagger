@@ -304,7 +304,8 @@ type PhpSDKDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) PhpSDKDev(opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../:0:0)
+func (r *Query) PhpSDKDev(ws *Workspace, opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("phpSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspaceDir` optional argument
@@ -324,6 +325,7 @@ func (r *Query) PhpSDKDev(opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (..
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
 		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &PhpSDKDev{
 		query: q,

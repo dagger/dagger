@@ -21,14 +21,20 @@ type GoSdkDev {
   pub sourcePath: String! = "sdk/go"
 
   """
+  Workspace
+  """
+  let ws: Workspace!
+
+  """
   Build a container to run the go toolchain
   """
   pub devContainer: Container! {
-    let ctr = go(source: workspaceDir)
+    let ctr = go(ws: self.ws, source: workspaceDir)
       .env
       .withWorkdir(sourcePath)
     # "sdk" is an arbitrary name for state persistence
-    engineDev.installClient(ctr, engineDev.service("sdk"))
+    let engine = engineDev(ws: self.ws)
+    engine.installClient(ctr, engine.service("sdk"))
   }
 
   pub source: Directory! {

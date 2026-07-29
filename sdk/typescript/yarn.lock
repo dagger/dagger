@@ -2582,13 +2582,12 @@ protobufjs@7.6.1, protobufjs@^7.5.3:
     "@types/node" ">=13.7.0"
     long "^5.3.2"
 
-protobufjs@8.0.0, protobufjs@8.0.2:
-  version "8.0.2"
-  resolved "https://registry.yarnpkg.com/protobufjs/-/protobufjs-8.0.2.tgz#d4e038b9abfbacebf2e25b5da471da94397d32a7"
-  integrity sha512-TNF0rhMsp+g21us9R2aj3iA7JY9pG7G/3zyRiULl6NS+AurvgQ7iWA203QcykDGSosHxMsV+K6GTR15RBWw1bA==
+protobufjs@8.0.0, protobufjs@8.4.1:
+  version "8.4.1"
+  resolved "https://registry.yarnpkg.com/protobufjs/-/protobufjs-8.4.1.tgz#3ba4b27e50e1f6ef901455e747224f86c32c6aea"
+  integrity sha512-oXf2UgIty8jnwfN4yvL1x79VLhL5uiKjZJbSGXGCIUmHmItTP4eS/UIlWDCeNx3seg+ujfn9vDlPMSrsh7wO+Q==
   dependencies:
-    "@types/node" ">=13.7.0"
-    long "^5.0.0"
+    long "^5.3.2"
 
 punycode@^2.1.0:
   version "2.3.1"

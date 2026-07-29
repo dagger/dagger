@@ -36,7 +36,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			slog.Error("failed to unmarshal log resource", "error", err, "log", sd)
 			continue
 		} else {
-			res = telemetry.ResourceFromPB(sd.ResourceSchemaUrl, &resPb)
+			res = telemetry.ResourceFromPB(sd.ResourceSchemaURL, &resPb)
 		}
 		var scope instrumentation.Scope
 		var scopePb otlpcommonv1.InstrumentationScope
@@ -68,6 +68,10 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 		var attrs []*otlpcommonv1.KeyValue
 		if err := UnmarshalProtoJSONs(sd.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
 			slog.Warn("failed to unmarshal log attributes", "error", err)
+			continue
+		}
+		if !sd.TraceID.Valid || !sd.SpanID.Valid {
+			slog.Error("log record has invalid trace or span ID", "log", sd)
 			continue
 		}
 		tid, err := trace.TraceIDFromHex(sd.TraceID.String)

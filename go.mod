@@ -45,7 +45,7 @@ require (
 	github.com/cilium/ebpf v0.21.0
 	github.com/containerd/console v1.0.5
 	github.com/containerd/containerd/api v1.10.0
-	github.com/containerd/containerd/v2 v2.2.4
+	github.com/containerd/containerd/v2 v2.2.5
 	github.com/containerd/continuity v0.4.5
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/errdefs/pkg v0.3.0
@@ -61,7 +61,6 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
-	github.com/dagger/go/buildinfo v0.0.0-20260603014022-bcbbfc749da7
 	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
@@ -157,7 +156,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.32
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/dang v1.0.1
-	github.com/vito/dang/v2 v2.1.2-0.20260717032725-9689d13e8a99
+	github.com/vito/dang/v2 v2.1.2-0.20260721205602-bfe66140e738
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea

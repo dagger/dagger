@@ -16,14 +16,19 @@ defmodule Dagger.CurrentModule do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+  Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
 
   Errors if the current module is not installed as an SDK in this workspace.
   """
-  @spec as_sdk(t()) :: Dagger.CurrentModuleAsSDK.t()
-  def as_sdk(%__MODULE__{} = current_module) do
+  @spec as_sdk(t(), [{:workspace, Dagger.Workspace.t() | nil}]) :: Dagger.CurrentModuleAsSDK.t()
+  def as_sdk(%__MODULE__{} = current_module, optional_args \\ []) do
     query_builder =
-      current_module.query_builder |> QB.select("asSDK")
+      current_module.query_builder
+      |> QB.select("asSDK")
+      |> QB.maybe_put_arg(
+        "workspace",
+        if(optional_args[:workspace], do: Dagger.ID.id!(optional_args[:workspace]), else: nil)
+      )
 
     %Dagger.CurrentModuleAsSDK{
       query_builder: query_builder,

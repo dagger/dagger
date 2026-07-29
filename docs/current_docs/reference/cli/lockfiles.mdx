@@ -44,6 +44,12 @@ Typical uses:
 - `pinned`: day-to-day development and most CI
 - `frozen`: reproducible, hermetic, or offline runs
 
+For a remote Git workspace selected by a full commit SHA, `frozen` reads the
+committed `dagger.lock` without modifying the remote workspace. Mutable Git
+workspace refs such as branches cannot bootstrap `frozen`, because Dagger must
+resolve the workspace ref before its committed lockfile is available. Modes
+that may update lock entries require a writable local workspace lockfile.
+
 ## Lock policies
 
 Lock policy is stored on each lock entry.

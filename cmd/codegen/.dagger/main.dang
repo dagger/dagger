@@ -11,7 +11,9 @@ type Codegen {
     "!**/*.tmpl",
   ])
 
+  let ws: Workspace!
+
   pub binary: File! {
-    go(source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
   }
 }

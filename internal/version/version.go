@@ -4,17 +4,17 @@
 // The semantic version is the contents of the VERSION file at the package
 // root, embedded at compile time via //go:embed.
 //
-// Commit and dirty state come from runtime/debug build info, wrapped by
-// github.com/dagger/go/buildinfo. Native `go build` outside the Dagger
-// sandbox gets these for free from the toolchain's VCS detection. Sandboxed
-// Dagger builds inject them via -ldflags into buildinfo's Injected* vars.
+// Commit and dirty state come from runtime/debug build info, wrapped by the
+// internal buildinfo package. Native `go build` outside the Dagger sandbox
+// gets these for free from the toolchain's VCS detection. Sandboxed Dagger
+// builds inject them via -ldflags into buildinfo's Injected* vars.
 package version
 
 import (
 	_ "embed"
 	"strings"
 
-	"github.com/dagger/go/buildinfo"
+	"github.com/dagger/dagger/internal/version/buildinfo"
 )
 
 //go:embed VERSION

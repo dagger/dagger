@@ -408,6 +408,34 @@ export type ContainerImportOpts = {
   tag?: string
 }
 
+export type ContainerLayerOpts = {
+  /**
+   * Force each layer of the image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Media types to use for image layers. Defaults to OCI.
+   */
+  mediaTypes?: ImageMediaTypes
+}
+
+export type ContainerManifestOpts = {
+  /**
+   * Force each layer of the image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Media types to use for image layers. Defaults to OCI.
+   */
+  mediaTypes?: ImageMediaTypes
+}
+
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -862,6 +890,18 @@ export type ContainerWithMountedTempOpts = {
   expand?: boolean
 }
 
+export type ContainerWithMountedVolumeOpts = {
+  /**
+   * Mount the volume read-only.
+   */
+  readOnly?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithNewFileOpts = {
   /**
    * Permissions of the new file. Example: 0600
@@ -970,6 +1010,13 @@ export type ContainerWithoutUnixSocketOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+}
+
+export type CurrentModuleAsSdkOpts = {
+  /**
+   * The workspace to resolve SDK-role data against. Defaults to the current workspace.
+   */
+  workspace?: Workspace
 }
 
 export type CurrentModuleGeneratorsOpts = {
@@ -2513,6 +2560,28 @@ export type ClientSecretOpts = {
   cacheKey?: string
 }
 
+export type ClientSshfsVolumeOpts = {
+  /**
+   * known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+   */
+  knownHosts?: Secret
+
+  /**
+   * Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+   */
+  cacheKey?: string
+
+  /**
+   * Disable SSH host key verification. This is insecure and must be explicitly opted into.
+   */
+  insecureSkipHostKeyCheck?: boolean
+
+  /**
+   * Service to use as the SSHFS network endpoint while verifying the original host key.
+   */
+  experimentalServiceHost?: Service
+}
+
 /**
  * Transport protocol to use for registry operations.
  */
@@ -3306,6 +3375,14 @@ export class Address extends BaseClient {
 
     return response
   }
+
+  /**
+   * Load a volume from the address.
+   */
+  volume = (): Volume => {
+    const ctx = this._ctx.select("volume")
+    return new Volume(ctx)
+  }
 }
 
 export class Binding extends BaseClient {
@@ -3646,6 +3723,14 @@ export class Binding extends BaseClient {
   asUpGroup = (): UpGroup => {
     const ctx = this._ctx.select("asUpGroup")
     return new UpGroup(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Volume
+   */
+  asVolume = (): Volume => {
+    const ctx = this._ctx.select("asVolume")
+    return new Volume(ctx)
   }
 
   /**
@@ -4840,6 +4925,47 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Returns the image layer or configuration blob with the given digest as a File.
+   * @param id Digest of the layer or configuration blob (e.g. "sha256:abc123...").
+   * @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Media types to use for image layers. Defaults to OCI.
+   */
+  layer = (id: string, opts?: ContainerLayerOpts): File => {
+    const metadata = {
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
+    }
+
+    const ctx = this._ctx.select("layer", { id, ...opts, __metadata: metadata })
+    return new File(ctx)
+  }
+
+  /**
+   * Computes and returns the manifest for this container as a File.
+   * @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Media types to use for image layers. Defaults to OCI.
+   */
+  manifest = (opts?: ContainerManifestOpts): File => {
+    const metadata = {
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
+    }
+
+    const ctx = this._ctx.select("manifest", { ...opts, __metadata: metadata })
+    return new File(ctx)
+  }
+
+  /**
    * Retrieves the list of paths where a directory is mounted.
    */
   mounts = async (): Promise<string[]> => {
@@ -5396,6 +5522,22 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container plus a volume mounted at the given path.
+   * @param path Location of the volume mount (e.g., "/mnt/volume").
+   * @param volume Identifier of the volume to mount.
+   * @param opts.readOnly Mount the volume read-only.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  withMountedVolume = (
+    path: string,
+    volume: Volume,
+    opts?: ContainerWithMountedVolumeOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withMountedVolume", { path, volume, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Return a new container snapshot, with a file added to its filesystem with text content
    * @param path Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
    * @param contents Contents of the new file. Example: "Hello world!"
@@ -5780,12 +5922,13 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+   * Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
    *
    * Errors if the current module is not installed as an SDK in this workspace.
+   * @param opts.workspace The workspace to resolve SDK-role data against. Defaults to the current workspace.
    */
-  asSDK = (): CurrentModuleAsSDK => {
-    const ctx = this._ctx.select("asSDK")
+  asSDK = (opts?: CurrentModuleAsSdkOpts): CurrentModuleAsSDK => {
+    const ctx = this._ctx.select("asSDK", { ...opts })
     return new CurrentModuleAsSDK(ctx)
   }
 
@@ -8623,6 +8766,31 @@ export class Env extends BaseClient {
    */
   withUpOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withUpOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Volume in the environment
+   * @param name The name of the binding
+   * @param value The Volume value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withVolumeInput = (name: string, value: Volume, description: string): Env => {
+    const ctx = this._ctx.select("withVolumeInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Volume output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withVolumeOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withVolumeOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -13076,6 +13244,17 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Generate this module's transitive local dependency closure, leaf-first, and return the accumulated changeset.
+   *
+   * Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
+   * @param workspace The workspace to generate the local dependencies against.
+   */
+  generateLocalDependencies = (workspace: Workspace): Changeset => {
+    const ctx = this._ctx.select("generateLocalDependencies", { workspace })
+    return new Changeset(ctx)
+  }
+
+  /**
    * The generated files and directories made on top of the module source's context directory, returned as a Changeset.
    */
   generatedContextChangeset = (): Changeset => {
@@ -14218,6 +14397,28 @@ export class Client extends BaseClient {
   sourceMap = (filename: string, line: number, column: number): SourceMap => {
     const ctx = this._ctx.select("sourceMap", { filename, line, column })
     return new SourceMap(ctx)
+  }
+
+  /**
+   * Constructs an SSHFS volume.
+   * @param endpoint SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path.
+   * @param privateKey Private key secret used to authenticate to the remote host.
+   * @param opts.knownHosts known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+   * @param opts.cacheKey Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+   * @param opts.insecureSkipHostKeyCheck Disable SSH host key verification. This is insecure and must be explicitly opted into.
+   * @param opts.experimentalServiceHost Service to use as the SSHFS network endpoint while verifying the original host key.
+   */
+  sshfsVolume = (
+    endpoint: string,
+    privateKey: Secret,
+    opts?: ClientSshfsVolumeOpts,
+  ): Volume => {
+    const ctx = this._ctx.select("sshfsVolume", {
+      endpoint,
+      privateKey,
+      ...opts,
+    })
+    return new Volume(ctx)
   }
 
   /**
@@ -15749,6 +15950,37 @@ export class UpGroup extends BaseClient {
 }
 
 /**
+ * A filesystem volume that can be mounted into containers.
+ */
+export class Volume extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Volume.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * A Dagger workspace detected from the current working directory or constructed from a Directory.
  */
 export class Workspace extends BaseClient {
@@ -16246,6 +16478,15 @@ export class Workspace extends BaseClient {
    */
   withUpdatedLock = (): Workspace => {
     const ctx = this._ctx.select("withUpdatedLock")
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with its working directory pointed at the given workspace-relative path.
+   * @param path Workspace-relative path to use as the working directory.
+   */
+  withWorkdir = (path: string): Workspace => {
+    const ctx = this._ctx.select("withWorkdir", { path })
     return new Workspace(ctx)
   }
 

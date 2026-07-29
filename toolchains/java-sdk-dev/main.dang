@@ -11,7 +11,7 @@ type JavaSdkDev {
   """
   Workspace with all the files needed to develop the SDK.
   """
-  pub workspaceDir: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+  workspaceDir: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
     "*",
     "!sdk/java/dagger-codegen-maven-plugin/",
     "!sdk/java/dagger-java-annotation-processor/",
@@ -29,7 +29,7 @@ type JavaSdkDev {
   """
   The path of the SDK in the workspace
   """
-  pub sourcePath: String! = "sdk/java"
+  sourcePath: String! = "sdk/java"
 
   """
   Workspace path in the dev container
@@ -37,10 +37,15 @@ type JavaSdkDev {
   let workspacePath: String! = "/src"
 
   """
+  Workspace
+  """
+  let ws: Workspace!
+
+  """
   Build a container to run the java toolchain
   """
   let devContainer: Container! {
-    daggerEngine
+    daggerEngine(ws: self.ws)
       .installClient(
         mavenImage
           .withDirectory(workspacePath, workspaceDir)
@@ -48,18 +53,18 @@ type JavaSdkDev {
       )
   }
 
-  pub name: String! {
+  name: String! {
     "java"
   }
 
-  pub source: Directory! {
+  source: Directory! {
     workspaceDir.directory(sourcePath)
   }
 
   """
   Test the Java SDK
   """
-  pub test: Void @check {
+  test: Void @check {
     devContainer
       .withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"])
       .sync
@@ -70,8 +75,10 @@ type JavaSdkDev {
   """
   Lint the Java SDK
   """
-  pub lint: Void @check {
-    devContainer
+  lint: Void @check {
+    mavenImage
+      .withDirectory(workspacePath, workspaceDir)
+      .withWorkdir(workspacePath + "/" + sourcePath)
       .withExec(["mvn", "fmt:check"])
       .sync
 
@@ -81,7 +88,7 @@ type JavaSdkDev {
   """
   Format the Java SDK
   """
-  pub fmt: Changeset {
+  fmt: Changeset {
     devContainer
       .withExec(["mvn", "com.spotify.fmt:fmt-maven-plugin:format"])
       .directory(workspacePath)
@@ -91,7 +98,7 @@ type JavaSdkDev {
   """
   Check that releasing works, without actually releasing
   """
-  pub releaseDryRun(
+  releaseDryRun(
     """
     Git tag to fake-release
     """
@@ -113,7 +120,7 @@ type JavaSdkDev {
 
   Java release not yet available, call dry run release
   """
-  pub release(
+  release(
     """
     Source git tag to release
     """
@@ -125,7 +132,7 @@ type JavaSdkDev {
   """
   Check dependencies in the Java SDK
   """
-  pub checkDeps: Void {
+  checkDeps: Void {
     let changes = bumpDeps
       .asPatch
       .contents
@@ -138,7 +145,7 @@ type JavaSdkDev {
   """
   Bump dependencies in the Java SDK
   """
-  pub bumpDeps: Changeset! {
+  bumpDeps: Changeset! {
     let ctr = devContainer
     [
       sourcePath + "/dagger-codegen-maven-plugin/",

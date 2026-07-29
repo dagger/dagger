@@ -89,6 +89,10 @@ Examples:
 
 func runFunctionList(cmd *cobra.Command, args []string) error {
 	params := initModuleParams(args)
+	// The leading token is the likely target module; the engine narrows
+	// workspace module loading from it (deliberately not set in
+	// initModuleParams: shell shares that helper and needs the full view).
+	params.WorkspaceModuleScope = functionName(args)
 	return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 		coreMode := moduleNoURL || isCoreModuleSelected()
 

@@ -145,6 +145,10 @@ type Params struct {
 	// WorkspaceEnv explicitly selects the workspace environment overlay for this client.
 	WorkspaceEnv *string
 
+	// WorkspaceModuleScope hints at the workspace module this client's first
+	// schema introspection targets (the leading CLI command token, unresolved).
+	WorkspaceModuleScope string
+
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
 
@@ -1458,6 +1462,11 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.Module == "" && c.LoadWorkspaceModules {
 		md.LoadWorkspaceModules = true
+	}
+	// The scope only narrows workspace module loading, so it travels only
+	// when this client asks for it.
+	if md.LoadWorkspaceModules {
+		md.WorkspaceModuleScope = c.WorkspaceModuleScope
 	}
 	if c.LockMode != "" {
 		md.LockMode = c.LockMode

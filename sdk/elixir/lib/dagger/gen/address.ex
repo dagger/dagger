@@ -168,6 +168,20 @@ defmodule Dagger.Address do
 
     Client.execute(address.client, query_builder)
   end
+
+  @doc """
+  Load a volume from the address.
+  """
+  @spec volume(t()) :: Dagger.Volume.t()
+  def volume(%__MODULE__{} = address) do
+    query_builder =
+      address.query_builder |> QB.select("volume")
+
+    %Dagger.Volume{
+      query_builder: query_builder,
+      client: address.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Address do

@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/engine"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -32,10 +33,12 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
 	"github.com/dagger/dagger/util/containerutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/llbtodagger"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
+	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -367,6 +370,14 @@ type ContainerWithMountedCacheLazy struct {
 	Cache  dagql.ObjectResult[*CacheVolume]
 }
 
+type ContainerWithMountedVolumeLazy struct {
+	LazyState
+	Parent   dagql.ObjectResult[*Container]
+	Target   string
+	Volume   dagql.ObjectResult[*Volume]
+	Readonly bool
+}
+
 type ContainerWithMountedTempLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
@@ -439,6 +450,8 @@ type ContainerMount struct {
 	FileSource *LazyAccessor[*File, *Container]
 	// The mounted cache.
 	CacheSource *CacheMountSource
+	// The mounted volume.
+	VolumeSource *VolumeMountSource
 	// The mounted tmpfs.
 	TmpfsSource *TmpfsMountSource
 }
@@ -446,6 +459,11 @@ type ContainerMount struct {
 type CacheMountSource struct {
 	// The cache volume backing this mount.
 	Volume dagql.ObjectResult[*CacheVolume]
+}
+
+type VolumeMountSource struct {
+	// The volume backing this mount.
+	Volume dagql.ObjectResult[*Volume]
 }
 
 type TmpfsMountSource struct {
@@ -456,12 +474,13 @@ type TmpfsMountSource struct {
 type ContainerMounts []ContainerMount
 
 type persistedContainerMountPayload struct {
-	Target              string          `json:"target"`
-	Readonly            bool            `json:"readonly,omitempty"`
-	Kind                string          `json:"kind"`
-	Value               json.RawMessage `json:"value,omitempty"`
-	CacheSourceResultID uint64          `json:"cacheSourceResultID,omitempty"`
-	TmpfsSize           int             `json:"tmpfsSize,omitempty"`
+	Target               string          `json:"target"`
+	Readonly             bool            `json:"readonly,omitempty"`
+	Kind                 string          `json:"kind"`
+	Value                json.RawMessage `json:"value,omitempty"`
+	CacheSourceResultID  uint64          `json:"cacheSourceResultID,omitempty"`
+	VolumeSourceResultID uint64          `json:"volumeSourceResultID,omitempty"`
+	TmpfsSize            int             `json:"tmpfsSize,omitempty"`
 }
 
 type persistedContainerSecretPayload struct {
@@ -487,6 +506,7 @@ const (
 	persistedContainerMountKindDirectory = "directory"
 	persistedContainerMountKindFile      = "file"
 	persistedContainerMountKindCache     = "cache"
+	persistedContainerMountKindVolume    = "volume"
 	persistedContainerMountKindTmpfs     = "tmpfs"
 )
 
@@ -762,6 +782,13 @@ type persistedContainerWithMountedCacheLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Target         string `json:"target"`
 	CacheResultID  uint64 `json:"cacheResultID"`
+}
+
+type persistedContainerWithMountedVolumeLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Target         string `json:"target"`
+	VolumeResultID uint64 `json:"volumeResultID"`
+	Readonly       bool   `json:"readonly,omitempty"`
 }
 
 type persistedContainerWithMountedTempLazy struct {
@@ -1110,6 +1137,14 @@ func (container *Container) AttachDependencyResultsKinds(
 			mnt.CacheSource.Volume = typed
 			owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true})
 		}
+		if mnt.VolumeSource != nil && mnt.VolumeSource.Volume.Self() != nil {
+			volume, err := attachVolumeResult(attach, mnt.VolumeSource.Volume, fmt.Sprintf("attach container volume mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			mnt.VolumeSource.Volume = volume
+			owned = append(owned, dagql.DependencyResult{Result: volume, Owned: true})
+		}
 	}
 	for i := range container.Secrets {
 		secret := &container.Secrets[i]
@@ -1448,6 +1483,7 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, r
 	}
 }
 
+//nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
 func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
@@ -1536,6 +1572,13 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 				return dagql.PersistedObjectEncoding{}, err
 			}
 			encoded.CacheSourceResultID = id
+		case mnt.VolumeSource != nil:
+			encoded.Kind = persistedContainerMountKindVolume
+			id, err := encodePersistedObjectRef(cache, mnt.VolumeSource.Volume, fmt.Sprintf("volume mount %q", mnt.Target))
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			encoded.VolumeSourceResultID = id
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
@@ -1579,6 +1622,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	}, nil
 }
 
+//nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
 func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedContainerPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -1640,6 +1684,12 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 				return nil, err
 			}
 			mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
+		case persistedContainerMountKindVolume:
+			volumeRes, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persistedMount.VolumeSourceResultID, "container mount volume")
+			if err != nil {
+				return nil, err
+			}
+			mnt.VolumeSource = &VolumeMountSource{Volume: volumeRes}
 		case persistedContainerMountKindTmpfs:
 			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
 		default:
@@ -1839,6 +1889,18 @@ func attachCacheVolumeResult(attach func(dagql.AnyResult) (dagql.AnyResult, erro
 	typed, ok := attached.(dagql.ObjectResult[*CacheVolume])
 	if !ok {
 		return dagql.ObjectResult[*CacheVolume]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
+	}
+	return typed, nil
+}
+
+func attachVolumeResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res dagql.ObjectResult[*Volume], label string) (dagql.ObjectResult[*Volume], error) {
+	attached, err := attach(res)
+	if err != nil {
+		return dagql.ObjectResult[*Volume]{}, fmt.Errorf("%s: %w", label, err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Volume])
+	if !ok {
+		return dagql.ObjectResult[*Volume]{}, fmt.Errorf("%s: unexpected result %T", label, attached)
 	}
 	return typed, nil
 }
@@ -3781,6 +3843,51 @@ func (lazy *ContainerWithMountedCacheLazy) EncodePersisted(ctx context.Context, 
 	})
 }
 
+func (lazy *ContainerWithMountedVolumeLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withMountedVolume", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err := container.WithMountedVolume(ctx, lazy.Target, lazy.Volume, lazy.Readonly)
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithMountedVolumeLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withMountedVolume parent")
+	if err != nil {
+		return nil, err
+	}
+	volume, err := attachVolumeResult(attach, lazy.Volume, "attach container withMountedVolume volume")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Volume = volume
+	return []dagql.AnyResult{parent, volume}, nil
+}
+
+func (lazy *ContainerWithMountedVolumeLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedVolume parent")
+	if err != nil {
+		return nil, err
+	}
+	volumeID, err := encodePersistedObjectRef(cache, lazy.Volume, "container withMountedVolume volume")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithMountedVolumeLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		VolumeResultID: volumeID,
+		Readonly:       lazy.Readonly,
+	})
+}
+
 func (lazy *ContainerWithMountedTempLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withMountedTemp", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
@@ -4728,6 +4835,27 @@ func decodePersistedContainerLazy(
 			Parent:    parent,
 			Target:    persisted.Target,
 			Cache:     cacheVolume,
+		}
+		return nil
+	case "withMountedVolume":
+		var persisted persistedContainerWithMountedVolumeLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withMountedVolume lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedVolume parent")
+		if err != nil {
+			return err
+		}
+		volume, err := loadPersistedObjectResultByResultID[*Volume](ctx, dag, persisted.VolumeResultID, "container withMountedVolume volume")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithMountedVolumeLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Target:    persisted.Target,
+			Volume:    volume,
+			Readonly:  persisted.Readonly,
 		}
 		return nil
 	case "withMountedTemp":
@@ -5842,6 +5970,33 @@ func (container *Container) WithMountedCache(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithMountedVolume(
+	_ context.Context,
+	target string,
+	volume dagql.ObjectResult[*Volume],
+	readonly bool,
+) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+
+	if volume.Self() == nil {
+		return nil, errors.New("volume is nil")
+	}
+
+	container.Mounts = container.Mounts.With(ContainerMount{
+		Target:   target,
+		Readonly: readonly,
+		VolumeSource: &VolumeMountSource{
+			Volume: volume,
+		},
+	})
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -6418,6 +6573,117 @@ func (container *Container) Publish(
 		return "", fmt.Errorf("with digest: %w", err)
 	}
 	return withDig.String(), nil
+}
+
+func (container *Container) Manifest(
+	ctx context.Context,
+	containerDigest digest.Digest,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+) (f *File, rerr error) {
+	image, err := container.prepareContainerImage(ctx, containerDigest, forcedCompression, mediaTypes)
+	if err != nil {
+		return nil, err
+	}
+
+	return containerImageBlobFile(ctx, image.Manifest(), "manifest.json")
+}
+
+func (container *Container) prepareContainerImage(
+	ctx context.Context,
+	containerDigest digest.Digest,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+) (*engineutil.PreparedContainerImage, error) {
+	variants := filterEmptyContainers([]*Container{container})
+	inputByPlatform, err := getVariantRefs(ctx, variants)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("prepare container image session metadata: %w", err)
+	}
+	cacheKey := hashutil.HashStrings(
+		"prepare-container-image",
+		clientMetadata.SessionID,
+		containerDigest.String(),
+		string(forcedCompression),
+		string(mediaTypes),
+	).String()
+	cacheRes, err := cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
+		return bk.PrepareContainerImage(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	image, ok := cacheRes.Value().(*engineutil.PreparedContainerImage)
+	if !ok {
+		return nil, fmt.Errorf("invalid prepared container image cache result %T", cacheRes.Value())
+	}
+	return image, nil
+}
+
+func (container *Container) Layer(
+	ctx context.Context,
+	containerDigest digest.Digest,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+	id string,
+) (f *File, rerr error) {
+	image, err := container.prepareContainerImage(ctx, containerDigest, forcedCompression, mediaTypes)
+	if err != nil {
+		return nil, err
+	}
+	blob, err := image.Blob(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return containerImageBlobFile(ctx, blob, containerImageBlobName(blob))
+}
+
+func containerImageBlobName(blob engineutil.ContainerImageBlob) string {
+	desc := blob.Descriptor()
+	name := desc.Digest.Encoded()
+	if images.IsConfigType(desc.MediaType) {
+		return name + ".json"
+	}
+
+	switch desc.MediaType {
+	case specs.MediaTypeImageLayer,
+		specs.MediaTypeImageLayerNonDistributable, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2Layer,
+		images.MediaTypeDockerSchema2LayerForeign:
+		return name + ".tar"
+	case specs.MediaTypeImageLayerGzip,
+		specs.MediaTypeImageLayerNonDistributableGzip, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2LayerGzip,
+		images.MediaTypeDockerSchema2LayerForeignGzip:
+		return name + ".tar.gz"
+	case specs.MediaTypeImageLayerZstd,
+		specs.MediaTypeImageLayerNonDistributableZstd, //nolint:staticcheck // Older images may still contain non-distributable layers.
+		images.MediaTypeDockerSchema2LayerZstd:
+		return name + ".tar.zst"
+	default:
+		return name
+	}
 }
 
 type ExportOpts struct {

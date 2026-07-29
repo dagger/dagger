@@ -1,0 +1,9 @@
+[modules.goodMod]
+source = ".dagger/modules/goodMod"
+
+[modules.entry]
+source = ".dagger/modules/entry"
+entrypoint = true
+
+[modules.bad]
+source = ".dagger/modules/bad"

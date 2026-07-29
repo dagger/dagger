@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
@@ -130,4 +131,13 @@ func TestReportHeartbeatLineNoChecks(t *testing.T) {
 	line := fe.reportHeartbeatLine(30 * time.Second)
 	require.Contains(t, line, "30.0s elapsed")
 	require.NotContains(t, line, "checks:")
+}
+
+func TestReportHandleFormFailsFast(t *testing.T) {
+	fe := NewReporter(io.Discard)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	form := NewForm(huh.NewGroup(huh.NewConfirm().Title("Continue?")))
+	err := fe.HandleForm(ctx, form)
+	require.ErrorIs(t, err, ErrNonInteractive)
 }

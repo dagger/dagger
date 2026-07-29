@@ -48,8 +48,9 @@ import (
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
 
 var (
-	ErrShellExited = errors.New("shell exited")
-	ErrInterrupted = errors.New("interrupted")
+	ErrShellExited    = errors.New("shell exited")
+	ErrInterrupted    = errors.New("interrupted")
+	ErrNonInteractive = errors.New("interactive prompts are unavailable in report mode")
 )
 
 // windowSize replaces tea.WindowSizeMsg for terminal dimensions.
@@ -1056,6 +1057,10 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
+	if fe.reportOnly {
+		return ErrNonInteractive
+	}
+
 	done := make(chan struct{}, 1)
 	wrapCh := make(chan *teav1.Wrap, 1)
 

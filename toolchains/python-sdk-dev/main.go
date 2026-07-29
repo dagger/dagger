@@ -19,6 +19,8 @@ type PythonSdkDev struct {
 	SourcePath   string
 	// Supported Python versions
 	SupportedVersions []string
+
+	Ws *dagger.Workspace // +private
 }
 
 func New(
@@ -49,10 +51,14 @@ func New(
 	// A docker config file with credentials to install on clients.
 	// +optional
 	clientDockerConfig *dagger.Secret,
+	// Workspace forwarded to engine-dev for VCS stamping. Auto-injected on a
+	// direct call; dependencies don't inherit it, so callers must forward it.
+	ws *dagger.Workspace,
 ) *PythonSdkDev {
 	return &PythonSdkDev{
 		DevContainer: dag.DaggerEngine(dagger.DaggerEngineOpts{
 			ClientDockerConfig: clientDockerConfig,
+			Ws:                 ws,
 		}).InstallClient(
 			dag.Wolfi().
 				Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
@@ -69,6 +75,7 @@ func New(
 		Workspace:         workspaceDir,
 		SourcePath:        sourcePath,
 		SupportedVersions: supportedVersions,
+		Ws:                ws,
 	}
 }
 
@@ -187,7 +194,7 @@ func (t PythonSdkDev) ClientLibrary(_ context.Context) (*dagger.Changeset, error
 	// FIXME: workaround for Directory.changes() bug
 	src = dag.Directory().WithDirectory("", src)
 	genFile := devContainer.
-		WithMountedFile("/schema.json", dag.DaggerEngine().IntrospectionJSON()).
+		WithMountedFile("/schema.json", dag.DaggerEngine(dagger.DaggerEngineOpts{Ws: t.Ws}).IntrospectionJSON()).
 		WithWorkdir("codegen").
 		WithExec(uvRun(
 			"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", "gen.py",

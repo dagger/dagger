@@ -18,6 +18,8 @@ var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 
 var FieldsToIgnoreForModuleIntrospection = []string{
 	"Query.currentWorkspace",
+	"Query.sshfsVolume",
+	"Address.volume",
 }
 
 type coreSchemaForker interface {

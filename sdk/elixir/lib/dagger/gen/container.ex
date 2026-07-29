@@ -455,6 +455,47 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Returns the image layer or configuration blob with the given digest as a File.
+  """
+  @spec layer(t(), String.t(), [
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: Dagger.File.t()
+  def layer(%__MODULE__{} = container, id, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("layer")
+      |> QB.put_arg("id", id)
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Computes and returns the manifest for this container as a File.
+  """
+  @spec manifest(t(), [
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: Dagger.File.t()
+  def manifest(%__MODULE__{} = container, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("manifest")
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Retrieves the list of paths where a directory is mounted.
   """
   @spec mounts(t()) :: {:ok, [String.t()]} | {:error, term()}
@@ -1112,6 +1153,28 @@ defmodule Dagger.Container do
       |> QB.select("withMountedTemp")
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("size", optional_args[:size])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Retrieves this container plus a volume mounted at the given path.
+  """
+  @spec with_mounted_volume(t(), String.t(), Dagger.Volume.t(), [
+          {:read_only, boolean() | nil},
+          {:expand, boolean() | nil}
+        ]) :: Dagger.Container.t()
+  def with_mounted_volume(%__MODULE__{} = container, path, volume, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withMountedVolume")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("volume", Dagger.ID.id!(volume))
+      |> QB.maybe_put_arg("readOnly", optional_args[:read_only])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{

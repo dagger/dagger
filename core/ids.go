@@ -14,6 +14,8 @@ type ServiceID = dagql.ID[*Service]
 
 type CacheVolumeID = dagql.ID[*CacheVolume]
 
+type VolumeID = dagql.ID[*Volume]
+
 type DirectoryID = dagql.ID[*Directory]
 
 type FileID = dagql.ID[*File]

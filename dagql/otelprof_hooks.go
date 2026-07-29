@@ -78,7 +78,11 @@ func beginOTelCallExec(callCtx context.Context, callKey, class string) (context.
 // finishes.
 func beginOTelPublishResult(ctx context.Context) trace.Span {
 	_, span := Tracer(ctx).Start(ctx, publishResultSpanName,
+		// Internal and Passthrough preserve publishResult's UI and loader
+		// semantics as profiling bookkeeping rather than a user-visible row.
+		// Live start emission is uniform for all spans, including internal ones.
 		telemetry.Passthrough(),
+		telemetry.Internal(),
 		trace.WithAttributes(
 			attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindInternal.String()),
 		),

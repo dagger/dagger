@@ -214,6 +214,12 @@ func configDocumentMap(cfg *Config) map[string]any {
 				modules := make(map[string]any, len(env.Modules))
 				for moduleName, overlay := range env.Modules {
 					module := map[string]any{}
+					if overlay.Source != "" {
+						module["source"] = overlay.Source
+					}
+					if overlay.Pin != "" {
+						module["pin"] = overlay.Pin
+					}
 					if len(overlay.Settings) > 0 {
 						module["settings"] = cloneConfigMap(overlay.Settings)
 					}

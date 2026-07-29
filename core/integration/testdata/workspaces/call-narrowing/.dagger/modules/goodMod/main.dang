@@ -1,0 +1,17 @@
+type GoodMod {
+  """
+  A trivial function. Used to prove the module loaded when targeted by its
+  kebab-case CLI command name (good-mod).
+  """
+  pub ping: String! {
+    "pong from goodMod"
+  }
+
+  """
+  Regenerate by writing a marker file. Used to prove the kebab-case name also
+  narrows the generate/check/up selector path.
+  """
+  pub generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
+    workdir.withNewFile("generated.txt", "hello from goodMod").changes(workdir)
+  }
+}

@@ -41,6 +41,10 @@ func registerInstalledSDKInitCommands(ctx context.Context, args []string) error 
 	if cfg == nil {
 		clearDynamicSDKInitCommands(moduleInitCmd)
 		clearDynamicSDKInitCommands(apiClientInitCmd)
+		// Without a workspace config nothing is installed, so there is no
+		// engine introspection to do; still offer an install hint when the
+		// requested SDK is one the registry knows about.
+		registerUninstalledSDKInitSuggestion(moduleInitCmd, apiClientInitCmd, kind, args, nil)
 		return nil
 	}
 
@@ -55,7 +59,7 @@ func registerInstalledSDKInitCommands(ctx context.Context, args []string) error 
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		return registerSDKInitCommandsFromConfigForKind(ctx, ec.Dagger(), moduleInitCmd, apiClientInitCmd, cfg, cfgDir, kind)
+		return registerSDKInitCommandsFromConfigForKind(ctx, ec.Dagger(), moduleInitCmd, apiClientInitCmd, cfg, cfgDir, kind, args)
 	})
 }
 
@@ -66,6 +70,7 @@ func registerSDKInitCommandsFromConfigForKind(
 	cfg *workspace.Config,
 	cfgDir string,
 	kind sdkInitKind,
+	args []string,
 ) error {
 	clearDynamicSDKInitCommands(moduleParent)
 	clearDynamicSDKInitCommands(clientParent)
@@ -77,6 +82,8 @@ func registerSDKInitCommandsFromConfigForKind(
 	if err != nil {
 		return err
 	}
+
+	registerUninstalledSDKInitSuggestion(moduleParent, clientParent, kind, args, sdks)
 
 	for _, sdk := range sdks {
 		sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
@@ -223,6 +230,54 @@ func newModuleInitSDKCommand(sdkName string) *cobra.Command {
 	return cmd
 }
 
+// registerUninstalledSDKInitSuggestion adds a temporary init subcommand for a
+// requested SDK that the embedded registry recognizes but that is not installed
+// in the workspace, so `dagger module init <sdk> ...` explains how to install it
+// instead of failing with a generic unknown-command error. Names the registry
+// doesn't know are left alone so cobra's usual error still applies.
+func registerUninstalledSDKInitSuggestion(moduleParent, clientParent *cobra.Command, kind sdkInitKind, args []string, sdks []configuredSDK) {
+	sdkName, ok := sdkInitInvocationSDKName(args)
+	if !ok {
+		return
+	}
+	for _, sdk := range sdks {
+		if sdk.commandName == sdkName || sdk.moduleName == sdkName {
+			return
+		}
+	}
+	if _, _, _, err := sdkResolveInstall(sdkName); err != nil {
+		return
+	}
+	parent := moduleParent
+	if kind == sdkInitKindClient {
+		parent = clientParent
+	}
+	parent.AddCommand(newUninstalledSDKInitCommand(kind, sdkName))
+}
+
+func newUninstalledSDKInitCommand(kind sdkInitKind, sdkName string) *cobra.Command {
+	use := sdkName + " <name>"
+	if kind == sdkInitKindClient {
+		use = sdkName + " <path> <module>"
+	}
+	return &cobra.Command{
+		Use:                   use,
+		Short:                 fmt.Sprintf("Initialize with the %s SDK (not installed)", sdkName),
+		DisableFlagsInUseLine: true,
+		// The SDK isn't installed, so there's no engine-backed init to run;
+		// accept any args and explain how to install it. The message must come
+		// from RunE, not Args: cobra returns help for a command that isn't
+		// Runnable (no Run/RunE) before it ever validates args.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
+		},
+		Annotations: map[string]string{
+			dynamicSDKInitCommandAnnotation: "true",
+		},
+	}
+}
+
 func newAPIClientInitSDKCommand(sdkName string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                   sdkName + " <path> <module>",
@@ -314,6 +369,19 @@ func sdkInitInvocationKind(args []string) (sdkInitKind, bool) {
 		}
 		if i+2 < len(tokens) && tokens[i] == "api" && tokens[i+1] == "client" && tokens[i+2] == "init" {
 			return sdkInitKindClient, true
+		}
+	}
+	return "", false
+}
+
+func sdkInitInvocationSDKName(args []string) (string, bool) {
+	tokens := sdkInitCommandTokens(args)
+	for i := 0; i < len(tokens); i++ {
+		if i+2 < len(tokens) && tokens[i] == "module" && tokens[i+1] == "init" {
+			return tokens[i+2], true
+		}
+		if i+3 < len(tokens) && tokens[i] == "api" && tokens[i+1] == "client" && tokens[i+2] == "init" {
+			return tokens[i+3], true
 		}
 	}
 	return "", false

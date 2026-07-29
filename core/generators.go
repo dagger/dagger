@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -80,6 +81,23 @@ type GeneratorGroup struct {
 	// an unscoped 'dagger generate' (empty when strict, or when every module
 	// loaded). Surfaced on the API so the CLI can warn and honor --require-load.
 	LoadFailures []string `json:"loadFailures,omitempty"`
+	// WorkspaceClientID is the ID of the client that owns the workspace these
+	// generators run for. Running the generators restores this client's context
+	// so the SDK codegen functions receive that workspace: the generator
+	// framework is trusted core code acting on behalf of the workspace owner, and
+	// unlike a user module->dependency call it is allowed to hand the workspace
+	// to the SDK it drives. Without this, a nested run (a module invoking
+	// workspace.generators().run()) would execute in the calling module's runtime
+	// client, where workspace auto-injection is disabled.
+	WorkspaceClientID string `json:"workspaceClientID,omitempty"`
+	// WorkspaceOverride, when set, is the workspace handed to the SDK generator
+	// functions in place of the client's ambient currentWorkspace. It lets the
+	// engine run a workspace's generators against a scoped/overlaid workspace it
+	// constructed — used by ModuleSource.generateLocalDependencies to generate a
+	// dependency (its path as cwd) against a workspace carrying the
+	// already-generated dependencies. Empty for the ordinary 'dagger generate'
+	// flow, which keeps the WorkspaceClientID behavior.
+	WorkspaceOverride dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
 var _ dagql.PersistedObject = (*Generator)(nil)
@@ -101,10 +119,12 @@ type persistedGeneratorObjectPayload struct {
 }
 
 type persistedGeneratorGroupPayload struct {
-	Tree         persistedModTree            `json:"tree"`
-	NodeID       int                         `json:"nodeID,omitempty"`
-	Generators   []persistedGeneratorPayload `json:"generators,omitempty"`
-	LoadFailures []string                    `json:"loadFailures,omitempty"`
+	Tree                      persistedModTree            `json:"tree"`
+	NodeID                    int                         `json:"nodeID,omitempty"`
+	Generators                []persistedGeneratorPayload `json:"generators,omitempty"`
+	LoadFailures              []string                    `json:"loadFailures,omitempty"`
+	WorkspaceClientID         string                      `json:"workspaceClientID,omitempty"`
+	WorkspaceOverrideResultID uint64                      `json:"workspaceOverrideResultID,omitempty"`
 }
 
 func NewGeneratorGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*GeneratorGroup, error) {
@@ -140,9 +160,35 @@ func (gg *GeneratorGroup) List(ctx context.Context) []*Generator {
 	return gg.Generators
 }
 
+// withWorkspaceClientContext restores the owning workspace client's metadata so
+// generator runs resolve their workspace against that client rather than an
+// intervening module runtime. It is a no-op when no owning client is recorded.
+func (gg *GeneratorGroup) withWorkspaceClientContext(ctx context.Context) (context.Context, error) {
+	if gg.WorkspaceClientID == "" {
+		return ctx, nil
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	clientMetadata, err := query.SpecificClientMetadata(ctx, gg.WorkspaceClientID)
+	if err != nil {
+		return nil, fmt.Errorf("get workspace client metadata: %w", err)
+	}
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+}
+
 // Run all the generators in the group
 func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 	gg = gg.Clone()
+
+	ctx, err := gg.withWorkspaceClientContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if gg.WorkspaceOverride.Self() != nil {
+		ctx = ContextWithWorkspaceOverride(ctx, gg.WorkspaceOverride)
+	}
 
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, generator := range gg.Generators {
@@ -342,11 +388,20 @@ func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql
 		}
 		generatorPayloads = append(generatorPayloads, generatorPayload)
 	}
+	var workspaceOverrideResultID uint64
+	if gg.WorkspaceOverride.Self() != nil {
+		workspaceOverrideResultID, err = encodePersistedObjectRef(cache, gg.WorkspaceOverride, "generator workspace override")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+	}
 	payload, err := json.Marshal(persistedGeneratorGroupPayload{
-		Tree:         tree.tree,
-		NodeID:       nodeID,
-		Generators:   generatorPayloads,
-		LoadFailures: gg.LoadFailures,
+		Tree:                      tree.tree,
+		NodeID:                    nodeID,
+		Generators:                generatorPayloads,
+		LoadFailures:              gg.LoadFailures,
+		WorkspaceClientID:         gg.WorkspaceClientID,
+		WorkspaceOverrideResultID: workspaceOverrideResultID,
 	})
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator group payload: %w", err)
@@ -385,11 +440,20 @@ func (*GeneratorGroup) DecodePersistedObject(
 		}
 		generators = append(generators, generator)
 	}
-	return &GeneratorGroup{
-		Node:         node,
-		Generators:   generators,
-		LoadFailures: persisted.LoadFailures,
-	}, nil
+	gg := &GeneratorGroup{
+		Node:              node,
+		Generators:        generators,
+		LoadFailures:      persisted.LoadFailures,
+		WorkspaceClientID: persisted.WorkspaceClientID,
+	}
+	if persisted.WorkspaceOverrideResultID != 0 {
+		override, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.WorkspaceOverrideResultID, "generator workspace override")
+		if err != nil {
+			return nil, err
+		}
+		gg.WorkspaceOverride = override
+	}
+	return gg, nil
 }
 
 func (gg *GeneratorGroup) AttachDependencyResults(
@@ -411,6 +475,18 @@ func (gg *GeneratorGroup) AttachDependencyResults(
 			return nil, err
 		}
 		owned = append(owned, generatorDeps...)
+	}
+	if gg.WorkspaceOverride.Self() != nil {
+		attached, err := attach(gg.WorkspaceOverride)
+		if err != nil {
+			return nil, fmt.Errorf("attach generator workspace override: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach generator workspace override: unexpected result %T", attached)
+		}
+		gg.WorkspaceOverride = typed
+		owned = append(owned, typed)
 	}
 	return owned, nil
 }

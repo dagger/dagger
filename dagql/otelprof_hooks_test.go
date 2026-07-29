@@ -79,8 +79,8 @@ func attrBool(s sdktrace.ReadOnlySpan, key string) (bool, bool) {
 
 // TestEmitHooksProduceLoaderShape drives the real singleflight emit (one executor
 // caller + call_exec + publishResult + one joiner) and asserts the emitted
-// span/link attributes carry exactly the op-kind, dag.digest, ui.passthrough and
-// wait-edge (purpose/reason/decimal-ns/target) shape the offline analyzer consumes.
+// span/link attributes carry exactly the op-kind, dag.digest, UI hints and wait-edge
+// (purpose/reason/decimal-ns/target) shape the offline analyzer consumes.
 func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	const digest = "xxh3:0123456789abcdef"
 	const class = "Container.stdout"
@@ -119,6 +119,11 @@ func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	pub := spanByName(t, ended, publishResultSpanName)
 	if got, _ := attrString(pub, telemetryattrs.WcprofOpKindAttr); got != wcprof.OpKindInternal.String() {
 		t.Fatalf("publishResult op kind = %q, want internal", got)
+	}
+	// Internal and Passthrough preserve the UI and loader semantics; live start
+	// emission is uniform for all spans.
+	if internal, ok := attrBool(pub, telemetry.UIInternalAttr); !ok || !internal {
+		t.Fatalf("publishResult must be ui.internal")
 	}
 	if pass, ok := attrBool(pub, telemetry.UIPassthroughAttr); !ok || !pass {
 		t.Fatalf("publishResult must be ui.passthrough")

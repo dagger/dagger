@@ -47,6 +47,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &portForwardValue{}
 	case CacheVolume:
 		return &cacheVolumeValue{}
+	case Volume:
+		return &volumeValue{}
 	case ModuleSource:
 		return &moduleSourceValue{}
 	case Module:
@@ -88,6 +90,9 @@ func GetCustomFlagValueSlice(name string, defVal []string) (DaggerValue, error) 
 		return v.SetDefault(defVal)
 	case CacheVolume:
 		v := &sliceValue[*cacheVolumeValue]{}
+		return v.SetDefault(defVal)
+	case Volume:
+		v := &sliceValue[*volumeValue]{}
 		return v.SetDefault(defVal)
 	case ModuleSource:
 		v := &sliceValue[*moduleSourceValue]{}
@@ -479,6 +484,34 @@ func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.
 		return nil, fmt.Errorf("cacheVolume name cannot be empty")
 	}
 	return dag.CacheVolume(v.name), nil
+}
+
+// volumeValue is a pflag.Value that builds an opaque Volume from an address.
+type volumeValue struct {
+	address string
+}
+
+func (v *volumeValue) Type() string {
+	return Volume
+}
+
+func (v *volumeValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("volume address cannot be empty")
+	}
+	v.address = s
+	return nil
+}
+
+func (v *volumeValue) String() string {
+	return v.address
+}
+
+func (v *volumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	if v.address == "" {
+		return nil, fmt.Errorf("volume address cannot be empty")
+	}
+	return dag.Address(v.address).Volume(), nil
 }
 
 type moduleValue struct {

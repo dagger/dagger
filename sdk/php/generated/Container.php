@@ -354,6 +354,42 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Returns the image layer or configuration blob with the given digest as a File.
+     */
+    public function layer(
+        string $id,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('layer');
+        $innerQueryBuilder->setArgument('id', $id);
+        if (null !== $forcedCompression) {
+        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Computes and returns the manifest for this container as a File.
+     */
+    public function manifest(
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('manifest');
+        if (null !== $forcedCompression) {
+        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves the list of paths where a directory is mounted.
      */
     public function mounts(): array
@@ -974,6 +1010,27 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $size) {
         $innerQueryBuilder->setArgument('size', $size);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus a volume mounted at the given path.
+     */
+    public function withMountedVolume(
+        string $path,
+        Volume $volume,
+        ?bool $readOnly = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedVolume');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('volume', $volume);
+        if (null !== $readOnly) {
+        $innerQueryBuilder->setArgument('readOnly', $readOnly);
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);

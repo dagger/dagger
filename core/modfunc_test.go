@@ -131,6 +131,53 @@ func TestModuleFunctionCacheImplicitInputsNilSafe(t *testing.T) {
 	}).cacheImplicitInputs())
 }
 
+// TestCallerInModuleFunction verifies the gate keys off an active function call,
+// not merely a module in context: a client that only has a module loaded (e.g.
+// `dagger generate` walking a schema) is not treated as a runtime caller, while
+// an active function call is.
+func TestCallerInModuleFunction(t *testing.T) {
+	t.Parallel()
+
+	// Module in context but no active function call: not a runtime caller.
+	moduleOnly := ContextWithQuery(t.Context(), &Query{Server: &mockServer{
+		moduleSource: &ModuleSource{
+			Kind:  ModuleSourceKindLocal,
+			Local: &LocalModuleSource{ContextDirectoryPath: "."},
+		},
+	}})
+	got, err := callerInModuleFunction(moduleOnly)
+	require.NoError(t, err)
+	require.False(t, got)
+
+	// An active function call: a runtime caller.
+	inFn := ContextWithQuery(t.Context(), &Query{Server: &mockServer{
+		functionCall: &FunctionCall{Name: "caller"},
+	}})
+	got, err = callerInModuleFunction(inFn)
+	require.NoError(t, err)
+	require.True(t, got)
+}
+
+// TestModuleFunctionLoadWorkspaceArgRejectsFunctionCallRuntimeCaller verifies an
+// omitted Workspace argument is not filled from caller context when a function
+// call is active (i.e. a module function calling a dependency).
+func TestModuleFunctionLoadWorkspaceArgRejectsFunctionCallRuntimeCaller(t *testing.T) {
+	t.Parallel()
+
+	query := &Query{
+		Server: &mockServer{
+			functionCall: &FunctionCall{Name: "caller"},
+		},
+	}
+	ctx := ContextWithQuery(t.Context(), query)
+	dag := newCoreDagqlServerForTest(t, query)
+
+	_, err := (&ModuleFunction{}).loadWorkspaceArg(ctx, dag)
+	require.ErrorIs(t, err, ErrNoCurrentWorkspace)
+	require.Contains(t, err.Error(), "workspace arguments are not inherited by module runtime calls")
+	require.Contains(t, err.Error(), "pass a Workspace explicitly")
+}
+
 func mapImplicitInputsByName(inputs []dagql.ImplicitInput) map[string]dagql.ImplicitInput {
 	byName := make(map[string]dagql.ImplicitInput, len(inputs))
 	for _, input := range inputs {

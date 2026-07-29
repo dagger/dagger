@@ -608,16 +608,21 @@ type GoOpts struct {
 	//
 	// Default: 10
 	Limit int
-	// Git repository for VCS info injection. When non-nil, the HEAD commit
-	// and uncommitted state are stamped into the binary via -ldflags
-	// against github.com/dagger/go/buildinfo's Injected* package vars so it
-	// self-reports VCS info at runtime via runtime/debug.ReadBuildInfo —
-	// without needing .git inside the build container.
+	// Workspace whose git HEAD commit and dirty state are stamped into built
+	// binaries as VCS info (see the stamping block in New).
 	//
-	// TODO: switch to Workspace.git (PR dagger/dagger#13074) once we depend
-	// on Dagger >= 1.0.0-beta.2. Workspace.git is lazier (no full repo
-	// upload), supports nested workspaces, and will expose commit time.
-	Repo *GitRepository
+	// The engine only auto-injects a Workspace on a *direct* client call;
+	// module-runtime callers don't inherit it. Rather than forward the
+	// Workspace (a session-scoped resource that would taint this build's cache
+	// key and break disk-cache reuse across engine restarts), parent
+	// toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
+	// precedence over ws. Omitted → no stamping.
+	Ws *Workspace
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
+	// precedence over ws so the Workspace never enters this build's cache key.
+	VcsCommit string
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	VcsDirty bool
 }
 
 func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../:0:0)
@@ -675,9 +680,17 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../:0:0)
 		if !querybuilder.IsZeroValue(opts[i].Limit) {
 			q = q.Arg("limit", opts[i].Limit)
 		}
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+		// `vcsDirty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
+			q = q.Arg("vcsDirty", opts[i].VcsDirty)
 		}
 	}
 

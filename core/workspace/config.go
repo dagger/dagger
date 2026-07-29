@@ -105,8 +105,18 @@ type EnvOverlay struct {
 	Modules map[string]EnvModuleOverlay `json:"modules,omitempty" toml:"modules"`
 }
 
-// EnvModuleOverlay is the environment-specific overlay for one installed module.
+// EnvModuleOverlay is the environment-specific overlay for one module.
+//
+// An overlay may override the [modules.<name>.settings] of a module already
+// installed in the base config, and/or *add* a module that only exists in this
+// environment by giving it a Source (and optional Pin). An overlay that names a
+// module missing from the base config without a Source is an error.
 type EnvModuleOverlay struct {
+	// Source, when set, installs a module scoped to this environment. It mirrors
+	// [modules.<name>.source]: a workspace-relative path or a canonical ref.
+	Source string `json:"source,omitempty" toml:"source,omitempty"`
+	// Pin is the resolved version for Source, mirroring [modules.<name>.pin].
+	Pin      string         `json:"pin,omitempty" toml:"pin,omitempty"`
 	Settings map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
 }
 
@@ -194,9 +204,12 @@ func clientOptionsFromTree(tree *toml.Tree) map[string]string {
 }
 
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
-// applied on top of the base module settings.
+// applied on top of the base module config.
 //
-// In v1, environments may only override [modules.<name>.settings] values.
+// Environments may override [modules.<name>.settings] of an installed module
+// and may add modules that only exist in the environment (by providing a
+// source). Naming a module that is neither installed in the base config nor
+// given a source is an error.
 func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 	if cfg == nil {
 		if envName == "" {
@@ -218,7 +231,21 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 	for moduleName, overlay := range env.Modules {
 		entry, ok := applied.Modules[moduleName]
 		if !ok {
-			return nil, fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
+			if overlay.Source == "" {
+				return nil, fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
+			}
+			if applied.Modules == nil {
+				applied.Modules = map[string]ModuleEntry{}
+			}
+			entry = ModuleEntry{}
+		}
+		// A source replaces the base module's source and its pin travels with
+		// it; a lone pin updates the existing pin in place.
+		if overlay.Source != "" {
+			entry.Source = overlay.Source
+			entry.Pin = overlay.Pin
+		} else if overlay.Pin != "" {
+			entry.Pin = overlay.Pin
 		}
 		if entry.Settings == nil {
 			entry.Settings = map[string]any{}
@@ -346,6 +373,8 @@ func cloneConfig(cfg *Config) *Config {
 				clonedEnv.Modules = make(map[string]EnvModuleOverlay, len(env.Modules))
 				for moduleName, overlay := range env.Modules {
 					clonedEnv.Modules[moduleName] = EnvModuleOverlay{
+						Source:   overlay.Source,
+						Pin:      overlay.Pin,
 						Settings: cloneConfigMap(overlay.Settings),
 					}
 				}
@@ -523,14 +552,29 @@ func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
 			if j > 0 {
 				b.WriteString("\n")
 			}
-			tablePath := strings.Join([]string{
+			overlay := env.Modules[moduleName]
+			modulePath := strings.Join([]string{
 				"env",
 				formatConfigPathSegment(name),
 				"modules",
 				formatConfigPathSegment(moduleName),
-				"settings",
 			}, ".")
-			writeConfigTable(b, tablePath, env.Modules[moduleName].Settings, false)
+			// A source-bearing overlay adds a module, so it renders its own
+			// [env.<name>.modules.<mod>] header with the source/pin scalars and
+			// a nested settings table. A settings-only overlay keeps the flat
+			// [env.<name>.modules.<mod>.settings] shape.
+			if overlay.Source != "" || overlay.Pin != "" {
+				fmt.Fprintf(b, "[%s]\n", modulePath)
+				if overlay.Source != "" {
+					fmt.Fprintf(b, "source = %q\n", overlay.Source)
+				}
+				if overlay.Pin != "" {
+					fmt.Fprintf(b, "pin = %q\n", overlay.Pin)
+				}
+				writeConfigTable(b, modulePath+".settings", overlay.Settings, true)
+			} else {
+				writeConfigTable(b, modulePath+".settings", overlay.Settings, false)
+			}
 		}
 	}
 
@@ -1125,7 +1169,7 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 		cfg.Modules[moduleName] = entry
 		return nil
 	case "env":
-		if len(parts) < 5 || parts[2] != "modules" || parts[4] != "settings" || len(parts) < 6 {
+		if len(parts) < 5 || parts[2] != "modules" {
 			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
 		}
 		if cfg.Env == nil {
@@ -1138,10 +1182,19 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 		}
 		moduleName := parts[3]
 		module := env.Modules[moduleName]
-		if module.Settings == nil {
-			module.Settings = map[string]any{}
+		switch {
+		case parts[4] == "source" && len(parts) == 5:
+			module.Source = fmt.Sprint(value)
+		case parts[4] == "pin" && len(parts) == 5:
+			module.Pin = fmt.Sprint(value)
+		case parts[4] == "settings" && len(parts) >= 6:
+			if module.Settings == nil {
+				module.Settings = map[string]any{}
+			}
+			module.Settings[parts[5]] = value
+		default:
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
 		}
-		module.Settings[parts[5]] = value
 		env.Modules[moduleName] = module
 		cfg.Env[envName] = env
 		return nil

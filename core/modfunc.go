@@ -1209,6 +1209,27 @@ func (fn *ModuleFunction) loadContextualGitArg(
 	}
 }
 
+// callerInModuleFunction reports whether ctx is executing inside a module
+// function body. It keys off an active function call, not merely a module in
+// context: a direct client (CLI/SDK) and schema-walking flows like `dagger
+// generate` load a module but run no function, and must still be allowed to
+// auto-inject a Workspace. ErrNoCurrentModule is the direct-client signal and is
+// swallowed; any other error is a real lookup failure.
+func callerInModuleFunction(ctx context.Context) (bool, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get current query: %w", err)
+	}
+	fnCall, err := query.CurrentFunctionCall(ctx)
+	if errors.Is(err, ErrNoCurrentModule) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get current function call: %w", err)
+	}
+	return fnCall != nil, nil
+}
+
 // loadWorkspaceArg loads a workspace argument by resolving it through the
 // currentWorkspace query. The workspace is automatically injected into
 // module functions that declare a Workspace parameter when the ambient context
@@ -1219,6 +1240,29 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 ) (dagql.IDType, error) {
 	if dag == nil {
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
+	}
+
+	// The generator framework can hand the SDK a specific workspace to inject
+	// (GeneratorGroup.WorkspaceOverride) — e.g. a scoped/overlaid workspace built
+	// by ModuleSource.generateLocalDependencies. It wins over both the
+	// module-function guard and the ambient currentWorkspace so nested generator
+	// runs receive exactly the workspace the engine constructed.
+	if override, ok := WorkspaceOverrideFromContext(ctx); ok {
+		overrideID, err := override.ID()
+		if err != nil {
+			return nil, fmt.Errorf("workspace override id: %w", err)
+		}
+		return dagql.NewID[*Workspace](overrideID), nil
+	}
+
+	// A Workspace is auto-injected only for calls originating outside a module
+	// function (a direct CLI/SDK client, or a schema-walking flow like `dagger
+	// generate`). A running module function must pass a Workspace to its
+	// dependencies explicitly, so they don't silently inherit its workspace.
+	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
+		return nil, err
+	} else if inModuleFunction {
+		return nil, fmt.Errorf("%w: workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly", ErrNoCurrentWorkspace)
 	}
 
 	var ws dagql.ObjectResult[*Workspace]

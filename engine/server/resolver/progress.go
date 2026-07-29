@@ -69,6 +69,17 @@ type progressWriter struct {
 	lastEmit time.Time
 }
 
+func (pw *progressWriter) Status() (content.Status, error) {
+	status, err := pw.Writer.Status()
+	if err != nil {
+		return content.Status{}, err
+	}
+	pw.mu.Lock()
+	pw.offset = status.Offset
+	pw.mu.Unlock()
+	return status, nil
+}
+
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.Writer.Write(p)
 	if n > 0 {

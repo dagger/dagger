@@ -1,13 +1,16 @@
 package engineutil
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 
+	"github.com/containerd/containerd/v2/core/content"
 	archiveexporter "github.com/containerd/containerd/v2/core/images/archive"
 	"github.com/containerd/platforms"
 	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
@@ -17,6 +20,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/util/containerutil"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
+	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -24,6 +28,54 @@ type ContainerExport struct {
 	Ref         bkcache.ImmutableRef
 	Config      dockerspec.DockerOCIImageConfig
 	Annotations []containerutil.ContainerAnnotation
+}
+
+type PreparedContainerImage struct {
+	manifest ContainerImageBlob
+	blobs    map[digest.Digest]ContainerImageBlob
+}
+
+type ContainerImageBlob struct {
+	descriptor specs.Descriptor
+	provider   content.Provider
+	contents   []byte
+}
+
+func (blob ContainerImageBlob) Descriptor() specs.Descriptor {
+	return blob.descriptor
+}
+
+func (blob ContainerImageBlob) WriteTo(ctx context.Context, dst io.Writer) error {
+	if blob.contents != nil {
+		_, err := io.Copy(dst, bytes.NewReader(blob.contents))
+		return err
+	}
+
+	reader, err := content.BlobReadSeeker(ctx, blob.provider, blob.descriptor)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	_, err = io.Copy(dst, reader)
+	return err
+}
+
+func (image *PreparedContainerImage) Manifest() ContainerImageBlob {
+	return image.manifest
+}
+
+func (image *PreparedContainerImage) Blob(id string) (ContainerImageBlob, error) {
+	dgst := digest.Digest(id)
+	if err := dgst.Validate(); err != nil {
+		return ContainerImageBlob{}, fmt.Errorf("invalid image blob digest %q: %w", id, err)
+	}
+
+	blob, ok := image.blobs[dgst]
+	if !ok {
+		return ContainerImageBlob{}, fmt.Errorf("image blob %q not found in manifest", id)
+	}
+	return blob, nil
 }
 
 func (c *Client) buildExportRequest(
@@ -259,4 +311,59 @@ func (c *Client) ExportContainerImage(
 	}
 
 	return nil, fmt.Errorf("client has no supported api for loading image")
+}
+
+func (c *Client) PrepareContainerImage(
+	ctx context.Context,
+	inputByPlatform map[string]ContainerExport,
+	useOCIMediaTypes bool,
+	forceCompression string,
+) (*PreparedContainerImage, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel(errors.New("prepare container image done"))
+
+	exported, err := c.assembleExportedImage(ctx, inputByPlatform, useOCIMediaTypes, forceCompression)
+	if err != nil {
+		return nil, err
+	}
+
+	manifestBlob, err := content.ReadBlob(ctx, exported.Provider, exported.RootDesc)
+	if err != nil {
+		return nil, fmt.Errorf("read manifest: %w", err)
+	}
+
+	var manifest struct {
+		Layers []specs.Descriptor `json:"layers"`
+		Config specs.Descriptor   `json:"config"`
+	}
+	if err := json.Unmarshal(manifestBlob, &manifest); err != nil {
+		return nil, fmt.Errorf("parse manifest: %w", err)
+	}
+
+	configBlob, err := content.ReadBlob(ctx, exported.Provider, manifest.Config)
+	if err != nil {
+		return nil, fmt.Errorf("read image config: %w", err)
+	}
+
+	prepared := &PreparedContainerImage{
+		manifest: ContainerImageBlob{
+			descriptor: exported.RootDesc,
+			contents:   manifestBlob,
+		},
+		blobs: make(map[digest.Digest]ContainerImageBlob, len(manifest.Layers)+1),
+	}
+	for _, desc := range manifest.Layers {
+		prepared.blobs[desc.Digest] = ContainerImageBlob{
+			descriptor: desc,
+			provider:   exported.Provider,
+		}
+	}
+	prepared.blobs[manifest.Config.Digest] = ContainerImageBlob{
+		descriptor: manifest.Config,
+		contents:   configBlob,
+	}
+	return prepared, nil
 }

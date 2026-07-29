@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
@@ -32,6 +33,18 @@ func TestLockfile(t *testing.T) {
 const containerFromQuery = `{
   container {
     from(address: "alpine:latest") {
+      file(path: "/etc/alpine-release") {
+        contents
+      }
+    }
+  }
+}
+`
+
+const containerFromImageRefQuery = `{
+  container {
+    from(address: "alpine:latest") {
+      imageRef
       file(path: "/etc/alpine-release") {
         contents
       }
@@ -147,6 +160,97 @@ func (LockfileSuite) TestFromLockfileFrozenUsesFloatEntry(ctx context.Context, t
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
 	require.Error(t, err)
 	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
+}
+
+func (LockfileSuite) TestFromLockfileFrozenRemoteCommitUsesPinEntry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
+	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
+
+	workdir := t.TempDir()
+	queryPath := writeContainerFromQuery(t, workdir)
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "query", "--doc", queryPath)
+	require.Error(t, err)
+	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
+}
+
+func (LockfileSuite) TestFromLockfileFrozenRemoteCommitUsesValidPin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	imageRef, err := c.Container().From("alpine:3.20").ImageRef(ctx)
+	require.NoError(t, err)
+	_, digest, found := strings.Cut(imageRef, "@")
+	require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
+	require.True(t, strings.HasPrefix(digest, "sha256:"), digest)
+
+	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), digest, workspace.PolicyPin)
+	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
+	workdir := t.TempDir()
+	queryPath := writeQueryDoc(t, workdir, "image-ref.graphql", containerFromImageRefQuery)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(out), digest)
+	require.Contains(t, string(out), "3.20")
+}
+
+func (LockfileSuite) TestFromLockfileFrozenRemoteCommitModuleCallUsesValidPin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	imageRef, err := c.Container().From("alpine:3.20").ImageRef(ctx)
+	require.NoError(t, err)
+	_, digest, found := strings.Cut(imageRef, "@")
+	require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
+
+	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), digest, workspace.PolicyPin)
+	remote := newRemoteWorkspace(ctx, t, c, c.Directory().
+		WithNewFile("dagger.toml", `[modules.lockmod]
+source = ".dagger/modules/lockmod"
+entrypoint = true
+`).
+		WithNewFile(workspace.LockFileName, lockContents).
+		WithDirectory(".dagger/modules/lockmod", c.Host().Directory(testDataPath(t, "modules", "dang", "lockmod"))))
+
+	workdir := t.TempDir()
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "call", "release")
+	require.NoError(t, err)
+	require.Contains(t, string(out), "3.20")
+}
+
+func (LockfileSuite) TestFromLockfileFrozenRemoteCommitRequiresEntry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	remote := newRemoteLockWorkspace(ctx, t, c, "")
+	workdir := t.TempDir()
+	queryPath := writeContainerFromQuery(t, workdir)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.commitRef, "query", "--doc", queryPath)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "missing lock entry for container.from")
+}
+
+func (LockfileSuite) TestFromLockfileLiveRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
+	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
+	workdir := t.TempDir()
+	queryPath := writeContainerFromQuery(t, workdir)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "-W", remote.commitRef, "query", "--doc", queryPath)
+	require.NoError(t, err)
+	committedLock, err := c.Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, lockContents, committedLock)
+}
+
+func (LockfileSuite) TestFromLockfileFrozenRemoteBranchRemainsUnavailable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
+	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
+	workdir := t.TempDir()
+	queryPath := writeContainerFromQuery(t, workdir)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "-W", remote.branchRef, "query", "--doc", queryPath)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "no writable workspace lockfile is available")
+	require.NotContains(t, err.Error(), `invalid lock digest "not-a-digest"`)
 }
 
 func (LockfileSuite) TestFromLockfileFrozenRequiresEntry(ctx context.Context, t *testctx.T) {
@@ -332,6 +436,35 @@ func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testc
 
 func writeContainerFromQuery(t *testctx.T, workdir string) string {
 	return writeQueryDoc(t, workdir, "query.graphql", containerFromQuery)
+}
+
+type remoteLockWorkspace struct {
+	repoURL   string
+	branchRef string
+	commitRef string
+	commit    string
+}
+
+func newRemoteLockWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, lockContents string) remoteLockWorkspace {
+	t.Helper()
+	return newRemoteWorkspace(ctx, t, c, c.Directory().
+		WithNewFile("dagger.toml", "").
+		WithNewFile(workspace.LockFileName, lockContents))
+}
+
+func newRemoteWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) remoteLockWorkspace {
+	t.Helper()
+	branchRef := workspaceSelectionRemoteRef(ctx, t, c, content)
+	repoURL := strings.TrimSuffix(branchRef, "@main")
+	commit, err := c.Git(repoURL).Branch("main").Commit(ctx)
+	require.NoError(t, err)
+	require.Len(t, commit, 40)
+	return remoteLockWorkspace{
+		repoURL:   repoURL,
+		branchRef: branchRef,
+		commitRef: repoURL + "@" + commit,
+		commit:    commit,
+	}
 }
 
 func writeQueryDoc(t *testctx.T, workdir, name, contents string) string {

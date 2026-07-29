@@ -12,7 +12,7 @@ Changesets come from **generators** (run by `dagger generate`) and from function
 
 ## Review and apply
 
-When a command returns a changeset, Dagger shows you the diff and waits for you to apply it. Nothing is written until you approve.
+When a command returns a changeset, Dagger shows you a summary of the changed paths and line counts, then waits for you to apply it. Nothing is written until you approve.
 
 ## Apply automatically
 
@@ -21,6 +21,16 @@ Pass `-y` / `--auto-apply` to apply changes without prompting — useful in scri
 ```shell
 dagger generate -y
 ```
+
+## Coding agents and non-interactive use
+
+When Dagger detects that a coding agent is running `dagger generate`, it requires an explicit choice before starting any generators. Pass `-y` / `--auto-apply` to apply the result, or pass `--no-apply` to run the generators and show the changes without writing them to your working tree:
+
+```shell
+dagger generate --no-apply
+```
+
+`--no-apply` exits successfully even when it finds pending changes, just like choosing **Discard** at the interactive prompt. It only prevents Dagger from exporting the returned changeset; generators still run and may perform other work. To make pending generated changes fail the command, use `dagger check --generate`.
 
 ## In CI
 

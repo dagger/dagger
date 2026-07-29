@@ -36,20 +36,13 @@ func (content *sdkContent) apply(ctr *dagger.Container) *dagger.Container {
 type sdkContentF func(ctx context.Context) (*sdkContent, error)
 
 func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error) {
-	base := build.source.Directory("sdk/python/runtime/images/base").
-		DockerBuild(dagger.DirectoryDockerBuildOpts{
-			Platform: build.platform,
-			Target:   "base",
-		})
+	pythonImageSource := build.source.Directory("sdk/python/runtime/images/base")
+	uvImageSource := build.source.Directory("sdk/python/runtime/images/uv")
 
-	uv := build.source.Directory("sdk/python/runtime/images/uv").
-		DockerBuild(dagger.DirectoryDockerBuildOpts{
-			Platform: build.platform,
-			Target:   "uv",
-		})
-
-	rootfs := dag.Directory().
-		WithDirectory("/", build.source.Directory("sdk/python"), dagger.DirectoryWithDirectoryOpts{
+	pySrc := dag.Directory().WithDirectory(
+		"/",
+		build.source.Directory("sdk/python"),
+		dagger.DirectoryWithDirectoryOpts{
 			Include: []string{
 				"pyproject.toml",
 				"uv.lock",
@@ -65,36 +58,55 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 				"src/dagger/_engine/",
 				"src/dagger/provisioning/",
 			},
-		}).
-		// bundle the uv binaries
-		WithDirectory("dist", uv.Rootfs(), dagger.DirectoryWithDirectoryOpts{
-			Include: []string{"uv*"},
-		})
+		},
+	)
 
-	rootfs = rootfs.
-		// bundle the codegen script and its dependencies into a single executable
-		WithFile("dist/codegen", base.
-			WithWorkdir("/src").
-			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
-			WithMountedDirectory("", rootfs.Directory("codegen")).
-			WithEnvVariable("UV_NATIVE_TLS", "true").
-			WithExec([]string{
-				"uv", "export",
-				"--no-hashes",
-				"--no-editable",
-				"--package", "codegen",
-				"-o", "/requirements.txt",
-			}).
-			WithExec([]string{
-				"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
-				"--reproducible",
-				"--compressed",
-				"-e", "codegen.cli:main",
-				"-o", "/codegen",
-				"-r", "/requirements.txt",
-			}).
-			File("/codegen"),
-		)
+	buildBase := pythonImageSource.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		Target: "base",
+	})
+
+	buildUV := uvImageSource.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		Target: "uv",
+	})
+
+	targetUV := uvImageSource.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		Platform: build.platform,
+		Target:   "uv",
+	})
+
+	// bundle the codegen script and its dependencies into a single executable
+	codegen := buildBase.
+		WithWorkdir("/src").
+		WithDirectory(
+			"/usr/local/bin",
+			buildUV.Rootfs(),
+			dagger.ContainerWithDirectoryOpts{Include: []string{"uv*"}},
+		).
+		WithMountedDirectory("", pySrc.Directory("codegen")).
+		WithEnvVariable("UV_NATIVE_TLS", "true").
+		WithExec([]string{
+			"uv", "export",
+			"--no-hashes",
+			"--no-editable",
+			"--package", "codegen",
+			"-o", "/requirements.txt",
+		}).
+		WithExec([]string{
+			"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
+			"--reproducible",
+			"--compressed",
+			"-e", "codegen.cli:main",
+			"-o", "/codegen",
+			"-r", "/requirements.txt",
+		}).
+		File("/codegen")
+
+	rootfs := pySrc.
+		// bundle the uv binaries
+		WithDirectory("dist", targetUV.Rootfs(), dagger.DirectoryWithDirectoryOpts{
+			Include: []string{"uv*"},
+		}).
+		WithFile("dist/codegen", codegen)
 
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).

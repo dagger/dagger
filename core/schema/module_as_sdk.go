@@ -17,17 +17,39 @@ import (
 func (s *moduleSchema) currentModuleAsSDK(
 	ctx context.Context,
 	curMod *core.CurrentModule,
-	_ struct{},
+	args struct {
+		// FIXME: optional for now to ease the rollout; make it required. See the
+		// fallback below.
+		Workspace dagql.Optional[dagql.ID[*core.Workspace]]
+	},
 ) (*core.CurrentModuleAsSDK, error) {
-	query, err := core.CurrentQuery(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ws, err := query.Server.CurrentWorkspace(ctx)
-	if err != nil {
+	// The workspace is meant to be passed explicitly: a module resolving its SDK
+	// role — as a dependency driven by another module, or as a generator run by
+	// the framework — hands in the workspace it was given rather than inheriting
+	// the caller's ambient one. Config reads route through that workspace's own
+	// rootfs/owner client, so there is no sandbox concern, and a synthetic (value)
+	// workspace that carries config is honored just like a detected one.
+	//
+	// FIXME: the workspace should be required. For now it's optional and, when
+	// omitted, falls back to the ambient current workspace, as asSDK did before
+	// the argument existed. Drop this fallback once the argument is required.
+	var wsResult dagql.ObjectResult[*core.Workspace]
+	if args.Workspace.Valid {
+		wsResult, err = args.Workspace.Value.Load(ctx, srv)
+		if err != nil {
+			return nil, fmt.Errorf("load workspace argument: %w", err)
+		}
+	} else if err := srv.Select(ctx, srv.Root(), &wsResult,
+		dagql.Selector{Field: "currentWorkspace"},
+	); err != nil {
 		return nil, fmt.Errorf("get current workspace: %w", err)
 	}
-	if isSyntheticWorkspace(ws) || ws.ConfigFile == "" {
+	ws := wsResult.Self()
+	if ws.ConfigFile == "" {
 		return nil, fmt.Errorf("current module is not installed as an SDK in this workspace")
 	}
 
@@ -56,9 +78,10 @@ func (s *moduleSchema) currentModuleAsSDK(
 	}
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
-			Path:   client.Path,
-			Module: client.Module,
-			Pin:    client.Pin,
+			Path:           client.Path,
+			Module:         client.Module,
+			Pin:            client.Pin,
+			BoundWorkspace: wsResult,
 		})
 	}
 	return result, nil
@@ -108,15 +131,14 @@ func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
 ) (dagql.ObjectResult[*core.ModuleSource], error) {
 	var res dagql.ObjectResult[*core.ModuleSource]
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, err
+	// Resolve against the workspace asSDK was called on, carried on the client,
+	// rather than the session's ambient workspace: a dependency-driven or overlaid
+	// SDK is handed its workspace explicitly and no longer inherits an ambient one.
+	ws := client.BoundWorkspace.Self()
+	if ws == nil {
+		return res, fmt.Errorf("current module as-sdk client has no bound workspace")
 	}
-	ws, err := query.Server.CurrentWorkspace(ctx)
-	if err != nil {
-		return res, fmt.Errorf("get current workspace: %w", err)
-	}
-	if isSyntheticWorkspace(ws) || ws.ConfigFile == "" {
+	if ws.ConfigFile == "" {
 		return res, fmt.Errorf("current module is not installed as an SDK in this workspace")
 	}
 

@@ -508,6 +508,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with its working directory pointed at the given workspace-relative path.
+     */
+    public function withWorkdir(string $path): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkdir');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a named config environment removed.
      */
     public function withoutConfigEnv(string $name, ?bool $here = false): Workspace

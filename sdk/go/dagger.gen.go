@@ -401,6 +401,15 @@ func (r *Address) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Load a volume from the address.
+func (r *Address) Volume() *Volume {
+	q := r.query.Select("volume")
+
+	return &Volume{
+		query: q,
+	}
+}
+
 // AsNode returns this Address as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Address) AsNode() Node {
@@ -750,6 +759,15 @@ func (r *Binding) AsUpGroup() *UpGroup {
 	q := r.query.Select("asUpGroup")
 
 	return &UpGroup{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Volume
+func (r *Binding) AsVolume() *Volume {
+	q := r.query.Select("asVolume")
+
+	return &Volume{
 		query: q,
 	}
 }
@@ -2363,6 +2381,69 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	return convert(response), nil
 }
 
+// ContainerLayerOpts contains options for Container.Layer
+type ContainerLayerOpts struct {
+	// Force each layer of the image to use the specified compression algorithm.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Media types to use for image layers. Defaults to OCI.
+	//
+	// Default: OCIMediaTypes
+	MediaTypes ImageMediaTypes
+}
+
+// Returns the image layer or configuration blob with the given digest as a File.
+func (r *Container) Layer(id string, opts ...ContainerLayerOpts) *File {
+	q := r.query.Select("layer")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+	q = q.Arg("id", id)
+
+	return &File{
+		query: q,
+	}
+}
+
+// ContainerManifestOpts contains options for Container.Manifest
+type ContainerManifestOpts struct {
+	// Force each layer of the image to use the specified compression algorithm.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Media types to use for image layers. Defaults to OCI.
+	//
+	// Default: OCIMediaTypes
+	MediaTypes ImageMediaTypes
+}
+
+// Computes and returns the manifest for this container as a File.
+func (r *Container) Manifest(opts ...ContainerManifestOpts) *File {
+	q := r.query.Select("manifest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	q := r.query.Select("mounts")
@@ -3327,6 +3408,36 @@ func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTem
 	}
 }
 
+// ContainerWithMountedVolumeOpts contains options for Container.WithMountedVolume
+type ContainerWithMountedVolumeOpts struct {
+	// Mount the volume read-only.
+	ReadOnly bool
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
+}
+
+// Retrieves this container plus a volume mounted at the given path.
+func (r *Container) WithMountedVolume(path string, volume *Volume, opts ...ContainerWithMountedVolumeOpts) *Container {
+	assertNotNil("volume", volume)
+	q := r.query.Select("withMountedVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("volume", volume)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
 	// Permissions of the new file. Example: 0600
@@ -3842,11 +3953,23 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
-// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+// CurrentModuleAsSDKOpts contains options for CurrentModule.AsSDK
+type CurrentModuleAsSDKOpts struct {
+	// The workspace to resolve SDK-role data against. Defaults to the current workspace.
+	Workspace *Workspace
+}
+
+// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
 //
 // Errors if the current module is not installed as an SDK in this workspace.
-func (r *CurrentModule) AsSDK() *CurrentModuleAsSDK {
+func (r *CurrentModule) AsSDK(opts ...CurrentModuleAsSDKOpts) *CurrentModuleAsSDK {
 	q := r.query.Select("asSDK")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
+		}
+	}
 
 	return &CurrentModuleAsSDK{
 		query: q,
@@ -7360,6 +7483,30 @@ func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
 // Declare a desired Up output to be assigned in the environment
 func (r *Env) WithUpOutput(name string, description string) *Env {
 	q := r.query.Select("withUpOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Volume in the environment
+func (r *Env) WithVolumeInput(name string, value *Volume, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withVolumeInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Volume output to be assigned in the environment
+func (r *Env) WithVolumeOutput(name string, description string) *Env {
+	q := r.query.Select("withVolumeOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -13036,6 +13183,19 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Generate this module's transitive local dependency closure, leaf-first, and return the accumulated changeset.
+//
+// Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
+func (r *ModuleSource) GenerateLocalDependencies(workspace *Workspace) *Changeset {
+	assertNotNil("workspace", workspace)
+	q := r.query.Select("generateLocalDependencies")
+	q = q.Arg("workspace", workspace)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory, returned as a Changeset.
 func (r *ModuleSource) GeneratedContextChangeset() *Changeset {
 	q := r.query.Select("generatedContextChangeset")
@@ -14524,6 +14684,48 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	q = q.Arg("column", column)
 
 	return &SourceMap{
+		query: q,
+	}
+}
+
+// SshfsVolumeOpts contains options for Query.SshfsVolume
+type SshfsVolumeOpts struct {
+	// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+	KnownHosts *Secret
+	// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+	CacheKey string
+	// Disable SSH host key verification. This is insecure and must be explicitly opted into.
+	InsecureSkipHostKeyCheck bool
+	// Service to use as the SSHFS network endpoint while verifying the original host key.
+	ExperimentalServiceHost *Service
+}
+
+// Constructs an SSHFS volume.
+func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+	assertNotNil("privateKey", privateKey)
+	q := r.query.Select("sshfsVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `knownHosts` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KnownHosts) {
+			q = q.Arg("knownHosts", opts[i].KnownHosts)
+		}
+		// `cacheKey` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CacheKey) {
+			q = q.Arg("cacheKey", opts[i].CacheKey)
+		}
+		// `insecureSkipHostKeyCheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureSkipHostKeyCheck) {
+			q = q.Arg("insecureSkipHostKeyCheck", opts[i].InsecureSkipHostKeyCheck)
+		}
+		// `experimentalServiceHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
+		}
+	}
+	q = q.Arg("endpoint", endpoint)
+	q = q.Arg("privateKey", privateKey)
+
+	return &Volume{
 		query: q,
 	}
 }
@@ -16603,6 +16805,67 @@ func (r *UpGroup) AsNode() Node {
 	}
 }
 
+// A filesystem volume that can be mounted into containers.
+type Volume struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
+	return &Volume{
+		query: q,
+	}
+}
+
+// A unique identifier for this Volume.
+func (r *Volume) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Volume) XXX_GraphQLType() string {
+	return "Volume"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Volume) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Volume) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Volume) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this Volume as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Volume) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A Dagger workspace detected from the current working directory or constructed from a Directory.
 type Workspace struct {
 	query *querybuilder.Selection
@@ -17414,6 +17677,16 @@ func (r *Workspace) WithSDK(ref string, opts ...WorkspaceWithSDKOpts) *Workspace
 // Return this workspace with refreshed lockfile state.
 func (r *Workspace) WithUpdatedLock() *Workspace {
 	q := r.query.Select("withUpdatedLock")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with its working directory pointed at the given workspace-relative path.
+func (r *Workspace) WithWorkdir(path string) *Workspace {
+	q := r.query.Select("withWorkdir")
+	q = q.Arg("path", path)
 
 	return &Workspace{
 		query: q,

@@ -15,6 +15,11 @@ type TypescriptSdkDev {
 
   pub sourcePath: String! = "sdk/typescript"
 
+  """
+  Workspace
+  """
+  let ws: Workspace!
+
   pub source: Directory! {
     workspaceDir.directory(sourcePath)
   }
@@ -83,7 +88,7 @@ type TypescriptSdkDev {
   Test the SDK with the given version of NodeJS
   """
   pub testNodejs(nodeVersion: String!): Void {
-    daggerEngine
+    daggerEngine(ws: self.ws)
       .installClient(nodejsDevContainer(nodeVersion))
       .withWorkdir(sourcePath)
       .withEnvVariable("NODE_OPTIONS", "--import @dagger.io/mocha/register")
@@ -97,7 +102,7 @@ type TypescriptSdkDev {
   Test the SDK with BunJS
   """
   pub testBunjs: Void @check {
-    daggerEngine
+    daggerEngine(ws: self.ws)
       .installClient(bunjsDevContainer)
       .withWorkdir(sourcePath)
       .withExec(["bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"])
@@ -113,9 +118,9 @@ type TypescriptSdkDev {
     let ctr = nodejsBase(nodeVersionPrevLts)
       .withMountedDirectory(".", workspaceDir)
       .withExec(["yarn", "--cwd", sourcePath, "install"])
-    ctr = daggerEngine.installClient(ctr)
+    ctr = daggerEngine(ws: self.ws).installClient(ctr)
     ctr
-      .withFile("/usr/local/bin/codegen", codegen.binary)
+      .withFile("/usr/local/bin/codegen", codegen(ws: self.ws).binary)
       .withExec(["codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/"])
       .withExec(["sh", "-c", "yarn --cwd " + sourcePath + " eslint --max-warnings=0 --fix ./src/api/"])
       .directory(".")
@@ -190,7 +195,7 @@ type TypescriptSdkDev {
   }
 
   pub isSemver(version: String!): Boolean! {
-    let binary = go(source: currentModule.source.directory("is-semver")).binary("is-semver")
+    let binary = go(ws: self.ws, source: currentModule.source.directory("is-semver")).binary("is-semver")
     let exitCode = container
       .from("alpine")
       .withFile("/bin/is-semver", binary)
@@ -247,6 +252,6 @@ type TypescriptSdkDev {
   }
 
   pub binary: File! {
-    go(source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
   }
 }

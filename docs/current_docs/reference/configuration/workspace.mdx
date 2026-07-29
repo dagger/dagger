@@ -97,7 +97,14 @@ An [environment](../../using-dagger/environments.mdx) is a named overlay applied
 baseImageAddress = "node:22-alpine"
 ```
 
-Write overlays with `dagger settings --env <name> <module> <key> <value>` (or `dagger workspace config --env <name> …` for raw access). Reads with `--env` show the effective view — the base configuration with the overlay applied — and the base is what every environment inherits.
+An environment can also **add** a module that only exists when that environment is selected, by giving it a `source` (and optional `pin`) — the same fields as a base `[modules.<name>]` entry:
+
+```toml
+[env.dev.modules.debugger]
+source = "modules/debugger"
+```
+
+Write settings overlays with `dagger settings --env <name> <module> <key> <value>` (or `dagger workspace config --env <name> …` for raw access). Reads with `--env` show the effective view — the base configuration with the overlay applied — and the base is what every environment inherits.
 
 ## Other keys
 

@@ -25,7 +25,8 @@ const (
 )
 
 type publishCheckEnv struct {
-	source *dagger.Directory
+	source    *dagger.Directory
+	workspace *dagger.Workspace
 
 	releaseTag     string
 	releaseVersion string
@@ -66,7 +67,7 @@ func (r *Release) PublishWithMockEndpoints(
 	// +defaultPath="/"
 	source *dagger.Directory,
 ) (rerr error) {
-	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"))
+	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace)
 	if err != nil {
 		return err
 	}
@@ -194,7 +195,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	return nil
 }
 
-func newPublishCheckEnv(ctx context.Context, source *dagger.Directory) (*publishCheckEnv, error) {
+func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagger.Workspace) (*publishCheckEnv, error) {
 	platform, platformArchive, err := publishCheckPlatform(ctx)
 	if err != nil {
 		return nil, err
@@ -243,6 +244,7 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory) (*publish
 
 	env := &publishCheckEnv{
 		source:          source,
+		workspace:       ws,
 		releaseTag:      releaseTag,
 		releaseVersion:  releaseVersion,
 		awsBucket:       "dagger-release-test-" + strings.ToLower(randomID()),
@@ -372,6 +374,7 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
 	dev := dag.EngineDev(dagger.EngineDevOpts{
 		Source:       env.source,
+		Ws:           env.workspace,
 		SubnetNumber: 90,
 	}).IncrementSubnet()
 	networkCIDR, err := dev.NetworkCidr(ctx)
@@ -410,7 +413,7 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 }
 
 func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
-	dev := dag.EngineDev(dagger.EngineDevOpts{Source: env.source})
+	dev := dag.EngineDev(dagger.EngineDevOpts{Source: env.source, Ws: env.workspace})
 	client := dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{"apk-tools", "ca-certificates", "curl", "git"},

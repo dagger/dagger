@@ -136,6 +136,10 @@ func TestCorePseudoModuleSelection(t *testing.T) {
 	require.True(t, isCoreModuleSelected())
 	require.False(t, shouldLoadWorkspaceModules(false))
 	require.False(t, initModuleParams([]string{"container"}).LoadWorkspaceModules)
+	// The scope is set per command site (api call/functions), never by the
+	// shared helper: shell also builds its params here and must keep the
+	// full workspace view.
+	require.Empty(t, initModuleParams([]string{"container"}).WorkspaceModuleScope)
 
 	ref, ok := getExplicitModuleSourceRef()
 	require.True(t, ok)

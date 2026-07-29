@@ -123,6 +123,56 @@ greeting = "hola"
 `, string(out))
 }
 
+func TestEnvModuleSourceRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// An env may add a module by giving it a source (with optional pin and
+	// settings) alongside settings-only overrides of installed modules.
+	data := []byte(`[modules.greeter]
+source = "modules/greeter"
+
+[env.dev.modules.delegate]
+source = "modules/delegate"
+pin = "abc123"
+
+[env.dev.modules.delegate.settings]
+verbose = true
+
+[env.dev.modules.greeter.settings]
+greeting = "hey"
+`)
+
+	cfg, err := ParseConfig(data)
+	require.NoError(t, err)
+	require.Equal(t, EnvModuleOverlay{
+		Source: "modules/delegate",
+		Pin:    "abc123",
+		Settings: map[string]any{
+			"verbose": true,
+		},
+	}, cfg.Env["dev"].Modules["delegate"])
+	require.Equal(t, EnvModuleOverlay{
+		Settings: map[string]any{
+			"greeting": "hey",
+		},
+	}, cfg.Env["dev"].Modules["greeter"])
+
+	// Round-trips through the canonical serializer without loss.
+	reparsed, err := ParseConfig(SerializeConfig(cfg))
+	require.NoError(t, err)
+	require.Equal(t, cfg.Env, reparsed.Env)
+
+	// Applying the env installs the added module and overrides the settings.
+	applied, err := ApplyEnvOverlay(cfg, "dev")
+	require.NoError(t, err)
+	require.Equal(t, ModuleEntry{
+		Source:   "modules/delegate",
+		Pin:      "abc123",
+		Settings: map[string]any{"verbose": true},
+	}, applied.Modules["delegate"])
+	require.Equal(t, "hey", applied.Modules["greeter"].Settings["greeting"])
+}
+
 func TestWorkspaceCheckGeneratedSetting(t *testing.T) {
 	t.Parallel()
 
@@ -524,8 +574,8 @@ func TestWriteConfigValue(t *testing.T) {
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
 
-		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.source", "github.com/acme/greeter")
-		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.source\"; valid fields at this level: settings")
+		_, err = WriteConfigValue(nil, "env.ci.modules.greeter.unknown", "value")
+		require.EqualError(t, err, "unknown config key \"env.ci.modules.greeter.unknown\"; valid fields at this level: pin, settings, source")
 	})
 
 	t.Run("preserves comments and section layout", func(t *testing.T) {
@@ -578,6 +628,26 @@ region = "us-west-2"
 		require.Contains(t, out, "# region comment")
 		require.Contains(t, out, "[env.ci.modules.greeter.settings]")
 		require.Contains(t, out, `region = "us-east-1"`)
+	})
+
+	t.Run("adds a module to an env by writing its source", func(t *testing.T) {
+		t.Parallel()
+
+		data := []byte(`# top comment
+[modules.greeter]
+source = "modules/greeter"
+`)
+
+		updated, err := WriteConfigValue(data, "env.dev.modules.delegate.source", "modules/delegate")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(updated)
+		require.NoError(t, err)
+		require.Equal(t, "modules/delegate", cfg.Env["dev"].Modules["delegate"].Source)
+
+		out := string(updated)
+		require.Contains(t, out, "# top comment")
+		require.Contains(t, out, `source = "modules/delegate"`)
 	})
 }
 
@@ -833,6 +903,75 @@ func TestApplyEnvOverlay(t *testing.T) {
 			},
 		}, "ci")
 		require.EqualError(t, err, `workspace env "ci" references unknown module "missing"`)
+	})
+
+	t.Run("adds a module that only exists in the environment", func(t *testing.T) {
+		t.Parallel()
+
+		base := &Config{
+			Modules: map[string]ModuleEntry{
+				"aws": {Source: "github.com/dagger/aws"},
+			},
+			Env: map[string]EnvOverlay{
+				"dev": {
+					Modules: map[string]EnvModuleOverlay{
+						"delegate": {
+							Source: "modules/delegate",
+							Pin:    "abc123",
+							Settings: map[string]any{
+								"verbose": true,
+							},
+						},
+					},
+				},
+			},
+		}
+
+		applied, err := ApplyEnvOverlay(base, "dev")
+		require.NoError(t, err)
+		require.Equal(t, ModuleEntry{
+			Source:   "modules/delegate",
+			Pin:      "abc123",
+			Settings: map[string]any{"verbose": true},
+		}, applied.Modules["delegate"])
+		// base config is left untouched.
+		require.NotContains(t, base.Modules, "delegate")
+	})
+
+	t.Run("env source overrides an installed module", func(t *testing.T) {
+		t.Parallel()
+
+		base := &Config{
+			Modules: map[string]ModuleEntry{
+				"editor": {
+					Source: "github.com/vito/editor",
+					Pin:    "old",
+					Settings: map[string]any{
+						"theme": "light",
+					},
+				},
+			},
+			Env: map[string]EnvOverlay{
+				"dev": {
+					Modules: map[string]EnvModuleOverlay{
+						"editor": {
+							Source: "modules/editor",
+							Settings: map[string]any{
+								"theme": "dark",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		applied, err := ApplyEnvOverlay(base, "dev")
+		require.NoError(t, err)
+		require.Equal(t, ModuleEntry{
+			Source:   "modules/editor",
+			Pin:      "", // pin travels with the source it pinned
+			Settings: map[string]any{"theme": "dark"},
+		}, applied.Modules["editor"])
 	})
 }
 

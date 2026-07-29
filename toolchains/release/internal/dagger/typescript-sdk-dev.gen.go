@@ -53,6 +53,10 @@ type TypescriptSDKDevOpts struct {
 	WorkspaceDir *Directory // typescript-sdk-dev (../../../../:0:0)
 
 	SourcePath string // typescript-sdk-dev (../../../../:0:0)
+	//
+	// Workspace
+	//
+	Ws *Workspace // typescript-sdk-dev (../../../../:0:0)
 }
 
 func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev { // typescript-sdk-dev (../../../../:0:0)
@@ -77,6 +81,10 @@ func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

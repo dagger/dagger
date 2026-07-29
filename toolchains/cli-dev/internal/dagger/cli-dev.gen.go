@@ -264,10 +264,22 @@ type CliDevOpts struct {
 	// consumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,
 	// semver release-gating). The built binary self-reports its own version
 	// from the embedded internal/version/VERSION file regardless of what's
-	// passed here; this is for publish-time metadata only.
+	// passed here, but this decides which engine the binary provisions by
+	// default: a valid semver means a tag build (embedded VERSION already
+	// matches, enforced by the publish workflow guard); anything else is a
+	// commit build, whose default engine tag is pinned to the commit.
 	Version string
-	// Git repository for VCS info injection.
-	Repo *GitRepository
+	// Workspace whose git info stamps the CLI's VCS metadata and pins the
+	// default engine tag on commit builds. Auto-injected when cli-dev is
+	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
+	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
+	// session-scoped Workspace never taints the cached build.
+	Ws *Workspace
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
+	// precedence over ws.
+	VcsCommit string
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	VcsDirty bool
 }
 
 func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../:0:0)
@@ -289,9 +301,17 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../:0:
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+		// `vcsDirty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
+			q = q.Arg("vcsDirty", opts[i].VcsDirty)
 		}
 	}
 

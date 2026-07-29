@@ -38,9 +38,17 @@ func addWorkspaceInstallFlags(cmd *cobra.Command) {
 // If optional is true, it also adds the --no-load-module flag and marks --load-module and --no-load-module as mutually exclusive.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 	flags.StringVarP(&moduleURL, "load-module", "m", "", "Use a one-off module (local path or git ref)")
+	// --mod is the pre-1.0 name for --load-module; keep it as a deprecated
+	// alias so existing scripts and shebangs don't break.
+	flags.StringVar(&moduleURL, "mod", "", "")
+	_ = flags.MarkDeprecated("mod", "use --load-module (-m) instead")
 	if optional {
 		flags.BoolVarP(&moduleNoURL, "no-load-module", "M", false, "Don't load any module for this command")
 		cmd.MarkFlagsMutuallyExclusive("load-module", "no-load-module")
+		// --no-mod is the pre-1.0 name for --no-load-module; keep it as a
+		// deprecated alias so existing scripts and shebangs don't break.
+		flags.BoolVar(&moduleNoURL, "no-mod", false, "")
+		_ = flags.MarkDeprecated("no-mod", "use --no-load-module (-M) instead")
 	}
 
 	var defaultAllowLLM []string

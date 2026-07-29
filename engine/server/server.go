@@ -858,7 +858,7 @@ func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.I
 	return &controlapi.InfoResponse{
 		BuildkitVersion: &apitypes.BuildkitVersion{
 			Package:  engine.Package,
-			Version:  engine.Version,
+			Version:  engine.FullVersion(),
 			Revision: srv.engineName,
 		},
 		SystemInfo: &controlapi.SystemInfo{

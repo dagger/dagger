@@ -393,8 +393,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("asSDK", s.currentModuleAsSDK).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live workspace config to resolve the current module's SDK-role data.").
-			Doc(`Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.`,
-				`Errors if the current module is not installed as an SDK in this workspace.`),
+			Doc(`Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.`,
+				`Errors if the current module is not installed as an SDK in this workspace.`).
+			Args(
+				dagql.Arg("workspace").Doc(
+					`The workspace to resolve SDK-role data against. Defaults to the current workspace.`),
+			),
 	}.Install(dag)
 
 	// Gate the as-sdk object types to the cli-1.0+ view so they (and their

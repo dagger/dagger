@@ -24,7 +24,6 @@ import (
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -825,8 +824,6 @@ func (file *File) Search(ctx context.Context, self dagql.ObjectResult[*File], op
 		return nil, err
 	}
 
-	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
-
 	results := []*SearchResult{}
 	err = MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
 		resolvedDir, err := containerdfs.RootPath(root, filepath.Dir(filePath))
@@ -848,8 +845,6 @@ func (file *File) Search(ctx context.Context, self dagql.ObjectResult[*File], op
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*File], searchStr, replacementStr string, firstFrom *int, all bool) error {
-	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err

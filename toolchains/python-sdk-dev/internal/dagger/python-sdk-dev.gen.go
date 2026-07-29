@@ -619,7 +619,8 @@ type PythonSDKDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) PythonSDKDev(opts ...PythonSDKDevOpts) *PythonSDKDev { // python-sdk-dev (../../../../:0:0)
+func (r *Query) PythonSDKDev(ws *Workspace, opts ...PythonSDKDevOpts) *PythonSDKDev { // python-sdk-dev (../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("pythonSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspaceDir` optional argument
@@ -635,6 +636,7 @@ func (r *Query) PythonSDKDev(opts ...PythonSDKDevOpts) *PythonSDKDev { // python
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
 		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &PythonSDKDev{
 		query: q,

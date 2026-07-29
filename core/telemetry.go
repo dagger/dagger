@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -14,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -144,6 +146,7 @@ func AroundFunc(
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+	initCacheEvidence(span, req)
 
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",
@@ -155,8 +158,85 @@ func AroundFunc(
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, req.ResultCall)
 		recordPending(res, span)
+		recordCacheEvidence(span, req.CacheEvidence, res)
 		logResult(ctx, res, req.ResultCall)
 	}
+}
+
+// initCacheEvidence arms the request's cache-evidence carrier
+// (dagql.CacheDecision) exactly when this call's span records and the call is
+// not ProfileSkip-classified — the same volume class the OTel profiling source
+// uses — so suppressed/deduplicated/introspection/profile-skipped calls record
+// nothing and dagql needs no gating logic of its own (nil carrier ⇒ no-op).
+func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
+	if span == nil || !span.IsRecording() {
+		return
+	}
+	if req == nil || req.ResultCall == nil || req.ResultCall.ProfileSkip {
+		return
+	}
+	req.CacheEvidence = dagql.NewCacheDecision()
+}
+
+// recordCacheEvidence maps a populated cache-evidence carrier onto the call's
+// span as the dagger.io/cache.* contract (engine/telemetryattrs). Best-effort
+// like recordStatus: it stamps only facts that were recorded and never fails
+// the call. An empty Outcome means the invocation never reached a cache
+// decision (validation/derivation error) — nothing is stamped then, so the
+// contract marker never rides a fact-free span.
+func recordCacheEvidence(span trace.Span, ev *dagql.CacheDecision, res dagql.AnyResult) {
+	if ev == nil || ev.Outcome == "" {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetryattrs.CacheContractAttr, telemetryattrs.CacheContractV1),
+		attribute.String(telemetryattrs.CacheOutcomeAttr, string(ev.Outcome)),
+	}
+	if ev.Outcome == dagql.CacheOutcomeHit && ev.HitRoute != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheHitRouteAttr, string(ev.HitRoute)))
+	}
+	if ev.Outcome == dagql.CacheOutcomeExecuted {
+		// Miss facts describe why the executed call's lookup found nothing
+		// reusable; emitted as "true"/index only when recorded, absent
+		// otherwise. Joined calls deliberately stamp none of these: their
+		// pre-join probe is not the decision that held.
+		if ev.MissIncompatibleCandidates {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissIncompatibleCandidatesAttr, "true"))
+		}
+		if ev.MissSawExpired {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissSawExpiredAttr, "true"))
+		}
+		if ev.MissUnknownInputIndex >= 0 {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissUnknownInputAttr, strconv.Itoa(ev.MissUnknownInputIndex)))
+		}
+	}
+	if ev.SelfDigest != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheSelfDigestAttr, ev.SelfDigest.String()))
+		// Native string-slice value: order is the contract (the miss
+		// unknown-input index points into it), and an EMPTY list is a recorded
+		// fact ("this call keys on no structural inputs"), distinct from the
+		// attribute being absent (no structural identity stamped at all).
+		inputs := make([]string, len(ev.StructuralInputs))
+		for i, dig := range ev.StructuralInputs {
+			inputs[i] = dig.String()
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CacheStructuralInputsAttr, inputs))
+		if ev.PairingDigest != "" {
+			attrs = append(attrs, attribute.String(telemetryattrs.CachePairingDigestAttr, ev.PairingDigest.String()))
+		}
+	}
+	if res != nil {
+		// The recorded output content identity: the authoritative frame's last
+		// content-labeled extra digest at completion (never the derived
+		// content-preferred digest). Errors reading the frame just drop the
+		// optional fact.
+		if frame, frameErr := res.ResultCall(); frameErr == nil {
+			if contentDig := frame.ContentDigest(); contentDig != "" {
+				attrs = append(attrs, attribute.String(telemetryattrs.CacheOutputContentDigestAttr, contentDig.String()))
+			}
+		}
+	}
+	span.SetAttributes(attrs...)
 }
 
 type moduleCallRef struct {

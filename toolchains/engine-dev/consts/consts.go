@@ -18,7 +18,8 @@ const (
 
 	RuncVersion  = "v1.4.2"
 	CniVersion   = "v1.9.0"
-	QemuBinImage = "tonistiigi/binfmt@sha256:e06789462ac7e2e096b53bfd9e607412426850227afeb1d0f5dfa48a731e0ba5"
+	SSHFSVersion = "3.7.6"
+	QemuBinImage = "tonistiigi/binfmt@sha256:6014c1e52b8e51a67fbf76f691ffbe20ac0204c31c2f086df3e8ef3ce134b488"
 
 	XxImage = "tonistiigi/xx:1.2.1"
 )

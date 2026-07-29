@@ -681,6 +681,12 @@ class Address(Type):
         _ctx = self._select("value", _args)
         return await _ctx.execute(str)
 
+    def volume(self) -> "Volume":
+        """Load a volume from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("volume", _args)
+        return Volume(_ctx)
+
 
 @typecheck
 class Binding(Type):
@@ -914,6 +920,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asUpGroup", _args)
         return UpGroup(_ctx)
+
+    def as_volume(self) -> "Volume":
+        """Retrieve the binding value, as type Volume"""
+        _args: list[Arg] = []
+        _ctx = self._select("asVolume", _args)
+        return Volume(_ctx)
 
     def as_workspace(self) -> "Workspace":
         """Retrieve the binding value, as type Workspace"""
@@ -2342,6 +2354,68 @@ class Container(Type):
         _ctx = self._select("labels", _args)
         return await _ctx.execute_object_list(Label)
 
+    def layer(
+        self,
+        id: str,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Returns the image layer or configuration blob with the given digest as
+        a File.
+
+        Parameters
+        ----------
+        id:
+            Digest of the layer or configuration blob (e.g.
+            "sha256:abc123...").
+        forced_compression:
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("id", id),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("layer", _args)
+        return File(_ctx)
+
+    def manifest(
+        self,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Computes and returns the manifest for this container as a File.
+
+        Parameters
+        ----------
+        forced_compression:
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("manifest", _args)
+        return File(_ctx)
+
     async def mounts(self) -> list[str]:
         """Retrieves the list of paths where a directory is mounted.
 
@@ -3373,6 +3447,38 @@ class Container(Type):
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)
 
+    def with_mounted_volume(
+        self,
+        path: str,
+        volume: "Volume",
+        *,
+        read_only: bool | None = False,
+        expand: bool | None = False,
+    ) -> Self:
+        """Retrieves this container plus a volume mounted at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the volume mount (e.g., "/mnt/volume").
+        volume:
+            Identifier of the volume to mount.
+        read_only:
+            Mount the volume read-only.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
+        """
+        _args = [
+            Arg("path", path),
+            Arg("volume", volume),
+            Arg("readOnly", read_only, False),
+            Arg("expand", expand, False),
+        ]
+        _ctx = self._select("withMountedVolume", _args)
+        return Container(_ctx)
+
     def with_new_file(
         self,
         path: str,
@@ -3952,14 +4058,26 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
-    def as_sdk(self) -> "CurrentModuleAsSDK":
-        """Treat the currently executing module as an SDK installed in the active
+    def as_sdk(
+        self,
+        *,
+        workspace: "Workspace | None" = None,
+    ) -> "CurrentModuleAsSDK":
+        """Treat the currently executing module as an SDK installed in the given
         workspace, exposing the modules and clients it manages.
 
         Errors if the current module is not installed as an SDK in this
         workspace.
+
+        Parameters
+        ----------
+        workspace:
+            The workspace to resolve SDK-role data against. Defaults to the
+            current workspace.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("workspace", workspace, None),
+        ]
         _ctx = self._select("asSDK", _args)
         return CurrentModuleAsSDK(_ctx)
 
@@ -7875,6 +7993,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withUpOutput", _args)
+        return Env(_ctx)
+
+    def with_volume_input(
+        self,
+        name: str,
+        value: "Volume",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Volume in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Volume value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withVolumeInput", _args)
+        return Env(_ctx)
+
+    def with_volume_output(self, name: str, description: str) -> Self:
+        """Declare a desired Volume output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withVolumeOutput", _args)
         return Env(_ctx)
 
     def with_workspace(self, workspace: Directory) -> Self:
@@ -13091,6 +13251,27 @@ class ModuleSource(Type):
         _ctx = self._select("engineVersion", _args)
         return await _ctx.execute(str)
 
+    def generate_local_dependencies(self, workspace: "Workspace") -> Changeset:
+        """Generate this module's transitive local dependency closure, leaf-
+        first, and return the accumulated changeset.
+
+        Each local dependency is generated by its own SDK against a workspace
+        scoped to it, carrying the already-generated dependencies. Remote
+        (git) dependencies are assumed committed and skipped. Overlay the
+        result onto the workspace before generating this module; it is not
+        this module's own generated code.
+
+        Parameters
+        ----------
+        workspace:
+            The workspace to generate the local dependencies against.
+        """
+        _args = [
+            Arg("workspace", workspace),
+        ]
+        _ctx = self._select("generateLocalDependencies", _args)
+        return Changeset(_ctx)
+
     def generated_context_changeset(self) -> Changeset:
         """The generated files and directories made on top of the module source's
         context directory, returned as a Changeset.
@@ -14648,6 +14829,50 @@ class Query(Root):
         ]
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    def sshfs_volume(
+        self,
+        endpoint: str,
+        private_key: "Secret",
+        *,
+        known_hosts: "Secret | None" = None,
+        cache_key: str | None = None,
+        insecure_skip_host_key_check: bool | None = False,
+        experimental_service_host: "Service | None" = None,
+    ) -> "Volume":
+        """Constructs an SSHFS volume.
+
+        Parameters
+        ----------
+        endpoint:
+            SSHFS endpoint URL in the form
+            sshfs://user@host[:port]/absolute/path.
+        private_key:
+            Private key secret used to authenticate to the remote host.
+        known_hosts:
+            known_hosts material used to verify the remote host key. Required
+            unless insecureSkipHostKeyCheck is true.
+        cache_key:
+            Optional cache equivalence key. If set, volumes with the same
+            cacheKey may be considered equivalent for cache lookups, still
+            subject to their resource dependencies.
+        insecure_skip_host_key_check:
+            Disable SSH host key verification. This is insecure and must be
+            explicitly opted into.
+        experimental_service_host:
+            Service to use as the SSHFS network endpoint while verifying the
+            original host key.
+        """
+        _args = [
+            Arg("endpoint", endpoint),
+            Arg("privateKey", private_key),
+            Arg("knownHosts", known_hosts, None),
+            Arg("cacheKey", cache_key, None),
+            Arg("insecureSkipHostKeyCheck", insecure_skip_host_key_check, False),
+            Arg("experimentalServiceHost", experimental_service_host, None),
+        ]
+        _ctx = self._select("sshfsVolume", _args)
+        return Volume(_ctx)
 
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
@@ -16387,6 +16612,39 @@ class UpGroup(Type):
 
 
 @typecheck
+class Volume(Type):
+    """A filesystem volume that can be mounted into containers."""
+
+    async def id(self) -> str:
+        """A unique identifier for this Volume.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory or
     constructed from a Directory."""
@@ -17167,6 +17425,21 @@ class Workspace(Type):
         _ctx = self._select("withUpdatedLock", _args)
         return Workspace(_ctx)
 
+    def with_workdir(self, path: str) -> Self:
+        """Return this workspace with its working directory pointed at the given
+        workspace-relative path.
+
+        Parameters
+        ----------
+        path:
+            Workspace-relative path to use as the working directory.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withWorkdir", _args)
+        return Workspace(_ctx)
+
     def without_config_env(
         self,
         name: str,
@@ -17873,6 +18146,7 @@ __all__ = [
     "Up",
     "UpGroup",
     "Void",
+    "Volume",
     "Workspace",
     "WorkspaceGit",
     "WorkspaceMigration",
