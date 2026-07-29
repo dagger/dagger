@@ -29,6 +29,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
+	"golang.org/x/sys/unix"
 )
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
@@ -1453,7 +1454,34 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 		}
 	}
 
-	return mkdirChangesetAddedDirs(ctx, copier, ws.dir, content.paths)
+	if err := mkdirChangesetAddedDirs(ctx, copier, ws.dir, content.paths); err != nil {
+		return err
+	}
+	return ws.touchAppliedPaths(content.paths)
+}
+
+// touchAppliedPaths bumps the mtime of every path the changeset wrote so git
+// can see the change. Snapshot contents carry normalized timestamps and the
+// copier preserves them, so a same-size edit can leave a file's mtime and
+// size both identical to the index entry; with core.checkStat=minimal (see
+// gitEphemeralConfig) git add would then skip re-hashing it and silently
+// drop the change from the branch commit.
+func (ws *gitMergeWorkspace) touchAppliedPaths(paths *ChangesetPaths) error {
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		if strings.HasSuffix(p, "/") {
+			// Directories are untracked by git; only file stat data matters.
+			continue
+		}
+		full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+		if err != nil {
+			return err
+		}
+		err = unix.UtimesNanoAt(unix.AT_FDCWD, full, nil, unix.AT_SYMLINK_NOFOLLOW)
+		if err != nil && !errors.Is(err, unix.ENOENT) {
+			return fmt.Errorf("touch %s: %w", p, err)
+		}
+	}
+	return nil
 }
 
 // withGitMergeWorkspace sets up a workspace for git merge operations, runs the provided
