@@ -2970,11 +2970,11 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 // only by (dependency path, workspace), so every walk that reaches a given
 // dependency shares one cached result — and (2) running the dependency's
 // owning SDK generator against a workspace scoped to it (its path as cwd) with
-// exactly that closure staged. The staged workspace is marked
-// (GeneratedDepsStaged), so the SDK generator's own nested
-// generateLocalDependencies call short-circuits instead of re-walking. Without
-// the memoization and the mark, generation fans out once per path through the
-// dependency DAG.
+// exactly that closure staged. The staged workspace records the dependency in
+// its StagedGeneration set (via __withGeneratedLocalDependencies), so the SDK
+// generator's own nested generateLocalDependencies call for that module
+// short-circuits instead of re-walking. Without the memoization and the mark,
+// generation fans out once per path through the dependency DAG.
 //
 // Results accumulate by overlaying each changeset onto the workspace root
 // directory — never by patch-based changeset merging — so overlapping content
@@ -3012,10 +3012,13 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 		return dagql.NewObjectResultForCurrentCall(ctx, dag, empty)
 	}
 
-	// A workspace built by this staging path already carries the module's
-	// transitive dependency codegen; there is nothing further to stage. This
-	// breaks the recursion when a dependency's SDK generator calls back in.
-	if workspace.Self().GeneratedDepsStaged {
+	// A workspace already carrying this module's staged dependency codegen
+	// (recorded by __withGeneratedLocalDependencies when the outer walk built
+	// the workspace this generator run received) has nothing further to
+	// stage. This breaks the recursion when a dependency's SDK generator
+	// calls back in — while leaving other modules, e.g. managed modules
+	// nested beneath the dependency, free to stage their own closures.
+	if slices.Contains(workspace.Self().StagedGeneration, cleanWorkspaceRelPath(srcInst.Self().SourceRootSubpath)) {
 		return emptyResult()
 	}
 
@@ -3188,8 +3191,8 @@ func localDepCycle(src dagql.ObjectResult[*core.ModuleSource]) []string {
 // generateOneLocalDependency generates the single dependency at depPath by
 // running only its owning SDK's generator (looked up in owners) against a
 // workspace scoped to depPath (as cwd) with the dependency's own transitive
-// staging (depStaging) overlaid and marked GeneratedDepsStaged, and returns
-// that dependency's changeset. Returns a nil result when no SDK claims the
+// staging (depStaging) applied and recorded via
+// __withGeneratedLocalDependencies, and returns that dependency's changeset. Returns a nil result when no SDK claims the
 // dependency, so the caller skips it. Wrapped in a revealed span so the
 // per-dependency generation is visible in the trace.
 func (s *moduleSourceSchema) generateOneLocalDependency(
@@ -3443,15 +3446,17 @@ func scopedStagedWorkspace(
 	if err != nil {
 		return scoped, err
 	}
-	// stageGeneratedDeps marks the workspace so the dependency's SDK generator,
-	// which calls generateLocalDependencies itself, short-circuits instead of
-	// re-staging the closure this workspace already carries.
+	// __withGeneratedLocalDependencies applies the staged dependency codegen
+	// and records the module in the workspace's StagedGeneration set, so the
+	// dependency's SDK generator — which calls generateLocalDependencies
+	// itself — short-circuits instead of re-staging the closure this
+	// workspace already carries.
 	var staged dagql.ObjectResult[*core.Workspace]
 	if err := dag.Select(ctx, scoped, &staged, dagql.Selector{
-		Field: "withChanges",
+		Field: "__withGeneratedLocalDependencies",
 		Args: []dagql.NamedInput{
+			{Name: "module", Value: dagql.String(cleanWorkspaceRelPath(cwd))},
 			{Name: "changes", Value: dagql.NewID[*core.Changeset](stagingID)},
-			{Name: "stageGeneratedDeps", Value: dagql.Boolean(true)},
 		},
 	}); err != nil {
 		return staged, err
