@@ -25,6 +25,14 @@ legacy-default-path = true
 # Git repository for VCS info injection.
 # settings.repo = "https://github.com/owner/repo"
 
+[modules.dev]
+source = "toolchains/dev"
+
+[modules.dev.settings]
+# Linux default. Override per-invocation with --docker=$DOCKER_HOST when the
+# active Docker context points somewhere else.
+docker = "unix:///var/run/docker.sock"
+
 [modules.docs]
 source = "toolchains/docs-dev"
 legacy-default-path = true
