@@ -671,6 +671,56 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 	})
 }
 
+// TestWorkspaceGenerateSkipsBrokenEntrypoint is a regression test for
+// https://github.com/dagger/dagger/issues/13742: an entrypoint module that
+// cannot load (e.g. a migrated v1 module whose local dependencies are missing
+// their generated files) must not abort `dagger generate` — generate is often
+// the repair for exactly that state. The generators listing already loads
+// best-effort, but the CLI's follow-up queries are rooted at `node(id:)` (every
+// post-Sync SDK handle is), and an unrecognized `node` root field used to
+// strictly (re)load the pending entrypoint, failing every generate mode.
+func (GeneratorsSuite) TestWorkspaceGenerateSkipsBrokenEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken-entrypoint")
+
+	t.Run("listing enumerates healthy generators despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("generate", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "good:generate")
+	})
+
+	t.Run("unscoped generate runs healthy generators despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(daggerExec("generate", "-y", "--progress=plain"))
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "no changes to apply")
+		// The broken entrypoint is surfaced as a skipped-module span, not a
+		// fatal error.
+		require.Contains(t, out, "modules/bad")
+		_, err = ctr.WithExec([]string{"grep", "-rl", "hello from good", "."}).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("generate --no-apply previews despite a broken entrypoint", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("generate", "--no-apply", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "no changes to apply")
+	})
+
+	t.Run("--require-load still makes the entrypoint load failure fatal", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("generate", "-l", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+	})
+}
+
 // TestWorkspaceCheckNarrowsToRequestedModule mirrors
 // TestWorkspaceGenerateNarrowsToRequestedModule for `dagger check`: an unrelated
 // broken/stale workspace module must not be loaded just to enumerate or run a

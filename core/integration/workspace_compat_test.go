@@ -289,6 +289,62 @@ func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *te
 	})
 }
 
+// TestCompatEntrypointWithLocalDepsGenerate is a regression test for
+// https://github.com/dagger/dagger/issues/13742: `dagger generate` in a legacy
+// dagger.json project whose root module is the workspace entrypoint and has
+// local dependencies must not fail while loading that module.
+func (WorkspaceCompatSuite) TestCompatEntrypointWithLocalDepsGenerate(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Mirrors the shape of github.com/kpenfound/greetings-api: a legacy Go
+	// module rooted at the repo with its source and local dependencies nested
+	// under .dagger/.
+	base := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "engineVersion": "v0.20.6",
+  "sdk": {"source": "go"},
+  "source": ".dagger",
+  "dependencies": [{"name": "dep", "source": ".dagger/dep"}]
+}`, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithNewFile(".dagger/main.go", `package main
+
+import "context"
+
+type Myapp struct{}
+
+func (m *Myapp) Greet(ctx context.Context) (string, error) {
+	return dag.Dep().Message(ctx)
+}
+`).
+			WithNewFile(".dagger/dep/dagger.json", `{"name":"dep","engineVersion":"v0.18.7","sdk":{"source":"go"}}`).
+			WithNewFile(".dagger/dep/main.go", `package main
+
+type Dep struct{}
+
+func (d *Dep) Message() string {
+	return "hello from dep"
+}
+`)
+	})
+
+	t.Run("call works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(compatDaggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from dep")
+	})
+
+	t.Run("generate list works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(compatDaggerExec("generate", "-l")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+	})
+
+	t.Run("generate works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(compatDaggerExec("generate", "--no-apply")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+	})
+}
+
 // TestCompatDetection should lock down which legacy dagger.json files become a
 // compat workspace and which do not.
 func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.T) {
