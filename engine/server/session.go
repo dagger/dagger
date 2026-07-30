@@ -1928,7 +1928,7 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 				// runs under client.modulesMu, which also guards
 				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
 				scope := client.pendingWorkspaceModuleScopeLocked()
-				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, rootFields, scope, client.entrypointServed)
+				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, client.failedModules, rootFields, scope, client.entrypointServed)
 				if applied {
 					scopeApplied = true
 					names := make([]string, 0, len(selected))
