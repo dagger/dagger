@@ -48,7 +48,11 @@ type mockServer struct {
 	attachables    map[string]*grpc.ClientConn
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
+}
+
+func (ms *mockServer) CurrentWorkspaceContext(context.Context) (dagql.ObjectResult[*Workspace], error) {
+	return dagql.ObjectResult[*Workspace]{}, nil
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
@@ -104,7 +108,6 @@ func (ms *mockServer) ModuleParent(context.Context) (dagql.ObjectResult[*Module]
 func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
 	return ms.functionCall, nil
 }
-
 
 func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
 	return NewSchemaBuilder(nil, nil), nil

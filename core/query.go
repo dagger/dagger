@@ -52,7 +52,7 @@ type SpecificClientAttachableConnOpts struct {
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -65,6 +65,11 @@ type Server interface {
 
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
+
+	// If the current client was created carrying a bound Workspace (an LLM's, or a
+	// caller module's), return it. The server-side fallback for WorkspaceFromContext
+	// once the in-process binding is lost across the module boundary.
+	CurrentWorkspaceContext(context.Context) (dagql.ObjectResult[*Workspace], error)
 
 	// Return the modules being served to the current client
 	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
