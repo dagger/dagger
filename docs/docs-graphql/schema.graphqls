@@ -501,6 +501,8 @@ type Container implements Exportable & Node & Syncer {
     behavior.
     """
     noInit: Boolean = false
+
+    experimentalDockerCompatibility: Boolean = false
   ): Service!
 
   """
@@ -945,6 +947,14 @@ type Container implements Exportable & Node & Syncer {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
+
+    """
+    Bind a Docker-compatible API listener inside the container during this
+    terminal session and set DOCKER_HOST to point at it.
+
+    This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+    """
+    experimentalDockerCompatibility: Boolean = false
   ): Container!
 
   """
@@ -999,6 +1009,8 @@ type Container implements Exportable & Node & Syncer {
     behavior.
     """
     noInit: Boolean = false
+
+    experimentalDockerCompatibility: Boolean = false
   ): Void
 
   """Retrieves the user to be set for all commands."""
@@ -1234,6 +1246,13 @@ type Container implements Exportable & Node & Syncer {
     sure, you don't need this.
     """
     noInit: Boolean = false
+
+    """
+    Bind a Docker-compatible API listener inside the container during this exec and set DOCKER_HOST to point at it.
+
+    This allows Docker CLI tooling to work inside the container without Docker-in-Docker.
+    """
+    experimentalDockerCompatibility: Boolean = false
   ): Container!
 
   """
@@ -2273,6 +2292,8 @@ type Directory implements Exportable & Node & Syncer {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
+
+    experimentalDockerCompatibility: Boolean = false
   ): Directory!
 
   """Return a directory with changes from another directory applied to it."""

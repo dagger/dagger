@@ -123,6 +123,10 @@ type TerminalArgs struct {
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
+
+	// Bind a Docker-compatible API listener inside the container and point
+	// DOCKER_HOST at it, so that Docker CLI tooling works without DinD.
+	ExperimentalDockerCompatibility dagql.Optional[dagql.Boolean] `default:"false"`
 }
 
 func (container *Container) Terminal(
@@ -213,9 +217,10 @@ func (container *Container) terminal(
 	var svc *Service
 	if execMD == nil && execMeta == nil {
 		svc, err = container.AsService(ctx, containerRes, ContainerAsServiceArgs{
-			Args:                          args.Cmd,
-			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
-			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
+			Args:                            args.Cmd,
+			ExperimentalPrivilegedNesting:   args.ExperimentalPrivilegedNesting.Value.Bool(),
+			InsecureRootCapabilities:        args.InsecureRootCapabilities.Value.Bool(),
+			ExperimentalDockerCompatibility: args.ExperimentalDockerCompatibility.Value.Bool(),
 		})
 	} else {
 		svc = &Service{

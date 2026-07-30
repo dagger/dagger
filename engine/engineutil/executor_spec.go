@@ -37,6 +37,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/util/cleanups"
+	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -1104,6 +1105,56 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.cleanups.Add("cancel nested client server pool", cleanups.Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
 	}))
+
+	return nil
+}
+
+func (c *Client) setupDockerCompatibility(ctx context.Context, state *execState) (rerr error) {
+	if state == nil || state.execMD == nil || !state.execMD.ExperimentalDockerCompatibility {
+		return nil
+	}
+
+	handler, err := newDockerHandler(ctx, c, state.id)
+	if err != nil {
+		return fmt.Errorf("docker API handler: %w", err)
+	}
+
+	srvCtx, srvCancel := context.WithCancelCause(ctx)
+	state.cleanups.Add("cancel docker API server", cleanups.Infallible(func() {
+		srvCancel(errors.New("container cleanup"))
+	}))
+
+	httpListener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
+		return net.Listen("tcp", "127.0.0.1:0")
+	})
+	if err != nil {
+		return fmt.Errorf("docker API listen: %w", err)
+	}
+	state.cleanups.Add("close Docker API listener", cleanups.IgnoreErrs(httpListener.Close, net.ErrClosed))
+
+	tcpAddr, ok := httpListener.Addr().(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
+	}
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		client.EnvOverrideHost+"=tcp://127.0.0.1:"+strconv.Itoa(tcpAddr.Port),
+	)
+
+	httpSrv := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+		Handler:           handler,
+	}
+
+	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
+	srvPool.Go(func(_ context.Context) error {
+		if err := httpSrv.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+			return fmt.Errorf("serve docker API: %w", err)
+		}
+		return nil
+	})
+
+	state.cleanups.Add("wait for docker API server pool", srvPool.Wait)
+	state.cleanups.Add("close docker API http server", httpSrv.Close)
 
 	return nil
 }

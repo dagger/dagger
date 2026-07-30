@@ -51,14 +51,15 @@ type Service struct {
 	CustomHostname string
 
 	// Container is the container to run as a service.
-	Container                     dagql.ObjectResult[*Container]
-	Args                          []string
-	ExperimentalPrivilegedNesting bool
-	InsecureRootCapabilities      bool
-	NoInit                        bool
-	ExecMD                        *engineutil.ExecutionMetadata
-	ModuleContext                 dagql.ObjectResult[*Module]
-	ExecMeta                      *executor.Meta
+	Container                       dagql.ObjectResult[*Container]
+	Args                            []string
+	ExperimentalPrivilegedNesting   bool
+	InsecureRootCapabilities        bool
+	NoInit                          bool
+	ExperimentalDockerCompatibility bool
+	ExecMD                          *engineutil.ExecutionMetadata
+	ModuleContext                   dagql.ObjectResult[*Module]
+	ExecMeta                        *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream dagql.ObjectResult[*Service]
@@ -85,18 +86,19 @@ var _ dagql.PersistedObjectDecoder = (*Service)(nil)
 var _ dagql.HasDependencyResults = (*Service)(nil)
 
 type persistedServicePayload struct {
-	CustomHostname                string                        `json:"customHostname,omitempty"`
-	ContainerResultID             uint64                        `json:"containerResultID,omitempty"`
-	Args                          []string                      `json:"args,omitempty"`
-	ExperimentalPrivilegedNesting bool                          `json:"experimentalPrivilegedNesting,omitempty"`
-	InsecureRootCapabilities      bool                          `json:"insecureRootCapabilities,omitempty"`
-	NoInit                        bool                          `json:"noInit,omitempty"`
-	ExecMD                        *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
-	ModuleContextResultID         uint64                        `json:"moduleContextResultID,omitempty"`
-	ExecMeta                      *executor.Meta                `json:"execMeta,omitempty"`
-	TunnelUpstreamResultID        uint64                        `json:"tunnelUpstreamResultID,omitempty"`
-	TunnelPorts                   []PortForward                 `json:"tunnelPorts,omitempty"`
-	HostSockets                   []persistedServiceHostSocket  `json:"hostSockets,omitempty"`
+	CustomHostname                  string                        `json:"customHostname,omitempty"`
+	ContainerResultID               uint64                        `json:"containerResultID,omitempty"`
+	Args                            []string                      `json:"args,omitempty"`
+	ExperimentalPrivilegedNesting   bool                          `json:"experimentalPrivilegedNesting,omitempty"`
+	InsecureRootCapabilities        bool                          `json:"insecureRootCapabilities,omitempty"`
+	NoInit                          bool                          `json:"noInit,omitempty"`
+	ExperimentalDockerCompatibility bool                          `json:"experimentalDockerCompatibility,omitempty"`
+	ExecMD                          *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	ModuleContextResultID           uint64                        `json:"moduleContextResultID,omitempty"`
+	ExecMeta                        *executor.Meta                `json:"execMeta,omitempty"`
+	TunnelUpstreamResultID          uint64                        `json:"tunnelUpstreamResultID,omitempty"`
+	TunnelPorts                     []PortForward                 `json:"tunnelPorts,omitempty"`
+	HostSockets                     []persistedServiceHostSocket  `json:"hostSockets,omitempty"`
 }
 
 type persistedServiceHostSocket struct {
@@ -119,15 +121,16 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service: nil service")
 	}
 	payload := persistedServicePayload{
-		CustomHostname:                svc.CustomHostname,
-		Args:                          slices.Clone(svc.Args),
-		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      svc.InsecureRootCapabilities,
-		NoInit:                        svc.NoInit,
-		ExecMD:                        svc.ExecMD,
-		ExecMeta:                      svc.ExecMeta,
-		TunnelPorts:                   slices.Clone(svc.TunnelPorts),
-		HostSockets:                   make([]persistedServiceHostSocket, 0, len(svc.HostSockets)),
+		CustomHostname:                  svc.CustomHostname,
+		Args:                            slices.Clone(svc.Args),
+		ExperimentalPrivilegedNesting:   svc.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:        svc.InsecureRootCapabilities,
+		NoInit:                          svc.NoInit,
+		ExperimentalDockerCompatibility: svc.ExperimentalDockerCompatibility,
+		ExecMD:                          svc.ExecMD,
+		ExecMeta:                        svc.ExecMeta,
+		TunnelPorts:                     slices.Clone(svc.TunnelPorts),
+		HostSockets:                     make([]persistedServiceHostSocket, 0, len(svc.HostSockets)),
 	}
 	var err error
 	if svc.Container.Self() != nil {
@@ -195,18 +198,19 @@ func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ 
 		})
 	}
 	return &Service{
-		CustomHostname:                persisted.CustomHostname,
-		Container:                     container,
-		Args:                          slices.Clone(persisted.Args),
-		ExperimentalPrivilegedNesting: persisted.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      persisted.InsecureRootCapabilities,
-		NoInit:                        persisted.NoInit,
-		ExecMD:                        persisted.ExecMD,
-		ModuleContext:                 moduleContext,
-		ExecMeta:                      persisted.ExecMeta,
-		TunnelUpstream:                tunnelUpstream,
-		TunnelPorts:                   slices.Clone(persisted.TunnelPorts),
-		HostSockets:                   hostSockets,
+		CustomHostname:                  persisted.CustomHostname,
+		Container:                       container,
+		Args:                            slices.Clone(persisted.Args),
+		ExperimentalPrivilegedNesting:   persisted.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:        persisted.InsecureRootCapabilities,
+		NoInit:                          persisted.NoInit,
+		ExperimentalDockerCompatibility: persisted.ExperimentalDockerCompatibility,
+		ExecMD:                          persisted.ExecMD,
+		ModuleContext:                   moduleContext,
+		ExecMeta:                        persisted.ExecMeta,
+		TunnelUpstream:                  tunnelUpstream,
+		TunnelPorts:                     slices.Clone(persisted.TunnelPorts),
+		HostSockets:                     hostSockets,
 	}, nil
 }
 
@@ -582,8 +586,9 @@ func (svc *Service) startContainer(
 	execMD := svc.ExecMD
 	if execMD == nil {
 		execMD, err = ctr.execMeta(ctx, ContainerExecOpts{
-			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
-			NoInit:                        svc.NoInit,
+			ExperimentalPrivilegedNesting:   svc.ExperimentalPrivilegedNesting,
+			NoInit:                          svc.NoInit,
+			ExperimentalDockerCompatibility: svc.ExperimentalDockerCompatibility,
 		}, nil, svc.ModuleContext)
 		if err != nil {
 			return err
@@ -708,10 +713,11 @@ func (svc *Service) startContainer(
 	meta := svc.ExecMeta
 	if meta == nil {
 		meta, err = ctr.metaSpec(ctx, ContainerExecOpts{
-			Args:                          svc.Args,
-			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
-			InsecureRootCapabilities:      svc.InsecureRootCapabilities,
-			NoInit:                        svc.NoInit,
+			Args:                            svc.Args,
+			ExperimentalPrivilegedNesting:   svc.ExperimentalPrivilegedNesting,
+			InsecureRootCapabilities:        svc.InsecureRootCapabilities,
+			NoInit:                          svc.NoInit,
+			ExperimentalDockerCompatibility: svc.ExperimentalDockerCompatibility,
 		}, false)
 		if err != nil {
 			return err

@@ -86,6 +86,7 @@ type Opts struct {
 	GetHostServiceCaller func(context.Context, string) (SessionCaller, error)
 	GetMainClientCaller  func(context.Context) (SessionCaller, error)
 	GetRegistryResolver  func(context.Context) (*serverresolver.Resolver, error)
+	SnapshotAccessor     bkcache.Accessor
 
 	Interactive        bool
 	InteractiveCommand []string

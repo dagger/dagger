@@ -37,6 +37,7 @@ import (
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/uuid"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -6856,4 +6857,43 @@ func (ContainerSuite) TestLayersConcurrent(ctx context.Context, t *testctx.T) {
 	for i, desc := range descriptors {
 		require.Equal(t, desc.Size, int64(sizes[i]))
 	}
+}
+
+func (ContainerSuite) TestExecWithExperimentalDockerCompatibilityStdout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	expected := uuid.NewString()
+	script := `#!/usr/bin/env sh
+out=$(docker run ` + alpineImage + ` echo ` + expected + `)
+test "$(echo "$out" | tr -d '[:space:]')" = "` + expected + `"
+`
+	base := t.BaseName()
+
+	_, err := c.Container().
+		From(dockerCLIImage).
+		WithNewFile(filepath.Join("usr", "local", "bin", base), script, dagger.ContainerWithNewFileOpts{Permissions: 0755}).
+		WithExec([]string{base}, dagger.ContainerWithExecOpts{ExperimentalDockerCompatibility: true}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
+func (ContainerSuite) TestExecWithExperimentalDockerCompatibilityPublishPort(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	expected := uuid.NewString()
+	script := `#!/usr/bin/env sh
+docker run -d -p 8080:5678 ` + httpEchoImage + ` -text=` + expected + `
+for i in $(seq 9); do
+	out=$(wget -qO- http://localhost:8080 2>/dev/null) && break || sleep $i
+done
+test "$(echo "$out" | tr -d '[:space:]')" = "` + expected + `"
+`
+	base := t.BaseName()
+
+	_, err := c.Container().
+		From(dockerCLIImage).
+		WithNewFile(filepath.Join("usr", "local", "bin", base), script, dagger.ContainerWithNewFileOpts{Permissions: 0755}).
+		WithExec([]string{base}, dagger.ContainerWithExecOpts{ExperimentalDockerCompatibility: true}).
+		Sync(ctx)
+	require.NoError(t, err)
 }

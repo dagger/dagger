@@ -3340,22 +3340,15 @@ func (s *moduleSourceSchema) generateOneLocalDependency(
 	// Scope generation to the owning SDK's generator (include) and hand it the
 	// dep-scoped workspace (withWorkspace). filterGeneratorsByInclude matches the
 	// bare module name, exactly like `dagger generate <sdk-name>`.
-	var generators dagql.ObjectResult[*core.GeneratorGroup]
-	if err := dag.Select(ctx, workspace, &generators, dagql.Selector{
-		Field: "generators",
-		Args: []dagql.NamedInput{
-			{Name: "include", Value: dagql.Opt(dagql.ArrayInput[dagql.String]{dagql.String(owner)})},
-			{Name: "withWorkspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](wsDID))},
-		},
-	}); err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
-	}
-	if err := validateDependencyGeneratorGroup(owner, depPath, generators.Self()); err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
-	}
-
 	var depChanges dagql.ObjectResult[*core.Changeset]
-	if err := dag.Select(ctx, generators, &depChanges,
+	if err := dag.Select(ctx, workspace, &depChanges,
+		dagql.Selector{
+			Field: "generators",
+			Args: []dagql.NamedInput{
+				{Name: "include", Value: dagql.Opt(dagql.ArrayInput[dagql.String]{dagql.String(owner)})},
+				{Name: "withWorkspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](wsDID))},
+			},
+		},
 		dagql.Selector{Field: "run"},
 		dagql.Selector{Field: "changes"},
 	); err != nil {
@@ -3370,24 +3363,6 @@ func (s *moduleSourceSchema) generateOneLocalDependency(
 		return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("reroot changeset under %q: %w", depPath, err)
 	}
 	return depChanges, nil
-}
-
-func validateDependencyGeneratorGroup(owner, depPath string, generators *core.GeneratorGroup) error {
-	if len(generators.LoadFailures) > 0 {
-		return fmt.Errorf(
-			"load owning SDK %q generators: %s",
-			owner,
-			strings.Join(generators.LoadFailures, "; "),
-		)
-	}
-	if len(generators.Generators) == 0 {
-		return fmt.Errorf(
-			"owning SDK %q exposes no generators for dependency %q",
-			owner,
-			depPath,
-		)
-	}
-	return nil
 }
 
 // rerootChangesetUnder returns changes with every path prefixed by dir, turning
@@ -3504,28 +3479,13 @@ func sdkOwnersByModulePath(ctx context.Context, ws *core.Workspace) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	return sdkOwnersByModulePathFromConfig(cfg)
-}
-
-func sdkOwnersByModulePathFromConfig(cfg *workspace.Config) (map[string]string, error) {
 	owners := map[string]string{}
 	for name, entry := range cfg.Modules {
 		if entry.AsSDK == nil {
 			continue
 		}
 		for _, managed := range entry.AsSDK.Modules {
-			path := cleanWorkspaceRelPath(managed.Path)
-			if existing, ok := owners[path]; ok && existing != name {
-				sdkNames := []string{existing, name}
-				slices.Sort(sdkNames)
-				return nil, fmt.Errorf(
-					"module path %q is managed by multiple SDKs: %q and %q",
-					path,
-					sdkNames[0],
-					sdkNames[1],
-				)
-			}
-			owners[path] = name
+			owners[cleanWorkspaceRelPath(managed.Path)] = name
 		}
 	}
 	return owners, nil

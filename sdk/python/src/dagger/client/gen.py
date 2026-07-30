@@ -1732,6 +1732,7 @@ class Container(Type):
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
+        experimental_docker_compatibility: bool | None = False,
     ) -> "Service":
         """Turn the container into a Service.
 
@@ -1762,6 +1763,7 @@ class Container(Type):
             This should only be used if the user requires that their exec
             process be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
+        experimental_docker_compatibility:
         """
         _args = [
             Arg("args", [] if args is None else args, []),
@@ -1772,6 +1774,11 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
+            Arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+                False,
+            ),
         ]
         _ctx = self._select("asService", _args)
         return Service(_ctx)
@@ -2638,6 +2645,7 @@ class Container(Type):
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
+        experimental_docker_compatibility: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal for this container using its configured
         default terminal command if not overridden by args (or sh as a
@@ -2656,6 +2664,11 @@ class Container(Type):
             --privileged" flag. Containerization does not provide any security
             guarantees when using this option. It should only be used when
             absolutely necessary and only with trusted commands.
+        experimental_docker_compatibility:
+            Bind a Docker-compatible API listener inside the container during
+            this terminal session and set DOCKER_HOST to point at it.
+            This allows Docker CLI tooling to work inside the container
+            without Docker-in-Docker.
         """
         _args = [
             Arg("cmd", [] if cmd is None else cmd, []),
@@ -2663,6 +2676,11 @@ class Container(Type):
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+            Arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+                False,
+            ),
         ]
         _ctx = self._select("terminal", _args)
         return Container(_ctx)
@@ -2678,6 +2696,7 @@ class Container(Type):
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
+        experimental_docker_compatibility: bool | None = False,
     ) -> Void | None:
         """Starts a Service and creates a tunnel that forwards traffic from the
         caller's network to that service.
@@ -2715,6 +2734,7 @@ class Container(Type):
             This should only be used if the user requires that their exec
             process be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
+        experimental_docker_compatibility:
 
         Returns
         -------
@@ -2740,6 +2760,11 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
+            Arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+                False,
+            ),
         ]
         _ctx = self._select("up", _args)
         await _ctx.execute()
@@ -3031,6 +3056,7 @@ class Container(Type):
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
+        experimental_docker_compatibility: bool | None = False,
     ) -> Self:
         """Execute a command in the container, and return a new snapshot of the
         container state after execution.
@@ -3078,6 +3104,11 @@ class Container(Type):
             Only use this if you specifically need the command to be pid 1 in
             the container. Otherwise it may result in unexpected behavior. If
             you're not sure, you don't need this.
+        experimental_docker_compatibility:
+            Bind a Docker-compatible API listener inside the container during
+            this exec and set DOCKER_HOST to point at it.
+            This allows Docker CLI tooling to work inside the container
+            without Docker-in-Docker.
         """
         _args = [
             Arg("args", args),
@@ -3093,6 +3124,11 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
+            Arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+                False,
+            ),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
@@ -5165,6 +5201,7 @@ class Directory(Type):
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
+        experimental_docker_compatibility: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal in new container with this directory
         mounted inside.
@@ -5184,6 +5221,7 @@ class Directory(Type):
             --privileged" flag. Containerization does not provide any security
             guarantees when using this option. It should only be used when
             absolutely necessary and only with trusted commands.
+        experimental_docker_compatibility:
         """
         _args = [
             Arg("container", container, None),
@@ -5192,6 +5230,11 @@ class Directory(Type):
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+            Arg(
+                "experimentalDockerCompatibility",
+                experimental_docker_compatibility,
+                False,
+            ),
         ]
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)

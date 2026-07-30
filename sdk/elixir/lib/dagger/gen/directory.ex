@@ -412,7 +412,8 @@ defmodule Dagger.Directory do
           {:container, Dagger.Container.t() | nil},
           {:cmd, [String.t()]},
           {:experimental_privileged_nesting, boolean() | nil},
-          {:insecure_root_capabilities, boolean() | nil}
+          {:insecure_root_capabilities, boolean() | nil},
+          {:experimental_docker_compatibility, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def terminal(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
@@ -428,6 +429,10 @@ defmodule Dagger.Directory do
         optional_args[:experimental_privileged_nesting]
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+      |> QB.maybe_put_arg(
+        "experimentalDockerCompatibility",
+        optional_args[:experimental_docker_compatibility]
+      )
 
     %Dagger.Directory{
       query_builder: query_builder,

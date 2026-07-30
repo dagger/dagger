@@ -26,7 +26,8 @@ defmodule Dagger.Container do
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
-          {:no_init, boolean() | nil}
+          {:no_init, boolean() | nil},
+          {:experimental_docker_compatibility, boolean() | nil}
         ]) :: Dagger.Service.t()
   def as_service(%__MODULE__{} = container, optional_args \\ []) do
     query_builder =
@@ -41,6 +42,10 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+      |> QB.maybe_put_arg(
+        "experimentalDockerCompatibility",
+        optional_args[:experimental_docker_compatibility]
+      )
 
     %Dagger.Service{
       query_builder: query_builder,
@@ -644,7 +649,8 @@ defmodule Dagger.Container do
   @spec terminal(t(), [
           {:cmd, [String.t()]},
           {:experimental_privileged_nesting, boolean() | nil},
-          {:insecure_root_capabilities, boolean() | nil}
+          {:insecure_root_capabilities, boolean() | nil},
+          {:experimental_docker_compatibility, boolean() | nil}
         ]) :: Dagger.Container.t()
   def terminal(%__MODULE__{} = container, optional_args \\ []) do
     query_builder =
@@ -656,6 +662,10 @@ defmodule Dagger.Container do
         optional_args[:experimental_privileged_nesting]
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+      |> QB.maybe_put_arg(
+        "experimentalDockerCompatibility",
+        optional_args[:experimental_docker_compatibility]
+      )
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -676,7 +686,8 @@ defmodule Dagger.Container do
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
-          {:no_init, boolean() | nil}
+          {:no_init, boolean() | nil},
+          {:experimental_docker_compatibility, boolean() | nil}
         ]) :: :ok | {:error, term()}
   def up(%__MODULE__{} = container, optional_args \\ []) do
     query_builder =
@@ -693,6 +704,10 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+      |> QB.maybe_put_arg(
+        "experimentalDockerCompatibility",
+        optional_args[:experimental_docker_compatibility]
+      )
 
     case Client.execute(container.client, query_builder) do
       {:ok, _} -> :ok
@@ -907,7 +922,8 @@ defmodule Dagger.Container do
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
-          {:no_init, boolean() | nil}
+          {:no_init, boolean() | nil},
+          {:experimental_docker_compatibility, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_exec(%__MODULE__{} = container, args, optional_args \\ []) do
     query_builder =
@@ -927,6 +943,10 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+      |> QB.maybe_put_arg(
+        "experimentalDockerCompatibility",
+        optional_args[:experimental_docker_compatibility]
+      )
 
     %Dagger.Container{
       query_builder: query_builder,

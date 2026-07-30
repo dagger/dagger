@@ -72,6 +72,10 @@ type ExecutionMetadata struct {
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
 
+	// If true, bind a Docker-compatible API listener inside the container's
+	// network namespace and set DOCKER_HOST to point at it.
+	ExperimentalDockerCompatibility bool
+
 	// ProfArgs is the fully-resolved user command (entrypoint + args), captured
 	// in core at exec-run time BEFORE any engine shim (the QEMU emulator, the
 	// executor's /.init) wraps it, so wall-clock profiling can headline the user's
@@ -187,6 +191,7 @@ func (c *Client) Run(
 		namedSetupFunc{"enableGPU", c.enableGPU},
 		namedSetupFunc{"createCWD", c.createCWD},
 		namedSetupFunc{"setupNestedClient", c.setupNestedClient},
+		namedSetupFunc{"setupDockerCompatibility", c.setupDockerCompatibility},
 		namedSetupFunc{"installCACerts", c.installCACerts},
 		namedSetupFunc{"runContainer", c.runContainer},
 	)

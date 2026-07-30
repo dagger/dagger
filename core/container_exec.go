@@ -85,6 +85,10 @@ type ContainerExecOpts struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+
+	// Bind a Docker-compatible API listener inside the container and point
+	// DOCKER_HOST at it, so that Docker CLI tooling works without DinD.
+	ExperimentalDockerCompatibility bool `default:"false"`
 }
 
 type ContainerExecState struct {
@@ -258,6 +262,9 @@ func (container *Container) execMeta(
 	execMD.EnabledGPUs = container.EnabledGPUs
 	if opts.NoInit {
 		execMD.NoInit = true
+	}
+	if opts.ExperimentalDockerCompatibility {
+		execMD.ExperimentalDockerCompatibility = true
 	}
 
 	var callerModDigest digest.Digest
