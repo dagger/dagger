@@ -46,10 +46,17 @@ func ResolverForID(id string) (SecretResolver, string, error) {
 	return resolver, pathWithQuery, nil
 }
 
-type SecretProvider struct{}
+type SecretProvider struct {
+	// workspaceRoot is the directory containing this client's dagger.json,
+	// if any. Resolved once at construction time, since it doesn't change
+	// over the lifetime of a client. See findWorkspaceRoot for why this is
+	// determined independently rather than reusing the engine's own
+	// workspace resolution.
+	workspaceRoot string
+}
 
 func NewSecretProvider() SecretProvider {
-	return SecretProvider{}
+	return SecretProvider{workspaceRoot: findWorkspaceRoot()}
 }
 
 func (sp SecretProvider) Register(server *grpc.Server) {
@@ -62,6 +69,7 @@ func (sp SecretProvider) GetSecret(ctx context.Context, req *secrets.GetSecretRe
 		return nil, err
 	}
 
+	ctx = withWorkspaceRoot(ctx, sp.workspaceRoot)
 	plaintext, err := resolver(ctx, u)
 	if err != nil {
 		if errors.Is(err, secrets.ErrNotFound) {
