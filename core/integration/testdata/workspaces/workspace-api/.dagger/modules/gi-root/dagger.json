@@ -1,1 +1,7 @@
-{"name":"gi-root","engineVersion":"v0.21.5","sdk":{"source":"dang"}}
+{
+  "name": "gi-root",
+  "engineVersion": "v0.21.5",
+  "sdk": {
+    "source": "dang"
+  }
+}

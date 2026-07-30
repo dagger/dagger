@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "foo",
-      "source": "./foo"
+      "source": "foo"
     }
   ]
 }

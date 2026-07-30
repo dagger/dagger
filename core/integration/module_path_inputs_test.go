@@ -1846,6 +1846,8 @@ func (ModuleSuite) TestContextParallel(ctx context.Context, t *testctx.T) {
 			WithWorkdir(workdir).
 			WithoutDirectory(filepath.Join(workdir, ".dagger")).
 			WithoutFile(filepath.Join(workdir, "dagger.json")).
+			WithoutFile(filepath.Join(workdir, "dagger.toml")).
+			WithoutFile(filepath.Join(workdir, "dagger.lock")).
 			With(withModuleFixture(t, c, workdir, "go/path-context-parallel"))
 	}
 
