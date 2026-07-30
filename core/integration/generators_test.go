@@ -806,6 +806,69 @@ source = "toolchain"
 	require.Equal(t, "false", strings.TrimSpace(out))
 }
 
+// TestWorkspaceGeneratorsSeeOverlayEdits locks in that a generator run via
+// Workspace.generators observes the workspace it was called on — including
+// overlay edits (Workspace.withNewFile, or an agent's applied changesets) —
+// rather than the session's frozen current workspace. Regression test for the
+// bug where an agent edited files, then `generate` re-ran against stale source
+// and came back as a cache hit (see hack/designs/workspace-agents.md §4).
+//
+// The generator-workspace-sync fixture's `repro:gen` reads input.txt from the
+// workspace and writes output.txt = "generated from: <input>", so the output
+// reveals which workspace the generator actually read.
+func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generator-workspace-sync")
+
+	t.Run("baseline reads input.txt from the workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{generators(include:["repro:gen"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "generated from: A")
+	})
+
+	t.Run("generator sees an overlay edit applied to the workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){generators(include:["repro:gen"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "generated from: B-OVERLAY")
+	})
+}
+
+// TestWorkspaceGeneratorRunsDependencyAgainstItsWorkspace locks in that when a
+// generator calls another module's function whose Workspace! Dagger auto-injects
+// (the generator does not pass one), that dependency resolves the workspace the
+// generator is running against — including overlay edits — not the frozen session
+// workspace. Regression test for the invariant that "module A calling module B
+// runs B against A's workspace" across the module boundary (hack/designs/workspace-agents.md §4).
+//
+// The generator-workspace-sync fixture's `repro:genViaDep` reads input.txt via a
+// dependency (`wsdep.readInput`) and writes output.txt = "via dep: <input>".
+func (GeneratorsSuite) TestWorkspaceGeneratorRunsDependencyAgainstItsWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generator-workspace-sync")
+
+	t.Run("baseline: the dependency reads input.txt from the workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{generators(include:["repro:genViaDep"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "via dep: A")
+	})
+
+	t.Run("the dependency sees an overlay edit applied to the workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){generators(include:["repro:genViaDep"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "via dep: B-OVERLAY")
+	})
+}
+
 func (GeneratorsSuite) TestGeneratorResultFieldsRequireRun(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
