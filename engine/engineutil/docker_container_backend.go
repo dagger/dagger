@@ -15,16 +15,16 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
+	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	randid "github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/distribution/reference"
-	"github.com/docker/docker/pkg/namesgenerator"
 	dockerrouter "github.com/docker/docker/api/server/router"
 	dockercontainer "github.com/docker/docker/api/server/router/container"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/pkg/namesgenerator"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/docker/pkg/sysinfo"
 	"github.com/docker/docker/runconfig"
@@ -97,7 +97,7 @@ func (b *dockerContainerBackend) ContainerCreate(ctx context.Context, cfg backen
 				if err := json.Unmarshal(configBytes, &imgSpec); err == nil {
 					out := *containerCfg
 					// Image env is the base; container env overrides/appends.
-					out.Env = append(imgSpec.Config.Env, containerCfg.Env...)
+					out.Env = append(imgSpec.Config.Env, containerCfg.Env...) //nolint:gocritic
 					if len(out.Cmd) == 0 {
 						out.Cmd = imgSpec.Config.Cmd
 					}
