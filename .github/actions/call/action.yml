@@ -21,7 +21,7 @@ inputs:
     default: ""
     required: false
 
-  version:
+  commit:
     description: "Dagger commit to run against"
     default: "352dd3d22652b02383ff655a7c20dc41821d3fe4"
     required: false
