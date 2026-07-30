@@ -78,6 +78,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.GitRepository]{
 		dagql.NodeFunc("head", s.head).
 			Doc(`Returns details for HEAD.`),
+		dagql.NodeFunc("latest", s.latest).
+			View(AfterVersion("v1.0.0-beta.8")).
+			Doc(`Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.`, `This operation is pinned.`),
 		dagql.NodeFunc("ref", s.ref).
 			Doc(`Returns details of a ref.`).
 			Args(
@@ -458,6 +461,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				View:  curCall.View,
 			})
 			if err != nil {
+				if errors.Is(err, gitutil.ErrGitAuthFailed) {
+					continue
+				}
+				return inst, err
+			}
+			if _, err := repo.Self().LoadRemote(ctx); err != nil {
 				if errors.Is(err, gitutil.ErrGitAuthFailed) {
 					continue
 				}
@@ -982,7 +991,10 @@ type refArgs struct {
 	LockName      string `default:"" internal:"true"`
 }
 
-const lockGitRefOperation = "git.ref"
+const (
+	lockGitLatestOperation = "git.latest"
+	lockGitRefOperation    = "git.ref"
+)
 
 func gitLockInputs(repo *core.GitRepository, name string) ([]any, error) {
 	remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository)
@@ -1054,7 +1066,11 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		}
 	}
 
-	ref, err := repo.Remote.Lookup(args.Name)
+	remote, err := repo.LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ref, err := remote.Lookup(args.Name)
 	if err != nil {
 		return inst, err
 	}
@@ -1150,7 +1166,10 @@ func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 }
 
 func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
-	remote := parent.Self().Remote
+	remote, err := parent.Self().LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
 	tags := remote.Tags().Filter([]string{"refs/tags/v*"}).ShortNames()
 	tags = slices.DeleteFunc(tags, func(tag string) bool {
 		return !semver.IsValid(tag)
@@ -1232,7 +1251,10 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	remote := parent.Remote
+	remote, err := parent.LoadRemote(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return dagql.NewStringArray(remote.Filter(patterns).Tags().ShortNames()...), nil
 }
 
@@ -1247,7 +1269,10 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	remote := parent.Remote
+	remote, err := parent.LoadRemote(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
 }
 
@@ -1344,9 +1369,8 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 	if err != nil {
 		return nil, err
 	}
-	repo := *parent
-	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		repo.Backend = &core.RemoteGitRepository{
+	if remote, ok := parent.Backend.(*core.RemoteGitRepository); ok {
+		backend := &core.RemoteGitRepository{
 			URL:           remote.URL,
 			SSHKnownHosts: remote.SSHKnownHosts,
 			SSHAuthSocket: remote.SSHAuthSocket,
@@ -1357,8 +1381,9 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 			AuthHeader:    remote.AuthHeader,
 			Mirror:        remote.Mirror,
 		}
+		return parent.CloneWithBackend(backend), nil
 	}
-	return &repo, nil
+	return parent, nil
 }
 
 type withAuthHeaderArgs struct {
@@ -1375,9 +1400,8 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 	if err != nil {
 		return nil, err
 	}
-	repo := *parent
-	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		repo.Backend = &core.RemoteGitRepository{
+	if remote, ok := parent.Backend.(*core.RemoteGitRepository); ok {
+		backend := &core.RemoteGitRepository{
 			URL:           remote.URL,
 			SSHKnownHosts: remote.SSHKnownHosts,
 			SSHAuthSocket: remote.SSHAuthSocket,
@@ -1388,8 +1412,9 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 			AuthHeader:    header,
 			Mirror:        remote.Mirror,
 		}
+		return parent.CloneWithBackend(backend), nil
 	}
-	return &repo, nil
+	return parent, nil
 }
 
 type treeArgs struct {
@@ -2020,4 +2045,87 @@ func (s *gitSchema) log(
 		commits = append(commits, commit)
 	}
 	return commits, nil
+}
+
+func (s *gitSchema) latest(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], _ struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+	repo := parent.Self()
+	remoteRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
+	if !isRemote {
+		remote, err := repo.LoadRemote(ctx)
+		if err != nil {
+			return inst, err
+		}
+		ref, err := core.SelectLatestGitRef(remote)
+		if err != nil {
+			return inst, err
+		}
+		return s.gitRefResult(ctx, parent, ref)
+	}
+
+	const lockPolicy = workspace.PolicyPin
+	lockInputs := []any{remoteRepo.URL.Remote()}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	lockMode, lookupLock, err := lookupLockForMode(ctx, query, lockGitLatestOperation)
+	if err != nil {
+		return inst, err
+	}
+
+	var lockResolution lookupLockResolution
+	if lockMode != workspace.LockModeDisabled {
+		lockResolution, err = resolveLookupFromLoadedLock(
+			ctx,
+			lockMode,
+			lookupLock,
+			lockGitLatestOperation,
+			lockInputs,
+			lockPolicy,
+		)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
+		}
+		if lockResolution.Pin != nil {
+			pin, ok := lockResolution.Pin.(string)
+			if !ok || pin == "" {
+				return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, lockResolution.Pin)
+			}
+			ref, err := core.DecodeGitLatestRefPin(pin)
+			if err != nil {
+				return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
+			}
+			return s.gitRefResult(ctx, parent, ref)
+		}
+	}
+
+	remote, err := repo.LoadRemote(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ref, err := core.SelectLatestGitRef(remote)
+	if err != nil {
+		return inst, err
+	}
+
+	if lockResolution.ShouldWrite && lookupLock != nil {
+		pin, err := core.EncodeGitRefPin(ref)
+		if err != nil {
+			return inst, err
+		}
+		if err := lookupLock.SetLookup(
+			lockCoreNamespace,
+			lockGitLatestOperation,
+			lockInputs,
+			workspace.LookupResult{
+				Value:  pin,
+				Policy: lockPolicy,
+			},
+		); err != nil {
+			return inst, fmt.Errorf("set lock entry for %s: %w", lockGitLatestOperation, err)
+		}
+	}
+
+	return s.gitRefResult(ctx, parent, ref)
 }

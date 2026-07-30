@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -24,9 +25,10 @@ import (
 )
 
 type GitRepository struct {
-	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
-	Backend GitRepositoryBackend
-	Remote  *gitutil.Remote
+	URL      dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
+	Backend  GitRepositoryBackend
+	Remote   *gitutil.Remote
+	remoteMu sync.Mutex
 
 	DiscardGitDir bool
 }
@@ -81,6 +83,113 @@ type GitRefBackend interface {
 	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
 
+// SelectLatestGitRef selects the greatest semantic-version tag in remote,
+// falling back to HEAD when the remote has no release tags.
+func SelectLatestGitRef(remote *gitutil.Remote) (*gitutil.Ref, error) {
+	if remote == nil {
+		return nil, fmt.Errorf("select latest git ref: nil remote")
+	}
+
+	var (
+		bestRef     string
+		bestVersion string
+	)
+	for _, ref := range remote.Tags().Refs {
+		version := ref.ShortName()
+		if !strings.HasPrefix(version, "v") {
+			version = "v" + version
+		}
+		if !semver.IsValid(version) {
+			continue
+		}
+		if semver.Prerelease(version) != "" {
+			continue
+		}
+
+		comparison := semver.Compare(version, bestVersion)
+		if bestRef == "" || comparison > 0 || (comparison == 0 && ref.Name > bestRef) {
+			bestRef = ref.Name
+			bestVersion = version
+		}
+	}
+
+	if bestRef == "" {
+		ref, err := remote.Lookup("HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("resolve git remote HEAD: %w", err)
+		}
+		return ref, nil
+	}
+
+	ref, err := remote.Lookup(bestRef)
+	if err != nil {
+		return nil, fmt.Errorf("resolve latest git release %q: %w", bestRef, err)
+	}
+	return ref, nil
+}
+
+// EncodeGitRefPin stores both the symbolic ref and resolved commit in a single
+// lock value so frozen resolution can replay the ref without listing the remote.
+func EncodeGitRefPin(ref *gitutil.Ref) (string, error) {
+	if ref == nil {
+		return "", fmt.Errorf("encode git ref pin: nil ref")
+	}
+	if ref.Name == "" {
+		return "", fmt.Errorf("encode git ref pin: ref name is required")
+	}
+	if !gitutil.IsCommitSHA(ref.SHA) {
+		return "", fmt.Errorf("encode git ref pin: invalid commit SHA %q", ref.SHA)
+	}
+	return ref.Name + "@" + ref.SHA, nil
+}
+
+// DecodeGitRefPin decodes a symbolic-ref-and-commit lock value.
+func DecodeGitRefPin(pin string) (*gitutil.Ref, error) {
+	separator := strings.LastIndex(pin, "@")
+	if separator <= 0 {
+		return nil, fmt.Errorf("invalid git ref pin %q", pin)
+	}
+	name, sha := pin[:separator], pin[separator+1:]
+	if name == "" {
+		return nil, fmt.Errorf("invalid git ref pin %q", pin)
+	}
+	if !gitutil.IsCommitSHA(sha) {
+		return nil, fmt.Errorf("invalid git ref pin commit %q", sha)
+	}
+	return &gitutil.Ref{Name: name, SHA: sha}, nil
+}
+
+// DecodeGitLatestRefPin decodes and validates a pin produced by the latest Git
+// release selector. Only semantic-version tags and the HEAD fallback are valid.
+func DecodeGitLatestRefPin(pin string) (*gitutil.Ref, error) {
+	ref, err := DecodeGitRefPin(pin)
+	if err != nil {
+		return nil, err
+	}
+
+	if tag, ok := strings.CutPrefix(ref.Name, "refs/tags/"); ok {
+		version := tag
+		if !strings.HasPrefix(version, "v") {
+			version = "v" + version
+		}
+		if !semver.IsValid(version) {
+			return nil, fmt.Errorf("invalid git.latest tag %q: not a semantic version", tag)
+		}
+		if semver.Prerelease(version) != "" {
+			return nil, fmt.Errorf("invalid git.latest tag %q: prerelease tags are not supported", tag)
+		}
+		return ref, nil
+	}
+
+	if ref.Name == "HEAD" {
+		return ref, nil
+	}
+	if branch, ok := strings.CutPrefix(ref.Name, "refs/heads/"); ok && branch != "" {
+		return ref, nil
+	}
+	return nil, fmt.Errorf("invalid git.latest ref %q", ref.Name)
+}
+
 var _ dagql.PersistedObject = (*GitRepository)(nil)
 var _ dagql.PersistedObjectDecoder = (*GitRepository)(nil)
 var _ dagql.OnReleaser = (*GitRepository)(nil)
@@ -97,17 +206,62 @@ func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRe
 		Backend: backend,
 	}
 
-	remote, err := backend.Remote(ctx)
+	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
+		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
+		repo.Remote = &gitutil.Remote{}
+		return repo, nil
+	}
+
+	_, err := repo.LoadRemote(ctx)
 	if err != nil {
 		return nil, err
 	}
-	repo.Remote = remote
+	return repo, nil
+}
 
-	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
-		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
+// LoadRemote returns remote metadata, loading it once when a resolver needs it.
+// Lazy loading allows frozen lock lookups to use pins without network access.
+func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, error) {
+	repo.remoteMu.Lock()
+	defer repo.remoteMu.Unlock()
+
+	if repo.Remote != nil && (repo.Remote.Refs != nil || repo.Remote.Symrefs != nil) {
+		return repo.Remote, nil
 	}
 
-	return repo, nil
+	var head *gitutil.Ref
+	if repo.Remote != nil {
+		head = repo.Remote.Head
+	}
+	remote, err := repo.Backend.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if head != nil {
+		remote.Head = head
+	}
+	repo.Remote = remote
+	return remote, nil
+}
+
+// CloneWithBackend returns a repository with fresh remote metadata state. This
+// is used when changing authentication so metadata loaded with one credential
+// set cannot be reused with another.
+func (repo *GitRepository) CloneWithBackend(backend GitRepositoryBackend) *GitRepository {
+	repo.remoteMu.Lock()
+	defer repo.remoteMu.Unlock()
+
+	clone := &GitRepository{
+		URL:           repo.URL,
+		Backend:       backend,
+		Remote:        &gitutil.Remote{},
+		DiscardGitDir: repo.DiscardGitDir,
+	}
+	if repo.Remote != nil && repo.Remote.Head != nil {
+		head := *repo.Remote.Head
+		clone.Remote.Head = &head
+	}
+	return clone
 }
 
 func (*GitRepository) Type() *ast.Type {

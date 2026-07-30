@@ -15,6 +15,7 @@ import (
 const (
 	lockCoreNamespace          = ""
 	lockContainerFromOperation = "container.from"
+	lockGitLatestOperation     = "git.latest"
 	lockGitRefOperation        = "git.ref"
 )
 
@@ -42,6 +43,8 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 	switch {
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromOperation:
 		return updateContainerFromLockEntry(ctx, query, entry)
+	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitLatestOperation:
+		return updateGitLatestLockEntry(ctx, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitRefOperation:
 		return updateGitRefLockEntry(ctx, entry)
 	default:
@@ -167,4 +170,27 @@ func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remo
 		return remote, nil
 	}
 	return nil, fmt.Errorf("load git remote %q: %w", remoteURL, lastErr)
+}
+
+func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
+	if len(entry.Inputs) != 1 {
+		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest inputs %v", entry.Inputs)
+	}
+	remoteURL, ok := entry.Inputs[0].(string)
+	if !ok || remoteURL == "" {
+		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest remote %v", entry.Inputs[0])
+	}
+	remote, err := loadRemoteGitMetadata(ctx, remoteURL)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+	ref, err := SelectLatestGitRef(remote)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("resolve latest git release for %q: %w", remoteURL, err)
+	}
+	pin, err := EncodeGitRefPin(ref)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+	return workspace.LookupResult{Value: pin, Policy: workspace.PolicyPin}, nil
 }
