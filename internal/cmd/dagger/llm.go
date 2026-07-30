@@ -472,9 +472,14 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	// binding to its base: the persisted recipe (globalID) must stop replaying
 	// the applied overlays, since re-deriving them against the updated files on
 	// a later session load fails (withReplaced no longer finds its search
-	// text) or silently re-applies them. Sync eagerly so a failed reset
-	// surfaces here rather than corrupting later saves.
-	reset, err := s.llm.WithResetWorkspace().Sync(ctx)
+	// text) or silently re-applies them. The reset recipe is unbound, so
+	// rebind the live workspace explicitly — resuming this recipe in a later
+	// session replays the currentWorkspace call and re-resolves it there.
+	// Sync eagerly so a failed reset surfaces here rather than corrupting
+	// later saves.
+	reset, err := s.llm.WithResetWorkspace().
+		WithWorkspace(s.dag.CurrentWorkspace()).
+		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace after export: %w", err)
 	}
@@ -497,7 +502,9 @@ func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	reset, err := s.llm.WithResetWorkspace().Sync(ctx)
+	reset, err := s.llm.WithResetWorkspace().
+		WithWorkspace(s.dag.CurrentWorkspace()).
+		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
