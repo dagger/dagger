@@ -105,7 +105,7 @@ type Client struct {
 }
 
 type sessionHandler interface {
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 }
 
 func NewOpts(opts Opts) (*Opts, error) {

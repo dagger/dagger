@@ -46,8 +46,9 @@ func (r *runtime) eval(
 	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
+	workspaceContext dagql.ObjectResult[*core.Workspace],
 ) ([]byte, error) {
-	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
+	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, workspaceContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
 		return dang.RunDir(ctx, modSrcDir, false)
 	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
@@ -88,10 +89,11 @@ func evalDangSource(
 	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
+	workspaceContext dagql.ObjectResult[*core.Workspace],
 	runSource dangSourceRunner,
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
-	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
+	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, workspaceContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		var intro introspection.Response
 		f, err := schemaFile.Self().Open(ctx, dagql.ObjectResult[*core.File]{Result: schemaFile})
 		if err != nil {

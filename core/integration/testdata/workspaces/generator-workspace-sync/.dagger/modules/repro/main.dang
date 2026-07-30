@@ -1,0 +1,27 @@
+type Repro {
+  """
+  Read input.txt from the workspace and write output.txt derived from it.
+
+  Proves whether a generator run via `Workspace.generators` sees the workspace
+  it was called on (including overlay edits) or a frozen session workspace.
+  """
+  pub gen(ws: Workspace!): Changeset! @generate {
+    let input = ws.file("input.txt").contents
+    let root = ws.directory("/")
+    root.withNewFile("output.txt", "generated from: " + input).changes(root)
+  }
+
+  """
+  Read input.txt via a DEPENDENCY module's function whose Workspace! Dagger
+  auto-injects (this generator does not pass one), then write output.txt from it.
+
+  Proves the caller's workspace propagates across the module boundary: the
+  dependency must resolve the same (possibly overlaid) workspace the generator
+  runs against, not the frozen session workspace.
+  """
+  pub genViaDep(ws: Workspace!): Changeset! @generate {
+    let viaDep = wsdep.readInput
+    let root = ws.directory("/")
+    root.withNewFile("output.txt", "via dep: " + viaDep).changes(root)
+  }
+}

@@ -305,7 +305,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Current location within the workspace root.",
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
-		dagql.Func("checks", s.checks).
+		dagql.NodeFunc("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
@@ -316,12 +316,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions").
 					View(AfterVersion("v0.21.4")),
 			),
-		dagql.Func("generators", s.generators).
+		dagql.NodeFunc("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
-		dagql.Func("services", s.services).
+		dagql.NodeFunc("services", s.services).
 			Doc("Return all services from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
@@ -464,6 +464,17 @@ func (s *workspaceSchema) currentWorkspace(
 	parent dagql.ObjectResult[*core.Query],
 	_ struct{},
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	// Prefer a Workspace explicitly bound into the context (an LLM operating on
+	// its own, possibly overlaid, Workspace; a generator/check group threading
+	// the workspace it was rolled up from) over the session's frozen current
+	// workspace, so module tools observe edits the agent has applied. This
+	// mirrors loadWorkspaceArg's preference for the bound workspace.
+	if boundWS, ok, err := core.WorkspaceFromContext(ctx); err != nil {
+		return inst, err
+	} else if ok {
+		return boundWS, nil
+	}
+
 	ws, err := parent.Self().Server.CurrentWorkspace(ctx)
 	if err != nil {
 		return inst, err
@@ -2139,7 +2150,7 @@ func isWorkspaceBasename(name string) bool {
 
 func (s *workspaceSchema) checks(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include      dagql.Optional[dagql.ArrayInput[dagql.String]]
 		Skip         dagql.Optional[dagql.ArrayInput[dagql.String]]
@@ -2147,6 +2158,7 @@ func (s *workspaceSchema) checks(
 		OnlyGenerate dagql.Optional[dagql.Boolean]
 	},
 ) (*core.CheckGroup, error) {
+	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
 		return &core.CheckGroup{}, nil
 	}
@@ -2233,7 +2245,7 @@ func (s *workspaceSchema) checks(
 		allChecks = append(allChecks, filtered...)
 	}
 
-	return &core.CheckGroup{Checks: allChecks}, nil
+	return &core.CheckGroup{Checks: allChecks, BoundWorkspace: parentResult}, nil
 }
 
 type workspaceGeneratorModule struct {
@@ -2268,16 +2280,12 @@ func selectVisibleGeneratorModules(entries []workspaceGeneratorModule) []workspa
 
 func (s *workspaceSchema) generators(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
-		// WithWorkspace runs the discovered generators against this workspace
-		// instead of the client's ambient one — used by
-		// ModuleSource.generateLocalDependencies to hand each dependency's SDK a
-		// scoped/overlaid workspace. Internal: not part of the public schema.
-		WithWorkspace dagql.Optional[dagql.ID[*core.Workspace]] `internal:"true"`
 	},
 ) (*core.GeneratorGroup, error) {
+	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
 		return &core.GeneratorGroup{}, nil
 	}
@@ -2396,32 +2404,21 @@ func (s *workspaceSchema) generators(
 		allGenerators = append(allGenerators, filtered...)
 	}
 
-	gg := &core.GeneratorGroup{
-		Generators:        allGenerators,
-		LoadFailures:      loadFailures,
-		WorkspaceClientID: parent.ClientID,
-	}
-	if args.WithWorkspace.Valid {
-		dag, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return nil, err
-		}
-		override, err := args.WithWorkspace.Value.Load(ctx, dag)
-		if err != nil {
-			return nil, fmt.Errorf("load workspace override: %w", err)
-		}
-		gg.WorkspaceOverride = override
-	}
-	return gg, nil
+	return &core.GeneratorGroup{
+		Generators:     allGenerators,
+		LoadFailures:   loadFailures,
+		BoundWorkspace: parentResult,
+	}, nil
 }
 
 func (s *workspaceSchema) services(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.UpGroup, error) {
+	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
 		return &core.UpGroup{}, nil
 	}
@@ -2506,7 +2503,7 @@ func (s *workspaceSchema) services(
 		}
 	}
 
-	return &core.UpGroup{Ups: allUps}, nil
+	return &core.UpGroup{Ups: allUps, BoundWorkspace: parentResult}, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {

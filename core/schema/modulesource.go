@@ -3332,20 +3332,15 @@ func (s *moduleSourceSchema) generateOneLocalDependency(
 	if err != nil {
 		return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("scope workspace: %w", err)
 	}
-	wsDID, err := wsD.ID()
-	if err != nil {
-		return dagql.ObjectResult[*core.Changeset]{}, err
-	}
 
 	// Scope generation to the owning SDK's generator (include) and hand it the
 	// dep-scoped workspace (withWorkspace). filterGeneratorsByInclude matches the
 	// bare module name, exactly like `dagger generate <sdk-name>`.
 	var generators dagql.ObjectResult[*core.GeneratorGroup]
-	if err := dag.Select(ctx, workspace, &generators, dagql.Selector{
+	if err := dag.Select(ctx, wsD, &generators, dagql.Selector{
 		Field: "generators",
 		Args: []dagql.NamedInput{
 			{Name: "include", Value: dagql.Opt(dagql.ArrayInput[dagql.String]{dagql.String(owner)})},
-			{Name: "withWorkspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](wsDID))},
 		},
 	}); err != nil {
 		return dagql.ObjectResult[*core.Changeset]{}, err
