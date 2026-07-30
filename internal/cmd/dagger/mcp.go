@@ -80,13 +80,19 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
+	// llm() starts unbound: resolve the current workspace and bind it
+	// explicitly so the toolset served over MCP exposes the workspace's
+	// schema. The engine binds each workspace module's main object as tools
+	// for the served MCP toolset (see LLM.MCP / MCP.bindWorkspaceModuleTools).
+	wsID, err := engineClient.Dagger().CurrentWorkspace().ID(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve current workspace: %w", err)
+	}
+
 	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
-	// The LLM binds the current workspace by default and serves its toolset
-	// over MCP, exposing the workspace's schema. The engine binds each
-	// workspace module's main object as tools for the served MCP toolset
-	// (see LLM.MCP / MCP.bindWorkspaceModuleTools).
 	q = q.Root().
 		Select("llm").
+		Select("withWorkspace").Arg("workspace", wsID).
 		Select("__mcp")
 
 	var response any
