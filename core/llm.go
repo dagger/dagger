@@ -2174,11 +2174,12 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 	}
 
 	// Reset the workspace to the first Workspace that was ever bound, dropping
-	// every overlay accumulated on top of it. If no workspace was ever
-	// explicitly bound — the LLM only carries NewLLM's imperative
-	// currentWorkspace default — omit the selector entirely so the re-emitted
-	// recipe simply inherits the live workspace on replay, exactly like a fresh
-	// session.
+	// every overlay accumulated on top of it. A bare currentWorkspace base is
+	// omitted entirely: its recorded call is per-invocation (PerCallInput), so
+	// carrying it would pin a stale detection. The re-emitted recipe is then
+	// unbound, and whoever continues the session binds the live workspace
+	// explicitly (the CLI chains withWorkspace(currentWorkspace) after reset
+	// and on resume).
 	if base, bound, err := baseWorkspaceBinding(ctx, llm.mcp.workspace); err != nil {
 		return res, err
 	} else if bound {
