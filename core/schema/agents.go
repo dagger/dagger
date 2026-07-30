@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -59,9 +60,25 @@ func (s agentsSchema) compose(ctx context.Context, parent *core.AgentGroup, args
 			return dagql.ObjectResult[*core.LLM]{}, err
 		}
 	} else {
-		// Seed a fresh workspace-bound LLM — the sole base-LLM seed point
-		// (hack/designs/workspace-agents.md §3). Every folded leaf then gets base passed explicitly.
-		if err := srv.Select(ctx, srv.Root(), &base, dagql.Selector{Field: "llm"}); err != nil {
+		// Seed a fresh base LLM — the sole base-LLM seed point
+		// (hack/designs/workspace-agents.md §3). Every folded leaf then gets base
+		// passed explicitly. llm() starts unbound, so bind the workspace this
+		// group was rolled up from as a recorded withWorkspace selector; the
+		// composed LLM's recipe then says exactly which workspace it operates on.
+		sels := []dagql.Selector{{Field: "llm"}}
+		if parent.BoundWorkspace.Self() != nil {
+			wsID, err := parent.BoundWorkspace.ID()
+			if err != nil {
+				return dagql.ObjectResult[*core.LLM]{}, fmt.Errorf("agent group workspace ID: %w", err)
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "workspace", Value: dagql.NewID[*core.Workspace](wsID)},
+				},
+			})
+		}
+		if err := srv.Select(ctx, srv.Root(), &base, sels...); err != nil {
 			return dagql.ObjectResult[*core.LLM]{}, err
 		}
 	}
