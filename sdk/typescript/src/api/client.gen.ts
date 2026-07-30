@@ -1759,6 +1759,39 @@ export type GeneratorGroupChangesOpts = {
   onConflict?: ChangesetsMergeConflict
 }
 
+export type GitCommitAncestorReleaseTagOpts = {
+  /**
+   * Include pre-release tags when choosing the latest tag.
+   */
+  includePreRelease?: boolean
+}
+
+export type GitCommitReleaseTagOpts = {
+  /**
+   * Include pre-release tags when choosing the latest tag.
+   */
+  includePreRelease?: boolean
+}
+
+export type GitCommitTreeOpts = {
+  /**
+   * Set to true to discard .git directory.
+   */
+  discardGitDir?: boolean
+
+  /**
+   * The depth of the tree to fetch.
+   */
+  depth?: number
+
+  /**
+   * Set to true to populate tag refs in the local checkout .git.
+   */
+  includeTags?: boolean
+  sshKnownHosts?: string
+  sshAuthSocket?: Socket
+}
+
 export type GitRefAsWorkspaceOpts = {
   /**
    * Current working directory inside the workspace root. Defaults to the workspace root.
@@ -9086,21 +9119,304 @@ export class GeneratorGroup extends BaseClient {
 }
 
 /**
+ * An immutable git commit.
+ */
+export class GitCommit extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _authorEmail?: string = undefined
+  private readonly _authorName?: string = undefined
+  private readonly _authoredDate?: string = undefined
+  private readonly _committedDate?: string = undefined
+  private readonly _committerEmail?: string = undefined
+  private readonly _committerName?: string = undefined
+  private readonly _message?: string = undefined
+  private readonly _messageBody?: string = undefined
+  private readonly _messageHeadline?: string = undefined
+  private readonly _sha?: string = undefined
+  private readonly _shortSha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _authorEmail?: string,
+    _authorName?: string,
+    _authoredDate?: string,
+    _committedDate?: string,
+    _committerEmail?: string,
+    _committerName?: string,
+    _message?: string,
+    _messageBody?: string,
+    _messageHeadline?: string,
+    _sha?: string,
+    _shortSha?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._authorEmail = _authorEmail
+    this._authorName = _authorName
+    this._authoredDate = _authoredDate
+    this._committedDate = _committedDate
+    this._committerEmail = _committerEmail
+    this._committerName = _committerName
+    this._message = _message
+    this._messageBody = _messageBody
+    this._messageHeadline = _messageHeadline
+    this._sha = _sha
+    this._shortSha = _shortSha
+  }
+
+  /**
+   * A unique identifier for this GitCommit.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The latest semver release tag reachable from this commit.
+   * @param opts.includePreRelease Include pre-release tags when choosing the latest tag.
+   */
+  ancestorReleaseTag = (opts?: GitCommitAncestorReleaseTagOpts): GitRef => {
+    const ctx = this._ctx.select("ancestorReleaseTag", { ...opts })
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Git author email.
+   */
+  authorEmail = async (): Promise<string> => {
+    if (this._authorEmail) {
+      return this._authorEmail
+    }
+
+    const ctx = this._ctx.select("authorEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git author name.
+   */
+  authorName = async (): Promise<string> => {
+    if (this._authorName) {
+      return this._authorName
+    }
+
+    const ctx = this._ctx.select("authorName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git author date, in RFC3339 format.
+   */
+  authoredDate = async (): Promise<string> => {
+    if (this._authoredDate) {
+      return this._authoredDate
+    }
+
+    const ctx = this._ctx.select("authoredDate")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer date, in RFC3339 format.
+   */
+  committedDate = async (): Promise<string> => {
+    if (this._committedDate) {
+      return this._committedDate
+    }
+
+    const ctx = this._ctx.select("committedDate")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer email.
+   */
+  committerEmail = async (): Promise<string> => {
+    if (this._committerEmail) {
+      return this._committerEmail
+    }
+
+    const ctx = this._ctx.select("committerEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer name.
+   */
+  committerName = async (): Promise<string> => {
+    if (this._committerName) {
+      return this._committerName
+    }
+
+    const ctx = this._ctx.select("committerName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Full commit message.
+   */
+  message = async (): Promise<string> => {
+    if (this._message) {
+      return this._message
+    }
+
+    const ctx = this._ctx.select("message")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Commit message body, excluding the headline.
+   */
+  messageBody = async (): Promise<string> => {
+    if (this._messageBody) {
+      return this._messageBody
+    }
+
+    const ctx = this._ctx.select("messageBody")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * First line of the commit message.
+   */
+  messageHeadline = async (): Promise<string> => {
+    if (this._messageHeadline) {
+      return this._messageHeadline
+    }
+
+    const ctx = this._ctx.select("messageHeadline")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Parent commit SHAs.
+   */
+  parentShas = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("parentShas")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The latest semver release tag that points directly at this commit.
+   * @param opts.includePreRelease Include pre-release tags when choosing the latest tag.
+   */
+  releaseTag = (opts?: GitCommitReleaseTagOpts): GitRef => {
+    const ctx = this._ctx.select("releaseTag", { ...opts })
+    return new GitRef(ctx)
+  }
+
+  /**
+   * The full commit SHA.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The abbreviated commit SHA.
+   */
+  shortSha = async (): Promise<string> => {
+    if (this._shortSha) {
+      return this._shortSha
+    }
+
+    const ctx = this._ctx.select("shortSha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The filesystem tree at this commit.
+   * @param opts.discardGitDir Set to true to discard .git directory.
+   * @param opts.depth The depth of the tree to fetch.
+   * @param opts.includeTags Set to true to populate tag refs in the local checkout .git.
+   */
+  tree = (opts?: GitCommitTreeOpts): Directory => {
+    const ctx = this._ctx.select("tree", { ...opts })
+    return new Directory(ctx)
+  }
+}
+
+/**
  * A git ref (tag, branch, or commit).
  */
 export class GitRef extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _commit?: string = undefined
+  private readonly _commitSHA?: string = undefined
+  private readonly _name?: string = undefined
   private readonly _ref?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID, _commit?: string, _ref?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _commit?: string,
+    _commitSHA?: string,
+    _name?: string,
+    _ref?: string,
+  ) {
     super(ctx)
 
     this._id = _id
     this._commit = _commit
+    this._commitSHA = _commitSHA
+    this._name = _name
     this._ref = _ref
   }
 
@@ -9130,6 +9446,7 @@ export class GitRef extends BaseClient {
 
   /**
    * The resolved commit id at this ref.
+   * @deprecated Use "commitSHA" instead.
    */
   commit = async (): Promise<string> => {
     if (this._commit) {
@@ -9137,6 +9454,21 @@ export class GitRef extends BaseClient {
     }
 
     const ctx = this._ctx.select("commit")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The resolved commit SHA at this ref.
+   */
+  commitSHA = async (): Promise<string> => {
+    if (this._commitSHA) {
+      return this._commitSHA
+    }
+
+    const ctx = this._ctx.select("commitSHA")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -9153,7 +9485,23 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * The resolved name of this ref.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The resolved ref name at this ref.
+   * @deprecated Use "name" instead.
    */
   ref = async (): Promise<string> => {
     if (this._ref) {
@@ -9165,6 +9513,14 @@ export class GitRef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The commit this ref resolves to.
+   */
+  targetCommit = (): GitCommit => {
+    const ctx = this._ctx.select("targetCommit")
+    return new GitCommit(ctx)
   }
 
   /**
@@ -9254,9 +9610,9 @@ export class GitRepository extends BaseClient {
    * Returns details of a commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
-  commit = (id: string): GitRef => {
+  commit = (id: string): GitCommit => {
     const ctx = this._ctx.select("commit", { id })
-    return new GitRef(ctx)
+    return new GitCommit(ctx)
   }
 
   /**
@@ -14824,6 +15180,18 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a cache volume mounted at a path.
+   *
+   * The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+   * @param path Mount path. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+   * @param cache Cache volume to mount.
+   */
+  withMountedCache = (path: string, cache: CacheVolume): Workspace => {
+    const ctx = this._ctx.select("withMountedCache", { path, cache })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a directory added, without mutating the source.
    * @param path Path of the added directory. Relative paths resolve from the workspace cwd.
    * @param source Directory to add.
@@ -14845,6 +15213,30 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source Directory to mount read-only.
+   */
+  withReferenceDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withReferenceDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source File to mount read-only.
+   */
+  withReferenceFile = (path: string, source: File): Workspace => {
+    const ctx = this._ctx.select("withReferenceFile", { path, source })
     return new Workspace(ctx)
   }
 
@@ -14906,6 +15298,24 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a directory removed, without mutating the source.
+   * @param path Path of the directory to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutDirectory = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutDirectory", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file removed, without mutating the source.
+   * @param path Path of the file to remove. Relative paths resolve from the workspace cwd.
+   */
+  withoutFile = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutFile", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a module removed from its config.
    * @param name Name of the installed module entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -14915,6 +15325,15 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithoutModuleOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withoutModule", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a previously mounted cache volume removed.
+   * @param path Mount path to remove. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+   */
+  withoutMount = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutMount", { path })
     return new Workspace(ctx)
   }
 

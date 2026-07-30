@@ -3143,6 +3143,76 @@ type GeneratorGroup implements Node {
   run: GeneratorGroup!
 }
 
+"""An immutable git commit."""
+type GitCommit implements Node {
+  """The latest semver release tag reachable from this commit."""
+  ancestorReleaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """Git author email."""
+  authorEmail: String!
+
+  """Git author name."""
+  authorName: String!
+
+  """Git author date, in RFC3339 format."""
+  authoredDate: String!
+
+  """Git committer date, in RFC3339 format."""
+  committedDate: String!
+
+  """Git committer email."""
+  committerEmail: String!
+
+  """Git committer name."""
+  committerName: String!
+
+  """A unique identifier for this GitCommit."""
+  id: ID!
+
+  """Full commit message."""
+  message: String!
+
+  """Commit message body, excluding the headline."""
+  messageBody: String!
+
+  """First line of the commit message."""
+  messageHeadline: String!
+
+  """Parent commit SHAs."""
+  parentShas: [String!]!
+
+  """The latest semver release tag that points directly at this commit."""
+  releaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """The full commit SHA."""
+  sha: String!
+
+  """The abbreviated commit SHA."""
+  shortSha: String!
+
+  """The filesystem tree at this commit."""
+  tree(
+    """Set to true to discard .git directory."""
+    discardGitDir: Boolean = false
+
+    """The depth of the tree to fetch."""
+    depth: Int = 1
+
+    """Set to true to populate tag refs in the local checkout .git."""
+    includeTags: Boolean = false
+
+    sshKnownHosts: String
+
+    sshAuthSocket: ID @expectedType(name: "Socket")
+  ): Directory!
+}
+
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
   """Creates a synthetic workspace from this git ref."""
@@ -3154,7 +3224,10 @@ type GitRef implements Node {
   ): Workspace!
 
   """The resolved commit id at this ref."""
-  commit: String!
+  commit: String! @deprecated(reason: "Use \"commitSHA\" instead.")
+
+  """The resolved commit SHA at this ref."""
+  commitSHA: String!
 
   """Find the best common ancestor between this ref and another ref."""
   commonAncestor(
@@ -3165,8 +3238,14 @@ type GitRef implements Node {
   """A unique identifier for this GitRef."""
   id: ID!
 
+  """The resolved name of this ref."""
+  name: String!
+
   """The resolved ref name at this ref."""
-  ref: String!
+  ref: String! @deprecated(reason: "Use \"name\" instead.")
+
+  """The commit this ref resolves to."""
+  targetCommit: GitCommit!
 
   """The filesystem tree at this ref."""
   tree(
@@ -3209,7 +3288,7 @@ type GitRepository implements Node {
     Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     """
     id: String!
-  ): GitRef!
+  ): GitCommit!
 
   """Returns details for HEAD."""
   head: GitRef!
@@ -5767,6 +5846,22 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with a cache volume mounted at a path.
+
+  The mounted cache shadows base workspace content at that path, is excluded
+  from Workspace.changes, and is committed into the volume on export.
+  """
+  withMountedCache(
+    """
+    Mount path. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+    """
+    path: String!
+
+    """Cache volume to mount."""
+    cache: ID! @expectedType(name: "CacheVolume")
+  ): Workspace!
+
+  """
   Return this workspace with a directory added, without mutating the source.
   """
   withNewDirectory(
@@ -5900,6 +5995,14 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a previously mounted cache volume removed."""
+  withoutMount(
+    """
+    Mount path to remove. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+    """
+    path: String!
   ): Workspace!
 
   """Return this workspace with an SDK removed from its config."""
