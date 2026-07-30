@@ -130,6 +130,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+     */
+    public function skills(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skills');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'skills');
+    }
+
+    /**
      * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
      */
     public function step(?int $maxTokens = null): LLM
@@ -223,6 +232,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
+     */
+    public function withResetWorkspace(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withResetWorkspace');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
      */
     public function withResponse(
@@ -250,6 +268,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         if (null !== $totalTokens) {
         $innerQueryBuilder->setArgument('totalTokens', $totalTokens);
         }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+     */
+    public function withSkills(Directory $directory): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSkills');
+        $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

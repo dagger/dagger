@@ -8451,6 +8451,236 @@ impl Node for GeneratorGroup {
     }
 }
 #[derive(Clone)]
+pub struct GitCommit {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitCommitAncestorReleaseTagOpts {
+    /// Include pre-release tags when choosing the latest tag.
+    #[builder(setter(into, strip_option), default)]
+    pub include_pre_release: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitCommitReleaseTagOpts {
+    /// Include pre-release tags when choosing the latest tag.
+    #[builder(setter(into, strip_option), default)]
+    pub include_pre_release: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitCommitTreeOpts<'a> {
+    /// The depth of the tree to fetch.
+    #[builder(setter(into, strip_option), default)]
+    pub depth: Option<isize>,
+    /// Set to true to discard .git directory.
+    #[builder(setter(into, strip_option), default)]
+    pub discard_git_dir: Option<bool>,
+    /// Set to true to populate tag refs in the local checkout .git.
+    #[builder(setter(into, strip_option), default)]
+    pub include_tags: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub ssh_auth_socket: Option<Id>,
+    #[builder(setter(into, strip_option), default)]
+    pub ssh_known_hosts: Option<&'a str>,
+}
+impl IntoID<Id> for GitCommit {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for GitCommit {
+    fn graphql_type() -> &'static str {
+        "GitCommit"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl GitCommit {
+    /// The latest semver release tag reachable from this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn ancestor_release_tag(&self) -> GitRef {
+        let query = self.selection.select("ancestorReleaseTag");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The latest semver release tag reachable from this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn ancestor_release_tag_opts(&self, opts: GitCommitAncestorReleaseTagOpts) -> GitRef {
+        let mut query = self.selection.select("ancestorReleaseTag");
+        if let Some(include_pre_release) = opts.include_pre_release {
+            query = query.arg("includePreRelease", include_pre_release);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Git author email.
+    pub async fn author_email(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authorEmail");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git author name.
+    pub async fn author_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authorName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git author date, in RFC3339 format.
+    pub async fn authored_date(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authoredDate");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git committer date, in RFC3339 format.
+    pub async fn committed_date(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("committedDate");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git committer email.
+    pub async fn committer_email(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("committerEmail");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git committer name.
+    pub async fn committer_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("committerName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this GitCommit.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Full commit message.
+    pub async fn message(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("message");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Commit message body, excluding the headline.
+    pub async fn message_body(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("messageBody");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// First line of the commit message.
+    pub async fn message_headline(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("messageHeadline");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Parent commit SHAs.
+    pub async fn parent_shas(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("parentShas");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The latest semver release tag that points directly at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn release_tag(&self) -> GitRef {
+        let query = self.selection.select("releaseTag");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The latest semver release tag that points directly at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn release_tag_opts(&self, opts: GitCommitReleaseTagOpts) -> GitRef {
+        let mut query = self.selection.select("releaseTag");
+        if let Some(include_pre_release) = opts.include_pre_release {
+            query = query.arg("includePreRelease", include_pre_release);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The full commit SHA.
+    pub async fn sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sha");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The abbreviated commit SHA.
+    pub async fn short_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("shortSha");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The filesystem tree at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tree(&self) -> Directory {
+        let query = self.selection.select("tree");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The filesystem tree at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tree_opts<'a>(&self, opts: GitCommitTreeOpts<'a>) -> Directory {
+        let mut query = self.selection.select("tree");
+        if let Some(discard_git_dir) = opts.discard_git_dir {
+            query = query.arg("discardGitDir", discard_git_dir);
+        }
+        if let Some(depth) = opts.depth {
+            query = query.arg("depth", depth);
+        }
+        if let Some(include_tags) = opts.include_tags {
+            query = query.arg("includeTags", include_tags);
+        }
+        if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
+            query = query.arg("sshKnownHosts", ssh_known_hosts);
+        }
+        if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
+            query = query.arg("sshAuthSocket", ssh_auth_socket);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for GitCommit {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct GitRef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -8532,6 +8762,11 @@ impl GitRef {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The resolved commit SHA at this ref.
+    pub async fn commit_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("commitSHA");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Find the best common ancestor between this ref and another ref.
     ///
     /// # Arguments
@@ -8557,10 +8792,24 @@ impl GitRef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The resolved name of this ref.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The resolved ref name at this ref.
     pub async fn r#ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("ref");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The commit this ref resolves to.
+    pub fn target_commit(&self) -> GitCommit {
+        let query = self.selection.select("targetCommit");
+        GitCommit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The filesystem tree at this ref.
     ///
@@ -8725,10 +8974,10 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `id` - Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
-    pub fn commit(&self, id: impl Into<String>) -> GitRef {
+    pub fn commit(&self, id: impl Into<String>) -> GitCommit {
         let mut query = self.selection.select("commit");
         query = query.arg("id", id.into());
-        GitRef {
+        GitCommit {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -15442,6 +15691,29 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with a cache volume mounted at a path.
+    /// The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Mount path. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+    /// * `cache` - Cache volume to mount.
+    pub fn with_mounted_cache(&self, path: impl Into<String>, cache: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withMountedCache");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "cache",
+            Box::new(move || {
+                let cache = cache.clone();
+                Box::pin(async move { cache.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a directory added, without mutating the source.
     ///
     /// # Arguments
@@ -15504,6 +15776,60 @@ impl Workspace {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a directory mounted read-only under the reserved references prefix.
+    /// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Reference-relative mount path under the reserved references prefix.
+    /// * `source` - Directory to mount read-only.
+    pub fn with_reference_directory(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withReferenceDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a file mounted read-only under the reserved references prefix.
+    /// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Reference-relative mount path under the reserved references prefix.
+    /// * `source` - File to mount read-only.
+    pub fn with_reference_file(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withReferenceFile");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -15652,6 +15978,34 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with a directory removed, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the directory to remove. Relative paths resolve from the workspace cwd.
+    pub fn without_directory(&self, path: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutDirectory");
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a file removed, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the file to remove. Relative paths resolve from the workspace cwd.
+    pub fn without_file(&self, path: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutFile");
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a module removed from its config.
     ///
     /// # Arguments
@@ -15683,6 +16037,20 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a previously mounted cache volume removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Mount path to remove. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+    pub fn without_mount(&self, path: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutMount");
+        query = query.arg("path", path.into());
         Workspace {
             proc: self.proc.clone(),
             selection: query,
