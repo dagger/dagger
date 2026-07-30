@@ -966,7 +966,7 @@ func (r *TestOtherCustomObj) AsNode() Node {
 	}
 }
 
-type TestCustomIface struct { // test (../../../../../../../../:0:0)
+type TestCustomIface struct { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:3:18)
 	query *querybuilder.Selection
 
 	bool_ *bool
@@ -1376,7 +1376,7 @@ func (r *TestCustomIface) Concrete(ctx context.Context) (Node, error) {
 	}
 }
 
-type TestOtherIface struct { // test (../../../../../../../../:0:0)
+type TestOtherIface struct { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:43:18)
 	query *querybuilder.Selection
 
 	foo *string
