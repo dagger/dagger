@@ -9789,6 +9789,16 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+   *
+   * This operation is pinned.
+   */
+  latest = (): GitRef => {
+    const ctx = this._ctx.select("latest")
+    return new GitRef(ctx)
+  }
+
+  /**
    * Returns details for the latest semver tag.
    */
   latestVersion = (): GitRef => {
