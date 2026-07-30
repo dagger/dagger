@@ -40,7 +40,6 @@ func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {
 
 func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	devEngine := devEngineContainerAsService(devEngineContainer(c))
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -68,6 +67,12 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		WithExposedPort(8080).
 		AsService()
 
+	// the engine-side exporters dial the cloud URL from the engine process,
+	// so the engine needs to resolve the fake cloud, not just the client
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("cloud", fakeCloud)
+	}))
+
 	eventsID := identity.NewID()
 	_, err = base.
 		WithServiceBinding("dev-engine", devEngine).
@@ -86,7 +91,7 @@ func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context,
 		WithMountedCache("/events", eventsVol).
 		WithExec([]string{"grep", "-F", "Container.withExec", fmt.Sprintf("/events/%s/v1/traces.json.names", eventsID)}).
 		Sync(ctx)
-	require.NoError(t, err, "relayed engine spans must still reach the independent Cloud exporter")
+	require.NoError(t, err, "engine spans must still reach the Cloud exporter in a silent session")
 }
 
 func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
