@@ -25,6 +25,13 @@ let OVERRIDE_CLI_URL: string = ""
 let OVERRIDE_CHECKSUMS_URL: string = ""
 const CLI_HOST = "dl.dagger.io"
 
+class CLIReleaseUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "CLIReleaseUnavailableError"
+  }
+}
+
 export type ExecaChildProcess = ResultPromise<{
   stdio: "pipe"
   reject: true
@@ -58,22 +65,35 @@ export class Bin implements EngineConn {
   }
 
   async Connect(opts: ConnectOpts): Promise<GraphQLClient> {
+    let downloadError: Error | undefined
+
     if (!this.binPath) {
-      if (opts.LogOutput) {
-        opts.LogOutput.write("Downloading CLI... ")
-      }
-
-      this.binPath = await this.downloadCLI()
-
-      if (opts.LogOutput) {
-        opts.LogOutput.write("OK!\n")
+      try {
+        this.binPath = await this.downloadCLI(opts.LogOutput)
+      } catch (e) {
+        downloadError = e instanceof Error ? e : new Error(String(e))
+        this.binPath = this.fallbackToLocalCLI(downloadError, opts.LogOutput)
       }
     }
 
-    return this.runEngineSession(this.binPath, opts)
+    try {
+      return await this.runEngineSession(this.binPath, opts)
+    } catch (e) {
+      if (downloadError) {
+        const sessionError = e instanceof Error ? e : new Error(String(e))
+        throw new AggregateError(
+          [downloadError, sessionError],
+          `${downloadError.message}\nfailed to use CLI from PATH "${this.binPath}": ${sessionError.message}`,
+          { cause: e },
+        )
+      }
+      throw e
+    }
   }
 
-  private async downloadCLI(): Promise<string> {
+  private async downloadCLI(
+    logOutput?: NodeJS.WritableStream,
+  ): Promise<string> {
     if (!this.cliVersion) {
       throw new Error("cliVersion is not set")
     }
@@ -91,12 +111,17 @@ export class Bin implements EngineConn {
     )
 
     try {
+      const expectedChecksum = await this.expectedChecksum()
+
+      if (logOutput) {
+        logOutput.write("Downloading CLI... ")
+      }
+
       // download an archive and use appropriate extraction depending on platforms (zip on windows, tar.gz on other platforms)
       const actualChecksum: string = await this.extractArchive(
         tmpBinDownloadDir,
         this.normalizedOS(),
       )
-      const expectedChecksum = await this.expectedChecksum()
       if (actualChecksum !== expectedChecksum) {
         throw new Error(
           `checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`,
@@ -105,6 +130,10 @@ export class Bin implements EngineConn {
       fs.chmodSync(tmpBinPath, 0o700)
       fs.renameSync(tmpBinPath, binPath)
       fs.rmSync(tmpBinDownloadDir, { recursive: true })
+
+      if (logOutput) {
+        logOutput.write("OK!\n")
+      }
     } catch (e) {
       fs.rmSync(tmpBinDownloadDir, { recursive: true })
       throw new InitEngineSessionBinaryError(
@@ -137,6 +166,127 @@ export class Bin implements EngineConn {
     }
 
     return binPath
+  }
+
+  private fallbackToLocalCLI(
+    downloadError: Error,
+    logOutput?: NodeJS.WritableStream,
+  ): string {
+    if (!this.hasCLIReleaseUnavailableError(downloadError)) {
+      throw downloadError
+    }
+
+    let binPath: string
+    try {
+      binPath = this.findDaggerCLI()
+    } catch (e) {
+      const pathError = e instanceof Error ? e : new Error(String(e))
+      throw new AggregateError(
+        [downloadError, pathError],
+        `${downloadError.message}\ndagger CLI not found in PATH: ${pathError.message}`,
+        { cause: e },
+      )
+    }
+
+    const warningOutput = logOutput ?? process.stderr
+    warningOutput.write(
+      `CLI version ${this.cliVersion} is unavailable; using ${binPath} from PATH (version compatibility is not guaranteed).\n`,
+    )
+    return binPath
+  }
+
+  private hasCLIReleaseUnavailableError(error: Error): boolean {
+    const seen = new Set<Error>()
+    let current: Error | undefined = error
+
+    while (current && !seen.has(current)) {
+      if (current instanceof CLIReleaseUnavailableError) {
+        return true
+      }
+      seen.add(current)
+      current = current.cause instanceof Error ? current.cause : undefined
+    }
+    return false
+  }
+
+  private findDaggerCLI(): string {
+    const pathEnv = process.env.PATH
+    if (!pathEnv) {
+      throw new Error("PATH is not set")
+    }
+
+    const platform = this.normalizedOS()
+    const pathImplementation = platform === "windows" ? path.win32 : path.posix
+    for (const candidate of this.daggerCLIPathCandidates(
+      platform,
+      pathEnv,
+      process.env.PATHEXT,
+    )) {
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK)
+        if (!fs.statSync(candidate).isFile()) {
+          continue
+        }
+      } catch {
+        // Continue searching PATH.
+        continue
+      }
+      if (!pathImplementation.isAbsolute(candidate)) {
+        throw new Error(
+          `cannot run dagger executable found relative to the current directory: ${candidate}`,
+        )
+      }
+      return candidate
+    }
+
+    throw new Error("dagger executable was not found")
+  }
+
+  private daggerCLIPathCandidates(
+    platform: string,
+    pathEnv: string,
+    pathExt: string | undefined,
+  ): string[] {
+    const windows = platform === "windows"
+    const pathImplementation = windows ? path.win32 : path.posix
+    const extensions = windows
+      ? this.windowsExecutableExtensions(pathExt)
+      : [""]
+    const candidates: string[] = []
+
+    for (let directory of pathEnv.split(pathImplementation.delimiter)) {
+      if (windows) {
+        // Match PowerShell and Go's exec.LookPath behavior.
+        if (directory === "") {
+          continue
+        }
+        directory = directory.replace(/^"(.*)"$/, "$1")
+      } else if (directory === "") {
+        // Match Unix shell semantics.
+        directory = "."
+      }
+
+      for (const extension of extensions) {
+        candidates.push(
+          pathImplementation.join(
+            directory,
+            `${this.DAGGER_CLI_BIN_PREFIX}${extension}`,
+          ),
+        )
+      }
+    }
+    return candidates
+  }
+
+  private windowsExecutableExtensions(pathExt: string | undefined): string[] {
+    const value = pathExt || ".COM;.EXE;.BAT;.CMD"
+    return value
+      .toLowerCase()
+      .split(";")
+      .filter((extension) => extension !== "")
+      .map((extension) =>
+        extension.startsWith(".") ? extension : `.${extension}`,
+      )
   }
 
   /**
@@ -375,9 +525,11 @@ export class Bin implements EngineConn {
     // download checksums.txt
     const checksums = await fetch(this.cliChecksumURL())
     if (!checksums.ok) {
-      throw new Error(
-        `failed to download checksums.txt from ${this.cliChecksumURL()}`,
-      )
+      const message = `failed to download checksums.txt from ${this.cliChecksumURL()}: ${checksums.status} ${checksums.statusText}`
+      if (this.isCLIReleaseUnavailable(checksums.status)) {
+        throw new CLIReleaseUnavailableError(message)
+      }
+      throw new Error(message)
     }
     const checksumsText = await checksums.text()
     // iterate over lines filling in map of filename -> checksum
@@ -387,6 +539,11 @@ export class Bin implements EngineConn {
       checksumMap.set(filename, checksum)
     }
     return checksumMap
+  }
+
+  private isCLIReleaseUnavailable(status: number): boolean {
+    // dl.dagger.io returns 403 for missing S3 objects.
+    return status === 403 || status === 404
   }
 
   private async expectedChecksum(): Promise<string> {

@@ -2263,3 +2263,30 @@ func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core
 	require.NoError(t, err)
 	return res
 }
+
+// The cloud exporters' token refresh runs from OTel exporter goroutines whose
+// contexts carry no Dagger session state. The context captured at exporter
+// creation must carry everything the refresh needs: the client's query (for
+// reading the credentials file via session attachables) and its metadata.
+func TestCloudRefreshContextCarriesSessionState(t *testing.T) {
+	t.Parallel()
+
+	client := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			ClientID:        "main-client",
+			CredentialsPath: "/home/user/.config/dagger/credentials.json",
+		},
+		dagqlRoot: core.NewRoot(&Server{}),
+	}
+
+	refreshCtx := cloudRefreshContext(context.Background(), client)
+
+	query, err := core.CurrentQuery(refreshCtx)
+	require.NoError(t, err)
+	require.Same(t, client.dagqlRoot, query)
+
+	md, err := engine.ClientMetadataFromContext(refreshCtx)
+	require.NoError(t, err)
+	require.Equal(t, "main-client", md.ClientID)
+	require.Equal(t, "/home/user/.config/dagger/credentials.json", md.CredentialsPath)
+}
