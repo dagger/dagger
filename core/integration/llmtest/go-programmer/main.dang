@@ -7,15 +7,16 @@ type GoProgrammer {
   """
   Complete the assignment and return the resulting main.go contents.
   """
-  run(assignment: String!): String! {
-    self.drive(assignment).loop.workspace.file("main.go").contents
+  run(assignment: String!, ws: Workspace!): String! {
+    self.drive(assignment, ws).loop.workspace.file("main.go").contents
   }
 
   """
   Set up the programmer's LLM with its tools and assignment.
   """
-  drive(assignment: String!): LLM! {
+  drive(assignment: String!, ws: Workspace!): LLM! {
     llm(model: model)
+      .withWorkspace(ws)
       .withTools(currentNode, except: ["run", "drive"])
       .withPrompt("You are an expert go programmer. You have access to a workspace.\n" + "Use the read, write, build tools to complete the following assignment.\n" + "Do not try to access the container directly.\n" + "Don't stop until your code builds.\n" + "\n" + "Assignment: " + assignment + "\n")
   }
