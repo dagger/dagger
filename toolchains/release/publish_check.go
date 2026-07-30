@@ -373,7 +373,6 @@ func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, ve
 
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
 	dev := dag.EngineDev(dagger.EngineDevOpts{
-		Source:       env.source,
 		Ws:           env.workspace,
 		SubnetNumber: 90,
 	}).IncrementSubnet()
@@ -413,7 +412,7 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 }
 
 func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
-	dev := dag.EngineDev(dagger.EngineDevOpts{Source: env.source, Ws: env.workspace})
+	dev := dag.EngineDev(dagger.EngineDevOpts{Ws: env.workspace})
 	client := dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{"apk-tools", "ca-certificates", "curl", "git"},
