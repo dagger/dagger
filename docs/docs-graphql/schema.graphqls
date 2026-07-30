@@ -1,8 +1,3 @@
-"""
-Indicates that this function is an agent middleware, composed by dagger agent.
-"""
-directive @agent on FIELD_DEFINITION
-
 """Controls the caching behavior of a function."""
 directive @cache(
   """The cache policy to use."""
@@ -94,39 +89,6 @@ type Address implements Node {
 
   """Load a volume from the address."""
   volume: Volume!
-}
-
-type Agent implements Node {
-  """The description of the agent"""
-  description: String!
-
-  """A unique identifier for this Agent."""
-  id: ID!
-
-  """Return the fully qualified name of the agent"""
-  name: String!
-
-  """The original module in which the agent has been defined"""
-  originalModule: Module!
-
-  """The path of the agent within its module"""
-  path: [String!]!
-}
-
-type AgentGroup implements Node {
-  """
-  Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-  """
-  compose(
-    """The base LLM to compose onto. Defaults to a fresh workspace-bound LLM."""
-    base: ID @expectedType(name: "LLM")
-  ): LLM!
-
-  """A unique identifier for this AgentGroup."""
-  id: ID!
-
-  """Return a list of individual agents and their details"""
-  list: [Agent!]!
 }
 
 """Key value object that represents a build argument."""
@@ -2872,9 +2834,6 @@ type Function implements Node {
   """
   sourceModuleName: String!
 
-  """Returns the function with a flag indicating it is an agent middleware."""
-  withAgent: Function!
-
   """Returns the function with the provided argument"""
   withArg(
     """The name of the argument"""
@@ -3669,16 +3628,6 @@ type LLM implements Node & Syncer {
     """The file to read the prompt from"""
     file: ID! @expectedType(name: "File")
   ): LLM!
-
-  """
-  Return a new LLM with the workspace reset to its base, dropping any
-  accumulated changes. The conversation and configuration are re-emitted as a
-  flat recipe bound to the live workspace, so a persisted session (globalID) no
-  longer replays workspace edits when loaded. Use after exporting changes
-  (Workspace.export) so a resumed session continues from the workspace's on-disk
-  state.
-  """
-  withResetWorkspace: LLM!
 
   """
   Append an assistant response to the message history without calling the model,
@@ -5403,12 +5352,6 @@ type Workspace implements Node {
   Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
   """
   address: String!
-
-  """Return all agent middlewares from modules loaded in the workspace."""
-  agents(
-    """Only include agents matching the specified patterns"""
-    include: [String!]
-  ): AgentGroup!
 
   """Return this workspace's pending overlay changes."""
   changes: Changeset!
