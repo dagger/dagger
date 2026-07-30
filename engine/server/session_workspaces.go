@@ -1295,8 +1295,9 @@ func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, served
 
 // filterPendingWorkspaceModulesForRootFields selects the pending modules a
 // request's root fields reference. served modules are recognized without
-// loading.
-func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string) []pendingModule {
+// loading. failed names modules already recorded as unloadable (see
+// daggerClient.failedModules); the unknown-field fallback skips them.
+func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map[string]struct{}, failed map[string]error, rootFields []string) []pendingModule {
 	if len(mods) == 0 || rootFieldsRequireFullWorkspaceSchema(rootFields) {
 		return mods
 	}
@@ -1334,11 +1335,24 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 
 	if unknownRootField {
 		entrypoints := pendingWorkspaceEntrypointIndexes(mods)
-		switch len(entrypoints) {
+		// The fallback is a guess that the unrecognized field might be an
+		// entrypoint function. A module already recorded as failed can't serve
+		// anything, so selecting it would only replay its load error — breaking
+		// requests that deliberately proceeded without it, like `dagger
+		// generate`'s follow-up queries after the generators listing skipped
+		// the broken entrypoint best-effort. Leave it pending and let GraphQL
+		// validation report the unresolved field or type.
+		alive := entrypoints[:0]
+		for _, i := range entrypoints {
+			if _, ok := failed[moduleProgressName(mods[i])]; !ok {
+				alive = append(alive, i)
+			}
+		}
+		switch len(alive) {
 		case 0:
 			// Leave the field unresolved; GraphQL validation will report the real error.
 		case 1:
-			selected[entrypoints[0]] = true
+			selected[alive[0]] = true
 		default:
 			// More than one possible entrypoint could serve the field. Preserve the
 			// existing behavior, including any conflict error from arbitration.
@@ -1361,9 +1375,9 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 // load-everything contribution with the scoped module set. Any other
 // full-schema field keeps loading everything, scope untouched. The second
 // result reports whether the scope was applied, so the caller can consume it.
-func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
+func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, failed map[string]error, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
 	if scope == "" || len(mods) == 0 {
-		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+		return filterPendingWorkspaceModulesForRootFields(mods, served, failed, rootFields), false
 	}
 
 	hasCurrentTypeDefs := false
@@ -1376,11 +1390,11 @@ func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, serv
 		remaining = append(remaining, field)
 	}
 	if !hasCurrentTypeDefs || rootFieldsRequireFullWorkspaceSchema(remaining) {
-		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+		return filterPendingWorkspaceModulesForRootFields(mods, served, failed, rootFields), false
 	}
 
 	wanted := make(map[string]struct{})
-	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, remaining) {
+	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, failed, remaining) {
 		wanted[moduleProgressName(mod)] = struct{}{}
 	}
 	for _, mod := range resolveWorkspaceModuleScope(mods, served, scope, entrypointServed) {

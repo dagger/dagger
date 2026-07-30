@@ -638,14 +638,14 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	t.Run("constructor match loads only matching module", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"foo"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"foo"})
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("unknown root field with multiple entrypoints loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"doThing"})
 		require.Equal(t, mods, filtered)
 	})
 
@@ -653,42 +653,59 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		oneEntrypoint := []pendingModule{mods[0], mods[1]}
-		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, nil, []string{"doThing"})
 		require.Equal(t, []pendingModule{mods[1]}, filtered)
+	})
+
+	t.Run("unknown root field skips entrypoint already recorded as failed", func(t *testing.T) {
+		t.Parallel()
+
+		oneEntrypoint := []pendingModule{mods[0], mods[1]}
+		failed := map[string]error{"bar-baz": errors.New("boom")}
+		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, failed, []string{"doThing"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("named root field still selects a failed module", func(t *testing.T) {
+		t.Parallel()
+
+		failed := map[string]error{"foo": errors.New("boom")}
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, failed, []string{"foo"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("introspection loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"__schema"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"__schema"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("current typedefs loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentTypeDefs"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"currentTypeDefs"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("current module loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentModule"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"currentModule"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("core-only query loads none", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"container", "version"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"container", "version"})
 		require.Empty(t, filtered)
 	})
 
 	t.Run("current workspace loads none (resolvers load on demand)", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentWorkspace"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"currentWorkspace"})
 		require.Empty(t, filtered)
 	})
 
@@ -696,7 +713,7 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		served := map[string]struct{}{"my-mod": {}}
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, nil, []string{"myMod"})
 		require.Empty(t, filtered)
 	})
 
@@ -704,14 +721,14 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		served := map[string]struct{}{"my-mod": {}}
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod", "foo"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, nil, []string{"myMod", "foo"})
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("env loads all (resolver snapshots served deps)", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"env"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"env"})
 		require.Equal(t, mods, filtered)
 	})
 
@@ -720,7 +737,7 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 
 		// The type name in load<Type>FromID needn't embed the module name, so
 		// only a full load can guarantee the field exists.
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"loadSomethingFromID"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, nil, []string{"loadSomethingFromID"})
 		require.Equal(t, mods, filtered)
 	})
 }
@@ -736,7 +753,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("no scope delegates to root-field demand", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "", false)
 		require.False(t, applied)
 		require.Equal(t, mods, selected)
 	})
@@ -744,7 +761,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("scoped typedefs loads target plus entrypoint", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "foo", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "foo", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{foo, entry}, selected)
 	})
@@ -752,7 +769,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("kebab-case token matches declared module name", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "bar-baz", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "bar-baz", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{barBaz, entry}, selected)
 	})
@@ -760,7 +777,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("unknown token loads pending entrypoint alone", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "greet", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs"}, "greet", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{entry}, selected)
 	})
@@ -769,7 +786,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		t.Parallel()
 
 		noEntry := []pendingModule{foo, barBaz}
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(noEntry, nil, []string{"currentTypeDefs"}, "greet", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(noEntry, nil, nil, []string{"currentTypeDefs"}, "greet", false)
 		require.True(t, applied)
 		require.Equal(t, noEntry, selected)
 	})
@@ -778,7 +795,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		t.Parallel()
 
 		for _, field := range []string{"env", "__schema", "currentModule"} {
-			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", field}, "foo", false)
+			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs", field}, "foo", false)
 			require.False(t, applied, field)
 			require.Equal(t, mods, selected, field)
 		}
@@ -787,7 +804,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("no typedefs field delegates without consuming", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"foo"}, "barBaz", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"foo"}, "barBaz", false)
 		require.False(t, applied)
 		require.Equal(t, []pendingModule{foo}, selected)
 	})
@@ -795,7 +812,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 	t.Run("typedefs plus module field unions both demands", func(t *testing.T) {
 		t.Parallel()
 
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", "foo"}, "bar-baz", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, nil, []string{"currentTypeDefs", "foo"}, "bar-baz", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{foo, barBaz, entry}, selected)
 	})
@@ -804,7 +821,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		t.Parallel()
 
 		served := map[string]struct{}{"my-mod": {}}
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, served, []string{"currentTypeDefs"}, "myMod", false)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, served, nil, []string{"currentTypeDefs"}, "myMod", false)
 		require.True(t, applied)
 		require.Equal(t, []pendingModule{entry}, selected)
 	})
@@ -818,7 +835,7 @@ func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
 		// still-pending workspace module.
 		served := map[string]struct{}{"entry": {}}
 		pending := []pendingModule{foo, barBaz}
-		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(pending, served, []string{"currentTypeDefs"}, "greet", true)
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(pending, served, nil, []string{"currentTypeDefs"}, "greet", true)
 		require.True(t, applied)
 		require.Empty(t, selected)
 	})
