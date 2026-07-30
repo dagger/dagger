@@ -6991,6 +6991,10 @@ type ContainerAsServiceArgs struct {
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
 
+	// Provide the executed command access back to the Dagger API with this
+	// workspace as the default for nested clients.
+	InheritWorkspace dagql.Optional[dagql.ID[*Workspace]]
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
@@ -7029,12 +7033,18 @@ func (container *Container) AsService(ctx context.Context, containerRes dagql.Ob
 		cmdargs = append(container.Config.Entrypoint, cmdargs...)
 	}
 
+	inheritedWorkspace, err := CaptureInheritedWorkspaceBinding(ctx, args.InheritWorkspace)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Service{
 		Container:                     containerRes,
 		Args:                          cmdargs,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 		NoInit:                        args.NoInit,
+		InheritedWorkspace:            inheritedWorkspace,
 	}, nil
 }
 

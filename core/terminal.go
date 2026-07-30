@@ -121,6 +121,10 @@ type TerminalArgs struct {
 	// Provide dagger access to the executed command
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 
+	// Provide dagger access to the executed command with this workspace as the
+	// default for nested clients.
+	InheritWorkspace dagql.Optional[dagql.ID[*Workspace]]
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
@@ -132,7 +136,7 @@ func (container *Container) Terminal(
 	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
 ) error {
-	return container.terminal(ctx, selectedID, selectedDigest, containerRes, args, nil, nil, nil)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, args, nil, nil, nil, nil)
 }
 
 func (container *Container) TerminalExecError(
@@ -140,11 +144,12 @@ func (container *Container) TerminalExecError(
 	selectedID *call.ID,
 	selectedDigest digest.Digest,
 	containerRes dagql.ObjectResult[*Container],
+	inheritedWorkspace *InheritedWorkspaceBinding,
 	execMD *engineutil.ExecutionMetadata,
 	execMeta *executor.Meta,
 	execErr error,
 ) error {
-	return container.terminal(ctx, selectedID, selectedDigest, containerRes, nil, execMD, execMeta, execErr)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, nil, inheritedWorkspace, execMD, execMeta, execErr)
 }
 
 func (container *Container) terminal(
@@ -153,6 +158,7 @@ func (container *Container) terminal(
 	selectedDigest digest.Digest,
 	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
+	inheritedWorkspace *InheritedWorkspaceBinding,
 	execMD *engineutil.ExecutionMetadata,
 	execMeta *executor.Meta,
 	execErr error,
@@ -215,13 +221,15 @@ func (container *Container) terminal(
 		svc, err = container.AsService(ctx, containerRes, ContainerAsServiceArgs{
 			Args:                          args.Cmd,
 			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
+			InheritWorkspace:              args.InheritWorkspace,
 			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 		})
 	} else {
 		svc = &Service{
-			Container: containerRes,
-			ExecMD:    execMD,
-			ExecMeta:  execMeta,
+			Container:          containerRes,
+			ExecMD:             execMD,
+			ExecMeta:           execMeta,
+			InheritedWorkspace: inheritedWorkspace,
 		}
 	}
 	if err != nil {

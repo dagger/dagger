@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -619,6 +620,70 @@ func TestEnvScopedConfigKeyQuotesDynamicSegments(t *testing.T) {
 	key, err := envScopedConfigKey(cfg, "review env", `modules."my.module".settings."some.key"`)
 	require.NoError(t, err)
 	require.Equal(t, `env."review env".modules."my.module".settings."some.key"`, key)
+}
+
+func TestSelectedWorkspaceEnv(t *testing.T) {
+	t.Parallel()
+
+	stringPtr := func(value string) *string { return &value }
+	tests := []struct {
+		name     string
+		metadata *engine.ClientMetadata
+		want     string
+		wantSet  bool
+	}{
+		{
+			name: "explicit env takes precedence",
+			metadata: &engine.ClientMetadata{
+				Workspace:                stringPtr("other-workspace"),
+				WorkspaceEnv:             stringPtr("explicit"),
+				InheritedWorkspaceEnv:    "inherited",
+				InheritedWorkspaceEnvSet: true,
+			},
+			want:    "explicit",
+			wantSet: true,
+		},
+		{
+			name: "inherited env applies with inherited workspace",
+			metadata: &engine.ClientMetadata{
+				InheritedWorkspaceEnv:    "inherited",
+				InheritedWorkspaceEnvSet: true,
+			},
+			want:    "inherited",
+			wantSet: true,
+		},
+		{
+			name: "explicit empty env suppresses inherited env",
+			metadata: &engine.ClientMetadata{
+				WorkspaceEnv:             stringPtr(""),
+				InheritedWorkspaceEnv:    "inherited",
+				InheritedWorkspaceEnvSet: true,
+			},
+		},
+		{
+			name: "explicit workspace suppresses inherited env",
+			metadata: &engine.ClientMetadata{
+				Workspace:                stringPtr("other-workspace"),
+				InheritedWorkspaceEnv:    "inherited",
+				InheritedWorkspaceEnvSet: true,
+			},
+		},
+		{
+			name:     "no env selected",
+			metadata: &engine.ClientMetadata{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := engine.ContextWithClientMetadata(context.Background(), test.metadata)
+			got, gotSet := selectedWorkspaceEnv(ctx)
+			require.Equal(t, test.wantSet, gotSet)
+			require.Equal(t, test.want, got)
+		})
+	}
 }
 
 func TestWorkspaceSettingConfigKeyQuotesDynamicSegments(t *testing.T) {

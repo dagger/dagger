@@ -52,7 +52,7 @@ type SpecificClientAttachableConnOpts struct {
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult, dagql.AnyObjectResult)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -86,6 +86,11 @@ type Server interface {
 
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
+
+	// Capture a workspace result as trusted, execution-scoped context for a
+	// nested client. When the result is the current workspace of a live
+	// ancestor, the binding also carries its environment and module provenance.
+	CaptureInheritedWorkspaceBinding(context.Context, dagql.ObjectResult[*Workspace]) (*InheritedWorkspaceBinding, error)
 
 	// Load pending workspace modules on demand; include narrows to the modules
 	// its patterns name ("module" or "module:item"), empty or unrecognized

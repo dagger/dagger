@@ -51,7 +51,7 @@ func WithNestedClientServer(
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall, envContext)
+			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall, envContext, nil)
 		}),
 	}
 	defer func() {

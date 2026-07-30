@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 )
@@ -45,12 +47,28 @@ func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	client.inheritedWorkspaceModulesMu.Lock()
+	defer client.inheritedWorkspaceModulesMu.Unlock()
+
 	client.workspaceMu.Lock()
-	defer client.workspaceMu.Unlock()
 	client.workspaceLoaded = false
 	client.workspaceErr = nil
 	client.workspace = nil
+	client.workspaceBindingID = ""
+	client.workspaceEnv = ""
+	client.workspaceEnvSet = false
+	client.workspaceModulesRequested.Store(false)
 	client.pendingModules = nil
+	client.workspaceMu.Unlock()
+
+	client.modulesMu.Lock()
+	client.stateMu.Lock()
+	client.servedWorkspaceMods = nil
+	client.servedWorkspaceModuleKeys = nil
+	client.servedWorkspaceModuleNames = nil
+	client.workspaceEntrypointServed = false
+	client.stateMu.Unlock()
+	client.modulesMu.Unlock()
 	return nil
 }
 
@@ -64,6 +82,74 @@ func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error
 		return nil, fmt.Errorf("%w: workspace not loaded", core.ErrNoCurrentWorkspace)
 	}
 	return client.workspace, nil
+}
+
+func (srv *Server) CaptureInheritedWorkspaceBinding(
+	ctx context.Context,
+	workspace dagql.ObjectResult[*core.Workspace],
+) (*core.InheritedWorkspaceBinding, error) {
+	if workspace.Self() == nil {
+		return nil, fmt.Errorf("workspace is nil")
+	}
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := append(slices.Clone(client.parents), client)
+	var fallback *core.InheritedWorkspaceBinding
+	for i := len(candidates) - 1; i >= 0; i-- {
+		candidate := candidates[i]
+		if err := srv.ensureWorkspaceLoaded(workspaceClientContext(ctx, candidate), candidate); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			// Provenance is optional: an arbitrary Workspace is still valid for
+			// currentWorkspace even when an unrelated client binding cannot load.
+			continue
+		}
+		candidate.workspaceMu.Lock()
+		if candidate.workspace != workspace.Self() {
+			candidate.workspaceMu.Unlock()
+			continue
+		}
+		if candidate.workspaceBindingID == "" {
+			candidate.workspaceBindingID = identity.NewID()
+		}
+		binding := &core.InheritedWorkspaceBinding{
+			Workspace:       workspace,
+			BindingID:       candidate.workspaceBindingID,
+			WorkspaceEnv:    candidate.workspaceEnv,
+			HasWorkspaceEnv: candidate.workspaceEnvSet,
+		}
+		candidate.workspaceMu.Unlock()
+		if clientLoadsWorkspaceModules(candidate) {
+			return binding, nil
+		}
+		if fallback == nil {
+			fallback = binding
+		}
+	}
+
+	if fallback != nil {
+		return fallback, nil
+	}
+	return &core.InheritedWorkspaceBinding{
+		Workspace: workspace,
+	}, nil
+}
+
+func workspaceClientContext(ctx context.Context, client *daggerClient) context.Context {
+	if client == nil {
+		return ctx
+	}
+	if client.clientMetadata != nil {
+		ctx = engine.ContextWithClientMetadata(ctx, client.clientMetadata)
+	}
+	if client.dagqlRoot != nil {
+		ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
+	}
+	return ctx
 }
 
 func canonicalModuleReference(src *core.ModuleSource) string {
@@ -92,6 +178,9 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 	if mode == workspaceBindingInherit {
 		return srv.inheritWorkspaceBinding(ctx, client)
 	}
+	if mode == workspaceBindingInherited {
+		return srv.loadInheritedWorkspaceBinding(client)
+	}
 
 	client.workspaceMu.Lock()
 	defer client.workspaceMu.Unlock()
@@ -117,6 +206,11 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 	}
 	if err != nil {
 		client.workspaceErr = err
+	} else if client.workspace != nil {
+		if client.workspaceBindingID == "" {
+			client.workspaceBindingID = identity.NewID()
+		}
+		client.workspaceEnv, client.workspaceEnvSet = workspaceEnvFromClientMetadata(client.clientMetadata)
 	}
 
 	client.workspaceLoaded = true
@@ -127,20 +221,79 @@ type workspaceBindingModeType string
 
 const (
 	workspaceBindingDeclared   workspaceBindingModeType = "declared"
+	workspaceBindingInherited  workspaceBindingModeType = "inherited"
 	workspaceBindingDetectHost workspaceBindingModeType = "detect_host"
 	workspaceBindingInherit    workspaceBindingModeType = "inherit"
 )
 
 // workspaceBindingMode resolves binding behavior for the current client:
-// explicit workspace declaration, own host detection, or parent inheritance.
+// explicit workspace declaration, execution-scoped inherited workspace, own
+// host detection, or ordinary parent inheritance.
 func workspaceBindingMode(client *daggerClient) (workspaceBindingModeType, string) {
 	if workspaceRef, ok := workspaceRefFromClientMetadata(client.clientMetadata); ok {
 		return workspaceBindingDeclared, workspaceRef
+	}
+	if client.inheritedWorkspace.Self() != nil {
+		return workspaceBindingInherited, ""
 	}
 	if client.pendingWorkspaceLoad {
 		return workspaceBindingDetectHost, ""
 	}
 	return workspaceBindingInherit, ""
+}
+
+func clientLoadsWorkspaceModules(client *daggerClient) bool {
+	if client == nil {
+		return false
+	}
+	if client.workspaceModulesRequested.Load() {
+		return true
+	}
+	return client.clientMetadata != nil &&
+		client.clientMetadata.LoadWorkspaceModules &&
+		!client.clientMetadata.SkipWorkspaceModules
+}
+
+func (srv *Server) loadInheritedWorkspaceBinding(client *daggerClient) error {
+	client.workspaceMu.Lock()
+	if client.workspaceLoaded {
+		err := client.workspaceErr
+		client.workspaceMu.Unlock()
+		return err
+	}
+
+	if client.inheritedWorkspace.Self() == nil {
+		client.workspaceErr = fmt.Errorf("inherited workspace is nil")
+		client.workspaceLoaded = true
+		client.workspaceMu.Unlock()
+		return client.workspaceErr
+	}
+	client.workspace = client.inheritedWorkspace.Self()
+	if client.clientMetadata != nil {
+		client.workspaceBindingID = client.clientMetadata.InheritedWorkspaceBindingID
+		client.workspaceEnv = client.clientMetadata.InheritedWorkspaceEnv
+		client.workspaceEnvSet = client.clientMetadata.InheritedWorkspaceEnvSet
+		if requestedEnv, ok := workspaceEnvFromClientMetadata(client.clientMetadata); ok {
+			if !client.workspaceEnvSet || requestedEnv != client.workspaceEnv {
+				client.workspaceErr = fmt.Errorf(
+					"workspace env %q does not match inherited workspace env %q; explicitly select a workspace to change environments",
+					requestedEnv,
+					client.workspaceEnv,
+				)
+			}
+		}
+	}
+	if client.workspaceBindingID == "" {
+		client.workspaceBindingID = identity.NewID()
+	}
+	client.workspaceLoaded = true
+	err := client.workspaceErr
+	client.workspaceMu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // workspaceRefFromClientMetadata returns the explicitly declared workspace
@@ -192,12 +345,20 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 		if isModuleRuntimeClient(client) && isModuleRuntimeClient(parent) {
 			return nil
 		}
+		// Ordinary inheritance preserves the active request context; workspace
+		// loading may depend on the child request's SDK-managed module state.
 		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
 			return err
 		}
 
 		parent.workspaceMu.Lock()
+		if parent.workspace != nil && parent.workspaceBindingID == "" {
+			parent.workspaceBindingID = identity.NewID()
+		}
 		parentWorkspace := parent.workspace
+		parentBindingID := parent.workspaceBindingID
+		parentWorkspaceEnv := parent.workspaceEnv
+		parentWorkspaceEnvSet := parent.workspaceEnvSet
 		parent.workspaceMu.Unlock()
 		if parentWorkspace == nil {
 			continue
@@ -206,6 +367,9 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 		client.workspaceMu.Lock()
 		if client.workspace == nil {
 			client.workspace = parentWorkspace
+			client.workspaceBindingID = parentBindingID
+			client.workspaceEnv = parentWorkspaceEnv
+			client.workspaceEnvSet = parentWorkspaceEnvSet
 		}
 		client.workspaceMu.Unlock()
 		return nil
@@ -629,10 +793,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	prebuiltSource core.WorkspaceSource,
 ) error {
 	clientMD := client.clientMetadata
-	loadModules := client.pendingWorkspaceLoad &&
-		clientMD != nil &&
-		clientMD.LoadWorkspaceModules &&
-		!clientMD.SkipWorkspaceModules
+	loadModules := client.pendingWorkspaceLoad && clientLoadsWorkspaceModules(client)
 	workspaceEnv, hasWorkspaceEnv := workspaceEnvFromClientMetadata(clientMD)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
@@ -949,6 +1110,26 @@ func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerCl
 // load while modulesMu is still held. Callers use it for state transitions
 // that must be atomic with the load becoming visible to another request.
 func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []string, rerr error) {
+	return srv.ensureModulesLoadedModeWithOptions(ctx, client, filter, bestEffort, true, onSuccessLocked)
+}
+
+func (srv *Server) ensureWorkspaceModulesLoadedMode(
+	ctx context.Context,
+	client *daggerClient,
+	filter func([]pendingModule) []pendingModule,
+	bestEffort bool,
+) (loadFailures []string, rerr error) {
+	return srv.ensureModulesLoadedModeWithOptions(ctx, client, filter, bestEffort, false, nil)
+}
+
+func (srv *Server) ensureModulesLoadedModeWithOptions(
+	ctx context.Context,
+	client *daggerClient,
+	filter func([]pendingModule) []pendingModule,
+	bestEffort bool,
+	loadExtraModules bool,
+	onSuccessLocked func(),
+) (loadFailures []string, rerr error) {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 	defer func() {
@@ -957,8 +1138,10 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		}
 	}()
 
-	if err := srv.ensureExtraModulesLoadedLocked(ctx, client); err != nil {
-		return nil, err
+	if loadExtraModules {
+		if err := srv.ensureExtraModulesLoadedLocked(ctx, client); err != nil {
+			return nil, err
+		}
 	}
 
 	if len(client.pendingModules) == 0 {
@@ -1053,6 +1236,12 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 // ensureExtraModulesLoadedLocked loads -m modules. They are explicitly
 // requested, so they load eagerly with sticky failures (unlike on-demand
 // workspace modules). client.modulesMu must be held.
+func (srv *Server) ensureExtraModulesLoaded(ctx context.Context, client *daggerClient) error {
+	client.modulesMu.Lock()
+	defer client.modulesMu.Unlock()
+	return srv.ensureExtraModulesLoadedLocked(ctx, client)
+}
+
 func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *daggerClient) error {
 	if client.extraModulesLoaded {
 		return client.extraModulesErr
@@ -1610,34 +1799,241 @@ func (srv *Server) serveResolvedModuleLoadsLocked(client *daggerClient, loads []
 	for i := range loads {
 		load := resolved[i]
 		key := resolvedModuleLoadIdentity(load.primary)
-		if _, ok := client.servedModuleKeys[key]; ok {
-			continue
-		}
-		for _, related := range load.related {
-			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
-				return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
-			}
-		}
-		if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
-			return moduleLoadErr(loads[i], err)
-		}
-		// For the entrypoint module (the one the user targets via dagger call),
-		// also serve its direct dependencies so the client schema can resolve
-		// concrete types behind interfaces. This mirrors the includeDependencies
-		// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
-		if load.primaryEntrypoint {
-			for _, dep := range load.primary.Self().Deps.Mods() {
-				if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
-					return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
+		if _, alreadyServed := client.servedModuleKeys[key]; !alreadyServed {
+			for _, related := range load.related {
+				if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
+					return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
 				}
 			}
+			if err := srv.serveModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: load.primaryEntrypoint}); err != nil {
+				return moduleLoadErr(loads[i], err)
+			}
+			// For the entrypoint module (the one the user targets via dagger call),
+			// also serve its direct dependencies so the client schema can resolve
+			// concrete types behind interfaces. This mirrors the includeDependencies
+			// behavior from `main`. Toolchain/non-entrypoint deps stay internal.
+			if load.primaryEntrypoint {
+				for _, dep := range load.primary.Self().Deps.Mods() {
+					if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
+						return fmt.Errorf("error serving entrypoint dependency %s: %w", dep.Name(), err)
+					}
+				}
+			}
+			if client.servedModuleKeys == nil {
+				client.servedModuleKeys = make(map[string]struct{})
+			}
+			client.servedModuleKeys[key] = struct{}{}
 		}
-		if client.servedModuleKeys == nil {
-			client.servedModuleKeys = make(map[string]struct{})
+
+		if loads[i].mod.Kind != moduleLoadKindAmbient {
+			continue
 		}
-		client.servedModuleKeys[key] = struct{}{}
+		if _, alreadyServed := client.servedWorkspaceModuleKeys[key]; alreadyServed {
+			continue
+		}
+		workspacePrimaryEntrypoint := loads[i].mod.Entrypoint
+		workspaceEntrypointServed := false
+		for _, related := range load.related {
+			relatedEntrypoint := loads[i].mod.Entrypoint && related.entrypoint
+			if relatedEntrypoint {
+				workspacePrimaryEntrypoint = false
+				workspaceEntrypointServed = true
+			}
+			if err := srv.serveWorkspaceModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: relatedEntrypoint}); err != nil {
+				return fmt.Errorf("error serving related workspace module %s: %w", related.mod.Self().Name(), err)
+			}
+		}
+		if err := srv.serveWorkspaceModule(client, core.NewUserMod(load.primary), core.InstallOpts{Entrypoint: workspacePrimaryEntrypoint}); err != nil {
+			return moduleLoadErr(loads[i], err)
+		}
+		if workspacePrimaryEntrypoint {
+			for _, dep := range load.primary.Self().Deps.Mods() {
+				if err := srv.serveWorkspaceModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
+					return fmt.Errorf("error serving workspace entrypoint dependency %s: %w", dep.Name(), err)
+				}
+			}
+			workspaceEntrypointServed = true
+		}
+		client.workspaceEntrypointServed = client.workspaceEntrypointServed || workspaceEntrypointServed
+		if client.servedWorkspaceModuleKeys == nil {
+			client.servedWorkspaceModuleKeys = make(map[string]struct{})
+		}
+		client.servedWorkspaceModuleKeys[key] = struct{}{}
 	}
 
+	return nil
+}
+
+func (srv *Server) requestAncestorWorkspaceModules(ctx context.Context, client *daggerClient) (bool, error) {
+	mode, _ := workspaceBindingMode(client)
+	if mode == workspaceBindingInherit {
+		// Ordinary inheritance deliberately carries no module provenance. Keep
+		// walking to the ancestor that owns the binding.
+		return false, nil
+	}
+
+	// Forced gathering replaces pendingModules. Keep it atomic with normal
+	// request-driven module loads, which use the same mutex.
+	client.modulesMu.Lock()
+	defer client.modulesMu.Unlock()
+
+	client.workspaceModulesRequested.Store(true)
+	client.workspaceMu.Lock()
+	client.workspaceLoaded = false
+	client.workspaceErr = nil
+	client.workspace = nil
+	client.pendingModules = nil
+	client.workspaceMu.Unlock()
+
+	parentCtx := workspaceClientContext(ctx, client)
+	if err := srv.ensureWorkspaceLoaded(parentCtx, client); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (srv *Server) inheritExplicitWorkspaceModules(
+	ctx context.Context,
+	client *daggerClient,
+	rootFields []string,
+	filterByRootFields bool,
+) error {
+	client.inheritedWorkspaceModulesMu.Lock()
+	defer client.inheritedWorkspaceModulesMu.Unlock()
+
+	// Preserve the established precedence: this client's explicit -m modules
+	// load before inherited ambient workspace modules.
+	if err := srv.ensureExtraModulesLoaded(ctx, client); err != nil {
+		return err
+	}
+
+	var scope string
+	var childEntrypointServed bool
+	if filterByRootFields {
+		client.modulesMu.Lock()
+		scope = client.pendingWorkspaceModuleScopeLocked()
+		childEntrypointServed = client.entrypointServed
+		client.modulesMu.Unlock()
+	}
+
+	client.workspaceMu.Lock()
+	bindingID := client.workspaceBindingID
+	workspaceEnv := client.workspaceEnv
+	workspaceEnvSet := client.workspaceEnvSet
+	client.workspaceMu.Unlock()
+
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		parentCtx := workspaceClientContext(ctx, parent)
+		parentMode, _ := workspaceBindingMode(parent)
+		if parentMode == workspaceBindingInherit || parentMode == workspaceBindingInherited {
+			// The full ancestor chain is available on the child. Skip clients
+			// that only carry the binding and load from the client that owns its
+			// declared or detected module state.
+			continue
+		}
+
+		// Sibling inherited clients can force and filter the same owner's
+		// workspace modules concurrently. Serialize the owner's readiness,
+		// module load, and snapshot so their demands cannot reset or race each
+		// other.
+		parent.inheritedWorkspaceModulesMu.Lock()
+		if err := srv.ensureWorkspaceLoaded(parentCtx, parent); err != nil {
+			parent.inheritedWorkspaceModulesMu.Unlock()
+			return err
+		}
+		parent.workspaceMu.Lock()
+		matches := parent.workspaceBindingID == bindingID &&
+			parent.workspaceEnv == workspaceEnv &&
+			parent.workspaceEnvSet == workspaceEnvSet
+		parent.workspaceMu.Unlock()
+		parentMode, _ = workspaceBindingMode(parent)
+		if !matches || parentMode == workspaceBindingInherit || parentMode == workspaceBindingInherited {
+			parent.inheritedWorkspaceModulesMu.Unlock()
+			continue
+		}
+		if !clientLoadsWorkspaceModules(parent) {
+			ready, err := srv.requestAncestorWorkspaceModules(ctx, parent)
+			if err != nil {
+				parent.inheritedWorkspaceModulesMu.Unlock()
+				return err
+			}
+			if !ready {
+				parent.inheritedWorkspaceModulesMu.Unlock()
+				continue
+			}
+		}
+		scopeApplied := false
+		var filter func([]pendingModule) []pendingModule
+		if filterByRootFields {
+			filter = func(mods []pendingModule) []pendingModule {
+				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(
+					mods,
+					parent.servedWorkspaceModuleNames,
+					parent.failedModules,
+					rootFields,
+					scope,
+					childEntrypointServed,
+				)
+				scopeApplied = applied
+				return selected
+			}
+		}
+		if _, err := srv.ensureWorkspaceModulesLoadedMode(parentCtx, parent, filter, false); err != nil {
+			parent.inheritedWorkspaceModulesMu.Unlock()
+			return err
+		}
+
+		parent.modulesMu.Lock()
+		parent.stateMu.RLock()
+		workspaceMods := parent.servedWorkspaceMods
+		if workspaceMods == nil {
+			workspaceMods = core.NewSchemaBuilder(parent.dagqlRoot, nil)
+		}
+		workspaceMods = workspaceMods.WithRoot(client.dagqlRoot)
+		failedModules := maps.Clone(parent.failedModules)
+		servedNames := maps.Clone(parent.servedWorkspaceModuleNames)
+		servedKeys := maps.Clone(parent.servedWorkspaceModuleKeys)
+		parentEntrypointServed := parent.workspaceEntrypointServed
+		parent.stateMu.RUnlock()
+		parent.modulesMu.Unlock()
+		parent.inheritedWorkspaceModulesMu.Unlock()
+
+		client.modulesMu.Lock()
+		client.stateMu.Lock()
+		aggregateWorkspaceMods := workspaceMods
+		if client.entrypointServed {
+			aggregateWorkspaceMods = aggregateWorkspaceMods.WithoutEntrypoints()
+		}
+		client.servedWorkspaceMods = client.servedWorkspaceMods.Merge(workspaceMods)
+		client.servedMods = client.servedMods.Merge(aggregateWorkspaceMods)
+		client.pendingModules = nil
+		if client.failedModules == nil {
+			client.failedModules = make(map[string]error)
+		}
+		maps.Copy(client.failedModules, failedModules)
+		if client.servedWorkspaceModuleNames == nil {
+			client.servedWorkspaceModuleNames = make(map[string]struct{})
+		}
+		maps.Copy(client.servedWorkspaceModuleNames, servedNames)
+		if client.servedWorkspaceModuleKeys == nil {
+			client.servedWorkspaceModuleKeys = make(map[string]struct{})
+		}
+		maps.Copy(client.servedWorkspaceModuleKeys, servedKeys)
+		client.workspaceEntrypointServed = client.workspaceEntrypointServed || parentEntrypointServed
+		client.entrypointServed = client.entrypointServed || parentEntrypointServed
+		if scopeApplied {
+			client.workspaceModuleScopeConsumed = true
+		}
+		client.stateMu.Unlock()
+		client.modulesMu.Unlock()
+		return nil
+	}
+
+	// Arbitrary Workspace values have no live ancestor module schema to copy.
+	// Keep serving the core schema: currentWorkspace and its filesystem APIs are
+	// still valid, and CLI clients request workspace modules even for core-only
+	// commands such as `dagger query`.
 	return nil
 }
 

@@ -162,6 +162,13 @@ type ClientMetadata struct {
 	// nested-client state and must not be forwarded through client headers.
 	UseRecipeIDsByDefault bool `json:"-"`
 
+	// InheritedWorkspace* selects matching ancestor module state for a trusted
+	// workspace object passed in-process to a nested client. These fields are
+	// engine-internal and must never be accepted from client headers.
+	InheritedWorkspaceBindingID string `json:"-"`
+	InheritedWorkspaceEnv       string `json:"-"`
+	InheritedWorkspaceEnvSet    bool   `json:"-"`
+
 	// Profile enables engine wall-clock profiling (wcprof) for the duration
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.

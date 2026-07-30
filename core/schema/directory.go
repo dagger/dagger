@@ -296,6 +296,13 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
+				dagql.Arg("inheritWorkspace").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(
+						`Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.`,
+						`When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.`,
+						`Only grant this access to trusted commands.`,
+					),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 			running a command with "sudo" or executing "docker run" with the

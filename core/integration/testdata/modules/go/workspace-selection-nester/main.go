@@ -7,7 +7,10 @@ import (
 	"dagger/nester/internal/dagger"
 )
 
-func New(greeting string) *Nester {
+func New(
+	// +default="default"
+	greeting string,
+) *Nester {
 	return &Nester{Message: greeting}
 }
 
@@ -19,16 +22,30 @@ func (m *Nester) Greeting() string {
 	return m.Message
 }
 
-func (m *Nester) NestedWorkspace(ctx context.Context, cli *dagger.File) (string, error) {
+func (m *Nester) NestedWorkspace(ctx context.Context, cli *dagger.File, inheritedWorkspace *dagger.Workspace) (string, error) {
 	return m.nested(ctx, cli, []string{"query"}, dagger.ContainerWithExecOpts{
-		ExperimentalPrivilegedNesting: true,
-		Stdin:                         "{currentWorkspace{cwd configFile}}",
+		InheritWorkspace: inheritedWorkspace,
+		Stdin:            "{currentWorkspace{cwd configFile}}",
 	})
 }
 
-func (m *Nester) NestedGreeting(ctx context.Context, cli *dagger.File) (string, error) {
+func (m *Nester) NestedGreeting(ctx context.Context, cli *dagger.File, inheritedWorkspace *dagger.Workspace) (string, error) {
 	return m.nested(ctx, cli, []string{"call", "greeting"}, dagger.ContainerWithExecOpts{
-		ExperimentalPrivilegedNesting: true,
+		InheritWorkspace: inheritedWorkspace,
+	})
+}
+
+func (m *Nester) NestedConfigRead(ctx context.Context, cli *dagger.File, inheritedWorkspace *dagger.Workspace) (string, error) {
+	return m.nested(ctx, cli, []string{"query"}, dagger.ContainerWithExecOpts{
+		InheritWorkspace: inheritedWorkspace,
+		Stdin:            `{currentWorkspace{configRead(key:"modules.nester.settings.greeting")}}`,
+	})
+}
+
+func (m *Nester) NestedExplicitWorkspace(ctx context.Context, cli *dagger.File, inheritedWorkspace *dagger.Workspace) (string, error) {
+	return m.nested(ctx, cli, []string{"-W", "/detected", "query"}, dagger.ContainerWithExecOpts{
+		InheritWorkspace: inheritedWorkspace,
+		Stdin:            "{currentWorkspace{cwd configFile}}",
 	})
 }
 
@@ -37,8 +54,9 @@ func (m *Nester) nested(ctx context.Context, cli *dagger.File, args []string, op
 	out, err := dag.Container().
 		From("alpine:3.22.1").
 		WithMountedFile("/bin/dagger", cli).
-		WithExec([]string{"mkdir", "-p", "/empty"}).
-		WithWorkdir("/empty").
+		WithExec([]string{"mkdir", "-p", "/empty", "/detected/.git"}).
+		WithNewFile("/detected/dagger.toml", "# explicitly selected nested workspace\n").
+		WithWorkdir("/detected").
 		WithExec(execArgs, opts).
 		Stdout(ctx)
 	if err != nil {

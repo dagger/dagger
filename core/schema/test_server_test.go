@@ -58,6 +58,13 @@ func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []st
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) CaptureInheritedWorkspaceBinding(_ context.Context, workspace dagql.ObjectResult[*core.Workspace]) (*core.InheritedWorkspaceBinding, error) {
+	return &core.InheritedWorkspaceBinding{
+		Workspace: workspace,
+		BindingID: "test-workspace-binding",
+	}, nil
+}
+
 func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.SchemaBuilder, error) {
 	return s.deps, nil
 }
@@ -97,7 +104,7 @@ func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Ha
 	return nil
 }
 
-func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
+func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult, dagql.AnyObjectResult) {
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {

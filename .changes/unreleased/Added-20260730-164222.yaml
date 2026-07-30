@@ -1,0 +1,8 @@
+kind: Added
+body: |
+  Container commands can now grant nested Dagger clients access to a selected
+  `Workspace` with the `inheritWorkspace` argument.
+time: 2026-07-30T16:42:22+02:00
+custom:
+  Author: shykes
+  PR: 13789

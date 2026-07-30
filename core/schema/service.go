@@ -33,6 +33,13 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If the container has an entrypoint, prepend it to the args.`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
+				dagql.Arg("inheritWorkspace").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(
+						`Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.`,
+						`When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.`,
+						`Only grant this access to trusted commands.`,
+					),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -76,6 +83,13 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If the container has an entrypoint, prepend it to the args.`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
+				dagql.Arg("inheritWorkspace").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(
+						`Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.`,
+						`When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.`,
+						`Only grant this access to trusted commands.`,
+					),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -279,6 +293,18 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
+	var inheritedWorkspace *core.InheritedWorkspaceBinding
+	if !args.InheritWorkspace.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		inheritedWorkspace, err = inheritedWorkspaceFromExecCall(ctx, srv, parent)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, err
@@ -298,7 +324,53 @@ func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.Obj
 	}
 	args.Args = expandedArgs
 
-	return parent.Self().AsService(ctx, parent, args)
+	svc, err := parent.Self().AsService(ctx, parent, args)
+	if err != nil {
+		return nil, err
+	}
+	if svc.InheritedWorkspace == nil {
+		svc.InheritedWorkspace = inheritedWorkspace
+	}
+	return svc, nil
+}
+
+func inheritedWorkspaceFromExecCall(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Container],
+) (*core.InheritedWorkspaceBinding, error) {
+	var cur dagql.AnyObjectResult = parent
+	for cur != nil {
+		call, err := cur.ResultCall()
+		if err != nil {
+			return nil, err
+		}
+		receiver, err := cur.Receiver(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		if call.Field == "withExec" {
+			ctr, ok := receiver.(dagql.ObjectResult[*core.Container])
+			if !ok {
+				return nil, fmt.Errorf("expected withExec receiver %T, got %T", ctr, receiver)
+			}
+			field, ok := ctr.ObjectType().FieldSpec(call.Field, call.View)
+			if !ok {
+				return nil, fmt.Errorf("could not find %s on %s", call.Field, ctr.Type().NamedType)
+			}
+			inputs, err := field.Args.InputsFromResultCallArgs(ctx, call.Args, call.View)
+			if err != nil {
+				return nil, err
+			}
+			var withExecArgs containerExecArgs
+			if err := field.Args.Decode(inputs, &withExecArgs, call.View); err != nil {
+				return nil, err
+			}
+			return core.CaptureInheritedWorkspaceBinding(ctx, withExecArgs.InheritWorkspace)
+		}
+		cur = receiver
+	}
+	return nil, nil
 }
 
 func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args struct {
@@ -327,6 +399,12 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 		inputs = append(inputs, dagql.NamedInput{
 			Name:  "experimentalPrivilegedNesting",
 			Value: dagql.Boolean(true),
+		})
+	}
+	if args.InheritWorkspace.Valid {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "inheritWorkspace",
+			Value: args.InheritWorkspace,
 		})
 	}
 	if args.InsecureRootCapabilities {

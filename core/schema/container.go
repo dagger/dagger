@@ -652,6 +652,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
+				dagql.Arg("inheritWorkspace").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(
+						`Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.`,
+						`When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.`,
+						`Only grant this access to trusted commands.`,
+					),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. Like --privileged in Docker`,
 					`DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.`),
@@ -949,6 +956,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
+				dagql.Arg("inheritWorkspace").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(
+						`Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.`,
+						`When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.`,
+						`Only grant this access to trusted commands.`,
+					),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -4520,6 +4534,13 @@ type containerTerminalArgs struct {
 	core.TerminalArgs
 }
 
+type containerTerminalLegacyArgs struct {
+	core.ExecTerminalArgs
+
+	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
+	InsecureRootCapabilities      dagql.Optional[dagql.Boolean] `default:"false"`
+}
+
 func (s *containerSchema) terminal(
 	ctx context.Context,
 	ctr dagql.ObjectResult[*core.Container],
@@ -4569,7 +4590,7 @@ func (s *containerSchema) terminal(
 func (s *containerSchema) terminalLegacy(
 	ctx context.Context,
 	ctr dagql.ObjectResult[*core.Container],
-	args containerTerminalArgs,
+	args containerTerminalLegacyArgs,
 ) (*core.TerminalLegacy, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

@@ -70,6 +70,39 @@ func (b *SchemaBuilder) WithRoot(root *Query) *SchemaBuilder {
 	return cp
 }
 
+// Merge returns a builder containing both sets of modules while preserving
+// each module's install policy. The receiver wins name collisions.
+func (b *SchemaBuilder) Merge(other *SchemaBuilder) *SchemaBuilder {
+	cp := b.Clone()
+	if cp == nil {
+		return other.Clone()
+	}
+	if other == nil {
+		return cp
+	}
+	for _, entry := range other.entries {
+		if existing, ok := cp.Lookup(entry.mod.Name()); ok {
+			cp = cp.With(existing, entry.opts)
+			continue
+		}
+		cp = cp.With(entry.mod, entry.opts)
+	}
+	return cp
+}
+
+// WithoutEntrypoints returns a builder with every module installed as a
+// non-entrypoint while preserving its other install policy.
+func (b *SchemaBuilder) WithoutEntrypoints() *SchemaBuilder {
+	cp := b.Clone()
+	if cp == nil {
+		return nil
+	}
+	for i := range cp.entries {
+		cp.entries[i].opts.Entrypoint = false
+	}
+	return cp
+}
+
 func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	extra := make([]modDepEntry, len(mods))
 	for i, m := range mods {

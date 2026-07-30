@@ -49,7 +49,7 @@ type mockServer struct {
 	attachables    map[string]*grpc.ClientConn
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult, dagql.AnyObjectResult) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
@@ -127,6 +127,13 @@ func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.C
 
 func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
 	return nil, nil
+}
+
+func (ms *mockServer) CaptureInheritedWorkspaceBinding(_ context.Context, workspace dagql.ObjectResult[*Workspace]) (*InheritedWorkspaceBinding, error) {
+	return &InheritedWorkspaceBinding{
+		Workspace: workspace,
+		BindingID: "mock-workspace-binding",
+	}, nil
 }
 
 func (ms *mockServer) SpecificClientAttachableConn(_ context.Context, clientID string, opts SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {

@@ -59,6 +59,7 @@ type Service struct {
 	ExecMD                        *engineutil.ExecutionMetadata
 	ModuleContext                 dagql.ObjectResult[*Module]
 	ExecMeta                      *executor.Meta
+	InheritedWorkspace            *InheritedWorkspaceBinding
 
 	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream dagql.ObjectResult[*Service]
@@ -94,6 +95,10 @@ type persistedServicePayload struct {
 	ExecMD                        *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
 	ModuleContextResultID         uint64                        `json:"moduleContextResultID,omitempty"`
 	ExecMeta                      *executor.Meta                `json:"execMeta,omitempty"`
+	InheritedWorkspaceResultID    uint64                        `json:"inheritedWorkspaceResultID,omitempty"`
+	InheritedWorkspaceBindingID   string                        `json:"inheritedWorkspaceBindingID,omitempty"`
+	InheritedWorkspaceEnv         string                        `json:"inheritedWorkspaceEnv,omitempty"`
+	InheritedWorkspaceEnvSet      bool                          `json:"inheritedWorkspaceEnvSet,omitempty"`
 	TunnelUpstreamResultID        uint64                        `json:"tunnelUpstreamResultID,omitempty"`
 	TunnelPorts                   []PortForward                 `json:"tunnelPorts,omitempty"`
 	HostSockets                   []persistedServiceHostSocket  `json:"hostSockets,omitempty"`
@@ -142,6 +147,15 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 			return dagql.PersistedObjectEncoding{}, err
 		}
 	}
+	if binding := svc.InheritedWorkspace; binding != nil && binding.Workspace.Self() != nil {
+		payload.InheritedWorkspaceResultID, err = encodePersistedObjectRef(cache, binding.Workspace, "service inherited workspace")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.InheritedWorkspaceBindingID = binding.BindingID
+		payload.InheritedWorkspaceEnv = binding.WorkspaceEnv
+		payload.InheritedWorkspaceEnvSet = binding.HasWorkspaceEnv
+	}
 	if svc.TunnelUpstream.Self() != nil {
 		payload.TunnelUpstreamResultID, err = encodePersistedObjectRef(cache, svc.TunnelUpstream, "service tunnel upstream")
 		if err != nil {
@@ -180,6 +194,10 @@ func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ 
 	if err != nil {
 		return nil, err
 	}
+	inheritedWorkspace, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.InheritedWorkspaceResultID, "service inherited workspace")
+	if err != nil {
+		return nil, err
+	}
 	tunnelUpstream, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.TunnelUpstreamResultID, "service tunnel upstream")
 	if err != nil {
 		return nil, err
@@ -194,7 +212,7 @@ func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ 
 			SourceClientID: sock.SourceClientID,
 		})
 	}
-	return &Service{
+	svc := &Service{
 		CustomHostname:                persisted.CustomHostname,
 		Container:                     container,
 		Args:                          slices.Clone(persisted.Args),
@@ -207,7 +225,16 @@ func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ 
 		TunnelUpstream:                tunnelUpstream,
 		TunnelPorts:                   slices.Clone(persisted.TunnelPorts),
 		HostSockets:                   hostSockets,
-	}, nil
+	}
+	if inheritedWorkspace.Self() != nil {
+		svc.InheritedWorkspace = &InheritedWorkspaceBinding{
+			Workspace:       inheritedWorkspace,
+			BindingID:       persisted.InheritedWorkspaceBindingID,
+			WorkspaceEnv:    persisted.InheritedWorkspaceEnv,
+			HasWorkspaceEnv: persisted.InheritedWorkspaceEnvSet,
+		}
+	}
+	return svc, nil
 }
 
 func (svc *Service) AttachDependencyResults(
@@ -239,6 +266,18 @@ func (svc *Service) AttachDependencyResults(
 		}
 		svc.ModuleContext = moduleContext
 		owned = append(owned, moduleContext)
+	}
+	if binding := svc.InheritedWorkspace; binding != nil && binding.Workspace.Self() != nil {
+		attached, err := attach(binding.Workspace)
+		if err != nil {
+			return nil, fmt.Errorf("attach service inherited workspace: %w", err)
+		}
+		workspace, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach service inherited workspace: expected %T, got %T", binding.Workspace, attached)
+		}
+		binding.Workspace = workspace
+		owned = append(owned, workspace)
 	}
 	if svc.TunnelUpstream.Self() != nil {
 		upstream, err := attachServiceResult(attach, svc.TunnelUpstream, "attach service tunnel upstream")
@@ -296,6 +335,10 @@ func (svc *Service) Clone() *Service {
 	cp.Args = slices.Clone(cp.Args)
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
+	if svc.InheritedWorkspace != nil {
+		binding := *svc.InheritedWorkspace
+		cp.InheritedWorkspace = &binding
+	}
 	return &cp
 }
 
@@ -808,15 +851,10 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	var nestedClientMetadata *engine.ClientMetadata
-	if svc.ExperimentalPrivilegedNesting {
-		nestedClientMetadata = &engine.ClientMetadata{
-			ClientID:          identity.NewID(),
-			ClientVersion:     engine.Version,
-			SessionID:         clientMetadata.SessionID,
-			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
-			LockMode:          clientMetadata.LockMode,
-		}
+	nestedClientMetadata := nestedClientMetadataForExec(clientMetadata, execMD, svc.ExperimentalPrivilegedNesting, svc.InheritedWorkspace)
+	var workspaceContext dagql.ObjectResult[*Workspace]
+	if svc.InheritedWorkspace != nil {
+		workspaceContext = svc.InheritedWorkspace.Workspace
 	}
 
 	exited := make(chan struct{})
@@ -853,6 +891,7 @@ func (svc *Service) startContainer(
 			svc.ModuleContext,
 			nil,
 			dagql.ObjectResult[*Env]{},
+			workspaceContext,
 		)
 		runErr <- err
 	}()

@@ -120,6 +120,7 @@ func (c *Client) Run(
 	nestedClientModule dagql.AnyObjectResult,
 	nestedClientFunctionCall dagql.Typed,
 	nestedClientEnv dagql.AnyObjectResult,
+	nestedClientWorkspace dagql.AnyObjectResult,
 ) (rerr error) {
 	if id == "" {
 		id = randid.NewID()
@@ -143,6 +144,7 @@ func (c *Client) Run(
 		nestedClientModule,
 		nestedClientFunctionCall,
 		nestedClientEnv,
+		nestedClientWorkspace,
 	)
 
 	execIdent := state.id
