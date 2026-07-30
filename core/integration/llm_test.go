@@ -620,9 +620,14 @@ func (LLMSuite) TestPortableIDWithResponse(ctx context.Context, t *testctx.T) {
 // reset) durable: replaying an edit chain against already-updated files fails
 // with "search string not found" or silently re-applies.
 func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
 
+	// llm() starts unbound; bind the live workspace explicitly, as the CLI
+	// does at session start.
 	llm := c.LLM().
+		WithWorkspace(c.CurrentWorkspace()).
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("be helpful").
 		WithPrompt("hello").
@@ -680,9 +685,12 @@ func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
 // which is what made `dagger agent`'s ctrl+s leave a stale "Changes" bubble and
 // re-diff already-saved files as deletions on the next turn.
 func (LLMSuite) TestWithResetWorkspaceStripsNonChangesOverlays(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
 
 	llm := c.LLM().
+		WithWorkspace(c.CurrentWorkspace()).
 		WithModel("openai/gpt-4o").
 		WithSystemPrompt("be helpful").
 		WithPrompt("hello").
@@ -705,9 +713,11 @@ func (LLMSuite) TestWithResetWorkspaceStripsNonChangesOverlays(ctx context.Conte
 
 	reset := edited.WithResetWorkspace()
 
-	// After reset the overlay is gone: the workspace re-roots at its base, so it
-	// reports no pending changes.
-	resetEmpty, err := reset.Workspace().Changes().IsEmpty(ctx)
+	// After reset the overlay is gone. The reset recipe is unbound, so rebind
+	// the live workspace as the CLI does after ctrl+s/ctrl+u: the workspace
+	// re-roots at its base and reports no pending changes.
+	rebound := reset.WithWorkspace(c.CurrentWorkspace())
+	resetEmpty, err := rebound.Workspace().Changes().IsEmpty(ctx)
 	require.NoError(t, err)
 	require.True(t, resetEmpty,
 		"reset workspace must drop overlay edits so no pending changes remain")
@@ -764,11 +774,12 @@ func (LLMSuite) TestWithResetWorkspaceBustsStaleHostReads(ctx context.Context, t
 	// ctrl+s does before resetting.
 	require.NoError(t, c.CurrentWorkspace().WithNewFile("x.txt", "NEW").Export(ctx))
 
-	// Reset re-roots the LLM at the live workspace, dropping the overlay; the
-	// file on disk now holds "NEW".
+	// Reset drops the overlay and unbinds; rebind the live workspace as the
+	// CLI does after ctrl+s. The file on disk now holds "NEW".
 	reset := c.LLM().
 		WithWorkspace(c.CurrentWorkspace().WithNewFile("x.txt", "NEW")).
-		WithResetWorkspace()
+		WithResetWorkspace().
+		WithWorkspace(c.CurrentWorkspace())
 
 	// The next read must observe the exported contents, not the snapshot the
 	// earlier read cached for the session.
