@@ -1,0 +1,5 @@
+# Declares the engine-dev module for these tests. The engine would normally put
+# it in the session's API automatically, but that path does not work here —
+# harness_test.go loads it by hand and explains why.
+[modules.engine-dev]
+source = "../../../toolchains/engine-dev"
