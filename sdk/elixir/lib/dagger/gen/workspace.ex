@@ -674,6 +674,34 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a directory removed, without mutating the source.
+  """
+  @spec without_directory(t(), String.t()) :: Dagger.Workspace.t()
+  def without_directory(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutDirectory") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a file removed, without mutating the source.
+  """
+  @spec without_file(t(), String.t()) :: Dagger.Workspace.t()
+  def without_file(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutFile") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a module removed from its config.
   """
   @spec without_module(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
