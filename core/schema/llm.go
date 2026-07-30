@@ -223,11 +223,11 @@ func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struc
 func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Workspace], _ error) {
 	ws := llm.Workspace()
 	if ws.Self() == nil {
-		// The LLM binds the current workspace by default, but a context with no
-		// current workspace (e.g. `dagger shell --model` run outside a workspace)
-		// leaves it unbound. Return an error rather than a zero-value Workspace!,
-		// which nil-derefs in the Workspace field resolvers and crashes the engine.
-		return res, fmt.Errorf("no workspace is bound to this LLM (no current workspace in this context)")
+		// llm() starts unbound; a workspace is only present once the caller
+		// binds one via withWorkspace. Return an error rather than a
+		// zero-value Workspace!, which nil-derefs in the Workspace field
+		// resolvers and crashes the engine.
+		return res, fmt.Errorf("no workspace is bound to this LLM (bind one with withWorkspace)")
 	}
 	return ws, nil
 }
