@@ -70,13 +70,13 @@ legacy-default-path = true
 # settings.sourcePath = ""
 
 [modules.golang]
-source = "github.com/dagger/go@5683fb4f7e2e909a453eba727fb982077d5d11b5"
+source = "github.com/dagger/go@28c691078b79071e27d1df4135adbba3b84a2fb7"
 legacy-default-path = true
 
 [modules.golang.settings]
 generate = "docs/current_docs/reference"
 lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
-test = "e2e/**"
+test = "e2e/**,sdk/go/**"
 
 # Go version used for the default Go base image.
 # version = ""

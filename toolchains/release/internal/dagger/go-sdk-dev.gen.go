@@ -49,7 +49,6 @@ type GoSDKDev struct { // go-sdk-dev (../../../../:0:0)
 	release       *Void
 	releaseDryRun *Void
 	sourcePath    *string
-	test          *Void
 }
 
 func (r *GoSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *GoSDKDev {
@@ -235,16 +234,6 @@ func (r *GoSDKDev) SourcePath(ctx context.Context) (string, error) { // go-sdk-d
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Test the Go SDK
-func (r *GoSDKDev) Test(ctx context.Context) error { // go-sdk-dev (../../../../:0:0)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
 }
 
 // Workspace with all the files needed to develop the SDK
