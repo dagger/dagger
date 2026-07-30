@@ -181,9 +181,10 @@ func (s *LLMSession) ToggleAutocompact() {
 }
 
 func (s *LLMSession) reset() {
-	// The LLM binds the current workspace by default (see core.NewLLM), so its
-	// schema and file-editing surface derive from the user's workspace.
-	s.updateLLMAndAgentVar(s.dag.LLM(dagger.LLMOpts{Model: s.model}))
+	// llm() starts unbound; bind the user's workspace explicitly so the LLM's
+	// schema and file-editing surface derive from it, recorded on the ID.
+	s.updateLLMAndAgentVar(s.dag.LLM(dagger.LLMOpts{Model: s.model}).
+		WithWorkspace(s.dag.CurrentWorkspace()))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
