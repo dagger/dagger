@@ -13,15 +13,16 @@ type GenAgent {
   file the generator writes). If the overlay reached the generator, this
   reflects the edited input.txt.
   """
-  run(assignment: String!): String! {
-    self.drive(assignment).loop.workspace.file("output.txt").contents
+  run(assignment: String!, ws: Workspace!): String! {
+    self.drive(assignment, ws).loop.workspace.file("output.txt").contents
   }
 
   """
   Set up the agent's LLM with its tools and assignment.
   """
-  drive(assignment: String!): LLM! {
+  drive(assignment: String!, ws: Workspace!): LLM! {
     llm(model: model)
+      .withWorkspace(ws)
       .withTools(currentNode, except: ["run", "drive", "gen"])
       .withPrompt("You are an agent operating on a workspace.\n" + "Use the write tool to edit input.txt, then the generate tool to run the workspace generators.\n" + "\n" + "Assignment: " + assignment + "\n")
   }
