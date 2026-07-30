@@ -2,34 +2,6 @@
 // and engine out of the current source tree. The suites under testdata/ then run
 // against what it built. Both import the Go client from this repo; this module
 // exists to keep their test-only dependencies out of sdk/go.
-//
-// FIXME: remove these.
-//
-// The engine does not need them: engine-dev loads its own sources, and this
-// suite reads everything else through CurrentWorkspace(). They are here because
-// when the suite runs inside a container, that container's uploaded context is
-// the workspace, so the tree has to be carried in. The sdk/go entry is separate
-// again: `replace dagger.io/dagger => ..` makes the Go toolchain read
-// sdk/go/go.mod off disk before any Dagger call happens, and that goes away with
-// the replace once dagger/dagger#13701 lands.
-//
-//go:test:include ../../../analytics/**
-//go:test:include ../../../auth/**
-//go:test:include ../../../cmd/**
-//go:test:include ../../../core/**
-//go:test:include ../../../dagql/**
-//go:test:include ../../../engine/**
-//go:test:include ../../../internal/**
-//go:test:include ../../../modules/**
-//go:test:include ../../../network/**
-//go:test:include ../../../sdk/**
-//go:test:include ../../../toolchains/**
-//go:test:include ../../../util/**
-//go:test:include ../../../dagger.json
-//go:test:include ../../../go.mod
-//go:test:include ../../../go.sum
-//go:test:include ../../../LICENSE
-//go:test:include ./dagger.toml
 package e2e
 
 import (
