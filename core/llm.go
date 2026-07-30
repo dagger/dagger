@@ -1012,35 +1012,18 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 }
 
 func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	mcp := newMCP()
-	// Bind the current workspace by default so the LLM's schema derives from its
-	// own workspace (see MCP.Server), matching the CLI's view. Best-effort: a
-	// context with no loaded workspace (ErrNoCurrentWorkspace) leaves the LLM
-	// unbound and MCP.Server falls back to the current client's served deps. The
-	// direct pre-check keeps the "no workspace" case from failing LLM creation
-	// while still surfacing a genuine Select error. This is imperative (not
-	// recorded as a .withWorkspace selector on the LLM ID), so it re-resolves to
-	// the current workspace on history replay; an explicit LLM.withWorkspace still
-	// pins a specific workspace via the ID.
-	if _, err := q.CurrentWorkspace(ctx); err == nil {
-		var ws dagql.ObjectResult[*Workspace]
-		if err := srv.Select(ctx, srv.Root(), &ws, dagql.Selector{
-			Field: "currentWorkspace",
-		}); err != nil {
-			return nil, err
-		}
-		mcp.workspace = ws
-	} else if !errors.Is(err, ErrNoCurrentWorkspace) {
-		return nil, err
-	}
+	// The LLM starts with no workspace. Binding one is the caller's explicit
+	// choice (LLM.withWorkspace), recorded as a selector on the LLM ID: the CLI
+	// binds currentWorkspace at session start, agent composition seeds the base
+	// from the workspace the group was rolled up from, and a module function
+	// returning an LLM threads a Workspace it was handed. An unbound LLM is
+	// valid — MCP.Server falls back to the current client's served deps —
+	// so nothing here depends on the calling context's ambient workspace.
+	_ = ctx
 	return &LLM{
 		model:       model,
 		provider:    provider,
-		mcp:         mcp,
+		mcp:         newMCP(),
 		endpointMtx: &sync.Mutex{},
 	}, nil
 }
@@ -1081,8 +1064,8 @@ func (llm *LLM) Clone() *LLM {
 var _ dagql.HasDependencyResults = (*LLM)(nil)
 
 // AttachDependencyResults declares the results the LLM value embeds outside
-// its call structure: the workspace it is bound to (captured imperatively by
-// NewLLM and rebound by workspace-mutating tool results) and the objects bound
+// its call structure: the workspace it is bound to (rebound imperatively by
+// workspace-mutating tool results) and the objects bound
 // as tools when a tool result rebound them mid-step (a withTools arg is
 // already a structural dependency, but a rebind happens inside step execution).
 // Declaring these edges lets the cache retain the embedded results and
