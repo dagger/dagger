@@ -405,6 +405,65 @@ func moduleConfigInDir(ctx context.Context, statFS core.StatFS, dir string) (fil
 	return "", false, nil
 }
 
+// workspaceModuleSourceByName resolves name as a module installed in the
+// workspace config (dagger.toml) of the workspace detected from the caller's
+// cwd. Returns found=false when there is no workspace config or no module
+// with that name.
+func (s *moduleSourceSchema) workspaceModuleSourceByName(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	bk *engineutil.Client,
+	name string,
+	allowNotExists bool,
+) (inst dagql.Result[*core.ModuleSource], found bool, err error) {
+	cwd, err := bk.AbsPath(ctx, ".")
+	if err != nil {
+		return inst, false, fmt.Errorf("failed to get cwd: %w", err)
+	}
+	statFS := core.NewCallerStatFS(bk)
+	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
+		return core.StatFSExists(ctx, statFS, path)
+	}, cwd)
+	if err != nil {
+		return inst, false, fmt.Errorf("failed to detect workspace: %w", err)
+	}
+	if ws == nil || ws.ConfigFile == "" {
+		return inst, false, nil
+	}
+	configPath := filepath.Join(ws.Root, ws.ConfigFile)
+	contents, err := bk.ReadCallerHostFile(ctx, configPath)
+	if err != nil {
+		return inst, false, fmt.Errorf("failed to read workspace config file: %w", err)
+	}
+	cfg, err := workspace.ParseConfig(contents)
+	if err != nil {
+		return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
+	}
+	entry, ok := cfg.Modules[name]
+	if !ok || entry.Source == "" {
+		return inst, false, nil
+	}
+	if filepath.IsAbs(entry.Source) {
+		return inst, false, fmt.Errorf("workspace module %q source path %q is absolute", name, entry.Source)
+	}
+
+	source := workspace.ResolveModuleEntrySource(filepath.Dir(configPath), entry.Source)
+	parsedRef, err := core.ParseRefString(ctx, statFS, source, entry.Pin)
+	if err != nil {
+		return inst, false, fmt.Errorf("failed to parse workspace module ref string: %w", err)
+	}
+	switch parsedRef.Kind {
+	case core.ModuleSourceKindLocal:
+		inst, err = s.localModuleSource(ctx, query, bk, source, false, allowNotExists)
+		return inst, true, err
+	case core.ModuleSourceKindGit:
+		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, entry.Pin, false, false)
+		return inst, true, err
+	default:
+		return inst, false, fmt.Errorf("unsupported workspace module %q source kind %q", name, parsedRef.Kind)
+	}
+}
+
 //nolint:gocyclo
 func (s *moduleSourceSchema) localModuleSource(
 	ctx context.Context,
@@ -489,6 +548,16 @@ func (s *moduleSourceSchema) localModuleSource(
 					return s.gitModuleSource(ctx, query, parsedRef.Git, namedDep.Pin, false, false)
 				}
 			}
+		}
+
+		// similarly, check if it's the name of a module installed in the workspace
+		// config (dagger.toml) found-up from the cwd
+		inst, found, err := s.workspaceModuleSourceByName(ctx, query, bk, localPath, allowNotExists)
+		if err != nil {
+			return inst, err
+		}
+		if found {
+			return inst, nil
 		}
 	}
 
@@ -2521,6 +2590,27 @@ func ignoresGeneratedPath(ignore string, generated []string) bool {
 	return false
 }
 
+func (s *moduleSourceSchema) runSDKCodegen(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+) (*core.GeneratedCode, error) {
+	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
+
+	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
+	if !ok {
+		return nil, ErrSDKCodegenNotImplemented{SDK: srcInst.Self().SDK.Source}
+	}
+
+	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate code: %w", err)
+	}
+	return generatedCode, nil
+}
+
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
@@ -2530,21 +2620,10 @@ func (s *moduleSourceSchema) runCodegen(
 		return res, fmt.Errorf("failed to get current dag: %w", err)
 	}
 
-	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
-	if err != nil {
-		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
-	}
-
-	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
-	if !ok {
-		return res, ErrSDKCodegenNotImplemented{SDK: srcInst.Self().SDK.Source}
-	}
-
 	// run codegen to get the generated context directory
-	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInst)
+	generatedCode, err := s.runSDKCodegen(ctx, srcInst)
 	if err != nil {
-		return res, fmt.Errorf("failed to generate code: %w", err)
+		return res, err
 	}
 	genDirInst := generatedCode.Code
 

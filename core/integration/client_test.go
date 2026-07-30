@@ -38,6 +38,57 @@ func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 }
 
+func (ClientSuite) TestSilentSessionExportsTelemetryToCloud(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	devEngine := devEngineContainerAsService(devEngineContainer(c))
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{
+			"core/integration/testdata/telemetry/",
+			"core/integration/testdata/basic-container/",
+			"sdk/go/",
+			"go.mod",
+			"go.sum",
+		},
+	})
+
+	eventsVol := c.CacheVolume("dagger-silent-session-events-" + identity.NewID())
+	base := c.Container().
+		From(golangImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(goCache(c)).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src")
+
+	fakeCloud := base.
+		WithMountedCache("/events", eventsVol).
+		WithDefaultArgs([]string{"go", "run", "./core/integration/testdata/telemetry/"}).
+		WithExposedPort(8080).
+		AsService()
+
+	eventsID := identity.NewID()
+	_, err = base.
+		WithServiceBinding("dev-engine", devEngine).
+		WithServiceBinding("cloud", fakeCloud).
+		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
+		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
+		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
+		WithEnvVariable("DAGGER_SILENT", "true").
+		WithExec([]string{"go", "run", "./core/integration/testdata/basic-container/"}).
+		Sync(ctx)
+	require.NoError(t, err, "silent SDK session handshake, query, and close must succeed")
+
+	_, err = base.
+		WithMountedCache("/events", eventsVol).
+		WithExec([]string{"grep", "-F", "Container.withExec", fmt.Sprintf("/events/%s/v1/traces.json.names", eventsID)}).
+		Sync(ctx)
+	require.NoError(t, err, "relayed engine spans must still reach the independent Cloud exporter")
+}
+
 func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	rootCtx, span := otel.Tracer("dagger").Start(ctx, "root")
 	defer span.End()

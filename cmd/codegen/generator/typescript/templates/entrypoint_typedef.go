@@ -43,49 +43,55 @@ type TypedefFunction struct {
 	IsCheck     bool               `json:"isCheck"`
 	IsGenerator bool               `json:"isGenerator"`
 	IsUp        bool               `json:"isUp"`
+	Location    *TypedefLocation   `json:"location,omitempty"`
 	ReturnType  *TypedefType       `json:"returnType,omitempty"`
 	Arguments   []*TypedefArgument `json:"arguments"`
 }
 
 type TypedefArgument struct {
-	Name           string          `json:"name"`
-	Description    string          `json:"description,omitempty"`
-	Deprecated     string          `json:"deprecated,omitempty"`
-	Type           *TypedefType    `json:"type,omitempty"`
-	IsVariadic     bool            `json:"isVariadic"`
-	IsNullable     bool            `json:"isNullable"`
-	IsOptional     bool            `json:"isOptional"`
-	DefaultValue   json.RawMessage `json:"defaultValue,omitempty"`
-	DefaultPath    string          `json:"defaultPath,omitempty"`
-	DefaultAddress string          `json:"defaultAddress,omitempty"`
-	Ignore         []string        `json:"ignore,omitempty"`
+	Name           string           `json:"name"`
+	Description    string           `json:"description,omitempty"`
+	Deprecated     string           `json:"deprecated,omitempty"`
+	Type           *TypedefType     `json:"type,omitempty"`
+	IsVariadic     bool             `json:"isVariadic"`
+	IsNullable     bool             `json:"isNullable"`
+	IsOptional     bool             `json:"isOptional"`
+	DefaultValue   json.RawMessage  `json:"defaultValue,omitempty"`
+	DefaultPath    string           `json:"defaultPath,omitempty"`
+	DefaultAddress string           `json:"defaultAddress,omitempty"`
+	Ignore         []string         `json:"ignore,omitempty"`
+	Location       *TypedefLocation `json:"location,omitempty"`
 }
 
 type TypedefProperty struct {
-	Name        string       `json:"name"`
-	Alias       string       `json:"alias,omitempty"`
-	Description string       `json:"description,omitempty"`
-	Deprecated  string       `json:"deprecated,omitempty"`
-	IsExposed   bool         `json:"isExposed"`
-	Type        *TypedefType `json:"type,omitempty"`
+	Name        string           `json:"name"`
+	Alias       string           `json:"alias,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Deprecated  string           `json:"deprecated,omitempty"`
+	IsExposed   bool             `json:"isExposed"`
+	Type        *TypedefType     `json:"type,omitempty"`
+	Location    *TypedefLocation `json:"location,omitempty"`
 }
 
 type TypedefEnum struct {
 	Name        string                       `json:"name"`
 	Description string                       `json:"description"`
+	Location    *TypedefLocation             `json:"location,omitempty"`
 	Values      map[string]*TypedefEnumValue `json:"values"`
 }
 
 type TypedefEnumValue struct {
-	Name        string `json:"name"`
-	Value       string `json:"value"`
-	Description string `json:"description"`
-	Deprecated  string `json:"deprecated,omitempty"`
+	Name        string           `json:"name"`
+	Value       string           `json:"value"`
+	Description string           `json:"description"`
+	Deprecated  string           `json:"deprecated,omitempty"`
+	Location    *TypedefLocation `json:"location,omitempty"`
 }
 
 type TypedefInterface struct {
 	Name        string                      `json:"name"`
 	Description string                      `json:"description"`
+	Location    *TypedefLocation            `json:"location,omitempty"`
 	Functions   map[string]*TypedefFunction `json:"functions"`
 }
 

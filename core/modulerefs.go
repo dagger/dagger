@@ -15,6 +15,10 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+// ErrModuleVersionNotFound indicates that a requested module version does not
+// match any tag in its Git repository.
+var ErrModuleVersionNotFound = errors.New("module version not found")
+
 // FastModuleSourceKindCheck performs a quick heuristic check to determine
 // whether a module ref string refers to a local path or a git source.
 // Returns "" if the kind cannot be determined without further inspection.
@@ -226,5 +230,5 @@ func matchVersion(versions []string, match, subPath string) (string, error) {
 			return v, nil
 		}
 	}
-	return "", fmt.Errorf("unable to find version %s", match)
+	return "", fmt.Errorf("%w: %s", ErrModuleVersionNotFound, match)
 }

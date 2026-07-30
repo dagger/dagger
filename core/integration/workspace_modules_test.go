@@ -34,6 +34,27 @@ func TestWorkspaceModules(t *testing.T) {
 // TestWorkspaceModuleInstall covers module installation through both the CLI
 // and the Workspace overlay/export API.
 func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *testctx.T) {
+	t.Run("module init creates its explicit path with standard permissions", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "dang")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "dang", "editor", "--path", "editor")
+		require.NoError(t, err)
+
+		info, err := os.Stat(filepath.Join(workdir, "editor"))
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o755), info.Mode().Perm(),
+			"module directory mode: got %#o, want %#o", info.Mode().Perm(), os.FileMode(0o755))
+
+		_, err = os.Stat(filepath.Join(workdir, "editor", workspacecfg.ModuleConfigFileName))
+		require.NoError(t, err, "engine-authored module config should be preserved")
+		_, err = os.Stat(filepath.Join(workdir, "editor", "main.dang"))
+		require.NoError(t, err, "SDK-authored starter source should be preserved")
+	})
+
 	t.Run("Workspace.WithModule initializes config and lock for remote modules", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
@@ -116,6 +137,22 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "dep")
 		require.Equal(t, "dep", cfg.Modules["dep"].Source)
+	})
+
+	t.Run("install omits commented settings hints", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "defaults", "superconstructor")
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		require.NoError(t, err)
+
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
+		require.NoError(t, err)
+		require.NotContains(t, string(configBytes), "# settings.")
 	})
 
 	t.Run("workspace install pins Git resolution without a modules.resolve entry", func(ctx context.Context, t *testctx.T) {

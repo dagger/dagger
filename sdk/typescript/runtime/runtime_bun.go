@@ -41,6 +41,10 @@ func NewBunRuntime(
 }
 
 func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, error) {
+	if b.introspectionJSON == nil {
+		return b.setupContainerWithoutCodegen(ctx)
+	}
+
 	var tsConfig *dagger.File
 	var sdkLibrary *dagger.Directory
 	var runtimeWithDep *BunRuntime
@@ -118,6 +122,50 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		// Merge source code directory with current directory
 		WithDirectory(".", b.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, generatedEntrypoint).
+		WithEntrypoint([]string{
+			"bun", "run", entrypointPath,
+		})
+
+	if b.cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
+	return ctr, nil
+}
+
+// setupContainerWithoutCodegen builds the runtime container when the module
+// opts out of runtime codegen (introspectionJSON not passed): it trusts the
+// committed generated files (sdk/, __dagger.entrypoint.ts, package.json), installs
+// dependencies and runs the committed entrypoint — no lib generation, no
+// entrypoint generation, no config rewrite.
+func (b *BunRuntime) setupContainerWithoutCodegen(ctx context.Context) (*dagger.Container, error) {
+	if err := b.cfg.requireGeneratedFiles(ctx); err != nil {
+		return nil, err
+	}
+	if b.cfg.packageJSONConfig == nil {
+		return nil, fmt.Errorf(
+			"module %q has runtime codegen disabled but no package.json is committed",
+			b.cfg.name)
+	}
+
+	// Trust the committed package.json as-is (no rewrite).
+	b.ctr = b.ctr.WithFile("package.json", b.cfg.source.File("package.json"))
+
+	runtimeWithDep, err := b.withInstalledDependencies().sync(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entrypointPath := filepath.Join(b.cfg.modulePath(), EntrypointExecutableFile)
+
+	ctr := runtimeWithDep.ctr.
+		// Overlay the committed tree (sdk/, __dagger.entrypoint.ts, user sources);
+		// node_modules is reinstalled above.
+		WithDirectory(".", b.cfg.source, dagger.ContainerWithDirectoryOpts{
+			Exclude: []string{NodeModulesDir},
+		}).
+		// Make @dagger.io/dagger resolve to the committed bindings.
+		WithMountedDirectory("node_modules/@dagger.io/dagger", b.cfg.source.Directory(GenDir)).
 		WithEntrypoint([]string{
 			"bun", "run", entrypointPath,
 		})
