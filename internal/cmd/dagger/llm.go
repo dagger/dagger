@@ -181,9 +181,10 @@ func (s *LLMSession) reset() {
 		s.updateLLM(llm)
 		return
 	}
-	// The LLM binds the current workspace by default (see core.NewLLM), so its
-	// schema and file-editing surface derive from the user's workspace.
-	s.updateLLM(s.dag.LLM(dagger.LLMOpts{Model: s.model}))
+	// llm() starts unbound; bind the user's workspace explicitly so the LLM's
+	// schema and file-editing surface derive from it, recorded on the ID.
+	s.updateLLM(s.dag.LLM(dagger.LLMOpts{Model: s.model}).
+		WithWorkspace(s.dag.CurrentWorkspace()))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -480,9 +481,14 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	// binding to its base: the persisted recipe (globalID) must stop replaying
 	// the applied overlays, since re-deriving them against the updated files on
 	// a later session load fails (withReplaced no longer finds its search
-	// text) or silently re-applies them. Sync eagerly so a failed reset
-	// surfaces here rather than corrupting later saves.
-	reset, err := s.llm.WithResetWorkspace().Sync(ctx)
+	// text) or silently re-applies them. The reset recipe is unbound, so
+	// rebind the live workspace explicitly — resuming this recipe in a later
+	// session replays the currentWorkspace call and re-resolves it there.
+	// Sync eagerly so a failed reset surfaces here rather than corrupting
+	// later saves.
+	reset, err := s.llm.WithResetWorkspace().
+		WithWorkspace(s.dag.CurrentWorkspace()).
+		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace after export: %w", err)
 	}
@@ -505,7 +511,9 @@ func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	reset, err := s.llm.WithResetWorkspace().Sync(ctx)
+	reset, err := s.llm.WithResetWorkspace().
+		WithWorkspace(s.dag.CurrentWorkspace()).
+		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
