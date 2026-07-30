@@ -86,7 +86,7 @@ func (LLMSuite) TestParallelChangesetToolsMergeResults(ctx context.Context, t *t
 		}))
 
 	out, err := base.With(daggerShell(fmt.Sprintf(
-		`llm --model="%s" | with-tools $(swapper) | with-prompt "make both changes" | loop | workspace | directory "/" | entries`,
+		`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "make both changes" | loop | workspace | directory "/" | entries`,
 		model,
 	))).Stdout(ctx)
 	require.NoError(t, err)
