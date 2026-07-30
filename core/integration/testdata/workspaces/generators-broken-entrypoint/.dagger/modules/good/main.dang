@@ -1,0 +1,8 @@
+type Good {
+  """
+  Regenerate by writing a marker file. Used to prove the module loaded.
+  """
+  pub generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
+    workdir.withNewFile("generated.txt", "hello from good").changes(workdir)
+  }
+}
