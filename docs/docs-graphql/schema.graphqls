@@ -3563,6 +3563,13 @@ type LLM implements Node & Syncer {
   replay: ID! @expectedType(name: "LLM")
 
   """
+  The skills visible to the model, exactly as the list_skills tool serves them:
+  engine-embedded skills, skills installed with withSkills, and skills
+  discovered in the workspace.
+  """
+  skills: [LLMSkill!]!
+
+  """
   Advance the conversation by a single step: send the queued prompt or tool
   results to the model, evaluate any tool calls it makes, and queue their
   results. Use loop to step until the model ends its turn.
@@ -3630,6 +3637,16 @@ type LLM implements Node & Syncer {
   ): LLM!
 
   """
+  Return a new LLM with the workspace reset to its base, dropping any
+  accumulated changes. The conversation and configuration are re-emitted as a
+  flat recipe bound to the live workspace, so a persisted session (globalID) no
+  longer replays workspace edits when loaded. Use after exporting changes
+  (Workspace.export) so a resumed session continues from the workspace's on-disk
+  state.
+  """
+  withResetWorkspace: LLM!
+
+  """
   Append an assistant response to the message history without calling the model,
   e.g. to reconstruct a conversation from another source.
   """
@@ -3651,6 +3668,18 @@ type LLM implements Node & Syncer {
 
     """Total tokens consumed by this response"""
     totalTokens: Int = 0
+  ): LLM!
+
+  """
+  Install skills from a directory, adding them to the skills the model discovers
+  with list_skills and reads with read_skill. Each skill is a directory
+  containing a SKILL.md with name and description frontmatter, discovered
+  anywhere in the tree. Installed skills take precedence over skills discovered
+  in the workspace, but cannot shadow the engine's built-in skills.
+  """
+  withSkills(
+    """A directory containing skills, each a subdirectory holding a SKILL.md."""
+    directory: ID! @expectedType(name: "Directory")
   ): LLM!
 
   """
@@ -3808,6 +3837,20 @@ enum LLMMessageRole {
 
   """A system prompt."""
   SYSTEM
+}
+
+"""
+A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.
+"""
+type LLMSkill implements Node {
+  """The one-line description from the SKILL.md frontmatter."""
+  description: String!
+
+  """A unique identifier for this LLMSkill."""
+  id: ID!
+
+  """The skill name, as passed to read_skill."""
+  name: String!
 }
 
 """A count of tokens consumed by LLM API calls."""
