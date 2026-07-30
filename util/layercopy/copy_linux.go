@@ -4,6 +4,7 @@ package layercopy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -341,7 +342,8 @@ func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions)
 }
 
 func isHardlinkFallback(err error) bool {
-	return err != nil && (os.IsExist(err) || err == unix.EXDEV || err == unix.EMLINK || err == syscall.EXDEV || err == syscall.EMLINK)
+	// os.Link wraps the errno in *os.LinkError, so unwrap rather than compare.
+	return err != nil && (os.IsExist(err) || errors.Is(err, unix.EXDEV) || errors.Is(err, unix.EMLINK))
 }
 
 func copyFileContent(dstPath, srcPath string) error {
