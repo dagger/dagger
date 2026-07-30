@@ -286,11 +286,7 @@ func (s *workspaceSchema) withModuleInstall(
 		}
 		return s.stageWorkspaceConfigAndLock(ctx, parent, staged, staged.Data, overlayLock)
 	}
-	var hints map[string][]workspace.ConstructorArgHint
-	if plan.Added {
-		hints = collectWorkspaceSettingsHintsFromSource(lookupCtx, resolved.Name, resolved.ModuleSource)
-	}
-	updated, err := workspace.UpdateConfigBytesWithHints(staged.Data, staged.Config, hints)
+	updated, err := workspace.UpdateConfigBytes(staged.Data, staged.Config)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

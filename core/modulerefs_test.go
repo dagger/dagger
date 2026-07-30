@@ -24,7 +24,7 @@ func TestMatchVersion(t *testing.T) {
 	require.Equal(t, "path/v1.0.1", match3)
 
 	_, err = matchVersion(vers, "v2.0.1", "/")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrModuleVersionNotFound)
 
 	_, err = matchVersion([]string{"hello/v0.3.0"}, "v0.3.0", "/hello")
 	require.NoError(t, err)

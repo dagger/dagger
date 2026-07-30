@@ -31,6 +31,18 @@ type destination struct {
 
 	sourceLinks map[inode]string
 	crossLinks  map[inode]struct{}
+
+	// materializedDirs records resolved relative paths already known to exist
+	// as directories in the write root, so repeated copies into the same
+	// subtree stop re-stat'ing every ancestor. It holds an invariant relied on
+	// when walking ancestors: if a path is present, so are all of its parents.
+	// Directory removals drop the whole set; file removals cannot invalidate it.
+	//
+	// This assumes the write root is only mutated through the Copier for its
+	// lifetime. Callers that reach around it — core/directory.go's withChanges
+	// removes changeset paths with a plain RemoveAll — must do so before the
+	// first copy, while the set is still empty.
+	materializedDirs map[string]struct{}
 }
 
 func newDestination(m Mount) (*destination, error) {
@@ -39,10 +51,11 @@ func newDestination(m Mount) (*destination, error) {
 	}
 
 	d := &destination{
-		viewRoot:    m.Root,
-		writeRoot:   m.Root,
-		sourceLinks: map[inode]string{},
-		crossLinks:  map[inode]struct{}{},
+		viewRoot:         m.Root,
+		writeRoot:        m.Root,
+		sourceLinks:      map[inode]string{},
+		crossLinks:       map[inode]struct{}{},
+		materializedDirs: map[string]struct{}{},
 	}
 	if m.Mount == nil {
 		return d, nil
@@ -83,7 +96,7 @@ func (d *destination) mkdir(destPath string, opts CopyOptions) error {
 			if err != nil {
 				return err
 			}
-			if err := os.RemoveAll(realPath); err != nil {
+			if err := d.removeAll(realPath, false); err != nil {
 				return err
 			}
 			if d.overlay {
@@ -160,12 +173,10 @@ func (d *destination) ensureExistingDir(destPath string, src *sourceEntry, opts 
 		return "", false, err
 	}
 	rel = cleanRel(rel)
-	// Recurse on the parent of the resolved path, not destPath, to handle
-	// symlinks on dest paths.
-	if parent := filepath.Dir(cleanContainerPath(rel)); parent != "/" && parent != "." {
-		if _, _, err := d.ensureDir(parent, nil, CopyOptions{}, false); err != nil {
-			return "", false, err
-		}
+	// Materialize the ancestors of the resolved path, not of destPath, to
+	// handle symlinks on dest paths.
+	if err := d.materializeAncestors(rel); err != nil {
+		return "", false, err
 	}
 	realPath, materialized, err := d.materializeExistingDir(rel, viewPath)
 	if err != nil {
@@ -230,6 +241,7 @@ func (d *destination) createDir(destPath string, src *sourceEntry, opts CopyOpti
 	if err := d.applyMetadataPath(realPath, src, opts); err != nil {
 		return "", false, err
 	}
+	d.markMaterialized(cleanRel(rel))
 	return rel, true, nil
 }
 
@@ -244,7 +256,7 @@ func (d *destination) replaceCreateDir(realPath string, mode os.FileMode, opts C
 	if info.IsDir() {
 		return nil
 	}
-	if err := os.RemoveAll(realPath); err != nil {
+	if err := d.removeAll(realPath, false); err != nil {
 		return err
 	}
 	if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
@@ -267,12 +279,44 @@ func mkdirMode(src *sourceEntry, opts CopyOptions) os.FileMode {
 	return mode
 }
 
+// materializeAncestors ensures every ancestor of rel exists in the write root.
+//
+// rel is produced by rootPath, so every component of it is already resolved:
+// none of its ancestors can be a symlink and none of them need resolving
+// again. Walking them directly avoids re-resolving the whole path from the
+// destination root once per level, which made ensuring a directory cost work
+// quadratic in its depth. The walk stops at the first ancestor known to be
+// materialized, since everything above it must be materialized too.
+func (d *destination) materializeAncestors(rel string) error {
+	var ancestors []string
+	for p := filepath.Dir(cleanContainerPath(rel)); p != "/" && p != "."; p = filepath.Dir(p) {
+		ancRel := cleanRel(p)
+		if _, ok := d.materializedDirs[ancRel]; ok {
+			break
+		}
+		ancestors = append(ancestors, ancRel)
+	}
+	// Materialize top-down so each parent exists before its child, preserving
+	// the materializedDirs invariant.
+	slices.Reverse(ancestors)
+	for _, ancRel := range ancestors {
+		if _, _, err := d.materializeExistingDir(ancRel, filepath.Join(d.viewRoot, ancRel)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool, error) {
 	realPath := filepath.Join(d.writeRoot, rel)
+	if _, ok := d.materializedDirs[rel]; ok {
+		return realPath, false, nil
+	}
 	if info, err := os.Lstat(realPath); err == nil {
 		if !info.IsDir() {
 			return "", false, fmt.Errorf("destination upper path %q exists and is not a directory", realPath)
 		}
+		d.markMaterialized(rel)
 		return realPath, false, nil
 	} else if !os.IsNotExist(err) {
 		return "", false, err
@@ -288,7 +332,69 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil, false); err != nil {
 		return "", false, err
 	}
+	d.markMaterialized(rel)
 	return realPath, true, nil
+}
+
+func (d *destination) markMaterialized(rel string) {
+	if rel != "" {
+		d.materializedDirs[rel] = struct{}{}
+	}
+}
+
+// removeAll removes a path from the write root. mayBeDir reports whether the
+// caller cannot rule out that the path is a directory; removing a directory
+// invalidates the materialized set, whereas removing a file never can.
+func (d *destination) removeAll(realPath string, mayBeDir bool) error {
+	if err := os.RemoveAll(realPath); err != nil {
+		return err
+	}
+	if mayBeDir {
+		clear(d.materializedDirs)
+	}
+	return nil
+}
+
+// resolvedParent carries the destination directory an entry is being copied
+// into, once it has already been resolved and materialized. Entries inside it
+// then need no resolution of their own: their parent is known to be
+// symlink-free, so only their final component can still be a symlink. ok is
+// false when the parent is not known yet, and paths are resolved from the
+// destination root as before.
+type resolvedParent struct {
+	rel string
+	ok  bool
+}
+
+// realPathIn returns the write-root path for destPath, using a known parent
+// directory when there is one. realPath resolves only the parent and appends
+// the final component, so this is the same answer without the walk.
+func (d *destination) realPathIn(destPath string, parent resolvedParent) (string, error) {
+	if !parent.ok {
+		return d.realPath(destPath)
+	}
+	base := filepath.Base(cleanContainerPath(destPath))
+	return filepath.Join(d.writeRoot, parent.rel, base), nil
+}
+
+// statViewIn stats destPath in the view, using a known parent directory when
+// there is one. Only the final component can still be a symlink there, so an
+// lstat settles the common case and the bounded resolution below is only
+// needed when it turns out to be one.
+func (d *destination) statViewIn(destPath string, parent resolvedParent) (os.FileInfo, bool, error) {
+	if parent.ok {
+		base := filepath.Base(cleanContainerPath(destPath))
+		info, err := os.Lstat(filepath.Join(d.viewRoot, parent.rel, base))
+		switch {
+		case err == nil && info.Mode()&os.ModeSymlink == 0:
+			return info, true, nil
+		case err != nil && (os.IsNotExist(err) || isNotDir(err)):
+			return nil, false, nil
+		case err != nil:
+			return nil, false, err
+		}
+	}
+	return d.statView(destPath)
 }
 
 func (d *destination) realPath(destPath string) (string, error) {
@@ -319,35 +425,39 @@ func (d *destination) statView(destPath string) (os.FileInfo, bool, error) {
 	return nil, false, err
 }
 
-func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opts CopyOptions) error {
+// removeForReplace clears a destination path that is about to be replaced. It
+// returns the resolved write-root path whenever it had to resolve one, so that
+// callers needing the same path can reuse it instead of resolving it a second
+// time. An empty string means nothing was resolved and nothing was removed.
+func (d *destination) removeForReplace(destPath string, parent resolvedParent, srcInfo os.FileInfo, opts CopyOptions) (string, error) {
 	if !opts.ReplaceExisting {
-		return nil
+		return "", nil
 	}
 
-	destInfo, exists, err := d.statView(destPath)
+	destInfo, exists, err := d.statViewIn(destPath, parent)
 	if err != nil || !exists {
-		return err
+		return "", err
 	}
 	if srcInfo.IsDir() && destInfo.IsDir() {
-		return nil
+		return "", nil
 	}
 
-	realPath, err := d.realPath(destPath)
+	realPath, err := d.realPathIn(destPath, parent)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := os.RemoveAll(realPath); err != nil {
-		return err
+	if err := d.removeAll(realPath, destInfo.IsDir()); err != nil {
+		return "", err
 	}
 	if d.overlay && srcInfo.IsDir() && !destInfo.IsDir() {
 		if err := os.Mkdir(realPath, srcInfo.Mode().Perm()); err != nil && !os.IsExist(err) {
-			return err
+			return "", err
 		}
 		if err := d.markOpaque(realPath); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return nil
+	return realPath, nil
 }
 
 func (d *destination) applyMetadataPath(dstPath string, src *sourceEntry, opts CopyOptions) error {

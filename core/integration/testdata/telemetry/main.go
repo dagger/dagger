@@ -11,12 +11,16 @@ package main
 // panics, killing the service and failing the test loudly. Every authorized
 // telemetry request is logged to /events/requests.log as "<credential>
 // <path>", so tests can pin a request to the credential that made it.
+// Trace requests additionally get their span names appended to
+// /events/<request path>.json.names, one name per line, so tests can grep
+// for a span without decoding protobuf.
 //
 // Paths starting with /hang/ simulate a Cloud outage: the server accepts the
 // request and then sits on it longer than any client or engine timeout, the
 // worst outage mode (a hard-down endpoint at least fails fast).
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +31,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 const refreshToken = "test-refresh-token"
@@ -58,7 +65,29 @@ func main() {
 		// engine-issued token apart from a client-issued one)
 		appendFile("/events/requests.log", strings.NewReader(credential+" "+r.URL.Path+"\n"))
 
-		appendFile(filepath.Join("/events", r.URL.Path+".json"), r.Body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			panic(err)
+		}
+		eventsFp := filepath.Join("/events", r.URL.Path+".json")
+		appendFile(eventsFp, bytes.NewReader(body))
+
+		if strings.HasSuffix(r.URL.Path, "/v1/traces") {
+			var req coltracepb.ExportTraceServiceRequest
+			if err := proto.Unmarshal(body, &req); err != nil {
+				panic(err)
+			}
+			var names strings.Builder
+			for _, resourceSpans := range req.ResourceSpans {
+				for _, scopeSpans := range resourceSpans.ScopeSpans {
+					for _, span := range scopeSpans.Spans {
+						fmt.Fprintln(&names, span.Name)
+					}
+				}
+			}
+			appendFile(eventsFp+".names", strings.NewReader(names.String()))
+		}
+
 		w.WriteHeader(http.StatusCreated)
 	}))
 	if !errors.Is(err, net.ErrClosed) {

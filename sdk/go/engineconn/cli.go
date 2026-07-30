@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,8 @@ const (
 )
 
 var (
+	errCLIReleaseUnavailable = errors.New("CLI release unavailable")
+
 	// Only modified by tests, not changeable by outside users due to being in
 	// an internal package
 	OverrideCLIArchiveURL string
@@ -64,17 +67,45 @@ func FromLocalCLI(ctx context.Context, cfg *Config) (EngineConn, bool, error) {
 }
 
 func FromDownloadedCLI(ctx context.Context, cfg *Config) (EngineConn, error) {
-	binPath, err := (CLIDownloader{
+	binPath, downloadErr := (CLIDownloader{
 		Ref:        CLIVersion,
 		Release:    true,
 		LogOutput:  cfg.LogOutput,
 		CleanupOld: true,
 	}).Download(ctx)
-	if err != nil {
-		return nil, err
+	if downloadErr != nil {
+		var err error
+		binPath, err = fallbackToLocalCLI(downloadErr, cfg.LogOutput)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return startCLISession(ctx, binPath, cfg)
+	conn, err := startCLISession(ctx, binPath, cfg)
+	if err != nil && downloadErr != nil {
+		return nil, errors.Join(downloadErr, fmt.Errorf("failed to use CLI from PATH %q: %w", binPath, err))
+	}
+	return conn, err
+}
+
+func fallbackToLocalCLI(downloadErr error, logOutput io.Writer) (string, error) {
+	if !errors.Is(downloadErr, errCLIReleaseUnavailable) {
+		return "", downloadErr
+	}
+
+	binPath, err := exec.LookPath("dagger")
+	if err != nil {
+		return "", errors.Join(downloadErr, fmt.Errorf("dagger CLI not found in PATH: %w", err))
+	}
+	if logOutput == nil {
+		logOutput = os.Stderr
+	}
+	fmt.Fprintf(logOutput,
+		"CLI version %s is unavailable; using %s from PATH (version compatibility is not guaranteed).\n",
+		CLIVersion,
+		binPath,
+	)
+	return binPath, nil
 }
 
 func (d CLIDownloader) Download(ctx context.Context) (string, error) {
@@ -94,10 +125,6 @@ func (d CLIDownloader) Download(ctx context.Context) (string, error) {
 	binPath := filepath.Join(cacheDir, binName)
 
 	if _, err := os.Stat(binPath); os.IsNotExist(err) {
-		if d.LogOutput != nil {
-			fmt.Fprintf(d.LogOutput, "Downloading CLI... ")
-		}
-
 		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+binName)
 		if err != nil {
 			return "", fmt.Errorf("failed to create temp file: %w", err)
@@ -111,6 +138,10 @@ func (d CLIDownloader) Download(ctx context.Context) (string, error) {
 			if err != nil {
 				return "", err
 			}
+		}
+
+		if d.LogOutput != nil {
+			fmt.Fprintf(d.LogOutput, "Downloading CLI... ")
 		}
 
 		actual, err := d.extract(ctx, tmpbin)
@@ -194,7 +225,11 @@ func (d CLIDownloader) checksumMap(ctx context.Context) (map[string]string, erro
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download checksums from %s: %s", checksumsURL, resp.Status)
+		err := fmt.Errorf("failed to download checksums from %s: %s", checksumsURL, resp.Status)
+		if isCLIReleaseUnavailable(resp.StatusCode) {
+			err = fmt.Errorf("%w: %w", errCLIReleaseUnavailable, err)
+		}
+		return nil, err
 	}
 	if _, err := io.Copy(checksumFileContents, resp.Body); err != nil {
 		return nil, fmt.Errorf("failed to download checksums from %s: %w", checksumsURL, err)
@@ -264,6 +299,11 @@ func (d CLIDownloader) extract(ctx context.Context, dest io.Writer) (string, err
 	}
 
 	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
+}
+
+func isCLIReleaseUnavailable(statusCode int) bool {
+	// dl.dagger.io returns 403 for missing S3 objects.
+	return statusCode == http.StatusForbidden || statusCode == http.StatusNotFound
 }
 
 func extractTarCLI(src io.Reader, dest io.Writer) error {

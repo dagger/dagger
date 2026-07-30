@@ -72,6 +72,16 @@ type Workspace struct {
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by workspace filesystem operations that need host access.
 	hostPath string
+
+	// StagedGeneration records the workspace-root-relative paths of modules
+	// whose generated local dependency closure has been applied to this
+	// workspace, via the internal Workspace.__withGeneratedLocalDependencies
+	// field. A nested ModuleSource.generateLocalDependencies call for a
+	// recorded module short-circuits to an empty changeset — without this, a
+	// dependency's SDK generator re-stages its own dependency closure and
+	// generation fans out exponentially over the dependency DAG. Kept sorted
+	// and deduplicated; carried through Clone so derived workspaces keep it.
+	StagedGeneration []string
 }
 
 // WorkspaceSource is the private backing source for a Workspace.
@@ -416,6 +426,8 @@ type persistedWorkspacePayload struct {
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
 
+	StagedGeneration []string `json:"stagedGeneration,omitempty"`
+
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
 	LegacyConfigPath string `json:"configPath,omitempty"`
@@ -555,13 +567,14 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		CompatWorkspace: ws.compatWorkspace,
-		Address:         ws.Address,
-		Cwd:             ws.Cwd,
-		ConfigFile:      ws.ConfigFile,
-		LockFile:        ws.LockFile,
-		ClientID:        ws.ClientID,
-		HostPath:        ws.hostPath,
+		CompatWorkspace:  ws.compatWorkspace,
+		Address:          ws.Address,
+		Cwd:              ws.Cwd,
+		ConfigFile:       ws.ConfigFile,
+		LockFile:         ws.LockFile,
+		ClientID:         ws.ClientID,
+		HostPath:         ws.hostPath,
+		StagedGeneration: ws.StagedGeneration,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -621,14 +634,15 @@ func (*Workspace) DecodePersistedObject(
 	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	ws := &Workspace{
-		rootfs:          rootfs,
-		compatWorkspace: persisted.CompatWorkspace,
-		Address:         persisted.Address,
-		Cwd:             cwd,
-		ConfigFile:      configFile,
-		LockFile:        lockFile,
-		ClientID:        persisted.ClientID,
-		hostPath:        persisted.HostPath,
+		rootfs:           rootfs,
+		compatWorkspace:  persisted.CompatWorkspace,
+		Address:          persisted.Address,
+		Cwd:              cwd,
+		ConfigFile:       configFile,
+		LockFile:         lockFile,
+		ClientID:         persisted.ClientID,
+		hostPath:         persisted.HostPath,
+		StagedGeneration: persisted.StagedGeneration,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
@@ -740,6 +754,28 @@ func attachWorkspaceSource(
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
 	return &cp
+}
+
+type workspaceOverrideKey struct{}
+
+// ContextWithWorkspaceOverride marks ws as the workspace to hand to SDK
+// functions that take a Workspace argument, in place of the ambient
+// currentWorkspace. Used by the generator framework (GeneratorGroup.Run) to run
+// a workspace's generators against a scoped/overlaid workspace the engine
+// constructed — e.g. ModuleSource.generateLocalDependencies staging a
+// dependency's codegen before generating the dependent.
+func ContextWithWorkspaceOverride(ctx context.Context, ws dagql.ObjectResult[*Workspace]) context.Context {
+	return context.WithValue(ctx, workspaceOverrideKey{}, ws)
+}
+
+// WorkspaceOverrideFromContext returns the override set by
+// ContextWithWorkspaceOverride, if any.
+func WorkspaceOverrideFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], bool) {
+	ws, ok := ctx.Value(workspaceOverrideKey{}).(dagql.ObjectResult[*Workspace])
+	if ok && ws.Self() != nil {
+		return ws, true
+	}
+	return dagql.ObjectResult[*Workspace]{}, false
 }
 
 // WorkspaceGit represents the git state associated with a workspace.

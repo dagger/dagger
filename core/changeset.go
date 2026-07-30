@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -20,11 +21,15 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/layercopy"
+	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sys/unix"
 )
 
 func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changeset, error) {
@@ -153,7 +158,20 @@ func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uin
 // metadata and git diffs.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
 	ch.pathsOnce.Do(func() {
-		ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
+		_ = enginetel.Task(ctx, "computing paths", func(ctx context.Context) error {
+			ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
+			if ch.pathsErr != nil {
+				// nothing to report; cachedPaths is nil on error
+				return ch.pathsErr
+			}
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			defer stdio.Close()
+			fmt.Fprintln(stdio.Stdout, "added:", ch.cachedPaths.Added)
+			fmt.Fprintln(stdio.Stdout, "removed:", ch.cachedPaths.Removed)
+			fmt.Fprintln(stdio.Stdout, "modified:", ch.cachedPaths.Modified)
+			fmt.Fprintln(stdio.Stdout, "renamed:", ch.cachedPaths.Renamed)
+			return nil
+		})
 	})
 	return ch.cachedPaths, ch.pathsErr
 }
@@ -184,6 +202,58 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 		return nil, err
 	}
 	return result, nil
+}
+
+// maxGitPathSpecBytes bounds the pathspecs appended to a git diff. They only
+// narrow work that would otherwise be correct anyway, and argv has a hard size
+// limit, so the list gets collapsed or dropped rather than allowed to grow
+// until exec fails.
+const maxGitPathSpecBytes = 128 << 10
+
+// gitDiffPathSpecs returns pathspecs limiting a diff to the paths that
+// actually changed. Renamed paths need no entry of their own: ChangesetPaths
+// records them under both their old and new names, in Removed and Added.
+//
+// An empty result means "diff everything". Too many paths to pass are first
+// collapsed to their parent directories, which still match everything beneath
+// them, and given up on entirely once even those don't fit.
+func gitDiffPathSpecs(paths *ChangesetPaths) []string {
+	specs := slices.Concat(paths.Added, paths.Removed, paths.Modified)
+	for pathSpecsSize(specs) > maxGitPathSpecBytes {
+		specs = collapsePathSpecsToParents(specs)
+		if len(specs) == 0 {
+			return nil
+		}
+	}
+	return specs
+}
+
+func pathSpecsSize(specs []string) int {
+	var size int
+	for _, spec := range specs {
+		size += len(spec) + 1 // NUL terminator in argv
+	}
+	return size
+}
+
+// collapsePathSpecsToParents replaces each pathspec with its parent directory,
+// which matches everything the original did and then some. Returns nil once
+// any entry sits at the tree root, since its parent is the whole tree.
+func collapsePathSpecsToParents(specs []string) []string {
+	seen := make(map[string]struct{}, len(specs))
+	collapsed := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		parent := path.Dir(path.Clean(spec))
+		if parent == "." || parent == "/" {
+			return nil
+		}
+		if _, ok := seen[parent]; ok {
+			continue
+		}
+		seen[parent] = struct{}{}
+		collapsed = append(collapsed, parent)
+	}
+	return collapsed
 }
 
 func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*ChangesetPaths, error) {
@@ -617,10 +687,6 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(ctx))
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
-	defer stdio.Close()
-
 	newRef, err := query.SnapshotManager().New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("Changeset.asPatch"))
@@ -635,6 +701,16 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Determine the changed paths so we only diff things that actually changed,
+	// rather than the entire tree
+	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compute paths: %w", err)
+	}
+	noChanges := changesetPathsEmpty(paths)
+	pathSpecs := gitDiffPathSpecs(paths)
+
 	err = MountRef(ctx, beforeRef, func(before string, _ *mount.Mount) error {
 		beforeDir, err := containerdfs.RootPath(before, beforeSelector)
 		if err != nil {
@@ -671,26 +747,52 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer patchFile.Close()
 
+				if noChanges {
+					// No paths actually changed (no-op Changeset) - just return early rather than
+					// computing an expensive no-op diff.
+					return nil
+				}
+
 				// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
 				// from the ---/+++ lines but not from rename from/to lines, so a
 				// rename entry makes the patch unapplyable ("inconsistent old
 				// filename"). Emitting renames as delete+add avoids the mismatch;
 				// with --binary the result is identical.
-				cmd := exec.CommandContext(ctx, "git", "diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b")
-				cmd.Dir = root
-				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
-				cmd.Stderr = stdio.Stderr
-				if err := cmd.Run(); err != nil {
-					var exitErr *exec.ExitError
-					// Check if it's exit code 1, which is expected for git diff when files differ
-					if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
+				args := []string{"diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b"}
+				if len(pathSpecs) > 0 {
+					// -- so a path starting with - isn't parsed as a flag, and
+					// GIT_LITERAL_PATHSPECS below so one starting with : isn't
+					// parsed as pathspec magic. Either would otherwise fail the
+					// diff or silently drop the path from the patch.
+					args = append(args, "--")
+					args = append(args, pathSpecs...)
+				}
+				return enginetel.Task(ctx, "git diff", func(ctx context.Context) error {
+					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
+					defer stdio.Close()
+					// The span is named for the command rather than the whole
+					// argv, which the pathspecs make unbounded; log those.
+					fmt.Fprintln(stdio.Stdout, "running git", strings.Join(args, " "))
+					cmd := exec.CommandContext(ctx, "git", args...)
+					cmd.Dir = root
+					cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
+					cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
+					cmd.Stderr = stdio.Stderr
+					if err := cmd.Run(); err != nil {
+						var exitErr *exec.ExitError
+						// Exit code 1 just means the trees differ, which is the
+						// whole point; returning it would end the span in error
+						// for every patch that isn't empty.
+						if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+							return nil
+						}
 						// NB: we could technically populate an ExecError here, but that
 						// feels like it leaks implementation details; "exit status 128" isn't
 						// exactly clear
 						return fmt.Errorf("failed to generate patch: %w", err)
 					}
-				}
-				return nil
+					return nil
+				})
 			})
 		}, mountRefAsReadOnly)
 	}, mountRefAsReadOnly)
@@ -935,19 +1037,18 @@ func (ch *Changeset) WithChangeset(
 		return nil, err
 	}
 
-	ourPatch, err := ch.AsPatch(ctx)
+	ourContent, err := ch.content(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("generate our patch: %w", err)
+		return nil, fmt.Errorf("materialize our changes: %w", err)
 	}
-	theirPatch, err := other.AsPatch(ctx)
+	theirContent, err := other.content(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("generate their patch: %w", err)
+		return nil, fmt.Errorf("materialize their changes: %w", err)
 	}
 
-	afterDir, err := gitMergeWithPatches(ctx,
+	afterDir, err := gitMergeChangesets(ctx,
 		before,
-		ourPatch, theirPatch,
-		ourPaths.AllRemoved, theirPaths.AllRemoved,
+		ourContent, theirContent,
 		conflicts,
 		onConflictStrategy,
 	)
@@ -956,6 +1057,21 @@ func (ch *Changeset) WithChangeset(
 	}
 
 	return newChangesetFromMerge(ctx, before, afterDir)
+}
+
+// maxParallelChangesets bounds how many changesets are worked on at once.
+// Each job mounts both of a changeset's snapshots and walks them, so this is
+// I/O bound work holding real resources for its duration, not something to fan
+// out one goroutine per changeset over.
+const maxParallelChangesets = 8
+
+// changesetJobs returns a job pool for per-changeset work, capped so that a
+// merge of many changesets doesn't mount all of them at once.
+func changesetJobs() parallel.Jobs {
+	return parallel.New().
+		WithContextualTracer(true).
+		WithInternal(true).
+		WithLimit(maxParallelChangesets)
 }
 
 // WithChangesets merges multiple changesets into this one using git's octopus merge strategy.
@@ -967,6 +1083,32 @@ func (ch *Changeset) WithChangesets(
 	others []*Changeset,
 	onConflictStrategy WithChangesetsMergeConflict,
 ) (*Changeset, error) {
+	// Before wasting any effort, remove any changesets that are empty.
+	//
+	// This asks ComputePaths rather than IsEmpty: every surviving changeset
+	// needs its paths computed anyway and ComputePaths memoizes, whereas
+	// IsEmpty would mount and walk both trees all over again for each one. It
+	// also counts directory-only changes, which IsEmpty deliberately ignores
+	// the way `git diff --quiet` does.
+	filtered := make([]*Changeset, len(others))
+	jobs := changesetJobs()
+	for i, other := range others {
+		jobs = jobs.WithJob(fmt.Sprintf("changeset %d paths", i), func(ctx context.Context) error {
+			paths, err := other.ComputePaths(ctx)
+			if err != nil {
+				return fmt.Errorf("compute paths for changeset %d: %w", i, err)
+			}
+			if !changesetPathsEmpty(paths) {
+				filtered[i] = other
+			}
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
+	others = slices.DeleteFunc(filtered, func(cs *Changeset) bool { return cs == nil })
+
 	if len(others) == 0 {
 		return ch, nil
 	}
@@ -983,36 +1125,56 @@ func (ch *Changeset) WithChangesets(
 		return ch.WithChangeset(ctx, others[0], twoWayStrategy)
 	}
 
-	err := checkAllPairwiseConflicts(ctx, ch, others)
+	err := enginetel.Task(ctx, "checking pairwise conflicts", func(ctx context.Context) error {
+		return checkAllPairwiseConflicts(ctx, ch, others)
+	})
 	if err != nil && onConflictStrategy == FailEarlyOnConflicts {
 		return nil, err
 	}
 
-	before, err := mergeBeforeDirectories(ctx, ch, others...)
+	before, err := enginetel.TaskRet(ctx, "merging before directories", func(ctx context.Context) (dagql.ObjectResult[*Directory], error) {
+		return mergeBeforeDirectories(ctx, ch, others...)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	ourPatch, err := ch.AsPatch(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get our patch: %w", err)
-	}
-
-	otherPatches := make([]*File, len(others))
-	for i, other := range others {
-		patch, err := other.AsPatch(ctx)
+	// Each diff is an independent snapshot-diff materialization, so take them
+	// all at once.
+	var ourContent *changesetContent
+	otherContents := make([]*changesetContent, len(others))
+	contentJobs := changesetJobs().WithJob("self changes", func(ctx context.Context) error {
+		content, err := ch.content(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("get patch for changeset %d: %w", i, err)
+			return fmt.Errorf("materialize our changes: %w", err)
 		}
-		otherPatches[i] = patch
+		ourContent = content
+		return nil
+	})
+	for i, other := range others {
+		contentJobs = contentJobs.WithJob(fmt.Sprintf("changeset %d changes", i), func(ctx context.Context) error {
+			content, err := other.content(ctx)
+			if err != nil {
+				return fmt.Errorf("materialize changes for changeset %d: %w", i, err)
+			}
+			otherContents[i] = content
+			return nil
+		})
+	}
+	if err := contentJobs.Run(ctx); err != nil {
+		return nil, err
 	}
 
-	afterDir, err := gitOctopusMergeWithPatches(ctx, before, ourPatch, otherPatches)
+	afterDir, err := enginetel.TaskRet(ctx, "octopus merge", func(ctx context.Context) (*Directory, error) {
+		return gitOctopusMergeChangesets(ctx, before, ourContent, otherContents)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return newChangesetFromMerge(ctx, before, afterDir)
+	return enginetel.TaskRet(ctx, "new changeset from merge", func(ctx context.Context) (*Changeset, error) {
+		return newChangesetFromMerge(ctx, before, afterDir)
+	})
 }
 
 // mergeBeforeDirectories merges the "before" directories from all changesets,
@@ -1026,17 +1188,46 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 	selectors := []dagql.Selector{
 		{Field: "directory"},
 	}
-	beforeID, err := ch.Before.ID()
-	if err != nil {
-		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("before ID: %w", err)
+	// Changesets merged together are normally diffs taken against a common
+	// base, so their before directories are usually the same directory
+	// repeated. Merging a directory onto itself is a no-op, but each merge
+	// still walks the whole tree, so folding in N identical copies costs N
+	// full-tree copies to produce what the first one already produced.
+	//
+	// Only consecutive repeats are collapsed. Dropping every repeat would
+	// reorder a sequence like A, B, A, where the trailing A is what decides
+	// paths that A and B disagree on.
+	// haveLast rather than comparing against the zero digest: an empty digest
+	// would otherwise read as a repeat of nothing and drop the first before
+	// directory, silently changing the merge base.
+	var lastDigest digest.Digest
+	var haveLast bool
+	appendBefore := func(before dagql.ObjectResult[*Directory]) error {
+		return enginetel.Task(ctx, "append before", func(ctx context.Context) error {
+			dgst, err := before.ContentPreferredDigest(ctx)
+			if err != nil {
+				return fmt.Errorf("before content-preferred digest: %w", err)
+			}
+			if haveLast && dgst == lastDigest {
+				return nil
+			}
+			id, err := before.ID()
+			if err != nil {
+				return fmt.Errorf("before ID: %w", err)
+			}
+			lastDigest, haveLast = dgst, true
+			selectors = append(selectors, withDirectorySelector(id))
+			return nil
+		})
 	}
-	selectors = append(selectors, withDirectorySelector(beforeID))
+
+	if err := appendBefore(ch.Before); err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
 	for _, other := range others {
-		otherBeforeID, err := other.Before.ID()
-		if err != nil {
-			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("other before ID: %w", err)
+		if err := appendBefore(other.Before); err != nil {
+			return dagql.ObjectResult[*Directory]{}, err
 		}
-		selectors = append(selectors, withDirectorySelector(otherBeforeID))
 	}
 
 	selectors = append(selectors, dagql.Selector{
@@ -1110,12 +1301,19 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 	}
 
 	otherPaths := make([]*ChangesetPaths, len(others))
+	jobs := changesetJobs()
 	for i, other := range others {
-		paths, err := other.ComputePaths(ctx)
-		if err != nil {
-			return fmt.Errorf("compute paths for changeset %d: %w", i, err)
-		}
-		otherPaths[i] = paths
+		jobs = jobs.WithJob(fmt.Sprintf("changeset %d paths", i), func(ctx context.Context) error {
+			paths, err := other.ComputePaths(ctx)
+			if err != nil {
+				return fmt.Errorf("compute paths for changeset %d: %w", i, err)
+			}
+			otherPaths[i] = paths
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return err
 	}
 
 	for i, paths := range otherPaths {
@@ -1137,9 +1335,158 @@ func checkAllPairwiseConflicts(ctx context.Context, ch *Changeset, others []*Cha
 	return nil
 }
 
+// changesetContent is a changeset reduced to its file-level content: a diff
+// directory holding its added and modified files, plus the computed paths
+// describing removals and empty added directories. Unlike a patch, this
+// content can be applied onto any base — content the base already contains
+// overlays as a no-op instead of double-applying or failing a hunk.
+type changesetContent struct {
+	// diff is the materialized Before.diff(After) directory — the same
+	// content Directory.WithChanges and Changeset.Export apply. Zero when the
+	// changeset adds and modifies nothing.
+	diff  dagql.ObjectResult[*Directory]
+	paths *ChangesetPaths
+}
+
+// content reduces the changeset to its file-level content, independent of its
+// before directory.
+func (ch *Changeset) content(ctx context.Context) (*changesetContent, error) {
+	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("compute paths: %w", err)
+	}
+	content := &changesetContent{paths: paths}
+	if len(paths.Added) == 0 && len(paths.Modified) == 0 {
+		// Nothing to overlay; removals are carried by paths alone.
+		return content, nil
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	afterID, err := ch.After.ID()
+	if err != nil {
+		return nil, fmt.Errorf("after ID: %w", err)
+	}
+	var diffDir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, ch.Before, &diffDir,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*Directory](afterID)},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("compute changes diff directory: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, diffDir); err != nil {
+		return nil, fmt.Errorf("evaluate changes diff directory: %w", err)
+	}
+	content.diff = diffDir
+	return content, nil
+}
+
+// gitMergeWorkspace is a mounted scratch copy of the merge base that git
+// branches are built in.
+type gitMergeWorkspace struct {
+	root    string // mounted snapshot root
+	dir     string // base directory selector within root
+	workDir string // absolute path of dir under root; where git runs
+}
+
+// applyContent applies a changeset's file-level content to the work tree:
+// removed paths are deleted, the diff directory is overlaid, and empty added
+// directories are recreated (the diff snapshot does not carry them). This
+// mirrors Directory.WithChanges' application of the same content.
+func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changesetContent) error {
+	if err := removeChangesetPaths(ws.root, ws.dir, content.paths.Removed); err != nil {
+		return fmt.Errorf("remove paths: %w", err)
+	}
+
+	// The copier must write through the mounted view, not the snapshot's
+	// upperdir: git runs inside the mount and has to see every file this
+	// writes, and modifying an overlay's layers behind a live mount leaves
+	// the view incoherent (git add sees names it cannot stat). So no Mount is
+	// passed here, unlike Directory.WithChanges, which never reads back
+	// through the mount before committing.
+	copier, err := layercopy.NewCopier(layercopy.Mount{Root: ws.root})
+	if err != nil {
+		return err
+	}
+	defer copier.Close()
+
+	if content.diff.Self() != nil {
+		diffRef, err := content.diff.Self().Snapshot.GetOrEval(ctx, content.diff.Result)
+		if err != nil {
+			return fmt.Errorf("diff snapshot: %w", err)
+		}
+		diffPath, err := content.diff.Self().Dir.GetOrEval(ctx, content.diff.Result)
+		if err != nil {
+			return fmt.Errorf("diff path: %w", err)
+		}
+		if diffPath == "" {
+			diffPath = "/"
+		}
+		if diffRef != nil {
+			err = MountRef(ctx, diffRef, func(srcRoot string, srcMnt *mount.Mount) error {
+				return copier.Copy(ctx,
+					layercopy.Mount{Root: srcRoot, Mount: srcMnt},
+					diffPath,
+					ws.dir,
+					layercopy.CopyOptions{
+						CopyDirContents: true,
+						ReplaceExisting: true,
+						// Linking from the diff snapshot into the mounted
+						// work tree crosses devices, so every attempt would
+						// just fail into the copy fallback.
+						DisableSourceHardlinks: true,
+					},
+				)
+			}, mountRefAsReadOnly)
+			if err != nil {
+				return fmt.Errorf("copy changed paths: %w", err)
+			}
+		}
+	}
+
+	if err := mkdirChangesetAddedDirs(ctx, copier, ws.dir, content.paths); err != nil {
+		return err
+	}
+	return ws.touchAppliedPaths(content.paths)
+}
+
+// touchAppliedPaths bumps the mtime of every path the changeset wrote so git
+// can see the change. Snapshot contents carry normalized timestamps and the
+// copier preserves them, so a same-size edit can leave a file's mtime and
+// size both identical to the index entry; with core.checkStat=minimal (see
+// gitEphemeralConfig) git add would then skip re-hashing it and silently
+// drop the change from the branch commit.
+func (ws *gitMergeWorkspace) touchAppliedPaths(paths *ChangesetPaths) error {
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		if strings.HasSuffix(p, "/") {
+			// Directories are untracked by git; only file stat data matters.
+			continue
+		}
+		full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+		if err != nil {
+			return err
+		}
+		err = unix.UtimesNanoAt(unix.AT_FDCWD, full, nil, unix.AT_SYMLINK_NOFOLLOW)
+		if err != nil && !errors.Is(err, unix.ENOENT) {
+			return fmt.Errorf("touch %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
 // withGitMergeWorkspace sets up a workspace for git merge operations, runs the provided
 // function, then commits and returns the resulting directory.
-func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directory], description string, fn func(workDir string) error) (*Directory, error) {
+func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directory], description string, fn func(ws *gitMergeWorkspace) error) (*Directory, error) {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, err
@@ -1174,7 +1521,11 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 		if err != nil {
 			return err
 		}
-		return fn(workDir)
+		return fn(&gitMergeWorkspace{
+			root:    root,
+			dir:     baseSelector,
+			workDir: workDir,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -1195,25 +1546,24 @@ func withGitMergeWorkspace(ctx context.Context, base dagql.ObjectResult[*Directo
 	return dir, nil
 }
 
-func gitMergeWithPatches(
+func gitMergeChangesets(
 	ctx context.Context,
 	base dagql.ObjectResult[*Directory],
-	ourPatch, theirPatch *File,
-	ourRemoved, theirRemoved []string,
+	ours, theirs *changesetContent,
 	conflicts Conflicts,
 	strategy WithChangesetMergeConflict,
 ) (*Directory, error) {
-	return withGitMergeWorkspace(ctx, base, "Changeset.withChangeset git merge", func(workDir string) error {
-		if err := initGitRepo(ctx, workDir); err != nil {
+	return withGitMergeWorkspace(ctx, base, "Changeset.withChangeset git merge", func(ws *gitMergeWorkspace) error {
+		if err := initGitRepo(ctx, ws.workDir); err != nil {
 			return err
 		}
-		if err := createBranchWithPatchFile(ctx, workDir, "ours", ourPatch); err != nil {
+		if err := createBranchWithContent(ctx, ws, "ours", ours); err != nil {
 			return err
 		}
-		if err := createBranchWithPatchFile(ctx, workDir, "theirs", theirPatch, "HEAD~1"); err != nil {
+		if err := createBranchWithContent(ctx, ws, "theirs", theirs, "HEAD~1"); err != nil {
 			return err
 		}
-		if err := runGit(ctx, workDir, "checkout", "ours"); err != nil {
+		if err := runGit(ctx, ws.workDir, "checkout", "ours"); err != nil {
 			return err
 		}
 
@@ -1226,7 +1576,7 @@ func gitMergeWithPatches(
 		}
 		mergeArgs = append(mergeArgs, "theirs")
 
-		mergeErr := runGit(ctx, workDir, mergeArgs...)
+		mergeErr := runGit(ctx, ws.workDir, mergeArgs...)
 
 		switch strategy {
 		case FailOnConflict:
@@ -1236,7 +1586,7 @@ func gitMergeWithPatches(
 		case LeaveConflictMarkers, PreferOursOnConflict, PreferTheirsOnConflict:
 			modifyDeleteConflicts := conflicts.ModifyDeletePaths()
 			if len(modifyDeleteConflicts) > 0 {
-				if err := resolveModifyDeleteConflicts(ctx, workDir, modifyDeleteConflicts, strategy, ourRemoved, theirRemoved); err != nil {
+				if err := resolveModifyDeleteConflicts(ctx, ws.workDir, modifyDeleteConflicts, strategy, ours.paths.AllRemoved, theirs.paths.AllRemoved); err != nil {
 					return err
 				}
 			}
@@ -1246,48 +1596,58 @@ func gitMergeWithPatches(
 			}
 		}
 
-		if err := os.RemoveAll(filepath.Join(workDir, ".git")); err != nil {
+		if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
 			return fmt.Errorf("remove temporary merge git repository: %w", err)
 		}
 		return nil
 	})
 }
 
-func gitOctopusMergeWithPatches(
+func gitOctopusMergeChangesets(
 	ctx context.Context,
 	base dagql.ObjectResult[*Directory],
-	ourPatch *File,
-	otherPatches []*File,
+	ourContent *changesetContent,
+	otherContents []*changesetContent,
 ) (*Directory, error) {
-	return withGitMergeWorkspace(ctx, base, "Changeset.withChangesets git octopus merge", func(workDir string) error {
-		if err := initGitRepo(ctx, workDir); err != nil {
+	return withGitMergeWorkspace(ctx, base, "Changeset.withChangesets git octopus merge", func(ws *gitMergeWorkspace) error {
+		if err := enginetel.Task(ctx, "init git", func(ctx context.Context) error {
+			return initGitRepo(ctx, ws.workDir)
+		}); err != nil {
 			return err
 		}
-		if err := createBranchWithPatchFile(ctx, workDir, "ours", ourPatch); err != nil {
+		if err := enginetel.Task(ctx, "create branch for ours", func(ctx context.Context) error {
+			return createBranchWithContent(ctx, ws, "ours", ourContent)
+		}); err != nil {
 			return err
 		}
 
-		branchNames := make([]string, len(otherPatches))
-		for i, patch := range otherPatches {
+		branchNames := make([]string, len(otherContents))
+		for i, content := range otherContents {
 			branchName := fmt.Sprintf("branch_%d", i)
 			branchNames[i] = branchName
-			if err := createBranchWithPatchFile(ctx, workDir, branchName, patch, "HEAD~1"); err != nil {
+			if err := enginetel.Task(ctx, "create branch "+branchName, func(ctx context.Context) error {
+				return createBranchWithContent(ctx, ws, branchName, content, "HEAD~1")
+			}); err != nil {
 				return err
 			}
 		}
 
-		if err := runGit(ctx, workDir, "checkout", "ours"); err != nil {
+		if err := enginetel.Task(ctx, "checkout ours", func(ctx context.Context) error {
+			return runGit(ctx, ws.workDir, "checkout", "ours")
+		}); err != nil {
 			return err
 		}
 
 		mergeArgs := []string{"merge", "--no-edit", "--no-commit"}
 		mergeArgs = append(mergeArgs, branchNames...)
 
-		if err := runGit(ctx, workDir, mergeArgs...); err != nil {
+		if err := enginetel.Task(ctx, "git merge", func(ctx context.Context) error {
+			return runGit(ctx, ws.workDir, mergeArgs...)
+		}); err != nil {
 			return err
 		}
 
-		if err := os.RemoveAll(filepath.Join(workDir, ".git")); err != nil {
+		if err := os.RemoveAll(filepath.Join(ws.workDir, ".git")); err != nil {
 			return fmt.Errorf("remove temporary octopus merge git repository: %w", err)
 		}
 		return nil
@@ -1301,6 +1661,17 @@ var gitEphemeralConfig = []string{
 	"-c", "maintenance.autoDetach=false",
 	"-c", "gc.auto=0",
 	"-c", "gc.autoDetach=false",
+	// Snapshots share file contents via hardlinks, so a file's ctime, inode
+	// and device can all change out from under us (e.g. when a concurrent
+	// snapshot hardlinks the same inode) without the content changing.
+	//
+	// Left alone, git sees these as stat-dirty entries, and `git merge`'s
+	// internal `git stash create` fails with a bewildering "fatal: stash
+	// failed".
+	//
+	// 'minimal' compares only mtime + size, which is all we can trust here.
+	"-c", "core.checkStat=minimal",
+	"-c", "core.trustctime=false",
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
@@ -1324,60 +1695,6 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-// gitApplyPatchFromFile streams the patch to avoid loading it entirely into memory.
-func gitApplyPatchFromFile(ctx context.Context, dir string, patch *File) error {
-	if patch == nil {
-		return nil
-	}
-
-	patchRef, _ := patch.Snapshot.Peek()
-	if patchRef == nil {
-		return fmt.Errorf("evaluate patch ref: nil")
-	}
-	patchPathSelector, _ := patch.File.Peek()
-
-	return MountRef(ctx, patchRef, func(patchMount string, _ *mount.Mount) error {
-		patchPath, err := containerdfs.RootPath(patchMount, patchPathSelector)
-		if err != nil {
-			return err
-		}
-
-		// Check if patch file is empty
-		info, err := os.Stat(patchPath)
-		if err != nil {
-			return fmt.Errorf("stat patch file: %w", err)
-		}
-		if info.Size() == 0 {
-			return nil
-		}
-
-		tempPatch := filepath.Join(dir, ".dagger-patch")
-		srcFile, err := os.Open(patchPath)
-		if err != nil {
-			return fmt.Errorf("open patch file: %w", err)
-		}
-		defer srcFile.Close()
-
-		dstFile, err := os.Create(tempPatch)
-		if err != nil {
-			return fmt.Errorf("create temp patch file: %w", err)
-		}
-
-		if _, err := io.Copy(dstFile, srcFile); err != nil {
-			dstFile.Close()
-			os.Remove(tempPatch)
-			return fmt.Errorf("copy patch file: %w", err)
-		}
-		if err := dstFile.Close(); err != nil {
-			os.Remove(tempPatch)
-			return fmt.Errorf("close temp patch file: %w", err)
-		}
-
-		defer os.Remove(tempPatch)
-		return runGit(ctx, dir, "apply", "--allow-empty", tempPatch)
-	}, mountRefAsReadOnly)
-}
-
 func initGitRepo(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "init"); err != nil {
 		return err
@@ -1388,25 +1705,25 @@ func initGitRepo(ctx context.Context, dir string) error {
 	return runGit(ctx, dir, "commit", "--allow-empty", "-m", "base")
 }
 
-func createBranchWithPatchFile(ctx context.Context, dir string, branchName string, patch *File, startPoint ...string) error {
+// createBranchWithContent creates branchName from startPoint (default: the
+// current HEAD) and populates it with the changeset's file-level content.
+func createBranchWithContent(ctx context.Context, ws *gitMergeWorkspace, branchName string, content *changesetContent, startPoint ...string) error {
 	checkoutArgs := []string{"checkout", "-b", branchName}
 	if len(startPoint) > 0 {
 		checkoutArgs = append(checkoutArgs, startPoint[0])
 	}
-	if err := runGit(ctx, dir, checkoutArgs...); err != nil {
+	if err := runGit(ctx, ws.workDir, checkoutArgs...); err != nil {
 		return err
 	}
-	if patch != nil {
-		if err := gitApplyPatchFromFile(ctx, dir, patch); err != nil {
-			return fmt.Errorf("apply %s patch: %w", branchName, err)
-		}
+	if err := ws.applyContent(ctx, content); err != nil {
+		return fmt.Errorf("apply %s changes: %w", branchName, err)
 	}
 	// Always commit (even if empty) to ensure consistent commit structure
 	// This is needed so that HEAD~1 references work correctly
-	if err := runGit(ctx, dir, "add", "-A"); err != nil {
+	if err := runGit(ctx, ws.workDir, "add", "-A"); err != nil {
 		return err
 	}
-	if err := runGit(ctx, dir, "commit", "--allow-empty", "-m", branchName); err != nil {
+	if err := runGit(ctx, ws.workDir, "commit", "--allow-empty", "-m", branchName); err != nil {
 		return err
 	}
 	return nil

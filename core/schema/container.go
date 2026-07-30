@@ -855,6 +855,35 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("imageRef", s.imageRef).
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
 
+		dagql.NodeFunc("manifest", s.manifest).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Computes and returns the manifest for this container as a File.`).
+			Args(
+				dagql.Arg("forcedCompression").Doc(
+					`Force each layer of the image to use the specified compression algorithm.`,
+					`If this is unset, then if a layer already has a compressed blob in the
+						engine's cache, that will be used (this can result in a mix of
+						compression algorithms for different layers). If this is unset and a
+						layer has no compressed blob in the engine's cache, then it will be
+						compressed using Gzip.`),
+				dagql.Arg("mediaTypes").Doc(`Media types to use for image layers. Defaults to OCI.`),
+			),
+
+		dagql.NodeFunc("layer", s.layer).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Returns the image layer or configuration blob with the given digest as a File.`).
+			Args(
+				dagql.Arg("id").Doc(`Digest of the layer or configuration blob (e.g. "sha256:abc123...").`),
+				dagql.Arg("forcedCompression").Doc(
+					`Force each layer of the image to use the specified compression algorithm.`,
+					`If this is unset, then if a layer already has a compressed blob in the
+						engine's cache, that will be used (this can result in a mix of
+						compression algorithms for different layers). If this is unset and a
+						layer has no compressed blob in the engine's cache, then it will be
+						compressed using Gzip.`),
+				dagql.Arg("mediaTypes").Doc(`Media types to use for image layers. Defaults to OCI.`),
+			),
+
 		dagql.NodeFunc("withExposedPort", s.withExposedPort).
 			Doc(`Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)`,
 				`Exposed ports serve two purposes:`,
@@ -4255,6 +4284,79 @@ func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.
 
 func (s *containerSchema) imageRef(ctx context.Context, parent *core.Container, args struct{}) (string, error) {
 	return parent.ImageRefOrErr(ctx)
+}
+
+type containerManifestArgs struct {
+	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+}
+
+func (s *containerSchema) manifest(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerManifestArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return inst, err
+	}
+	parentDigest, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	f, err := parent.Self().Manifest(ctx, parentDigest, args.ForcedCompression.Value, args.MediaTypes)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
+}
+
+type containerLayerArgs struct {
+	ID                string
+	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+}
+
+func (s *containerSchema) layer(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerLayerArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return inst, err
+	}
+	parentDigest, err := parent.RecipeDigest(ctx)
+	if err != nil {
+		return inst, err
+	}
+	f, err := parent.Self().Layer(ctx, parentDigest, args.ForcedCompression.Value, args.MediaTypes, args.ID)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
 
 type containerWithServiceBindingArgs struct {

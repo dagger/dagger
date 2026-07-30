@@ -458,6 +458,47 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ShellSuite) TestNoLoadModuleByName(ctx context.Context, t *testctx.T) {
+	// Regression test for https://github.com/dagger/dagger/issues/13728: with
+	// `dagger shell -M`, modules must be callable by their configured name, as
+	// in v0.2x, not only by their source path.
+
+	t.Run("workspace module by name", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := goGitBase(t, c).
+			With(withModuleFixture(t, c, ".dagger/modules/foo", "go/shell-load-another/foo")).
+			WithNewFile("dagger.toml", `[modules.foo]
+source = ".dagger/modules/foo"
+`).
+			With(daggerShellNoMod("foo | bar")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", out)
+	})
+
+	t.Run("workspace module by path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := goGitBase(t, c).
+			With(withModuleFixture(t, c, ".dagger/modules/foo", "go/shell-load-another/foo")).
+			WithNewFile("dagger.toml", `[modules.foo]
+source = ".dagger/modules/foo"
+`).
+			With(daggerShellNoMod(".dagger/modules/foo | bar")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", out)
+	})
+
+	t.Run("legacy dependency by name", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := moduleFixture(t, c, "go/shell-module-lookup").
+			With(daggerShellNoMod("dep | version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dep function", out)
+	})
+}
+
 func (ShellSuite) TestLoadAnotherModule(ctx context.Context, t *testctx.T) {
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

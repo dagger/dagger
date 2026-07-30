@@ -7,6 +7,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -2052,5 +2054,67 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Equal(t, fmt.Sprintf("content from changeset %d", i), content)
 		}
+	})
+}
+
+// Changesets that modify different regions of the same file must all survive
+// a merge. Merge branches are populated with full-file content, but git
+// re-derives line-level hunks against the merge base, so the content overlay
+// must not coarsen merging to whole-file granularity.
+func (ChangesetSuite) TestSameFileRegionMerge(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	lines := make([]string, 30)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line%d", i+1)
+	}
+	base := c.Directory().WithNewFile("f.txt", strings.Join(lines, "\n")+"\n")
+
+	withLine := func(in []string, n int, text string) []string {
+		out := slices.Clone(in)
+		out[n-1] = text
+		return out
+	}
+	fileContent := func(in []string) string {
+		return strings.Join(in, "\n") + "\n"
+	}
+	edit := func(n int, text string) *dagger.Changeset {
+		return base.
+			WithNewFile("f.txt", fileContent(withLine(lines, n, text))).
+			Changes(base)
+	}
+
+	top := edit(1, "TOP-EDIT")
+	mid := edit(15, "MID-EDIT")
+	bot := edit(30, "BOT-EDIT")
+
+	t.Run("two-way", func(ctx context.Context, t *testctx.T) {
+		merged, err := top.WithChangeset(mid).Sync(ctx)
+		require.NoError(t, err)
+		content, err := merged.After().File("f.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t,
+			fileContent(withLine(withLine(lines, 1, "TOP-EDIT"), 15, "MID-EDIT")),
+			content)
+	})
+
+	t.Run("octopus", func(ctx context.Context, t *testctx.T) {
+		merged, err := c.Changeset().
+			WithChangesets([]*dagger.Changeset{top, mid, bot}).
+			Sync(ctx)
+		require.NoError(t, err)
+		content, err := merged.After().File("f.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t,
+			fileContent(withLine(withLine(withLine(lines, 1, "TOP-EDIT"), 15, "MID-EDIT"), 30, "BOT-EDIT")),
+			content)
+	})
+
+	// Overlapping edits still conflict; only separate regions compose. (Where
+	// exactly nearby-but-disjoint edits stop composing is git's merge
+	// heuristics, deliberately not pinned here.)
+	t.Run("overlapping edits conflict", func(ctx context.Context, t *testctx.T) {
+		_, err := edit(10, "A-EDIT").WithChangeset(edit(10, "B-EDIT")).Sync(ctx)
+		require.Error(t, err)
 	})
 }

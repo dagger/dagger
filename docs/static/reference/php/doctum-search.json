@@ -3006,6 +3006,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::layer",
+			"p": "Dagger/Container.html#method_layer",
+			"d": "<p>Returns the image layer or configuration blob with the given digest as a File.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::manifest",
+			"p": "Dagger/Container.html#method_manifest",
+			"d": "<p>Computes and returns the manifest for this container as a File.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::mounts",
 			"p": "Dagger/Container.html#method_mounts",
 			"d": "<p>Retrieves the list of paths where a directory is mounted.</p>"
@@ -6114,6 +6126,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::generateLocalDependencies",
+			"p": "Dagger/ModuleSource.html#method_generateLocalDependencies",
+			"d": "<p>Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::generatedContextChangeset",
 			"p": "Dagger/ModuleSource.html#method_generatedContextChangeset",
 			"d": "<p>The generated files and directories made on top of the module source's context directory, returned as a Changeset.</p>"
@@ -7197,6 +7215,12 @@
 			"n": "Dagger\\Workspace::withUpdatedLock",
 			"p": "Dagger/Workspace.html#method_withUpdatedLock",
 			"d": "<p>Return this workspace with refreshed lockfile state.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withWorkdir",
+			"p": "Dagger/Workspace.html#method_withWorkdir",
+			"d": "<p>Return this workspace with its working directory pointed at the given workspace-relative path.</p>"
 		},
 		{
 			"t": "M",

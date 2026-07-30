@@ -493,7 +493,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 	if obj.Module.Self() == nil || obj.TypeDef == nil {
 		owned := make([]dagql.AnyResult, 0)
 		for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
-			updated, deps, err := attachModuleObjectValue(attach, obj.Fields[name])
+			updated, deps, err := attachModuleObjectValue(ctx, attach, obj.Fields[name])
 			if err != nil {
 				return nil, fmt.Errorf("attach module object field %q: %w", name, err)
 			}
@@ -517,7 +517,7 @@ func (obj *ModuleObject) AttachDependencyResults(
 	for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 		fieldTypeDef, ok := obj.TypeDef.FieldByOriginalName(name)
 		if !ok {
-			updated, deps, err := attachModuleObjectValue(attach, obj.Fields[name])
+			updated, deps, err := attachModuleObjectValue(ctx, attach, obj.Fields[name])
 			if err != nil {
 				return nil, fmt.Errorf("attach module object field %q: %w", name, err)
 			}
@@ -624,6 +624,7 @@ func attachTypedModuleObjectValue(
 }
 
 func attachModuleObjectValue(
+	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 	val any,
 ) (any, []dagql.AnyResult, error) {
@@ -636,11 +637,29 @@ func attachModuleObjectValue(
 			return nil, nil, err
 		}
 		return attached, []dagql.AnyResult{attached}, nil
+	case string:
+		var id call.ID
+		if err := id.Decode(x); err == nil {
+			return attachModuleObjectHandleValue(ctx, attach, val, &id)
+		} else {
+			// Not an encoded ID: an ordinary scalar string.
+			return val, nil, nil
+		}
+	case dagql.IDable:
+		id, err := x.ID()
+		if err != nil {
+			return nil, nil, err
+		}
+		return attachModuleObjectHandleValue(ctx, attach, val, id)
+	case *call.ID:
+		return attachModuleObjectHandleValue(ctx, attach, val, x)
+	case call.ID:
+		return attachModuleObjectHandleValue(ctx, attach, val, &x)
 	case []any:
 		items := make([]any, 0, len(x))
 		owned := make([]dagql.AnyResult, 0)
 		for i, item := range x {
-			updated, deps, err := attachModuleObjectValue(attach, item)
+			updated, deps, err := attachModuleObjectValue(ctx, attach, item)
 			if err != nil {
 				return nil, nil, fmt.Errorf("item %d: %w", i, err)
 			}
@@ -652,7 +671,7 @@ func attachModuleObjectValue(
 		fields := make(map[string]any, len(x))
 		owned := make([]dagql.AnyResult, 0)
 		for _, name := range slices.Sorted(maps.Keys(x)) {
-			updated, deps, err := attachModuleObjectValue(attach, x[name])
+			updated, deps, err := attachModuleObjectValue(ctx, attach, x[name])
 			if err != nil {
 				return nil, nil, fmt.Errorf("field %q: %w", name, err)
 			}
@@ -663,6 +682,47 @@ func attachModuleObjectValue(
 	default:
 		return val, nil, nil
 	}
+}
+
+// attachModuleObjectHandleValue attaches a module object field value that
+// stores a handle-form ID (as an encoded string, a *call.ID, or an IDable)
+// by loading its result so attachment can record a real dependency edge and
+// later serialization can mint a live handle. Private (undeclared) fields
+// are the main source of these values: SDKs serialize stored objects as ID
+// strings, and without a dependency edge the referenced result can be
+// released while the owning object's cached state is still reusable,
+// leaving later sessions to replay a dangling handle that fails with
+// "missing shared result". Non-ID strings are ordinary scalars, and
+// recipe-form IDs are self-contained and replayable, so both are left
+// as-is.
+func attachModuleObjectHandleValue(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+	orig any,
+	id *call.ID,
+) (any, []dagql.AnyResult, error) {
+	if id == nil || !id.IsHandle() {
+		return orig, nil, nil
+	}
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		if srv := dagql.AttachmentResolverServer(ctx); srv != nil {
+			dag = srv
+		} else {
+			// The value names a live engine result; silently keeping the raw
+			// handle would recreate the dangling-reference bug, so fail loudly.
+			return nil, nil, fmt.Errorf("attach stored handle %q: no dagql server: %w", id.Display(), err)
+		}
+	}
+	res, err := dag.LoadType(ctx, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load stored handle %q: %w", id.Display(), err)
+	}
+	attached, err := attach(res)
+	if err != nil {
+		return nil, nil, err
+	}
+	return attached, []dagql.AnyResult{attached}, nil
 }
 
 func persistedModuleObjectValueHasCallID(val persistedModuleObjectValue) bool {

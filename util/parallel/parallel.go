@@ -11,8 +11,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func New() parallelJobs {
-	return parallelJobs{
+func New() Jobs {
+	return Jobs{
 		Tracing:  true, // Enable tracing by default
 		Internal: false,
 		Reveal:   false, // this used to be 'true', but it caused too many "hiding noisy spans" in web trace view
@@ -27,7 +27,9 @@ func Run(ctx context.Context, name string, fn JobFunc) error {
 	return New().WithJob(name, fn).Run(ctx)
 }
 
-type parallelJobs struct {
+// Jobs is a set of jobs to run together, built up with the With methods and
+// executed by Run.
+type Jobs struct {
 	Jobs     []Job
 	Limit    *int
 	Internal bool
@@ -65,55 +67,55 @@ type Job struct {
 
 type JobFunc func(context.Context) error
 
-func (p parallelJobs) WithTracing(tracing bool) parallelJobs {
+func (p Jobs) WithTracing(tracing bool) Jobs {
 	p = p.Clone()
 	p.Tracing = tracing
 	return p
 }
 
-func (p parallelJobs) WithInternal(internal bool) parallelJobs {
+func (p Jobs) WithInternal(internal bool) Jobs {
 	p = p.Clone()
 	p.Internal = internal
 	return p
 }
 
-func (p parallelJobs) WithReveal(reveal bool) parallelJobs {
+func (p Jobs) WithReveal(reveal bool) Jobs {
 	p = p.Clone()
 	p.Reveal = reveal
 	return p
 }
 
-func (p parallelJobs) WithContextualTracer(contextualTracer bool) parallelJobs {
+func (p Jobs) WithContextualTracer(contextualTracer bool) Jobs {
 	p = p.Clone()
 	p.ContextualTracer = contextualTracer
 	return p
 }
 
-func (p parallelJobs) WithRollupSpans(rollupSpans bool) parallelJobs {
+func (p Jobs) WithRollupSpans(rollupSpans bool) Jobs {
 	p = p.Clone()
 	p.RollupSpans = rollupSpans
 	return p
 }
 
-func (p parallelJobs) WithRollupLogs(rollupLogs bool) parallelJobs {
+func (p Jobs) WithRollupLogs(rollupLogs bool) Jobs {
 	p = p.Clone()
 	p.RollupLogs = rollupLogs
 	return p
 }
 
-func (p parallelJobs) WithFailFast(failFast bool) parallelJobs {
+func (p Jobs) WithFailFast(failFast bool) Jobs {
 	p = p.Clone()
 	p.FailFast = failFast
 	return p
 }
 
-func (p parallelJobs) WithJob(name string, fn JobFunc, attributes ...attribute.KeyValue) parallelJobs {
+func (p Jobs) WithJob(name string, fn JobFunc, attributes ...attribute.KeyValue) Jobs {
 	p = p.Clone()
 	p.Jobs = append(p.Jobs, Job{name, fn, attributes, p.Internal, p.Reveal, p.ContextualTracer, p.RollupLogs, p.RollupSpans, p.Tracing})
 	return p
 }
 
-func (p parallelJobs) Clone() parallelJobs {
+func (p Jobs) Clone() Jobs {
 	cp := p
 	cp.Jobs = slices.Clone(cp.Jobs)
 	return cp
@@ -173,13 +175,13 @@ func (job Job) Run(ctx context.Context) error {
 	return job.Runner(ctx)()
 }
 
-func (p parallelJobs) WithLimit(limit int) parallelJobs {
+func (p Jobs) WithLimit(limit int) Jobs {
 	p = p.Clone()
 	p.Limit = &limit
 	return p
 }
 
-func (p parallelJobs) Run(ctx context.Context) error {
+func (p Jobs) Run(ctx context.Context) error {
 	if p.FailFast {
 		return p.runFailFast(ctx)
 	}
@@ -193,7 +195,7 @@ func (p parallelJobs) Run(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func (p parallelJobs) runFailFast(ctx context.Context) error {
+func (p Jobs) runFailFast(ctx context.Context) error {
 	eg := pool.New().WithContext(ctx).WithCancelOnError().WithFirstError()
 	if p.Limit != nil {
 		eg = eg.WithMaxGoroutines(*p.Limit)
@@ -206,7 +208,7 @@ func (p parallelJobs) runFailFast(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func (p parallelJobs) RunSerial(ctx context.Context) error {
+func (p Jobs) RunSerial(ctx context.Context) error {
 	for _, job := range p.Jobs {
 		if err := job.Run(ctx); err != nil {
 			return err

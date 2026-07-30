@@ -2,13 +2,157 @@ package daggercmd
 
 import (
 	"context"
-	"io"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/stretchr/testify/require"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
-// TestEngineTelemetryConfigSkipsSharedExporters guards the fix for the noisy
+type countingLogExporter struct {
+	exports atomic.Int64
+}
+
+func (e *countingLogExporter) Export(context.Context, []sdklog.Record) error {
+	e.exports.Add(1)
+	return nil
+}
+
+func (e *countingLogExporter) Shutdown(context.Context) error   { return nil }
+func (e *countingLogExporter) ForceFlush(context.Context) error { return nil }
+
+type countingMetricExporter struct {
+	exports atomic.Int64
+}
+
+func (e *countingMetricExporter) Export(context.Context, *metricdata.ResourceMetrics) error {
+	e.exports.Add(1)
+	return nil
+}
+
+func (e *countingMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
+}
+
+func (e *countingMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
+func (e *countingMetricExporter) Shutdown(context.Context) error   { return nil }
+func (e *countingMetricExporter) ForceFlush(context.Context) error { return nil }
+
+func TestClientTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
+	oldFrontend := Frontend
+	oldSkip := skipSharedTelemetryExporters
+	t.Cleanup(func() {
+		Frontend = oldFrontend
+		skipSharedTelemetryExporters = oldSkip
+	})
+	skipSharedTelemetryExporters = false
+
+	localSpans := tracetest.NewInMemoryExporter()
+	localLogs := new(countingLogExporter)
+	localMetrics := new(countingMetricExporter)
+	frontend := &idtui.FrontendMock{
+		SpanExporterFunc:   func() sdktrace.SpanExporter { return localSpans },
+		LogExporterFunc:    func() sdklog.Exporter { return localLogs },
+		MetricExporterFunc: func() sdkmetric.Exporter { return localMetrics },
+	}
+	Frontend = frontend
+
+	cloudSpans := tracetest.NewInMemoryExporter()
+	cloudLogs := new(countingLogExporter)
+	cloudMetrics := new(countingMetricExporter)
+	cfg := clientTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+		return cloudSpans, cloudLogs, cloudMetrics, true
+	})
+
+	require.True(t, cfg.Detect)
+	require.Len(t, frontend.SpanExporterCalls(), 1)
+	require.Len(t, frontend.LogExporterCalls(), 1)
+	require.Len(t, frontend.MetricExporterCalls(), 1)
+	require.Equal(t, []sdktrace.SpanExporter{localSpans}, cfg.LiveTraceExporters)
+	require.Equal(t, []sdklog.Exporter{localLogs, cloudLogs}, cfg.LiveLogExporters)
+	require.Equal(t, []sdkmetric.Exporter{localMetrics, cloudMetrics}, cfg.LiveMetricExporters)
+	require.Len(t, cfg.SpanProcessors, 1, "Cloud spans use their independent large-queue processor")
+	t.Cleanup(func() {
+		require.NoError(t, cfg.SpanProcessors[0].Shutdown(context.Background()))
+	})
+}
+
+func TestClientTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
+	oldFrontend := Frontend
+	oldSkip := skipSharedTelemetryExporters
+	t.Cleanup(func() {
+		Frontend = oldFrontend
+		skipSharedTelemetryExporters = oldSkip
+	})
+	skipSharedTelemetryExporters = false
+
+	localSpans := tracetest.NewInMemoryExporter()
+	localLogs := new(countingLogExporter)
+	localMetrics := new(countingMetricExporter)
+	frontend := &idtui.FrontendMock{
+		SpanExporterFunc:   func() sdktrace.SpanExporter { return localSpans },
+		LogExporterFunc:    func() sdklog.Exporter { return localLogs },
+		MetricExporterFunc: func() sdkmetric.Exporter { return localMetrics },
+	}
+	Frontend = frontend
+
+	cloudSpans := tracetest.NewInMemoryExporter()
+	cloudLogs := new(countingLogExporter)
+	cloudMetrics := new(countingMetricExporter)
+	cfg := clientTelemetryConfigWithCloud(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+		return cloudSpans, cloudLogs, cloudMetrics, true
+	})
+
+	require.True(t, cfg.Detect)
+	require.Empty(t, frontend.SpanExporterCalls())
+	require.Empty(t, frontend.LogExporterCalls())
+	require.Empty(t, frontend.MetricExporterCalls())
+	require.Empty(t, cfg.LiveTraceExporters)
+	require.Equal(t, []sdklog.Exporter{cloudLogs}, cfg.LiveLogExporters)
+	require.Equal(t, []sdkmetric.Exporter{cloudMetrics}, cfg.LiveMetricExporters)
+	require.Len(t, cfg.SpanProcessors, 1)
+
+	snapshot := tracetest.SpanStub{
+		Name: "relayed engine span",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			SpanID:     trace.SpanID{1},
+			TraceFlags: trace.FlagsSampled,
+		}),
+		StartTime: time.Now(),
+		EndTime:   time.Now(),
+	}.Snapshot()
+	cfg.SpanProcessors[0].OnEnd(snapshot)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	require.NoError(t, cfg.SpanProcessors[0].ForceFlush(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, cfg.SpanProcessors[0].Shutdown(context.Background()))
+	})
+
+	require.NoError(t, cfg.LiveLogExporters[0].Export(ctx, nil))
+	require.NoError(t, cfg.LiveMetricExporters[0].Export(ctx, new(metricdata.ResourceMetrics)))
+
+	require.Len(t, cloudSpans.GetSpans(), 1)
+	require.Equal(t, int64(1), cloudLogs.exports.Load())
+	require.Equal(t, int64(1), cloudMetrics.exports.Load())
+	require.Empty(t, localSpans.GetSpans())
+	require.Zero(t, localLogs.exports.Load())
+	require.Zero(t, localMetrics.exports.Load())
+}
+
+// TestClientTelemetryConfigSkipsSharedExporters guards the fix for the noisy
 // "HTTP exporter is shutdown" / "context canceled" telemetry warnings emitted by
 // the second engine session that `dagger module init` opens. Internal plumbing
 // sessions must not wire up (and later tear down) the process-wide OTLP exporter
@@ -17,7 +161,11 @@ import (
 func TestClientTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	oldFrontend := Frontend
 	oldSkip := skipSharedTelemetryExporters
-	Frontend = idtui.NewPlain(io.Discard)
+	Frontend = &idtui.FrontendMock{
+		SpanExporterFunc:   func() sdktrace.SpanExporter { return tracetest.NewInMemoryExporter() },
+		LogExporterFunc:    func() sdklog.Exporter { return new(countingLogExporter) },
+		MetricExporterFunc: func() sdkmetric.Exporter { return new(countingMetricExporter) },
+	}
 	t.Cleanup(func() {
 		Frontend = oldFrontend
 		skipSharedTelemetryExporters = oldSkip

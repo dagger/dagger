@@ -194,7 +194,68 @@ func (s *workspaceSchema) initModuleChanges(
 		return res, err
 	}
 
-	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
+	merged, err := mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
+	if err != nil {
+		return res, err
+	}
+
+	// Changesets are merged through Git, which does not track directory modes.
+	// A newly added directory is therefore recreated using the engine process's
+	// umask instead of retaining the mode staged by the engine or SDK. Normalize
+	// only the module root here: it is owned by module init, while directories
+	// below it remain owned by the SDK and keep their explicitly authored modes.
+	return changesetWithDirectoryMode(ctx, merged, relPath, 0o755)
+}
+
+// changesetWithDirectoryMode returns changes with path's mode explicitly set
+// in the after snapshot. Overlaying an empty directory changes only the root
+// directory metadata and preserves all files and child-directory modes.
+func changesetWithDirectoryMode(
+	ctx context.Context,
+	changes dagql.ObjectResult[*core.Changeset],
+	path string,
+	mode int,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return changes, fmt.Errorf("dagql server: %w", err)
+	}
+
+	var empty dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &empty, dagql.Selector{Field: "directory"}); err != nil {
+		return changes, fmt.Errorf("create empty directory: %w", err)
+	}
+	emptyID, err := empty.ID()
+	if err != nil {
+		return changes, fmt.Errorf("empty directory ID: %w", err)
+	}
+
+	var after dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, changes.Self().After, &after, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(filepath.ToSlash(path))},
+			{Name: "source", Value: dagql.NewID[*core.Directory](emptyID)},
+			{Name: "permissions", Value: dagql.Opt(dagql.Int(mode))},
+		},
+	}); err != nil {
+		return changes, fmt.Errorf("set directory mode for %q: %w", path, err)
+	}
+
+	beforeID, err := changes.Self().Before.ID()
+	if err != nil {
+		return changes, fmt.Errorf("changeset before ID: %w", err)
+	}
+	var normalized dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, after, &normalized, dagql.Selector{
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)},
+		},
+	}); err != nil {
+		return changes, fmt.Errorf("rebuild changeset with directory mode: %w", err)
+	}
+	return normalized, nil
 }
 
 // validateSDKInitChangesetOwnership enforces the CLI-1.0 ownership split: the
