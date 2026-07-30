@@ -464,12 +464,14 @@ func (s *workspaceSchema) currentWorkspace(
 	parent dagql.ObjectResult[*core.Query],
 	_ struct{},
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
-	// Prefer a Workspace explicitly bound into the context (a generator/check
-	// group threading the workspace it was rolled up from) over the session's
-	// frozen current workspace, so every leaf in the group resolves the same
-	// workspace under the same ID. This mirrors loadWorkspaceArg's preference
-	// for the bound workspace.
-	if boundWS, ok := core.WorkspaceFromContext(ctx); ok {
+	// Prefer a Workspace explicitly bound into the context (an LLM operating on
+	// its own, possibly overlaid, Workspace; a generator/check group threading
+	// the workspace it was rolled up from) over the session's frozen current
+	// workspace, so module tools observe edits the agent has applied. This
+	// mirrors loadWorkspaceArg's preference for the bound workspace.
+	if boundWS, ok, err := core.WorkspaceFromContext(ctx); err != nil {
+		return inst, err
+	} else if ok {
 		return boundWS, nil
 	}
 
