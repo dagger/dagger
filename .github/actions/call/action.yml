@@ -54,7 +54,6 @@ runs:
       shell: bash
       env:
         DAGGER_VERSION: "${{ inputs.version }}"
-      env:
         DAGGER_COMMIT: "${{ inputs.commit }}"
       run: |
         if [[ -x "$(command -v dagger)" ]]; then
