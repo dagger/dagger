@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -137,6 +138,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return this workspace with a changeset applied, without mutating the source.").
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
+			),
+		dagql.NodeFunc("__withGeneratedLocalDependencies", s.withGeneratedLocalDependencies).
+			Doc("(Internal-only) Return this workspace with a module's generated local dependency closure applied and recorded.",
+				"Applies the changeset produced by ModuleSource.generateLocalDependencies for the module at the given path, and marks the workspace so a nested generateLocalDependencies call for that module short-circuits instead of re-staging.").
+			Args(
+				dagql.Arg("module").Doc("Workspace-root-relative path of the module whose generated local dependencies these are."),
+				dagql.Arg("changes").Doc("The staged dependency codegen to apply."),
 			),
 		dagql.NodeFunc("withWorkdir", s.withWorkdir).
 			View(AfterVersion("v1.0.0-0")).
@@ -1091,15 +1099,52 @@ func (s *workspaceSchema) withChanges(
 	parent dagql.ObjectResult[*core.Workspace],
 	args withChangesArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
+	return s.applyChangeset(ctx, parent, args.Changes, nil)
+}
+
+// __withGeneratedLocalDependencies (Dagger-internal) applies the changeset
+// produced by ModuleSource.generateLocalDependencies for the module at the
+// given workspace-root-relative path, and records that module in the
+// workspace's StagedGeneration set so a nested generateLocalDependencies call
+// for it short-circuits instead of re-staging the closure this workspace
+// already carries. Combining the apply and the mark in one field keeps the
+// provenance structural: a workspace can only be marked for a module by
+// applying that module's staged dependency codegen.
+func (s *workspaceSchema) withGeneratedLocalDependencies(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Module  string
+		Changes dagql.ID[*core.Changeset]
+	},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	modPath := cleanWorkspaceRelPath(args.Module)
+	return s.applyChangeset(ctx, parent, args.Changes, func(ws *core.Workspace) {
+		if !slices.Contains(ws.StagedGeneration, modPath) {
+			ws.StagedGeneration = append(slices.Clone(ws.StagedGeneration), modPath)
+			slices.Sort(ws.StagedGeneration)
+		}
+	})
+}
+
+// applyChangeset overlays a changeset onto the workspace, optionally mutating
+// the resulting workspace value. Shared by withChanges and
+// __withGeneratedLocalDependencies.
+func (s *workspaceSchema) applyChangeset(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	changes dagql.ID[*core.Changeset],
+	mutate func(*core.Workspace),
+) (dagql.ObjectResult[*core.Workspace], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	changesID, err := args.Changes.ID()
+	changesID, err := changes.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	changesObj, err := args.Changes.Load(ctx, srv)
+	changesObj, err := changes.Load(ctx, srv)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -1116,7 +1161,7 @@ func (s *workspaceSchema) withChanges(
 			},
 		})
 		return updated, err
-	}, nil)
+	}, mutate)
 }
 
 func (s *workspaceSchema) withWorkdir(
