@@ -479,6 +479,17 @@ type Container implements Exportable & Node & Syncer {
     experimentalPrivilegedNesting: Boolean = false
 
     """
+    Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+
+    When this is the caller's current workspace, its selected environment and
+    module commands are inherited. Other workspace values are available through
+    currentWorkspace, but do not provide module commands.
+
+    Only grant this access to trusted commands.
+    """
+    inheritWorkspace: ID @expectedType(name: "Workspace")
+
+    """
     Execute the command with all root capabilities. This is similar to running a
     command with "sudo" or executing "docker run" with the "--privileged" flag.
     Containerization does not provide any security guarantees when using this
@@ -938,6 +949,17 @@ type Container implements Exportable & Node & Syncer {
     experimentalPrivilegedNesting: Boolean = false
 
     """
+    Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+
+    When this is the caller's current workspace, its selected environment and
+    module commands are inherited. Other workspace values are available through
+    currentWorkspace, but do not provide module commands.
+
+    Only grant this access to trusted commands.
+    """
+    inheritWorkspace: ID @expectedType(name: "Workspace")
+
+    """
     Execute the command with all root capabilities. This is similar to running a
     command with "sudo" or executing "docker run" with the "--privileged" flag.
     Containerization does not provide any security guarantees when using this
@@ -975,6 +997,17 @@ type Container implements Exportable & Node & Syncer {
 
     """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
+
+    """
+    Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+
+    When this is the caller's current workspace, its selected environment and
+    module commands are inherited. Other workspace values are available through
+    currentWorkspace, but do not provide module commands.
+
+    Only grant this access to trusted commands.
+    """
+    inheritWorkspace: ID @expectedType(name: "Workspace")
 
     """
     Execute the command with all root capabilities. This is similar to running a
@@ -1210,6 +1243,17 @@ type Container implements Exportable & Node & Syncer {
 
     """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
+
+    """
+    Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+
+    When this is the caller's current workspace, its selected environment and
+    module commands are inherited. Other workspace values are available through
+    currentWorkspace, but do not provide module commands.
+
+    Only grant this access to trusted commands.
+    """
+    inheritWorkspace: ID @expectedType(name: "Workspace")
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
@@ -2264,6 +2308,17 @@ type Directory implements Exportable & Node & Syncer {
 
     """Provides Dagger access to the executed command."""
     experimentalPrivilegedNesting: Boolean = false
+
+    """
+    Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+
+    When this is the caller's current workspace, its selected environment and
+    module commands are inherited. Other workspace values are available through
+    currentWorkspace, but do not provide module commands.
+
+    Only grant this access to trusted commands.
+    """
+    inheritWorkspace: ID @expectedType(name: "Workspace")
 
     """
     Execute the command with all root capabilities. This is similar to running a

@@ -24,6 +24,7 @@ defmodule Dagger.Container do
           {:args, [String.t()]},
           {:use_entrypoint, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
+          {:inherit_workspace, Dagger.Workspace.t() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
           {:no_init, boolean() | nil}
@@ -37,6 +38,13 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
+      )
+      |> QB.maybe_put_arg(
+        "inheritWorkspace",
+        if(optional_args[:inherit_workspace],
+          do: Dagger.ID.id!(optional_args[:inherit_workspace]),
+          else: nil
+        )
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
@@ -644,6 +652,7 @@ defmodule Dagger.Container do
   @spec terminal(t(), [
           {:cmd, [String.t()]},
           {:experimental_privileged_nesting, boolean() | nil},
+          {:inherit_workspace, Dagger.Workspace.t() | nil},
           {:insecure_root_capabilities, boolean() | nil}
         ]) :: Dagger.Container.t()
   def terminal(%__MODULE__{} = container, optional_args \\ []) do
@@ -654,6 +663,13 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
+      )
+      |> QB.maybe_put_arg(
+        "inheritWorkspace",
+        if(optional_args[:inherit_workspace],
+          do: Dagger.ID.id!(optional_args[:inherit_workspace]),
+          else: nil
+        )
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
@@ -674,6 +690,7 @@ defmodule Dagger.Container do
           {:args, [String.t()]},
           {:use_entrypoint, boolean() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
+          {:inherit_workspace, Dagger.Workspace.t() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
           {:no_init, boolean() | nil}
@@ -689,6 +706,13 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
+      )
+      |> QB.maybe_put_arg(
+        "inheritWorkspace",
+        if(optional_args[:inherit_workspace],
+          do: Dagger.ID.id!(optional_args[:inherit_workspace]),
+          else: nil
+        )
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
@@ -905,6 +929,7 @@ defmodule Dagger.Container do
           {:redirect_stderr, String.t() | nil},
           {:expect, Dagger.ReturnType.t() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
+          {:inherit_workspace, Dagger.Workspace.t() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
           {:no_init, boolean() | nil}
@@ -923,6 +948,13 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]
+      )
+      |> QB.maybe_put_arg(
+        "inheritWorkspace",
+        if(optional_args[:inherit_workspace],
+          do: Dagger.ID.id!(optional_args[:inherit_workspace]),
+          else: nil
+        )
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])

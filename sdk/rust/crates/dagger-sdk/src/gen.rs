@@ -1576,6 +1576,11 @@ pub struct ContainerAsServiceOpts<'a> {
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
+    /// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+    /// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+    /// Only grant this access to trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_workspace: Option<Id>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -1739,6 +1744,11 @@ pub struct ContainerTerminalOpts<'a> {
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
+    /// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+    /// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+    /// Only grant this access to trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_workspace: Option<Id>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -1755,6 +1765,11 @@ pub struct ContainerUpOpts<'a> {
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
+    /// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+    /// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+    /// Only grant this access to trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_workspace: Option<Id>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -1851,6 +1866,11 @@ pub struct ContainerWithExecOpts<'a> {
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
+    /// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+    /// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+    /// Only grant this access to trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_workspace: Option<Id>,
     /// Execute the command with all root capabilities. Like --privileged in Docker
     /// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
     #[builder(setter(into, strip_option), default)]
@@ -2151,6 +2171,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(inherit_workspace) = opts.inherit_workspace {
+            query = query.arg("inheritWorkspace", inherit_workspace);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -2850,6 +2873,9 @@ impl Container {
                 experimental_privileged_nesting,
             );
         }
+        if let Some(inherit_workspace) = opts.inherit_workspace {
+            query = query.arg("inheritWorkspace", inherit_workspace);
+        }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
@@ -2894,6 +2920,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(inherit_workspace) = opts.inherit_workspace {
+            query = query.arg("inheritWorkspace", inherit_workspace);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -3311,6 +3340,9 @@ impl Container {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(inherit_workspace) = opts.inherit_workspace {
+            query = query.arg("inheritWorkspace", inherit_workspace);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
@@ -5248,6 +5280,11 @@ pub struct DirectoryTerminalOpts<'a> {
     /// Provides Dagger access to the executed command.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
+    /// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+    /// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+    /// Only grant this access to trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_workspace: Option<Id>,
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
@@ -5881,6 +5918,9 @@ impl Directory {
                 "experimentalPrivilegedNesting",
                 experimental_privileged_nesting,
             );
+        }
+        if let Some(inherit_workspace) = opts.inherit_workspace {
+            query = query.arg("inheritWorkspace", inherit_workspace);
         }
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
