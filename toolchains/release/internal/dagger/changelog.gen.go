@@ -133,15 +133,15 @@ func (r *Env) WithChangelogOutput(name string, description string) *Env { // cha
 
 // ChangelogOpts contains options for Query.Changelog
 type ChangelogOpts struct {
-	Source *Directory // changelog (../../../../:0:0)
+	Ws *Workspace // changelog (../../../../:0:0)
 }
 
 func (r *Query) Changelog(opts ...ChangelogOpts) *Changelog { // changelog (../../../../:0:0)
 	q := r.query.Select("changelog")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 
