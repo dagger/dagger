@@ -706,7 +706,7 @@ func (r *Query) Impl(strs []string, ints []int, bools []bool, dirs []*Directory)
 	}
 }
 
-type ImplLocalOtherIface struct { // impl (../../../../../../../../:0:0)
+type ImplLocalOtherIface struct { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:190:18)
 	query *querybuilder.Selection
 
 	foo *string
