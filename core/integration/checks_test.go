@@ -178,8 +178,8 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "empty-generate")
 		require.Contains(t, out, "non-empty-generate")
-		require.Regexp(t, `passing-check\s+check\s+`, out)
-		require.Regexp(t, `empty-generate\s+generate\s+`, out)
+		require.Regexp(t, `passing-check\s+# A regular passing check`, out)
+		require.Regexp(t, `empty-generate\s+# Did you "`, out)
 		require.NotContains(t, out, "Generators")
 	})
 
@@ -200,9 +200,9 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 			With(daggerExec("check", "-l", "--generate")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// Should only list generators (rendered as generate-type rows), no regular checks
-		require.Regexp(t, `empty-generate\s+generate\s+`, out)
-		require.Regexp(t, `non-empty-generate\s+generate\s+`, out)
+		// Should only list generators (rendered with `# Did you "..."?` comments), no regular checks
+		require.Regexp(t, `empty-generate\s+# Did you "`, out)
+		require.Regexp(t, `non-empty-generate\s+# Did you "`, out)
 		require.NotContains(t, out, "passing-check")
 	})
 
@@ -373,8 +373,8 @@ source = "hello-with-generate-checks"
 	t.Run("--generate flag overrides the config", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "--generate")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Regexp(t, `empty-generate\s+generate\s+`, out)
-		require.Regexp(t, `non-empty-generate\s+generate\s+`, out)
+		require.Regexp(t, `empty-generate\s+# Did you "`, out)
+		require.Regexp(t, `non-empty-generate\s+# Did you "`, out)
 		require.NotContains(t, out, "passing-check")
 	})
 
