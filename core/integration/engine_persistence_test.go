@@ -11,7 +11,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -229,16 +228,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 			return random
 		}
 
-		// Killing the engine makes this client's CLI session exit asynchronously.
-		// Keep its final log drain independent from the lifetime of testing.T.
-		upstreamSvcA, engineSvcA, engineClientA := startEngineWithClientOpts(
-			c,
-			ctx,
-			t,
-			stateKey,
-			[]dagger.ClientOpt{dagger.WithLogOutput(io.Discard)},
-			engineWithPersistenceTestGC(ctx, t),
-		)
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		randomA := runRandom(ctx, t, engineClientA)

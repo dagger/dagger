@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultAuthDomain = "https://auth.dagger.cloud"
+	authDomain = "https://auth.dagger.cloud"
 )
 
 var (
@@ -32,29 +32,22 @@ var (
 	apiURL = "https://api.dagger.cloud"
 )
 
-var authConfig = &oauth2.Config{
-	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
-	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
-	Scopes:   []string{"openid", "offline_access"},
-	// Endpoint is set in init, after the env override is applied
-}
-
 func init() {
 	if u := os.Getenv("DAGGER_CLOUD_URL"); u != "" {
 		apiURL = u
 	}
+}
 
-	authDomain := defaultAuthDomain
-	if u := os.Getenv("DAGGER_CLOUD_AUTH_URL"); u != "" {
-		// override for integration tests, mirroring DAGGER_CLOUD_URL above
-		authDomain = u
-	}
-	authConfig.Endpoint = oauth2.Endpoint{
+var authConfig = &oauth2.Config{
+	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
+	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
+	Scopes:   []string{"openid", "offline_access"},
+	Endpoint: oauth2.Endpoint{
 		AuthStyle:     oauth2.AuthStyleInParams,
 		AuthURL:       authDomain + "/authorize",
 		TokenURL:      authDomain + "/oauth/token",
 		DeviceAuthURL: authDomain + "/oauth/device/code",
-	}
+	},
 }
 
 type LoginOption func(*loginOptions)
@@ -80,10 +73,6 @@ func WithAuthGate() LoginOption {
 	return func(opts *loginOptions) {
 		opts.authGate = true
 	}
-}
-
-func CredentialsFile() string {
-	return credentialsFile
 }
 
 // Login logs the user in and stores the credentials for later use.
