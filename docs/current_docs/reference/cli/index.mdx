@@ -2187,7 +2187,7 @@ dagger module init <sdk> <name> [flags]
 ### Examples
 
 ```
-dagger module init <sdk> <name>
+dagger sdk install go && dagger module init go my-module
 ```
 
 ### Options
@@ -2328,7 +2328,7 @@ dagger sdk install [options] <name-or-ref> [flags]
 ### Examples
 
 ```
-dagger sdk install <sdk>
+dagger sdk install typescript && dagger module init typescript --help && dagger api client init typescript --help
 ```
 
 ### Options
@@ -2453,12 +2453,6 @@ files are left on disk untouched, only the workspace entries go away.
 
 ```
 dagger sdk uninstall [options] <name> [flags]
-```
-
-### Examples
-
-```
-dagger sdk uninstall <sdk>
 ```
 
 ### Options

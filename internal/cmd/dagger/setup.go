@@ -158,7 +158,7 @@ const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to m
         dagger install <module>
 
     • Install an SDK to author your own:
-        dagger sdk install <sdk>
+        dagger sdk search
 
     • Create a new module (after installing an SDK):
         dagger module init <sdk> <name>

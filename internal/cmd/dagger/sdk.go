@@ -57,7 +57,7 @@ SDKs, the workspace install name is the canonical ref basename prefixed with
 
 Generic ` + "`dagger install <ref>`" + ` does NOT mark anything as an SDK.
 The marker is opt-in via this verb.`,
-	Example: "dagger sdk install <sdk>",
+	Example: "dagger sdk install typescript && dagger module init typescript --help && dagger api client init typescript --help",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runSDKInstall,
 }
@@ -71,9 +71,8 @@ Refuses if anything is authored under the SDK (entries in
 [[modules.<name>.as-sdk.modules]] or [[modules.<name>.as-sdk.clients]]).
 Pass --force to override and remove anyway; the authored module/client
 files are left on disk untouched, only the workspace entries go away.`,
-	Example: "dagger sdk uninstall <sdk>",
-	Args:    cobra.ExactArgs(1),
-	RunE:    runSDKUninstall,
+	Args: cobra.ExactArgs(1),
+	RunE: runSDKUninstall,
 }
 
 var sdkInstalledCmd = &cobra.Command{

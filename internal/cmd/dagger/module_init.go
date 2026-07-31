@@ -147,7 +147,7 @@ What the engine does (atomically, in one Changeset):
 --path defaults to .dagger/modules/<name>. Custom paths skip the
 [modules.<name>] install (the user is managing workspace layout
 explicitly).`,
-	Example: "dagger module init <sdk> <name>",
+	Example: "dagger sdk install go && dagger module init go my-module",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
