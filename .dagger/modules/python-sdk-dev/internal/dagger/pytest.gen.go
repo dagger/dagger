@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type Pytest
-func (r *Binding) AsPytest() *Pytest { // pytest (../../../../:0:0)
+func (r *Binding) AsPytest() *Pytest { // pytest (../../../../../:0:0)
 	q := r.query.Select("asPytest")
 
 	return &Pytest{
@@ -19,7 +19,7 @@ func (r *Binding) AsPytest() *Pytest { // pytest (../../../../:0:0)
 }
 
 // Create or update a binding of type Pytest in the environment
-func (r *Env) WithPytestInput(name string, value *Pytest, description string) *Env { // pytest (../../../../:0:0)
+func (r *Env) WithPytestInput(name string, value *Pytest, description string) *Env { // pytest (../../../../../:0:0)
 	assertNotNil("value", value)
 	q := r.query.Select("withPytestInput")
 	q = q.Arg("name", name)
@@ -32,7 +32,7 @@ func (r *Env) WithPytestInput(name string, value *Pytest, description string) *E
 }
 
 // Declare a desired Pytest output to be assigned in the environment
-func (r *Env) WithPytestOutput(name string, description string) *Env { // pytest (../../../../:0:0)
+func (r *Env) WithPytestOutput(name string, description string) *Env { // pytest (../../../../../:0:0)
 	q := r.query.Select("withPytestOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -42,7 +42,7 @@ func (r *Env) WithPytestOutput(name string, description string) *Env { // pytest
 	}
 }
 
-type Pytest struct { // pytest (../../../../:0:0)
+type Pytest struct { // pytest (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id   *ID
@@ -57,7 +57,7 @@ func (r *Pytest) WithGraphQLQuery(q *querybuilder.Selection) *Pytest {
 
 // Optional: A custom container with Python and uv installed.
 // If not provided, defaults to Alpine Linux with uv.
-func (r *Pytest) Container() *Container { // pytest (../../../../:0:0)
+func (r *Pytest) Container() *Container { // pytest (../../../../../:0:0)
 	q := r.query.Select("container")
 
 	return &Container{
@@ -115,7 +115,7 @@ func (r *Pytest) UnmarshalJSON(bs []byte) error {
 }
 
 // Optional: The source directory containing your Python project
-func (r *Pytest) Source() *Directory { // pytest (../../../../:0:0)
+func (r *Pytest) Source() *Directory { // pytest (../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -128,11 +128,11 @@ type PytestTestOpts struct {
 	//
 	// Additional arguments to pass to pytest (e.g., ["-x", "--tb=short"])
 	//
-	Args []string // pytest (../../../../:0:0)
+	Args []string // pytest (../../../../../:0:0)
 	//
 	// Python version to use (e.g., "3.12", "3.11", "3.10")
 	//
-	Version string // pytest (../../../../:0:0)
+	Version string // pytest (../../../../../:0:0)
 }
 
 // Test a Python project with pytest and OpenTelemetry tracing.
@@ -145,7 +145,7 @@ type PytestTestOpts struct {
 // - Install your project dependencies using uv sync
 // - Inject pytest_otel for automatic test tracing
 // - Run pytest with the specified Python version
-func (r *Pytest) Test(ctx context.Context, opts ...PytestTestOpts) error { // pytest (../../../../:0:0)
+func (r *Pytest) Test(ctx context.Context, opts ...PytestTestOpts) error { // pytest (../../../../../:0:0)
 	if r.test != nil {
 		return nil
 	}
@@ -177,15 +177,15 @@ type PytestOpts struct {
 	//
 	// Optional: The source directory containing your Python project
 	//
-	Source *Directory // pytest (../../../../:0:0)
+	Source *Directory // pytest (../../../../../:0:0)
 	//
 	// Optional: A custom container with Python and uv installed.
 	// If not provided, defaults to Alpine Linux with uv.
 	//
-	Container *Container // pytest (../../../../:0:0)
+	Container *Container // pytest (../../../../../:0:0)
 }
 
-func (r *Query) Pytest(opts ...PytestOpts) *Pytest { // pytest (../../../../:0:0)
+func (r *Query) Pytest(opts ...PytestOpts) *Pytest { // pytest (../../../../../:0:0)
 	q := r.query.Select("pytest")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument

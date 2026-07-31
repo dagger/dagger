@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type Wolfi
-func (r *Binding) AsWolfi() *Wolfi { // wolfi (../../../../modules/wolfi/main.go:10:6)
+func (r *Binding) AsWolfi() *Wolfi { // wolfi (../../../../../modules/wolfi/main.go:10:6)
 	q := r.query.Select("asWolfi")
 
 	return &Wolfi{
@@ -19,7 +19,7 @@ func (r *Binding) AsWolfi() *Wolfi { // wolfi (../../../../modules/wolfi/main.go
 }
 
 // Create or update a binding of type Wolfi in the environment
-func (r *Env) WithWolfiInput(name string, value *Wolfi, description string) *Env { // wolfi (../../../../modules/wolfi/main.go:10:6)
+func (r *Env) WithWolfiInput(name string, value *Wolfi, description string) *Env { // wolfi (../../../../../modules/wolfi/main.go:10:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withWolfiInput")
 	q = q.Arg("name", name)
@@ -32,7 +32,7 @@ func (r *Env) WithWolfiInput(name string, value *Wolfi, description string) *Env
 }
 
 // Declare a desired Wolfi output to be assigned in the environment
-func (r *Env) WithWolfiOutput(name string, description string) *Env { // wolfi (../../../../modules/wolfi/main.go:10:6)
+func (r *Env) WithWolfiOutput(name string, description string) *Env { // wolfi (../../../../../modules/wolfi/main.go:10:6)
 	q := r.query.Select("withWolfiOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -43,7 +43,7 @@ func (r *Env) WithWolfiOutput(name string, description string) *Env { // wolfi (
 }
 
 // A Wolfi Linux configuration
-func (r *Query) Wolfi() *Wolfi { // wolfi (../../../../modules/wolfi/main.go:10:6)
+func (r *Query) Wolfi() *Wolfi { // wolfi (../../../../../modules/wolfi/main.go:10:6)
 	q := r.query.Select("wolfi")
 
 	return &Wolfi{
@@ -52,7 +52,7 @@ func (r *Query) Wolfi() *Wolfi { // wolfi (../../../../modules/wolfi/main.go:10:
 }
 
 // A Wolfi Linux configuration
-type Wolfi struct { // wolfi (../../../../modules/wolfi/main.go:10:6)
+type Wolfi struct { // wolfi (../../../../../modules/wolfi/main.go:10:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -69,28 +69,28 @@ type WolfiContainerOpts struct {
 	//
 	// APK packages to install
 	//
-	Packages []string // wolfi (../../../../modules/wolfi/main.go:16:2)
+	Packages []string // wolfi (../../../../../modules/wolfi/main.go:16:2)
 	//
 	// Hardware architecture to target
 	//
-	Arch string // wolfi (../../../../modules/wolfi/main.go:19:2)
+	Arch string // wolfi (../../../../../modules/wolfi/main.go:19:2)
 	//
 	// Extra repositories to add to the package resolver
 	//
-	ExtraRepositories []string // wolfi (../../../../modules/wolfi/main.go:22:2)
+	ExtraRepositories []string // wolfi (../../../../../modules/wolfi/main.go:22:2)
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // wolfi (../../../../modules/wolfi/main.go:25:2)
+	ExtraKeyUrls []string // wolfi (../../../../../modules/wolfi/main.go:25:2)
 	//
 	// Overlay images to merge on top of the base.
 	// See https://twitter.com/ibuildthecloud/status/1721306361999597884
 	//
-	Overlays []*Container // wolfi (../../../../modules/wolfi/main.go:29:2)
+	Overlays []*Container // wolfi (../../../../../modules/wolfi/main.go:29:2)
 }
 
 // Build a Wolfi Linux container
-func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (../../../../modules/wolfi/main.go:13:1)
+func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (../../../../../modules/wolfi/main.go:13:1)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `packages` optional argument

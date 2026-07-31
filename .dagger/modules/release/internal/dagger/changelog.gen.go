@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type Changelog
-func (r *Binding) AsChangelog() *Changelog { // changelog (../../../../:0:0)
+func (r *Binding) AsChangelog() *Changelog { // changelog (../../../../../:0:0)
 	q := r.query.Select("asChangelog")
 
 	return &Changelog{
@@ -18,7 +18,7 @@ func (r *Binding) AsChangelog() *Changelog { // changelog (../../../../:0:0)
 	}
 }
 
-type Changelog struct { // changelog (../../../../:0:0)
+type Changelog struct { // changelog (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -31,7 +31,7 @@ func (r *Changelog) WithGraphQLQuery(q *querybuilder.Selection) *Changelog {
 }
 
 // Generate the changelog with 'changie merge'. Only run this manually, at release time.
-func (r *Changelog) Generate() *Changeset { // changelog (../../../../:0:0)
+func (r *Changelog) Generate() *Changeset { // changelog (../../../../../:0:0)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -89,7 +89,7 @@ func (r *Changelog) UnmarshalJSON(bs []byte) error {
 }
 
 // Lookup the change notes file for the given component and version
-func (r *Changelog) LookupEntry(component string, version string) *File { // changelog (../../../../:0:0)
+func (r *Changelog) LookupEntry(component string, version string) *File { // changelog (../../../../../:0:0)
 	q := r.query.Select("lookupEntry")
 	q = q.Arg("component", component)
 	q = q.Arg("version", version)
@@ -108,7 +108,7 @@ func (r *Changelog) AsNode() Node {
 }
 
 // Create or update a binding of type Changelog in the environment
-func (r *Env) WithChangelogInput(name string, value *Changelog, description string) *Env { // changelog (../../../../:0:0)
+func (r *Env) WithChangelogInput(name string, value *Changelog, description string) *Env { // changelog (../../../../../:0:0)
 	assertNotNil("value", value)
 	q := r.query.Select("withChangelogInput")
 	q = q.Arg("name", name)
@@ -121,7 +121,7 @@ func (r *Env) WithChangelogInput(name string, value *Changelog, description stri
 }
 
 // Declare a desired Changelog output to be assigned in the environment
-func (r *Env) WithChangelogOutput(name string, description string) *Env { // changelog (../../../../:0:0)
+func (r *Env) WithChangelogOutput(name string, description string) *Env { // changelog (../../../../../:0:0)
 	q := r.query.Select("withChangelogOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -133,10 +133,10 @@ func (r *Env) WithChangelogOutput(name string, description string) *Env { // cha
 
 // ChangelogOpts contains options for Query.Changelog
 type ChangelogOpts struct {
-	Ws *Workspace // changelog (../../../../:0:0)
+	Ws *Workspace // changelog (../../../../../:0:0)
 }
 
-func (r *Query) Changelog(opts ...ChangelogOpts) *Changelog { // changelog (../../../../:0:0)
+func (r *Query) Changelog(opts ...ChangelogOpts) *Changelog { // changelog (../../../../../:0:0)
 	q := r.query.Select("changelog")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `ws` optional argument

@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type Codegen
-func (r *Binding) AsCodegen() *Codegen { // codegen (../../../../:0:0)
+func (r *Binding) AsCodegen() *Codegen { // codegen (../../../../../:0:0)
 	q := r.query.Select("asCodegen")
 
 	return &Codegen{
@@ -18,7 +18,7 @@ func (r *Binding) AsCodegen() *Codegen { // codegen (../../../../:0:0)
 	}
 }
 
-type Codegen struct { // codegen (../../../../:0:0)
+type Codegen struct { // codegen (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -30,7 +30,7 @@ func (r *Codegen) WithGraphQLQuery(q *querybuilder.Selection) *Codegen {
 	}
 }
 
-func (r *Codegen) Binary() *File { // codegen (../../../../:0:0)
+func (r *Codegen) Binary() *File { // codegen (../../../../../:0:0)
 	q := r.query.Select("binary")
 
 	return &File{
@@ -87,7 +87,7 @@ func (r *Codegen) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *Codegen) Source() *Directory { // codegen (../../../../:0:0)
+func (r *Codegen) Source() *Directory { // codegen (../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -104,7 +104,7 @@ func (r *Codegen) AsNode() Node {
 }
 
 // Create or update a binding of type Codegen in the environment
-func (r *Env) WithCodegenInput(name string, value *Codegen, description string) *Env { // codegen (../../../../:0:0)
+func (r *Env) WithCodegenInput(name string, value *Codegen, description string) *Env { // codegen (../../../../../:0:0)
 	assertNotNil("value", value)
 	q := r.query.Select("withCodegenInput")
 	q = q.Arg("name", name)
@@ -117,7 +117,7 @@ func (r *Env) WithCodegenInput(name string, value *Codegen, description string) 
 }
 
 // Declare a desired Codegen output to be assigned in the environment
-func (r *Env) WithCodegenOutput(name string, description string) *Env { // codegen (../../../../:0:0)
+func (r *Env) WithCodegenOutput(name string, description string) *Env { // codegen (../../../../../:0:0)
 	q := r.query.Select("withCodegenOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -129,12 +129,12 @@ func (r *Env) WithCodegenOutput(name string, description string) *Env { // codeg
 
 // CodegenOpts contains options for Query.Codegen
 type CodegenOpts struct {
-	Source *Directory // codegen (../../../../:0:0)
+	Source *Directory // codegen (../../../../../:0:0)
 
-	Ws *Workspace // codegen (../../../../:0:0)
+	Ws *Workspace // codegen (../../../../../:0:0)
 }
 
-func (r *Query) Codegen(opts ...CodegenOpts) *Codegen { // codegen (../../../../:0:0)
+func (r *Query) Codegen(opts ...CodegenOpts) *Codegen { // codegen (../../../../../:0:0)
 	q := r.query.Select("codegen")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument

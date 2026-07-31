@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type RegistryConfig
-func (r *Binding) AsRegistryConfig() *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+func (r *Binding) AsRegistryConfig() *RegistryConfig { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:22:6)
 	q := r.query.Select("asRegistryConfig")
 
 	return &RegistryConfig{
@@ -19,7 +19,7 @@ func (r *Binding) AsRegistryConfig() *RegistryConfig { // registry-config (../..
 }
 
 // Retrieve the binding value, as type RegistryConfigSecretMount
-func (r *Binding) AsRegistryConfigSecretMount() *RegistryConfigSecretMount { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
+func (r *Binding) AsRegistryConfigSecretMount() *RegistryConfigSecretMount { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:111:6)
 	q := r.query.Select("asRegistryConfigSecretMount")
 
 	return &RegistryConfigSecretMount{
@@ -28,7 +28,7 @@ func (r *Binding) AsRegistryConfigSecretMount() *RegistryConfigSecretMount { // 
 }
 
 // Create or update a binding of type RegistryConfig in the environment
-func (r *Env) WithRegistryConfigInput(name string, value *RegistryConfig, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+func (r *Env) WithRegistryConfigInput(name string, value *RegistryConfig, description string) *Env { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:22:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withRegistryConfigInput")
 	q = q.Arg("name", name)
@@ -41,7 +41,7 @@ func (r *Env) WithRegistryConfigInput(name string, value *RegistryConfig, descri
 }
 
 // Declare a desired RegistryConfig output to be assigned in the environment
-func (r *Env) WithRegistryConfigOutput(name string, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+func (r *Env) WithRegistryConfigOutput(name string, description string) *Env { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:22:6)
 	q := r.query.Select("withRegistryConfigOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -52,7 +52,7 @@ func (r *Env) WithRegistryConfigOutput(name string, description string) *Env { /
 }
 
 // Create or update a binding of type RegistryConfigSecretMount in the environment
-func (r *Env) WithRegistryConfigSecretMountInput(name string, value *RegistryConfigSecretMount, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
+func (r *Env) WithRegistryConfigSecretMountInput(name string, value *RegistryConfigSecretMount, description string) *Env { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:111:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withRegistryConfigSecretMountInput")
 	q = q.Arg("name", name)
@@ -65,7 +65,7 @@ func (r *Env) WithRegistryConfigSecretMountInput(name string, value *RegistryCon
 }
 
 // Declare a desired RegistryConfigSecretMount output to be assigned in the environment
-func (r *Env) WithRegistryConfigSecretMountOutput(name string, description string) *Env { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
+func (r *Env) WithRegistryConfigSecretMountOutput(name string, description string) *Env { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:111:6)
 	q := r.query.Select("withRegistryConfigSecretMountOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -87,7 +87,7 @@ func (r *Env) WithRegistryConfigSecretMountOutput(name string, description strin
 // Be advised that using the tool's built-in authentication mechanism may not work with the configuration file (since it's read only).
 //
 // You can read more about the topic in the readme: https://github.com/sagikazarmark/daggerverse/tree/main/registry-config#resources
-func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:22:6)
 	q := r.query.Select("registryConfig")
 
 	return &RegistryConfig{
@@ -95,7 +95,7 @@ func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../
 	}
 }
 
-type RegistryConfig struct { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
+type RegistryConfig struct { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:22:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -169,11 +169,11 @@ type RegistryConfigSecretOpts struct {
 	//
 	// Customize the name of the secret.
 	//
-	Name string // registry-config (../../../../../toolchains/release/registry-config/main.go:60:2)
+	Name string // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:60:2)
 }
 
 // Create the registry configuration.
-func (r *RegistryConfig) Secret(opts ...RegistryConfigSecretOpts) *Secret { // registry-config (../../../../../toolchains/release/registry-config/main.go:54:1)
+func (r *RegistryConfig) Secret(opts ...RegistryConfigSecretOpts) *Secret { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:54:1)
 	q := r.query.Select("secret")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `name` optional argument
@@ -192,11 +192,11 @@ type RegistryConfigSecretMountOpts struct {
 	//
 	// Name of the secret to create and mount.
 	//
-	SecretName string // registry-config (../../../../../toolchains/release/registry-config/main.go:78:2)
+	SecretName string // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:78:2)
 	//
 	// Skip mounting the secret if it's empty.
 	//
-	SkipOnEmpty bool // registry-config (../../../../../toolchains/release/registry-config/main.go:83:2)
+	SkipOnEmpty bool // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:83:2)
 	//
 	// A user:group to set for the mounted secret.
 	//
@@ -204,17 +204,17 @@ type RegistryConfigSecretMountOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	//
-	Owner string // registry-config (../../../../../toolchains/release/registry-config/main.go:92:2)
+	Owner string // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:92:2)
 	//
 	// Permission given to the mounted secret (e.g., 0600).
 	//
 	// This option requires an owner to be set to be active.
 	//
-	Mode int // registry-config (../../../../../toolchains/release/registry-config/main.go:99:2)
+	Mode int // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:99:2)
 }
 
 // Create a SecretMount that can be used to mount the registry configuration into a container.
-func (r *RegistryConfig) SecretMount(path string, opts ...RegistryConfigSecretMountOpts) *RegistryConfigSecretMount { // registry-config (../../../../../toolchains/release/registry-config/main.go:71:1)
+func (r *RegistryConfig) SecretMount(path string, opts ...RegistryConfigSecretMountOpts) *RegistryConfigSecretMount { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:71:1)
 	q := r.query.Select("secretMount")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `secretName` optional argument
@@ -242,7 +242,7 @@ func (r *RegistryConfig) SecretMount(path string, opts ...RegistryConfigSecretMo
 }
 
 // Add credentials for a registry.
-func (r *RegistryConfig) WithRegistryAuth(address string, username string, secret *Secret) *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:34:1)
+func (r *RegistryConfig) WithRegistryAuth(address string, username string, secret *Secret) *RegistryConfig { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:34:1)
 	assertNotNil("secret", secret)
 	q := r.query.Select("withRegistryAuth")
 	q = q.Arg("address", address)
@@ -255,7 +255,7 @@ func (r *RegistryConfig) WithRegistryAuth(address string, username string, secre
 }
 
 // Removes credentials for a registry.
-func (r *RegistryConfig) WithoutRegistryAuth(address string) *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:45:1)
+func (r *RegistryConfig) WithoutRegistryAuth(address string) *RegistryConfig { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:45:1)
 	q := r.query.Select("withoutRegistryAuth")
 	q = q.Arg("address", address)
 
@@ -272,7 +272,7 @@ func (r *RegistryConfig) AsNode() Node {
 	}
 }
 
-type RegistryConfigSecretMount struct { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
+type RegistryConfigSecretMount struct { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:111:6)
 	query *querybuilder.Selection
 
 	id          *ID
@@ -339,7 +339,7 @@ func (r *RegistryConfigSecretMount) UnmarshalJSON(bs []byte) error {
 }
 
 // Permission given to the mounted secret (e.g., 0600).
-func (r *RegistryConfigSecretMount) Mode(ctx context.Context) (int, error) { // registry-config (../../../../../toolchains/release/registry-config/main.go:125:2)
+func (r *RegistryConfigSecretMount) Mode(ctx context.Context) (int, error) { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:125:2)
 	if r.mode != nil {
 		return *r.mode, nil
 	}
@@ -351,7 +351,7 @@ func (r *RegistryConfigSecretMount) Mode(ctx context.Context) (int, error) { // 
 	return response, q.Execute(ctx)
 }
 
-func (r *RegistryConfigSecretMount) Mount(container *Container) *Container { // registry-config (../../../../../toolchains/release/registry-config/main.go:133:1)
+func (r *RegistryConfigSecretMount) Mount(container *Container) *Container { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:133:1)
 	assertNotNil("container", container)
 	q := r.query.Select("mount")
 	q = q.Arg("container", container)
@@ -362,7 +362,7 @@ func (r *RegistryConfigSecretMount) Mount(container *Container) *Container { // 
 }
 
 // A user:group to set for the mounted secret.
-func (r *RegistryConfigSecretMount) Owner(ctx context.Context) (string, error) { // registry-config (../../../../../toolchains/release/registry-config/main.go:122:2)
+func (r *RegistryConfigSecretMount) Owner(ctx context.Context) (string, error) { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:122:2)
 	if r.owner != nil {
 		return *r.owner, nil
 	}
@@ -375,7 +375,7 @@ func (r *RegistryConfigSecretMount) Owner(ctx context.Context) (string, error) {
 }
 
 // Path to mount the secret into (a common path is ~/.docker/config.json).
-func (r *RegistryConfigSecretMount) Path(ctx context.Context) (string, error) { // registry-config (../../../../../toolchains/release/registry-config/main.go:113:2)
+func (r *RegistryConfigSecretMount) Path(ctx context.Context) (string, error) { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:113:2)
 	if r.path != nil {
 		return *r.path, nil
 	}
@@ -390,7 +390,7 @@ func (r *RegistryConfigSecretMount) Path(ctx context.Context) (string, error) { 
 // DO NOT USE
 // Made public until https://github.com/dagger/dagger/pull/8149 is fixed.
 // private
-func (r *RegistryConfigSecretMount) RegistryConfig() *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:130:2)
+func (r *RegistryConfigSecretMount) RegistryConfig() *RegistryConfig { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:130:2)
 	q := r.query.Select("registryConfig")
 
 	return &RegistryConfig{
@@ -399,7 +399,7 @@ func (r *RegistryConfigSecretMount) RegistryConfig() *RegistryConfig { // regist
 }
 
 // Name of the secret to create and mount.
-func (r *RegistryConfigSecretMount) SecretName(ctx context.Context) (string, error) { // registry-config (../../../../../toolchains/release/registry-config/main.go:116:2)
+func (r *RegistryConfigSecretMount) SecretName(ctx context.Context) (string, error) { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:116:2)
 	if r.secretName != nil {
 		return *r.secretName, nil
 	}
@@ -412,7 +412,7 @@ func (r *RegistryConfigSecretMount) SecretName(ctx context.Context) (string, err
 }
 
 // Skip mounting the secret if it's empty.
-func (r *RegistryConfigSecretMount) SkipOnEmpty(ctx context.Context) (bool, error) { // registry-config (../../../../../toolchains/release/registry-config/main.go:119:2)
+func (r *RegistryConfigSecretMount) SkipOnEmpty(ctx context.Context) (bool, error) { // registry-config (../../../../../../.dagger/modules/release/registry-config/main.go:119:2)
 	if r.skipOnEmpty != nil {
 		return *r.skipOnEmpty, nil
 	}

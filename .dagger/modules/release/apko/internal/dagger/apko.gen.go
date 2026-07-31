@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Apko struct { // apko (../../../../../:0:0)
+type Apko struct { // apko (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id      *ID
@@ -313,7 +313,7 @@ func (r *Apko) Wolfi() *ApkoConfig {
 	}
 }
 
-type ApkoBuildResult struct { // apko (../../../../../:0:0)
+type ApkoBuildResult struct { // apko (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id  *ID
@@ -404,7 +404,7 @@ func (r *ApkoBuildResult) Tag(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-type ApkoConfig struct { // apko (../../../../../:0:0)
+type ApkoConfig struct { // apko (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -594,7 +594,7 @@ type ApkoOpts struct {
 	WithoutCache bool
 }
 
-func (r *Query) Apko(opts ...ApkoOpts) *Apko { // apko (../../../../../:0:0)
+func (r *Query) Apko(opts ...ApkoOpts) *Apko { // apko (../../../../../../:0:0)
 	q := r.query.Select("apko")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `container` optional argument

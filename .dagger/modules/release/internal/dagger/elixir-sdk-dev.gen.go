@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type ElixirSdkDev
-func (r *Binding) AsElixirSDKDev() *ElixirSDKDev { // elixir-sdk-dev (../../../../:0:0)
+func (r *Binding) AsElixirSDKDev() *ElixirSDKDev { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("asElixirSdkDev")
 
 	return &ElixirSDKDev{
@@ -18,7 +18,7 @@ func (r *Binding) AsElixirSDKDev() *ElixirSDKDev { // elixir-sdk-dev (../../../.
 	}
 }
 
-type ElixirSDKDev struct { // elixir-sdk-dev (../../../../:0:0)
+type ElixirSDKDev struct { // elixir-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	baseImage     *string
@@ -37,7 +37,7 @@ func (r *ElixirSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *ElixirSDKDev
 	}
 }
 
-func (r *ElixirSDKDev) BaseImage(ctx context.Context) (string, error) { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) BaseImage(ctx context.Context) (string, error) { // elixir-sdk-dev (../../../../../:0:0)
 	if r.baseImage != nil {
 		return *r.baseImage, nil
 	}
@@ -50,7 +50,7 @@ func (r *ElixirSDKDev) BaseImage(ctx context.Context) (string, error) { // elixi
 }
 
 // Regenerate the Elixir SDK API
-func (r *ElixirSDKDev) ClientLibrary() *Changeset { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) ClientLibrary() *Changeset { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -59,7 +59,7 @@ func (r *ElixirSDKDev) ClientLibrary() *Changeset { // elixir-sdk-dev (../../../
 }
 
 // Run dagger_codegen tests
-func (r *ElixirSDKDev) CodegenTest(ctx context.Context) error { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) CodegenTest(ctx context.Context) error { // elixir-sdk-dev (../../../../../:0:0)
 	if r.codegenTest != nil {
 		return nil
 	}
@@ -68,7 +68,7 @@ func (r *ElixirSDKDev) CodegenTest(ctx context.Context) error { // elixir-sdk-de
 	return q.Execute(ctx)
 }
 
-func (r *ElixirSDKDev) DevContainer() *Container { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) DevContainer() *Container { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("devContainer")
 
 	return &Container{
@@ -126,7 +126,7 @@ func (r *ElixirSDKDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Lint the SDK
-func (r *ElixirSDKDev) Lint(ctx context.Context) error { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) Lint(ctx context.Context) error { // elixir-sdk-dev (../../../../../:0:0)
 	if r.lint != nil {
 		return nil
 	}
@@ -140,19 +140,19 @@ type ElixirSDKDevPublishOpts struct {
 	//
 	// Hex.pm API key for publishing
 	//
-	HexAPIKey *Secret // elixir-sdk-dev (../../../../:0:0)
+	HexAPIKey *Secret // elixir-sdk-dev (../../../../../:0:0)
 	//
 	// Hex.pm API URL to publish to
 	//
-	HexAPIURL string // elixir-sdk-dev (../../../../:0:0)
+	HexAPIURL string // elixir-sdk-dev (../../../../../:0:0)
 	//
 	// Execute a dry-run release, with no side effects
 	//
-	DryRun bool // elixir-sdk-dev (../../../../:0:0)
+	DryRun bool // elixir-sdk-dev (../../../../../:0:0)
 }
 
 // Publish the Elixir SDK
-func (r *ElixirSDKDev) Publish(ctx context.Context, tag string, opts ...ElixirSDKDevPublishOpts) error { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) Publish(ctx context.Context, tag string, opts ...ElixirSDKDevPublishOpts) error { // elixir-sdk-dev (../../../../../:0:0)
 	if r.publish != nil {
 		return nil
 	}
@@ -177,7 +177,7 @@ func (r *ElixirSDKDev) Publish(ctx context.Context, tag string, opts ...ElixirSD
 }
 
 // Test the publishing process
-func (r *ElixirSDKDev) ReleaseDryRun(ctx context.Context) error { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) ReleaseDryRun(ctx context.Context) error { // elixir-sdk-dev (../../../../../:0:0)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -187,7 +187,7 @@ func (r *ElixirSDKDev) ReleaseDryRun(ctx context.Context) error { // elixir-sdk-
 }
 
 // Run the SDK tests
-func (r *ElixirSDKDev) SDKTest(ctx context.Context) error { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) SDKTest(ctx context.Context) error { // elixir-sdk-dev (../../../../../:0:0)
 	if r.sdkTest != nil {
 		return nil
 	}
@@ -196,7 +196,7 @@ func (r *ElixirSDKDev) SDKTest(ctx context.Context) error { // elixir-sdk-dev (.
 	return q.Execute(ctx)
 }
 
-func (r *ElixirSDKDev) Source() *Directory { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) Source() *Directory { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -204,7 +204,7 @@ func (r *ElixirSDKDev) Source() *Directory { // elixir-sdk-dev (../../../../:0:0
 	}
 }
 
-func (r *ElixirSDKDev) SourcePath(ctx context.Context) (string, error) { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) SourcePath(ctx context.Context) (string, error) { // elixir-sdk-dev (../../../../../:0:0)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -217,7 +217,7 @@ func (r *ElixirSDKDev) SourcePath(ctx context.Context) (string, error) { // elix
 }
 
 // Sync Elixir image to keep both dev and runtime modules consistent
-func (r *ElixirSDKDev) SyncImage() *File { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) SyncImage() *File { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("syncImage")
 
 	return &File{
@@ -226,7 +226,7 @@ func (r *ElixirSDKDev) SyncImage() *File { // elixir-sdk-dev (../../../../:0:0)
 }
 
 // Update codegen test snapshots (auto-accept Mneme changes)
-func (r *ElixirSDKDev) UpdateCodegenTests() *Changeset { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) UpdateCodegenTests() *Changeset { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("updateCodegenTests")
 
 	return &Changeset{
@@ -234,7 +234,7 @@ func (r *ElixirSDKDev) UpdateCodegenTests() *Changeset { // elixir-sdk-dev (../.
 	}
 }
 
-func (r *ElixirSDKDev) WorkspaceDir() *Directory { // elixir-sdk-dev (../../../../:0:0)
+func (r *ElixirSDKDev) WorkspaceDir() *Directory { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("workspaceDir")
 
 	return &Directory{
@@ -251,7 +251,7 @@ func (r *ElixirSDKDev) AsNode() Node {
 }
 
 // Create or update a binding of type ElixirSdkDev in the environment
-func (r *Env) WithElixirSDKDevInput(name string, value *ElixirSDKDev, description string) *Env { // elixir-sdk-dev (../../../../:0:0)
+func (r *Env) WithElixirSDKDevInput(name string, value *ElixirSDKDev, description string) *Env { // elixir-sdk-dev (../../../../../:0:0)
 	assertNotNil("value", value)
 	q := r.query.Select("withElixirSdkDevInput")
 	q = q.Arg("name", name)
@@ -264,7 +264,7 @@ func (r *Env) WithElixirSDKDevInput(name string, value *ElixirSDKDev, descriptio
 }
 
 // Declare a desired ElixirSdkDev output to be assigned in the environment
-func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env { // elixir-sdk-dev (../../../../:0:0)
+func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("withElixirSdkDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -276,18 +276,18 @@ func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env { // 
 
 // ElixirSDKDevOpts contains options for Query.ElixirSDKDev
 type ElixirSDKDevOpts struct {
-	BaseImage string // elixir-sdk-dev (../../../../:0:0)
+	BaseImage string // elixir-sdk-dev (../../../../../:0:0)
 
-	WorkspaceDir *Directory // elixir-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // elixir-sdk-dev (../../../../../:0:0)
 
-	SourcePath string // elixir-sdk-dev (../../../../:0:0)
+	SourcePath string // elixir-sdk-dev (../../../../../:0:0)
 	//
 	// Workspace
 	//
-	Ws *Workspace // elixir-sdk-dev (../../../../:0:0)
+	Ws *Workspace // elixir-sdk-dev (../../../../../:0:0)
 }
 
-func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir-sdk-dev (../../../../:0:0)
+func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("elixirSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `baseImage` optional argument

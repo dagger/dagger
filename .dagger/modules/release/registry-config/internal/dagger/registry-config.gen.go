@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../../../:0:0)
+func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../../../../:0:0)
 	q := r.query.Select("registryConfig")
 
 	return &RegistryConfig{
@@ -17,7 +17,7 @@ func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../
 	}
 }
 
-type RegistryConfig struct { // registry-config (../../../../../:0:0)
+type RegistryConfig struct { // registry-config (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -176,7 +176,7 @@ func (r *RegistryConfig) WithoutRegistryAuth(address string) *RegistryConfig {
 	}
 }
 
-type RegistryConfigSecretMount struct { // registry-config (../../../../../:0:0)
+type RegistryConfigSecretMount struct { // registry-config (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id          *ID

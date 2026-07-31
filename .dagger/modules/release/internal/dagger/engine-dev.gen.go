@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type EngineDev
-func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:88:6)
+func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
 	q := r.query.Select("asEngineDev")
 
 	return &EngineDev{
@@ -19,7 +19,7 @@ func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../../../toolchai
 }
 
 // Retrieve the binding value, as type EngineDevLoadedEngine
-func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-dev (../../../../toolchains/engine-dev/docker.go:77:6)
+func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
 	q := r.query.Select("asEngineDevLoadedEngine")
 
 	return &EngineDevLoadedEngine{
@@ -27,7 +27,7 @@ func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-d
 	}
 }
 
-type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go:88:6)
+type EngineDev struct { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
 	query *querybuilder.Selection
 
 	id            *ID
@@ -52,7 +52,7 @@ func (r *EngineDev) WithGraphQLQuery(q *querybuilder.Selection) *EngineDev {
 	}
 }
 
-func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../toolchains/engine-dev/main.go:103:2)
+func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:103:2)
 	q := r.query.Select("clientDockerConfig")
 
 	return &Secret{
@@ -62,7 +62,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../to
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:386:1)
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:386:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -73,15 +73,15 @@ func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../.
 
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
-	Platform Platform // engine-dev (../../../../toolchains/engine-dev/main.go:180:2)
+	Platform Platform // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:180:2)
 
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:182:2)
+	GpuSupport bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:182:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:184:2)
+	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:184:2)
 }
 
 // Build the engine container
-func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:176:1)
+func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:176:1)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -105,7 +105,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:401:1)
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:401:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -115,11 +115,11 @@ func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchain
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:360:2)
+	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:360:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:357:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:357:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -182,7 +182,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:112:1)
+func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:112:1)
 	q := r.query.Select("incrementSubnet")
 
 	return &EngineDev{
@@ -195,13 +195,13 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:302:2)
+	Service *Service // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:302:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:304:2)
+	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:304:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:296:1)
+func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:296:1)
 	assertNotNil("client", client)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -223,7 +223,7 @@ func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallCli
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:344:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:344:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -232,7 +232,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolc
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:378:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:378:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -244,17 +244,17 @@ func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolc
 type EngineDevLoadToDockerOpts struct {
 
 	// Default: "localhost/dagger-engine.dev:latest"
-	Name string // engine-dev (../../../../toolchains/engine-dev/docker.go:23:2)
+	Name string // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:23:2)
 
-	Platform Platform // engine-dev (../../../../toolchains/engine-dev/docker.go:26:2)
+	Platform Platform // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:26:2)
 	//
 	// Enable experimental GPU support
 	//
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/docker.go:30:2)
+	GpuSupport bool // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:30:2)
 }
 
 // Load the engine container into a Docker engine
-func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOpts) *EngineDevLoadedEngine { // engine-dev (../../../../toolchains/engine-dev/docker.go:16:1)
+func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOpts) *EngineDevLoadedEngine { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:16:1)
 	assertNotNil("docker", docker)
 	q := r.query.Select("loadToDocker")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -278,7 +278,7 @@ func (r *EngineDev) LoadToDocker(docker *Socket, opts ...EngineDevLoadToDockerOp
 	}
 }
 
-func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:108:1)
+func (r *EngineDev) NetworkCidr(ctx context.Context) (string, error) { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:108:1)
 	if r.networkCidr != nil {
 		return *r.networkCidr, nil
 	}
@@ -295,23 +295,23 @@ type EngineDevPlaygroundOpts struct {
 	//
 	// Build from a custom base image
 	//
-	Base *Container // engine-dev (../../../../toolchains/engine-dev/main.go:142:2)
+	Base *Container // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:142:2)
 	//
 	// Enable experimental GPU support
 	//
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:145:2)
+	GpuSupport bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:145:2)
 	//
 	// Share cache globally
 	//
-	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:148:2)
+	SharedCache bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:148:2)
 
-	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:150:2)
+	Metrics bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:150:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:152:2)
+	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:152:2)
 }
 
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
-func (r *EngineDev) Playground(opts ...EngineDevPlaygroundOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:138:1)
+func (r *EngineDev) Playground(opts ...EngineDevPlaygroundOpts) *Container { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:138:1)
 	q := r.query.Select("playground")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `base` optional argument
@@ -348,17 +348,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:486:2)
+	Image string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:486:2)
 
-	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:491:2)
+	DryRun bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:491:2)
 
-	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:494:2)
+	RegistryUsername string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:494:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:496:2)
+	RegistryPassword *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:496:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:481:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:481:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -386,7 +386,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:467:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:467:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -397,17 +397,17 @@ func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (..
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:243:2)
+	GpuSupport bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:243:2)
 
-	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:245:2)
+	SharedCache bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:245:2)
 
-	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:247:2)
+	Metrics bool // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:247:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:249:2)
+	Version string // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:249:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:239:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:239:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
@@ -434,7 +434,7 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 	}
 }
 
-func (r *EngineDev) Source() *Directory { // engine-dev (../../../../toolchains/engine-dev/main.go:89:2)
+func (r *EngineDev) Source() *Directory { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:89:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -447,49 +447,49 @@ type EngineDevTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:26:2)
+	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:26:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:29:2)
+	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:29:2)
 
 	// Default: "./..."
-	Pkg string // engine-dev (../../../../toolchains/engine-dev/test.go:32:2)
+	Pkg string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:32:2)
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:35:2)
+	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:35:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:38:2)
+	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:38:2)
 	//
 	// How long before timing out the test run
 	//
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:41:2)
+	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:41:2)
 
-	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:43:2)
+	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:43:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:46:2)
+	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:46:2)
 
-	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:48:2)
+	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:48:2)
 	//
 	// Enable verbose output
 	//
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:51:2)
+	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:51:2)
 	//
 	// Update golden files
 	//
-	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:54:2)
+	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:54:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:57:2)
+	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:57:2)
 }
 
 // Run core engine tests
-func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../../../toolchains/engine-dev/test.go:22:1)
+func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:22:1)
 	if r.test != nil {
 		return nil
 	}
@@ -553,36 +553,36 @@ type EngineDevTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:88:2)
+	Run string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:88:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:91:2)
+	Skip string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:91:2)
 
-	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:93:2)
+	Update bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:93:2)
 
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:95:2)
+	Failfast bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:95:2)
 
-	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:97:2)
+	Parallel int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:97:2)
 
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:99:2)
+	Timeout string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:99:2)
 
-	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:101:2)
+	Race bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:101:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:103:2)
+	Count int // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:103:2)
 
-	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:105:2)
+	EnvFile *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:105:2)
 
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:107:2)
+	TestVerbose bool // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:107:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:110:2)
+	EbpfProgs []string // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:110:2)
 }
 
 // Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../toolchains/engine-dev/test.go:84:1)
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:84:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -637,7 +637,7 @@ func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset
 }
 
 // List all core engine tests
-func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/test.go:16:1)
+func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../../../../.dagger/modules/engine-dev/test.go:16:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}
@@ -649,7 +649,7 @@ func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (
 	return response, q.Execute(ctx)
 }
 
-func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:117:1)
+func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:117:1)
 	q := r.query.Select("withEbpfprogs")
 	q = q.Arg("names", names)
 
@@ -658,7 +658,7 @@ func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (..
 	}
 }
 
-func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:122:1)
+func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:122:1)
 	q := r.query.Select("withEngineConfig")
 	q = q.Arg("key", key)
 	q = q.Arg("value", value)
@@ -668,7 +668,7 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // e
 	}
 }
 
-func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:132:1)
+func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:132:1)
 	q := r.query.Select("withLogLevel")
 	q = q.Arg("level", level)
 
@@ -677,7 +677,7 @@ func (r *EngineDev) WithLogLevel(level string) *EngineDev { // engine-dev (../..
 	}
 }
 
-func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:127:1)
+func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:127:1)
 	q := r.query.Select("withRace")
 
 	return &EngineDev{
@@ -693,7 +693,7 @@ func (r *EngineDev) AsNode() Node {
 	}
 }
 
-type EngineDevLoadedEngine struct { // engine-dev (../../../../toolchains/engine-dev/docker.go:77:6)
+type EngineDevLoadedEngine struct { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
 	query *querybuilder.Selection
 
 	id    *ID
@@ -756,7 +756,7 @@ func (r *EngineDevLoadedEngine) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EngineDevLoadedEngine) Image(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/docker.go:79:2)
+func (r *EngineDevLoadedEngine) Image(ctx context.Context) (string, error) { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:79:2)
 	if r.image != nil {
 		return *r.image, nil
 	}
@@ -772,19 +772,19 @@ func (r *EngineDevLoadedEngine) Image(ctx context.Context) (string, error) { // 
 type EngineDevLoadedEngineStartOpts struct {
 
 	// Default: "dagger-engine.dev"
-	Name string // engine-dev (../../../../toolchains/engine-dev/docker.go:91:2)
+	Name string // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:91:2)
 
-	CloudToken *Secret // engine-dev (../../../../toolchains/engine-dev/docker.go:93:2)
+	CloudToken *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:93:2)
 
-	CloudURL string // engine-dev (../../../../toolchains/engine-dev/docker.go:95:2)
+	CloudURL string // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:95:2)
 
-	Debug bool // engine-dev (../../../../toolchains/engine-dev/docker.go:98:2)
+	Debug bool // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:98:2)
 
-	ExtraHosts []string // engine-dev (../../../../toolchains/engine-dev/docker.go:101:2)
+	ExtraHosts []string // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:101:2)
 }
 
 // Start the loaded engine container
-func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoadedEngineStartOpts) error { // engine-dev (../../../../toolchains/engine-dev/docker.go:86:1)
+func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoadedEngineStartOpts) error { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:86:1)
 	if r.start != nil {
 		return nil
 	}
@@ -824,7 +824,7 @@ func (r *EngineDevLoadedEngine) AsNode() Node {
 }
 
 // Create or update a binding of type EngineDev in the environment
-func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/main.go:88:6)
+func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEngineDevInput")
 	q = q.Arg("name", name)
@@ -837,7 +837,7 @@ func (r *Env) WithEngineDevInput(name string, value *EngineDev, description stri
 }
 
 // Create or update a binding of type EngineDevLoadedEngine in the environment
-func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoadedEngine, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/docker.go:77:6)
+func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoadedEngine, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEngineDevLoadedEngineInput")
 	q = q.Arg("name", name)
@@ -850,7 +850,7 @@ func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoaded
 }
 
 // Declare a desired EngineDevLoadedEngine output to be assigned in the environment
-func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/docker.go:77:6)
+func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/docker.go:77:6)
 	q := r.query.Select("withEngineDevLoadedEngineOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -861,7 +861,7 @@ func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *
 }
 
 // Declare a desired EngineDev output to be assigned in the environment
-func (r *Env) WithEngineDevOutput(name string, description string) *Env { // engine-dev (../../../../toolchains/engine-dev/main.go:88:6)
+func (r *Env) WithEngineDevOutput(name string, description string) *Env { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:88:6)
 	q := r.query.Select("withEngineDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -873,23 +873,23 @@ func (r *Env) WithEngineDevOutput(name string, description string) *Env { // eng
 
 // EngineDevOpts contains options for Query.EngineDev
 type EngineDevOpts struct {
-	Ws *Workspace // engine-dev (../../../../toolchains/engine-dev/main.go:21:2)
+	Ws *Workspace // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:21:2)
 	//
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
 	//
 	//
 	// Default: 89
-	SubnetNumber int // engine-dev (../../../../toolchains/engine-dev/main.go:25:2)
+	SubnetNumber int // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:25:2)
 	//
 	// A docker config file with credentials to install on clients,
 	// to ensure they can access private registries
 	//
-	ClientDockerConfig *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:29:2)
+	ClientDockerConfig *Secret // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:29:2)
 }
 
 // Creates a complete end-to-end build environment with CLI and engine for interactive testing
-func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:19:1)
+func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../../.dagger/modules/engine-dev/main.go:19:1)
 	q := r.query.Select("engineDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `ws` optional argument

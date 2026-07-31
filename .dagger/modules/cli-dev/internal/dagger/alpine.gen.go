@@ -11,7 +11,7 @@ import (
 )
 
 // An Alpine Linux configuration
-type Alpine struct { // alpine (../../../../modules/alpine/main.go:85:6)
+type Alpine struct { // alpine (../../../../../modules/alpine/main.go:85:6)
 	query *querybuilder.Selection
 
 	arch   *string
@@ -27,7 +27,7 @@ func (r *Alpine) WithGraphQLQuery(q *querybuilder.Selection) *Alpine {
 }
 
 // The hardware architecture to build for
-func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (../../../../modules/alpine/main.go:89:2)
+func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (../../../../../modules/alpine/main.go:89:2)
 	if r.arch != nil {
 		return *r.arch, nil
 	}
@@ -40,7 +40,7 @@ func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (../../..
 }
 
 // The Alpine branch to download packages from
-func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (../../../../modules/alpine/main.go:91:2)
+func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (../../../../../modules/alpine/main.go:91:2)
 	if r.branch != nil {
 		return *r.branch, nil
 	}
@@ -53,7 +53,7 @@ func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (../../
 }
 
 // Build an Alpine Linux container
-func (r *Alpine) Container() *Container { // alpine (../../../../modules/alpine/main.go:105:1)
+func (r *Alpine) Container() *Container { // alpine (../../../../../modules/alpine/main.go:105:1)
 	q := r.query.Select("container")
 
 	return &Container{
@@ -62,7 +62,7 @@ func (r *Alpine) Container() *Container { // alpine (../../../../modules/alpine/
 }
 
 // The distro to use
-func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (../../../../modules/alpine/main.go:87:2)
+func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (../../../../../modules/alpine/main.go:87:2)
 	if r.distro != nil {
 		return *r.distro, nil
 	}
@@ -75,7 +75,7 @@ func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (
 }
 
 // Where to download additional keys from
-func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine (../../../../modules/alpine/main.go:97:2)
+func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine (../../../../../modules/alpine/main.go:97:2)
 	q := r.query.Select("extraKeyUrls")
 
 	var response []string
@@ -85,7 +85,7 @@ func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine
 }
 
 // Extra repositories to add to the package resolver
-func (r *Alpine) ExtraRepositories(ctx context.Context) ([]string, error) { // alpine (../../../../modules/alpine/main.go:95:2)
+func (r *Alpine) ExtraRepositories(ctx context.Context) ([]string, error) { // alpine (../../../../../modules/alpine/main.go:95:2)
 	q := r.query.Select("extraRepositories")
 
 	var response []string
@@ -144,7 +144,7 @@ func (r *Alpine) UnmarshalJSON(bs []byte) error {
 }
 
 // The APK packages to install
-func (r *Alpine) Packages(ctx context.Context) ([]string, error) { // alpine (../../../../modules/alpine/main.go:93:2)
+func (r *Alpine) Packages(ctx context.Context) ([]string, error) { // alpine (../../../../../modules/alpine/main.go:93:2)
 	q := r.query.Select("packages")
 
 	var response []string
@@ -162,7 +162,7 @@ func (r *Alpine) AsNode() Node {
 }
 
 // Retrieve the binding value, as type Alpine
-func (r *Binding) AsAlpine() *Alpine { // alpine (../../../../modules/alpine/main.go:85:6)
+func (r *Binding) AsAlpine() *Alpine { // alpine (../../../../../modules/alpine/main.go:85:6)
 	q := r.query.Select("asAlpine")
 
 	return &Alpine{
@@ -171,7 +171,7 @@ func (r *Binding) AsAlpine() *Alpine { // alpine (../../../../modules/alpine/mai
 }
 
 // Create or update a binding of type Alpine in the environment
-func (r *Env) WithAlpineInput(name string, value *Alpine, description string) *Env { // alpine (../../../../modules/alpine/main.go:85:6)
+func (r *Env) WithAlpineInput(name string, value *Alpine, description string) *Env { // alpine (../../../../../modules/alpine/main.go:85:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withAlpineInput")
 	q = q.Arg("name", name)
@@ -184,7 +184,7 @@ func (r *Env) WithAlpineInput(name string, value *Alpine, description string) *E
 }
 
 // Declare a desired Alpine output to be assigned in the environment
-func (r *Env) WithAlpineOutput(name string, description string) *Env { // alpine (../../../../modules/alpine/main.go:85:6)
+func (r *Env) WithAlpineOutput(name string, description string) *Env { // alpine (../../../../../modules/alpine/main.go:85:6)
 	q := r.query.Select("withAlpineOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -199,35 +199,35 @@ type AlpineOpts struct {
 	//
 	// Hardware architecture to build for
 	//
-	Arch string // alpine (../../../../modules/alpine/main.go:32:2)
+	Arch string // alpine (../../../../../modules/alpine/main.go:32:2)
 	//
 	// Alpine branch to download packages from
 	//
 	//
 	// Default: "edge"
-	Branch string // alpine (../../../../modules/alpine/main.go:36:2)
+	Branch string // alpine (../../../../../modules/alpine/main.go:36:2)
 	//
 	// APK packages to install
 	//
-	Packages []string // alpine (../../../../modules/alpine/main.go:39:2)
+	Packages []string // alpine (../../../../../modules/alpine/main.go:39:2)
 	//
 	// Extra repositories to add to the package resolver
 	//
-	ExtraRepositories []string // alpine (../../../../modules/alpine/main.go:42:2)
+	ExtraRepositories []string // alpine (../../../../../modules/alpine/main.go:42:2)
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // alpine (../../../../modules/alpine/main.go:45:2)
+	ExtraKeyUrls []string // alpine (../../../../../modules/alpine/main.go:45:2)
 	//
 	// Alpine distribution to use
 	//
 	//
 	// Default: ALPINE
-	Distro AlpineDistro // alpine (../../../../modules/alpine/main.go:50:2)
+	Distro AlpineDistro // alpine (../../../../../modules/alpine/main.go:50:2)
 }
 
 // An Alpine Linux configuration
-func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../modules/alpine/main.go:29:1)
+func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../../modules/alpine/main.go:29:1)
 	q := r.query.Select("alpine")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `arch` optional argument
@@ -261,7 +261,7 @@ func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../modu
 	}
 }
 
-type AlpineDistro string // alpine (../../../../modules/alpine/main.go:22:6)
+type AlpineDistro string // alpine (../../../../../modules/alpine/main.go:22:6)
 
 func (AlpineDistro) IsEnum() {}
 
@@ -310,8 +310,8 @@ func (v *AlpineDistro) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	AlpineDistroAlpine AlpineDistro = "ALPINE" // alpine (../../../../modules/alpine/main.go:25:2)
+	AlpineDistroAlpine AlpineDistro = "ALPINE" // alpine (../../../../../modules/alpine/main.go:25:2)
 
-	AlpineDistroWolfi AlpineDistro = "WOLFI" // alpine (../../../../modules/alpine/main.go:26:2)
+	AlpineDistroWolfi AlpineDistro = "WOLFI" // alpine (../../../../../modules/alpine/main.go:26:2)
 
 )

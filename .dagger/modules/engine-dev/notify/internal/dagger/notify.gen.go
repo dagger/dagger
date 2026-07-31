@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Notify struct { // notify (../../../../../:0:0)
+type Notify struct { // notify (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	daggerCloudTraceUrl *string
@@ -157,7 +157,7 @@ func (r *Notify) Slack(ctx context.Context, token *Secret, color string, message
 	return response, q.Execute(ctx)
 }
 
-func (r *Query) Notify() *Notify { // notify (../../../../../:0:0)
+func (r *Query) Notify() *Notify { // notify (../../../../../../:0:0)
 	q := r.query.Select("notify")
 
 	return &Notify{

@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type DocsDev struct { // docs-dev (../../../../:0:0)
+type DocsDev struct { // docs-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	check   *Void
@@ -190,7 +190,7 @@ type DocsDevOpts struct {
 	NginxConfig *File
 }
 
-func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../../:0:0)
+func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../../../:0:0)
 	q := r.query.Select("docsDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument

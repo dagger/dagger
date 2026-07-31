@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type Notify
-func (r *Binding) AsNotify() *Notify { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+func (r *Binding) AsNotify() *Notify { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:18:6)
 	q := r.query.Select("asNotify")
 
 	return &Notify{
@@ -19,7 +19,7 @@ func (r *Binding) AsNotify() *Notify { // notify (../../../../toolchains/engine-
 }
 
 // Create or update a binding of type Notify in the environment
-func (r *Env) WithNotifyInput(name string, value *Notify, description string) *Env { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+func (r *Env) WithNotifyInput(name string, value *Notify, description string) *Env { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:18:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withNotifyInput")
 	q = q.Arg("name", name)
@@ -32,7 +32,7 @@ func (r *Env) WithNotifyInput(name string, value *Notify, description string) *E
 }
 
 // Declare a desired Notify output to be assigned in the environment
-func (r *Env) WithNotifyOutput(name string, description string) *Env { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+func (r *Env) WithNotifyOutput(name string, description string) *Env { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:18:6)
 	q := r.query.Select("withNotifyOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -42,7 +42,7 @@ func (r *Env) WithNotifyOutput(name string, description string) *Env { // notify
 	}
 }
 
-type Notify struct { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+type Notify struct { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:18:6)
 	query *querybuilder.Selection
 
 	daggerCloudTraceUrl *string
@@ -59,7 +59,7 @@ func (r *Notify) WithGraphQLQuery(q *querybuilder.Selection) *Notify {
 
 // helper to return a dagger cloud trace link from the OTEL data in ctx.
 // useful as input to "message" to link your slack or discord notification back up to dagger cloud.
-func (r *Notify) DaggerCloudTraceURL(ctx context.Context) (string, error) { // notify (../../../../toolchains/engine-dev/notify/main.go:116:1)
+func (r *Notify) DaggerCloudTraceURL(ctx context.Context) (string, error) { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:116:1)
 	if r.daggerCloudTraceUrl != nil {
 		return *r.daggerCloudTraceUrl, nil
 	}
@@ -72,7 +72,7 @@ func (r *Notify) DaggerCloudTraceURL(ctx context.Context) (string, error) { // n
 }
 
 // Message a Discord webhook: `dagger call discord --webhook-url=env:DISCORD_WEBHOOK --message="👋 from Dagger notify module"`
-func (r *Notify) Discord(ctx context.Context, webhookUrl *Secret, message string) (string, error) { // notify (../../../../toolchains/engine-dev/notify/main.go:21:1)
+func (r *Notify) Discord(ctx context.Context, webhookUrl *Secret, message string) (string, error) { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:21:1)
 	assertNotNil("webhookUrl", webhookUrl)
 	if r.discord != nil {
 		return *r.discord, nil
@@ -141,27 +141,27 @@ type NotifySlackOpts struct {
 	//
 	// Set a title to the message
 	//
-	Title string // notify (../../../../toolchains/engine-dev/notify/main.go:62:2)
+	Title string // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:62:2)
 	//
 	// Set a footer to the message
 	//
-	Footer string // notify (../../../../toolchains/engine-dev/notify/main.go:65:2)
+	Footer string // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:65:2)
 	//
 	// Set an icon in the footer, the icon should be a link
 	//
-	FooterIcon string // notify (../../../../toolchains/engine-dev/notify/main.go:68:2)
+	FooterIcon string // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:68:2)
 	//
 	// Add an image in the message
 	//
-	ImageURL string // notify (../../../../toolchains/engine-dev/notify/main.go:71:2)
+	ImageURL string // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:71:2)
 	//
 	// The thread id if we want to reply to a message or in a thread
 	//
-	ThreadID string // notify (../../../../toolchains/engine-dev/notify/main.go:74:2)
+	ThreadID string // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:74:2)
 }
 
 // Message a specific Slack channel: `dagger call slack --token=env:SLACK_TOKEN --channel-id=C07PBDE3U57 --color="#FC0" --message="👋 from Dagger notify module"`
-func (r *Notify) Slack(ctx context.Context, token *Secret, color string, message string, channelId string, opts ...NotifySlackOpts) (string, error) { // notify (../../../../toolchains/engine-dev/notify/main.go:50:1)
+func (r *Notify) Slack(ctx context.Context, token *Secret, color string, message string, channelId string, opts ...NotifySlackOpts) (string, error) { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:50:1)
 	assertNotNil("token", token)
 	if r.slack != nil {
 		return *r.slack, nil
@@ -211,7 +211,7 @@ func (r *Notify) AsNode() Node {
 // Send notifications
 //
 // Supports Discord & Slack.
-func (r *Query) Notify() *Notify { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
+func (r *Query) Notify() *Notify { // notify (../../../../../.dagger/modules/engine-dev/notify/main.go:18:6)
 	q := r.query.Select("notify")
 
 	return &Notify{

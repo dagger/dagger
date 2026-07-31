@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type Apko struct { // apko (../../../../../toolchains/release/apko/main.go:16:6)
+type Apko struct { // apko (../../../../../../.dagger/modules/release/apko/main.go:16:6)
 	query *querybuilder.Selection
 
 	id      *ID
@@ -31,7 +31,7 @@ func (r *Apko) WithGraphQLQuery(q *querybuilder.Selection) *Apko {
 }
 
 // Load the Alpine base configuration.
-func (r *Apko) Alpine() *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:11:1)
+func (r *Apko) Alpine() *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:11:1)
 	q := r.query.Select("alpine")
 
 	return &ApkoConfig{
@@ -44,45 +44,45 @@ type ApkoBuildOpts struct {
 	//
 	// A .lock.json file (e.g. produced by apko lock) that constraints versions of packages to the listed ones.
 	//
-	Lockfile *File // apko (../../../../../toolchains/release/apko/main.go:172:2)
+	Lockfile *File // apko (../../../../../../.dagger/modules/release/apko/main.go:172:2)
 	//
 	// OCI annotations to add. Separate with colon (key:value).
 	//
-	Annotations []string // apko (../../../../../toolchains/release/apko/main.go:177:2)
+	Annotations []string // apko (../../../../../../.dagger/modules/release/apko/main.go:177:2)
 	//
 	// Architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on.
 	//
-	Arch []string // apko (../../../../../toolchains/release/apko/main.go:182:2)
+	Arch []string // apko (../../../../../../.dagger/modules/release/apko/main.go:182:2)
 	//
 	// Date used for the timestamps of the files inside the image in RFC3339 format.
 	//
-	BuildDate string // apko (../../../../../toolchains/release/apko/main.go:187:2)
+	BuildDate string // apko (../../../../../../.dagger/modules/release/apko/main.go:187:2)
 	//
 	// Path to extra keys to include in the keyring.
 	//
-	KeyringAppend []string // apko (../../../../../toolchains/release/apko/main.go:192:2)
+	KeyringAppend []string // apko (../../../../../../.dagger/modules/release/apko/main.go:192:2)
 	//
 	// Do not use network to fetch packages (cache must be pre-populated).
 	//
-	Offline bool // apko (../../../../../toolchains/release/apko/main.go:197:2)
+	Offline bool // apko (../../../../../../.dagger/modules/release/apko/main.go:197:2)
 	//
 	// Extra packages to include.
 	//
-	PackageAppend []string // apko (../../../../../toolchains/release/apko/main.go:202:2)
+	PackageAppend []string // apko (../../../../../../.dagger/modules/release/apko/main.go:202:2)
 	//
 	// Path to extra repositories to include.
 	//
-	RepositoryAppend []string // apko (../../../../../toolchains/release/apko/main.go:207:2)
+	RepositoryAppend []string // apko (../../../../../../.dagger/modules/release/apko/main.go:207:2)
 	//
 	// Detect and embed VCS URLs.
 	//
 	//
 	// Default: true
-	Vcs bool // apko (../../../../../toolchains/release/apko/main.go:215:2)
+	Vcs bool // apko (../../../../../../.dagger/modules/release/apko/main.go:215:2)
 }
 
 // Build an image from a YAML configuration file.
-func (r *Apko) Build(config *File, tag string, opts ...ApkoBuildOpts) *ApkoBuildResult { // apko (../../../../../toolchains/release/apko/main.go:162:1)
+func (r *Apko) Build(config *File, tag string, opts ...ApkoBuildOpts) *ApkoBuildResult { // apko (../../../../../../.dagger/modules/release/apko/main.go:162:1)
 	assertNotNil("config", config)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -132,7 +132,7 @@ func (r *Apko) Build(config *File, tag string, opts ...ApkoBuildOpts) *ApkoBuild
 }
 
 // Load a configuration file.
-func (r *Apko) Config(file *File) *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:24:1)
+func (r *Apko) Config(file *File) *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:24:1)
 	assertNotNil("file", file)
 	q := r.query.Select("config")
 	q = q.Arg("file", file)
@@ -192,7 +192,7 @@ func (r *Apko) UnmarshalJSON(bs []byte) error {
 }
 
 // Load a configuration preset.
-func (r *Apko) Preset(name string) *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:16:1)
+func (r *Apko) Preset(name string) *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:16:1)
 	q := r.query.Select("preset")
 	q = q.Arg("name", name)
 
@@ -206,41 +206,41 @@ type ApkoPublishOpts struct {
 	//
 	// OCI annotations to add. Separate with colon (key:value).
 	//
-	Annotations []string // apko (../../../../../toolchains/release/apko/main.go:274:2)
+	Annotations []string // apko (../../../../../../.dagger/modules/release/apko/main.go:274:2)
 	//
 	// Architectures to build for (e.g., x86_64,ppc64le,arm64) -- default is all, unless specified in config. Can also use 'host' to indicate arch of host this is running on.
 	//
-	Arch []string // apko (../../../../../toolchains/release/apko/main.go:279:2)
+	Arch []string // apko (../../../../../../.dagger/modules/release/apko/main.go:279:2)
 	//
 	// Date used for the timestamps of the files inside the image in RFC3339 format.
 	//
-	BuildDate string // apko (../../../../../toolchains/release/apko/main.go:284:2)
+	BuildDate string // apko (../../../../../../.dagger/modules/release/apko/main.go:284:2)
 	//
 	// Path to extra keys to include in the keyring.
 	//
-	KeyringAppend []string // apko (../../../../../toolchains/release/apko/main.go:289:2)
+	KeyringAppend []string // apko (../../../../../../.dagger/modules/release/apko/main.go:289:2)
 	//
 	// Do not use network to fetch packages (cache must be pre-populated).
 	//
-	Offline bool // apko (../../../../../toolchains/release/apko/main.go:294:2)
+	Offline bool // apko (../../../../../../.dagger/modules/release/apko/main.go:294:2)
 	//
 	// Extra packages to include.
 	//
-	PackageAppend []string // apko (../../../../../toolchains/release/apko/main.go:299:2)
+	PackageAppend []string // apko (../../../../../../.dagger/modules/release/apko/main.go:299:2)
 	//
 	// Path to extra repositories to include.
 	//
-	RepositoryAppend []string // apko (../../../../../toolchains/release/apko/main.go:304:2)
+	RepositoryAppend []string // apko (../../../../../../.dagger/modules/release/apko/main.go:304:2)
 	//
 	// Detect and embed VCS URLs.
 	//
 	//
 	// Default: true
-	Vcs bool // apko (../../../../../toolchains/release/apko/main.go:312:2)
+	Vcs bool // apko (../../../../../../.dagger/modules/release/apko/main.go:312:2)
 }
 
 // Publish a built image from a YAML configuration file.
-func (r *Apko) Publish(ctx context.Context, config *File, tag string, opts ...ApkoPublishOpts) error { // apko (../../../../../toolchains/release/apko/main.go:262:1)
+func (r *Apko) Publish(ctx context.Context, config *File, tag string, opts ...ApkoPublishOpts) error { // apko (../../../../../../.dagger/modules/release/apko/main.go:262:1)
 	assertNotNil("config", config)
 	if r.publish != nil {
 		return nil
@@ -291,15 +291,15 @@ type ApkoWithCacheOpts struct {
 	//
 	// Identifier of the directory to use as the cache volume's root.
 	//
-	Source *Directory // apko (../../../../../toolchains/release/apko/main.go:67:2)
+	Source *Directory // apko (../../../../../../.dagger/modules/release/apko/main.go:67:2)
 	//
 	// Sharing mode of the cache volume.
 	//
-	Sharing CacheSharingMode // apko (../../../../../toolchains/release/apko/main.go:72:2)
+	Sharing CacheSharingMode // apko (../../../../../../.dagger/modules/release/apko/main.go:72:2)
 }
 
 // Mount a cache volume for apk cache.
-func (r *Apko) WithCache(cache *CacheVolume, opts ...ApkoWithCacheOpts) *Apko { // apko (../../../../../toolchains/release/apko/main.go:61:1)
+func (r *Apko) WithCache(cache *CacheVolume, opts ...ApkoWithCacheOpts) *Apko { // apko (../../../../../../.dagger/modules/release/apko/main.go:61:1)
 	assertNotNil("cache", cache)
 	q := r.query.Select("withCache")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -320,7 +320,7 @@ func (r *Apko) WithCache(cache *CacheVolume, opts ...ApkoWithCacheOpts) *Apko { 
 }
 
 // Add credentials for a registry.
-func (r *Apko) WithRegistryAuth(address string, username string, secret *Secret) *Apko { // apko (../../../../../toolchains/release/apko/main.go:87:1)
+func (r *Apko) WithRegistryAuth(address string, username string, secret *Secret) *Apko { // apko (../../../../../../.dagger/modules/release/apko/main.go:87:1)
 	assertNotNil("secret", secret)
 	q := r.query.Select("withRegistryAuth")
 	q = q.Arg("address", address)
@@ -333,7 +333,7 @@ func (r *Apko) WithRegistryAuth(address string, username string, secret *Secret)
 }
 
 // Removes credentials for a registry.
-func (r *Apko) WithoutRegistryAuth(address string) *Apko { // apko (../../../../../toolchains/release/apko/main.go:94:1)
+func (r *Apko) WithoutRegistryAuth(address string) *Apko { // apko (../../../../../../.dagger/modules/release/apko/main.go:94:1)
 	q := r.query.Select("withoutRegistryAuth")
 	q = q.Arg("address", address)
 
@@ -343,7 +343,7 @@ func (r *Apko) WithoutRegistryAuth(address string) *Apko { // apko (../../../../
 }
 
 // Load the Wolfi base configuration.
-func (r *Apko) Wolfi() *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:6:1)
+func (r *Apko) Wolfi() *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:6:1)
 	q := r.query.Select("wolfi")
 
 	return &ApkoConfig{
@@ -359,7 +359,7 @@ func (r *Apko) AsNode() Node {
 	}
 }
 
-type ApkoBuildResult struct { // apko (../../../../../toolchains/release/apko/main.go:251:6)
+type ApkoBuildResult struct { // apko (../../../../../../.dagger/modules/release/apko/main.go:251:6)
 	query *querybuilder.Selection
 
 	id  *ID
@@ -373,7 +373,7 @@ func (r *ApkoBuildResult) WithGraphQLQuery(q *querybuilder.Selection) *ApkoBuild
 }
 
 // Import the image into a container.
-func (r *ApkoBuildResult) AsContainer() *Container { // apko (../../../../../toolchains/release/apko/main.go:257:1)
+func (r *ApkoBuildResult) AsContainer() *Container { // apko (../../../../../../.dagger/modules/release/apko/main.go:257:1)
 	q := r.query.Select("asContainer")
 
 	return &Container{
@@ -381,7 +381,7 @@ func (r *ApkoBuildResult) AsContainer() *Container { // apko (../../../../../too
 	}
 }
 
-func (r *ApkoBuildResult) File() *File { // apko (../../../../../toolchains/release/apko/main.go:252:2)
+func (r *ApkoBuildResult) File() *File { // apko (../../../../../../.dagger/modules/release/apko/main.go:252:2)
 	q := r.query.Select("file")
 
 	return &File{
@@ -438,7 +438,7 @@ func (r *ApkoBuildResult) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *ApkoBuildResult) Tag(ctx context.Context) (string, error) { // apko (../../../../../toolchains/release/apko/main.go:253:2)
+func (r *ApkoBuildResult) Tag(ctx context.Context) (string, error) { // apko (../../../../../../.dagger/modules/release/apko/main.go:253:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -458,7 +458,7 @@ func (r *ApkoBuildResult) AsNode() Node {
 	}
 }
 
-type ApkoConfig struct { // apko (../../../../../toolchains/release/apko/config.go:31:6)
+type ApkoConfig struct { // apko (../../../../../../.dagger/modules/release/apko/config.go:31:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -478,7 +478,7 @@ func (r *ApkoConfig) WithGraphQLQuery(q *querybuilder.Selection) *ApkoConfig {
 	}
 }
 
-func (r *ApkoConfig) Archs(ctx context.Context) ([]string, error) { // apko (../../../../../toolchains/release/apko/config.go:36:2)
+func (r *ApkoConfig) Archs(ctx context.Context) ([]string, error) { // apko (../../../../../../.dagger/modules/release/apko/config.go:36:2)
 	q := r.query.Select("archs")
 
 	var response []string
@@ -488,7 +488,7 @@ func (r *ApkoConfig) Archs(ctx context.Context) ([]string, error) { // apko (../
 }
 
 // Build an image from configuration.
-func (r *ApkoConfig) Build(tag string) *ApkoBuildResult { // apko (../../../../../toolchains/release/apko/config.go:79:1)
+func (r *ApkoConfig) Build(tag string) *ApkoBuildResult { // apko (../../../../../../.dagger/modules/release/apko/config.go:79:1)
 	q := r.query.Select("build")
 	q = q.Arg("tag", tag)
 
@@ -498,7 +498,7 @@ func (r *ApkoConfig) Build(tag string) *ApkoBuildResult { // apko (../../../../.
 }
 
 // Build a container from configuration.
-func (r *ApkoConfig) Container() *Container { // apko (../../../../../toolchains/release/apko/config.go:84:1)
+func (r *ApkoConfig) Container() *Container { // apko (../../../../../../.dagger/modules/release/apko/config.go:84:1)
 	q := r.query.Select("container")
 
 	return &Container{
@@ -506,7 +506,7 @@ func (r *ApkoConfig) Container() *Container { // apko (../../../../../toolchains
 	}
 }
 
-func (r *ApkoConfig) File() *File { // apko (../../../../../toolchains/release/apko/config.go:32:2)
+func (r *ApkoConfig) File() *File { // apko (../../../../../../.dagger/modules/release/apko/config.go:32:2)
 	q := r.query.Select("file")
 
 	return &File{
@@ -563,7 +563,7 @@ func (r *ApkoConfig) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *ApkoConfig) Keyrings(ctx context.Context) ([]string, error) { // apko (../../../../../toolchains/release/apko/config.go:35:2)
+func (r *ApkoConfig) Keyrings(ctx context.Context) ([]string, error) { // apko (../../../../../../.dagger/modules/release/apko/config.go:35:2)
 	q := r.query.Select("keyrings")
 
 	var response []string
@@ -572,7 +572,7 @@ func (r *ApkoConfig) Keyrings(ctx context.Context) ([]string, error) { // apko (
 	return response, q.Execute(ctx)
 }
 
-func (r *ApkoConfig) Packages(ctx context.Context) ([]string, error) { // apko (../../../../../toolchains/release/apko/config.go:37:2)
+func (r *ApkoConfig) Packages(ctx context.Context) ([]string, error) { // apko (../../../../../../.dagger/modules/release/apko/config.go:37:2)
 	q := r.query.Select("packages")
 
 	var response []string
@@ -581,7 +581,7 @@ func (r *ApkoConfig) Packages(ctx context.Context) ([]string, error) { // apko (
 	return response, q.Execute(ctx)
 }
 
-func (r *ApkoConfig) Repositories(ctx context.Context) ([]string, error) { // apko (../../../../../toolchains/release/apko/config.go:34:2)
+func (r *ApkoConfig) Repositories(ctx context.Context) ([]string, error) { // apko (../../../../../../.dagger/modules/release/apko/config.go:34:2)
 	q := r.query.Select("repositories")
 
 	var response []string
@@ -591,7 +591,7 @@ func (r *ApkoConfig) Repositories(ctx context.Context) ([]string, error) { // ap
 }
 
 // Add an arch to the configuration.
-func (r *ApkoConfig) WithArch(arch string) *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:58:1)
+func (r *ApkoConfig) WithArch(arch string) *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:58:1)
 	q := r.query.Select("withArch")
 	q = q.Arg("arch", arch)
 
@@ -601,7 +601,7 @@ func (r *ApkoConfig) WithArch(arch string) *ApkoConfig { // apko (../../../../..
 }
 
 // Add a keyring to the configuration.
-func (r *ApkoConfig) WithKeyring(url string) *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:51:1)
+func (r *ApkoConfig) WithKeyring(url string) *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:51:1)
 	q := r.query.Select("withKeyring")
 	q = q.Arg("url", url)
 
@@ -611,7 +611,7 @@ func (r *ApkoConfig) WithKeyring(url string) *ApkoConfig { // apko (../../../../
 }
 
 // Add a package to the configuration.
-func (r *ApkoConfig) WithPackage(name string) *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:65:1)
+func (r *ApkoConfig) WithPackage(name string) *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:65:1)
 	q := r.query.Select("withPackage")
 	q = q.Arg("name", name)
 
@@ -621,7 +621,7 @@ func (r *ApkoConfig) WithPackage(name string) *ApkoConfig { // apko (../../../..
 }
 
 // Add a list of packages to the configuration.
-func (r *ApkoConfig) WithPackages(pkgs []string) *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:72:1)
+func (r *ApkoConfig) WithPackages(pkgs []string) *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:72:1)
 	q := r.query.Select("withPackages")
 	q = q.Arg("pkgs", pkgs)
 
@@ -631,7 +631,7 @@ func (r *ApkoConfig) WithPackages(pkgs []string) *ApkoConfig { // apko (../../..
 }
 
 // Add a repository to the configuration.
-func (r *ApkoConfig) WithRepository(url string) *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:44:1)
+func (r *ApkoConfig) WithRepository(url string) *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:44:1)
 	q := r.query.Select("withRepository")
 	q = q.Arg("url", url)
 
@@ -649,7 +649,7 @@ func (r *ApkoConfig) AsNode() Node {
 }
 
 // Retrieve the binding value, as type Apko
-func (r *Binding) AsApko() *Apko { // apko (../../../../../toolchains/release/apko/main.go:16:6)
+func (r *Binding) AsApko() *Apko { // apko (../../../../../../.dagger/modules/release/apko/main.go:16:6)
 	q := r.query.Select("asApko")
 
 	return &Apko{
@@ -658,7 +658,7 @@ func (r *Binding) AsApko() *Apko { // apko (../../../../../toolchains/release/ap
 }
 
 // Retrieve the binding value, as type ApkoBuildResult
-func (r *Binding) AsApkoBuildResult() *ApkoBuildResult { // apko (../../../../../toolchains/release/apko/main.go:251:6)
+func (r *Binding) AsApkoBuildResult() *ApkoBuildResult { // apko (../../../../../../.dagger/modules/release/apko/main.go:251:6)
 	q := r.query.Select("asApkoBuildResult")
 
 	return &ApkoBuildResult{
@@ -667,7 +667,7 @@ func (r *Binding) AsApkoBuildResult() *ApkoBuildResult { // apko (../../../../..
 }
 
 // Retrieve the binding value, as type ApkoConfig
-func (r *Binding) AsApkoConfig() *ApkoConfig { // apko (../../../../../toolchains/release/apko/config.go:31:6)
+func (r *Binding) AsApkoConfig() *ApkoConfig { // apko (../../../../../../.dagger/modules/release/apko/config.go:31:6)
 	q := r.query.Select("asApkoConfig")
 
 	return &ApkoConfig{
@@ -676,7 +676,7 @@ func (r *Binding) AsApkoConfig() *ApkoConfig { // apko (../../../../../toolchain
 }
 
 // Create or update a binding of type ApkoBuildResult in the environment
-func (r *Env) WithApkoBuildResultInput(name string, value *ApkoBuildResult, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:251:6)
+func (r *Env) WithApkoBuildResultInput(name string, value *ApkoBuildResult, description string) *Env { // apko (../../../../../../.dagger/modules/release/apko/main.go:251:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withApkoBuildResultInput")
 	q = q.Arg("name", name)
@@ -689,7 +689,7 @@ func (r *Env) WithApkoBuildResultInput(name string, value *ApkoBuildResult, desc
 }
 
 // Declare a desired ApkoBuildResult output to be assigned in the environment
-func (r *Env) WithApkoBuildResultOutput(name string, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:251:6)
+func (r *Env) WithApkoBuildResultOutput(name string, description string) *Env { // apko (../../../../../../.dagger/modules/release/apko/main.go:251:6)
 	q := r.query.Select("withApkoBuildResultOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -700,7 +700,7 @@ func (r *Env) WithApkoBuildResultOutput(name string, description string) *Env { 
 }
 
 // Create or update a binding of type ApkoConfig in the environment
-func (r *Env) WithApkoConfigInput(name string, value *ApkoConfig, description string) *Env { // apko (../../../../../toolchains/release/apko/config.go:31:6)
+func (r *Env) WithApkoConfigInput(name string, value *ApkoConfig, description string) *Env { // apko (../../../../../../.dagger/modules/release/apko/config.go:31:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withApkoConfigInput")
 	q = q.Arg("name", name)
@@ -713,7 +713,7 @@ func (r *Env) WithApkoConfigInput(name string, value *ApkoConfig, description st
 }
 
 // Declare a desired ApkoConfig output to be assigned in the environment
-func (r *Env) WithApkoConfigOutput(name string, description string) *Env { // apko (../../../../../toolchains/release/apko/config.go:31:6)
+func (r *Env) WithApkoConfigOutput(name string, description string) *Env { // apko (../../../../../../.dagger/modules/release/apko/config.go:31:6)
 	q := r.query.Select("withApkoConfigOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -724,7 +724,7 @@ func (r *Env) WithApkoConfigOutput(name string, description string) *Env { // ap
 }
 
 // Create or update a binding of type Apko in the environment
-func (r *Env) WithApkoInput(name string, value *Apko, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:16:6)
+func (r *Env) WithApkoInput(name string, value *Apko, description string) *Env { // apko (../../../../../../.dagger/modules/release/apko/main.go:16:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withApkoInput")
 	q = q.Arg("name", name)
@@ -737,7 +737,7 @@ func (r *Env) WithApkoInput(name string, value *Apko, description string) *Env {
 }
 
 // Declare a desired Apko output to be assigned in the environment
-func (r *Env) WithApkoOutput(name string, description string) *Env { // apko (../../../../../toolchains/release/apko/main.go:16:6)
+func (r *Env) WithApkoOutput(name string, description string) *Env { // apko (../../../../../../.dagger/modules/release/apko/main.go:16:6)
 	q := r.query.Select("withApkoOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -752,15 +752,15 @@ type ApkoOpts struct {
 	//
 	// Custom container to use as a base container.
 	//
-	Container *Container // apko (../../../../../toolchains/release/apko/main.go:28:2)
+	Container *Container // apko (../../../../../../.dagger/modules/release/apko/main.go:28:2)
 	//
 	// Disable mounting a default cache volume.
 	//
-	WithoutCache bool // apko (../../../../../toolchains/release/apko/main.go:33:2)
+	WithoutCache bool // apko (../../../../../../.dagger/modules/release/apko/main.go:33:2)
 }
 
 // Build container images from apk packages.
-func (r *Query) Apko(opts ...ApkoOpts) *Apko { // apko (../../../../../toolchains/release/apko/main.go:24:1)
+func (r *Query) Apko(opts ...ApkoOpts) *Apko { // apko (../../../../../../.dagger/modules/release/apko/main.go:24:1)
 	q := r.query.Select("apko")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `container` optional argument

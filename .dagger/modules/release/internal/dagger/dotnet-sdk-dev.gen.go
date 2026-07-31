@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type DotnetSdkDev
-func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
+func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("asDotnetSdkDev")
 
 	return &DotnetSDKDev{
@@ -18,7 +18,7 @@ func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev { // dotnet-sdk-dev (../../../.
 	}
 }
 
-type DotnetSDKDev struct { // dotnet-sdk-dev (../../../../:0:0)
+type DotnetSDKDev struct { // dotnet-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	csharpier  *Void
@@ -46,7 +46,7 @@ func (r *DotnetSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *DotnetSDKDev
 //
 // For example: this can be called after `withFormat` to upload the formatted
 // code on the host.
-func (r *DotnetSDKDev) Changes() *Changeset { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) Changes() *Changeset { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("changes")
 
 	return &Changeset{
@@ -55,7 +55,7 @@ func (r *DotnetSDKDev) Changes() *Changeset { // dotnet-sdk-dev (../../../../:0:
 }
 
 // Lint the Dotnet SDK with Csharpier (https://csharpier.com)
-func (r *DotnetSDKDev) Csharpier(ctx context.Context) error { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) Csharpier(ctx context.Context) error { // dotnet-sdk-dev (../../../../../:0:0)
 	if r.csharpier != nil {
 		return nil
 	}
@@ -66,7 +66,7 @@ func (r *DotnetSDKDev) Csharpier(ctx context.Context) error { // dotnet-sdk-dev 
 
 // Return the Dotnet SDK workspace mounted in a dev container,
 // and working directory set to the SDK source.
-func (r *DotnetSDKDev) DevContainer() *Container { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) DevContainer() *Container { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("devContainer")
 
 	return &Container{
@@ -130,7 +130,7 @@ func (r *DotnetSDKDev) UnmarshalJSON(bs []byte) error {
 //
 // Since the SDK at this moment cannot be published or installed, the
 // standard function does not need to exist.
-func (r *DotnetSDKDev) Install() *Changeset { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) Install() *Changeset { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("install")
 
 	return &Changeset{
@@ -139,7 +139,7 @@ func (r *DotnetSDKDev) Install() *Changeset { // dotnet-sdk-dev (../../../../:0:
 }
 
 // The path of the SDK in the workspace.
-func (r *DotnetSDKDev) SourcePath(ctx context.Context) (string, error) { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) SourcePath(ctx context.Context) (string, error) { // dotnet-sdk-dev (../../../../../:0:0)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -152,7 +152,7 @@ func (r *DotnetSDKDev) SourcePath(ctx context.Context) (string, error) { // dotn
 }
 
 // Run tests on the Dotnet SDK
-func (r *DotnetSDKDev) Test(ctx context.Context) error { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) Test(ctx context.Context) error { // dotnet-sdk-dev (../../../../../:0:0)
 	if r.test != nil {
 		return nil
 	}
@@ -163,7 +163,7 @@ func (r *DotnetSDKDev) Test(ctx context.Context) error { // dotnet-sdk-dev (../.
 
 // Run csharpier (https://csharpier.com) on the SDK source code
 // and save it back to the workspace.
-func (r *DotnetSDKDev) WithFormat() *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) WithFormat() *DotnetSDKDev { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("withFormat")
 
 	return &DotnetSDKDev{
@@ -171,7 +171,7 @@ func (r *DotnetSDKDev) WithFormat() *DotnetSDKDev { // dotnet-sdk-dev (../../../
 	}
 }
 
-func (r *DotnetSDKDev) WithInstall() *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) WithInstall() *DotnetSDKDev { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("withInstall")
 
 	return &DotnetSDKDev{
@@ -180,7 +180,7 @@ func (r *DotnetSDKDev) WithInstall() *DotnetSDKDev { // dotnet-sdk-dev (../../..
 }
 
 // A directory with all the files needed to develop the SDK.
-func (r *DotnetSDKDev) WorkspaceDir() *Directory { // dotnet-sdk-dev (../../../../:0:0)
+func (r *DotnetSDKDev) WorkspaceDir() *Directory { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("workspaceDir")
 
 	return &Directory{
@@ -197,7 +197,7 @@ func (r *DotnetSDKDev) AsNode() Node {
 }
 
 // Create or update a binding of type DotnetSdkDev in the environment
-func (r *Env) WithDotnetSDKDevInput(name string, value *DotnetSDKDev, description string) *Env { // dotnet-sdk-dev (../../../../:0:0)
+func (r *Env) WithDotnetSDKDevInput(name string, value *DotnetSDKDev, description string) *Env { // dotnet-sdk-dev (../../../../../:0:0)
 	assertNotNil("value", value)
 	q := r.query.Select("withDotnetSdkDevInput")
 	q = q.Arg("name", name)
@@ -210,7 +210,7 @@ func (r *Env) WithDotnetSDKDevInput(name string, value *DotnetSDKDev, descriptio
 }
 
 // Declare a desired DotnetSdkDev output to be assigned in the environment
-func (r *Env) WithDotnetSDKDevOutput(name string, description string) *Env { // dotnet-sdk-dev (../../../../:0:0)
+func (r *Env) WithDotnetSDKDevOutput(name string, description string) *Env { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("withDotnetSdkDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -225,14 +225,14 @@ type DotnetSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK.
 	//
-	WorkspaceDir *Directory // dotnet-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // dotnet-sdk-dev (../../../../../:0:0)
 	//
 	// The path of the SDK in the workspace.
 	//
-	SourcePath string // dotnet-sdk-dev (../../../../:0:0)
+	SourcePath string // dotnet-sdk-dev (../../../../../:0:0)
 }
 
-func (r *Query) DotnetSDKDev(opts ...DotnetSDKDevOpts) *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
+func (r *Query) DotnetSDKDev(opts ...DotnetSDKDevOpts) *DotnetSDKDev { // dotnet-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("dotnetSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspaceDir` optional argument

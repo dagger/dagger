@@ -10,7 +10,7 @@ import (
 )
 
 // Docusaurus
-type Docusaurus struct { // docusaurus (../../../../../../:0:0)
+type Docusaurus struct { // docusaurus (../../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	cacheVolumeName *string
@@ -186,7 +186,7 @@ type DocusaurusOpts struct {
 	Yarn bool
 }
 
-func (r *Query) Docusaurus(src *Directory, opts ...DocusaurusOpts) *Docusaurus { // docusaurus (../../../../../../:0:0)
+func (r *Query) Docusaurus(src *Directory, opts ...DocusaurusOpts) *Docusaurus { // docusaurus (../../../../../../../:0:0)
 	assertNotNil("src", src)
 	q := r.query.Select("docusaurus")
 	for i := len(opts) - 1; i >= 0; i-- {

@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type PhpSDKDev struct { // php-sdk-dev (../../../../:0:0)
+type PhpSDKDev struct { // php-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id             *ID
@@ -304,7 +304,7 @@ type PhpSDKDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) PhpSDKDev(ws *Workspace, opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../:0:0)
+func (r *Query) PhpSDKDev(ws *Workspace, opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("phpSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {

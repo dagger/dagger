@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type Dockerd
-func (r *Binding) AsDockerd() *Dockerd { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+func (r *Binding) AsDockerd() *Dockerd { // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:14:6)
 	q := r.query.Select("asDockerd")
 
 	return &Dockerd{
@@ -19,7 +19,7 @@ func (r *Binding) AsDockerd() *Dockerd { // dockerd (../../../../toolchains/pyth
 }
 
 // Module for running docker in dagger
-type Dockerd struct { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+type Dockerd struct { // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:14:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -35,11 +35,11 @@ func (r *Dockerd) WithGraphQLQuery(q *querybuilder.Selection) *Dockerd {
 type DockerdAttachOpts struct {
 
 	// Default: "24.0"
-	DockerVersion string // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:22:2)
+	DockerVersion string // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:22:2)
 }
 
 // Attach a dockerd service to a container
-func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Container { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:17:1)
+func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Container { // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:17:1)
 	assertNotNil("container", container)
 	q := r.query.Select("attach")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -108,11 +108,11 @@ func (r *Dockerd) UnmarshalJSON(bs []byte) error {
 type DockerdServiceOpts struct {
 
 	// Default: "24.0"
-	DockerVersion string // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:42:2)
+	DockerVersion string // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:42:2)
 }
 
 // Get a Service container running dockerd
-func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:39:1)
+func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:39:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `dockerVersion` optional argument
@@ -135,7 +135,7 @@ func (r *Dockerd) AsNode() Node {
 }
 
 // Create or update a binding of type Dockerd in the environment
-func (r *Env) WithDockerdInput(name string, value *Dockerd, description string) *Env { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+func (r *Env) WithDockerdInput(name string, value *Dockerd, description string) *Env { // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:14:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withDockerdInput")
 	q = q.Arg("name", name)
@@ -148,7 +148,7 @@ func (r *Env) WithDockerdInput(name string, value *Dockerd, description string) 
 }
 
 // Declare a desired Dockerd output to be assigned in the environment
-func (r *Env) WithDockerdOutput(name string, description string) *Env { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+func (r *Env) WithDockerdOutput(name string, description string) *Env { // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:14:6)
 	q := r.query.Select("withDockerdOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -159,7 +159,7 @@ func (r *Env) WithDockerdOutput(name string, description string) *Env { // docke
 }
 
 // Module for running docker in dagger
-func (r *Query) Dockerd() *Dockerd { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
+func (r *Query) Dockerd() *Dockerd { // dockerd (../../../../../.dagger/modules/python-sdk-dev/dockerd/main.go:14:6)
 	q := r.query.Select("dockerd")
 
 	return &Dockerd{

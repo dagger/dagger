@@ -11,7 +11,7 @@ import (
 )
 
 // Retrieve the binding value, as type Gh
-func (r *Binding) AsGh() *Gh { // gh (../../../../toolchains/release/gh/main.go:12:6)
+func (r *Binding) AsGh() *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:12:6)
 	q := r.query.Select("asGh")
 
 	return &Gh{
@@ -20,7 +20,7 @@ func (r *Binding) AsGh() *Gh { // gh (../../../../toolchains/release/gh/main.go:
 }
 
 // Retrieve the binding value, as type GhPullRequest
-func (r *Binding) AsGhPullRequest() *GhPullRequest { // gh (../../../../toolchains/release/gh/pull-request.go:16:6)
+func (r *Binding) AsGhPullRequest() *GhPullRequest { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:16:6)
 	q := r.query.Select("asGhPullRequest")
 
 	return &GhPullRequest{
@@ -29,7 +29,7 @@ func (r *Binding) AsGhPullRequest() *GhPullRequest { // gh (../../../../toolchai
 }
 
 // Retrieve the binding value, as type GhPullRequestReview
-func (r *Binding) AsGhPullRequestReview() *GhPullRequestReview { // gh (../../../../toolchains/release/gh/pull-request.go:266:6)
+func (r *Binding) AsGhPullRequestReview() *GhPullRequestReview { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:266:6)
 	q := r.query.Select("asGhPullRequestReview")
 
 	return &GhPullRequestReview{
@@ -38,7 +38,7 @@ func (r *Binding) AsGhPullRequestReview() *GhPullRequestReview { // gh (../../..
 }
 
 // Retrieve the binding value, as type GhRelease
-func (r *Binding) AsGhRelease() *GhRelease { // gh (../../../../toolchains/release/gh/release.go:14:6)
+func (r *Binding) AsGhRelease() *GhRelease { // gh (../../../../../.dagger/modules/release/gh/release.go:14:6)
 	q := r.query.Select("asGhRelease")
 
 	return &GhRelease{
@@ -47,7 +47,7 @@ func (r *Binding) AsGhRelease() *GhRelease { // gh (../../../../toolchains/relea
 }
 
 // Retrieve the binding value, as type GhRepo
-func (r *Binding) AsGhRepo() *GhRepo { // gh (../../../../toolchains/release/gh/repo.go:10:6)
+func (r *Binding) AsGhRepo() *GhRepo { // gh (../../../../../.dagger/modules/release/gh/repo.go:10:6)
 	q := r.query.Select("asGhRepo")
 
 	return &GhRepo{
@@ -56,7 +56,7 @@ func (r *Binding) AsGhRepo() *GhRepo { // gh (../../../../toolchains/release/gh/
 }
 
 // Create or update a binding of type Gh in the environment
-func (r *Env) WithGhInput(name string, value *Gh, description string) *Env { // gh (../../../../toolchains/release/gh/main.go:12:6)
+func (r *Env) WithGhInput(name string, value *Gh, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/main.go:12:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGhInput")
 	q = q.Arg("name", name)
@@ -69,7 +69,7 @@ func (r *Env) WithGhInput(name string, value *Gh, description string) *Env { // 
 }
 
 // Declare a desired Gh output to be assigned in the environment
-func (r *Env) WithGhOutput(name string, description string) *Env { // gh (../../../../toolchains/release/gh/main.go:12:6)
+func (r *Env) WithGhOutput(name string, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/main.go:12:6)
 	q := r.query.Select("withGhOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -80,7 +80,7 @@ func (r *Env) WithGhOutput(name string, description string) *Env { // gh (../../
 }
 
 // Create or update a binding of type GhPullRequest in the environment
-func (r *Env) WithGhPullRequestInput(name string, value *GhPullRequest, description string) *Env { // gh (../../../../toolchains/release/gh/pull-request.go:16:6)
+func (r *Env) WithGhPullRequestInput(name string, value *GhPullRequest, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:16:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGhPullRequestInput")
 	q = q.Arg("name", name)
@@ -93,7 +93,7 @@ func (r *Env) WithGhPullRequestInput(name string, value *GhPullRequest, descript
 }
 
 // Declare a desired GhPullRequest output to be assigned in the environment
-func (r *Env) WithGhPullRequestOutput(name string, description string) *Env { // gh (../../../../toolchains/release/gh/pull-request.go:16:6)
+func (r *Env) WithGhPullRequestOutput(name string, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:16:6)
 	q := r.query.Select("withGhPullRequestOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -104,7 +104,7 @@ func (r *Env) WithGhPullRequestOutput(name string, description string) *Env { //
 }
 
 // Create or update a binding of type GhPullRequestReview in the environment
-func (r *Env) WithGhPullRequestReviewInput(name string, value *GhPullRequestReview, description string) *Env { // gh (../../../../toolchains/release/gh/pull-request.go:266:6)
+func (r *Env) WithGhPullRequestReviewInput(name string, value *GhPullRequestReview, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:266:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGhPullRequestReviewInput")
 	q = q.Arg("name", name)
@@ -117,7 +117,7 @@ func (r *Env) WithGhPullRequestReviewInput(name string, value *GhPullRequestRevi
 }
 
 // Declare a desired GhPullRequestReview output to be assigned in the environment
-func (r *Env) WithGhPullRequestReviewOutput(name string, description string) *Env { // gh (../../../../toolchains/release/gh/pull-request.go:266:6)
+func (r *Env) WithGhPullRequestReviewOutput(name string, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:266:6)
 	q := r.query.Select("withGhPullRequestReviewOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -128,7 +128,7 @@ func (r *Env) WithGhPullRequestReviewOutput(name string, description string) *En
 }
 
 // Create or update a binding of type GhRelease in the environment
-func (r *Env) WithGhReleaseInput(name string, value *GhRelease, description string) *Env { // gh (../../../../toolchains/release/gh/release.go:14:6)
+func (r *Env) WithGhReleaseInput(name string, value *GhRelease, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/release.go:14:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGhReleaseInput")
 	q = q.Arg("name", name)
@@ -141,7 +141,7 @@ func (r *Env) WithGhReleaseInput(name string, value *GhRelease, description stri
 }
 
 // Declare a desired GhRelease output to be assigned in the environment
-func (r *Env) WithGhReleaseOutput(name string, description string) *Env { // gh (../../../../toolchains/release/gh/release.go:14:6)
+func (r *Env) WithGhReleaseOutput(name string, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/release.go:14:6)
 	q := r.query.Select("withGhReleaseOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -152,7 +152,7 @@ func (r *Env) WithGhReleaseOutput(name string, description string) *Env { // gh 
 }
 
 // Create or update a binding of type GhRepo in the environment
-func (r *Env) WithGhRepoInput(name string, value *GhRepo, description string) *Env { // gh (../../../../toolchains/release/gh/repo.go:10:6)
+func (r *Env) WithGhRepoInput(name string, value *GhRepo, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/repo.go:10:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGhRepoInput")
 	q = q.Arg("name", name)
@@ -165,7 +165,7 @@ func (r *Env) WithGhRepoInput(name string, value *GhRepo, description string) *E
 }
 
 // Declare a desired GhRepo output to be assigned in the environment
-func (r *Env) WithGhRepoOutput(name string, description string) *Env { // gh (../../../../toolchains/release/gh/repo.go:10:6)
+func (r *Env) WithGhRepoOutput(name string, description string) *Env { // gh (../../../../../.dagger/modules/release/gh/repo.go:10:6)
 	q := r.query.Select("withGhRepoOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -175,7 +175,7 @@ func (r *Env) WithGhRepoOutput(name string, description string) *Env { // gh (..
 	}
 }
 
-type Gh struct { // gh (../../../../toolchains/release/gh/main.go:12:6)
+type Gh struct { // gh (../../../../../.dagger/modules/release/gh/main.go:12:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -200,11 +200,11 @@ type GhCloneOpts struct {
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/main.go:137:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/main.go:137:2)
 }
 
 // Clone a GitHub repository.
-func (r *Gh) Clone(opts ...GhCloneOpts) *Gh { // gh (../../../../toolchains/release/gh/main.go:133:1)
+func (r *Gh) Clone(opts ...GhCloneOpts) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:133:1)
 	q := r.query.Select("clone")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `repo` optional argument
@@ -223,15 +223,15 @@ type GhExecOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/main.go:176:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/main.go:176:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/main.go:181:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/main.go:181:2)
 }
 
 // Run a GitHub CLI command (accepts a list of arguments without "gh").
-func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../../../toolchains/release/gh/main.go:169:1)
+func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../../../../.dagger/modules/release/gh/main.go:169:1)
 	q := r.query.Select("exec")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -300,7 +300,7 @@ func (r *Gh) UnmarshalJSON(bs []byte) error {
 }
 
 // Work with GitHub pull requests.
-func (r *Gh) PullRequest() *GhPullRequest { // gh (../../../../toolchains/release/gh/pull-request.go:12:1)
+func (r *Gh) PullRequest() *GhPullRequest { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:12:1)
 	q := r.query.Select("pullRequest")
 
 	return &GhPullRequest{
@@ -309,7 +309,7 @@ func (r *Gh) PullRequest() *GhPullRequest { // gh (../../../../toolchains/releas
 }
 
 // Manage releases.
-func (r *Gh) Release() *GhRelease { // gh (../../../../toolchains/release/gh/release.go:10:1)
+func (r *Gh) Release() *GhRelease { // gh (../../../../../.dagger/modules/release/gh/release.go:10:1)
 	q := r.query.Select("release")
 
 	return &GhRelease{
@@ -318,7 +318,7 @@ func (r *Gh) Release() *GhRelease { // gh (../../../../toolchains/release/gh/rel
 }
 
 // Work with GitHub repositories.
-func (r *Gh) Repo() *GhRepo { // gh (../../../../toolchains/release/gh/repo.go:6:1)
+func (r *Gh) Repo() *GhRepo { // gh (../../../../../.dagger/modules/release/gh/repo.go:6:1)
 	q := r.query.Select("repo")
 
 	return &GhRepo{
@@ -331,15 +331,15 @@ type GhRunOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/main.go:158:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/main.go:158:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/main.go:163:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/main.go:163:2)
 }
 
 // Run a GitHub CLI command (accepts a single command string without "gh").
-func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../../../toolchains/release/gh/main.go:151:1)
+func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../../../../.dagger/modules/release/gh/main.go:151:1)
 	q := r.query.Select("run")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -359,7 +359,7 @@ func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../../../
 }
 
 // Git repository source (with .git directory).
-func (r *Gh) Source() *Directory { // gh (../../../../toolchains/release/gh/main.go:34:2)
+func (r *Gh) Source() *Directory { // gh (../../../../../.dagger/modules/release/gh/main.go:34:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -372,15 +372,15 @@ type GhTerminalOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/main.go:207:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/main.go:207:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/main.go:212:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/main.go:212:2)
 }
 
 // Open an interactive terminal.
-func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../../../toolchains/release/gh/main.go:203:1)
+func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../../../../.dagger/modules/release/gh/main.go:203:1)
 	q := r.query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -399,7 +399,7 @@ func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../../../to
 }
 
 // Set an additional CA certificate for the GitHub host.
-func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../../../toolchains/release/gh/main.go:109:1)
+func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:109:1)
 	assertNotNil("caCert", caCert)
 	q := r.query.Select("withCacert")
 	q = q.Arg("caCert", caCert)
@@ -410,7 +410,7 @@ func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../../../toolchains/releas
 }
 
 // Run a git command (accepts a list of arguments without "git").
-func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../../../toolchains/release/gh/main.go:189:1)
+func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:189:1)
 	q := r.query.Select("withGitExec")
 	q = q.Arg("args", args)
 
@@ -420,7 +420,7 @@ func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../../../toolchains/rele
 }
 
 // Set a GitHub host as context.
-func (r *Gh) WithHost(host string) *Gh { // gh (../../../../toolchains/release/gh/main.go:97:1)
+func (r *Gh) WithHost(host string) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:97:1)
 	q := r.query.Select("withHost")
 	q = q.Arg("host", host)
 
@@ -430,7 +430,7 @@ func (r *Gh) WithHost(host string) *Gh { // gh (../../../../toolchains/release/g
 }
 
 // Set a GitHub repository as context.
-func (r *Gh) WithRepo(repo string) *Gh { // gh (../../../../toolchains/release/gh/main.go:85:1)
+func (r *Gh) WithRepo(repo string) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:85:1)
 	q := r.query.Select("withRepo")
 	q = q.Arg("repo", repo)
 
@@ -440,7 +440,7 @@ func (r *Gh) WithRepo(repo string) *Gh { // gh (../../../../toolchains/release/g
 }
 
 // Load a Git repository source (with .git directory).
-func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../../../toolchains/release/gh/main.go:121:1)
+func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:121:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withSource")
 	q = q.Arg("source", source)
@@ -451,7 +451,7 @@ func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../../../toolchains/r
 }
 
 // Set a GitHub token.
-func (r *Gh) WithToken(token *Secret) *Gh { // gh (../../../../toolchains/release/gh/main.go:73:1)
+func (r *Gh) WithToken(token *Secret) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:73:1)
 	assertNotNil("token", token)
 	q := r.query.Select("withToken")
 	q = q.Arg("token", token)
@@ -469,7 +469,7 @@ func (r *Gh) AsNode() Node {
 	}
 }
 
-type GhPullRequest struct { // gh (../../../../toolchains/release/gh/pull-request.go:16:6)
+type GhPullRequest struct { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:16:6)
 	query *querybuilder.Selection
 
 	create *Void
@@ -488,79 +488,79 @@ type GhPullRequestCreateOpts struct {
 	//
 	// Assign people by their login. Use "@me" to self-assign.
 	//
-	Assignees []string // gh (../../../../toolchains/release/gh/pull-request.go:28:2)
+	Assignees []string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:28:2)
 	//
 	// The branch into which you want your code merged.
 	//
-	Base string // gh (../../../../toolchains/release/gh/pull-request.go:33:2)
+	Base string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:33:2)
 	//
 	// Body for the pull request.
 	//
-	Body string // gh (../../../../toolchains/release/gh/pull-request.go:38:2)
+	Body string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:38:2)
 	//
 	// Read body text from file.
 	//
-	BodyFile *File // gh (../../../../toolchains/release/gh/pull-request.go:43:2)
+	BodyFile *File // gh (../../../../../.dagger/modules/release/gh/pull-request.go:43:2)
 	//
 	// Mark pull request as a draft.
 	//
-	Draft bool // gh (../../../../toolchains/release/gh/pull-request.go:48:2)
+	Draft bool // gh (../../../../../.dagger/modules/release/gh/pull-request.go:48:2)
 	//
 	// Use commit info for title and body. (Requires repository source)
 	//
-	Fill bool // gh (../../../../toolchains/release/gh/pull-request.go:53:2)
+	Fill bool // gh (../../../../../.dagger/modules/release/gh/pull-request.go:53:2)
 	//
 	// Use first commit info for title and body. (Requires repository source)
 	//
-	FillFirst bool // gh (../../../../toolchains/release/gh/pull-request.go:58:2)
+	FillFirst bool // gh (../../../../../.dagger/modules/release/gh/pull-request.go:58:2)
 	//
 	// Use commits msg+body for description. (Requires repository source)
 	//
-	FillVerbose bool // gh (../../../../toolchains/release/gh/pull-request.go:63:2)
+	FillVerbose bool // gh (../../../../../.dagger/modules/release/gh/pull-request.go:63:2)
 	//
 	// The branch that contains commits for your pull request (default [current branch], required when no repository source is available).
 	//
-	Head string // gh (../../../../toolchains/release/gh/pull-request.go:68:2)
+	Head string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:68:2)
 	//
 	// Add labels by name.
 	//
-	Labels []string // gh (../../../../toolchains/release/gh/pull-request.go:73:2)
+	Labels []string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:73:2)
 	//
 	// Add the pull request to a milestone by name.
 	//
-	Milestone string // gh (../../../../toolchains/release/gh/pull-request.go:78:2)
+	Milestone string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:78:2)
 	//
 	// Disable maintainer's ability to modify pull request.
 	//
-	NoMaintainerEdit bool // gh (../../../../toolchains/release/gh/pull-request.go:83:2)
+	NoMaintainerEdit bool // gh (../../../../../.dagger/modules/release/gh/pull-request.go:83:2)
 	//
 	// Add the pull request to projects by name.
 	//
-	Projects []string // gh (../../../../toolchains/release/gh/pull-request.go:88:2)
+	Projects []string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:88:2)
 	//
 	// Request reviews from people or teams by their handle.
 	//
-	Reviewers []string // gh (../../../../toolchains/release/gh/pull-request.go:93:2)
+	Reviewers []string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:93:2)
 	//
 	// Template file to use as starting body text.
 	//
-	Template *File // gh (../../../../toolchains/release/gh/pull-request.go:98:2)
+	Template *File // gh (../../../../../.dagger/modules/release/gh/pull-request.go:98:2)
 	//
 	// Title for the pull request.
 	//
-	Title string // gh (../../../../toolchains/release/gh/pull-request.go:103:2)
+	Title string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:103:2)
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/pull-request.go:108:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/pull-request.go:108:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/pull-request.go:113:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:113:2)
 }
 
 // Create a pull request on GitHub.
-func (r *GhPullRequest) Create(ctx context.Context, opts ...GhPullRequestCreateOpts) error { // gh (../../../../toolchains/release/gh/pull-request.go:22:1)
+func (r *GhPullRequest) Create(ctx context.Context, opts ...GhPullRequestCreateOpts) error { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:22:1)
 	if r.create != nil {
 		return nil
 	}
@@ -648,15 +648,15 @@ type GhPullRequestExistsOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/pull-request.go:214:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/pull-request.go:214:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/pull-request.go:219:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:219:2)
 }
 
 // Check if a PR exists
-func (r *GhPullRequest) Exists(ctx context.Context, pullRequest string, opts ...GhPullRequestExistsOpts) (bool, error) { // gh (../../../../toolchains/release/gh/pull-request.go:205:1)
+func (r *GhPullRequest) Exists(ctx context.Context, pullRequest string, opts ...GhPullRequestExistsOpts) (bool, error) { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:205:1)
 	if r.exists != nil {
 		return *r.exists, nil
 	}
@@ -733,15 +733,15 @@ type GhPullRequestReviewOpts struct {
 	//
 	// Specify the body of a review.
 	//
-	Body string // gh (../../../../toolchains/release/gh/pull-request.go:250:2)
+	Body string // gh (../../../../../.dagger/modules/release/gh/pull-request.go:250:2)
 	//
 	// Read body text from file.
 	//
-	BodyFile *File // gh (../../../../toolchains/release/gh/pull-request.go:255:2)
+	BodyFile *File // gh (../../../../../.dagger/modules/release/gh/pull-request.go:255:2)
 }
 
 // Add a review to a pull request.
-func (r *GhPullRequest) Review(pullRequest string, opts ...GhPullRequestReviewOpts) *GhPullRequestReview { // gh (../../../../toolchains/release/gh/pull-request.go:243:1)
+func (r *GhPullRequest) Review(pullRequest string, opts ...GhPullRequestReviewOpts) *GhPullRequestReview { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:243:1)
 	q := r.query.Select("review")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `body` optional argument
@@ -769,7 +769,7 @@ func (r *GhPullRequest) AsNode() Node {
 }
 
 // TODO: revisit if these should be private
-type GhPullRequestReview struct { // gh (../../../../toolchains/release/gh/pull-request.go:266:6)
+type GhPullRequestReview struct { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:266:6)
 	query *querybuilder.Selection
 
 	approve        *Void
@@ -785,7 +785,7 @@ func (r *GhPullRequestReview) WithGraphQLQuery(q *querybuilder.Selection) *GhPul
 }
 
 // Approve a pull request.
-func (r *GhPullRequestReview) Approve(ctx context.Context) error { // gh (../../../../toolchains/release/gh/pull-request.go:281:1)
+func (r *GhPullRequestReview) Approve(ctx context.Context) error { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:281:1)
 	if r.approve != nil {
 		return nil
 	}
@@ -795,7 +795,7 @@ func (r *GhPullRequestReview) Approve(ctx context.Context) error { // gh (../../
 }
 
 // Comment on a pull request.
-func (r *GhPullRequestReview) Comment(ctx context.Context) error { // gh (../../../../toolchains/release/gh/pull-request.go:286:1)
+func (r *GhPullRequestReview) Comment(ctx context.Context) error { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:286:1)
 	if r.comment != nil {
 		return nil
 	}
@@ -854,7 +854,7 @@ func (r *GhPullRequestReview) UnmarshalJSON(bs []byte) error {
 }
 
 // Request changes on a pull request.
-func (r *GhPullRequestReview) RequestChanges(ctx context.Context) error { // gh (../../../../toolchains/release/gh/pull-request.go:291:1)
+func (r *GhPullRequestReview) RequestChanges(ctx context.Context) error { // gh (../../../../../.dagger/modules/release/gh/pull-request.go:291:1)
 	if r.requestChanges != nil {
 		return nil
 	}
@@ -871,7 +871,7 @@ func (r *GhPullRequestReview) AsNode() Node {
 	}
 }
 
-type GhRelease struct { // gh (../../../../toolchains/release/gh/release.go:14:6)
+type GhRelease struct { // gh (../../../../../.dagger/modules/release/gh/release.go:14:6)
 	query *querybuilder.Selection
 
 	create *Void
@@ -889,65 +889,65 @@ type GhReleaseCreateOpts struct {
 	//
 	// Release assets to upload.
 	//
-	Files []*File // gh (../../../../toolchains/release/gh/release.go:40:2)
+	Files []*File // gh (../../../../../.dagger/modules/release/gh/release.go:40:2)
 	//
 	// Save the release as a draft instead of publishing it.
 	//
-	Draft bool // gh (../../../../toolchains/release/gh/release.go:45:2)
+	Draft bool // gh (../../../../../.dagger/modules/release/gh/release.go:45:2)
 	//
 	// Mark the release as a prerelease.
 	//
-	PreRelease bool // gh (../../../../toolchains/release/gh/release.go:50:2)
+	PreRelease bool // gh (../../../../../.dagger/modules/release/gh/release.go:50:2)
 	//
 	// Target branch or full commit SHA (default: main branch).
 	//
-	Target string // gh (../../../../toolchains/release/gh/release.go:55:2)
+	Target string // gh (../../../../../.dagger/modules/release/gh/release.go:55:2)
 	//
 	// Release notes.
 	//
-	Notes string // gh (../../../../toolchains/release/gh/release.go:60:2)
+	Notes string // gh (../../../../../.dagger/modules/release/gh/release.go:60:2)
 	//
 	// Read release notes from file.
 	//
-	NotesFile *File // gh (../../../../toolchains/release/gh/release.go:65:2)
+	NotesFile *File // gh (../../../../../.dagger/modules/release/gh/release.go:65:2)
 	//
 	// Start a discussion in the specified category.
 	//
-	DiscussionCategory string // gh (../../../../toolchains/release/gh/release.go:70:2)
+	DiscussionCategory string // gh (../../../../../.dagger/modules/release/gh/release.go:70:2)
 	//
 	// Automatically generate title and notes for the release.
 	//
-	GenerateNotes bool // gh (../../../../toolchains/release/gh/release.go:75:2)
+	GenerateNotes bool // gh (../../../../../.dagger/modules/release/gh/release.go:75:2)
 	//
 	// Tag to use as the starting point for generating release notes.
 	//
-	NotesStartTag string // gh (../../../../toolchains/release/gh/release.go:80:2)
+	NotesStartTag string // gh (../../../../../.dagger/modules/release/gh/release.go:80:2)
 	//
 	// Mark this release as "Latest" (default: automatic based on date and version).
 	//
 	//
 	// Default: AUTO
-	Latest GhLatest // gh (../../../../toolchains/release/gh/release.go:86:2)
+	Latest GhLatest // gh (../../../../../.dagger/modules/release/gh/release.go:86:2)
 	//
 	// Abort in case the git tag doesn't already exist in the remote repository.
 	//
-	VerifyTag bool // gh (../../../../toolchains/release/gh/release.go:91:2)
+	VerifyTag bool // gh (../../../../../.dagger/modules/release/gh/release.go:91:2)
 	//
 	// Tag to use as the starting point for generating release notes.
 	//
-	NotesFromTag bool // gh (../../../../toolchains/release/gh/release.go:96:2)
+	NotesFromTag bool // gh (../../../../../.dagger/modules/release/gh/release.go:96:2)
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/release.go:101:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/release.go:101:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/release.go:106:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/release.go:106:2)
 }
 
 // Create a new GitHub Release for a repository.
-func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts ...GhReleaseCreateOpts) error { // gh (../../../../toolchains/release/gh/release.go:28:1)
+func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts ...GhReleaseCreateOpts) error { // gh (../../../../../.dagger/modules/release/gh/release.go:28:1)
 	if r.create != nil {
 		return nil
 	}
@@ -1073,7 +1073,7 @@ func (r *GhRelease) AsNode() Node {
 	}
 }
 
-type GhRepo struct { // gh (../../../../toolchains/release/gh/repo.go:10:6)
+type GhRepo struct { // gh (../../../../../.dagger/modules/release/gh/repo.go:10:6)
 	query *querybuilder.Selection
 
 	id *ID
@@ -1090,15 +1090,15 @@ type GhRepoCloneOpts struct {
 	//
 	// Additional arguments to pass to the "git clone" command.
 	//
-	Args []string // gh (../../../../toolchains/release/gh/repo.go:22:2)
+	Args []string // gh (../../../../../.dagger/modules/release/gh/repo.go:22:2)
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/repo.go:27:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/repo.go:27:2)
 }
 
 // Clone a GitHub repository locally.
-func (r *GhRepo) Clone(repository string, opts ...GhRepoCloneOpts) *Directory { // gh (../../../../toolchains/release/gh/repo.go:16:1)
+func (r *GhRepo) Clone(repository string, opts ...GhRepoCloneOpts) *Directory { // gh (../../../../../.dagger/modules/release/gh/repo.go:16:1)
 	q := r.query.Select("clone")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `args` optional argument
@@ -1179,27 +1179,27 @@ type GhOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../toolchains/release/gh/main.go:41:2)
+	Token *Secret // gh (../../../../../.dagger/modules/release/gh/main.go:41:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../toolchains/release/gh/main.go:46:2)
+	Repo string // gh (../../../../../.dagger/modules/release/gh/main.go:46:2)
 	//
 	// GitHub host.
 	//
-	Host string // gh (../../../../toolchains/release/gh/main.go:51:2)
+	Host string // gh (../../../../../.dagger/modules/release/gh/main.go:51:2)
 	//
 	// Additional CA certificate for the GitHub host.
 	//
-	CaCert *File // gh (../../../../toolchains/release/gh/main.go:56:2)
+	CaCert *File // gh (../../../../../.dagger/modules/release/gh/main.go:56:2)
 	//
 	// Git repository source (with .git directory).
 	//
-	Source *Directory // gh (../../../../toolchains/release/gh/main.go:61:2)
+	Source *Directory // gh (../../../../../.dagger/modules/release/gh/main.go:61:2)
 }
 
 // GitHub CLI
-func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../toolchains/release/gh/main.go:37:1)
+func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../.dagger/modules/release/gh/main.go:37:1)
 	q := r.query.Select("gh")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -1229,7 +1229,7 @@ func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../toolchains/release/g
 	}
 }
 
-type GhLatest string // gh (../../../../toolchains/release/gh/release.go:19:6)
+type GhLatest string // gh (../../../../../.dagger/modules/release/gh/release.go:19:6)
 
 func (GhLatest) IsEnum() {}
 
@@ -1282,10 +1282,10 @@ func (v *GhLatest) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	GhLatestAuto GhLatest = "LATEST_AUTO" // gh (../../../../toolchains/release/gh/release.go:24:2)
+	GhLatestAuto GhLatest = "LATEST_AUTO" // gh (../../../../../.dagger/modules/release/gh/release.go:24:2)
 
-	GhLatestFalse GhLatest = "LATEST_FALSE" // gh (../../../../toolchains/release/gh/release.go:23:2)
+	GhLatestFalse GhLatest = "LATEST_FALSE" // gh (../../../../../.dagger/modules/release/gh/release.go:23:2)
 
-	GhLatestTrue GhLatest = "LATEST_TRUE" // gh (../../../../toolchains/release/gh/release.go:22:2)
+	GhLatestTrue GhLatest = "LATEST_TRUE" // gh (../../../../../.dagger/modules/release/gh/release.go:22:2)
 
 )

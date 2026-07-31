@@ -10,7 +10,7 @@ import (
 )
 
 // A toolchain to develop the Dagger Python SDK
-type PythonSDKDev struct { // python-sdk-dev (../../../../:0:0)
+type PythonSDKDev struct { // python-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id            *ID
@@ -420,7 +420,7 @@ func (r *PythonSDKDev) Workspace() *Directory {
 	}
 }
 
-type PythonSDKDevDocs struct { // python-sdk-dev (../../../../:0:0)
+type PythonSDKDevDocs struct { // python-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -513,7 +513,7 @@ func (r *PythonSDKDevDocs) Preview(opts ...PythonSDKDevDocsPreviewOpts) *Service
 	}
 }
 
-type PythonSDKDevTestForPythonVersion struct { // python-sdk-dev (../../../../:0:0)
+type PythonSDKDevTestForPythonVersion struct { // python-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id   *ID
@@ -619,7 +619,7 @@ type PythonSDKDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) PythonSDKDev(ws *Workspace, opts ...PythonSDKDevOpts) *PythonSDKDev { // python-sdk-dev (../../../../:0:0)
+func (r *Query) PythonSDKDev(ws *Workspace, opts ...PythonSDKDevOpts) *PythonSDKDev { // python-sdk-dev (../../../../../:0:0)
 	assertNotNil("ws", ws)
 	q := r.query.Select("pythonSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {

@@ -19,7 +19,7 @@ type RustSDKDevOpts struct {
 	ClientDockerConfig *Secret
 }
 
-func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev (../../../../:0:0)
+func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev (../../../../../:0:0)
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("rustSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -40,7 +40,7 @@ func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSD
 }
 
 // Develop the Dagger Rust SDK (experimental)
-type RustSDKDev struct { // rust-sdk-dev (../../../../:0:0)
+type RustSDKDev struct { // rust-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	cargoCheck    *Void

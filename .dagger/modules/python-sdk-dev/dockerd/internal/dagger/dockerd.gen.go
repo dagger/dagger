@@ -10,7 +10,7 @@ import (
 )
 
 // Module for running docker in dagger
-type Dockerd struct { // dockerd (../../../../../:0:0)
+type Dockerd struct { // dockerd (../../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id *ID
@@ -117,7 +117,7 @@ func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service {
 	}
 }
 
-func (r *Query) Dockerd() *Dockerd { // dockerd (../../../../../:0:0)
+func (r *Query) Dockerd() *Dockerd { // dockerd (../../../../../../:0:0)
 	q := r.query.Select("dockerd")
 
 	return &Dockerd{

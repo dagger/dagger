@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type TypescriptSdkDev
-func (r *Binding) AsTypescriptSDKDev() *TypescriptSDKDev { // typescript-sdk-dev (../../../../:0:0)
+func (r *Binding) AsTypescriptSDKDev() *TypescriptSDKDev { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("asTypescriptSdkDev")
 
 	return &TypescriptSDKDev{
@@ -19,7 +19,7 @@ func (r *Binding) AsTypescriptSDKDev() *TypescriptSDKDev { // typescript-sdk-dev
 }
 
 // Create or update a binding of type TypescriptSdkDev in the environment
-func (r *Env) WithTypescriptSDKDevInput(name string, value *TypescriptSDKDev, description string) *Env { // typescript-sdk-dev (../../../../:0:0)
+func (r *Env) WithTypescriptSDKDevInput(name string, value *TypescriptSDKDev, description string) *Env { // typescript-sdk-dev (../../../../../:0:0)
 	assertNotNil("value", value)
 	q := r.query.Select("withTypescriptSdkDevInput")
 	q = q.Arg("name", name)
@@ -32,7 +32,7 @@ func (r *Env) WithTypescriptSDKDevInput(name string, value *TypescriptSDKDev, de
 }
 
 // Declare a desired TypescriptSdkDev output to be assigned in the environment
-func (r *Env) WithTypescriptSDKDevOutput(name string, description string) *Env { // typescript-sdk-dev (../../../../:0:0)
+func (r *Env) WithTypescriptSDKDevOutput(name string, description string) *Env { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("withTypescriptSdkDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -44,22 +44,22 @@ func (r *Env) WithTypescriptSDKDevOutput(name string, description string) *Env {
 
 // TypescriptSDKDevOpts contains options for Query.TypescriptSDKDev
 type TypescriptSDKDevOpts struct {
-	NodeVersionPrevLts string // typescript-sdk-dev (../../../../:0:0)
+	NodeVersionPrevLts string // typescript-sdk-dev (../../../../../:0:0)
 
-	NodeVersionLts string // typescript-sdk-dev (../../../../:0:0)
+	NodeVersionLts string // typescript-sdk-dev (../../../../../:0:0)
 
-	BunVersion string // typescript-sdk-dev (../../../../:0:0)
+	BunVersion string // typescript-sdk-dev (../../../../../:0:0)
 
-	WorkspaceDir *Directory // typescript-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // typescript-sdk-dev (../../../../../:0:0)
 
-	SourcePath string // typescript-sdk-dev (../../../../:0:0)
+	SourcePath string // typescript-sdk-dev (../../../../../:0:0)
 	//
 	// Workspace
 	//
-	Ws *Workspace // typescript-sdk-dev (../../../../:0:0)
+	Ws *Workspace // typescript-sdk-dev (../../../../../:0:0)
 }
 
-func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev { // typescript-sdk-dev (../../../../:0:0)
+func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("typescriptSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `nodeVersionPrevLts` optional argument
@@ -93,7 +93,7 @@ func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev
 	}
 }
 
-type TypescriptSDKDev struct { // typescript-sdk-dev (../../../../:0:0)
+type TypescriptSDKDev struct { // typescript-sdk-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	bunVersion         *string
@@ -118,7 +118,7 @@ func (r *TypescriptSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *Typescri
 	}
 }
 
-func (r *TypescriptSDKDev) Binary() *File { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) Binary() *File { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("binary")
 
 	return &File{
@@ -126,7 +126,7 @@ func (r *TypescriptSDKDev) Binary() *File { // typescript-sdk-dev (../../../../:
 	}
 }
 
-func (r *TypescriptSDKDev) BunVersion(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) BunVersion(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../../:0:0)
 	if r.bunVersion != nil {
 		return *r.bunVersion, nil
 	}
@@ -138,7 +138,7 @@ func (r *TypescriptSDKDev) BunVersion(ctx context.Context) (string, error) { // 
 	return response, q.Execute(ctx)
 }
 
-func (r *TypescriptSDKDev) BunjsDevContainer() *Container { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) BunjsDevContainer() *Container { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("bunjsDevContainer")
 
 	return &Container{
@@ -147,7 +147,7 @@ func (r *TypescriptSDKDev) BunjsDevContainer() *Container { // typescript-sdk-de
 }
 
 // Generate the Typescript client library
-func (r *TypescriptSDKDev) ClientLibrary() *Changeset { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) ClientLibrary() *Changeset { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -156,7 +156,7 @@ func (r *TypescriptSDKDev) ClientLibrary() *Changeset { // typescript-sdk-dev (.
 }
 
 // Format the SDK source with prettier via eslint --fix
-func (r *TypescriptSDKDev) Format() *Changeset { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) Format() *Changeset { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("format")
 
 	return &Changeset{
@@ -213,7 +213,7 @@ func (r *TypescriptSDKDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *TypescriptSDKDev) IsSemver(ctx context.Context, version string) (bool, error) { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) IsSemver(ctx context.Context, version string) (bool, error) { // typescript-sdk-dev (../../../../../:0:0)
 	if r.isSemver != nil {
 		return *r.isSemver, nil
 	}
@@ -228,11 +228,11 @@ func (r *TypescriptSDKDev) IsSemver(ctx context.Context, version string) (bool, 
 
 // TypescriptSDKDevLintDocsSnippetsOpts contains options for TypescriptSDKDev.LintDocsSnippets
 type TypescriptSDKDevLintDocsSnippetsOpts struct {
-	DocsWorkspace *Directory // typescript-sdk-dev (../../../../:0:0)
+	DocsWorkspace *Directory // typescript-sdk-dev (../../../../../:0:0)
 }
 
 // Check the formatting of Typescript docs snippets
-func (r *TypescriptSDKDev) LintDocsSnippets(ctx context.Context, opts ...TypescriptSDKDevLintDocsSnippetsOpts) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) LintDocsSnippets(ctx context.Context, opts ...TypescriptSDKDevLintDocsSnippetsOpts) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.lintDocsSnippets != nil {
 		return nil
 	}
@@ -248,7 +248,7 @@ func (r *TypescriptSDKDev) LintDocsSnippets(ctx context.Context, opts ...Typescr
 }
 
 // Check the formatting of the SDK
-func (r *TypescriptSDKDev) LintTypescript(ctx context.Context) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) LintTypescript(ctx context.Context) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.lintTypescript != nil {
 		return nil
 	}
@@ -257,7 +257,7 @@ func (r *TypescriptSDKDev) LintTypescript(ctx context.Context) error { // typesc
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptSDKDev) NodeVersionLts(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) NodeVersionLts(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../../:0:0)
 	if r.nodeVersionLts != nil {
 		return *r.nodeVersionLts, nil
 	}
@@ -269,7 +269,7 @@ func (r *TypescriptSDKDev) NodeVersionLts(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-func (r *TypescriptSDKDev) NodeVersionPrevLts(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) NodeVersionPrevLts(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../../:0:0)
 	if r.nodeVersionPrevLts != nil {
 		return *r.nodeVersionPrevLts, nil
 	}
@@ -283,10 +283,10 @@ func (r *TypescriptSDKDev) NodeVersionPrevLts(ctx context.Context) (string, erro
 
 // TypescriptSDKDevNodejsBaseOpts contains options for TypescriptSDKDev.NodejsBase
 type TypescriptSDKDevNodejsBaseOpts struct {
-	NodeVersion string // typescript-sdk-dev (../../../../:0:0)
+	NodeVersion string // typescript-sdk-dev (../../../../../:0:0)
 }
 
-func (r *TypescriptSDKDev) NodejsBase(opts ...TypescriptSDKDevNodejsBaseOpts) *Container { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) NodejsBase(opts ...TypescriptSDKDevNodejsBaseOpts) *Container { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("nodejsBase")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `nodeVersion` optional argument
@@ -302,10 +302,10 @@ func (r *TypescriptSDKDev) NodejsBase(opts ...TypescriptSDKDevNodejsBaseOpts) *C
 
 // TypescriptSDKDevNodejsDevContainerOpts contains options for TypescriptSDKDev.NodejsDevContainer
 type TypescriptSDKDevNodejsDevContainerOpts struct {
-	NodeVersion string // typescript-sdk-dev (../../../../:0:0)
+	NodeVersion string // typescript-sdk-dev (../../../../../:0:0)
 }
 
-func (r *TypescriptSDKDev) NodejsDevContainer(opts ...TypescriptSDKDevNodejsDevContainerOpts) *Container { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) NodejsDevContainer(opts ...TypescriptSDKDevNodejsDevContainerOpts) *Container { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("nodejsDevContainer")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `nodeVersion` optional argument
@@ -324,18 +324,18 @@ type TypescriptSDKDevReleaseOpts struct {
 	//
 	// NPM authentication token
 	//
-	NpmToken *Secret // typescript-sdk-dev (../../../../:0:0)
+	NpmToken *Secret // typescript-sdk-dev (../../../../../:0:0)
 	//
 	// Execute a dry-run release, with no side effects
 	//
-	DryRun bool // typescript-sdk-dev (../../../../:0:0)
+	DryRun bool // typescript-sdk-dev (../../../../../:0:0)
 	//
 	// NPM registry URL to publish to.
 	//
-	NpmRegistryURL string // typescript-sdk-dev (../../../../:0:0)
+	NpmRegistryURL string // typescript-sdk-dev (../../../../../:0:0)
 }
 
-func (r *TypescriptSDKDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptSDKDevReleaseOpts) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptSDKDevReleaseOpts) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.release != nil {
 		return nil
 	}
@@ -359,7 +359,7 @@ func (r *TypescriptSDKDev) Release(ctx context.Context, sourceTag string, opts .
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptSDKDev) ReleaseDryRun(ctx context.Context) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) ReleaseDryRun(ctx context.Context) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -368,7 +368,7 @@ func (r *TypescriptSDKDev) ReleaseDryRun(ctx context.Context) error { // typescr
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptSDKDev) Source() *Directory { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) Source() *Directory { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -376,7 +376,7 @@ func (r *TypescriptSDKDev) Source() *Directory { // typescript-sdk-dev (../../..
 	}
 }
 
-func (r *TypescriptSDKDev) SourcePath(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) SourcePath(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../../:0:0)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -389,7 +389,7 @@ func (r *TypescriptSDKDev) SourcePath(ctx context.Context) (string, error) { // 
 }
 
 // Test the SDK with BunJS
-func (r *TypescriptSDKDev) TestBunjs(ctx context.Context) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) TestBunjs(ctx context.Context) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.testBunjs != nil {
 		return nil
 	}
@@ -399,7 +399,7 @@ func (r *TypescriptSDKDev) TestBunjs(ctx context.Context) error { // typescript-
 }
 
 // Test the SDK with the given version of NodeJS
-func (r *TypescriptSDKDev) TestNodejs(ctx context.Context, nodeVersion string) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) TestNodejs(ctx context.Context, nodeVersion string) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.testNodejs != nil {
 		return nil
 	}
@@ -410,7 +410,7 @@ func (r *TypescriptSDKDev) TestNodejs(ctx context.Context, nodeVersion string) e
 }
 
 // Test the SDK with LTS version of Node
-func (r *TypescriptSDKDev) TestNodejsLts(ctx context.Context) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) TestNodejsLts(ctx context.Context) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.testNodejsLts != nil {
 		return nil
 	}
@@ -420,7 +420,7 @@ func (r *TypescriptSDKDev) TestNodejsLts(ctx context.Context) error { // typescr
 }
 
 // Test the SDK with previous LTS version of Node
-func (r *TypescriptSDKDev) TestNodejsPrevLts(ctx context.Context) error { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) TestNodejsPrevLts(ctx context.Context) error { // typescript-sdk-dev (../../../../../:0:0)
 	if r.testNodejsPrevLts != nil {
 		return nil
 	}
@@ -429,7 +429,7 @@ func (r *TypescriptSDKDev) TestNodejsPrevLts(ctx context.Context) error { // typ
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptSDKDev) WorkspaceDir() *Directory { // typescript-sdk-dev (../../../../:0:0)
+func (r *TypescriptSDKDev) WorkspaceDir() *Directory { // typescript-sdk-dev (../../../../../:0:0)
 	q := r.query.Select("workspaceDir")
 
 	return &Directory{
