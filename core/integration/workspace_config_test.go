@@ -304,7 +304,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 			"cwd": "/app/sub",
 			"configFile": %q
 		}
-	}`, filepath.Join("app", workspace.ConfigFileName)), string(out))
+	}`, filepath.Join("..", workspace.ConfigFileName)), string(out))
 }
 
 func (WorkspaceSuite) TestWorkspaceModuleSettingsPolicy(ctx context.Context, t *testctx.T) {

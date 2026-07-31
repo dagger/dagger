@@ -16067,7 +16067,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Selected native workspace config file relative to the workspace root, if any.
+   * Selected native workspace config file relative to the workspace cwd, if any.
    */
   configFile = async (): Promise<string> => {
     if (this._configFile) {

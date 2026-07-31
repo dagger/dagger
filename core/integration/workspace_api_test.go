@@ -845,7 +845,7 @@ source = "../modules/existing"
 
 	configFile, err := ws.ConfigFile(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "app/dagger.toml", configFile)
+	require.Equal(t, "../dagger.toml", configFile)
 
 	updated := ws.WithModule("github.com/dagger/dagger/modules/wolfi@v0.20.2")
 	modified, err := updated.Changes().ModifiedPaths(ctx)
