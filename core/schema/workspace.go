@@ -28,7 +28,8 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
-		WithInput(dagql.PerCallInput).
+		WithInput(dagql.PerCallInput, dagql.PerSessionInput).
+		NotReplayable("Resolves the calling client's workspace; the result carries that client's ID, which only resolves inside its own session.").
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 		PassthroughTelemetry()
