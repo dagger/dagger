@@ -7,9 +7,8 @@ import (
 	"os"
 	"sync"
 
-	dagger "engine-dev"
-
 	dagClient "dagger.io/dagger"
+	dagger "github.com/dagger/dagger/sdk/go/e2e/internal/dagger/engine-dev"
 )
 
 var client *dagger.Client

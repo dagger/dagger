@@ -3,7 +3,7 @@ package e2e
 import (
 	"testing"
 
-	"dagger.io/dagger"
+	engineDev "github.com/dagger/dagger/sdk/go/e2e/internal/dagger/engine-dev"
 )
 
 // TestAgainstEngines runs the development client library's engine-backed test
@@ -12,7 +12,7 @@ import (
 func TestAgainstEngines(t *testing.T) {
 	t.Run("dev", func(t *testing.T) {
 		h := newHarness(t)
-		cliBin := h.devCLIBinary(t)
+		cliBin := h.devCLIBinary()
 		engine, engineEndpoint := h.startDevEngine(t, "go-client-against-dev-engine")
 
 		innerSource := h.dag.CurrentWorkspace().Directory("/sdk/go/e2e/testdata/against-engines")
@@ -26,7 +26,7 @@ func TestAgainstEngines(t *testing.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/local/bin/dagger").
 			WithoutEnvVariable("DAGGER_SESSION_PORT").
 			WithoutEnvVariable("DAGGER_SESSION_TOKEN").
-			WithFile("/usr/local/bin/dagger", cliBin, dagger.ContainerWithFileOpts{Permissions: 0o755}).
+			WithFile("/usr/local/bin/dagger", cliBin, engineDev.ContainerWithFileOpts{Permissions: 0o755}).
 			WithDirectory("/sdk", devSDKSource).
 			WithDirectory("/work", innerSource).
 			WithNewFile("/work/go.mod", `module dagger-against-engines-inner
@@ -45,7 +45,7 @@ replace dagger.io/dagger => /sdk
 
 		innerTest := target.WithExec(
 			[]string{"timeout", "-k", "10s", "10m", "go", "test", "-v", "-count=1", "-mod=mod", "./..."},
-			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny, NoInit: true},
+			engineDev.ContainerWithExecOpts{Expect: engineDev.ReturnTypeAny, NoInit: true},
 		)
 		requireTargetExec(t, innerTest, "run the development client library against the dev engine")
 	})

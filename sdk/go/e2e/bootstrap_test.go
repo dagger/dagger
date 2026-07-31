@@ -3,7 +3,7 @@ package e2e
 import (
 	"testing"
 
-	"dagger.io/dagger"
+	engineDev "github.com/dagger/dagger/sdk/go/e2e/internal/dagger/engine-dev"
 )
 
 const bootstrapArchiveName = "dagger-bootstrap.tar.gz"
@@ -20,9 +20,21 @@ const bootstrapArchiveName = "dagger-bootstrap.tar.gz"
 // and remains covered by core/integration/provision_test.go.
 func TestBootstrap(t *testing.T) {
 	h := newHarness(t)
-	cliBin := h.devCLIBinary(t)
-	assets := bootstrapAssetServer(h.dag, cliBin)
 	engine, engineEndpoint := h.startDevEngine(t, "go-client-bootstrap")
+
+	// What the server hands out is the client downloader's input contract, not a
+	// production release archive contract: one executable plus a matching
+	// checksum entry.
+	assets := h.dag.Container().
+		From("busybox:1.37").
+		WithFile("/srv/dagger", h.devCLIBinary(), engineDev.ContainerWithFileOpts{Permissions: 0o755}).
+		WithWorkdir("/srv").
+		WithExec([]string{"tar", "czf", bootstrapArchiveName, "dagger"}).
+		WithExec([]string{"sh", "-ec", "sha256sum " + bootstrapArchiveName + " > checksums.txt"}).
+		WithExposedPort(8080).
+		AsService(engineDev.ContainerAsServiceOpts{
+			Args: []string{"/bin/httpd", "-f", "-p", "8080", "-h", "/srv"},
+		})
 
 	innerSource := h.dag.CurrentWorkspace().Directory("/sdk/go/e2e/testdata/bootstrap")
 	devSDKSource := h.dag.CurrentWorkspace().Directory("/sdk/go")
@@ -54,22 +66,7 @@ replace dagger.io/dagger => /sdk
 
 	innerTest := target.WithExec(
 		[]string{"timeout", "-k", "10s", "120s", "go", "test", "-v", "-count=1", "-mod=mod", "."},
-		dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny, NoInit: true},
+		engineDev.ContainerWithExecOpts{Expect: engineDev.ReturnTypeAny, NoInit: true},
 	)
 	requireTargetExec(t, innerTest, "run the development client-library bootstrap tests")
-}
-
-func bootstrapAssetServer(dag *dagger.Client, cliBin *dagger.File) *dagger.Service {
-	// This is the client downloader's input contract, not a production release
-	// archive contract: one executable plus a matching checksum entry.
-	return dag.Container().
-		From("busybox:1.37").
-		WithFile("/srv/dagger", cliBin, dagger.ContainerWithFileOpts{Permissions: 0o755}).
-		WithWorkdir("/srv").
-		WithExec([]string{"tar", "czf", bootstrapArchiveName, "dagger"}).
-		WithExec([]string{"sh", "-ec", "sha256sum " + bootstrapArchiveName + " > checksums.txt"}).
-		WithExposedPort(8080).
-		AsService(dagger.ContainerAsServiceOpts{
-			Args: []string{"/bin/httpd", "-f", "-p", "8080", "-h", "/srv"},
-		})
 }
