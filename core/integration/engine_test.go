@@ -1,7 +1,7 @@
 package core
 
 // These tests cover the Dagger engine process and the client/engine contract.
-// They verify signal handling, engine naming, `dagger api exec`, version
+// They verify signal handling, engine naming, `dagger api with-session`, version
 // compatibility, cancellation, Prometheus metrics, DagQL cache cleanup, and
 // client metadata reuse.
 //
@@ -258,7 +258,7 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 		name string
 		cmd  string
 	}{
-		{"exec", "dagger api exec"},
+		{"with-session", "dagger api with-session"},
 		{"compat", "dagger run"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.W[*testing.T]) {

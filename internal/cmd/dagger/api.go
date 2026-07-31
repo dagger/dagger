@@ -15,6 +15,6 @@ See https://docs.dagger.io/api for the full overview.`,
 }
 
 func init() {
-	apiCmd.AddCommand(apiQueryCmd, apiListenCmd, apiSessionCmd, apiCallCmd.Command(), apiFunctionsCmd, apiClientCmd, apiExecCmd)
+	apiCmd.AddCommand(apiQueryCmd, apiListenCmd, apiSessionCmd, apiCallCmd.Command(), apiFunctionsCmd, apiClientCmd, apiWithSessionCmd)
 	rootCmd.AddCommand(runCmd)
 }

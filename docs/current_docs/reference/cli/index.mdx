@@ -136,9 +136,9 @@ See https://docs.dagger.io/api for the full overview.
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 * [dagger api call](#dagger-api-call)	 - Call one or more functions, interconnected into a pipeline
 * [dagger api client](#dagger-api-client)	 - Manage generated API clients
-* [dagger api exec](#dagger-api-exec)	 - Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)
 * [dagger api functions](#dagger-api-functions)	 - List available functions
 * [dagger api query](#dagger-api-query)	 - Send API queries to a dagger engine
+* [dagger api with-session](#dagger-api-with-session)	 - Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)
 
 ## dagger api call
 
@@ -309,71 +309,6 @@ dagger api client list
 
 * [dagger api client](#dagger-api-client)	 - Manage generated API clients
 
-## dagger api exec
-
-Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)
-
-### Synopsis
-
-Run an external command with a live Dagger API session attached.
-
-`DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` are injected into the
-command's environment so the command can talk to the engine directly.
-Progress is rendered live in the TUI.
-
-For example:
-```shell
-jq -n '{query:"{container{id}}"}' | \
-  dagger api exec sh -c 'curl -s \
-    -u $DAGGER_SESSION_TOKEN: \
-    -H "content-type:application/json" \
-    -d @- \
-    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
-```
-
-```
-dagger api exec [options] <command>...
-```
-
-### Examples
-
-```
-dagger api exec go run main.go
-dagger api exec node index.mjs
-dagger api exec python main.py
-```
-
-### Options
-
-```
-      --cleanup-timeout duration   max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s)
-      --focus                      Only show output for focused commands.
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-      --env string                   Apply the named workspace environment overlay
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
-  -E, --no-exit                      Leave the TUI running after completion
-      --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace location to load from (local path or git ref)
-      --x-release string             Run an experimental release from a Dagger git ref
-```
-
-### SEE ALSO
-
-* [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
-
 ## dagger api functions
 
 List available functions
@@ -474,6 +409,71 @@ EOF
   -M, --no-load-module       Don't load any module for this command
       --var strings          List of query variables, in key=value format
       --var-json string      Query variables in JSON format (overrides --var)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
+
+## dagger api with-session
+
+Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)
+
+### Synopsis
+
+Run an external command with a live Dagger API session attached.
+
+`DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` are injected into the
+command's environment so the command can talk to the engine directly.
+Progress is rendered live in the TUI.
+
+For example:
+```shell
+jq -n '{query:"{container{id}}"}' | \
+  dagger api with-session sh -c 'curl -s \
+    -u $DAGGER_SESSION_TOKEN: \
+    -H "content-type:application/json" \
+    -d @- \
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
+```
+
+```
+dagger api with-session [options] <command>...
+```
+
+### Examples
+
+```
+dagger api with-session go run main.go
+dagger api with-session node index.mjs
+dagger api with-session python main.py
+```
+
+### Options
+
+```
+      --cleanup-timeout duration   max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s)
+      --focus                      Only show output for focused commands.
 ```
 
 ### Options inherited from parent commands
