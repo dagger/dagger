@@ -3053,8 +3053,13 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 // exactly that closure staged. The staged workspace records the dependency in
 // its StagedGeneration set (via __withGeneratedLocalDependencies), so the SDK
 // generator's own nested generateLocalDependencies call for that module
-// short-circuits instead of re-walking. Without the memoization and the mark,
-// generation fans out once per path through the dependency DAG.
+// short-circuits instead of re-walking. Nested walks for other modules also
+// skip any dependency the workspace already marks as staged: the marked
+// dependency's generator run is what invoked them, so re-staging it would
+// recurse through that generator forever (see the depPaths loop below).
+// Without the memoization and the marks, generation fans out once per path
+// through the dependency DAG — or diverges entirely when a module beneath a
+// dependency depends on that same dependency.
 //
 // Results accumulate by overlaying each changeset onto the workspace root
 // directory — never by patch-based changeset merging — so overlapping content
@@ -3140,7 +3145,17 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 		return res, fmt.Errorf("read workspace SDK ownership: %w", err)
 	}
 
-	// Direct local dependencies, deduplicated, in declaration order.
+	// Direct local dependencies, deduplicated, in declaration order. A
+	// dependency the workspace already records in StagedGeneration is skipped
+	// outright: this workspace was built by this very field while generating
+	// that dependency, and the walk reaching it again means the dependency's
+	// own SDK generator regenerates modules beneath it whose closures lead
+	// back to the dependency (e.g. the dependency is the workspace root, so
+	// every module — including this receiver — sits beneath it). Re-staging
+	// it can never converge — its fresh codegen is being produced by the
+	// in-flight generator run one level up — and each re-entry would rebuild
+	// the staged workspace with a longer ID, so neither the memoized recursion
+	// nor the receiver short-circuit above ever terminates it.
 	var depPaths []string
 	seenDeps := make(map[string]bool)
 	for _, dep := range src.Self().Dependencies {
@@ -3152,6 +3167,9 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 			continue
 		}
 		seenDeps[p] = true
+		if slices.Contains(workspace.Self().StagedGeneration, cleanWorkspaceRelPath(p)) {
+			continue
+		}
 		depPaths = append(depPaths, p)
 	}
 	slog.ExtraDebug("generateLocalDependencies walk",

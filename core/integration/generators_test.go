@@ -490,6 +490,97 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 	require.NotContains(t, out, "result *core.Changeset is detached")
 }
 
+// TestGenerateLocalDependenciesTerminatesOnRootDep locks in that
+// ModuleSource.generateLocalDependencies terminates when a module's local
+// dependency closure leads back to a dependency that is currently being
+// generated one level up.
+//
+// The shape (mirroring the go-sdk workspace, where this recursed forever): the
+// workspace root module is managed as-sdk by an SDK module whose generator —
+// like the real SDK management modules — stages every visible module's local
+// dependency closure before generating it, and a nested module depends on the
+// workspace root. Staging the nested module's closure generates the root via
+// that SDK generator, whose own staging pass walks the nested module again;
+// since the root dependency is recorded in the staged workspace's
+// StagedGeneration set, the nested walk must skip it instead of recursing
+// through the generator with a fresh workspace ID per round.
+func (GeneratorsSuite) TestGenerateLocalDependenciesTerminatesOnRootDep(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := goGitBase(t, c).
+		WithNewFile("dagger.toml", `[modules.root-mod]
+source = "."
+
+[modules.nested]
+source = ".dagger/modules/nested"
+
+[modules.fanout-sdk]
+source = ".dagger/modules/fanout-sdk"
+
+[modules.fanout-sdk.as-sdk]
+
+[[modules.fanout-sdk.as-sdk.modules]]
+path = "."
+`).
+		WithNewFile("dagger.json", `{
+  "name": "root-mod",
+  "engineVersion": "latest",
+  "sdk": { "source": "go" },
+  "source": "."
+}`).
+		WithNewFile(".dagger/modules/nested/dagger.json", `{
+  "name": "nested",
+  "engineVersion": "latest",
+  "sdk": { "source": "go" },
+  "dependencies": [
+    { "name": "root-mod", "source": "../../.." }
+  ],
+  "source": "."
+}`).
+		WithNewFile(".dagger/modules/fanout-sdk/dagger.json", `{
+  "name": "fanout-sdk",
+  "engineVersion": "latest",
+  "sdk": { "source": "go" },
+  "source": "."
+}`).
+		WithNewFile(".dagger/modules/fanout-sdk/main.go", `package main
+
+import (
+	"context"
+
+	"dagger/fanout-sdk/internal/dagger"
+)
+
+type FanoutSdk struct{}
+
+// Mimic an SDK-wide generator: stage each visible module's local dependency
+// closure, then emit a marker changeset.
+// +generate
+func (m *FanoutSdk) Generate(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
+	for _, path := range []string{".", ".dagger/modules/nested"} {
+		_, err := ws.ModuleSource(path).GenerateLocalDependencies(ws).Sync(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return dag.Directory().WithNewFile("fanout-generated", "ok").Changes(dag.Directory()), nil
+}
+`)
+
+	// Bound the run so a regression fails instead of hanging: pre-fix this
+	// recursed with a fresh workspace per round until the client disconnected.
+	ctr := base.WithExec(
+		[]string{"timeout", "300", "dagger", "generate", "fanout-sdk", "-y", "--progress=plain"},
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	out, err := ctr.CombinedOutput(ctx)
+	require.NoError(t, err, out)
+
+	generated, err := ctr.File("fanout-generated").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ok", generated)
+}
+
 // TestWorkspaceGenerateNarrowsToRequestedModule locks in that
 // `dagger generate <module>` only loads the named generator's module. The
 // workspace generators resolver loads modules on demand from its include
