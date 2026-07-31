@@ -76,8 +76,12 @@ legacy-default-path = true
 
 [modules.golang.settings]
 generate = "docs/current_docs/reference"
-lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
-test = "e2e/**,sdk/go/**"
+# sdk/go/e2e/internal holds a generated API client, which is its own Go module.
+# It carries no go.sum and pins an unpublished dagger.io/dagger, so it only
+# builds through its parent module's replace directives — not on its own, the
+# way lint and test drive a module root. Drop this once dagger/go-sdk#20 lands.
+lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!sdk/go/e2e/internal,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
+test = "e2e/**,sdk/go/**,!sdk/go/e2e/internal"
 
 # Go version used for the default Go base image.
 # version = ""
@@ -287,7 +291,3 @@ path = "toolchains/rust-sdk-dev"
 [[modules.dagger-go-sdk.as-sdk.clients]]
 path = "sdk/go/e2e/internal/dagger/engine-dev"
 module = "toolchains/engine-dev"
-
-[[modules.dagger-go-sdk.as-sdk.clients]]
-path = "sdk/go/e2e/internal/dagger/cli-dev"
-module = "toolchains/cli-dev"
