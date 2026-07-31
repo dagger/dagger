@@ -56,7 +56,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Path to config.toml relative to the workspace boundary (empty if not initialized)."),
 		dagql.Func("configFile", s.configFile).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Selected native workspace config file relative to the workspace root, if any."),
+			Doc("Selected native workspace config file relative to the workspace cwd, if any."),
 		dagql.Func("hasConfig", s.legacyHasConfig).
 			View(BeforeVersion("v1.0.0-0")).
 			Doc("Whether a config.toml file exists in the workspace."),
@@ -486,7 +486,11 @@ func (s *workspaceSchema) configFile(
 	_ struct{},
 ) (dagql.String, error) {
 	_ = ctx
-	return dagql.NewString(parent.ConfigFile), nil
+	configFile, err := workspacePathRelativeToCwd(parent.ConfigFile, parent.Cwd)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(configFile), nil
 }
 
 func (s *workspaceSchema) legacyPath(
@@ -1732,6 +1736,20 @@ func workspaceAPIPath(resolvedPath string) string {
 		return "/"
 	}
 	return "/" + strings.TrimPrefix(clean, "/")
+}
+
+func workspacePathRelativeToCwd(rootRelPath, cwd string) (string, error) {
+	if rootRelPath == "" {
+		return "", nil
+	}
+	rel, err := filepath.Rel(cleanWorkspaceRelPath(cwd), cleanWorkspaceRelPath(rootRelPath))
+	if err != nil {
+		return "", fmt.Errorf("workspace path relative to cwd: %w", err)
+	}
+	if rel == "" {
+		return ".", nil
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 type workspaceFindUpArgs struct {

@@ -431,11 +431,31 @@ func workspaceConfigHostPath(ctx context.Context, ws *dagger.Workspace) (string,
 	if configFile == "" {
 		return "", fmt.Errorf("workspace config file is not selected")
 	}
+	cwd, err := ws.Cwd(ctx)
+	if err != nil {
+		return "", fmt.Errorf("workspace cwd: %w", err)
+	}
+	configFile, err = workspaceConfigRootPathFromCwd(configFile, cwd)
+	if err != nil {
+		return "", err
+	}
 	root, err := currentWorkspaceExportPath(ctx, ws)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(root, filepath.FromSlash(configFile)), nil
+}
+
+func workspaceConfigRootPathFromCwd(configFile, cwd string) (string, error) {
+	cwd, err := workspaceRelativeCwd(cwd)
+	if err != nil {
+		return "", err
+	}
+	configFile = filepath.Clean(filepath.Join(cwd, filepath.FromSlash(configFile)))
+	if filepath.IsAbs(configFile) || configFile == ".." || strings.HasPrefix(configFile, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("workspace config file %q escapes workspace root", configFile)
+	}
+	return configFile, nil
 }
 
 func workspaceRootFromAddress(address, cwd string) (string, error) {

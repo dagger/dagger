@@ -258,6 +258,48 @@ func TestWorkspaceAPIPath(t *testing.T) {
 	})
 }
 
+func TestWorkspacePathRelativeToCwd(t *testing.T) {
+	tests := []struct {
+		name        string
+		rootRelPath string
+		cwd         string
+		want        string
+	}{
+		{
+			name:        "root cwd",
+			rootRelPath: "dagger.toml",
+			cwd:         ".",
+			want:        "dagger.toml",
+		},
+		{
+			name:        "nested cwd",
+			rootRelPath: "app/dagger.toml",
+			cwd:         "app/sub",
+			want:        "../dagger.toml",
+		},
+		{
+			name:        "selected workspace cwd",
+			rootRelPath: "selected/dagger.toml",
+			cwd:         "selected",
+			want:        "dagger.toml",
+		},
+		{
+			name:        "no path",
+			rootRelPath: "",
+			cwd:         "app/sub",
+			want:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := workspacePathRelativeToCwd(tt.rootRelPath, tt.cwd)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestWorkspaceRootfsRequiresDirectory(t *testing.T) {
 	_, err := workspaceRootfs(&core.Workspace{})
 	require.ErrorContains(t, err, "workspace has no root filesystem")

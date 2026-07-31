@@ -278,6 +278,45 @@ func TestWorkspaceSettingConfigKeyQuotesDynamicSegments(t *testing.T) {
 	)
 }
 
+func TestWorkspaceConfigRootPathFromCwd(t *testing.T) {
+	tests := []struct {
+		name       string
+		configFile string
+		cwd        string
+		want       string
+	}{
+		{
+			name:       "root cwd",
+			configFile: "dagger.toml",
+			cwd:        "/",
+			want:       "dagger.toml",
+		},
+		{
+			name:       "nested cwd",
+			configFile: "../dagger.toml",
+			cwd:        "/app/sub",
+			want:       filepath.Join("app", "dagger.toml"),
+		},
+		{
+			name:       "selected workspace cwd",
+			configFile: "dagger.toml",
+			cwd:        "/selected",
+			want:       filepath.Join("selected", "dagger.toml"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := workspaceConfigRootPathFromCwd(tt.configFile, tt.cwd)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+
+	_, err := workspaceConfigRootPathFromCwd("../../../outside.toml", "/app/sub")
+	require.ErrorContains(t, err, "escapes workspace root")
+}
+
 func renderHelp(t *testing.T, cmd *cobra.Command) string {
 	t.Helper()
 

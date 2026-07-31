@@ -65,7 +65,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Selected native workspace config file relative to the workspace root, if any.
+  Selected native workspace config file relative to the workspace cwd, if any.
   """
   @spec config_file(t()) :: {:ok, String.t()} | {:error, term()}
   def config_file(%__MODULE__{} = workspace) do

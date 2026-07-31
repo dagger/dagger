@@ -7040,7 +7040,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::configFile",
 			"p": "Dagger/Workspace.html#method_configFile",
-			"d": "<p>Selected native workspace config file relative to the workspace root, if any.</p>"
+			"d": "<p>Selected native workspace config file relative to the workspace cwd, if any.</p>"
 		},
 		{
 			"t": "M",

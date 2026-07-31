@@ -57,7 +57,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Selected native workspace config file relative to the workspace root, if any.
+     * Selected native workspace config file relative to the workspace cwd, if any.
      */
     public function configFile(): string
     {

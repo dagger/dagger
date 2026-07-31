@@ -16711,7 +16711,7 @@ class Workspace(Type):
         return CheckGroup(_ctx)
 
     async def config_file(self) -> str:
-        """Selected native workspace config file relative to the workspace root,
+        """Selected native workspace config file relative to the workspace cwd,
         if any.
 
         Returns

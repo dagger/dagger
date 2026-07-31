@@ -17320,7 +17320,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Selected native workspace config file relative to the workspace root, if any.
+    /// Selected native workspace config file relative to the workspace cwd, if any.
     pub async fn config_file(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("configFile");
         query.execute(self.graphql_client.clone()).await
