@@ -39,7 +39,10 @@ import (
 type LLMTool struct {
 	// Tool name
 	Name string `json:"name"`
-	// MCP server name providing the tool, if any
+	// Name of the tool's provider, if any: the MCP server for MCP tools, or the
+	// bound object's type name for object tools. Only a name registered in
+	// MCP.mcpServers routes calls through MCP server syncing; otherwise it's
+	// display metadata (telemetry's tool-server attribute).
 	Server string
 	// Tool description
 	Description string `json:"description"`
@@ -752,7 +755,10 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 			continue
 		}
 
-		if tool.Server == "" {
+		// Object tools set Server to their bound type name for display, so a
+		// non-empty Server alone doesn't make this an MCP tool — only a
+		// registered MCP server does.
+		if _, isMCPTool := m.mcpServers[tool.Server]; !isMCPTool {
 			// Changeset-returning tools are evaluated in parallel against the same
 			// workspace, then merged before the workspace is updated.
 			if tool.ReturnsChangeset {
