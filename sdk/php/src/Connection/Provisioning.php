@@ -9,7 +9,7 @@ final class Provisioning
 {
     public static function getCliVersion(): string
     {
-        return require_once 'version.php';
+        return require __DIR__ . '/version.php';
     }
 
     public static function getSdkVersion(): string

@@ -2,6 +2,7 @@
 
 namespace Dagger\Connection;
 
+use Dagger\Exception\CliReleaseUnavailable;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -78,7 +79,7 @@ class CliDownloader implements LoggerAwareInterface
         return 'windows' === $this->getOs();
     }
 
-    private function getDefaultCliArchiveName(string $version): string
+    protected function getDefaultCliArchiveName(string $version): string
     {
         $ext = $this->isWindows() ? 'zip' : 'tar.gz';
 
@@ -117,28 +118,54 @@ class CliDownloader implements LoggerAwareInterface
         }
     }
 
-    private function getExpectedChecksum(string $daggerVersion, string $archiveName): ?string
+    private function getExpectedChecksum(string $daggerVersion, string $archiveName): string
     {
-        $checksumMapUrl = "https://dl.dagger.io/dagger/releases/{$daggerVersion}/checksums.txt";
-        $checksumMapContent = file_get_contents($checksumMapUrl);
+        $checksumMapUrl = $this->getChecksumsUrl($daggerVersion);
+        [$checksumMapContent, $statusCode] = $this->fetchUrl($checksumMapUrl);
+        if (null !== $statusCode && $statusCode >= 400) {
+            $message = "Failed to download checksums from {$checksumMapUrl}: HTTP {$statusCode}";
+            if ($this->isCliReleaseUnavailable($statusCode)) {
+                throw new CliReleaseUnavailable($message);
+            }
 
-        $checksumArray = explode("\n", trim($checksumMapContent));
-        $checksumMap = [];
-
-        foreach ($checksumArray as $checksumLine) {
-            [$v, $k] = preg_split("/\s+/", $checksumLine, 2);
-            $checksumMap[$k] = $v;
+            throw new RuntimeException($message);
+        }
+        if (false === $checksumMapContent) {
+            throw new RuntimeException("Failed to download checksums from {$checksumMapUrl}");
         }
 
-        return $checksumMap[$archiveName] ?? null;
+        foreach (explode("\n", trim($checksumMapContent)) as $checksumLine) {
+            $parts = preg_split('/\s+/', trim($checksumLine), 2);
+            if (false === $parts || 2 !== count($parts)) {
+                throw new RuntimeException("Malformed checksum data from {$checksumMapUrl}");
+            }
+
+            [$checksum, $filename] = $parts;
+            if ($filename === $archiveName) {
+                if (1 !== preg_match('/^[a-f0-9]{64}$/i', $checksum)) {
+                    throw new RuntimeException("Malformed checksum data from {$checksumMapUrl}");
+                }
+
+                return $checksum;
+            }
+        }
+
+        throw new RuntimeException("Could not find checksum for {$archiveName}");
     }
 
     private function extractCli(string $archiveName, string $daggerVersion, string $tmpBinFile): string
     {
         $tmpArchiveFile = $this->getCacheDir() . DIRECTORY_SEPARATOR . $archiveName;
-        $archiveUrl = "https://dl.dagger.io/dagger/releases/{$daggerVersion}/{$archiveName}";
+        $archiveUrl = $this->getArchiveUrl($daggerVersion, $archiveName);
         $this->logger->info("Downloading dagger {$daggerVersion} from {$archiveUrl}");
-        file_put_contents($tmpArchiveFile, file_get_contents($archiveUrl));
+        [$archiveContent, $statusCode] = $this->fetchUrl($archiveUrl);
+        if (null !== $statusCode && $statusCode >= 400) {
+            throw new RuntimeException("Failed to download Dagger CLI archive from {$archiveUrl}: HTTP {$statusCode}");
+        }
+        if (false === $archiveContent) {
+            throw new RuntimeException("Failed to download Dagger CLI archive from {$archiveUrl}");
+        }
+        file_put_contents($tmpArchiveFile, $archiveContent);
 
         if ($this->isWindows()) {
             throw new RuntimeException('Not implemented');
@@ -151,5 +178,43 @@ class CliDownloader implements LoggerAwareInterface
         unlink($tmpArchiveFile);
 
         return $archiveHash;
+    }
+
+    private function getChecksumsUrl(string $daggerVersion): string
+    {
+        return "https://dl.dagger.io/dagger/releases/{$daggerVersion}/checksums.txt";
+    }
+
+    private function getArchiveUrl(string $daggerVersion, string $archiveName): string
+    {
+        return "https://dl.dagger.io/dagger/releases/{$daggerVersion}/{$archiveName}";
+    }
+
+    /** @return array{string|false, int|null} */
+    protected function fetchUrl(string $url): array
+    {
+        $context = stream_context_create([
+            'http' => [
+                'ignore_errors' => true,
+            ],
+        ]);
+        $http_response_header = [];
+        $content = @file_get_contents($url, false, $context);
+        $responseHeaders = $http_response_header;
+        $statusCode = null;
+
+        foreach ($responseHeaders as $header) {
+            if (1 === preg_match('/^HTTP\/\S+\s+(\d{3})\b/i', $header, $matches)) {
+                $statusCode = (int) $matches[1];
+            }
+        }
+
+        return [$content, $statusCode];
+    }
+
+    private function isCliReleaseUnavailable(int $statusCode): bool
+    {
+        // dl.dagger.io returns 403 for missing S3 objects.
+        return 403 === $statusCode || 404 === $statusCode;
     }
 }
