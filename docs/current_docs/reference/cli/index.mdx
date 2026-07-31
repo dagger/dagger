@@ -2163,9 +2163,6 @@ Initialize a new module in the workspace.
 &lt;sdk&gt; is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
 to add more choices.
 
-For example, after `dagger sdk install go`, run
-`dagger module init go myapp`.
-
 The CLI is a thin wrapper around the engine's Workspace.withInitModule. The
 engine validates that &lt;sdk&gt; is installed as an SDK in dagger.toml and returns
 an updated workspace that the CLI previews and exports.
@@ -2190,7 +2187,7 @@ dagger module init <sdk> <name> [flags]
 ### Examples
 
 ```
-dagger module init go myapp
+dagger sdk install go && dagger module init go my-module
 ```
 
 ### Options
@@ -2276,15 +2273,8 @@ Install and manage SDKs (the modules that author other modules)
 
 ### Synopsis
 
-Install and manage SDKs.
-
-SDKs are workspace modules whose role is to scaffold/codegen other things:
-new Dagger modules (`dagger module init`) or typed clients against the
-Dagger API (`dagger api client init`). An install becomes an SDK when
-added through this group — `dagger sdk install go` installs
-[modules.dagger-go-sdk] with [modules.dagger-go-sdk.as-sdk] name = "go" so
-`dagger module init go` / `dagger api client init go`
-dispatch through that SDK.
+Install and manage SDKs that can create Dagger modules or generated API clients.
+Use an installed SDK with `dagger module init` or `dagger api client init`.
 
 ### Options inherited from parent commands
 
@@ -2309,51 +2299,10 @@ dispatch through that SDK.
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
-* [dagger sdk client-options](#dagger-sdk-client-options)	 - Show SDK-specific flags accepted by `dagger api client init <sdk>`
 * [dagger sdk install](#dagger-sdk-install)	 - Install an SDK and mark it
-* [dagger sdk list](#dagger-sdk-list)	 - List installed SDKs
-* [dagger sdk module-options](#dagger-sdk-module-options)	 - Show SDK-specific flags accepted by `dagger module init <sdk>`
+* [dagger sdk installed](#dagger-sdk-installed)	 - List installed SDKs
 * [dagger sdk search](#dagger-sdk-search)	 - Discover SDKs in the SDK registry
 * [dagger sdk uninstall](#dagger-sdk-uninstall)	 - Remove an SDK install
-
-## dagger sdk client-options
-
-Show SDK-specific flags accepted by `dagger api client init <sdk>`
-
-### Synopsis
-
-Print the SDK-specific flags `dagger api client init <sdk>`
-accepts, introspected from the SDK's initClient function.
-
-Requires the SDK to implement the initClient capability.
-
-```
-dagger sdk client-options <sdk> [flags]
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-      --env string                   Apply the named workspace environment overlay
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
-  -E, --no-exit                      Leave the TUI running after completion
-      --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace location to load from (local path or git ref)
-      --x-release string             Run an experimental release from a Dagger git ref
-```
-
-### SEE ALSO
-
-* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
 
 ## dagger sdk install
 
@@ -2364,13 +2313,10 @@ Install an SDK and mark it
 Install an SDK into the current workspace and mark it with the
 [modules.&lt;name&gt;.as-sdk] table.
 
-Alias resolution: `dagger sdk install go` resolves "go" via the
-embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the canonical ref basename prefixed with "dagger-"
-(`dagger-go-sdk`), and the user-facing name is persisted as
-[modules.dagger-go-sdk.as-sdk] name = "go". Direct refs work too:
-`dagger sdk install github.com/foo/sdk` is installed as
-[modules.sdk] by basename.
+Registry names and aliases resolve to their canonical SDK refs. For registry
+SDKs, the workspace install name is the canonical ref basename prefixed with
+"dagger-", and the user-facing name is persisted in
+[modules.&lt;name&gt;.as-sdk] name. Direct refs are installed by basename.
 
 Generic `dagger install <ref>` does NOT mark anything as an SDK.
 The marker is opt-in via this verb.
@@ -2382,7 +2328,7 @@ dagger sdk install [options] <name-or-ref> [flags]
 ### Examples
 
 ```
-dagger sdk install go
+dagger sdk install typescript && dagger module init typescript --help && dagger api client init typescript --help
 ```
 
 ### Options
@@ -2416,7 +2362,7 @@ dagger sdk install go
 
 * [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
 
-## dagger sdk list
+## dagger sdk installed
 
 List installed SDKs
 
@@ -2425,51 +2371,8 @@ List installed SDKs
 List installs in the current workspace that carry the
 [modules.&lt;name&gt;.as-sdk] marker.
 
-The M and C columns count workspace-local modules and clients authored
-under each SDK (the entries in [[modules.&lt;name&gt;.as-sdk.modules]] and
-[[modules.&lt;name&gt;.as-sdk.clients]]).
-
 ```
-dagger sdk list [flags]
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-      --env string                   Apply the named workspace environment overlay
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
-  -E, --no-exit                      Leave the TUI running after completion
-      --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace location to load from (local path or git ref)
-      --x-release string             Run an experimental release from a Dagger git ref
-```
-
-### SEE ALSO
-
-* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
-
-## dagger sdk module-options
-
-Show SDK-specific flags accepted by `dagger module init <sdk>`
-
-### Synopsis
-
-Print the SDK-specific flags `dagger module init <sdk> <name>`
-accepts, introspected from the SDK's initModule function.
-
-Requires the SDK to implement the initModule capability.
-
-```
-dagger sdk module-options <sdk> [flags]
+dagger sdk installed [flags]
 ```
 
 ### Options inherited from parent commands
@@ -2550,12 +2453,6 @@ files are left on disk untouched, only the workspace entries go away.
 
 ```
 dagger sdk uninstall [options] <name> [flags]
-```
-
-### Examples
-
-```
-dagger sdk uninstall go
 ```
 
 ### Options

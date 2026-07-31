@@ -131,9 +131,6 @@ var moduleInitCmd = &cobra.Command{
 <sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
 to add more choices.
 
-For example, after ` + "`dagger sdk install go`" + `, run
-` + "`dagger module init go myapp`" + `.
-
 The CLI is a thin wrapper around the engine's Workspace.withInitModule. The
 engine validates that <sdk> is installed as an SDK in dagger.toml and returns
 an updated workspace that the CLI previews and exports.
@@ -150,7 +147,7 @@ What the engine does (atomically, in one Changeset):
 --path defaults to .dagger/modules/<name>. Custom paths skip the
 [modules.<name>] install (the user is managing workspace layout
 explicitly).`,
-	Example: "dagger module init go myapp",
+	Example: "dagger sdk install go && dagger module init go my-module",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
