@@ -3340,7 +3340,7 @@ func (s *moduleSourceSchema) generateOneLocalDependency(
 	depStaging dagql.ObjectResult[*core.Changeset],
 	owners map[string]string,
 ) (_ dagql.ObjectResult[*core.Changeset], rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "generate local dependency: "+depPath, telemetry.Reveal())
+	ctx, span := core.Tracer(ctx).Start(ctx, "generate local dependency: "+depPath)
 	defer telemetry.EndWithCause(span, &rerr)
 
 	owner, ok := owners[cleanWorkspaceRelPath(depPath)]
