@@ -266,13 +266,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://pkg.go.dev/dagger.io/dagger@" + cmp.Or(version, "main"),
 			dev:  true,
 			release: func(ctx context.Context) error {
-				return dag.GoSDKDev(dagger.GoSDKDevOpts{Ws: r.Workspace}).Release(ctx, tag, dagger.GoSDKDevReleaseOpts{
+				return dag.GoClientDev(dagger.GoClientDevOpts{Ws: r.Workspace}).Release(ctx, tag, dagger.GoClientDevReleaseOpts{
 					GithubToken: githubToken,
 					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.GoSDKDev(dagger.GoSDKDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
+				return dag.GoClientDev(dagger.GoClientDevOpts{Ws: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{

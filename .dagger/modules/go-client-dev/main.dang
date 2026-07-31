@@ -1,6 +1,6 @@
 pub description = "Toolchain to develop the Dagger Go SDK"
 
-type GoSdkDev {
+type GoClientDev {
   """
   Workspace with all the files needed to develop the SDK
   """

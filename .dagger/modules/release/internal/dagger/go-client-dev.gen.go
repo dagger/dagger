@@ -9,19 +9,19 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// Retrieve the binding value, as type GoSdkDev
-func (r *Binding) AsGoSDKDev() *GoSDKDev { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("asGoSdkDev")
+// Retrieve the binding value, as type GoClientDev
+func (r *Binding) AsGoClientDev() *GoClientDev { // go-client-dev (../../../../../:0:0)
+	q := r.query.Select("asGoClientDev")
 
-	return &GoSDKDev{
+	return &GoClientDev{
 		query: q,
 	}
 }
 
-// Create or update a binding of type GoSdkDev in the environment
-func (r *Env) WithGoSDKDevInput(name string, value *GoSDKDev, description string) *Env { // go-sdk-dev (../../../../:0:0)
+// Create or update a binding of type GoClientDev in the environment
+func (r *Env) WithGoClientDevInput(name string, value *GoClientDev, description string) *Env { // go-client-dev (../../../../../:0:0)
 	assertNotNil("value", value)
-	q := r.query.Select("withGoSdkDevInput")
+	q := r.query.Select("withGoClientDevInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -31,9 +31,9 @@ func (r *Env) WithGoSDKDevInput(name string, value *GoSDKDev, description string
 	}
 }
 
-// Declare a desired GoSdkDev output to be assigned in the environment
-func (r *Env) WithGoSDKDevOutput(name string, description string) *Env { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("withGoSdkDevOutput")
+// Declare a desired GoClientDev output to be assigned in the environment
+func (r *Env) WithGoClientDevOutput(name string, description string) *Env { // go-client-dev (../../../../../:0:0)
+	q := r.query.Select("withGoClientDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -42,7 +42,7 @@ func (r *Env) WithGoSDKDevOutput(name string, description string) *Env { // go-s
 	}
 }
 
-type GoSDKDev struct { // go-sdk-dev (../../../../:0:0)
+type GoClientDev struct { // go-client-dev (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	id            *ID
@@ -52,14 +52,14 @@ type GoSDKDev struct { // go-sdk-dev (../../../../:0:0)
 	test          *Void
 }
 
-func (r *GoSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *GoSDKDev {
-	return &GoSDKDev{
+func (r *GoClientDev) WithGraphQLQuery(q *querybuilder.Selection) *GoClientDev {
+	return &GoClientDev{
 		query: q,
 	}
 }
 
 // Build a container to run the go toolchain
-func (r *GoSDKDev) DevContainer() *Container { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) DevContainer() *Container { // go-client-dev (../../../../../:0:0)
 	q := r.query.Select("devContainer")
 
 	return &Container{
@@ -68,7 +68,7 @@ func (r *GoSDKDev) DevContainer() *Container { // go-sdk-dev (../../../../:0:0)
 }
 
 // Regenerate the Go SDK API
-func (r *GoSDKDev) Generate() *Changeset { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) Generate() *Changeset { // go-client-dev (../../../../../:0:0)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -76,8 +76,8 @@ func (r *GoSDKDev) Generate() *Changeset { // go-sdk-dev (../../../../:0:0)
 	}
 }
 
-// A unique identifier for this GoSdkDev.
-func (r *GoSDKDev) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this GoClientDev.
+func (r *GoClientDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -90,17 +90,17 @@ func (r *GoSDKDev) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *GoSDKDev) XXX_GraphQLType() string {
-	return "GoSdkDev"
+func (r *GoClientDev) XXX_GraphQLType() string {
+	return "GoClientDev"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *GoSDKDev) XXX_GraphQLIDType() string {
+func (r *GoClientDev) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *GoSDKDev) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *GoClientDev) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -108,41 +108,41 @@ func (r *GoSDKDev) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *GoSDKDev) MarshalJSON() ([]byte, error) {
+func (r *GoClientDev) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(id)
 }
-func (r *GoSDKDev) UnmarshalJSON(bs []byte) error {
+func (r *GoClientDev) UnmarshalJSON(bs []byte) error {
 	var id string
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = GoSDKDev{query: selectNode(dag.query, id, "GoSdkDev")}
+	*r = GoClientDev{query: selectNode(dag.query, id, "GoClientDev")}
 	return nil
 }
 
-// GoSDKDevReleaseOpts contains options for GoSDKDev.Release
-type GoSDKDevReleaseOpts struct {
+// GoClientDevReleaseOpts contains options for GoClientDev.Release
+type GoClientDevReleaseOpts struct {
 	//
 	// Source git repository to release
 	//
-	SourceRepo *GitRepository // go-sdk-dev (../../../../:0:0)
+	SourceRepo *GitRepository // go-client-dev (../../../../../:0:0)
 	//
 	// Target git remote to release to
 	//
-	DestRemote string // go-sdk-dev (../../../../:0:0)
+	DestRemote string // go-client-dev (../../../../../:0:0)
 
-	GithubToken *Secret // go-sdk-dev (../../../../:0:0)
+	GithubToken *Secret // go-client-dev (../../../../../:0:0)
 
-	Callback *File // go-sdk-dev (../../../../:0:0)
+	Callback *File // go-client-dev (../../../../../:0:0)
 }
 
 // Publish the Go SDK
-func (r *GoSDKDev) Release(ctx context.Context, sourceTag string, opts ...GoSDKDevReleaseOpts) error { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) Release(ctx context.Context, sourceTag string, opts ...GoClientDevReleaseOpts) error { // go-client-dev (../../../../../:0:0)
 	if r.release != nil {
 		return nil
 	}
@@ -170,26 +170,26 @@ func (r *GoSDKDev) Release(ctx context.Context, sourceTag string, opts ...GoSDKD
 	return q.Execute(ctx)
 }
 
-// GoSDKDevReleaseDryRunOpts contains options for GoSDKDev.ReleaseDryRun
-type GoSDKDevReleaseDryRunOpts struct {
+// GoClientDevReleaseDryRunOpts contains options for GoClientDev.ReleaseDryRun
+type GoClientDevReleaseDryRunOpts struct {
 	//
 	// Git repository to fake-release
 	//
-	SourceRepo *GitRepository // go-sdk-dev (../../../../:0:0)
+	SourceRepo *GitRepository // go-client-dev (../../../../../:0:0)
 	//
 	// Git tag to fake-release
 	//
-	SourceTag string // go-sdk-dev (../../../../:0:0)
+	SourceTag string // go-client-dev (../../../../../:0:0)
 	//
 	// Git remote to fake-release to
 	//
-	DestRemote string // go-sdk-dev (../../../../:0:0)
+	DestRemote string // go-client-dev (../../../../../:0:0)
 
-	Callback *File // go-sdk-dev (../../../../:0:0)
+	Callback *File // go-client-dev (../../../../../:0:0)
 }
 
 // Check that releasing works, without actually releasing
-func (r *GoSDKDev) ReleaseDryRun(ctx context.Context, opts ...GoSDKDevReleaseDryRunOpts) error { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) ReleaseDryRun(ctx context.Context, opts ...GoClientDevReleaseDryRunOpts) error { // go-client-dev (../../../../../:0:0)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -216,7 +216,7 @@ func (r *GoSDKDev) ReleaseDryRun(ctx context.Context, opts ...GoSDKDevReleaseDry
 	return q.Execute(ctx)
 }
 
-func (r *GoSDKDev) Source() *Directory { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) Source() *Directory { // go-client-dev (../../../../../:0:0)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -225,7 +225,7 @@ func (r *GoSDKDev) Source() *Directory { // go-sdk-dev (../../../../:0:0)
 }
 
 // Path of the Go SDK source within the workspace
-func (r *GoSDKDev) SourcePath(ctx context.Context) (string, error) { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) SourcePath(ctx context.Context) (string, error) { // go-client-dev (../../../../../:0:0)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -238,7 +238,7 @@ func (r *GoSDKDev) SourcePath(ctx context.Context) (string, error) { // go-sdk-d
 }
 
 // Test the Go SDK
-func (r *GoSDKDev) Test(ctx context.Context) error { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) Test(ctx context.Context) error { // go-client-dev (../../../../../:0:0)
 	if r.test != nil {
 		return nil
 	}
@@ -248,7 +248,7 @@ func (r *GoSDKDev) Test(ctx context.Context) error { // go-sdk-dev (../../../../
 }
 
 // Workspace with all the files needed to develop the SDK
-func (r *GoSDKDev) WorkspaceDir() *Directory { // go-sdk-dev (../../../../:0:0)
+func (r *GoClientDev) WorkspaceDir() *Directory { // go-client-dev (../../../../../:0:0)
 	q := r.query.Select("workspaceDir")
 
 	return &Directory{
@@ -256,32 +256,32 @@ func (r *GoSDKDev) WorkspaceDir() *Directory { // go-sdk-dev (../../../../:0:0)
 	}
 }
 
-// AsNode returns this GoSDKDev as a Node.
+// AsNode returns this GoClientDev as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *GoSDKDev) AsNode() Node {
+func (r *GoClientDev) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
 }
 
-// GoSDKDevOpts contains options for Query.GoSDKDev
-type GoSDKDevOpts struct {
+// GoClientDevOpts contains options for Query.GoClientDev
+type GoClientDevOpts struct {
 	//
 	// Workspace with all the files needed to develop the SDK
 	//
-	WorkspaceDir *Directory // go-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // go-client-dev (../../../../../:0:0)
 	//
 	// Path of the Go SDK source within the workspace
 	//
-	SourcePath string // go-sdk-dev (../../../../:0:0)
+	SourcePath string // go-client-dev (../../../../../:0:0)
 	//
 	// Workspace
 	//
-	Ws *Workspace // go-sdk-dev (../../../../:0:0)
+	Ws *Workspace // go-client-dev (../../../../../:0:0)
 }
 
-func (r *Query) GoSDKDev(opts ...GoSDKDevOpts) *GoSDKDev { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("goSdkDev")
+func (r *Query) GoClientDev(opts ...GoClientDevOpts) *GoClientDev { // go-client-dev (../../../../../:0:0)
+	q := r.query.Select("goClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspaceDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
@@ -297,7 +297,7 @@ func (r *Query) GoSDKDev(opts ...GoSDKDevOpts) *GoSDKDev { // go-sdk-dev (../../
 		}
 	}
 
-	return &GoSDKDev{
+	return &GoClientDev{
 		query: q,
 	}
 }

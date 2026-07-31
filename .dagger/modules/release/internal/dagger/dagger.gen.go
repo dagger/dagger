@@ -278,7 +278,7 @@ type GitRefID string
 type GitRepositoryID string
 
 // A unique identifier for an object.
-type GoSDKDevID string
+type GoClientDevID string
 
 // A unique identifier for an object.
 type HTTPStateID string
@@ -13255,12 +13255,12 @@ func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	}
 }
 
-// Load a GoSdkDev from its ID.
-func (r *Query) LoadGoSDKDevFromID(id GoSDKDevID) *GoSDKDev {
-	q := r.query.Select("loadGoSdkDevFromID")
+// Load a GoClientDev from its ID.
+func (r *Query) LoadGoClientDevFromID(id GoClientDevID) *GoClientDev {
+	q := r.query.Select("loadGoClientDevFromID")
 	q = q.Arg("id", id)
 
-	return &GoSDKDev{
+	return &GoClientDev{
 		query: q,
 	}
 }

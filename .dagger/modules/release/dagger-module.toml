@@ -30,8 +30,8 @@ include = ["../../../go.mod", "../../../go.sum"]
   source = "gh"
 
 [[dependencies]]
-  name = "go-sdk-dev"
-  source = "../go-sdk-dev"
+  name = "go-client-dev"
+  source = "../go-client-dev"
 
 [[dependencies]]
   name = "notify"

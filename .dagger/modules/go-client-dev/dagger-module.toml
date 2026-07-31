@@ -1,4 +1,4 @@
-name = "go-sdk-dev"
+name = "go-client-dev"
 engineVersion = "v0.21.7"
 
 [runtime]

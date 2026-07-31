@@ -34,8 +34,7 @@ source = ".dagger/modules/engine-dev"
 legacy-default-path = true
 
 [modules.go-client]
-# TODO: move to a path without "sdk"
-source = ".dagger/modules/go-sdk-dev"
+source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
@@ -141,7 +140,7 @@ path = ".dagger/modules/dotnet-sdk-dev"
 path = ".dagger/modules/elixir-sdk-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/go-sdk-dev"
+path = ".dagger/modules/go-client-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
 path = ".dagger/modules/java-sdk-dev"
