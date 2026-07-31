@@ -193,6 +193,27 @@ final class CliFallbackTest extends TestCase
     }
 
     #[Test]
+    public function itRefusesADaggerCliFoundRelativeToTheCurrentDirectory(): void
+    {
+        $this->createDaggerExecutable();
+        $previousCwd = getcwd();
+        self::assertNotFalse($previousCwd);
+        chdir($this->tempDir);
+        putenv('PATH=bin');
+        $downloadError = new CliReleaseUnavailable('download failed');
+
+        try {
+            $error = $this->catchError(fn() => $this->newConnection()->fallbackToLocalCli($downloadError));
+        } finally {
+            chdir($previousCwd);
+        }
+
+        self::assertInstanceOf(CliFallbackFailed::class, $error);
+        self::assertSame($downloadError, $error->getDownloadError());
+        self::assertStringContainsString('relative to the current directory', (string) $error);
+    }
+
+    #[Test]
     public function itPreservesDownloadAndSessionErrorsWhenTheFallbackFailsToStart(): void
     {
         $binPath = $this->createDaggerExecutable();
