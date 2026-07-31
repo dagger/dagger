@@ -17,18 +17,23 @@ func TestWriteCheckListWithGenerateChecks(t *testing.T) {
 		},
 		{
 			Name:        "assets",
-			Description: "Generate assets",
+			Description: "Generate assets.",
 			Type:        "generate",
+		},
+		{
+			Name: "empty",
+			Type: "check",
 		},
 	})
 	require.NoError(t, err)
 
 	text := out.String()
-	require.Contains(t, text, "Type")
-	require.Regexp(t, `lint\s+check\s+Run lint`, text)
-	require.Regexp(t, `assets\s+generate\s+Generate assets`, text)
+	require.NotContains(t, text, "Name")
+	require.NotContains(t, text, "Type")
+	require.Regexp(t, `(?m)^lint\s+# Run lint$`, text)
+	require.Regexp(t, `(?m)^assets\s+# Did you "generate assets"\?$`, text)
+	require.Regexp(t, `(?m)^empty$`, text)
 	require.NotContains(t, text, "with details")
-	require.NotContains(t, text, "Generators")
 }
 
 func TestWriteCheckListWithoutGenerateChecks(t *testing.T) {
@@ -43,9 +48,9 @@ func TestWriteCheckListWithoutGenerateChecks(t *testing.T) {
 	require.NoError(t, err)
 
 	text := out.String()
+	require.NotContains(t, text, "Name")
 	require.NotContains(t, text, "Type")
-	require.Regexp(t, `lint\s+Run lint`, text)
-	require.NotContains(t, text, "Generators")
+	require.Regexp(t, `(?m)^lint\s+# Run lint$`, text)
 }
 
 func TestValidateCheckSelection(t *testing.T) {
