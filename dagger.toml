@@ -1,19 +1,19 @@
 [modules.changelog]
-source = "toolchains/changelog"
+source = ".dagger/modules/changelog"
 legacy-default-path = true
 
 # settings.source = "./path"
 
 [modules.ci]
-source = "toolchains/ci"
+source = ".dagger/modules/ci"
 legacy-default-path = true
 
 [modules.cli]
-source = "toolchains/cli-dev"
+source = ".dagger/modules/cli-dev"
 legacy-default-path = true
 
 [modules.dev]
-source = "toolchains/dev"
+source = ".dagger/modules/dev"
 
 [modules.dev.settings]
 # Linux default. Override per-invocation with --docker=$DOCKER_HOST when the
@@ -21,21 +21,21 @@ source = "toolchains/dev"
 docker = "unix:///var/run/docker.sock"
 
 [modules.docs]
-source = "toolchains/docs-dev"
+source = ".dagger/modules/docs-dev"
 legacy-default-path = true
 
 [modules.elixir-client]
 # TODO: move to a path without "sdk"
-source = "toolchains/elixir-sdk-dev"
+source = ".dagger/modules/elixir-sdk-dev"
 legacy-default-path = true
 
 [modules.engine-dev]
-source = "toolchains/engine-dev"
+source = ".dagger/modules/engine-dev"
 legacy-default-path = true
 
 [modules.go-client]
 # TODO: move to a path without "sdk"
-source = "toolchains/go-sdk-dev"
+source = ".dagger/modules/go-sdk-dev"
 legacy-default-path = true
 
 [modules.golang]
@@ -44,7 +44,8 @@ legacy-default-path = true
 
 [modules.golang.settings]
 generate = "docs/current_docs/reference"
-lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
+# FIXME: this can be an actual list (dagger.json required a hack)
+lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,.dagger/modules/cli-dev,.dagger/modules/docs-dev,.dagger/modules/engine-dev,.dagger/modules/go,.dagger/modules/release,!.dagger/modules/docs-dev/docusaurus,!.dagger/modules/engine-dev/notify,!.dagger/modules/release/apko,!.dagger/modules/release/gh,!.dagger/modules/release/registry-config,!.dagger/modules/release/testdata"
 test = "e2e/**"
 
 [modules.helm]
@@ -53,7 +54,7 @@ legacy-default-path = true
 
 [modules.java-client]
 # TODO: move to a path without "sdk"
-source = "toolchains/java-sdk-dev"
+source = ".dagger/modules/java-sdk-dev"
 legacy-default-path = true
 
 [modules.markdown-lint]
@@ -62,7 +63,7 @@ legacy-default-path = true
 
 [modules.php-client]
 # TODO: move to a path without "sdk"
-source = "toolchains/php-sdk-dev"
+source = ".dagger/modules/php-sdk-dev"
 legacy-default-path = true
 
 [modules.ps-analyzer]
@@ -71,20 +72,20 @@ legacy-default-path = true
 
 [modules.python-client]
 # TODO: move to a path without "sdk"
-source = "toolchains/python-sdk-dev"
+source = ".dagger/modules/python-sdk-dev"
 legacy-default-path = true
 
 [modules.release]
-source = "toolchains/release"
+source = ".dagger/modules/release"
 legacy-default-path = true
 
 [modules.rust-client]
 # TODO: move to a path without "sdk"
-source = "toolchains/rust-sdk-dev"
+source = ".dagger/modules/rust-sdk-dev"
 legacy-default-path = true
 
 [modules.security]
-source = "toolchains/security"
+source = ".dagger/modules/security"
 legacy-default-path = true
 
 [modules.security.settings]
@@ -104,12 +105,12 @@ source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
 legacy-default-path = true
 
 [modules.test-split]
-source = "toolchains/test-split"
+source = ".dagger/modules/test-split"
 legacy-default-path = true
 
 [modules.typescript-client]
 # TODO: move to a path without "sdk"
-source = "toolchains/typescript-sdk-dev"
+source = ".dagger/modules/typescript-sdk-dev"
 legacy-default-path = true
 
 [modules.dagger-dang-sdk]
@@ -128,31 +129,31 @@ path = "cmd/codegen"
 path = "modules/markdownlint"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/changelog"
+path = ".dagger/modules/changelog"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/ci"
+path = ".dagger/modules/ci"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/dotnet-sdk-dev"
+path = ".dagger/modules/dotnet-sdk-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/elixir-sdk-dev"
+path = ".dagger/modules/elixir-sdk-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/go-sdk-dev"
+path = ".dagger/modules/go-sdk-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/java-sdk-dev"
+path = ".dagger/modules/java-sdk-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/security"
+path = ".dagger/modules/security"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/test-split"
+path = ".dagger/modules/test-split"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = "toolchains/typescript-sdk-dev"
+path = ".dagger/modules/typescript-sdk-dev"
 
 [modules.dagger-go-sdk.as-sdk]
 name = "go"
@@ -167,40 +168,40 @@ path = "modules/git-releaser"
 path = "modules/wolfi"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/cli-dev"
+path = ".dagger/modules/cli-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/docs-dev"
+path = ".dagger/modules/docs-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/docs-dev/docusaurus"
+path = ".dagger/modules/docs-dev/docusaurus"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/engine-dev"
+path = ".dagger/modules/engine-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/engine-dev/notify"
+path = ".dagger/modules/engine-dev/notify"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/php-sdk-dev"
+path = ".dagger/modules/php-sdk-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/python-sdk-dev"
+path = ".dagger/modules/python-sdk-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/python-sdk-dev/dockerd"
+path = ".dagger/modules/python-sdk-dev/dockerd"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/release/apko"
+path = ".dagger/modules/release/apko"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/release"
+path = ".dagger/modules/release"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/release/gh"
+path = ".dagger/modules/release/gh"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/release/registry-config"
+path = ".dagger/modules/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/rust-sdk-dev"
+path = ".dagger/modules/rust-sdk-dev"
