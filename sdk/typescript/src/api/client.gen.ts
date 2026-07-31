@@ -30,13 +30,6 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
-export type AgentGroupComposeOpts = {
-  /**
-   * The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
-   */
-  base?: LLM
-}
-
 export type BuildArg = {
   /**
    * The build argument name.
@@ -3040,13 +3033,6 @@ export function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
-export type WorkspaceAgentsOpts = {
-  /**
-   * Only include agents matching the specified patterns
-   */
-  include?: string[]
-}
-
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -3430,139 +3416,6 @@ export class Address extends BaseClient {
   volume = (): Volume => {
     const ctx = this._ctx.select("volume")
     return new Volume(ctx)
-  }
-}
-
-export class Agent extends BaseClient {
-  private readonly _id?: ID = undefined
-  private readonly _description?: string = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._description = _description
-    this._name = _name
-  }
-
-  /**
-   * A unique identifier for this Agent.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The description of the agent
-   */
-  description = async (): Promise<string> => {
-    if (this._description) {
-      return this._description
-    }
-
-    const ctx = this._ctx.select("description")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Return the fully qualified name of the agent
-   */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The original module in which the agent has been defined
-   */
-  originalModule = (): Module_ => {
-    const ctx = this._ctx.select("originalModule")
-    return new Module_(ctx)
-  }
-
-  /**
-   * The path of the agent within its module
-   */
-  path = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("path")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-}
-
-export class AgentGroup extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this AgentGroup.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-   * @param opts.base The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
-   */
-  compose = (opts?: AgentGroupComposeOpts): LLM => {
-    const ctx = this._ctx.select("compose", { ...opts })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Return a list of individual agents and their details
-   */
-  list = async (): Promise<Agent[]> => {
-    type list = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("list").select("id")
-
-    const response: Awaited<list[]> = await ctx.execute()
-
-    return response.map((r) => new Agent(ctx.copy().selectNode(r.id, "Agent")))
   }
 }
 
@@ -8253,14 +8106,6 @@ export class Function_ extends BaseClient {
   }
 
   /**
-   * Returns the function with a flag indicating it is an agent middleware.
-   */
-  withAgent = (): Function_ => {
-    const ctx = this._ctx.select("withAgent")
-    return new Function_(ctx)
-  }
-
-  /**
    * Returns the function with the provided argument
    * @param name The name of the argument
    * @param typeDef The type of the argument
@@ -10233,23 +10078,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
-   */
-  skills = async (): Promise<LLMSkill[]> => {
-    type skills = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("skills").select("id")
-
-    const response: Awaited<skills[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new LLMSkill(ctx.copy().selectNode(r.id, "LLMSkill")),
-    )
-  }
-
-  /**
    * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
    * @param opts.maxTokens Cap the model's output tokens for this step. Defaults to the model's maximum.
    */
@@ -10346,14 +10174,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
-   */
-  withResetWorkspace = (): LLM => {
-    const ctx = this._ctx.select("withResetWorkspace")
-    return new LLM(ctx)
-  }
-
-  /**
    * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
    * @param content The response content
    * @param opts.inputTokens Uncached input tokens sent
@@ -10367,15 +10187,6 @@ export class LLM extends BaseClient {
     opts?: LLMWithResponseOpts,
   ): LLM => {
     const ctx = this._ctx.select("withResponse", { content, ...opts })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
-   * @param directory A directory containing skills, each a subdirectory holding a SKILL.md.
-   */
-  withSkills = (directory: Directory): LLM => {
-    const ctx = this._ctx.select("withSkills", { directory })
     return new LLM(ctx)
   }
 
@@ -10691,71 +10502,6 @@ export class LLMMessage extends BaseClient {
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
-  }
-}
-
-/**
- * A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.
- */
-export class LLMSkill extends BaseClient {
-  private readonly _id?: ID = undefined
-  private readonly _description?: string = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._description = _description
-    this._name = _name
-  }
-
-  /**
-   * A unique identifier for this LLMSkill.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The one-line description from the SKILL.md frontmatter.
-   */
-  description = async (): Promise<string> => {
-    if (this._description) {
-      return this._description
-    }
-
-    const ctx = this._ctx.select("description")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The skill name, as passed to read_skill.
-   */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
   }
 }
 
@@ -14422,15 +14168,6 @@ export class Workspace extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Return all agent middlewares from modules loaded in the workspace.
-   * @param opts.include Only include agents matching the specified patterns
-   */
-  agents = (opts?: WorkspaceAgentsOpts): AgentGroup => {
-    const ctx = this._ctx.select("agents", { ...opts })
-    return new AgentGroup(ctx)
   }
 
   /**
