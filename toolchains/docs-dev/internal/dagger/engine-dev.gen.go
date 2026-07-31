@@ -62,7 +62,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../to
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:386:1)
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:409:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -105,7 +105,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:401:1)
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:424:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -113,13 +113,28 @@ func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchain
 	}
 }
 
+// Build a lightweight Go build environment with the from-source Dagger CLI
+// installed on $PATH.
+//
+// Unlike Container, which builds the whole engine, this is just a Wolfi Go base
+// with the `dagger` binary available. It's intended for use as the `base` of the
+// golang toolchain, so Go commands (including the integration tests, which shell
+// out to `dagger`) can find the CLI without paying the cost of an engine build.
+func (r *EngineDev) GoContainer() *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:245:1)
+	q := r.query.Select("goContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:360:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:383:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:357:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:380:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -195,13 +210,13 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:302:2)
+	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:325:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:304:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:327:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:296:1)
+func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:319:1)
 	assertNotNil("client", client)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -223,7 +238,7 @@ func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallCli
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:344:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:367:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -232,7 +247,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolc
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:378:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:401:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -348,17 +363,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:486:2)
+	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:509:2)
 
-	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:491:2)
+	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:514:2)
 
-	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:494:2)
+	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:517:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:496:2)
+	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:519:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:481:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:504:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -386,7 +401,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:467:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:490:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -397,17 +412,17 @@ func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (..
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:243:2)
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:266:2)
 
-	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:245:2)
+	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:268:2)
 
-	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:247:2)
+	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:270:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:249:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:272:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:239:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:262:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
