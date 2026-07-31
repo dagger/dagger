@@ -2,9 +2,12 @@ package daggercmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -248,6 +251,55 @@ func TestPrintSDKSearchResults(t *testing.T) {
 	require.Contains(t, out, "golang")
 	require.Contains(t, out, "java")
 	require.Contains(t, out, "\nRun 'dagger sdk install <NAME>' to install an SDK.\n")
+}
+
+func TestSDKCommandShape(t *testing.T) {
+	cmd, _, err := sdkCmd.Find([]string{"installed"})
+	require.NoError(t, err)
+	require.Same(t, sdkInstalledCmd, cmd)
+	require.Equal(t, "installed", cmd.Use)
+	require.Contains(t, cmd.Aliases, "list")
+
+	listAlias, _, err := sdkCmd.Find([]string{"list"})
+	require.NoError(t, err)
+	require.Same(t, sdkInstalledCmd, listAlias)
+
+	require.True(t, sdkModuleOptionsCmd.Hidden)
+	require.True(t, sdkClientOptionsCmd.Hidden)
+	require.NotContains(t, sdkCmd.Long, "dagger sdk install go")
+	require.NotContains(t, sdkCmd.Long, "dagger module init go")
+}
+
+func TestRunSDKListPrintsInstalledColumns(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, workspace.ConfigFileName), []byte(`
+[modules.dagger-go-sdk]
+source = "github.com/dagger/go-sdk"
+
+[modules.dagger-go-sdk.as-sdk]
+name = "go"
+
+[modules.custom-sdk]
+source = "github.com/acme/custom-sdk"
+
+[modules.custom-sdk.as-sdk]
+`), 0o600))
+
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+	require.NoError(t, runSDKList(cmd, nil))
+
+	out := buf.String()
+	require.Contains(t, out, "SDK NAME")
+	require.Contains(t, out, "MODULE NAME")
+	require.Contains(t, out, "SOURCE")
+	require.Contains(t, out, "go")
+	require.Contains(t, out, "dagger-go-sdk")
+	require.Contains(t, out, "github.com/dagger/go-sdk")
+	require.NotContains(t, out, "ALIAS")
+	require.NotContains(t, out, "\tM\tC")
 }
 
 // Conventional SDK short-name derivation is now in core/workspace as

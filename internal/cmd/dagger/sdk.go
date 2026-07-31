@@ -32,15 +32,8 @@ import (
 var sdkCmd = &cobra.Command{
 	Use:   "sdk",
 	Short: "Install and manage SDKs (the modules that author other modules)",
-	Long: `Install and manage SDKs.
-
-SDKs are workspace modules whose role is to scaffold/codegen other things:
-new Dagger modules (` + "`dagger module init`" + `) or typed clients against the
-Dagger API (` + "`dagger api client init`" + `). An install becomes an SDK when
-added through this group — ` + "`dagger sdk install go`" + ` installs
-[modules.dagger-go-sdk] with [modules.dagger-go-sdk.as-sdk] name = "go" so
-` + "`dagger module init go`" + ` / ` + "`dagger api client init go`" + `
-dispatch through that SDK.`,
+	Long: `Install and manage SDKs that can create Dagger modules or generated API clients.
+Use an installed SDK with ` + "`dagger module init`" + ` or ` + "`dagger api client init`" + `.`,
 }
 
 var (
@@ -57,17 +50,14 @@ var sdkInstallCmd = &cobra.Command{
 	Long: `Install an SDK into the current workspace and mark it with the
 [modules.<name>.as-sdk] table.
 
-Alias resolution: ` + "`dagger sdk install go`" + ` resolves "go" via the
-embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the canonical ref basename prefixed with "dagger-"
-(` + "`dagger-go-sdk`" + `), and the user-facing name is persisted as
-[modules.dagger-go-sdk.as-sdk] name = "go". Direct refs work too:
-` + "`dagger sdk install github.com/foo/sdk`" + ` is installed as
-[modules.sdk] by basename.
+Registry names and aliases resolve to their canonical SDK refs. For registry
+SDKs, the workspace install name is the canonical ref basename prefixed with
+"dagger-", and the user-facing name is persisted in
+[modules.<name>.as-sdk] name. Direct refs are installed by basename.
 
 Generic ` + "`dagger install <ref>`" + ` does NOT mark anything as an SDK.
 The marker is opt-in via this verb.`,
-	Example: "dagger sdk install go",
+	Example: "dagger sdk install <sdk>",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runSDKInstall,
 }
@@ -81,20 +71,17 @@ Refuses if anything is authored under the SDK (entries in
 [[modules.<name>.as-sdk.modules]] or [[modules.<name>.as-sdk.clients]]).
 Pass --force to override and remove anyway; the authored module/client
 files are left on disk untouched, only the workspace entries go away.`,
-	Example: "dagger sdk uninstall go",
+	Example: "dagger sdk uninstall <sdk>",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runSDKUninstall,
 }
 
-var sdkListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List installed SDKs",
+var sdkInstalledCmd = &cobra.Command{
+	Use:     "installed",
+	Aliases: []string{"list"},
+	Short:   "List installed SDKs",
 	Long: `List installs in the current workspace that carry the
-[modules.<name>.as-sdk] marker.
-
-The M and C columns count workspace-local modules and clients authored
-under each SDK (the entries in [[modules.<name>.as-sdk.modules]] and
-[[modules.<name>.as-sdk.clients]]).`,
+[modules.<name>.as-sdk] marker.`,
 	Args: cobra.NoArgs,
 	RunE: runSDKList,
 }
@@ -111,8 +98,9 @@ filters by case-insensitive substring on name, description, alias, or repo.`,
 }
 
 var sdkModuleOptionsCmd = &cobra.Command{
-	Use:   "module-options <sdk>",
-	Short: "Show SDK-specific flags accepted by `dagger module init <sdk>`",
+	Hidden: true,
+	Use:    "module-options <sdk>",
+	Short:  "Show SDK-specific flags accepted by `dagger module init <sdk>`",
 	Long: `Print the SDK-specific flags ` + "`dagger module init <sdk> <name>`" + `
 accepts, introspected from the SDK's initModule function.
 
@@ -122,8 +110,9 @@ Requires the SDK to implement the initModule capability.`,
 }
 
 var sdkClientOptionsCmd = &cobra.Command{
-	Use:   "client-options <sdk>",
-	Short: "Show SDK-specific flags accepted by `dagger api client init <sdk>`",
+	Hidden: true,
+	Use:    "client-options <sdk>",
+	Short:  "Show SDK-specific flags accepted by `dagger api client init <sdk>`",
 	Long: `Print the SDK-specific flags ` + "`dagger api client init <sdk>`" + `
 accepts, introspected from the SDK's initClient function.
 
@@ -142,7 +131,7 @@ func init() {
 	sdkCmd.AddCommand(
 		sdkInstallCmd,
 		sdkUninstallCmd,
-		sdkListCmd,
+		sdkInstalledCmd,
 		sdkSearchCmd,
 		sdkModuleOptionsCmd,
 		sdkClientOptionsCmd,
@@ -339,7 +328,6 @@ func runSDKList(cmd *cobra.Command, _ []string) error {
 	}
 	type row struct {
 		name, alias, source string
-		modules, clients    int
 	}
 	var rows []row
 	for name, entry := range cfg.Modules {
@@ -347,32 +335,24 @@ func runSDKList(cmd *cobra.Command, _ []string) error {
 			continue
 		}
 		rows = append(rows, row{
-			name:    name,
-			alias:   sdkCommandName(name, entry),
-			source:  entry.Source,
-			modules: len(entry.AsSDK.Modules),
-			clients: len(entry.AsSDK.Clients),
+			name:   name,
+			alias:  sdkCommandName(name, entry),
+			source: entry.Source,
 		})
 	}
 	out := cmd.OutOrStdout()
 	if len(rows) == 0 {
-		_, err := fmt.Fprintln(out, "No SDKs installed in this workspace. Try `dagger sdk install go` (or another SDK from `dagger sdk search`).")
+		_, err := fmt.Fprintln(out, "No SDKs installed in this workspace. Try `dagger sdk search`, then `dagger sdk install <sdk>`.")
 		return err
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
 
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	// M = authored modules, C = generated clients. Cheap capability
-	// affordance until full per-SDK introspection lands with task #129.
-	if _, err := fmt.Fprintln(w, "NAME\tALIAS\tSOURCE\tM\tC"); err != nil {
+	if _, err := fmt.Fprintln(w, "SDK NAME\tMODULE NAME\tSOURCE"); err != nil {
 		return err
 	}
 	for _, r := range rows {
-		alias := "-"
-		if r.alias != r.name {
-			alias = r.alias
-		}
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n", r.name, alias, r.source, r.modules, r.clients); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", r.alias, r.name, r.source); err != nil {
 			return err
 		}
 	}
@@ -572,7 +552,7 @@ func planMigratedSDKFixups(cfg *workspace.Config) []migratedSDKFixup {
 func readLocalWorkspaceConfig() (*workspace.Config, string, error) {
 	// Walk up from cwd looking for dagger.toml. Mirrors the lookup
 	// `dagger module sdk` uses; consistent behavior means a user who reaches
-	// for `dagger sdk list` from a subdirectory sees the same workspace the
+	// for `dagger sdk installed` from a subdirectory sees the same workspace the
 	// rest of the CLI does.
 	cwd, err := os.Getwd()
 	if err != nil {
