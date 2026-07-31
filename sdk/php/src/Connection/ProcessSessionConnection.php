@@ -191,6 +191,16 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
                 'dagger CLI not found in PATH',
             );
         }
+        if (!self::isAbsolutePath($binPath)) {
+            throw new CliFallbackFailed(
+                $downloadError,
+                new RuntimeException(sprintf(
+                    'cannot run dagger executable found relative to the current directory: %s',
+                    $binPath,
+                )),
+                'dagger CLI not found in PATH',
+            );
+        }
 
         $warning = sprintf(
             'CLI version %s is unavailable; using %s from PATH (version compatibility is not guaranteed).',
@@ -198,7 +208,10 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
             $binPath,
         );
         if ($this->logger instanceof NullLogger) {
-            fwrite($this->warningOutput(), $warning . PHP_EOL);
+            $output = $this->warningOutput();
+            if (is_resource($output)) {
+                fwrite($output, $warning . PHP_EOL);
+            }
         } else {
             $this->logger->warning($warning);
         }
@@ -206,9 +219,18 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
         return $binPath;
     }
 
-    /** @return resource */
+    /** @return resource|false */
     protected function warningOutput()
     {
-        return STDERR;
+        // STDERR is only defined under the CLI SAPI; web SAPIs (fpm, mod_php)
+        // need an explicit stream.
+        return defined('STDERR') ? STDERR : fopen('php://stderr', 'w');
+    }
+
+    private static function isAbsolutePath(string $path): bool
+    {
+        return str_starts_with($path, '/')
+            || str_starts_with($path, '\\')
+            || 1 === preg_match('#^[A-Za-z]:[/\\\\]#', $path);
     }
 }
