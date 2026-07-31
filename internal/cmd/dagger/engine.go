@@ -116,7 +116,7 @@ func withEngine(
 
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
-		ctx, cleanupTelemetry := initClientTelemetry(ctx)
+		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
 
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
@@ -149,7 +149,7 @@ func withEngine(
 
 // finalizeEngineParams fills in the run-scoped client params that depend on the
 // frontend and telemetry being set up. Must be called inside Frontend.Run,
-// after initClientTelemetry. Shared by withEngine and withSetupSessions.
+// after initEngineTelemetry. Shared by withEngine and withSetupSessions.
 func finalizeEngineParams(ctx context.Context, params client.Params) (client.Params, error) {
 	if debugFlag {
 		params.LogLevel = slog.LevelDebug
@@ -175,44 +175,13 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 
 	params.CloudURLCallback = Frontend.SetCloudURL
 
-	// setup exporters that will subscribe to engine telemetry.
-	// by default it should only be the frontend unless the user
-	// specifies additional ones via OTEL_* variables which the
-	// client then will pick up.
-	traceExporters := []sdktrace.SpanExporter{}
-	logExporters := []sdklog.Exporter{}
-	metricExporters := []sdkmetric.Exporter{}
-
-	// if silent is set, don't set default exporters to avoid subscribing
-	// to telemetry unnecessarily
-	if !silent {
-		traceExporters = append(traceExporters, Frontend.SpanExporter())
-		logExporters = append(logExporters, Frontend.LogExporter())
-		metricExporters = append(metricExporters, Frontend.MetricExporter())
+	params.EngineTrace = telemetry.SpanForwarder{
+		Processors: telemetry.SpanProcessors,
 	}
-
-	if exp, ok := telemetry.ConfiguredSpanExporter(ctx); ok {
-		if !telemetry.LiveTracesEnabled {
-			exp = telemetry.FilterLiveSpansExporter{SpanExporter: exp}
-		}
-		traceExporters = append(traceExporters, exp)
+	params.EngineLogs = telemetry.LogForwarder{
+		Processors: telemetry.LogProcessors,
 	}
-	if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
-		logExporters = append(logExporters, exp)
-	}
-	if exp, ok := telemetry.ConfiguredMetricExporter(ctx); ok {
-		metricExporters = append(metricExporters, exp)
-	}
-
-	if len(traceExporters) > 0 {
-		params.EngineTrace = enginetel.MultiSpanExporter(traceExporters)
-	}
-	if len(logExporters) > 0 {
-		params.EngineLogs = enginetel.MultiLogExporter(logExporters)
-	}
-	if len(metricExporters) > 0 {
-		params.EngineMetrics = metricExporters
-	}
+	params.EngineMetrics = telemetry.MetricExporters
 
 	params.WithTerminal = withTerminal
 
@@ -262,7 +231,7 @@ func withSetupSessions(
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 
-		ctx, cleanupTelemetry := initClientTelemetry(ctx)
+		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
 				slog.Error("failed to emit telemetry", "error", err)
@@ -334,15 +303,13 @@ func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
 	return string(mode), nil
 }
 
-// skipSharedTelemetryExporters, when set, makes clientTelemetryConfig leave out
+// skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
 // the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_* "Detect"
 // exporters). It is toggled by withEngineSilent for internal plumbing sessions;
-// see clientTelemetryConfig for why.
+// see engineTelemetryConfig for why.
 var skipSharedTelemetryExporters bool
 
-// clientTelemetryConfig builds the telemetry pipeline for the local CLI/client
-// process. Engine telemetry is subscribed to separately and exported by the
-// engine itself when Cloud export is configured.
+// engineTelemetryConfig builds the telemetry pipeline for one engine session.
 //
 // Internal plumbing sessions (see skipSharedTelemetryExporters) opt out of the
 // process-wide OTLP exporter singletons — the Dagger Cloud exporters and the
@@ -351,15 +318,15 @@ var skipSharedTelemetryExporters bool
 // tore them down would leave them dead for the real command that runs next in
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the second session opened by `dagger module init`).
-// Such sessions render to a discard frontend and have no reason to export the
-// client's own telemetry to Cloud, so they simply skip the shared exporters.
-func clientTelemetryConfig(ctx context.Context) telemetry.Config {
-	return clientTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
+// Such sessions render to a discard frontend and have no reason to export to
+// Cloud, so they simply skip the shared exporters.
+func engineTelemetryConfig(ctx context.Context) telemetry.Config {
+	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
 }
 
 type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
 
-func clientTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) telemetry.Config {
+func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) telemetry.Config {
 	cfg := telemetry.Config{
 		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
@@ -386,8 +353,8 @@ func clientTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 	return cfg
 }
 
-func initClientTelemetry(ctx context.Context) (context.Context, func(error)) {
-	ctx = telemetry.Init(ctx, clientTelemetryConfig(ctx))
+func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
+	ctx = telemetry.Init(ctx, engineTelemetryConfig(ctx))
 	// telemetry.Init extracts inherited OTel baggage from the environment.
 	// Re-apply explicit local process settings afterward so a nested Dagger
 	// command's own NO_COLOR/debug request wins over parent baggage.
