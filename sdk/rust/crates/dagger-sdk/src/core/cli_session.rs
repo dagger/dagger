@@ -108,16 +108,12 @@ impl InnerCliSession {
             format!("dagger.io/sdk.version:{}", env!("CARGO_PKG_VERSION")),
         ]);
 
-        let proc = tokio::process::Command::new(
-            cli_path
-                .to_str()
-                .ok_or(eyre::anyhow!("could not get string from path"))?,
-        )
-        .args(args.as_slice())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        let proc = tokio::process::Command::new(cli_path)
+            .args(args.as_slice())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
         //TODO: Add retry mechanism
 
