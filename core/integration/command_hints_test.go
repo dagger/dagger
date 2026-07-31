@@ -33,7 +33,7 @@ func (CommandHintsSuite) TestEmptySetupHint(ctx context.Context, t *testctx.T) {
 	got := string(out)
 	require.Contains(t, got, "nothing to migrate")
 	require.Contains(t, got, "dagger install <module>")
-	require.Contains(t, got, "dagger sdk install <sdk>")
+	require.Contains(t, got, "dagger sdk search")
 	require.Contains(t, got, "dagger module init <sdk> <name>")
 
 	_, statErr := os.Stat(filepath.Join(workdir, "dagger.toml"))
