@@ -153,10 +153,11 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.GitRef]{
 		dagql.NodeFunc("targetCommit", s.targetCommit).
-			View(AllVersion).
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`The commit this ref resolves to.`),
 		dagql.NodeFunc("commitSHA", s.fetchCommit).
 			IsPersistable().
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`The resolved commit SHA at this ref.`),
 		dagql.NodeFunc("tree", s.tree).
 			IsPersistable().
@@ -178,13 +179,24 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			IsPersistable().
+			View(BeforeVersion("v1.0.0-0")).
+			Doc(`The resolved commit id at this ref.`),
+		dagql.NodeFunc("commit", s.fetchCommit).
+			IsPersistable().
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`The resolved commit id at this ref.`).
 			Deprecated(`Use "commitSHA" instead.`),
 		dagql.NodeFunc("name", s.fetchRef).
 			IsPersistable().
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`The resolved name of this ref.`),
 		dagql.NodeFunc("ref", s.fetchRef).
 			IsPersistable().
+			View(BeforeVersion("v1.0.0-0")).
+			Doc(`The resolved ref name at this ref.`),
+		dagql.NodeFunc("ref", s.fetchRef).
+			IsPersistable().
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`The resolved ref name at this ref.`).
 			Deprecated(`Use "name" instead.`),
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
@@ -208,6 +220,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	srv.InstallObject(dagql.NewClass[*core.GitCommit](srv).View(AfterVersion("v1.0.0-0")))
+
 	dagql.Fields[*core.GitCommit]{
 		dagql.NodeFunc("releaseTag", s.releaseTag).
 			Doc(`The latest semver release tag that points directly at this commit.`).
@@ -221,7 +235,6 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("tree", s.commitTree).
 			IsPersistable().
-			View(AllVersion).
 			Doc(`The filesystem tree at this commit.`).
 			Args(
 				dagql.Arg("discardGitDir").
@@ -1468,7 +1481,13 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 	return inst, nil
 }
 
-func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+type commitTreeArgs struct {
+	DiscardGitDir bool `default:"false"`
+	Depth         int  `default:"1"`
+	IncludeTags   bool `default:"false"`
+}
+
+func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args commitTreeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -1489,7 +1508,11 @@ func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*c
 			Backend: parent.Self().Backend,
 			Ref:     parent.Self().Ref,
 		}
-		dgst, err := calcGitContentDigest(ref, args)
+		dgst, err := calcGitContentDigest(ref, treeArgs{
+			DiscardGitDir: args.DiscardGitDir,
+			Depth:         args.Depth,
+			IncludeTags:   args.IncludeTags,
+		})
 		if err != nil {
 			return inst, err
 		}
