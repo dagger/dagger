@@ -20,9 +20,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const (
-	defaultAuthDomain = "https://auth.dagger.cloud"
-)
+const defaultAuthDomain = "https://auth.dagger.cloud"
 
 var (
 	configRoot      = filepath.Join(xdg.ConfigHome, "dagger")
@@ -32,13 +30,6 @@ var (
 	apiURL = "https://api.dagger.cloud"
 )
 
-var authConfig = &oauth2.Config{
-	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
-	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
-	Scopes:   []string{"openid", "offline_access"},
-	// Endpoint is set in init, after the env override is applied
-}
-
 func init() {
 	if u := os.Getenv("DAGGER_CLOUD_URL"); u != "" {
 		apiURL = u
@@ -46,7 +37,6 @@ func init() {
 
 	authDomain := defaultAuthDomain
 	if u := os.Getenv("DAGGER_CLOUD_AUTH_URL"); u != "" {
-		// override for integration tests, mirroring DAGGER_CLOUD_URL above
 		authDomain = u
 	}
 	authConfig.Endpoint = oauth2.Endpoint{
@@ -55,6 +45,12 @@ func init() {
 		TokenURL:      authDomain + "/oauth/token",
 		DeviceAuthURL: authDomain + "/oauth/device/code",
 	}
+}
+
+var authConfig = &oauth2.Config{
+	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
+	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
+	Scopes:   []string{"openid", "offline_access"},
 }
 
 type LoginOption func(*loginOptions)
