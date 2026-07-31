@@ -1,0 +1,13 @@
+name = "apko"
+engineVersion = "v0.21.7"
+include = ["!../.direnv", "!../.devenv", "!../go.work", "!../go.work.sum"]
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "registry-config"
+  source = "../registry-config"
+
+[codegen]
+  automaticGitignore = false

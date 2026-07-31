@@ -1,37 +1,59 @@
-#!/usr/bin/env -S dagger shell -M
+#!/usr/bin/env bash
 
 # hack/build builds the engine and cli from local code, and additionally starts
 # the engine in the host's docker runtime.
+#
+# The work lives in the `dev` toolchain (toolchains/dev). This wrapper only maps
+# the historical _EXPERIMENTAL_* environment variables onto its flags, and runs
+# from the repo root so both the workspace and ./bin resolve there.
+#
+# Driven by a pinned dagger via --x-release, for two reasons: it can run the
+# v1.0 workspace regardless of what's installed on the host, and it provisions
+# its own dagger-engine-<commit> container, so the build never runs on the
+# engine it is about to replace. Pinned to a main commit rather than a release
+# tag because the workspace's Dang toolchains need engine APIs no tagged v1.0
+# beta has yet.
+X_RELEASE=${DAGGER_X_RELEASE:-00cb7d3a0e8d1eb6ec672aa504db14e52a9d1e21}
 
-# HACK: strip "build" from the script path to get the parent module
-.cd ${0%/build}/..
+set -e -u -o pipefail
 
-CONTAINER=${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}
-VOLUME=$CONTAINER
-IMAGE=${_EXPERIMENTAL_DAGGER_DEV_IMAGE:-localhost/dagger-engine.dev}
+cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.."
 
-toolchains/cli-dev --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" |\
-    dev-binaries --platform=current |\
-    export ./bin &
-cli_pid=$!
+# The host CLI has to be built for the host, which need not match the engine's
+# platform (e.g. macOS). Module arguments don't get the CLI's own
+# `--platform=current` handling, so resolve it here.
+host_os=$(uname -s | tr '[:upper:]' '[:lower:]')
+case "$(uname -m)" in
+    x86_64 | amd64) host_arch=amd64 ;;
+    aarch64 | arm64) host_arch=arm64 ;;
+    *) host_arch=$(uname -m) ;;
+esac
 
-toolchains/engine-dev |\
-    container ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
-    as-tarball --forced-compression=gzip |\
-    export ./bin/engine.tar &
-engine_pid=$!
+# --docker configures the Dev object itself, so it goes on the module
+# selector, ahead of the function name; everything else is a deploy argument.
+mod_args=()
+if [[ -n "${DOCKER_HOST:-}" ]]; then
+    mod_args+=(--docker="$DOCKER_HOST")
+fi
 
-toolchains/engine-dev |\
-    # HACK: /var/run/docker.sock is a linux default
-    load-to-docker ${DOCKER_HOST:-/var/run/docker.sock} \
-        ${IMAGE:+--name=${IMAGE-}} \
-        ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
-    start \
-        --name=$CONTAINER \
-        --debug \
-        ${DAGGER_EXTRA_HOSTS:+--extra-hosts=${DAGGER_EXTRA_HOSTS-}} \
-        ${DAGGER_CLOUD_TOKEN:+--cloud-token=env://DAGGER_CLOUD_TOKEN} \
-        ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} &
-start_pid=$!
+args=(
+    --name="${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}"
+    --image="${_EXPERIMENTAL_DAGGER_DEV_IMAGE:-localhost/dagger-engine.dev}"
+    --platform="$host_os/$host_arch"
+)
 
-.wait $cli_pid $engine_pid $start_pid
+if [[ -n "${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:-}" ]]; then
+    args+=(--gpu-support)
+fi
+if [[ -n "${DAGGER_EXTRA_HOSTS:-}" ]]; then
+    args+=(--extra-hosts="$DAGGER_EXTRA_HOSTS")
+fi
+if [[ -n "${DAGGER_CLOUD_TOKEN:-}" ]]; then
+    args+=(--cloud-token=env://DAGGER_CLOUD_TOKEN)
+fi
+if [[ -n "${DAGGER_CLOUD_URL:-}" ]]; then
+    args+=(--cloud-url="$DAGGER_CLOUD_URL")
+fi
+
+exec dagger --x-release "$X_RELEASE" \
+    api call dev "${mod_args[@]+"${mod_args[@]}"}" deploy "${args[@]}" --output ./bin

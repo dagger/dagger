@@ -14,7 +14,7 @@ replace (
 
 require (
 	charm.land/catwalk v0.49.24
-	charm.land/lipgloss/v2 v2.0.2
+	charm.land/lipgloss/v2 v2.0.5
 	cloud.google.com/go/secretmanager v1.16.0
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.89
@@ -39,8 +39,8 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/huh v1.0.0
-	github.com/charmbracelet/ultraviolet v0.0.0-20260309091805-903bfd0cf188
-	github.com/charmbracelet/x/ansi v0.11.6
+	github.com/charmbracelet/ultraviolet v0.0.0-20260720091822-7cc6674724ac
+	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/cilium/ebpf v0.21.0
 	github.com/containerd/console v1.0.5
@@ -106,7 +106,7 @@ require (
 	github.com/lmittmann/tint v1.1.3
 	github.com/mackerelio/go-osstat v0.2.7
 	github.com/mark3labs/mcp-go v0.47.0
-	github.com/mattn/go-isatty v0.0.20
+	github.com/mattn/go-isatty v0.0.24
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/moby/docker-image-spec v1.3.1
@@ -159,9 +159,9 @@ require (
 	github.com/vito/dang/v2 v2.1.2-0.20260721205602-bfe66140e738
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
-	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
-	github.com/vito/tuist v0.0.8
-	github.com/vito/tuist/teav1 v0.0.0-20260330150345-de388bf31342
+	github.com/vito/midterm v0.2.5-0.20260728152709-9f5888c96c1f
+	github.com/vito/tuist v0.0.10
+	github.com/vito/tuist/teav1 v0.0.0-20260728151937-82e472c0ece3
 	github.com/zeebo/xxh3 v1.1.0
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
@@ -258,10 +258,10 @@ require (
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
-	github.com/danielgatis/go-ansicode v1.0.7 // indirect
+	github.com/danielgatis/go-ansicode v1.0.14 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
-	github.com/danielgatis/go-utf8 v1.0.0 // indirect
-	github.com/danielgatis/go-vte v1.0.8 // indirect
+	github.com/danielgatis/go-utf8 v1.0.1 // indirect
+	github.com/danielgatis/go-vte v1.0.11 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
@@ -304,12 +304,12 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/matryer/moq v0.6.0 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
-	github.com/mattn/go-runewidth v0.0.21 // indirect
+	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/mattn/goveralls v0.0.12 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

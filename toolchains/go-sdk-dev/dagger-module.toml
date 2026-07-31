@@ -1,0 +1,17 @@
+name = "go-sdk-dev"
+engineVersion = "v0.21.7"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "engine-dev"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "git-releaser"
+  source = "../../modules/git-releaser"
+
+[[dependencies]]
+  name = "go"
+  source = "../go"
