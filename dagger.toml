@@ -195,7 +195,7 @@ legacy-default-path = true
 source = "github.com/dagger/dang-sdk"
 
 [modules.dagger-go-sdk]
-source = "github.com/dagger/go-sdk@feat/extract-client-codegen-in-go-sdk"
+source = "github.com/dagger/go-sdk"
 
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"
