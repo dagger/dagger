@@ -297,7 +297,10 @@ mod tests {
         .await
         .expect("a session exiting without connect params must error, not hang");
 
-        let error = result.unwrap_err();
+        let error = match result {
+            Ok(_) => panic!("expected fallback session to fail"),
+            Err(error) => error,
+        };
         assert!(format!("{error:#}").contains("could not receive ok signal"));
     }
 
