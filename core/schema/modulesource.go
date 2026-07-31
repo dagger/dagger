@@ -3077,7 +3077,14 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 		Workspace dagql.ID[*core.Workspace]
 	},
 ) (res dagql.ObjectResult[*core.Changeset], rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "generate local dependencies", telemetry.Reveal())
+	// Dir-kind sources (e.g. loaded through Workspace.moduleSource, as the
+	// recursion below does) have no ref string; identify them by their
+	// workspace-relative source root instead.
+	srcDesc := srcInst.Self().AsString()
+	if srcDesc == "" {
+		srcDesc = cleanWorkspaceRelPath(srcInst.Self().SourceRootSubpath)
+	}
+	ctx, span := core.Tracer(ctx).Start(ctx, "generate local dependencies for "+srcDesc)
 	defer telemetry.EndWithCause(span, &rerr)
 
 	dag, err := core.CurrentDagqlServer(ctx)
