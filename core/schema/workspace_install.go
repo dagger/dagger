@@ -102,15 +102,13 @@ func planWorkspaceEnvInstallConfig(
 
 	if existing, ok := env.Modules[name]; ok {
 		if existing.Source != "" {
-			if existing.Source != sourcePath {
-				return plan, fmt.Errorf(
-					"module %q already exists in workspace env %q with source %q (new source %q)",
-					name,
-					envName,
-					existing.Source,
-					sourcePath,
-				)
+			if existing.Source == sourcePath {
+				return plan, nil
 			}
+			existing.Source = sourcePath
+			existing.Pin = ""
+			env.Modules[name] = existing
+			plan.Changed = true
 			return plan, nil
 		}
 		if base, ok := cfg.Modules[name]; ok && base.Source == sourcePath {

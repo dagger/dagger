@@ -649,19 +649,33 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 		require.Equal(t, "fast", cfg.Env["dev"].Modules["dep"].Settings["mode"])
 	})
 
-	t.Run("rejects conflicting env source", func(t *testing.T) {
+	t.Run("replaces existing env source and preserves settings", func(t *testing.T) {
 		cfg := &workspace.Config{
 			Env: map[string]workspace.EnvOverlay{
 				"dev": {
 					Modules: map[string]workspace.EnvModuleOverlay{
-						"dep": {Source: "old"},
+						"dep": {
+							Source:   "old",
+							Pin:      "old-pin",
+							Settings: map[string]any{"mode": "fast"},
+						},
 					},
 				},
 			},
 		}
 
-		_, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
-		require.EqualError(t, err, `module "dep" already exists in workspace env "dev" with source "old" (new source "new")`)
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.False(t, plan.Added)
+		require.Equal(t, "new", cfg.Env["dev"].Modules["dep"].Source)
+		require.Empty(t, cfg.Env["dev"].Modules["dep"].Pin)
+		require.Equal(t, "fast", cfg.Env["dev"].Modules["dep"].Settings["mode"])
+
+		plan, err = planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
+		require.NoError(t, err)
+		require.False(t, plan.Changed)
+		require.False(t, plan.Added)
 	})
 }
 

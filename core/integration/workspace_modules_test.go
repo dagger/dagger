@@ -168,6 +168,40 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Contains(t, string(out), "dep")
 	})
 
+	t.Run("install with env replaces module sources independently", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		baseDir := filepath.Join(workdir, "base")
+		devDir := filepath.Join(workdir, "dev")
+		devForkDir := filepath.Join(workdir, "dev-fork")
+		ciDir := filepath.Join(workdir, "ci")
+
+		for _, dir := range []string{baseDir, devDir, devForkDir, ciDir} {
+			require.NoError(t, os.MkdirAll(dir, 0o755))
+			copyTestdataFixture(ctx, t, dir, "modules", "go", "minimal-dep")
+		}
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./base")
+		require.NoError(t, err)
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env", "dev", "install", "./dev")
+		require.NoError(t, err)
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env", "ci", "install", "./ci")
+		require.NoError(t, err)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "base", cfg.Modules["dep"].Source)
+		require.Equal(t, "dev", cfg.Env["dev"].Modules["dep"].Source)
+		require.Equal(t, "ci", cfg.Env["ci"].Modules["dep"].Source)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env", "dev", "install", "./dev-fork")
+		require.NoError(t, err)
+
+		cfg = readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "base", cfg.Modules["dep"].Source)
+		require.Equal(t, "dev-fork", cfg.Env["dev"].Modules["dep"].Source)
+		require.Equal(t, "ci", cfg.Env["ci"].Modules["dep"].Source)
+	})
+
 	t.Run("install omits commented settings hints", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
