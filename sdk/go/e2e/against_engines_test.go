@@ -3,7 +3,7 @@ package e2e
 import (
 	"testing"
 
-	engineDev "github.com/dagger/dagger/sdk/go/e2e/internal/dagger/engine-dev"
+	enginedev "github.com/dagger/dagger/sdk/go/e2e/internal/dagger/engine-dev"
 )
 
 // TestAgainstEngines runs the development client library's engine-backed test
@@ -11,14 +11,15 @@ import (
 // only the engine built from the current source tree.
 func TestAgainstEngines(t *testing.T) {
 	t.Run("dev", func(t *testing.T) {
-		h := newHarness(t)
-		cliBin := h.devCLIBinary()
-		engine, engineEndpoint := h.startDevEngine(t, "go-client-against-dev-engine")
+		dag := connect(t)
+		engineDev := newEngineDev(dag)
+		cliBin := devCLIBinary(engineDev)
+		engine, engineEndpoint := startDevEngine(t, engineDev, "go-client-against-dev-engine")
 
-		innerSource := h.dag.CurrentWorkspace().Directory("/sdk/go/e2e/testdata/against-engines")
-		devSDKSource := h.dag.CurrentWorkspace().Directory("/sdk/go")
+		innerSource := dag.CurrentWorkspace().Directory("/sdk/go/e2e/testdata/against-engines")
+		devSDKSource := dag.CurrentWorkspace().Directory("/sdk/go")
 
-		target := h.dag.Container().
+		target := dag.Container().
 			From("golang:1.26-alpine").
 			WithExec([]string{"apk", "add", "--no-cache", "ca-certificates", "coreutils", "git"}).
 			WithServiceBinding("dagger-engine", engine).
@@ -26,7 +27,7 @@ func TestAgainstEngines(t *testing.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/local/bin/dagger").
 			WithoutEnvVariable("DAGGER_SESSION_PORT").
 			WithoutEnvVariable("DAGGER_SESSION_TOKEN").
-			WithFile("/usr/local/bin/dagger", cliBin, engineDev.ContainerWithFileOpts{Permissions: 0o755}).
+			WithFile("/usr/local/bin/dagger", cliBin, enginedev.ContainerWithFileOpts{Permissions: 0o755}).
 			WithDirectory("/sdk", devSDKSource).
 			WithDirectory("/work", innerSource).
 			WithNewFile("/work/go.mod", `module dagger-against-engines-inner
@@ -45,7 +46,7 @@ replace dagger.io/dagger => /sdk
 
 		innerTest := target.WithExec(
 			[]string{"timeout", "-k", "10s", "10m", "go", "test", "-v", "-count=1", "-mod=mod", "./..."},
-			engineDev.ContainerWithExecOpts{Expect: engineDev.ReturnTypeAny, NoInit: true},
+			enginedev.ContainerWithExecOpts{Expect: enginedev.ReturnTypeAny, NoInit: true},
 		)
 		requireTargetExec(t, innerTest, "run the development client library against the dev engine")
 	})

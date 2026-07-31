@@ -3,7 +3,7 @@ package e2e
 import (
 	"testing"
 
-	engineDev "github.com/dagger/dagger/sdk/go/e2e/internal/dagger/engine-dev"
+	enginedev "github.com/dagger/dagger/sdk/go/e2e/internal/dagger/engine-dev"
 )
 
 const bootstrapArchiveName = "dagger-bootstrap.tar.gz"
@@ -19,27 +19,28 @@ const bootstrapArchiveName = "dagger-bootstrap.tar.gz"
 // engine through Docker, Podman, containerd, or another runner is CLI bootstrap
 // and remains covered by core/integration/provision_test.go.
 func TestBootstrap(t *testing.T) {
-	h := newHarness(t)
-	engine, engineEndpoint := h.startDevEngine(t, "go-client-bootstrap")
+	dag := connect(t)
+	engineDev := newEngineDev(dag)
+	engine, engineEndpoint := startDevEngine(t, engineDev, "go-client-bootstrap")
 
 	// What the server hands out is the client downloader's input contract, not a
 	// production release archive contract: one executable plus a matching
 	// checksum entry.
-	assets := h.dag.Container().
+	assets := dag.Container().
 		From("busybox:1.37").
-		WithFile("/srv/dagger", h.devCLIBinary(), engineDev.ContainerWithFileOpts{Permissions: 0o755}).
+		WithFile("/srv/dagger", devCLIBinary(engineDev), enginedev.ContainerWithFileOpts{Permissions: 0o755}).
 		WithWorkdir("/srv").
 		WithExec([]string{"tar", "czf", bootstrapArchiveName, "dagger"}).
 		WithExec([]string{"sh", "-ec", "sha256sum " + bootstrapArchiveName + " > checksums.txt"}).
 		WithExposedPort(8080).
-		AsService(engineDev.ContainerAsServiceOpts{
+		AsService(enginedev.ContainerAsServiceOpts{
 			Args: []string{"/bin/httpd", "-f", "-p", "8080", "-h", "/srv"},
 		})
 
-	innerSource := h.dag.CurrentWorkspace().Directory("/sdk/go/e2e/testdata/bootstrap")
-	devSDKSource := h.dag.CurrentWorkspace().Directory("/sdk/go")
+	innerSource := dag.CurrentWorkspace().Directory("/sdk/go/e2e/testdata/bootstrap")
+	devSDKSource := dag.CurrentWorkspace().Directory("/sdk/go")
 
-	target := h.dag.Container().
+	target := dag.Container().
 		From("golang:1.26-alpine").
 		WithExec([]string{"apk", "add", "--no-cache", "ca-certificates", "coreutils"}).
 		WithServiceBinding("bootstrap-assets", assets).
@@ -66,7 +67,7 @@ replace dagger.io/dagger => /sdk
 
 	innerTest := target.WithExec(
 		[]string{"timeout", "-k", "10s", "120s", "go", "test", "-v", "-count=1", "-mod=mod", "."},
-		engineDev.ContainerWithExecOpts{Expect: engineDev.ReturnTypeAny, NoInit: true},
+		enginedev.ContainerWithExecOpts{Expect: enginedev.ReturnTypeAny, NoInit: true},
 	)
 	requireTargetExec(t, innerTest, "run the development client-library bootstrap tests")
 }
