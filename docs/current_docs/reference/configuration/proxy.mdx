@@ -17,13 +17,37 @@ The engine supports the following standard environment variables:
 - `ALL_PROXY`
 - `FTP_PROXY`
 
-As well as the custom environment variables:
-- `_DAGGER_ENGINE_SYSTEMENV_GOPROXY` (only propagated to `GOPROXY` for go modules)
+As well as the custom environment variable:
 
-Configuring Dagger with these settings currently requires [provisioning a custom engine](./custom-runner.mdx).
+- `_DAGGER_ENGINE_SYSTEMENV_GOPROXY` — set this on the **engine container**.
+  Dagger propagates it into Go module downloads (including SDK codegen) as
+  `GOPROXY`. Use this when the default Go module proxy
+  (`https://proxy.golang.org`) is unreachable and you need a mirror such as
+  `https://goproxy.cn,direct`.
 
-To be applied, one or more of the environment variables listed above just need
-to be set on the custom Dagger container.
+Configuring these settings requires [provisioning a custom
+engine](./custom-runner.mdx). Set the variable(s) on that engine container,
+then point the CLI at it with `_EXPERIMENTAL_DAGGER_RUNNER_HOST`.
+
+Example:
+
+```shell
+docker run -d --name dagger-engine-v0.21.7 \
+  --privileged \
+  -v dagger-engine:/var/lib/dagger \
+  -e _DAGGER_ENGINE_SYSTEMENV_GOPROXY=https://goproxy.cn,direct \
+  registry.dagger.io/engine:v0.21.7
+
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=container://dagger-engine-v0.21.7
+```
+
+:::important What does *not* work
+- Setting `_DAGGER_ENGINE_SYSTEMENV_GOPROXY` only on the **host** (for example
+  prefixing a `dagger call`) does **not** configure the auto-started engine.
+- Setting plain `GOPROXY` on the engine container is **not** enough. Codegen
+  does not inherit that value; you must use the
+  `_DAGGER_ENGINE_SYSTEMENV_GOPROXY` name.
+:::
 
 :::warning Applies to all containers
 As mentioned above, these proxy environment variables set on Dagger will also
