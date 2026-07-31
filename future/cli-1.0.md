@@ -134,7 +134,7 @@ What we considered, debated, changed, and decided for each command. Not a descri
 | `cloud integration` | Original `dagger integration` was singleton-shaped (`accounts`, `setup`) — one provider type, list its accounts. Requested redesign to mutable shape (`create`, `rm`, `list`): each configured integration is a discrete entry; `list` enumerates them (optionally filtered by type), replacing the old "list accounts of provider X" framing. Folded under `cloud` per usefulness × simplicity — integrations are configured occasionally, so they nest. |
 | `cloud check` | Replaces `dagger workspace autocheck` (which was just on/off for the selected remote). Mutable shape `{on, off, list, status NAME}` proposed during the cloud restructure. Naming intentionally overlaps with top-level `check`: different concepts at different levels — top-level = run local checks, `cloud check` = manage Cloud-side automated runs. Acceptable. |
 | `workspace` (group) | Killed in the first flat-redesign sweep, then reintroduced after observing that the namespace itself does load-bearing work: `dagger workspace config` reads as "advanced workspace plumbing" without the verbs having to carry the signal alone. Slimmed to plumbing only (config, cwd, root, config-file, remote, remotes). Bare invocation prints a digest — this absorbed and dropped a briefly-proposed `dagger status` verb. Moved from group 1 to group 4 because it's structurally a namespace, not a single inspection verb. |
-| `exec` | Initially hidden as "niche." Pushback restored it to visible in group 5 (utility). Then folded under `api` — `dagger api exec` reads correctly: it's "exec a command with a Dagger API session attached." Belongs alongside `api query` and `api call`, all variations on "use the API directly." Group 5 reverts to just `help` and `version`. |
+| `with-session` | Initially hidden as "niche." Pushback restored it to visible in group 5 (utility). Then folded under `api` and renamed to `dagger api with-session`: it runs a command with a Dagger API session attached. Belongs alongside `api query` and `api call`, all variations on "use the API directly." Group 5 reverts to just `help` and `version`. |
 | `call` (hidden) | `dagger function call` was killed when the `function` group was dissolved. `dagger api call` makes the most semantic sense (it's "an API call" and clusters with `query` and `functions`). `dagger call` kept as a hidden top-level alias for muscle memory — and to keep the top-level `call` slot reserved for a future higher-level porcelain (tentative name: `dagger do`). |
 | `shell` (hidden) | Kept reachable, absent from `--help`. Slot stays open to promote or deprecate later based on usage. |
 | `env` (removed) | Originally a top-level group with `create` / `list` / `rm`. Removed entirely after recognizing that `env` is *strictly a path prefix in workspace config* (`env.<name>.modules.<m>.settings.<k>`), not a first-class concept. CRUD happens via `dagger settings --env <name>` (typed) and `dagger workspace config` (raw). Discoverability moves into the `--env` flag's description, which names the file path explicitly. This eliminates one corner of the "workspace vs env vs --env vs settings" four-way confusion cold-read v2 flagged. |
@@ -705,7 +705,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 - ✅ **`dagger api call`** — moved from `dagger function call`.
 - ✅ **`dagger api functions`** — moved + renamed from `dagger function list`.
 - ✅ **`dagger api query`** — unchanged.
-- ✅ **`dagger api exec`** — moved from top-level `dagger exec`. Short description sharpened to "Run a command with a connected Dagger API session". Top-level `dagger exec` is gone.
+- ✅ **`dagger api with-session`** — moved from top-level `dagger exec`. Short description sharpened to "Run a command with a connected Dagger API session". Top-level `dagger exec` is gone.
 - ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <sdk> <path> <module> [SDK-SPECIFIC FLAGS]`.** `<sdk>` is the user-facing SDK name from `[modules.<name>.as-sdk] name = ...`, falling back to the module entry name; installed SDKs are registered as `init` child commands only when the SDK exposes `initClient`. The CLI introspects extra `initClient` args as typed flags; `--sdk`, `--module`, and `--option` are gone.
 
 ### Shipped — `dagger sdk`
@@ -750,7 +750,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 
 - ✅ **`dagger call`** — hidden alias to `dagger api call`.
 - ✅ **`dagger functions`** — hidden alias to `dagger api functions`.
-- ✅ **`dagger run`** — hidden alias to `dagger api exec`.
+- ✅ **`dagger run`** — hidden alias to `dagger api with-session`.
 - ✅ **`dagger shell`** — hidden, reachable.
 
 ### ⬜ Not yet implemented — handoff to follow-up PRs

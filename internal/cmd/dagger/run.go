@@ -27,9 +27,10 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-var apiExecCmd = &cobra.Command{
-	Use:   "exec [options] <command>...",
-	Short: "Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)",
+var apiWithSessionCmd = &cobra.Command{
+	Use:     "with-session [options] <command>...",
+	Aliases: []string{"exec"},
+	Short:   "Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)",
 	Long: strings.ReplaceAll(
 		`Run an external command with a live Dagger API session attached.
 
@@ -40,7 +41,7 @@ Progress is rendered live in the TUI.
 For example:
 ´´´shell
 jq -n '{query:"{container{id}}"}' | \
-  dagger api exec sh -c 'curl -s \
+  dagger api with-session sh -c 'curl -s \
     -u $DAGGER_SESSION_TOKEN: \
     -H "content-type:application/json" \
     -d @- \
@@ -50,9 +51,9 @@ jq -n '{query:"{container{id}}"}' | \
 		"`",
 	),
 	Example: strings.TrimSpace(`
-dagger api exec go run main.go
-dagger api exec node index.mjs
-dagger api exec python main.py
+dagger api with-session go run main.go
+dagger api with-session node index.mjs
+dagger api with-session python main.py
 `,
 	),
 	RunE:         Run,
@@ -61,6 +62,10 @@ dagger api exec python main.py
 	Annotations: map[string]string{
 		printTraceLinkKey:    "true",
 		showFinalProgressKey: "true",
+		// Keep `dagger api exec` working for CLI 1.0 beta users. The command
+		// was documented in v1.0.0-beta.4 through v1.0.0-beta.7 before being
+		// renamed to `dagger api with-session` for v1.0.0-beta.8.
+		hiddenAliasesAnnotation: "exec",
 	},
 }
 
@@ -82,10 +87,10 @@ var runLoadWorkspaceModules bool
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
-	apiExecCmd.Flags().SetInterspersed(false)
+	apiWithSessionCmd.Flags().SetInterspersed(false)
 	runCmd.Flags().SetInterspersed(false)
 
-	apiExecCmd.Flags().DurationVar(
+	apiWithSessionCmd.Flags().DurationVar(
 		&waitDelay,
 		"cleanup-timeout",
 		10*time.Second,
@@ -98,11 +103,11 @@ func init() {
 		"max duration to wait between SIGTERM and SIGKILL on interrupt",
 	)
 
-	apiExecCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
+	apiWithSessionCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
 	runCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
-	apiExecCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
+	apiWithSessionCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
 	runCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
-	if err := apiExecCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
+	if err := apiWithSessionCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
 		fmt.Fprintln(stderr, "Error hiding flag: load-workspace-modules", err)
 		os.Exit(1)
 	}

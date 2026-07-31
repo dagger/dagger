@@ -77,10 +77,14 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.True(t, cmd.Hidden)
 	require.Contains(t, cmd.Deprecated, "dagger -m core api call")
 
-	// exec / run moved under `dagger api`; available at root for backward compat
+	// with-session / run moved under `dagger api`; available at root for backward compat
+	cmd, _, err = rootCmd.Find([]string{"api", "with-session"})
+	require.NoError(t, err)
+	require.Same(t, apiWithSessionCmd, cmd)
+
 	cmd, _, err = rootCmd.Find([]string{"api", "exec"})
 	require.NoError(t, err)
-	require.Same(t, apiExecCmd, cmd)
+	require.Same(t, apiWithSessionCmd, cmd)
 
 	cmd, _, err = rootCmd.Find([]string{"run"})
 	require.NoError(t, err)
@@ -260,7 +264,8 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 func TestHelpAliasesRespectHiddenAliases(t *testing.T) {
 	require.Contains(t, renderHelp(t, workspaceCmd), "workspace, ws")
 
-	execHelp := renderHelp(t, apiExecCmd)
+	execHelp := renderHelp(t, apiWithSessionCmd)
+	require.NotContains(t, execHelp, "with-session, exec")
 	require.NotContains(t, execHelp, "exec, run")
 	require.NotContains(t, execHelp, "exec, r")
 	require.NotContains(t, execHelp, "ALIASES")
