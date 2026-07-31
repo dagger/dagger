@@ -3,13 +3,17 @@
 namespace Dagger\Connection;
 
 use Dagger\Connection;
+use Dagger\Exception\CliFallbackFailed;
+use Dagger\Exception\CliReleaseUnavailable;
 use GraphQL\Client;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use RuntimeException;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\InputStream;
+use Throwable;
 
 /**
  * @deprecated
@@ -35,7 +39,25 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
             return $this->client;
         }
 
-        $cliBinPath = $this->getCliPath();
+        [$cliBinPath, $downloadError] = $this->getCliPath();
+
+        try {
+            return $this->startCliSession($cliBinPath);
+        } catch (Throwable $sessionError) {
+            if (null !== $downloadError) {
+                throw new CliFallbackFailed(
+                    $downloadError,
+                    $sessionError,
+                    sprintf('failed to use CLI from PATH "%s"', $cliBinPath),
+                );
+            }
+
+            throw $sessionError;
+        }
+    }
+
+    protected function startCliSession(string $cliBinPath): Client
+    {
         $sdkVersion = Provisioning::getSdkVersion();
 
         $sessionInformation = null;
@@ -137,13 +159,56 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
         $this->close();
     }
 
-    private function getCliPath(): string
+    /** @return array{string, CliReleaseUnavailable|null} */
+    private function getCliPath(): array
     {
         $cliBinPath = getenv('_EXPERIMENTAL_DAGGER_CLI_BIN');
-        if (false === $cliBinPath) {
-            $cliBinPath = $this->cliDownloader->download();
+        if (false !== $cliBinPath) {
+            return [$cliBinPath, null];
         }
 
-        return $cliBinPath;
+        try {
+            return [$this->cliDownloader->download(), null];
+        } catch (CliReleaseUnavailable $downloadError) {
+            return [$this->fallbackToLocalCli($downloadError), $downloadError];
+        }
+    }
+
+    /**
+     * @internal
+     */
+    public function fallbackToLocalCli(Throwable $downloadError): string
+    {
+        if (!$downloadError instanceof CliReleaseUnavailable) {
+            throw $downloadError;
+        }
+
+        $binPath = (new ExecutableFinder())->find('dagger');
+        if (null === $binPath) {
+            throw new CliFallbackFailed(
+                $downloadError,
+                new RuntimeException('dagger executable was not found'),
+                'dagger CLI not found in PATH',
+            );
+        }
+
+        $warning = sprintf(
+            'CLI version %s is unavailable; using %s from PATH (version compatibility is not guaranteed).',
+            Provisioning::getCliVersion(),
+            $binPath,
+        );
+        if ($this->logger instanceof NullLogger) {
+            fwrite($this->warningOutput(), $warning . PHP_EOL);
+        } else {
+            $this->logger->warning($warning);
+        }
+
+        return $binPath;
+    }
+
+    /** @return resource */
+    protected function warningOutput()
+    {
+        return STDERR;
     }
 }
