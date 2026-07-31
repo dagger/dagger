@@ -8,9 +8,11 @@ use std::{
 use eyre::Context;
 use flate2::read::GzDecoder;
 use platform_info::{PlatformInfoAPI, UNameAPI};
+use reqwest::StatusCode;
 use sha2::Digest;
 use tar::Archive;
 use tempfile::tempfile;
+use thiserror::Error;
 
 use crate::errors::DaggerError;
 
@@ -70,6 +72,7 @@ pub type CliVersion = String;
 pub struct Downloader {
     version: CliVersion,
     platform: Platform,
+    cli_base_url: String,
 }
 #[allow(dead_code)]
 const DEFAULT_CLI_HOST: &str = "dl.dagger.io";
@@ -84,6 +87,7 @@ impl Downloader {
         Self {
             version,
             platform: Platform::from_system(),
+            cli_base_url: CLI_BASE_URL.into(),
         }
     }
 
@@ -96,13 +100,16 @@ impl Downloader {
         let os = &self.platform.os;
         let arch = &self.platform.arch;
 
-        format!("{CLI_BASE_URL}/{version}/dagger_v{version}_{os}_{arch}.{ext}")
+        format!(
+            "{}/{version}/dagger_v{version}_{os}_{arch}.{ext}",
+            self.cli_base_url
+        )
     }
 
     pub fn checksum_url(&self) -> String {
         let version = &self.version;
 
-        format!("{CLI_BASE_URL}/{version}/checksums.txt")
+        format!("{}/{version}/checksums.txt", self.cli_base_url)
     }
 
     pub fn cache_dir(&self) -> eyre::Result<PathBuf> {
@@ -167,7 +174,16 @@ impl Downloader {
         let archive_name = archive_path
             .file_name()
             .ok_or(eyre::anyhow!("could not get file_name from archive_url"))?;
-        let resp = reqwest::get(self.checksum_url()).await?;
+        let checksum_url = self.checksum_url();
+        let resp = reqwest::get(&checksum_url).await?;
+        let status = resp.status();
+        if is_cli_release_unavailable(status) {
+            return Err(CliReleaseUnavailableError {
+                url: checksum_url,
+                status,
+            }
+            .into());
+        }
         let resp = resp.error_for_status()?;
         for line in resp.text().await?.lines() {
             let mut content = line.split_whitespace();
@@ -224,9 +240,40 @@ impl Downloader {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("CLI release unavailable: failed to download checksums from {url}: {status}")]
+pub(super) struct CliReleaseUnavailableError {
+    pub(super) url: String,
+    pub(super) status: StatusCode,
+}
+
+pub(super) fn has_cli_release_unavailable_error(error: &DaggerError) -> bool {
+    match error {
+        DaggerError::DownloadClient(error) => {
+            error.downcast_ref::<CliReleaseUnavailableError>().is_some()
+        }
+        _ => false,
+    }
+}
+
+fn is_cli_release_unavailable(status: StatusCode) -> bool {
+    // dl.dagger.io returns 403 for missing S3 objects.
+    status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND
+}
+
 #[cfg(test)]
-mod test {
-    use super::Downloader;
+mod tests {
+    use reqwest::StatusCode;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    use crate::errors::DaggerError;
+
+    use super::{
+        has_cli_release_unavailable_error, CliReleaseUnavailableError, Downloader, Platform,
+    };
 
     #[tokio::test]
     async fn download() {
@@ -236,5 +283,74 @@ mod test {
             Some("dagger-0.3.10"),
             cli_path.file_name().and_then(|s| s.to_str())
         )
+    }
+
+    #[tokio::test]
+    async fn checksum_marks_release_unavailable() {
+        for status in [StatusCode::FORBIDDEN, StatusCode::NOT_FOUND] {
+            let downloader = test_downloader(status_server(status).await);
+
+            let error = downloader.expected_checksum().await.unwrap_err();
+
+            assert!(error.downcast_ref::<CliReleaseUnavailableError>().is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_archive_does_not_mark_release_unavailable() {
+        // Missing checksums mean the release is absent; a missing archive may be a
+        // partial or broken release, so it must remain fatal.
+        for status in [StatusCode::FORBIDDEN, StatusCode::NOT_FOUND] {
+            let downloader = test_downloader(status_server(status).await);
+
+            let error = downloader
+                .extract_cli_archive(&mut Vec::new())
+                .await
+                .unwrap_err();
+
+            assert!(error.downcast_ref::<CliReleaseUnavailableError>().is_none());
+        }
+    }
+
+    #[test]
+    fn detects_release_unavailable_through_download_context() {
+        let error = CliReleaseUnavailableError {
+            url: "https://example.test/checksums.txt".into(),
+            status: StatusCode::NOT_FOUND,
+        };
+        let error = eyre::Report::new(error).wrap_err("failed to download CLI from archive");
+        let error = DaggerError::DownloadClient(error);
+
+        assert!(has_cli_release_unavailable_error(&error));
+    }
+
+    fn test_downloader(cli_base_url: String) -> Downloader {
+        Downloader {
+            version: "unreleased".into(),
+            platform: Platform {
+                os: "linux".into(),
+                arch: "amd64".into(),
+            },
+            cli_base_url,
+        }
+    }
+
+    async fn status_server(status: StatusCode) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 1024];
+            stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 {} {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                status.as_u16(),
+                status.canonical_reason().unwrap()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        format!("http://{address}")
     }
 }
