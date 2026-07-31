@@ -1,11 +1,16 @@
 import contextlib
 import logging
 import os
+import shutil
+import sys
 import typing
+from typing import TextIO
 
+from exceptiongroup import ExceptionGroup
 from typing_extensions import Self
 
 import dagger
+from dagger._engine._version import CLI_VERSION
 from dagger.client._session import (
     BaseConnection,
     ConnectConfig,
@@ -16,7 +21,7 @@ from dagger.client._session import (
 
 from ._config import Config
 from ._download import Downloader
-from ._exceptions import ProvisionError
+from ._exceptions import CLIReleaseUnavailableError, ProvisionError
 from ._progress import Progress
 from ._session import start_cli_session
 
@@ -33,6 +38,28 @@ async def provision_engine(cfg: Config):
         logger.debug("Provisioning engine")
         yield await Engine(cfg, stack).provision()
         logger.debug("Closing engine provisioning")
+
+
+def fallback_to_local_cli(
+    download_error: Exception,
+    log_output: TextIO | None = None,
+) -> str:
+    if not isinstance(download_error, CLIReleaseUnavailableError):
+        raise download_error
+
+    bin_path = shutil.which("dagger")
+    if bin_path is None:
+        path_error = FileNotFoundError("dagger executable was not found")
+        msg = f"{download_error}\ndagger CLI not found in PATH: {path_error}"
+        raise ExceptionGroup(msg, [download_error, path_error]) from path_error
+
+    warning_output = log_output if log_output is not None else sys.stderr
+    print(
+        f"CLI version {CLI_VERSION} is unavailable; using {bin_path} from PATH "
+        "(version compatibility is not guaranteed).",
+        file=warning_output,
+    )
+    return bin_path
 
 
 class Engine:
@@ -63,12 +90,26 @@ class Engine:
             # Only start progress if we are provisioning, not on active sessions
             # like `dagger run`.
             await self.progress.start("Provisioning engine")
-            cli_bin = await self.get_cli()
+            download_error = None
+            try:
+                cli_bin = await self.get_cli()
+            except CLIReleaseUnavailableError as e:
+                download_error = e
+                cli_bin = fallback_to_local_cli(e, self.cfg.log_output)
 
             await self.progress.update("Creating new Engine session")
-            connect_params = await self.stack.enter_async_context(
-                start_cli_session(self.cfg, cli_bin)
-            )
+            try:
+                connect_params = await self.stack.enter_async_context(
+                    start_cli_session(self.cfg, cli_bin)
+                )
+            except Exception as e:
+                if download_error is not None:
+                    msg = (
+                        f"{download_error}\nfailed to use CLI from PATH "
+                        f"{cli_bin!r}: {e}"
+                    )
+                    raise ExceptionGroup(msg, [download_error, e]) from e
+                raise
 
         self.connect_params = connect_params
         self.connect_config = ConnectConfig(

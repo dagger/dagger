@@ -22,7 +22,7 @@ import platformdirs
 
 from dagger._engine._version import CLI_VERSION
 
-from ._exceptions import DownloadError
+from ._exceptions import CLIReleaseUnavailableError, DownloadError
 from ._progress import Progress
 
 logger = logging.getLogger(__name__)
@@ -188,12 +188,13 @@ class Downloader:
 
     def _download(self, path: Path) -> Path:
         logger.debug("Downloading dagger CLI from %s to %s", self.archive_url, path)
-        self.progress.update_sync("Downloading dagger CLI")
         try:
             expected_hash = self.expected_checksum()
         except httpx.HTTPError as e:
             msg = f"Failed to download checksums from {self.checksum_url}: {e}"
             raise DownloadError(msg) from e
+
+        self.progress.update_sync("Downloading dagger CLI")
 
         with TempFile(f"temp-{self.CLI_BIN_PREFIX}", self.cache_dir) as tmp_bin:
             try:
@@ -216,13 +217,24 @@ class Downloader:
     def expected_checksum(self) -> str:
         archive_name = self.archive_name
         with httpx.stream("GET", self.checksum_url, follow_redirects=True) as r:
-            r.raise_for_status()
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                if self.is_cli_release_unavailable(e.response.status_code):
+                    msg = f"Failed to download checksums from {self.checksum_url}: {e}"
+                    raise CLIReleaseUnavailableError(msg) from e
+                raise
             for line in r.iter_lines():
                 checksum, filename = line.split()
                 if filename == archive_name:
                     return checksum
         msg = "Could not find checksum for archive"
         raise DownloadError(msg)
+
+    @staticmethod
+    def is_cli_release_unavailable(status_code: int) -> bool:
+        # dl.dagger.io returns 403 for missing S3 objects.
+        return status_code in (httpx.codes.FORBIDDEN, httpx.codes.NOT_FOUND)
 
     def extract_cli_archive(self, dest: IO[bytes]) -> str:
         """
