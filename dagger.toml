@@ -24,7 +24,8 @@ docker = "unix:///var/run/docker.sock"
 source = "toolchains/docs-dev"
 legacy-default-path = true
 
-[modules.elixir-sdk]
+[modules.elixir-client]
+# TODO: move to a path without "sdk"
 source = "toolchains/elixir-sdk-dev"
 legacy-default-path = true
 
@@ -32,7 +33,8 @@ legacy-default-path = true
 source = "toolchains/engine-dev"
 legacy-default-path = true
 
-[modules.go-sdk]
+[modules.go-client]
+# TODO: move to a path without "sdk"
 source = "toolchains/go-sdk-dev"
 legacy-default-path = true
 
@@ -49,7 +51,8 @@ test = "e2e/**"
 source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
 legacy-default-path = true
 
-[modules.java-sdk]
+[modules.java-client]
+# TODO: move to a path without "sdk"
 source = "toolchains/java-sdk-dev"
 legacy-default-path = true
 
@@ -57,7 +60,8 @@ legacy-default-path = true
 source = "modules/markdownlint"
 legacy-default-path = true
 
-[modules.php-sdk]
+[modules.php-client]
+# TODO: move to a path without "sdk"
 source = "toolchains/php-sdk-dev"
 legacy-default-path = true
 
@@ -65,7 +69,8 @@ legacy-default-path = true
 source = "github.com/dagger/PsScriptAnalyzer@d87a12883dccd495bee98da9d2c20eb44b6f608d"
 legacy-default-path = true
 
-[modules.python-sdk]
+[modules.python-client]
+# TODO: move to a path without "sdk"
 source = "toolchains/python-sdk-dev"
 legacy-default-path = true
 
@@ -73,7 +78,8 @@ legacy-default-path = true
 source = "toolchains/release"
 legacy-default-path = true
 
-[modules.rust-sdk]
+[modules.rust-client]
+# TODO: move to a path without "sdk"
 source = "toolchains/rust-sdk-dev"
 legacy-default-path = true
 
@@ -101,7 +107,8 @@ legacy-default-path = true
 source = "toolchains/test-split"
 legacy-default-path = true
 
-[modules.typescript-sdk]
+[modules.typescript-client]
+# TODO: move to a path without "sdk"
 source = "toolchains/typescript-sdk-dev"
 legacy-default-path = true
 
