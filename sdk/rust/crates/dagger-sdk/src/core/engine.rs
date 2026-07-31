@@ -137,14 +137,9 @@ fn fallback_to_local_cli(
         bin_path.display()
     );
     if let Some(logger) = logger {
-        if let Err(fallback_error) = logger.stderr(&warning) {
-            return Err(CliPathFallbackError {
-                download_error,
-                fallback_context: "failed to emit CLI compatibility warning".into(),
-                fallback_error,
-            }
-            .into());
-        }
+        // A failed warning write shouldn't turn a usable fallback into an
+        // error; go/python/typescript ignore it too.
+        let _ = logger.stderr(&warning);
     } else {
         eprintln!("{warning}");
     }
@@ -272,6 +267,38 @@ mod tests {
         assert!(rendered.contains("CLI release unavailable"));
         assert!(rendered.contains("https://example.test/checksums.txt"));
         assert!(rendered.contains(&format!("failed to use CLI from PATH {bin_path:?}")));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fallback_session_exiting_without_params_errors_instead_of_hanging() {
+        let temp_dir = TempDir::new().unwrap();
+        let bin_path = temp_dir.path().join("dagger");
+        let mut file = File::create(&bin_path).unwrap();
+        file.write_all(b"#!/bin/sh\nexit 1\n").unwrap();
+        let mut permissions = file.metadata().unwrap().permissions();
+        permissions.set_mode(0o700);
+        file.set_permissions(permissions).unwrap();
+        drop(file);
+
+        let _path_lock = path_lock();
+        let _path = PathGuard::set(temp_dir.path());
+        let logger: DynLogger = Arc::new(TestLogger::default());
+        let cfg = Config::builder().logger(logger).build();
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            Engine::new().connect_provisioned_cli(
+                &cfg,
+                "unreleased",
+                Err(unavailable_download_error()),
+            ),
+        )
+        .await
+        .expect("a session exiting without connect params must error, not hang");
+
+        let error = result.unwrap_err();
+        assert!(format!("{error:#}").contains("could not receive ok signal"));
     }
 
     fn unavailable_download_error() -> DaggerError {
