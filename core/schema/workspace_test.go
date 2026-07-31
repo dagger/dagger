@@ -583,15 +583,13 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 	t.Run("adds module to new env without touching base modules", func(t *testing.T) {
 		cfg := &workspace.Config{}
 
-		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
-		require.NoError(t, err)
+		plan := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
 		require.True(t, plan.Changed)
 		require.True(t, plan.Added)
 		require.NotContains(t, cfg.Modules, "dep")
 		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
 
-		plan, err = planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
-		require.NoError(t, err)
+		plan = planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
 		require.False(t, plan.Changed)
 		require.False(t, plan.Added)
 	})
@@ -603,8 +601,7 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 			},
 		}
 
-		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
-		require.NoError(t, err)
+		plan := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
 		require.True(t, plan.Changed)
 		require.False(t, plan.Added)
 		require.Contains(t, cfg.Env, "dev")
@@ -622,8 +619,7 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 			},
 		}
 
-		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dev")
-		require.NoError(t, err)
+		plan := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dev")
 		require.True(t, plan.Changed)
 		require.True(t, plan.Added)
 		require.Equal(t, "base", cfg.Modules["dep"].Source)
@@ -641,8 +637,7 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 			},
 		}
 
-		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
-		require.NoError(t, err)
+		plan := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
 		require.True(t, plan.Changed)
 		require.True(t, plan.Added)
 		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
@@ -664,16 +659,14 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 			},
 		}
 
-		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
-		require.NoError(t, err)
+		plan := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
 		require.True(t, plan.Changed)
 		require.False(t, plan.Added)
 		require.Equal(t, "new", cfg.Env["dev"].Modules["dep"].Source)
 		require.Empty(t, cfg.Env["dev"].Modules["dep"].Pin)
 		require.Equal(t, "fast", cfg.Env["dev"].Modules["dep"].Settings["mode"])
 
-		plan, err = planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
-		require.NoError(t, err)
+		plan = planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
 		require.False(t, plan.Changed)
 		require.False(t, plan.Added)
 	})

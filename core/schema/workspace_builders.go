@@ -274,7 +274,7 @@ func (s *workspaceSchema) withModuleInstall(
 
 	var plan workspaceInstallConfigPlan
 	if envName, ok := selectedWorkspaceEnv(ctx); ok && !args.AsSdk {
-		plan, err = planWorkspaceEnvInstallConfig(staged.Config, envName, resolved.Name, resolved.ConfigSource)
+		plan = planWorkspaceEnvInstallConfig(staged.Config, envName, resolved.Name, resolved.ConfigSource)
 	} else {
 		plan, err = planWorkspaceInstallConfig(staged.Config, args, resolved.Name, resolved.ConfigSource)
 	}

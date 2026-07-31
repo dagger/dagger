@@ -82,7 +82,7 @@ func planWorkspaceEnvInstallConfig(
 	envName string,
 	name string,
 	sourcePath string,
-) (workspaceInstallConfigPlan, error) {
+) workspaceInstallConfigPlan {
 	plan := workspaceInstallConfigPlan{}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
@@ -103,32 +103,32 @@ func planWorkspaceEnvInstallConfig(
 	if existing, ok := env.Modules[name]; ok {
 		if existing.Source != "" {
 			if existing.Source == sourcePath {
-				return plan, nil
+				return plan
 			}
 			existing.Source = sourcePath
 			existing.Pin = ""
 			env.Modules[name] = existing
 			plan.Changed = true
-			return plan, nil
+			return plan
 		}
 		if base, ok := cfg.Modules[name]; ok && base.Source == sourcePath {
-			return plan, nil
+			return plan
 		}
 		existing.Source = sourcePath
 		env.Modules[name] = existing
 		plan.Changed = true
 		plan.Added = true
-		return plan, nil
+		return plan
 	}
 
 	if base, ok := cfg.Modules[name]; ok && base.Source == sourcePath {
-		return plan, nil
+		return plan
 	}
 
 	env.Modules[name] = workspace.EnvModuleOverlay{Source: sourcePath}
 	plan.Changed = true
 	plan.Added = true
-	return plan, nil
+	return plan
 }
 
 type workspaceInstallResolution struct {
