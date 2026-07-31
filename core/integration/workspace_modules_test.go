@@ -139,6 +139,35 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, "dep", cfg.Modules["dep"].Source)
 	})
 
+	t.Run("install with env initializes env-scoped module", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env", "dev", "install", "./dep")
+		require.NoError(t, err)
+		outStr := strings.TrimSpace(string(out))
+		require.Contains(t, outStr, "Created workspace config in "+workdir)
+		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.ConfigFileName))
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules, "dep")
+		require.Contains(t, cfg.Env, "dev")
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+
+		out, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "installed")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "No modules installed in the workspace.")
+
+		out, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env", "dev", "installed")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "NAME")
+		require.Contains(t, string(out), "dep")
+	})
+
 	t.Run("install omits commented settings hints", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")

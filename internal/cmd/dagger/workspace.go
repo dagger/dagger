@@ -337,31 +337,10 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 	if requestedName != "" {
 		return requestedName, nil
 	}
-	before, err := current.Modules(ctx)
-	if err != nil {
-		return "", err
-	}
-	beforeNames := make(map[string]struct{}, len(before))
-	for _, module := range before {
-		name, err := module.Name(ctx)
-		if err != nil {
-			return "", err
-		}
-		beforeNames[name] = struct{}{}
-	}
 
 	modules, err := updated.Modules(ctx)
 	if err != nil {
 		return "", err
-	}
-	for _, module := range modules {
-		name, err := module.Name(ctx)
-		if err != nil {
-			return "", err
-		}
-		if _, existed := beforeNames[name]; !existed {
-			return name, nil
-		}
 	}
 
 	comparisonRef := ref
@@ -383,6 +362,31 @@ func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.
 			return module.Name(ctx)
 		}
 	}
+
+	before, err := current.Modules(ctx)
+	if err != nil && workspaceEnv == "" {
+		return "", err
+	}
+	if err == nil {
+		beforeNames := make(map[string]struct{}, len(before))
+		for _, module := range before {
+			name, err := module.Name(ctx)
+			if err != nil {
+				return "", err
+			}
+			beforeNames[name] = struct{}{}
+		}
+		for _, module := range modules {
+			name, err := module.Name(ctx)
+			if err != nil {
+				return "", err
+			}
+			if _, existed := beforeNames[name]; !existed {
+				return name, nil
+			}
+		}
+	}
+
 	refWithoutVersion, _, _ := strings.Cut(ref, "@")
 	name := path.Base(filepath.ToSlash(refWithoutVersion))
 	if name == "." || name == "/" || name == "" {

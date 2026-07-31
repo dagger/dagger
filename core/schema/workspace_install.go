@@ -77,6 +77,62 @@ func planWorkspaceInstallConfig(
 	return plan, nil
 }
 
+func planWorkspaceEnvInstallConfig(
+	cfg *workspace.Config,
+	envName string,
+	name string,
+	sourcePath string,
+) (workspaceInstallConfigPlan, error) {
+	plan := workspaceInstallConfigPlan{}
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	if cfg.Env == nil {
+		cfg.Env = map[string]workspace.EnvOverlay{}
+	}
+
+	env, envExists := cfg.Env[envName]
+	if !envExists {
+		plan.Changed = true
+	}
+	if env.Modules == nil {
+		env.Modules = map[string]workspace.EnvModuleOverlay{}
+	}
+	cfg.Env[envName] = env
+
+	if existing, ok := env.Modules[name]; ok {
+		if existing.Source != "" {
+			if existing.Source != sourcePath {
+				return plan, fmt.Errorf(
+					"module %q already exists in workspace env %q with source %q (new source %q)",
+					name,
+					envName,
+					existing.Source,
+					sourcePath,
+				)
+			}
+			return plan, nil
+		}
+		if base, ok := cfg.Modules[name]; ok && base.Source == sourcePath {
+			return plan, nil
+		}
+		existing.Source = sourcePath
+		env.Modules[name] = existing
+		plan.Changed = true
+		plan.Added = true
+		return plan, nil
+	}
+
+	if base, ok := cfg.Modules[name]; ok && base.Source == sourcePath {
+		return plan, nil
+	}
+
+	env.Modules[name] = workspace.EnvModuleOverlay{Source: sourcePath}
+	plan.Changed = true
+	plan.Added = true
+	return plan, nil
+}
+
 type workspaceInstallResolution struct {
 	Name         string
 	ConfigSource string

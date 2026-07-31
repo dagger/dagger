@@ -579,6 +579,92 @@ func TestEnvScopedConfigKeyQuotesDynamicSegments(t *testing.T) {
 	require.Equal(t, `env."review env".modules."my.module".settings."some.key"`, key)
 }
 
+func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
+	t.Run("adds module to new env without touching base modules", func(t *testing.T) {
+		cfg := &workspace.Config{}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.True(t, plan.Added)
+		require.NotContains(t, cfg.Modules, "dep")
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+
+		plan, err = planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
+		require.NoError(t, err)
+		require.False(t, plan.Changed)
+		require.False(t, plan.Added)
+	})
+
+	t.Run("creates env when base already provides the module", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"dep": {Source: "dep"},
+			},
+		}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.False(t, plan.Added)
+		require.Contains(t, cfg.Env, "dev")
+		require.Empty(t, cfg.Env["dev"].Modules)
+		require.Equal(t, "dep", cfg.Modules["dep"].Source)
+	})
+
+	t.Run("overrides base module source in env", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"dep": {Source: "base"},
+			},
+			Env: map[string]workspace.EnvOverlay{
+				"dev": {},
+			},
+		}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dev")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.True(t, plan.Added)
+		require.Equal(t, "base", cfg.Modules["dep"].Source)
+		require.Equal(t, "dev", cfg.Env["dev"].Modules["dep"].Source)
+	})
+
+	t.Run("preserves existing env module settings", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Env: map[string]workspace.EnvOverlay{
+				"dev": {
+					Modules: map[string]workspace.EnvModuleOverlay{
+						"dep": {Settings: map[string]any{"mode": "fast"}},
+					},
+				},
+			},
+		}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "dep")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.True(t, plan.Added)
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+		require.Equal(t, "fast", cfg.Env["dev"].Modules["dep"].Settings["mode"])
+	})
+
+	t.Run("rejects conflicting env source", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Env: map[string]workspace.EnvOverlay{
+				"dev": {
+					Modules: map[string]workspace.EnvModuleOverlay{
+						"dep": {Source: "old"},
+					},
+				},
+			},
+		}
+
+		_, err := planWorkspaceEnvInstallConfig(cfg, "dev", "dep", "new")
+		require.EqualError(t, err, `module "dep" already exists in workspace env "dev" with source "old" (new source "new")`)
+	})
+}
+
 func TestWorkspaceSettingConfigKeyQuotesDynamicSegments(t *testing.T) {
 	require.Equal(t,
 		`modules."my.module".settings."some.key"`,

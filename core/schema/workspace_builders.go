@@ -272,7 +272,12 @@ func (s *workspaceSchema) withModuleInstall(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	plan, err := planWorkspaceInstallConfig(staged.Config, args, resolved.Name, resolved.ConfigSource)
+	var plan workspaceInstallConfigPlan
+	if envName, ok := selectedWorkspaceEnv(ctx); ok && !args.AsSdk {
+		plan, err = planWorkspaceEnvInstallConfig(staged.Config, envName, resolved.Name, resolved.ConfigSource)
+	} else {
+		plan, err = planWorkspaceInstallConfig(staged.Config, args, resolved.Name, resolved.ConfigSource)
+	}
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

@@ -17,12 +17,21 @@ func (s *workspaceSchema) workspaceModules(
 ) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
 	ws := parent.Self()
 	if ws.ConfigFile == "" {
+		if envName, ok := selectedWorkspaceEnv(ctx); ok {
+			return nil, fmt.Errorf("workspace env %q requires dagger.toml", envName)
+		}
 		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
 	}
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
 		return nil, err
+	}
+	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	configDir, err := workspaceConfigDirectory(ws)
@@ -179,7 +188,7 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, err
 	}
 
-	// Source comes from base config; values come from the selected env overlay.
+	// Source and values come from the effective config for the selected env.
 	effectiveCfg := cfg
 	if envName, ok := selectedWorkspaceEnv(ctx); ok {
 		effectiveCfg, err = workspace.ApplyEnvOverlay(cfg, envName)
@@ -188,7 +197,7 @@ func (s *workspaceSchema) moduleSettings(
 		}
 	}
 
-	entry, ok := cfg.Modules[parent.Self().Name]
+	entry, ok := effectiveCfg.Modules[parent.Self().Name]
 	if !ok {
 		return nil, fmt.Errorf("module %q is not installed in the workspace", parent.Self().Name)
 	}
