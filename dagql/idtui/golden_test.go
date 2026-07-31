@@ -400,10 +400,14 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// the things that should be cacheable, and the second run will be the final
 	// result. Each test is responsible for busting its own caches.
 	func() {
-		_, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
+		ctx, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
 		defer span.End()
 		warmup := exec.Command(daggerBin, daggerArgs...)
-		warmup.Env = goldenCmdEnv(s.Home)
+		warmup.Env = append(
+			os.Environ(),
+			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
+		)
+		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
 		warmup.Env = append(warmup.Env, ex.Env...)
 
 		// still try use docker credentials even though we overrode HOME, lest we get rate limited
@@ -428,13 +432,15 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	}()
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
-	cmd.Env = goldenCmdEnv(
-		s.Home,
+	cmd.Env = append(
+		os.Environ(),
+		fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		"NO_COLOR=1",
 		"OTEL_EXPORTER_OTLP_TRACES_LIVE=1",
 		fmt.Sprintf("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://%s/v1/traces", otlpL.Addr().String()),
 		fmt.Sprintf("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://%s/v1/logs", otlpL.Addr().String()),
 	)
+	cmd.Env = append(cmd.Env, telemetry.PropagationEnv(ctx)...)
 	cmd.Env = append(cmd.Env, ex.Env...)
 
 	// still try use docker credentials even though we overrode HOME, lest we get rate limited
@@ -465,32 +471,6 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	}
 
 	return scrub.Stabilize(expected), db
-}
-
-func goldenCmdEnv(home string, extra ...string) []string {
-	env := make([]string, 0, len(os.Environ())+1+len(extra))
-	for _, kv := range os.Environ() {
-		key, _, _ := strings.Cut(kv, "=")
-		if isGoldenTelemetryEnv(key) {
-			continue
-		}
-		env = append(env, kv)
-	}
-	env = append(env, fmt.Sprintf("HOME=%s", home)) // ignore any local Dagger Cloud auth
-	env = append(env, extra...)
-	return env
-}
-
-func isGoldenTelemetryEnv(key string) bool {
-	if strings.HasPrefix(key, "OTEL_") {
-		return true
-	}
-	switch key {
-	case "BAGGAGE", "TRACEPARENT", "TRACESTATE":
-		return true
-	default:
-		return false
-	}
 }
 
 func testDB(t *testctx.T) (*dagui.DB, net.Listener) {
@@ -553,6 +533,13 @@ func (o *otlpReceiver) TracesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forward to the original telemetry so we can see it there too
+	if len(telemetry.SpanProcessors) > 0 {
+		telemetry.SpanForwarder{
+			Processors: telemetry.SpanProcessors,
+		}.ExportSpans(r.Context(), spans)
+	}
+
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -578,6 +565,15 @@ func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Error("error exporting spans", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Forward to the original telemetry so we can see it there too
+	if len(telemetry.LogProcessors) > 0 {
+		if err := telemetry.ReexportLogsFromPB(r.Context(), telemetry.LogForwarder{
+			Processors: telemetry.LogProcessors,
+		}, &req); err != nil {
+			slog.Warn("error forwarding logs", "error", err)
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
