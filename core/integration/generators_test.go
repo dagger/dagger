@@ -1055,3 +1055,37 @@ func (GeneratorsSuite) TestCurrentModuleAsSDKClientModuleSourceField(ctx context
 	}
 	require.True(t, found, "CurrentModuleAsSDKClient should expose a moduleSource field")
 }
+
+// TestWorkspaceGeneratorsSeeOverlayEdits locks in that a generator run via
+// Workspace.generators observes the workspace it was called on — including
+// overlay edits (Workspace.withNewFile, or an agent's applied changesets) —
+// rather than the session's frozen current workspace. The group run threads
+// its receiver workspace into every leaf (GeneratorGroup.BoundWorkspace), which
+// also gives every generator across the group's SDK modules the same workspace
+// ID — without it, each leaf re-derives a per-call equivalent workspace, and
+// nothing keyed by (module, workspace) is shared across the group.
+//
+// The generator-workspace-sync fixture's `repro:gen` reads input.txt from the
+// workspace and writes output.txt = "generated from: <input>", so the output
+// reveals which workspace the generator actually read.
+func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generator-workspace-sync")
+
+	t.Run("baseline reads input.txt from the workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{generators(include:["repro:gen"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "generated from: A")
+	})
+
+	t.Run("generator sees an overlay edit applied to the workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){generators(include:["repro:gen"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "generated from: B-OVERLAY")
+	})
+}

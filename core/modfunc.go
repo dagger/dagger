@@ -1242,23 +1242,31 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
-	// The generator framework can hand the SDK a specific workspace to inject
-	// (GeneratorGroup.WorkspaceOverride) — e.g. a scoped/overlaid workspace built
-	// by ModuleSource.generateLocalDependencies. It wins over both the
-	// module-function guard and the ambient currentWorkspace so nested generator
-	// runs receive exactly the workspace the engine constructed.
-	if override, ok := WorkspaceOverrideFromContext(ctx); ok {
-		overrideID, err := override.ID()
+	// Prefer a Workspace explicitly bound into the context (a generator/check
+	// group threading the workspace it was rolled up from) over the ambient
+	// currentWorkspace, so every leaf in the group resolves the same workspace
+	// under the same ID.
+	//
+	// This bound-workspace preference MUST be checked before the
+	// callerInModuleFunction guard below: a generator/check leaf's
+	// auto-injected Workspace! is resolved while running inside the module
+	// runtime, so gating on callerInModuleFunction first would reject the
+	// seeded workspace and leave the leaf reading stale source. The workspace
+	// is still explicit here — the group threaded it via WorkspaceToContext —
+	// so this does not silently inherit a caller's workspace across modules.
+	if boundWS, ok := WorkspaceFromContext(ctx); ok {
+		wsID, err := boundWS.ID()
 		if err != nil {
-			return nil, fmt.Errorf("workspace override id: %w", err)
+			return nil, fmt.Errorf("get bound workspace ID: %w", err)
 		}
-		return dagql.NewID[*Workspace](overrideID), nil
+		return dagql.NewID[*Workspace](wsID), nil
 	}
 
-	// A Workspace is auto-injected only for calls originating outside a module
-	// function (a direct CLI/SDK client, or a schema-walking flow like `dagger
-	// generate`). A running module function must pass a Workspace to its
-	// dependencies explicitly, so they don't silently inherit its workspace.
+	// Otherwise a Workspace is auto-injected only for calls originating outside a
+	// module function (a direct CLI/SDK client, or a schema-walking flow like
+	// `dagger generate`). A running module function must pass a Workspace to its
+	// dependencies explicitly, so a dependency does not silently inherit its
+	// caller's workspace.
 	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
 		return nil, err
 	} else if inModuleFunction {

@@ -26,6 +26,14 @@ type Check struct {
 type CheckGroup struct {
 	Node   *ModTreeNode `json:"node"`
 	Checks []*Check     `json:"checks"`
+
+	// BoundWorkspace is the Workspace this group was rolled up from — the one
+	// `Workspace.checks` was called on, including any overlay edits. Run threads
+	// it into the context (WorkspaceToContext) so each check leaf's auto-injected
+	// Workspace! (and any currentWorkspace read) resolves against it, rather than
+	// the session's frozen current workspace. Transient (not persisted): it is
+	// re-established when `checks` re-runs on replay.
+	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
 func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate, onlyGenerate bool) (*CheckGroup, error) {
@@ -84,6 +92,14 @@ func (r *CheckGroup) List() []*Check {
 // Run all the checks in the group
 func (r *CheckGroup) Run(ctx context.Context, failFast bool) (*CheckGroup, error) {
 	r = r.Clone()
+
+	// Run the checks against the workspace this group was rolled up from, so
+	// overlay edits applied since the session loaded are visible to each check
+	// (its auto-injected Workspace! and any currentWorkspace read resolve against
+	// BoundWorkspace, not the frozen session workspace).
+	if r.BoundWorkspace.Self() != nil {
+		ctx = WorkspaceToContext(ctx, r.BoundWorkspace)
+	}
 
 	jobs := parallel.New().WithContextualTracer(true).WithFailFast(failFast)
 	for _, check := range r.Checks {
