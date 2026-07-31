@@ -709,21 +709,24 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.myapp]`)
-		require.Contains(t, configOut, `source = ".dagger/modules/myapp"`)
+		require.Contains(t, configOut, strings.Join([]string{
+			"[modules.myapp]",
+			`source = "."`,
+		}, "\n"))
 		require.Contains(t, configOut, `entrypoint = true`)
 
-		moduleOut, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger-module.toml"}).Stdout(ctx)
+		moduleOut, err := ctr.WithExec([]string{"cat", "dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, moduleOut, `name = "myapp"`)
-		require.Contains(t, moduleOut, `source = "../../../ci"`)
+		require.Contains(t, moduleOut, `source = "ci"`,
+			"the source path is preserved as-is: the config replaces dagger.json at the same location")
 
 		out, err := ctr.With(compatDaggerCall("greet")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from migrated compat", strings.TrimSpace(out))
 	})
 
-	t.Run("migrate creates root parent workspace for sdk-only root-source modules", func(ctx context.Context, t *testctx.T) {
+	t.Run("migrate converts sdk-only root-source modules in place with a minimal workspace config", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyGoSource(t, c, "hello from sdk-only root").
 			With(compatDaggerExec("setup", "--auto-apply"))
@@ -734,16 +737,21 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 
-		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
-		require.NoError(t, err, "sdk-only dagger.json should remain in place")
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "sdk-only dagger.json should be converted in place")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger-module.toml"}).Sync(ctx)
+		require.NoError(t, err, "module config should be converted in place at the root")
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
-		require.NoError(t, err, "root parent workspace config should be created")
+		require.NoError(t, err, "minimal workspace config should be created")
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.dagger-go-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
+		require.NotContains(t, configOut, `[modules.myapp]`,
+			"a repo that is just a dagger module is not installed into the workspace")
 
 		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
 		require.NoError(t, err)

@@ -2,8 +2,6 @@ package schema
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
@@ -34,14 +32,15 @@ func workspaceMigrationModuleConfigConversions(
 			if workspaceMigrationLeavesModuleLegacy(compatWorkspace) {
 				continue
 			}
-		} else {
-			if compatWorkspace.MustMigrateToWorkspaceConfig() {
-				continue
-			}
-			if compatWorkspace.Config.SDK != nil && !workspaceMigrationProjectRootInDefaultModules(compatWorkspace.ProjectRoot) {
-				continue
-			}
+		} else if compatWorkspace.MustMigrateToWorkspaceConfig() {
+			// PlanMigration writes this config's dagger-module.toml alongside
+			// its dagger.toml.
+			continue
 		}
+		// Reaching here non-discovered means the selected config is a plain
+		// SDK module with its source at the project root — the "repo is just
+		// a dagger module" shape. It converts in place; the minimal workspace
+		// config pinning its runtime comes from the parent-plan flow.
 		if compatWorkspace.ProjectRoot == "" {
 			return nil, fmt.Errorf("legacy module config project root is required")
 		}
@@ -82,14 +81,4 @@ func legacyModuleConfigAsCurrent(cfg *modules.ModuleConfig) ([]byte, error) {
 	return modules.MarshalModuleConfigForFormat(&modules.ModuleConfigWithUserFields{
 		ModuleConfig: cloned,
 	}, modules.ConfigFormatCurrent)
-}
-
-func workspaceMigrationProjectRootInDefaultModules(projectRoot string) bool {
-	parts := strings.Split(filepath.ToSlash(filepath.Clean(projectRoot)), "/")
-	for i := 0; i+2 < len(parts); i++ {
-		if parts[i] == workspace.LockDirName && parts[i+1] == "modules" && parts[i+2] != "" {
-			return true
-		}
-	}
-	return false
 }

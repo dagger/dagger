@@ -215,6 +215,15 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
 		return nil, fmt.Errorf("load legacy module source: %w", err)
 	}
 
+	// The load above resolves whatever module config lives at the project
+	// root. If it isn't the legacy SDK module being migrated — e.g. a stray
+	// dagger-module.toml already sits at the migration target, which target
+	// validation will reject with a proper error — there is no legacy codegen
+	// to inspect, and running it would panic on the missing SDK.
+	if source.Self() == nil || source.Self().SDK == nil || source.Self().SDKImpl == nil {
+		return nil, nil
+	}
+
 	sourceSchema := &moduleSourceSchema{}
 	generatedCode, err := sourceSchema.runSDKCodegen(ctx, source)
 	if err != nil {
@@ -302,12 +311,6 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 
 	compatWorkspaces := make([]*workspace.CompatWorkspace, 0, len(configPaths))
 	for _, cp := range configPaths {
-		// A locally-referenced module may legitimately live under a hidden
-		// directory (e.g. ./.internal/foo); only filter hidden paths for the
-		// selected/glob discovery set, not for explicit dependency references.
-		if !cp.DiscoveredLocalModule && workspaceMigrationHiddenPath(cp.Path) {
-			continue
-		}
 		configPath := filepath.Join(ws.HostPath(), filepath.FromSlash(cp.Path))
 		configDir := filepath.Dir(configPath)
 		hasWorkspaceConfig, err := workspaceMigrationHasExplicitConfigAncestor(workspaceCtx, statFS, ws.HostPath(), configDir)
@@ -337,8 +340,9 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 	return compatWorkspaces, discoveryWarnings, nil
 }
 
-// workspaceMigrationConfigPath is a legacy config discovered for migration,
-// tagged with whether it was reached by following a local module reference.
+// workspaceMigrationConfigPath is a legacy config selected for migration,
+// tagged with whether it was reached by following a local module reference
+// from the selected root config (rather than being the selection itself).
 type workspaceMigrationConfigPath struct {
 	Path                  string
 	DiscoveredLocalModule bool
@@ -349,61 +353,33 @@ func workspaceMigrationLegacyConfigPaths(
 	rootDir dagql.ObjectResult[*core.Directory],
 	ws *core.Workspace,
 ) ([]workspaceMigrationConfigPath, []string, error) {
-	// Migration is intentionally scoped to the selected legacy project plus
-	// its conventional project-local module directory. A repo may contain
-	// unrelated dagger.json files in testdata, examples, or nested projects;
-	// those should only migrate when the user runs migration from that project.
+	// Migration is intentionally scoped to the selected legacy project: the
+	// dagger.json found up from cwd plus the local dependencies and toolchains
+	// it references, transitively. A repo may contain unrelated dagger.json
+	// files — testdata, examples, sibling modules, nested projects — and those
+	// are never touched; they only migrate when migration runs from their own
+	// directory.
 	selectedConfig, selected, err := workspaceMigrationSelectedLegacyConfigPath(ctx, rootDir, ws)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	projectRoot := workspaceMigrationCleanRelPath(ws.Cwd)
-	if selected {
-		projectRoot = path.Dir(selectedConfig)
-		if projectRoot == "." {
-			projectRoot = ""
-		}
+	if !selected || workspaceMigrationHiddenPath(selectedConfig) {
+		return nil, nil, nil
 	}
 
-	initial := make([]string, 0, 1)
-	if selected {
-		initial = append(initial, selectedConfig)
+	projectRoot := path.Dir(selectedConfig)
+	if projectRoot == "." {
+		projectRoot = ""
 	}
 
-	moduleConfigPattern := path.Join(projectRoot, workspace.LockDirName, "modules", "**", workspace.LegacyModuleConfigFileName)
-	modulePaths, err := rootDir.Self().Glob(ctx, rootDir, moduleConfigPattern)
-	if err != nil {
-		return nil, nil, fmt.Errorf("find legacy module configs under %s: %w", path.Join(projectRoot, workspace.LockDirName, "modules"), err)
-	}
-	initial = append(initial, modulePaths...)
-	initial = workspaceMigrationUniqueSortedPaths(initial)
-
-	// Seed the dependency walk from the configs that will actually be migrated,
-	// dropping hidden .dagger/modules/** glob hits (e.g. a scratch dir): an
-	// ignored hidden config must not be read, nor drag its own local deps into
-	// migration. Hidden modules reached from a non-hidden explicit reference are
-	// still discovered by the walk itself.
-	seeds := make([]string, 0, len(initial))
-	for _, p := range initial {
-		if workspaceMigrationHiddenPath(p) {
-			continue
-		}
-		seeds = append(seeds, p)
-	}
-	discovered, warnings, err := workspaceMigrationDiscoverLocalModules(ctx, rootDir, projectRoot, seeds)
+	discovered, warnings, err := workspaceMigrationDiscoverLocalModules(ctx, rootDir, projectRoot, []string{selectedConfig})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Selected/glob origin wins over a discovered origin: a config that is both a
-	// .dagger/modules/** hit and locally referenced keeps its existing handling.
-	result := make([]workspaceMigrationConfigPath, 0, len(initial)+len(discovered))
-	seen := make(map[string]struct{}, len(initial)+len(discovered))
-	for _, p := range initial {
-		result = append(result, workspaceMigrationConfigPath{Path: p})
-		seen[path.Clean(p)] = struct{}{}
-	}
+	result := make([]workspaceMigrationConfigPath, 0, 1+len(discovered))
+	result = append(result, workspaceMigrationConfigPath{Path: selectedConfig})
+	seen := map[string]struct{}{path.Clean(selectedConfig): {}}
 	for _, p := range discovered {
 		if _, ok := seen[path.Clean(p)]; ok {
 			continue
@@ -1342,25 +1318,4 @@ func workspaceMigrationPlanBundleWarnings(plans workspaceMigrationPlanBundle) []
 		}
 	}
 	return warnings
-}
-
-func workspaceConfigUsesMigratedModuleSources(cfg *workspace.Config, configDir string) bool {
-	if cfg == nil {
-		return false
-	}
-
-	migratedModulesDir := filepath.Clean(filepath.Join(workspace.LockDirName, "modules"))
-	for _, entry := range cfg.Modules {
-		resolvedSource := workspace.ResolveModuleEntrySource(configDir, entry.Source)
-		if filepath.IsAbs(resolvedSource) {
-			continue
-		}
-		resolvedSource = filepath.Clean(resolvedSource)
-		if resolvedSource == migratedModulesDir ||
-			strings.HasPrefix(resolvedSource, migratedModulesDir+string(filepath.Separator)) {
-			return true
-		}
-	}
-
-	return false
 }

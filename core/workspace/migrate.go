@@ -48,8 +48,30 @@ func migrationSDKInstallName(sdkRef string) string {
 // created, matching how the root module's SDK is recorded. This keeps every
 // locally-defined module's runtime installed and pinned in the workspace.
 func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath string) {
-	if wsCfg == nil || sdkSource == "" {
+	sdkName := ensureMigratedSDKInstall(wsCfg, sdkSource)
+	if sdkName == "" {
 		return
+	}
+	entry := wsCfg.Modules[sdkName]
+	entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
+	wsCfg.Modules[sdkName] = entry
+}
+
+// AddMigratedSDKInstall records a workspace SDK install for sdkSource without
+// registering a managed module — the "repo is just a dagger module" pin, where
+// the one install is expected to serve every module in the repo. It reuses an
+// existing as-sdk install for the same runtime source, so a later
+// AddMigratedModuleSDK for the same runtime lands on the same entry instead of
+// installing the SDK twice.
+func AddMigratedSDKInstall(wsCfg *Config, sdkSource string) {
+	ensureMigratedSDKInstall(wsCfg, sdkSource)
+}
+
+// ensureMigratedSDKInstall finds or creates the as-sdk install entry for
+// sdkSource and returns its install name ("" if there is nothing to record).
+func ensureMigratedSDKInstall(wsCfg *Config, sdkSource string) string {
+	if wsCfg == nil || sdkSource == "" {
+		return ""
 	}
 	if wsCfg.Modules == nil {
 		wsCfg.Modules = map[string]ModuleEntry{}
@@ -59,9 +81,7 @@ func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath string) {
 	// runtime is not installed twice under different names.
 	for name, entry := range wsCfg.Modules {
 		if entry.AsSDK != nil && entry.Source == sdkSource {
-			entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
-			wsCfg.Modules[name] = entry
-			return
+			return name
 		}
 	}
 
@@ -82,8 +102,8 @@ func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath string) {
 	if entry.AsSDK == nil {
 		entry.AsSDK = &ModuleAsSDK{}
 	}
-	entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
 	wsCfg.Modules[sdkName] = entry
+	return sdkName
 }
 
 // uniqueModuleName returns base if free, otherwise base with a numeric suffix,
@@ -144,21 +164,23 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 		return nil, fmt.Errorf("dagger.json does not require workspace config migration")
 	}
 	hasSDK := cfg.SDK != nil && cfg.SDK.Source != ""
-	needsProjectModuleMigration := hasSDK
+	sourceAtRoot := ModuleSourceAtRoot(cfg)
 
 	plan := &MigrationPlan{
 		ProjectRoot: compatWorkspace.ProjectRoot,
 	}
 
-	if needsProjectModuleMigration {
-		modulePath := filepath.Join("modules", cfg.Name)
-		moduleDir := filepath.Join(LockDirName, modulePath)
-		newModuleConfig, err := buildMigratedModuleConfig(cfg, moduleDir)
+	// The module config replaces dagger.json at the exact same location:
+	// other repos may install this module by path, and that path must keep
+	// resolving to the module config file. Nothing moves and no paths are
+	// rebased.
+	if hasSDK {
+		newModuleConfig, err := buildMigratedModuleConfig(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("building migrated module config: %w", err)
 		}
 		plan.MigratedModuleConfigData = newModuleConfig
-		plan.MigratedModuleConfigPath = filepath.Join(moduleDir, ModuleConfigFileName)
+		plan.MigratedModuleConfigPath = ModuleConfigFileName
 	}
 
 	warnings := analyzeCustomizations(cfg.Toolchains)
@@ -168,21 +190,28 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 
 	wsCfg := compatWorkspace.WorkspaceConfig()
-	if needsProjectModuleMigration && compatWorkspace.MainModule != nil {
-		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
+	mainModule := compatWorkspace.MainModule
+	if !hasSDK || sourceAtRoot {
+		// A module whose source is the project root IS the repo, not a module
+		// owned by a surrounding project: it is not installed into the
+		// workspace and gets no entrypoint. Its SDK runtime is pinned
+		// separately (as a plain module install) by the migration caller.
+		mainModule = nil
 	}
+	if mainModule != nil {
+		wsCfg.Modules[cfg.Name] = mainModule.Entry
 
-	// Surface the legacy module's SDK ref as a workspace module installed
-	// AS an SDK, with the migrated module recorded under the SDK's as-sdk
-	// authoring list. Legacy dagger.json carried the SDK inline on the
-	// module; new dagger.toml records every install (regular module or SDK)
-	// under [modules.*], with the SDK-role data nested in
-	// [modules.<sdk>.as-sdk.*]. This is the file-format catch-up for the
-	// runtime/SDK split.
-	if hasSDK {
-		AddMigratedModuleSDK(wsCfg, cfg.SDK.Source, filepath.Join(LockDirName, "modules", cfg.Name))
+		// Surface the legacy module's SDK ref as a workspace module installed
+		// AS an SDK, with the migrated module recorded under the SDK's as-sdk
+		// authoring list. Legacy dagger.json carried the SDK inline on the
+		// module; new dagger.toml records every install (regular module or
+		// SDK) under [modules.*], with the SDK-role data nested in
+		// [modules.<sdk>.as-sdk.*]. This is the file-format catch-up for the
+		// runtime/SDK split. The module path is the module config's directory
+		// — the project root, where dagger-module.toml replaced dagger.json.
+		AddMigratedModuleSDK(wsCfg, cfg.SDK.Source, ".")
 	}
-	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, compatWorkspace.MainModule)
+	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, mainModule)
 	if err != nil {
 		return nil, fmt.Errorf("serializing workspace config: %w", err)
 	}
@@ -218,17 +247,22 @@ func renderMigrationWorkspaceConfig(cfg *Config, mainModule *CompatMainModule) (
 	return UpdateConfigBytes(seeded, cfg)
 }
 
-// buildMigratedModuleConfig creates the cleaned-up dagger-module.toml for the migrated
-// module. newModuleDir is relative to the project root.
-func buildMigratedModuleConfig(cfg *modules.ModuleConfig, newModuleDir string) ([]byte, error) {
-	source, err := migratedModuleRelPath(newModuleDir, cfg.Source)
-	if err != nil {
-		return nil, fmt.Errorf("rebasing source path: %w", err)
+// buildMigratedModuleConfig creates the cleaned-up dagger-module.toml that
+// replaces dagger.json at the same location. The config does not move, so
+// source, dependency, and include paths are preserved as-is; only the
+// workspace-level fields (toolchains, blueprint, customizations) are dropped —
+// those migrate into dagger.toml instead.
+func buildMigratedModuleConfig(cfg *modules.ModuleConfig) ([]byte, error) {
+	if cfg.Source != "" && filepath.IsAbs(cfg.Source) {
+		return nil, fmt.Errorf("source path %q is absolute", cfg.Source)
 	}
-
-	rootPrefix, err := migratedModuleRootPrefix(newModuleDir)
-	if err != nil {
-		return nil, fmt.Errorf("rebasing project root: %w", err)
+	source := cfg.Source
+	if source != "" {
+		source = filepath.ToSlash(filepath.Clean(source))
+	}
+	if source == "." {
+		// An empty source means "here", matching configs authored natively.
+		source = ""
 	}
 
 	deps := make([]*modules.ModuleConfigDependency, 0, len(cfg.Dependencies))
@@ -236,32 +270,14 @@ func buildMigratedModuleConfig(cfg *modules.ModuleConfig, newModuleDir string) (
 		if dep == nil {
 			continue
 		}
-
-		depSource := dep.Source
-		if IsLocalRef(dep.Source, dep.Pin) {
-			depSource, err = migratedModuleRelPath(newModuleDir, dep.Source)
-			if err != nil {
-				return nil, fmt.Errorf("rebasing dependency %q source path: %w", dep.Name, err)
-			}
-		}
-
 		deps = append(deps, &modules.ModuleConfigDependency{
 			Name:             dep.Name,
-			Source:           depSource,
+			Source:           dep.Source,
 			Pin:              dep.Pin,
 			Customizations:   cloneCustomizations(dep.Customizations),
 			IgnoreChecks:     append([]string(nil), dep.IgnoreChecks...),
 			IgnoreGenerators: append([]string(nil), dep.IgnoreGenerators...),
 		})
-	}
-
-	includes := make([]string, 0, len(cfg.Include))
-	for _, inc := range cfg.Include {
-		if strings.HasPrefix(inc, "!") {
-			includes = append(includes, "!"+rootPrefix+inc[1:])
-		} else {
-			includes = append(includes, rootPrefix+inc)
-		}
 	}
 
 	newCfg := modules.ModuleConfig{
@@ -270,7 +286,7 @@ func buildMigratedModuleConfig(cfg *modules.ModuleConfig, newModuleDir string) (
 		SDK:                           cfg.SDK,
 		Source:                        source,
 		Dependencies:                  deps,
-		Include:                       includes,
+		Include:                       append([]string(nil), cfg.Include...),
 		Codegen:                       cfg.Codegen,
 		Clients:                       cfg.Clients,
 		DisableDefaultFunctionCaching: cfg.DisableDefaultFunctionCaching,
@@ -283,32 +299,6 @@ func buildMigratedModuleConfig(cfg *modules.ModuleConfig, newModuleDir string) (
 		return nil, err
 	}
 	return out, nil
-}
-
-func migratedModuleRelPath(newModuleDir, source string) (string, error) {
-	if source == "" {
-		source = "."
-	}
-	if filepath.IsAbs(source) {
-		return "", fmt.Errorf("source path %q is absolute", source)
-	}
-
-	rel, err := filepath.Rel(newModuleDir, filepath.Clean(source))
-	if err != nil {
-		return "", err
-	}
-	return filepath.ToSlash(rel), nil
-}
-
-func migratedModuleRootPrefix(newModuleDir string) (string, error) {
-	rootRel, err := migratedModuleRelPath(newModuleDir, ".")
-	if err != nil {
-		return "", err
-	}
-	if rootRel == "." {
-		return "", nil
-	}
-	return rootRel + "/", nil
 }
 
 type migrationWarning struct {

@@ -1,0 +1,23 @@
+kind: Changed
+body: |
+  `dagger setup` now does much less during a 1.0 migration, especially for
+  repos that are just dagger modules:
+  - Migration only touches the root `dagger.json` (found up from the current
+    directory) and the local dependencies/toolchains it references. Unreferenced
+    modules — including ones under `.dagger/modules/` — are left alone.
+  - The migrated `dagger-module.toml` is written exactly where the legacy
+    `dagger.json` was — with its `source` and dependency paths preserved as-is
+    — instead of being synthesized under `.dagger/modules/<name>/`. Installs
+    that reference the module by path keep resolving to the config file.
+  - A repo that *is* a dagger module (root `dagger.json` with its source at the
+    root) converts its config in place and gets a minimal `dagger.toml` that
+    only pins its SDK runtime; the module is not installed into the workspace
+    and no `entrypoint = true` is set.
+  - Setup no longer combines migration with module recommendations: applying a
+    migration ends the run, and recommendations appear on the next
+    `dagger setup` once the workspace is current. Declining the migration
+    falls through to recommendations as before.
+time: 2026-07-30T12:00:00Z
+custom:
+  Author: kpenfound
+  PR: 13810

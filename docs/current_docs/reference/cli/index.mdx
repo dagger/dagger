@@ -2577,13 +2577,16 @@ Ensure Dagger is properly set up and operational in the workspace
 
 Ensure Dagger is properly set up and operational in the workspace.
 
-Walks through three steps, each prompted independently:
+Starts with a Cloud login prompt, then takes one of two paths:
 
-  1. Cloud login        — authenticate with Dagger Cloud.
-  2. Workspace migrate  — convert any legacy dagger.json projects to
-                          the current workspace format.
-  3. Recommended modules — suggest modules to install based on files
-                           present in the workspace.
+  • Workspace migrate    — if a legacy dagger.json project is detected,
+                           convert it to the current workspace format.
+  • Recommended modules  — otherwise, suggest modules to install based
+                           on files present in the workspace.
+
+Migration and recommendations never run together: after applying a
+migration, run setup again to see recommendations for the migrated
+workspace. Declining the migration falls through to recommendations.
 
 Idempotent: safe to run anytime. No-ops what's already in good shape.
 Each step can be skipped at the prompt. With --auto-apply, all steps

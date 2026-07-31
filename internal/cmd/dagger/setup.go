@@ -23,20 +23,24 @@ import (
 )
 
 // setupCmd is the idempotent "ensure environment works" doctor verb.
-// Walks through three optional steps, each with a confirmation prompt:
-// (1) Cloud login, (2) workspace migration, (3) recommended modules.
+// Walks through optional steps, each with a confirmation prompt:
+// (1) Cloud login, then EITHER (2) workspace migration when the workspace
+// is legacy, OR (3) recommended modules when it is already current.
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Ensure Dagger is properly set up and operational in the workspace",
 	Long: `Ensure Dagger is properly set up and operational in the workspace.
 
-Walks through three steps, each prompted independently:
+Starts with a Cloud login prompt, then takes one of two paths:
 
-  1. Cloud login        — authenticate with Dagger Cloud.
-  2. Workspace migrate  — convert any legacy dagger.json projects to
-                          the current workspace format.
-  3. Recommended modules — suggest modules to install based on files
-                           present in the workspace.
+  • Workspace migrate    — if a legacy dagger.json project is detected,
+                           convert it to the current workspace format.
+  • Recommended modules  — otherwise, suggest modules to install based
+                           on files present in the workspace.
+
+Migration and recommendations never run together: after applying a
+migration, run setup again to see recommendations for the migrated
+workspace. Declining the migration falls through to recommendations.
 
 Idempotent: safe to run anytime. No-ops what's already in good shape.
 Each step can be skipped at the prompt. With --auto-apply, all steps
@@ -61,7 +65,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 	// and cached for a session's lifetime, so install must not reuse the
 	// migrate session or it would still see the legacy dagger.json.
 	return withSetupSessions(cmd.Context(), func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error {
-		// Session 1: migrate (apply form) + recommend (compute + install
+		// Session 1: migrate (apply form) or recommend (compute + install
 		// confirm form). The migrate write lands here; the session is closed
 		// before the install session opens so the workspace lock is released.
 		var (
@@ -80,6 +84,15 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			migrated, migratedConfigs, err = setupStepMigrate(ctx, cmd, dag)
 			if err != nil {
 				return fmt.Errorf("step 2 (migrate): %w", err)
+			}
+			if migrated {
+				// Migration and recommendations are alternative paths: piling
+				// recommended modules onto a freshly migrated workspace adds
+				// confusion, not value. Recommendations appear on the next
+				// `dagger setup`. A declined migration falls through — the
+				// user opted to keep the workspace as-is, so recommendations
+				// still run.
+				return nil
 			}
 			recs, install, err = planRecommend(ctx, cmd, dag)
 			if err != nil {
@@ -115,6 +128,9 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			}
 		}
 
+		if migrated {
+			fmt.Fprintln(out, "\nRun `dagger setup` again to see recommended modules for the migrated workspace.")
+		}
 		fmt.Fprintln(out, "\nSetup complete.")
 		return nil
 	})
@@ -164,11 +180,12 @@ const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to m
         dagger module init <sdk> <name>
 `
 
-// setupStepMigrate reports whether a migration was needed (and thus a fresh
+// setupStepMigrate reports whether a migration was applied (which routes setup
+// down the migration path instead of recommendations, and means a fresh
 // session should resolve SDKs migration may have recorded by short name) and
 // the workspace-root-relative paths of the dagger.toml configs it wrote — the
 // exact set the SDK resolution pass must scope itself to.
-func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (bool, []string, error) {
+func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (applied bool, configs []string, _ error) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "\nStep 2: Workspace migration")
 
@@ -203,7 +220,7 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 		return false, nil, nil
 	}
 
-	configs, err := migratedConfigPaths(ctx, changes)
+	configs, err = migratedConfigPaths(ctx, changes)
 	if err != nil {
 		return false, nil, err
 	}
@@ -211,7 +228,7 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 	// handleWorkspaceResponse owns the apply prompt via a huh form when
 	// autoApply is false — we don't run our own confirm() here, otherwise
 	// the user would face two prompts back-to-back for the same action.
-	applied, err := handleWorkspaceResponse(ctx, dag, ws.WithChanges(changes), autoApply)
+	applied, err = handleWorkspaceResponse(ctx, dag, ws.WithChanges(changes), autoApply)
 	if err != nil {
 		return false, nil, err
 	}

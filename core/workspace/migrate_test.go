@@ -38,11 +38,13 @@ func TestPlanMigrationPreservesDependencyPinsInModuleConfig(t *testing.T) {
   ]
 }`)
 
+	require.Equal(t, ModuleConfigFileName, plan.MigratedModuleConfigPath,
+		"the module config replaces dagger.json at the same location")
 	cfg, err := modules.ParseModuleConfigForFilename(plan.MigratedModuleConfigData, ModuleConfigFileName)
 	require.NoError(t, err)
 	require.Equal(t, "myapp", cfg.Name)
 	require.Equal(t, "go", cfg.SDK.Source)
-	require.Equal(t, "../../../src", cfg.Source)
+	require.Equal(t, "src", cfg.Source, "the source path is preserved as-is")
 	require.Len(t, cfg.Dependencies, 1)
 	require.Equal(t, "dep", cfg.Dependencies[0].Name)
 	require.Equal(t, "github.com/acme/dep@main", cfg.Dependencies[0].Source)
@@ -103,20 +105,27 @@ func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
 	require.Contains(t, reportData, `"function": [`)
 }
 
-func TestPlanMigrationRebasesMainModuleSource(t *testing.T) {
+// TestPlanMigrationConvertsModuleConfigInPlace verifies the migrated
+// dagger-module.toml replaces dagger.json at the exact same location, with the
+// source path preserved as-is: other repos may install this module by path,
+// and that path must keep resolving to the module config file. Only a module
+// whose source lives in a subdirectory (a project-style layout) is installed
+// into the workspace with an entrypoint.
+func TestPlanMigrationConvertsModuleConfigInPlace(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name   string
-		source string
-		want   string
+		name       string
+		source     string
+		wantSource string
+		installed  bool
 	}{
-		{name: "empty", source: "", want: "../../.."},
-		{name: "root", source: ".", want: "../../.."},
-		{name: "subdir", source: "ci", want: "../../../ci"},
-		{name: "nested subdir", source: "src/mod", want: "../../../src/mod"},
-		{name: "dot dagger", source: ".dagger", want: "../.."},
-		{name: "clean dot dagger", source: "./.dagger/", want: "../.."},
+		{name: "empty", source: "", wantSource: "."},
+		{name: "root", source: ".", wantSource: "."},
+		{name: "subdir", source: "ci", wantSource: "ci", installed: true},
+		{name: "nested subdir", source: "src/mod", wantSource: "src/mod", installed: true},
+		{name: "dot dagger", source: ".dagger", wantSource: ".dagger", installed: true},
+		{name: "clean dot dagger", source: "./.dagger/", wantSource: ".dagger", installed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -130,11 +139,49 @@ func TestPlanMigrationRebasesMainModuleSource(t *testing.T) {
   ]
 }`, tc.source))
 
+			require.Equal(t, ModuleConfigFileName, plan.MigratedModuleConfigPath,
+				"the module config replaces dagger.json at the same location")
 			cfg, err := modules.ParseModuleConfigForFilename(plan.MigratedModuleConfigData, ModuleConfigFileName)
 			require.NoError(t, err)
-			require.Equal(t, tc.want, cfg.Source)
+			require.Equal(t, "myapp", cfg.Name)
+			// Parsing normalizes an omitted source to ".".
+			require.Equal(t, tc.wantSource, cfg.Source)
+
+			wsCfg, err := ParseConfig(plan.WorkspaceConfigData)
+			require.NoError(t, err)
+			entry, installed := wsCfg.Modules["myapp"]
+			require.Equal(t, tc.installed, installed,
+				"a module whose source is the project root is the repo itself and must not be installed")
+			if tc.installed {
+				require.Equal(t, ".", entry.Source,
+					"the entry points at the module config's directory")
+				require.True(t, entry.Entrypoint)
+			}
 		})
 	}
+}
+
+// TestPlanMigrationModuleRepoSkipsSDKInstall verifies the "repo is just a
+// dagger module" shape (source at the project root) records no as-sdk install
+// for the root module: the runtime pin is a plain install added by the
+// migration caller, and the module gets no entrypoint.
+func TestPlanMigrationModuleRepoSkipsSDKInstall(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": ".",
+  "toolchains": [
+    {"name": "tools", "source": "./tools"}
+  ]
+}`)
+
+	require.Equal(t, ModuleConfigFileName, plan.MigratedModuleConfigPath)
+	configData := string(plan.WorkspaceConfigData)
+	require.NotContains(t, configData, "[modules.myapp]")
+	require.NotContains(t, configData, "as-sdk")
+	require.Contains(t, configData, "[modules.tools]")
 }
 
 func TestPlanMigrationRejectsAbsoluteMainModuleSource(t *testing.T) {
@@ -156,7 +203,7 @@ func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
 	plan := testMigrationPlan(t, "repo", `{
   "name": "myapp",
   "sdk": {"source": "go"},
-  "source": ".",
+  "source": "src",
   "toolchains": [
     {"name": "toolchain", "source": "./toolchain"}
   ],
@@ -195,7 +242,7 @@ func TestPlanMigrationWritesAsSDK(t *testing.T) {
 	require.Contains(t, configData, "[modules.dagger-go-sdk]")
 	require.Contains(t, configData, `source = "go"`)
 	require.Contains(t, configData, "[[modules.dagger-go-sdk.as-sdk.modules]]")
-	require.Contains(t, configData, `path = ".dagger/modules/myapp"`)
+	require.Contains(t, configData, `path = "."`)
 }
 
 func TestMigrationSDKInstallName(t *testing.T) {

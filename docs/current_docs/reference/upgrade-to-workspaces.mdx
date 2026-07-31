@@ -45,7 +45,13 @@ No. Backwards compatibility will infer a workspace from your existing `dagger.js
 dagger setup
 ```
 
-`dagger setup` walks through three steps with per-step prompts; the middle step converts workspace fields from legacy `dagger.json` into `dagger.toml`, and converts plain module-shaped `dagger.json` files to `dagger-module.toml`. If anything needs manual attention, it creates `.dagger/migration-report.md` with instructions.
+`dagger setup` prompts before each step. Its migration step converts workspace fields from your legacy `dagger.json` into `dagger.toml`, and converts module-shaped `dagger.json` files to `dagger-module.toml` in place — module files are never moved, and only the root `dagger.json` plus the local dependencies and toolchains it references are touched. If anything needs manual attention, it creates `.dagger/migration-report.md` with instructions.
+
+A few migration behaviors worth knowing:
+
+- If your repo *is* a dagger module — the root `dagger.json` describes a module whose source lives at the repo root — migration converts the config in place and writes a minimal `dagger.toml` that only pins the module's SDK. The module is not installed into the workspace, so load it explicitly: `dagger -m . call --help`.
+- Modules now commit their generated code (e.g. `dagger.gen.go`) instead of regenerating it at runtime. Migration removes the legacy `.gitignore` rules that ignored those files — after migrating, run `dagger generate` and commit the output.
+- Applying a migration ends the setup run; run `dagger setup` again to see module recommendations for the migrated workspace.
 
 ## What happened to module-management commands?
 
