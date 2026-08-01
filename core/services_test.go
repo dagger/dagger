@@ -350,6 +350,59 @@ func (f *fakeStartable) Exit(err error) {
 	close(f.waitResult)
 }
 
+// RunningServices backs the ListServices builtin: it must scope to the
+// requested session, order deterministically, and expose (possibly absent)
+// telemetry span handles without panicking.
+func TestServicesRunningServicesListing(t *testing.T) {
+	t.Parallel()
+
+	ctxA := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		SessionID: "list-session-a",
+		ClientID:  "client-a",
+	})
+	ctxB := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		SessionID: "list-session-b",
+		ClientID:  "client-b",
+	})
+
+	services := core.NewServices()
+
+	svc1 := newStartable("list-1")
+	svc2 := newStartable("list-2")
+	other := newStartable("list-other")
+
+	host1 := svc1.Succeed()
+	running1, err := services.Start(ctxA, svc1.Digest(), svc1, false)
+	require.NoError(t, err)
+	host2 := svc2.Succeed()
+	_, err = services.Start(ctxA, svc2.Digest(), svc2, false)
+	require.NoError(t, err)
+	otherHost := other.Succeed()
+	_, err = services.Start(ctxB, other.Digest(), other, false)
+	require.NoError(t, err)
+
+	hostsOf := func(svcs []*core.RunningService) []string {
+		hosts := make([]string, len(svcs))
+		for i, svc := range svcs {
+			hosts[i] = svc.Host
+		}
+		return hosts
+	}
+
+	// scoped to a session, ordered by hostname
+	require.Equal(t, []string{host1, host2}, hostsOf(services.RunningServices("list-session-a")))
+	require.Equal(t, []string{otherHost}, hostsOf(services.RunningServices("list-session-b")))
+	// empty session ID lists everything
+	require.ElementsMatch(t, []string{host1, host2, otherHost}, hostsOf(services.RunningServices("")))
+	// unknown session lists nothing
+	require.Empty(t, services.RunningServices("list-session-c"))
+
+	// the fake runtime records no telemetry spans; the accessors must report
+	// that gracefully rather than panic
+	require.False(t, running1.ServiceSpanContext().IsValid())
+	require.Empty(t, running1.InstallSpanContexts())
+}
+
 // TestServicesDetachRace tests the race condition where:
 //   - Client A starts service (bindings=1)
 //   - Client A detaches (bindings=0, spawns stop goroutine)
