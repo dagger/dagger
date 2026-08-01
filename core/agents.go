@@ -88,10 +88,11 @@ func (r *AgentGroup) Compose(ctx context.Context, base dagql.ObjectResult[*LLM])
 }
 
 // warnToolNameCollisions emits a warning for each tool name contributed by more
-// than one of the composed agents' toolsets. Composition keeps "last withTools
-// wins" (hack/designs/workspace-agents.md §3); this surfaces the shadowing so an author
-// notices two modules fighting over a tool name. Best-effort: any error building
-// the toolset is ignored, since it must not fail composition.
+// than one of the composed agents' toolsets. On such a collision every involved
+// object's tools are served under namespaced names (`<object>_<tool>`, see
+// MCP.loadObjectTools) so nothing is silently shadowed; the warning surfaces
+// the renaming so an author knows why the bare names are gone. Best-effort: any
+// error building the toolset is ignored, since it must not fail composition.
 func warnToolNameCollisions(ctx context.Context, llm *LLM) {
 	if llm == nil || llm.mcp == nil {
 		return
@@ -102,10 +103,14 @@ func warnToolNameCollisions(ctx context.Context, llm *LLM) {
 	}
 	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
 	for name, contributors := range collisions {
-		logger.Warn("agent tool name collision: last binding wins",
+		served := make([]string, len(contributors))
+		for i, typeName := range contributors {
+			served[i] = namespacedToolName(typeName, name)
+		}
+		logger.Warn("agent tool name collision: serving the conflicting toolsets under namespaced names",
 			"tool", name,
 			"contributors", contributors,
-			"winner", contributors[len(contributors)-1])
+			"served", served)
 	}
 }
 

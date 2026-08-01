@@ -264,64 +264,124 @@ func (m *MCP) bindWorkspaceModuleTools(ctx context.Context) (*MCP, error) {
 }
 
 // loadObjectTools registers one tool per eligible method of each bound object.
-// It is called before the builtins so a bound method overrides a builtin of the
-// same name; within the object tools a later withTools binding wins a name
-// collision ("last withTools wins").
+// It is called before the MCP/skill/builtin tools so a bound method overrides a
+// builtin of the same name. When a tool name is contributed by more than one
+// bound object, ALL tools of every object involved are served under namespaced
+// names instead (see namespacedTypes) — nothing is silently shadowed.
 func (m *MCP) loadObjectTools(_ context.Context, srv *dagql.Server, allTools *LLMToolSet) error {
-	m.mu.Lock()
-	bindings := slices.Clone(m.boundTools)
-	m.mu.Unlock()
-	if len(bindings) == 0 {
-		return nil
+	toolsets, err := m.boundToolsets(srv)
+	if err != nil {
+		return err
 	}
-	schema := srv.Schema()
-	// Later bindings override earlier ones on a name collision; keep first-seen
-	// order for stable listing.
-	byName := map[string]LLMTool{}
-	var order []string
-	for _, b := range bindings {
-		tools, err := m.toolsForBoundObject(srv, schema, b)
-		if err != nil {
-			return err
-		}
-		for _, t := range tools {
-			if _, seen := byName[t.Name]; !seen {
-				order = append(order, t.Name)
+	namespaced := namespacedTypes(toolsets)
+	for _, ts := range toolsets {
+		for _, t := range ts.tools {
+			if namespaced[ts.typeName] {
+				t.Name = namespacedToolName(ts.typeName, t.Name)
 			}
-			byName[t.Name] = t
+			allTools.Add(t)
 		}
-	}
-	for _, name := range order {
-		allTools.Add(byName[name])
 	}
 	return nil
 }
 
-// ToolNameCollisions reports, per tool name, the bound-object type names that
-// each contribute a tool of that name — but only for names contributed by more
-// than one bound object. On such a collision the last withTools binding wins
-// (loadObjectTools order); the report lets callers warn about the shadowing when
-// composing several agents' toolsets onto one LLM (hack/designs/workspace-agents.md §3).
-func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, error) {
-	srv, err := m.Server(ctx)
-	if err != nil {
-		return nil, err
-	}
-	schema := srv.Schema()
+// bindingToolset is one binding's generated tools plus the bound object's type
+// name — the unit of collision-driven namespacing.
+type bindingToolset struct {
+	typeName string
+	tools    []LLMTool
+}
 
+// boundToolsets generates each binding's tools, in binding order.
+func (m *MCP) boundToolsets(srv *dagql.Server) ([]bindingToolset, error) {
 	m.mu.Lock()
 	bindings := slices.Clone(m.boundTools)
 	m.mu.Unlock()
-
-	contributors := map[string][]string{}
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	schema := srv.Schema()
+	toolsets := make([]bindingToolset, 0, len(bindings))
 	for _, b := range bindings {
 		tools, err := m.toolsForBoundObject(srv, schema, b)
 		if err != nil {
 			return nil, err
 		}
-		typeName := b.typeName()
-		for _, t := range tools {
-			contributors[t.Name] = append(contributors[t.Name], typeName)
+		toolsets = append(toolsets, bindingToolset{typeName: b.typeName(), tools: tools})
+	}
+	return toolsets, nil
+}
+
+// namespacedToolName qualifies a tool name with its bound object's type, e.g.
+// TuiQa's `start` becomes `tuiQa_start` — the type rendered as its GraphQL
+// field name, matching how the module is spelled elsewhere in the API.
+func namespacedToolName(typeName, toolName string) string {
+	return gqlFieldName(typeName) + "_" + toolName
+}
+
+// namespacedTypes decides which bound-object types must serve their tools under
+// namespaced names: a tool name contributed by more than one binding namespaces
+// ALL tools of every binding involved, so each conflicting toolset stays
+// uniform (either every tool bare, or every tool prefixed) and no tool is
+// silently shadowed. Bindings with no collisions keep bare names — the common
+// case stays terse. Runs to a fixpoint, since a namespaced name can itself
+// collide with another binding's bare tool name; the namespaced set only
+// grows, so this terminates within len(toolsets) rounds.
+func namespacedTypes(toolsets []bindingToolset) map[string]bool {
+	namespaced := map[string]bool{}
+	for {
+		// served name -> the set of bound types contributing a tool under it
+		contributors := map[string]map[string]bool{}
+		for _, ts := range toolsets {
+			for _, t := range ts.tools {
+				name := t.Name
+				if namespaced[ts.typeName] {
+					name = namespacedToolName(ts.typeName, name)
+				}
+				if contributors[name] == nil {
+					contributors[name] = map[string]bool{}
+				}
+				contributors[name][ts.typeName] = true
+			}
+		}
+		changed := false
+		for _, types := range contributors {
+			if len(types) < 2 {
+				continue
+			}
+			for typeName := range types {
+				if !namespaced[typeName] {
+					namespaced[typeName] = true
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			return namespaced
+		}
+	}
+}
+
+// ToolNameCollisions reports, per bare tool name, the bound-object type names
+// that each contribute a tool of that name — but only for names contributed by
+// more than one bound object. Such a collision makes loadObjectTools serve ALL
+// tools of every object involved under namespaced names (namespacedToolName);
+// the report lets callers surface the renaming when composing several agents'
+// toolsets onto one LLM (hack/designs/workspace-agents.md §3).
+func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, error) {
+	srv, err := m.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	toolsets, err := m.boundToolsets(srv)
+	if err != nil {
+		return nil, err
+	}
+
+	contributors := map[string][]string{}
+	for _, ts := range toolsets {
+		for _, t := range ts.tools {
+			contributors[t.Name] = append(contributors[t.Name], ts.typeName)
 		}
 	}
 

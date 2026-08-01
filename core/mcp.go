@@ -738,7 +738,12 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	}
 	toolName := tool.Name
 	if tool.Server != "" {
+		// External MCP tools may come prefixed `<server>_`; collision-namespaced
+		// object tools are prefixed `<gqlFieldName(server)>_` (their Server is
+		// the bound type name). Trim either so the span shows the bare tool name
+		// alongside the server attribute.
 		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
+		toolName = strings.TrimPrefix(toolName, gqlFieldName(tool.Server)+"_")
 	}
 	span := trace.SpanFromContext(ctx)
 	attrs := []attribute.KeyValue{

@@ -4,7 +4,7 @@ package core
 // middlewares (hack/designs/workspace-agents.md §3). They verify cross-module discovery, the base
 // argument being matched by type (not name), nested discovery through
 // object-returning functions, signature validation, and the composed toolset
-// (auto-exclusion of the entrypoint + collision last-wins). Driving the
+// (auto-exclusion of the entrypoint + collision-driven namespacing). Driving the
 // interactive prompt itself needs a live model and is covered by manual QA.
 //
 // See also:
@@ -98,18 +98,33 @@ func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
 		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	// Tools from both modules fold onto one LLM (godoc's tool proves the
-	// `llm`-named base was threaded correctly). Names chosen to not be a
-	// substring of a builtin (e.g. `read` ⊂ `read_skill`).
-	require.Contains(t, out, "## readFile")
-	require.Contains(t, out, "## goDoc")
 	// The @agent entrypoint is auto-excluded from the toolset, so authors don't
 	// need `except: ["agent"]`.
 	require.NotContains(t, out, "## agent")
-	// Collision: godoc:agent folds after editor:agent (alphabetical module:fn
-	// order), so godoc's `shared` wins (last withTools wins).
+	// Collision: both modules define `shared`. Instead of one silently
+	// shadowing the other, ALL tools of BOTH conflicting modules are served
+	// under namespaced names — the whole toolset, not just the colliding tool,
+	// so each module's toolset stays uniform. (godoc's tools being present at
+	// all proves the `llm`-named base was threaded correctly.)
+	require.Contains(t, out, "## editor_shared")
+	require.Contains(t, out, "shared tool from editor")
+	require.Contains(t, out, "## godoc_shared")
 	require.Contains(t, out, "shared tool from godoc")
-	require.NotContains(t, out, "shared tool from editor")
+	require.Contains(t, out, "## editor_readFile")
+	require.Contains(t, out, "## godoc_goDoc")
+	require.NotContains(t, out, "## readFile")
+	require.NotContains(t, out, "## goDoc")
+	require.NotContains(t, out, "## shared")
+
+	// A module with no collisions keeps its bare tool names — namespacing only
+	// kicks in when toolsets actually conflict.
+	out, err = modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents(include:["editor"]){compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "## readFile")
+	require.Contains(t, out, "## shared")
+	require.NotContains(t, out, "## editor_")
 }
 
 // TestComposeSeedIsWorkspaceBound locks in that compose's default base LLM is
