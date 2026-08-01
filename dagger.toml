@@ -209,6 +209,9 @@ source = "github.com/vito/editor"
 [env.dev.modules.tui-qa]
 source = "modules/tui-qa"
 
+[env.dev.modules.engine-lab]
+source = "modules/engine-lab"
+
 [env.dev.modules.golang]
 source = "github.com/vito/dagger-go@go-doc"
 
