@@ -1,6 +1,6 @@
 name = "python-client-dev"
 engineVersion = "v0.21.7"
-include = ["../../../go.sum", "../../../go.mod", "../../../util/parallel", "../../../util/dockerfileextractor", "../../../sdk/python/runtime/images"]
+include = ["../../../go.sum", "../../../go.mod", "../../../util/parallel", "../../../sdk/python/runtime/images"]
 
 [runtime]
   source = "go"
