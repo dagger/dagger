@@ -112,6 +112,43 @@ func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
 	require.NotContains(t, out, "shared tool from editor")
 }
 
+// TestComposeSeedIsWorkspaceBound locks in that compose's default base LLM is
+// bound to the workspace the group was rolled up from. llm() starts unbound
+// (NewLLM no longer binds the ambient workspace), so without the explicit
+// withWorkspace seed, reading the composed LLM's workspace fails with "no
+// workspace is bound to this LLM" — the `dagger agent` startup regression.
+func (AgentsSuite) TestComposeSeedIsWorkspaceBound(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+
+	// Reading the bound workspace back out proves the seed bound one, and the
+	// entries prove it's the env workspace the group was rolled up from (its
+	// root carries the fixture module tree).
+	out, err := modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{workspace{directory(path:"/"){entries}}}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "modules/")
+}
+
+// TestAgentReadsSeedWorkspace covers the mid-fold half of the same regression:
+// an @agent leaf that reads base.workspace during compose (like a real agent
+// scanning project context) must see the seed's bound workspace.
+func (AgentsSuite) TestAgentReadsSeedWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "wsaware")
+	require.NoError(t, err)
+
+	// wsaware:agent derives its system prompt from
+	// base.workspace.file("dagger.toml"), so composing succeeds only when the
+	// seed is workspace-bound (compose runs each leaf eagerly).
+	_, err = modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+}
+
 func (AgentsSuite) TestEmptySelectionComposesBareLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor")
