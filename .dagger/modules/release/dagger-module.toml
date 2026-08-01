@@ -18,10 +18,6 @@ include = ["../../../go.mod", "../../../go.sum"]
   source = "../docs-dev"
 
 [[dependencies]]
-  name = "dotnet-client-dev"
-  source = "../dotnet-client-dev"
-
-[[dependencies]]
   name = "engine-dev"
   source = "../engine-dev"
 

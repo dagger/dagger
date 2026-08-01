@@ -194,9 +194,6 @@ type DirectoryID string
 type DocsDevID string
 
 // A unique identifier for an object.
-type DotnetClientDevID string
-
-// A unique identifier for an object.
 type ElixirClientDevID string
 
 // A unique identifier for an object.
@@ -12972,16 +12969,6 @@ func (r *Query) LoadDocsDevFromID(id DocsDevID) *DocsDev {
 	q = q.Arg("id", id)
 
 	return &DocsDev{
-		query: q,
-	}
-}
-
-// Load a DotnetClientDev from its ID.
-func (r *Query) LoadDotnetClientDevFromID(id DotnetClientDevID) *DotnetClientDev {
-	q := r.query.Select("loadDotnetClientDevFromID")
-	q = q.Arg("id", id)
-
-	return &DotnetClientDev{
 		query: q,
 	}
 }
