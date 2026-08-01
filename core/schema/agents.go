@@ -60,8 +60,26 @@ func (s agentsSchema) compose(ctx context.Context, parent *core.AgentGroup, args
 		}
 	} else {
 		// Seed a fresh workspace-bound LLM — the sole base-LLM seed point
-		// (hack/designs/workspace-agents.md §3). Every folded leaf then gets base passed explicitly.
-		if err := srv.Select(ctx, srv.Root(), &base, dagql.Selector{Field: "llm"}); err != nil {
+		// (hack/designs/workspace-agents.md §3). Every folded leaf then gets base
+		// passed explicitly. llm() starts unbound (NewLLM no longer binds the
+		// ambient workspace), so bind the workspace this group was rolled up from
+		// explicitly — an @agent leaf reads it via LLM.workspace and acts on it
+		// through its tools.
+		sels := []dagql.Selector{{Field: "llm"}}
+		if parent.BoundWorkspace.Self() != nil {
+			wsID, err := parent.BoundWorkspace.ID()
+			if err != nil {
+				return dagql.ObjectResult[*core.LLM]{}, err
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withWorkspace",
+				Args: []dagql.NamedInput{{
+					Name:  "workspace",
+					Value: dagql.NewID[*core.Workspace](wsID),
+				}},
+			})
+		}
+		if err := srv.Select(ctx, srv.Root(), &base, sels...); err != nil {
 			return dagql.ObjectResult[*core.LLM]{}, err
 		}
 	}
