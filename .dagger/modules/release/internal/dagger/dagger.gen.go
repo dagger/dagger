@@ -194,10 +194,10 @@ type DirectoryID string
 type DocsDevID string
 
 // A unique identifier for an object.
-type DotnetSDKDevID string
+type DotnetClientDevID string
 
 // A unique identifier for an object.
-type ElixirSDKDevID string
+type ElixirClientDevID string
 
 // A unique identifier for an object.
 type EngineDevID string
@@ -329,7 +329,7 @@ type NotifyID string
 type ObjectTypeDefID string
 
 // A unique identifier for an object.
-type PhpSDKDevID string
+type PhpClientDevID string
 
 // The platform config OS and architecture in a Container.
 //
@@ -340,19 +340,19 @@ type Platform string
 type PortID string
 
 // A unique identifier for an object.
-type PythonSDKDevDocsID string
+type PythonClientDevDocsID string
 
 // A unique identifier for an object.
-type PythonSDKDevID string
+type PythonClientDevID string
 
 // A unique identifier for an object.
-type PythonSDKDevTestForPythonVersionID string
+type PythonClientDevTestForPythonVersionID string
 
 // A unique identifier for an object.
 type RemoteGitMirrorID string
 
 // A unique identifier for an object.
-type RustSDKDevID string
+type RustClientDevID string
 
 // A unique identifier for an object.
 type SDKConfigID string
@@ -391,7 +391,7 @@ type TerminalID string
 type TypeDefID string
 
 // A unique identifier for an object.
-type TypescriptSDKDevID string
+type TypescriptClientDevID string
 
 // A unique identifier for an object.
 type UpGroupID string
@@ -12976,22 +12976,22 @@ func (r *Query) LoadDocsDevFromID(id DocsDevID) *DocsDev {
 	}
 }
 
-// Load a DotnetSdkDev from its ID.
-func (r *Query) LoadDotnetSDKDevFromID(id DotnetSDKDevID) *DotnetSDKDev {
-	q := r.query.Select("loadDotnetSdkDevFromID")
+// Load a DotnetClientDev from its ID.
+func (r *Query) LoadDotnetClientDevFromID(id DotnetClientDevID) *DotnetClientDev {
+	q := r.query.Select("loadDotnetClientDevFromID")
 	q = q.Arg("id", id)
 
-	return &DotnetSDKDev{
+	return &DotnetClientDev{
 		query: q,
 	}
 }
 
-// Load a ElixirSdkDev from its ID.
-func (r *Query) LoadElixirSDKDevFromID(id ElixirSDKDevID) *ElixirSDKDev {
-	q := r.query.Select("loadElixirSdkDevFromID")
+// Load a ElixirClientDev from its ID.
+func (r *Query) LoadElixirClientDevFromID(id ElixirClientDevID) *ElixirClientDev {
+	q := r.query.Select("loadElixirClientDevFromID")
 	q = q.Arg("id", id)
 
-	return &ElixirSDKDev{
+	return &ElixirClientDev{
 		query: q,
 	}
 }
@@ -13405,12 +13405,12 @@ func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 	}
 }
 
-// Load a PhpSdkDev from its ID.
-func (r *Query) LoadPhpSDKDevFromID(id PhpSDKDevID) *PhpSDKDev {
-	q := r.query.Select("loadPhpSdkDevFromID")
+// Load a PhpClientDev from its ID.
+func (r *Query) LoadPhpClientDevFromID(id PhpClientDevID) *PhpClientDev {
+	q := r.query.Select("loadPhpClientDevFromID")
 	q = q.Arg("id", id)
 
-	return &PhpSDKDev{
+	return &PhpClientDev{
 		query: q,
 	}
 }
@@ -13425,32 +13425,32 @@ func (r *Query) LoadPortFromID(id PortID) *Port {
 	}
 }
 
-// Load a PythonSdkDevDocs from its ID.
-func (r *Query) LoadPythonSDKDevDocsFromID(id PythonSDKDevDocsID) *PythonSDKDevDocs {
-	q := r.query.Select("loadPythonSdkDevDocsFromID")
+// Load a PythonClientDevDocs from its ID.
+func (r *Query) LoadPythonClientDevDocsFromID(id PythonClientDevDocsID) *PythonClientDevDocs {
+	q := r.query.Select("loadPythonClientDevDocsFromID")
 	q = q.Arg("id", id)
 
-	return &PythonSDKDevDocs{
+	return &PythonClientDevDocs{
 		query: q,
 	}
 }
 
-// Load a PythonSdkDev from its ID.
-func (r *Query) LoadPythonSDKDevFromID(id PythonSDKDevID) *PythonSDKDev {
-	q := r.query.Select("loadPythonSdkDevFromID")
+// Load a PythonClientDev from its ID.
+func (r *Query) LoadPythonClientDevFromID(id PythonClientDevID) *PythonClientDev {
+	q := r.query.Select("loadPythonClientDevFromID")
 	q = q.Arg("id", id)
 
-	return &PythonSDKDev{
+	return &PythonClientDev{
 		query: q,
 	}
 }
 
-// Load a PythonSdkDevTestForPythonVersion from its ID.
-func (r *Query) LoadPythonSDKDevTestForPythonVersionFromID(id PythonSDKDevTestForPythonVersionID) *PythonSDKDevTestForPythonVersion {
-	q := r.query.Select("loadPythonSdkDevTestForPythonVersionFromID")
+// Load a PythonClientDevTestForPythonVersion from its ID.
+func (r *Query) LoadPythonClientDevTestForPythonVersionFromID(id PythonClientDevTestForPythonVersionID) *PythonClientDevTestForPythonVersion {
+	q := r.query.Select("loadPythonClientDevTestForPythonVersionFromID")
 	q = q.Arg("id", id)
 
-	return &PythonSDKDevTestForPythonVersion{
+	return &PythonClientDevTestForPythonVersion{
 		query: q,
 	}
 }
@@ -13465,12 +13465,12 @@ func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror
 	}
 }
 
-// Load a RustSdkDev from its ID.
-func (r *Query) LoadRustSDKDevFromID(id RustSDKDevID) *RustSDKDev {
-	q := r.query.Select("loadRustSdkDevFromID")
+// Load a RustClientDev from its ID.
+func (r *Query) LoadRustClientDevFromID(id RustClientDevID) *RustClientDev {
+	q := r.query.Select("loadRustClientDevFromID")
 	q = q.Arg("id", id)
 
-	return &RustSDKDev{
+	return &RustClientDev{
 		query: q,
 	}
 }
@@ -13594,12 +13594,12 @@ func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	}
 }
 
-// Load a TypescriptSdkDev from its ID.
-func (r *Query) LoadTypescriptSDKDevFromID(id TypescriptSDKDevID) *TypescriptSDKDev {
-	q := r.query.Select("loadTypescriptSdkDevFromID")
+// Load a TypescriptClientDev from its ID.
+func (r *Query) LoadTypescriptClientDevFromID(id TypescriptClientDevID) *TypescriptClientDev {
+	q := r.query.Select("loadTypescriptClientDevFromID")
 	q = q.Arg("id", id)
 
-	return &TypescriptSDKDev{
+	return &TypescriptClientDev{
 		query: q,
 	}
 }

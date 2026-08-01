@@ -1,0 +1,12 @@
+name = "rust-client-dev"
+engineVersion = "v0.21.7"
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "dagger-engine"
+  source = "../engine-dev"
+
+[codegen]
+  automaticGitignore = false

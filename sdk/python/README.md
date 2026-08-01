@@ -129,13 +129,13 @@ dagger call -m dev format export --path=.
 Update pinned development dependencies (run from this directory, `./sdk/python`, or adjust export path accordingly):
 
 ```shell
-dagger call -m ../../.dagger/modules/python-sdk-dev dev-container with-exec --args uv,lock,-U directory --path . export --path .
+dagger call -m ../../.dagger/modules/python-client-dev dev-container with-exec --args uv,lock,-U directory --path . export --path .
 ```
 
 Update a single pinned development dependency (run from this directory, `./sdk/python`, or adjust export path accordingly):
 
 ```shell
-dagger call -m ../../.dagger/modules/python-sdk-dev dev-container with-exec --args uv,lock,-P,<DEPNAME> directory --path . export --path .
+dagger call -m ../../.dagger/modules/python-client-dev dev-container with-exec --args uv,lock,-P,<DEPNAME> directory --path . export --path .
 ```
 
 Build and preview the reference documentation:

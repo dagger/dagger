@@ -18,8 +18,8 @@ include = ["../../../go.mod", "../../../go.sum"]
   source = "../docs-dev"
 
 [[dependencies]]
-  name = "dotnet-sdk-dev"
-  source = "../dotnet-sdk-dev"
+  name = "dotnet-client-dev"
+  source = "../dotnet-client-dev"
 
 [[dependencies]]
   name = "engine-dev"
@@ -38,24 +38,24 @@ include = ["../../../go.mod", "../../../go.sum"]
   source = "../engine-dev/notify"
 
 [[dependencies]]
-  name = "php-sdk-dev"
-  source = "../php-sdk-dev"
+  name = "php-client-dev"
+  source = "../php-client-dev"
 
 [[dependencies]]
-  name = "python-sdk-dev"
-  source = "../python-sdk-dev"
+  name = "python-client-dev"
+  source = "../python-client-dev"
 
 [[dependencies]]
-  name = "elixir-sdk-dev"
-  source = "../elixir-sdk-dev"
+  name = "elixir-client-dev"
+  source = "../elixir-client-dev"
 
 [[dependencies]]
-  name = "rust-sdk-dev"
-  source = "../rust-sdk-dev"
+  name = "rust-client-dev"
+  source = "../rust-client-dev"
 
 [[dependencies]]
-  name = "typescript-sdk-dev"
-  source = "../typescript-sdk-dev"
+  name = "typescript-client-dev"
+  source = "../typescript-client-dev"
 
 [[dependencies]]
   name = "wolfi"

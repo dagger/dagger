@@ -25,8 +25,7 @@ source = ".dagger/modules/docs-dev"
 legacy-default-path = true
 
 [modules.elixir-client]
-# TODO: move to a path without "sdk"
-source = ".dagger/modules/elixir-sdk-dev"
+source = ".dagger/modules/elixir-client-dev"
 legacy-default-path = true
 
 [modules.engine-dev]
@@ -52,8 +51,7 @@ source = "github.com/dagger/helm@d0a7e172e8212b31c6061bb699495b1e8ba0958f"
 legacy-default-path = true
 
 [modules.java-client]
-# TODO: move to a path without "sdk"
-source = ".dagger/modules/java-sdk-dev"
+source = ".dagger/modules/java-client-dev"
 legacy-default-path = true
 
 [modules.markdown-lint]
@@ -61,8 +59,7 @@ source = "modules/markdownlint"
 legacy-default-path = true
 
 [modules.php-client]
-# TODO: move to a path without "sdk"
-source = ".dagger/modules/php-sdk-dev"
+source = ".dagger/modules/php-client-dev"
 legacy-default-path = true
 
 [modules.ps-analyzer]
@@ -70,8 +67,7 @@ source = "github.com/dagger/PsScriptAnalyzer@d87a12883dccd495bee98da9d2c20eb44b6
 legacy-default-path = true
 
 [modules.python-client]
-# TODO: move to a path without "sdk"
-source = ".dagger/modules/python-sdk-dev"
+source = ".dagger/modules/python-client-dev"
 legacy-default-path = true
 
 [modules.release]
@@ -79,8 +75,7 @@ source = ".dagger/modules/release"
 legacy-default-path = true
 
 [modules.rust-client]
-# TODO: move to a path without "sdk"
-source = ".dagger/modules/rust-sdk-dev"
+source = ".dagger/modules/rust-client-dev"
 legacy-default-path = true
 
 [modules.security]
@@ -108,8 +103,7 @@ source = ".dagger/modules/test-split"
 legacy-default-path = true
 
 [modules.typescript-client]
-# TODO: move to a path without "sdk"
-source = ".dagger/modules/typescript-sdk-dev"
+source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
 
 [modules.dagger-dang-sdk]
@@ -134,16 +128,16 @@ path = ".dagger/modules/changelog"
 path = ".dagger/modules/ci"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/dotnet-sdk-dev"
+path = ".dagger/modules/dotnet-client-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/elixir-sdk-dev"
+path = ".dagger/modules/elixir-client-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
 path = ".dagger/modules/go-client-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/java-sdk-dev"
+path = ".dagger/modules/java-client-dev"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
 path = ".dagger/modules/security"
@@ -152,7 +146,7 @@ path = ".dagger/modules/security"
 path = ".dagger/modules/test-split"
 
 [[modules.dagger-dang-sdk.as-sdk.modules]]
-path = ".dagger/modules/typescript-sdk-dev"
+path = ".dagger/modules/typescript-client-dev"
 
 [modules.dagger-go-sdk.as-sdk]
 name = "go"
@@ -182,13 +176,13 @@ path = ".dagger/modules/engine-dev"
 path = ".dagger/modules/engine-dev/notify"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/php-sdk-dev"
+path = ".dagger/modules/php-client-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/python-sdk-dev"
+path = ".dagger/modules/python-client-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/python-sdk-dev/dockerd"
+path = ".dagger/modules/python-client-dev/dockerd"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/release/apko"
@@ -203,4 +197,4 @@ path = ".dagger/modules/release/gh"
 path = ".dagger/modules/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
-path = ".dagger/modules/rust-sdk-dev"
+path = ".dagger/modules/rust-client-dev"
