@@ -68,6 +68,15 @@ type TuiQa {
     Port the HTTP TUI console listens on inside the container.
     """
     port: Int! = defaultPort,
+    """
+    Address of an already-running engine to attach to instead of building and
+    binding a fresh one — e.g. the tcp://<host>:1234 endpoint the engine-lab
+    start tool prints. The TUI session then runs against THAT engine, so its
+    debug endpoints and logs observe exactly what the TUI is driving. Note:
+    the attached runner has no LLM auth inherited via nesting, so prefer the
+    default for `args: ["agent"]` sessions.
+    """
+    engine: String! = "",
   ): TuiQa! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): starting a service is a side effect that must actually run
     # every invocation, not be served stale from the dagql session cache.
@@ -77,10 +86,24 @@ type TuiQa {
     # build the dagger CLI from source
     let cli = cliDev(ws: source, source: srcDir).binary
 
-    # a client container with a from-source engine already bound + the released
-    # dagger CLI installed; we overwrite the CLI with our from-source build.
-    let runner = engineDev(source)
-      .playground
+    # The client container the command under test runs in. Default: an
+    # engine-dev Playground (a from-source engine bound + released CLI
+    # installed, with experimentalPrivilegedNesting for LLM auth). With
+    # `engine`: a lean client pointed at the existing engine by address —
+    # deliberately NOT the playground, whose engine binding would boot a
+    # second engine. The address resolves with no binding because engine-lab
+    # starts its service under the session DNS domain.
+    let base = if (engine == "") {
+      engineDev(source).playground
+    } else {
+      container
+        .from("alpine:3.20")
+        .withExec(["apk", "add", "--no-cache", "curl", "git"])
+        .withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
+    }
+
+    # we overwrite (or install) the CLI with our from-source build.
+    let runner = base
       .withFile("/usr/local/bin/dagger", cli)
       .withMountedDirectory(workdir, srcDir)
       .withWorkdir(workdir)
@@ -99,6 +122,9 @@ type TuiQa {
       .withExec(["apk", "add", "--no-cache", "curl"])
       .withServiceBinding("tui-qa", svc)
 
+    if (engine != "") {
+      print("Attached to existing engine at " + engine)
+    }
     self.client = curlCtr
     self.service = svc
     self.url = "http://tui-qa:" + toString(port)
@@ -249,5 +275,12 @@ type TuiQa {
     editline and `key enter` to submit; `key esc` toggles nav/input mode.
     The runner uses experimentalPrivilegedNesting so it inherits the outer
     session's LLM auth (no credential setup needed).
+
+    If engine-lab tools are available, their start tool prints a
+    tcp://<host>:1234 endpoint — pass it as `start(engine: ...)` to run the
+    TUI against THAT engine instead of a fresh one, so its debug endpoints
+    and logs observe exactly what the TUI is driving. Caveats: no LLM auth
+    in that mode (avoid for `args: ["agent"]`), and restarting/stopping the
+    lab engine breaks the attached TUI session — start a new one after.
   """
 }

@@ -48,6 +48,10 @@ type EngineLab {
   let runner: Container! = container
   # the started from-source engine service (null until `start`)
   let engine: Service = null
+  # tcp://<host>:1234 address of the running engine, resolvable session-wide
+  # (digest hostname + session DNS domain) — the handoff other tools (e.g.
+  # tui-qa's `start`) use to attach to THIS engine ("" until `start`)
+  let engineEndpoint: String! = ""
 
   """
   Compose the engine-lab tools onto a base LLM.
@@ -85,22 +89,30 @@ type EngineLab {
     # (fresh state volume, engine entrypoint, incremented subnet for nesting)
     # and adds --debugaddr, which the stock Playground service doesn't enable.
     let svcDev = dev.incrementSubnet
-    let svc = svcDev.container
+    let engineCtr = svcDev.container
       .withExposedPort(1234)
       .withMountedCache(
         "/var/lib/dagger",
         cacheVolume("engine-lab-state-" + Random.string),
       )
-      .asService(
-        args: [
-          "--addr", "tcp://0.0.0.0:1234",
-          "--network-name", "dagger-lab",
-          "--network-cidr", svcDev.networkCidr,
-          "--debugaddr", "0.0.0.0:" + toString(debugPort),
-        ],
-        useEntrypoint: true,
-        insecureRootCapabilities: true,
-      )
+    let engineArgs = [
+      "--addr", "tcp://0.0.0.0:1234",
+      "--network-name", "dagger-lab",
+      "--network-cidr", svcDev.networkCidr,
+      "--debugaddr", "0.0.0.0:" + toString(debugPort),
+    ]
+    # Dang bug workaround: a let-bound `.start` result materializes as the
+    # service's string ID, so no methods can be called on it. Derive the
+    # service twice from the same let-bound container (identical args ->
+    # identical service ID): one unbroken chain for the hostname, one to
+    # start. The digest hostname resolves session-wide (session DNS domain),
+    # so OTHER modules' containers can dial it with no binding — that's the
+    # tui-qa handoff.
+    let host = engineCtr
+      .asService(args: engineArgs, useEntrypoint: true, insecureRootCapabilities: true)
+      .hostname
+    let svc = engineCtr
+      .asService(args: engineArgs, useEntrypoint: true, insecureRootCapabilities: true)
       .start
 
     # The client container: installClient binds the engine service under the
@@ -118,18 +130,39 @@ type EngineLab {
       .withMountedDirectory(defaultWorkdir, srcDir)
       .withWorkdir(defaultWorkdir)
     self.engine = svc
+    self.engineEndpoint = "tcp://" + host + ":1234"
+    print(
+      "Engine listening at " + self.engineEndpoint
+        + " — pass this to the tui-qa start tool's `engine` arg to QA the TUI"
+        + " against THIS engine (debugGet/debugJq/ReadLogs then introspect the"
+        + " same engine the TUI is driving)."
+    )
     self
   }
 
   """
   Rebuild the engine + CLI from the current workspace source and replace the
   running engine service. Call after editing engine code, then re-run your
-  repro with `exec`.
+  repro with `exec`. Breaks any TUI session attached to the old engine —
+  restart those after (tui-qa `start` with the freshly printed endpoint).
   """
   restart(
     source: Workspace!,
   ): EngineLab! @cache(policy: FunctionCachePolicy.Never) {
     start(source: source)
+  }
+
+  """
+  The tcp://<host>:1234 address of the running engine, resolvable from any
+  container in this session. Pass it to the tui-qa start tool's `engine` arg
+  to point a TUI session at this engine. Empty until `start`.
+  """
+  endpoint: String! {
+    if (engineEndpoint == "") {
+      "No engine session. Call `start` first."
+    } else {
+      engineEndpoint
+    }
   }
 
   # NOTE: every tool that talks to the live engine MUST be
@@ -330,6 +363,12 @@ type EngineLab {
     - Engine logs: ListServices shows the engine service's span ids;
       ReadLogs(span, grep, limit) reads them — the equivalent of
       `docker logs dagger-engine.dev | grep`.
+    - `start` prints the engine's tcp://<host>:1234 endpoint (`endpoint`
+      re-prints it). If tui-qa tools are available, pass it to their start
+      tool's `engine` arg to run a TUI session against THIS engine — then
+      `debugGet`/`debugJq`/ReadLogs introspect the very engine the TUI is
+      driving (e.g. reproduce a hang in the TUI, then pprof it live).
+      `restart`/`stop` break attached TUI sessions; restart them after.
     - `stop` when done.
   """
 }
