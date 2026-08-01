@@ -43,7 +43,7 @@ legacy-default-path = true
 [modules.golang.settings]
 generate = "docs/current_docs/reference"
 # FIXME: this can be an actual list (dagger.json required a hack)
-lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,.dagger/modules/cli-dev,.dagger/modules/docs-dev,.dagger/modules/engine-dev,.dagger/modules/go,.dagger/modules/release,!.dagger/modules/docs-dev/docusaurus,!.dagger/modules/engine-dev/notify,!.dagger/modules/release/apko,!.dagger/modules/release/gh,!.dagger/modules/release/registry-config,!.dagger/modules/release/testdata"
+lint = ".,engine/distconsts,modules/daggerverse,sdk/go,.dagger/modules/cli-dev,.dagger/modules/docs-dev,.dagger/modules/engine-dev,.dagger/modules/go,.dagger/modules/release,!.dagger/modules/docs-dev/docusaurus,!.dagger/modules/engine-dev/notify,!.dagger/modules/release/apko,!.dagger/modules/release/gh,!.dagger/modules/release/registry-config,!.dagger/modules/release/testdata"
 test = "e2e/**"
 
 [modules.helm]
