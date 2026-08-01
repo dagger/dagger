@@ -36,6 +36,8 @@ func (LLMSuite) TestSkillsEngineEmbedded(ctx context.Context, t *testctx.T) {
 	skills := skillIndex(ctx, t, c.LLM())
 	require.Contains(t, skills, "dang-language")
 	require.NotEmpty(t, skills["dang-language"])
+	require.Contains(t, skills, "dang-dagger-modules")
+	require.NotEmpty(t, skills["dang-dagger-modules"])
 }
 
 func (LLMSuite) TestSkillsWorkspaceDiscovery(ctx context.Context, t *testctx.T) {

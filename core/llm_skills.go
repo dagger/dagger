@@ -13,6 +13,7 @@ import (
 	dangskills "github.com/vito/dang/v2/.agents/skills"
 	"gopkg.in/yaml.v3"
 
+	daggerskills "github.com/dagger/dagger/core/skills"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -26,9 +27,9 @@ import (
 // know how to write.
 //
 // Skills come from ordered sources behind a common skillSource interface:
-// engine-embedded skills (the dang-language skill shipped in the engine), skill
-// directories installed via LLM.withSkills, and SKILL.md files discovered in the
-// bound workspace.
+// engine-embedded skills (the dang-language skill vendored from the dang repo
+// and the Dagger-authored skills in core/skills), skill directories installed
+// via LLM.withSkills, and SKILL.md files discovered in the bound workspace.
 
 // errSkillNotFound signals that a source does not provide the requested skill, so
 // read_skill should consult the next source rather than fail.
@@ -64,12 +65,12 @@ type skillSource interface {
 }
 
 // skillSources returns the ordered skill origins consulted by list_skills and
-// read_skill. Engine-embedded skills come first, so the dang-language skill
-// cannot be shadowed; directories installed explicitly via LLM.withSkills come
-// before skills discovered in the bound workspace, so an installed skill wins a
-// name collision with an ambient one.
+// read_skill. Engine-embedded skills come first, so the dang-language and
+// dang-dagger-modules skills cannot be shadowed; directories installed
+// explicitly via LLM.withSkills come before skills discovered in the bound
+// workspace, so an installed skill wins a name collision with an ambient one.
 func (m *MCP) skillSources() []skillSource {
-	sources := []skillSource{engineSkills}
+	sources := []skillSource{engineSkills, daggerSkills}
 	for _, dir := range m.skillDirs {
 		sources = append(sources, directorySkillSource{m: m, dir: dir})
 	}
@@ -83,6 +84,14 @@ func (m *MCP) skillSources() []skillSource {
 var engineSkills = embeddedSkillSource{
 	fsys:  dangskills.FS,
 	allow: []string{"dang-language"},
+}
+
+// daggerSkills exposes the Dagger-authored skills embedded in this repo
+// (core/skills) — guidance that belongs to Dagger rather than the Dang
+// language, like authoring Dagger modules in Dang.
+var daggerSkills = embeddedSkillSource{
+	fsys:  daggerskills.FS,
+	allow: []string{"dang-dagger-modules"},
 }
 
 // embeddedSkillSource serves an allowlisted subset of an embedded FS rooted at a

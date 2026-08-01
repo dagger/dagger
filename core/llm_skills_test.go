@@ -199,11 +199,12 @@ func TestSkillSourcesOrder(t *testing.T) {
 		WithSkills(dagql.ObjectResult[*Directory]{}).
 		WithSkills(dagql.ObjectResult[*Directory]{})
 	sources := m.skillSources()
-	require.Len(t, sources, 4)
+	require.Len(t, sources, 5)
 	require.IsType(t, embeddedSkillSource{}, sources[0])
-	require.IsType(t, directorySkillSource{}, sources[1])
+	require.IsType(t, embeddedSkillSource{}, sources[1])
 	require.IsType(t, directorySkillSource{}, sources[2])
-	require.IsType(t, workspaceSkillSource{}, sources[3])
+	require.IsType(t, directorySkillSource{}, sources[3])
+	require.IsType(t, workspaceSkillSource{}, sources[4])
 }
 
 // TestEngineSkills checks the real embedded source: the dang-language skill is
@@ -232,5 +233,27 @@ func TestEngineSkills(t *testing.T) {
 	require.NotEmpty(t, ref)
 
 	_, err = engineSkills.read(ctx, "builtin-dsl", "")
+	require.ErrorIs(t, err, errSkillNotFound)
+}
+
+// TestDaggerSkills checks the Dagger-authored embedded source: the
+// dang-dagger-modules skill is exposed with a description and readable.
+func TestDaggerSkills(t *testing.T) {
+	ctx := context.Background()
+
+	metas, err := daggerSkills.list(ctx)
+	require.NoError(t, err)
+	names := make([]string, len(metas))
+	for i, m := range metas {
+		names[i] = m.Name
+		assert.NotEmpty(t, m.Description, "skill %q should have a description", m.Name)
+	}
+	require.Contains(t, names, "dang-dagger-modules")
+
+	skill, err := daggerSkills.read(ctx, "dang-dagger-modules", "")
+	require.NoError(t, err)
+	require.Contains(t, skill, "self-call")
+
+	_, err = daggerSkills.read(ctx, "dang-language", "")
 	require.ErrorIs(t, err, errSkillNotFound)
 }
