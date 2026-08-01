@@ -2824,7 +2824,19 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 			dir.Snapshot.setValue(scratchSnapshot)
 			return nil
 		}
-		dir.Snapshot.setValue(currentSnapshot)
+		// Reopen rather than sharing the parent's ref instance: each cached
+		// Directory value owns its snapshot handle and releases it when its
+		// cache entry is collected, so sharing one instance would let this
+		// result's collection invalidate the parent's still-cached snapshot.
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, currentSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+		if err != nil {
+			return err
+		}
+		dir.Snapshot.setValue(reopened)
 		return nil
 	}
 
