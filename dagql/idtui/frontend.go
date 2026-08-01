@@ -139,8 +139,9 @@ type TraceFrontend interface {
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))
 	SetSpanProvider(func(id dagui.SpanID))
-	// SurfacedFailedCheckSpans lists the failed checks' spans (plus their
-	// error origins and links) whose subtrees the report needs prefetched.
+	// SurfacedFailedCheckSpans lists the failed checks' and generators' spans
+	// (plus their error origins and links) whose subtrees the report needs
+	// prefetched.
 	SurfacedFailedCheckSpans() []dagui.SpanID
 	// RequestSurfacedLogs makes the frontend request logs for the failures it
 	// surfaces, so a single final report render includes their detail.

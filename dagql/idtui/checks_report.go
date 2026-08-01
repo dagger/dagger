@@ -223,10 +223,10 @@ func eachFailedLeafCheck(nodes []*dagui.CheckNode, f func(*dagui.CheckNode)) {
 }
 
 // SurfacedFailedCheckSpans returns the span IDs of the surfaced failed leaf
-// checks, so the report driver can fetch their subtrees on demand -- a failed
-// check's cause is often a deep descendant outside the priority window. Failed
-// *parent* checks are skipped: their subtree is the whole run, and they defer
-// their detail to the failed children anyway.
+// checks (and generators), so the report driver can fetch their subtrees on
+// demand -- a failed check's cause is often a deep descendant outside the
+// priority window. Failed *parent* checks are skipped: their subtree is the
+// whole run, and they defer their detail to the failed children anyway.
 func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 	// Run on the event loop: SurfacedChecks/checkDefersToTests read (and lazily
 	// rebuild) shared DB state -- the test index in particular -- which the
@@ -256,6 +256,17 @@ func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 			// The cause is often reached via a forward link instead -- a check
 			// links to the lazy-eval span that did (and failed) the work, which the
 			// subtree fetch doesn't descend into. Fetch those targets directly.
+			for _, o := range n.Span.ErrorOrigins.Order {
+				add(o.ID)
+			}
+			for _, l := range n.Span.Links {
+				add(l.SpanContext.SpanID)
+			}
+		})
+		// Failed generators render their cause the same way checks do
+		// (renderGeneratorNode -> renderCauseDetail), so prefetch theirs too.
+		eachFailedLeafGenerator(fe.db.SurfacedGenerators(), func(n *dagui.GeneratorNode) {
+			add(n.Span.ID)
 			for _, o := range n.Span.ErrorOrigins.Order {
 				add(o.ID)
 			}

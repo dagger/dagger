@@ -1725,7 +1725,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerateReport() {
+	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerators() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -2396,6 +2396,16 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 		ctx.Lines(checkLines...)
 		renderedRows = true
+	} else if genRows := fe.generatorsReport(ctx, r, zoomed); len(genRows) > 0 {
+		// A `dagger generate` run: surface the generators reveal-independently,
+		// the generator analog of the checks section.
+		ctx.Lines(genRows...)
+		renderedRows = true
+		// Skipped unloadable modules can accompany the generators that did run.
+		if skipLines := fe.generateReport(ctx, r, zoomed); len(skipLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(skipLines...)
+		}
 	} else if genLines := fe.generateReport(ctx, r, zoomed); len(genLines) > 0 {
 		// A successful `dagger generate` that skipped an unloadable module:
 		// surface the skips in their own persisted section instead of the raw
@@ -2896,6 +2906,7 @@ func (fe *frontendPretty) formHeight() int {
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
 	fe.promoteChecksLocked()
+	fe.promoteGeneratorsLocked()
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
@@ -2960,6 +2971,15 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					fe.requestLogs(origin.ID)
 				}
 			})
+			eachFailedLeafGenerator(fe.db.SurfacedGenerators(), func(n *dagui.GeneratorNode) {
+				// The generator span's own rolled-up logs carry the exec failure
+				// (renderGeneratorFailureDetail); explicit origins render like a
+				// check's causes.
+				fe.requestLogs(n.Span.ID)
+				for _, origin := range n.Span.ErrorOrigins.Order {
+					fe.requestLogs(origin.ID)
+				}
+			})
 		}
 	}
 
@@ -3021,6 +3041,44 @@ func (fe *frontendPretty) promoteChecksLocked() {
 		return
 	}
 	fe.db.RootSpan.Passthrough = true
+	if !fe.ZoomedSpan.IsValid() {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+}
+
+// promoteGeneratorsLocked is the `dagger generate` analog of
+// promoteChecksLocked: when a trace ran generators, surface them at the top
+// level instead of the root's setup children (session connect, workspace
+// load). Generator spans no longer set `reveal`, so this wires the
+// reveal-independent SurfacedGenerators tree into the host's RevealedSpans
+// (via DB.PromoteGeneratorsTo) and marks the host Passthrough so RowsView
+// iterates those revealed spans.
+func (fe *frontendPretty) promoteGeneratorsLocked() {
+	if fe.db == nil || !fe.db.HasGenerators() {
+		return
+	}
+	// SetPrimary explicitly zooms interactive commands to the CLI root, while
+	// RootSpan is merely the first parentless span received and may be a remote
+	// query root. Promote the span RowsView is actually zoomed to.
+	host := fe.db.RootSpan
+	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
+		host = primary
+	}
+	if host == nil {
+		return
+	}
+	if host.GeneratorName != "" {
+		// The host is itself a generator: there is no setup noise above it to hide.
+		return
+	}
+	fe.db.PromoteGeneratorsTo(host)
+	// Passthrough hides everything but revealed spans, so keep best-effort
+	// generate's skipped-module rows visible mid-run alongside the generators
+	// (the final report persists them via the SKIPPED MODULES section).
+	for _, skip := range fe.db.SkippedModuleSpans() {
+		host.RevealedSpans.Add(skip)
+	}
+	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
 	}
