@@ -61,8 +61,7 @@ type Delegate {
   ): String! {
     source
       .agents
-      .compose(llm)
-      .withWorkspace(source)
+      .compose
       .withSystemPrompt(subAgentPrompt)
       .withPrompt(task)
       .loop(maxSteps: maxSteps)
