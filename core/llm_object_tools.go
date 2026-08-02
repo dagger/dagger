@@ -743,10 +743,13 @@ func (m *MCP) toolLogs(ctx context.Context) string {
 	// Exclude service exec span logs: long-lived services stream noise into
 	// the tool-call subtree via cause links, drowning out deliberate prints.
 	// ReadLogs remains the discovery path for service logs.
-	logs, err := m.captureLogs(ctx, spanID.String(), true)
-	if err != nil || len(logs) == 0 {
+	lines, err := m.captureLogLines(ctx, spanID.String(), true)
+	if err != nil || len(lines) == 0 {
 		return ""
 	}
-	logs = limitLines(spanID.String(), logs, llmToolLogsMaxLines, llmLogsMaxLineLen)
+	// Whatever the tool printed itself survives in full — a sub-agent's report
+	// or a tool's summary is the point of the call. Only logs from nested work
+	// beneath it are abridged to a tail.
+	logs := limitIndirectLines(spanID.String(), lines, llmToolLogsMaxLines, llmLogsMaxLineLen)
 	return strings.TrimRight(strings.Join(logs, "\n"), "\n")
 }

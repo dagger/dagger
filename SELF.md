@@ -41,16 +41,41 @@ patch summary — the sub-agent's REPORT text was lost in 3 of 3 edit
 delegations. Plain `delegate` survived fine because the report IS its return
 value.
 
-- First check the cheap module-side fix: in `modules/delegate/main.dang`,
-  make delegateEdits' RETURN VALUE carry `lastReply` + patch summary as one
-  string (like `delegate` does), instead of relying on logs to surface the
-  report above the summary.
-- Then re-test after the platform engine includes this session's service-log
-  fix — the engine-metrics noise is nested-engine service logs and should
-  disappear; the SSE noise may not (those records likely sit on LLM-loop or
-  HTTP spans under the delegation span, not on LLMRole/LLMTool spans that
-  captureLogs already skips). If SSE noise persists, find which span carries
-  it (tuiQa `span` tool / ReadLogs) and extend the capture filter.
+DONE (SSE half): the noise came from `core/llm_otel.go`'s per-request "LLM
+HTTP %s %s" span, which teed raw request/response bodies to span stdio and
+carried only `telemetry.Encapsulate()` — never `telemetry.Internal()`, so
+captureLogs' internalSpanFilter had nothing to filter on. Now started with
+`telemetry.Internal()` (hidden below `ShowInternalVerbosity`, skipped by
+captureLogs AND ReadLogs), with `revealTransport` clearing the attribute
+again on transport error / HTTP >= 400 so failures still surface their
+bodies. Unit test: `core/llm_otel_test.go` TestLLMTransportSpanInternal
+(tracetest recorder + httptest server, 200 hidden / 500 revealed).
+
+DONE (truncation half): `llmToolLogsMaxLines` = 8 was tail-only, so even a
+noise-free 12-line report arrived head-snipped. Tool results now abridge by
+PROVENANCE, not position: `captureLogLines` (core/mcp.go) tags each assembled
+line `direct` when its log record sits on the tool-call span or a DIRECT CHILD
+of it — where a Dang `print` lands, since Dang binds its stdout to
+`telemetry.SpanStdio` on the module function's dagql call span
+(core/sdk/dang/v2/helpers.go:112). `limitIndirectLines` keeps every direct
+line verbatim and trims only nested-work lines to the last 8, replacing each
+dropped run with a counted marker. `captureLogs` (ReadLogs' path) is
+unchanged in behavior — it now just flattens captureLogLines.
+Unit tests: `core/mcp_test.go` TestAssembleLines + TestLimitIndirectLines.
+NOT yet integration-proven (see below).
+
+Remaining:
+
+- Integration test still owed: an llmtest fixture whose tool prints a >8-line
+  report AFTER noisy nested work, asserting the whole report survives and only
+  the nested lines are abridged. Model it on TestToolLogsExcludeService. This
+  is the test that would VERIFY the direct-child span assumption; the unit
+  tests only cover the line-assembly and abridging logic, not span topology.
+  Two delegation attempts failed (one changeset merge error, one step-limit
+  blowout at 40) — run it directly with engineTest, or after raising the
+  delegate step cap.
+- Re-test the live delegateEdits result on a platform engine carrying both
+  fixes; engine-metrics lines should already be gone via the service filter.
 
 ### 2. Sub-agents do NOT see workspace edits to their own tool modules
 
@@ -110,6 +135,15 @@ already prunes the worst repeat offender.
   (loads + compiles the Dang source).
 
 ## Parked backlog (no decision yet — don't act, don't lose)
+
+- delegate/delegateEdits `maxSteps` ceiling is too tight for real editing
+  tasks: a scoped "write an integration test + run it + prove it bites" task
+  blew through 40 steps without finishing (an engine build burns several).
+  Raise the default/cap in `modules/delegate/main.dang`, or let the sub-agent
+  report partial progress on hitting the cap instead of failing outright.
+  Also seen once: `failed to merge parallel changesets: git apply: exit
+  status 128` on a lone delegateEdits (no parallel peers) — the sub-agent's
+  work was discarded; worth a repro.
 
 - Workspace-returning tool with doc-string fallback: "Set the current
   workspace." reproduced AGAIN this session — this time from a Write tool
