@@ -20,4 +20,21 @@ type Swapper {
     let root = ws.directory("/")
     root.withNewFile("SECOND.txt", "second parallel change").changes(root)
   }
+
+  """
+  Rewrite both lines of shared.txt one way.
+
+  Paired with clashSecond to produce two parallel changesets that rewrite the
+  same lines, i.e. a batch that cannot merge cleanly.
+  """
+  clashFirst(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("shared.txt", "line1: RED\nline2: RED\n").changes(root)
+  }
+
+  """Rewrite both lines of shared.txt the other way. See clashFirst."""
+  clashSecond(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("shared.txt", "line1: BLUE\nline2: BLUE\n").changes(root)
+  }
 }
