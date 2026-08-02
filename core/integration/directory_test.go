@@ -1627,6 +1627,19 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "Hello, Dagger!\n", content)
 	})
 
+	t.Run("corrupt patch reports what git said and where", func(ctx context.Context, t *testctx.T) {
+		// A failing git subprocess must not surface as a bare exit status:
+		// callers several layers up (e.g. parallel changeset merges) show
+		// only the error text.
+		dir := c.Directory().WithNewFile("hello.txt", "Hello, World!\n")
+
+		_, err := dir.WithPatch("--- a/hello.txt\n+++ b/hello.txt\n@@ -1 +1 @@\nTOTALLY BROKEN\n").Sync(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "corrupt patch")
+		// ...and it points at the offending line, quoted.
+		require.Contains(t, err.Error(), `"TOTALLY BROKEN"`)
+	})
+
 	t.Run("patching a subdirectory", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with a simple file
 		dir := c.Directory().

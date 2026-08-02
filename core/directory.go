@@ -1680,7 +1680,7 @@ func (dir *Directory) applyPatchToSnapshot(ctx context.Context, parentRef bkcach
 				return fmt.Errorf("open patch file: %w", err)
 			}
 			defer patchFile.Close()
-			return applyGitPatch(ctx, resolvedDir, patchFile, stdio, onConflict)
+			return applyGitPatch(ctx, resolvedDir, patchFile, resolvedPatchPath, stdio, onConflict)
 		}, mountRefAsReadOnly)
 	})
 	if err != nil {
@@ -1788,7 +1788,91 @@ func (dir *Directory) applyPatchFileResult(ctx context.Context, parent dagql.Obj
 	return nil
 }
 
-func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telemetry.SpanStreams, onConflict PatchConflict) error {
+// gitDiagnostics collects a bounded head of a git subprocess's output so it
+// can be attached to the error it returns. Bounded because a patch that fails
+// on many files can produce a lot of output, and the error text ends up in
+// agent tool results and TUI rows.
+type gitDiagnostics struct {
+	buf []byte
+	// patchPath, when set, is quoted around the line git points at, so
+	// "corrupt patch at <stdin>:5" says WHICH line is corrupt.
+	patchPath string
+}
+
+// gitDiagnosticsMaxLen caps how much subprocess output is folded into an error.
+const gitDiagnosticsMaxLen = 4096
+
+// gitStdinLineRe matches git's "<stdin>:<line>" position in e.g.
+// "error: corrupt patch at <stdin>:5".
+var gitStdinLineRe = regexp.MustCompile(`<stdin>:(\d+)`)
+
+func (d *gitDiagnostics) Write(p []byte) (int, error) {
+	if room := gitDiagnosticsMaxLen - len(d.buf); room > 0 {
+		d.buf = append(d.buf, p[:min(room, len(p))]...)
+	}
+	return len(p), nil
+}
+
+// wrap annotates err with whatever the subprocess said, plus the patch lines
+// it complained about. Without this a caller several layers up sees only e.g.
+// "git apply: exit status 128" — true, and useless.
+func (d *gitDiagnostics) wrap(what string, err error) error {
+	out := strings.TrimSpace(string(d.buf))
+	if out == "" {
+		return fmt.Errorf("%s: %w (no output)", what, err)
+	}
+	if ctxLines := d.patchContext(out); ctxLines != "" {
+		return fmt.Errorf("%s: %w: %s\n%s", what, err, out, ctxLines)
+	}
+	return fmt.Errorf("%s: %w: %s", what, err, out)
+}
+
+// patchContext quotes the patch around every line git named, with visible
+// line numbers. Whitespace matters in patches (a context line for a blank
+// line is a lone space), so lines are quoted rather than printed raw.
+func (d *gitDiagnostics) patchContext(gitOutput string) string {
+	if d.patchPath == "" {
+		return ""
+	}
+	matches := gitStdinLineRe.FindAllStringSubmatch(gitOutput, gitDiagnosticsMaxPositions)
+	if len(matches) == 0 {
+		return ""
+	}
+	content, err := os.ReadFile(d.patchPath)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(content), "\n")
+	var out strings.Builder
+	seen := map[int]bool{}
+	for _, match := range matches {
+		lineNo, err := strconv.Atoi(match[1])
+		if err != nil || seen[lineNo] {
+			continue
+		}
+		seen[lineNo] = true
+		fmt.Fprintf(&out, "patch around <stdin>:%d:\n", lineNo)
+		for n := max(1, lineNo-2); n <= min(len(lines), lineNo+2); n++ {
+			marker := "  "
+			if n == lineNo {
+				marker = "> "
+			}
+			fmt.Fprintf(&out, "%s%d: %q\n", marker, n, lines[n-1])
+		}
+	}
+	return strings.TrimRight(out.String(), "\n")
+}
+
+// gitDiagnosticsMaxPositions caps how many "<stdin>:N" positions are quoted.
+const gitDiagnosticsMaxPositions = 3
+
+// noRepoGitDir is a GIT_DIR value that suppresses repository discovery for
+// commands that don't need a repository. git never opens it (working-tree
+// `git apply` touches no object store), it just stops looking once GIT_DIR is
+// set — including at a .git that would fail to open.
+const noRepoGitDir = "/nonexistent/dagger-no-repo"
+
+func applyGitPatch(ctx context.Context, dir string, patch io.Reader, patchPath string, stdio telemetry.SpanStreams, onConflict PatchConflict) error {
 	leaveMarkers := onConflict == PatchConflictLeaveMarkers
 	args := []string{"apply", "--allow-empty"}
 	var preexisting map[string]bool
@@ -1805,16 +1889,31 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 	args = append(args, "-")
 	apply := exec.CommandContext(ctx, "git", args...)
 	apply.Dir = dir
+	// Patching a working tree needs no repository, but git looks for one
+	// anyway — and DIES if it finds a broken pointer. The common case is a
+	// checkout made with `git worktree`: its .git is a file naming a gitdir
+	// on the developer's machine, a path that doesn't exist inside the
+	// engine, so every patch against such a tree failed with
+	// "fatal: not a git repository" before the patch was even parsed.
+	// Pointing GIT_DIR at nothing skips discovery entirely, which also keeps
+	// patching hermetic: no config from a repo that happens to be embedded
+	// in the tree (core.autocrlf, core.fileMode, …) can change the result.
+	apply.Env = append(os.Environ(), "GIT_DIR="+noRepoGitDir)
 	apply.Stdin = patch
-	apply.Stdout = stdio.Stdout
-	apply.Stderr = stdio.Stderr
+	// Tee git's own diagnostics into a buffer as well as span stdio: the
+	// caller only ever sees the returned error (often several layers up, e.g.
+	// as "failed to merge parallel changesets"), and "exit status 128" on its
+	// own is unactionable.
+	diags := gitDiagnostics{patchPath: patchPath}
+	apply.Stdout = io.MultiWriter(stdio.Stdout, &diags)
+	apply.Stderr = io.MultiWriter(stdio.Stderr, &diags)
 	runErr := apply.Run()
 	if runErr != nil && ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if !leaveMarkers {
 		if runErr != nil {
-			return fmt.Errorf("git apply: %w", runErr)
+			return diags.wrap("git apply", runErr)
 		}
 		return nil
 	}
@@ -1832,7 +1931,7 @@ func applyGitPatch(ctx context.Context, dir string, patch io.Reader, stdio telem
 		// No rejects written: a non-zero exit is a hard failure (bad patch,
 		// not a content conflict).
 		if runErr != nil {
-			return fmt.Errorf("git apply: %w", runErr)
+			return diags.wrap("git apply", runErr)
 		}
 		return nil
 	}
