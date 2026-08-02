@@ -615,7 +615,10 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 			return nil, err
 		}
 		var val dagql.AnyResult
-		if err := srv.Select(ctx, recv, &val, sel); err != nil {
+		// The method call is the real user-facing work of the tool call, not
+		// engine bookkeeping: don't let Select mark it internal, so its spans
+		// (and the logs beneath them) surface in the UI and in toolLogs.
+		if err := srv.Select(dagql.WithNonInternalTelemetry(ctx), recv, &val, sel); err != nil {
 			return nil, err
 		}
 		return m.routeObjectMethodResult(ctx, srv, typeName, val)
@@ -716,7 +719,9 @@ func (m *MCP) syncObject(ctx context.Context, srv *dagql.Server, obj dagql.AnyOb
 		return nil
 	}
 	var synced dagql.AnyResult
-	return srv.Select(ctx, obj, &synced, dagql.Selector{View: srv.View, Field: "sync"})
+	// Non-internal for the same reason as the tool's method call itself: the
+	// sync runs the object's side effects whose print output we surface.
+	return srv.Select(dagql.WithNonInternalTelemetry(ctx), obj, &synced, dagql.Selector{View: srv.View, Field: "sync"})
 }
 
 // logsOrDone returns whatever the just-executed method printed, or "(done)" when
