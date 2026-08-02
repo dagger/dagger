@@ -371,6 +371,62 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "creating new go.mod")
 }
 
+// TestToolLogsExcludeService locks in captureLogs' service-span filtering:
+// a tool result surfaces the tool's deliberate print output, but not logs
+// from long-lived service exec spans (dagger.io/service) — those enter the
+// tool-call subtree via cause links (gaining new links per session, e.g.
+// when a later tool call reloads the started service) and would otherwise
+// drown out the print signal in the 8-line tail. ReadLogs remains the
+// deliberate discovery path for service logs.
+func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/svc-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	// Mirrors SvcAgent.drive's conversation (the first user message must
+	// match its withPrompt byte for byte): start the noisy service, then
+	// stop it. Tool results are placeholders — the real tools run during
+	// replay.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that manages a service.\n"+
+			"Use the start tool to start the service, then the stop tool to stop it.\n"+
+			"\n"+
+			"Assignment: start and stop the service\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Starting the service."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "start"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Now stopping the service."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "stop"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: service started and stopped."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "start and stop the service" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The start tool's deliberate print survives into its tool result: the
+	// service's 200 noise lines all land before the healthcheck passes, so
+	// without service filtering they'd swamp the 8-line tail.
+	require.Contains(t, out, "SERVICE-READY")
+	// The service exec span's logs stay out of tool results entirely.
+	require.NotContains(t, out, "SVC-NOISE")
+	// stop's print also surfaces — this exercises the late-cause-link route:
+	// stop reloads the started service, re-linking the exec span (and its
+	// full log history) beneath the stop tool call.
+	require.Contains(t, out, "SERVICE-STOPPED")
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

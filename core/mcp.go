@@ -1131,9 +1131,11 @@ func stableIDDigest(id *call.ID) digest.Digest {
 const llmLogsMaxLineLen = 2000
 const llmLogsBatchSize = 1000
 
-// captureLogs returns nicely Heroku-formatted lines of all logs seen since the
-// last capture.
-func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) {
+// captureLogs returns nicely Heroku-formatted lines of all logs emitted
+// beneath the given span. When excludeServiceLogs is set, logs from
+// long-lived service exec spans are skipped — they enter tool-call subtrees
+// via cause links and would otherwise drown out deliberate print output.
+func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs bool) ([]string, error) {
 	root, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1152,7 +1154,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
 	// roll-up behavior.
-	internalSpans := newInternalSpanFilter(q, spanID)
+	internalSpans := newInternalSpanFilter(q, spanID, excludeServiceLogs)
 
 	var lastLogID int64
 
@@ -1259,16 +1261,19 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 // internalSpanFilter reports whether spans sit within a subtree marked
 // internal (dagger.io/ui.internal) beneath a captured root span, so their
 // logs can be skipped — mirroring how the TUI refuses to roll logs up across
-// an internal span. Results are memoized per span so captureLogs doesn't
-// re-walk the parent chain for every log line.
+// an internal span. When skipServices is set, service exec spans
+// (dagger.io/service) are filtered the same way, keeping long-lived service
+// noise out of tool-result captures. Results are memoized per span so
+// captureLogs doesn't re-walk the parent chain for every log line.
 type internalSpanFilter struct {
-	db   *clientdb.DB
-	root string
-	memo map[string]bool
+	db           *clientdb.DB
+	root         string
+	skipServices bool
+	memo         map[string]bool
 }
 
-func newInternalSpanFilter(db *clientdb.DB, rootSpanID string) *internalSpanFilter {
-	return &internalSpanFilter{db: db, root: rootSpanID, memo: map[string]bool{}}
+func newInternalSpanFilter(db *clientdb.DB, rootSpanID string, skipServices bool) *internalSpanFilter {
+	return &internalSpanFilter{db: db, root: rootSpanID, skipServices: skipServices, memo: map[string]bool{}}
 }
 
 // beneathInternal reports whether the given span, or any ancestor strictly
@@ -1306,6 +1311,21 @@ func (f *internalSpanFilter) beneathInternal(ctx context.Context, traceID, spanI
 			internal = true
 			break
 		}
+		if f.skipServices && attr.Key == telemetryattrs.ServiceAttr && attr.Value.GetBoolValue() {
+			internal = true
+			break
+		}
+	}
+	if !internal && f.skipServices {
+		// Service stdio log records are tied to the *install* span
+		// (Container.asService and friends) rather than the service's exec
+		// span itself: core/service.go routes them there via the executor
+		// cause context (logTargetCtx). Detect install spans by their
+		// cause-linked service exec child and filter them the same way.
+		internal, err = f.serviceInstallSpan(ctx, traceID, spanID)
+		if err != nil {
+			return false, err
+		}
 	}
 	if !internal && span.ParentSpanID.Valid {
 		internal, err = f.beneathInternal(ctx, traceID, span.ParentSpanID.String)
@@ -1315,6 +1335,38 @@ func (f *internalSpanFilter) beneathInternal(ctx context.Context, traceID, spanI
 	}
 	f.memo[spanID] = internal
 	return internal, nil
+}
+
+// serviceInstallSpan reports whether a service's long-lived exec span
+// (dagger.io/service) cause-links to the given span — i.e. whether the span
+// is one of the API spans that installed a Service value. Service stdio log
+// records are tied to those install spans (see core/service.go), so
+// filtering service logs means filtering the install spans' subtrees.
+func (f *internalSpanFilter) serviceInstallSpan(ctx context.Context, traceID, spanID string) (bool, error) {
+	for _, childID := range f.db.CausalChildren(spanID) {
+		child, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+			TraceID: traceID,
+			SpanID:  childID,
+		})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// linking span not stored (or in another trace); can't tell
+				continue
+			}
+			return false, err
+		}
+		var childAttrs []*otlpcommonv1.KeyValue
+		if err := clientdb.UnmarshalProtoJSONs(child.Attributes, &otlpcommonv1.KeyValue{}, &childAttrs); err != nil {
+			slog.Warn("failed to unmarshal span attributes", "error", err)
+			continue
+		}
+		for _, attr := range childAttrs {
+			if attr.Key == telemetryattrs.ServiceAttr && attr.Value.GetBoolValue() {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func toolErrorMessage(err error) string {
@@ -1464,7 +1516,9 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		Limit  int    `default:"100"`
 		Grep   string `default:""`
 	}) (any, error) {
-		logs, err := m.captureLogs(ctx, args.Span)
+		// Include service logs: ReadLogs is the deliberate affordance for
+		// reading them (e.g. via span IDs from ListServices).
+		logs, err := m.captureLogs(ctx, args.Span, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}

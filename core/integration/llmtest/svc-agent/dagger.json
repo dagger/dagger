@@ -1,0 +1,6 @@
+{
+  "name": "svc-agent",
+  "engineVersion": "v1.0.0",
+  "sdk": "dang",
+  "disableDefaultFunctionCaching": true
+}
