@@ -71,18 +71,13 @@ type Delegate {
     """
     task: String!,
     source: Workspace!,
-    """
-    Cap the sub-agent's steps so a runaway task can't loop forever. The call
-    fails if the cap is hit before the sub-agent finishes.
-    """
-    maxSteps: Int! = 40,
   ): String! {
     source
       .agents
       .compose
       .withSystemPrompt(subAgentPrompt)
       .withPrompt(task)
-      .loop(maxSteps: maxSteps)
+      .loop
       .lastReply
   }
 
@@ -114,18 +109,13 @@ type Delegate {
     """
     task: String!,
     source: Workspace!,
-    """
-    Cap the sub-agent's steps so a runaway task can't loop forever. The call
-    fails if the cap is hit before the sub-agent finishes.
-    """
-    maxSteps: Int! = 40,
   ): Changeset! {
     let worker = source
       .agents
       .compose
       .withSystemPrompt(editorSubAgentPrompt)
       .withPrompt(task)
-      .loop(maxSteps: maxSteps)
+      .loop
     # Surface the sub-agent's report alongside the returned changeset (tool
     # routing prepends print output to the patch summary).
     print(worker.lastReply)

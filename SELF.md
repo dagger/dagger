@@ -136,11 +136,12 @@ already prunes the worst repeat offender.
 
 ## Parked backlog (no decision yet — don't act, don't lose)
 
-- delegate/delegateEdits `maxSteps` ceiling is too tight for real editing
-  tasks: a scoped "write an integration test + run it + prove it bites" task
-  blew through 40 steps without finishing (an engine build burns several).
-  Raise the default/cap in `modules/delegate/main.dang`, or let the sub-agent
-  report partial progress on hitting the cap instead of failing outright.
+- delegate/delegateEdits step cap: REMOVED (the `maxSteps` arg is gone from
+  both tools; `loop` runs uncapped). It was too tight for real editing tasks —
+  a scoped "write an integration test + run it + prove it bites" task blew
+  through 40 steps without finishing, since an engine build burns several.
+  Watch for the opposite failure mode now (a runaway sub-agent) and consider
+  a much higher cap or a time budget if it shows up.
   Also seen once: `failed to merge parallel changesets: git apply: exit
   status 128` on a lone delegateEdits (no parallel peers) — the sub-agent's
   work was discarded; worth a repro.
