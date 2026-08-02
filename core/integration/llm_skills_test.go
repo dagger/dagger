@@ -101,20 +101,20 @@ func (LLMSuite) TestSkillsPrecedence(ctx context.Context, t *testctx.T) {
 }
 
 // TestSkillsSurviveWorkspaceReset verifies that installed skill directories are
-// selector-expressible state: withResetWorkspace re-emits them into the flat
-// recipe, and they survive a portableID save/load round trip.
+// selector-expressible state: portableID re-emits them into the flat recipe,
+// so they survive a save/load round trip.
 func (LLMSuite) TestSkillsSurviveWorkspaceReset(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	installed := c.Directory().
 		WithNewFile("deploy/SKILL.md",
 			"---\ndescription: Installed deploy guidance.\n---\nbody")
-	reset := c.LLM().WithSkills(installed).WithResetWorkspace()
+	withSkills := c.LLM().WithSkills(installed)
 
-	skills := skillIndex(ctx, t, reset)
+	skills := skillIndex(ctx, t, withSkills)
 	require.Equal(t, "Installed deploy guidance.", skills["deploy"])
 
-	portableID, err := reset.PortableID(ctx)
+	portableID, err := withSkills.PortableID(ctx)
 	require.NoError(t, err)
 	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
 	skills = skillIndex(ctx, t, reloaded)

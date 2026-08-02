@@ -163,9 +163,10 @@ func savedSessionConversation(c *dagger.Client, contents string) *dagger.LLM {
 type savePolicy int
 
 const (
-	// saveAfterReset mirrors ctrl+s (export + reset): the recipe is re-emitted
-	// flat and rebound to the live workspace, deliberately dropping the
-	// accumulated overlay because its edits are already on disk.
+	// saveAfterReset mirrors ctrl+s (export + rebind): the LLM is rebound to
+	// the live workspace, and portableID's flattening then drops the
+	// accumulated overlay from the saved recipe, because its edits are
+	// already on disk.
 	saveAfterReset savePolicy = iota
 	// saveAutosave mirrors LLMSession.AutoSaveSession: a plain portableID of
 	// the conversation as it stands, overlay and all. Pending edits are
@@ -196,7 +197,7 @@ func saveAndResume(
 
 	toSave := llmA
 	if policy == saveAfterReset {
-		toSave = llmA.WithResetWorkspace().WithWorkspace(cA.CurrentWorkspace())
+		toSave = llmA.WithWorkspace(cA.CurrentWorkspace())
 	}
 	savedID, err := toSave.PortableID(ctx)
 	require.NoError(t, err)
@@ -627,8 +628,7 @@ func (LLMSuite) TestResumeAcrossEngineRestart(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	require.Equal(t, "ORIGINAL", beforeSave)
 
-	savedID, err := llmA.WithResetWorkspace().
-		WithWorkspace(clientA.CurrentWorkspace()).
+	savedID, err := llmA.WithWorkspace(clientA.CurrentWorkspace()).
 		PortableID(ctx)
 	require.NoError(t, err)
 

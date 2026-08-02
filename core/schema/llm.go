@@ -58,13 +58,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
-		dagql.NodeFunc("withResetWorkspace", s.withResetWorkspace).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Return a new LLM with the workspace reset to its base, dropping any accumulated changes. " +
-				"The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, " +
-				"so a persisted session (globalID) no longer replays workspace edits when loaded. " +
-				"Use after exporting changes (Workspace.export) so a resumed session continues from the " +
-				"workspace's on-disk state."),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
 			Args(
@@ -161,7 +154,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		}).
 			Doc("Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine."),
 		dagql.NodeFunc("portableID", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.AnyID, error) {
-			id, err := self.RecipeID(ctx)
+			recipe, err := self.Self().PortableRecipe(ctx)
+			if err != nil {
+				return dagql.AnyID{}, err
+			}
+			id, err := recipe.RecipeID(ctx)
 			if err != nil {
 				return dagql.AnyID{}, err
 			}
@@ -171,7 +168,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			DoNotCache("An ID describes the current attached result and must not be served from cache.").
 			Doc("A portable, self-contained ID for the conversation that node() can resolve in any session. " +
 				"Unlike id, which may return an engine-local runtime handle valid only within the current session, " +
-				"this returns the recipe form suitable for persisting and later restoring the conversation."),
+				"this returns the recipe form suitable for persisting and later restoring the conversation. " +
+				"The recipe is flattened: bindings superseded during the session (workspace overlays recorded by " +
+				"each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — " +
+				"including any pending, un-exported edits — is preserved."),
 		dagql.NodeFunc("replay", s.replay).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -250,10 +250,6 @@ func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{})
 		return res, fmt.Errorf("no workspace is bound to this LLM (bind one with withWorkspace)")
 	}
 	return ws, nil
-}
-
-func (s *llmSchema) withResetWorkspace(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.ObjectResult[*core.LLM], error) {
-	return self.Self().WithResetWorkspace(ctx)
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {

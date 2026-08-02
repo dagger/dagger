@@ -30,7 +30,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -1658,7 +1657,7 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 
 // responseSelectorFromBlocks builds a withResponse selector from raw content
 // blocks and token usage. Used for fresh responses (responseSelector) and for
-// re-emitting recorded assistant messages (WithResetWorkspace).
+// re-emitting recorded assistant messages (recipeSelectors).
 func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
 	// Build content block input objects for the withResponse selector.
 	// An InputObject's fields are only populated by decoding a map through
@@ -2131,30 +2130,31 @@ func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 	return llm.mcp.workspace
 }
 
-// WithResetWorkspace returns a new LLM whose recipe is re-emitted as a flat,
-// data-only chain rooted at Query.llm: the conversation, model, config, MCP
-// servers, and tool bindings are replayed as selectors, and the workspace
-// binding is reset to the first Workspace that was ever bound — dropping every
-// overlay accumulated from workspace-mutating tool calls (Changeset overlays,
-// withNewFile, and any other Workspace→Workspace edit).
+// recipeSelectors re-emits the conversation as a flat, data-only selector chain
+// rooted at Query.llm: the model, config, MCP servers, skills, tool bindings,
+// workspace binding, and full message history, in that order.
 //
-// This exists for session persistence. After the workspace's changes are
-// exported to disk (Workspace.export), the overlay derivations in the LLM's
-// recipe describe edits that are already applied: replaying them on a later
-// load fails (e.g. withReplaced no longer finds its search text) or silently
-// re-applies them. Resetting re-roots the recipe at the live workspace, whose
-// on-disk content the export just made equal to the overlay result. It also
-// keeps persisted IDs (globalID) from growing with every recorded edit.
+// It emits from the LLM's *final in-memory state*, never from its recorded ID
+// spine. That is what makes the result bounded and replay-safe. During a
+// session step() appends a withWorkspace selector on every workspace-mutating
+// tool call and a withTools selector on every object rebind, so the spine
+// accumulates each superseded binding; replaying those on a later load
+// re-applies edits that are already on disk (or fails outright, once the
+// content they were derived from has moved on). Emitting from final state
+// keeps only the tip-most binding per slot and drops the rest. Tool bindings
+// need no explicit dedupe: MCP.WithTools already keeps at most one binding per
+// object type, so BoundToolBindings is per-type final state by construction.
 //
-// The re-emitted recipe carries exactly the state that survives a save/load
-// round trip (selector-expressible state); transient state such as open MCP
-// sessions or the last tool result is not carried, same as save/load.
-func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, err
-	}
-
+// The workspace binding is carried *verbatim*, including any overlay
+// derivations (withChanges and friends) sitting on top of its base. Pending,
+// un-exported edits are therefore preserved across a save/resume round trip;
+// once they are exported and the caller rebinds the live workspace, the
+// overlay-free binding is what gets emitted.
+//
+// The chain carries exactly the state that survives a save/load round trip
+// (selector-expressible state); transient state such as open MCP sessions or
+// the last tool result is not carried, same as save/load.
+func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 	// The llm(maxAPICalls:) legacy knob is deliberately not carried: it is only
 	// settable through pre-v1 views, and this field only exists in v1+.
 	root := dagql.Selector{Field: "llm"}
@@ -2174,7 +2174,7 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 		cfg := llm.mcp.mcpServers[name]
 		svcID, err := cfg.Service.ID()
 		if err != nil {
-			return res, fmt.Errorf("mcp server %q service ID: %w", name, err)
+			return nil, fmt.Errorf("mcp server %q service ID: %w", name, err)
 		}
 		sels = append(sels, dagql.Selector{
 			Field: "withMCPServer",
@@ -2188,7 +2188,7 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 	for _, dir := range llm.mcp.skillDirs {
 		dirID, err := dir.ID()
 		if err != nil {
-			return res, fmt.Errorf("skill directory ID: %w", err)
+			return nil, fmt.Errorf("skill directory ID: %w", err)
 		}
 		sels = append(sels, dagql.Selector{
 			Field: "withSkills",
@@ -2200,7 +2200,7 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 
 	bindings, err := llm.mcp.BoundToolBindings()
 	if err != nil {
-		return res, fmt.Errorf("bound tool bindings: %w", err)
+		return nil, fmt.Errorf("bound tool bindings: %w", err)
 	}
 	for _, b := range bindings {
 		sels = append(sels, dagql.Selector{
@@ -2212,20 +2212,27 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 		})
 	}
 
-	// Reset the workspace to the first Workspace that was ever bound, dropping
-	// every overlay accumulated on top of it. A bare currentWorkspace base is
-	// omitted entirely: its recorded call is per-invocation (PerCallInput), so
-	// carrying it would pin a stale detection. The re-emitted recipe is then
-	// unbound, and whoever continues the session binds the live workspace
-	// explicitly (the CLI chains withWorkspace(currentWorkspace) after reset
-	// and on resume).
-	if base, bound, err := baseWorkspaceBinding(ctx, llm.mcp.workspace); err != nil {
-		return res, err
-	} else if bound {
+	// Carry the current workspace binding verbatim. This is the tip-most
+	// binding — the one the last workspace-mutating tool call installed — so
+	// any overlay derivations riding on it (withChanges and friends) come
+	// along, and pending un-exported edits survive the round trip. Every
+	// superseded binding recorded on the spine is simply not emitted.
+	//
+	// A bare currentWorkspace binding is carried too, and is safe to carry:
+	// currentWorkspace is per-invocation (PerCallInput), so a loaded session
+	// re-detects the live workspace rather than pinning a stale detection.
+	// Emitting it unconditionally is what keeps a restored session bound —
+	// an unbound LLM fails LLM.workspace and silently degrades tool behavior
+	// (e.g. a workspace-returning tool reporting no diff).
+	if llm.mcp.workspace.Self() != nil {
+		wsID, err := llm.mcp.workspace.RecipeID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("workspace recipe ID: %w", err)
+		}
 		sels = append(sels, dagql.Selector{
 			Field: "withWorkspace",
 			Args: []dagql.NamedInput{
-				{Name: "workspace", Value: dagql.NewID[*Workspace](base)},
+				{Name: "workspace", Value: dagql.NewID[*Workspace](wsID)},
 			},
 		})
 	}
@@ -2249,7 +2256,7 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 			}
 			sel, err := responseSelectorFromBlocks(msg.Content, usage)
 			if err != nil {
-				return res, fmt.Errorf("message %d: %w", i, err)
+				return nil, fmt.Errorf("message %d: %w", i, err)
 			}
 			sels = append(sels, sel)
 		case LLMMessageRoleUser:
@@ -2272,88 +2279,33 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 						},
 					})
 				default:
-					return res, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)
+					return nil, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)
 				}
 			}
 		default:
-			return res, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)
+			return nil, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)
 		}
 	}
 
+	return sels, nil
+}
+
+// PortableRecipe materializes the conversation as a flat, self-contained
+// recipe (see recipeSelectors) rooted at Query.llm, suitable for persisting
+// and restoring in a later session. Backs LLM.portableID.
+func (llm *LLM) PortableRecipe(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	sels, err := llm.recipeSelectors(ctx)
+	if err != nil {
+		return res, err
+	}
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("re-emit session recipe: %w", err)
 	}
-
-	// Reads through host-backed workspaces are cached per client for the
-	// client's whole lifetime (dagql.PerClientInput), so within a single
-	// long-lived session — a `dagger agent` conversation — a file read earlier
-	// in the session keeps returning its original snapshot. A reset means the
-	// agent's edits were just exported to disk (ctrl+s) or discarded (ctrl+u),
-	// either way the base workspace's on-disk content changed out from under
-	// those cached reads. Bump the client's workspace read epoch so subsequent
-	// reads land in a fresh per-client cache namespace and re-read the live
-	// host instead of a stale snapshot. Best-effort like export's
-	// InvalidateCurrentWorkspace: a bookkeeping failure must not fail the
-	// reset, it only falls back to the prior (stale) read behavior.
-	if err := BumpWorkspaceReadEpoch(ctx); err != nil {
-		slog.Warn("could not bump workspace read epoch after reset", "error", err)
-	}
 	return res, nil
-}
-
-// baseWorkspaceBinding resolves the workspace a reset should restore: the first
-// Workspace that was ever bound, before any overlay edits accumulated on top of
-// it.
-//
-// It walks the bound workspace's recipe back to its base call — the deepest
-// call that still returns a Workspace but whose receiver is not itself a
-// Workspace. Everything above it is a Workspace→Workspace transform (the
-// overlays an agent builds via withChanges, withNewFile, withNewDirectory,
-// withConfigValue, and so on) and is dropped. Walking by receiver type rather
-// than an allowlist of mutator names means every overlay is stripped, including
-// ones added later, instead of silently leaking a stale overlay into the reset.
-//
-// The three results are:
-//   - no workspace bound at all: (zero, false, nil).
-//   - the base is the bare currentWorkspace (NewLLM's imperative default, never
-//     explicitly set): (zero, false, nil) — the caller omits the binding so the
-//     reset re-inherits the live workspace on replay.
-//   - an explicitly bound base (e.g. loadWorkspaceFromID, a git-derived
-//     workspace, or a non-bare currentWorkspace chain): (baseID, true, nil).
-func baseWorkspaceBinding(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*call.ID, bool, error) {
-	if ws.Self() == nil {
-		return nil, false, nil
-	}
-	wsID, err := ws.RecipeID(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("workspace recipe ID: %w", err)
-	}
-	base := workspaceRecipeBase(wsID)
-	// A bare currentWorkspace base was never explicitly bound, so it is not
-	// carried into the reset recipe: replay re-resolves the live workspace.
-	if base.Field() == "currentWorkspace" && base.Receiver() == nil {
-		return nil, false, nil
-	}
-	return base, true, nil
-}
-
-// workspaceRecipeBase walks a workspace recipe ID back to its base call: the
-// deepest call that still returns a Workspace but whose receiver is not itself a
-// Workspace (e.g. Query.currentWorkspace or Query.loadWorkspaceFromID). Every
-// Workspace→Workspace transform above it — the overlay edits an agent
-// accumulates via withChanges, withNewFile, withNewDirectory, withConfigValue,
-// and so on — is peeled off. Walking by receiver type rather than an allowlist
-// of mutator names strips every overlay, including ones added later.
-func workspaceRecipeBase(wsID *call.ID) *call.ID {
-	const workspaceType = "Workspace"
-	for wsID.Type().NamedType() == workspaceType {
-		recv := wsID.Receiver()
-		if recv == nil || recv.Type().NamedType() != workspaceType {
-			break
-		}
-		wsID = recv
-	}
-	return wsID
 }
 
 // A variable in the LLM environment

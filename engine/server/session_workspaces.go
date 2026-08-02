@@ -87,9 +87,10 @@ func (srv *Server) currentWorkspaceReadEpoch(ctx context.Context) (string, error
 // bumpClientWorkspaceReadEpoch advances the calling client's workspace read
 // epoch, so cached host reads (Workspace.file / Workspace.directory) taken
 // before the bump are no longer served for the rest of the session. Triggered
-// from core.WithResetWorkspace, after the agent's changes are exported to disk
-// or its overlay is discarded, so the next read re-reads the live host instead
-// of a stale per-client host.directory snapshot cached earlier in the session.
+// from Workspace.export, after the agent's changes are written to disk, and
+// from Workspace.reloaded when its overlay is discarded instead, so the next
+// read re-reads the live host instead of a stale per-client host.directory
+// snapshot cached earlier in the session.
 func (srv *Server) bumpClientWorkspaceReadEpoch(ctx context.Context) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {

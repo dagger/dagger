@@ -476,17 +476,19 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	if err := s.llm.Workspace().Export(ctx); err != nil {
 		return err
 	}
-	// The exported edits now live on disk, so reset the LLM's workspace
-	// binding to its base: the persisted recipe (globalID) must stop replaying
-	// the applied overlays, since re-deriving them against the updated files on
-	// a later session load fails (withReplaced no longer finds its search
-	// text) or silently re-applies them. Sync eagerly so a failed reset
-	// surfaces here rather than corrupting later saves.
-	reset, err := s.llm.WithResetWorkspace().Sync(ctx)
+	// The exported edits now live on disk, so rebind the live workspace: the
+	// overlay the agent accumulated is now redundant with the files
+	// themselves, and carrying it forward would re-diff already-saved content
+	// as pending changes. Rebinding also drops it from the next save —
+	// portableID emits only the current binding. Export bumps the client's
+	// workspace read epoch, so reads after this point see the saved content
+	// rather than a snapshot cached earlier in the session. Sync eagerly so a
+	// failure surfaces here rather than corrupting later saves.
+	rebound, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace()).Sync(ctx)
 	if err != nil {
-		return fmt.Errorf("reset workspace after export: %w", err)
+		return fmt.Errorf("rebind workspace after export: %w", err)
 	}
-	if err := s.updateLLM(reset); err != nil {
+	if err := s.updateLLM(rebound); err != nil {
 		return err
 	}
 	if s.onStep != nil {
@@ -496,16 +498,18 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 }
 
 // ResetWorkspace discards the workspace's pending overlay edits, re-binding the
-// LLM to the live workspace base (WithResetWorkspace) without exporting first.
+// LLM to the live workspace without exporting first.
 // It is the ctrl+u action: conceptually the opposite direction of ctrl+s, it
 // "uploads" the host's current state to the agent by throwing away the agent's
-// accumulated changes rather than writing them out. Sync eagerly so a failed
-// reset surfaces here rather than corrupting later saves.
+// accumulated changes rather than writing them out. The binding goes through
+// Workspace.reloaded so cached host reads from earlier in the session are
+// invalidated and the agent genuinely re-reads whatever is on disk now. Sync
+// eagerly so a failure surfaces here rather than corrupting later saves.
 func (s *LLMSession) ResetWorkspace(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
 	}
-	reset, err := s.llm.WithResetWorkspace().Sync(ctx)
+	reset, err := s.llm.WithWorkspace(s.dag.CurrentWorkspace().Reloaded()).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("reset workspace: %w", err)
 	}
