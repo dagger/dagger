@@ -10,6 +10,25 @@ Accuracy pass (re-checked every claim below against the source): the
 "Completed" list, the DONE halves of item 1, and pending items 2–5 all still
 match the tree. The one correction is inside item 1 — see the live re-test.
 
+SECOND accuracy pass (this session, every claim re-checked again): nothing has
+regressed and nothing new has landed. Spot-verified in the tree — item 0's
+`noRepoGitDir = "/nonexistent/dagger-no-repo"` + `gitDiagnostics`
+(core/directory.go:1791–1907, core/directory_patch_test.go, and the
+`corrupt patch reports what git said and where` subtest at
+core/integration/directory_test.go:1630); item 1's `telemetry.Internal()` +
+`revealTransport` (core/llm_otel.go:69,103,136,144) and
+`captureLogLines`/`limitIndirectLines` (core/mcp.go:1164,1719) with
+core/mcp_test.go's TestAssembleLines + TestLimitIndirectLines; item 2's
+delegate doc still SOURCE-silent; item 3's engineTest still returning bare
+PASS/FAIL (modules/engine-lab/main.dang:313–315); item 4's
+`workdir: String! = defaultWorkdir` (modules/tui-qa/main.dang:79); item 5's
+`var lastLogID int64` (core/mcp.go:1188). The owed integration test for item 1
+does NOT exist (core/integration/llm_test.go has only TestToolLogsExclude
+Internal/Service). Item 1's abridging bug was RE-REPRODUCED live, then
+DIAGNOSED AND FIXED this session (directSpanFilter + TestToolLogsKeepReport) —
+so the item-1 notes below now describe a closed loop, and the owed integration
+test exists.
+
 Context to have open: `modules/delegate/main.dang`, `modules/tui-qa/main.dang`,
 `modules/engine-lab/main.dang`, `core/mcp.go` (captureLogs /
 internalSpanFilter), `core/llm_object_tools.go` (toolLogs),
@@ -86,7 +105,7 @@ reproduction the moment the subprocess's own words reached the error. Check
 other exec sites for the same silence — `core/changeset.go`'s `runGit` already
 does it right (`git %v: %w: %s` with CombinedOutput).
 
-### 1. delegateEdits results drown the sub-agent's final report
+### 1. delegateEdits results drown the sub-agent's final report (FIXED)
 
 Observed in the implementation session: `delegateEdits` tool results were
 "… N lines omitted …" + a tail of raw LLM SSE events (`event:
@@ -117,7 +136,8 @@ line verbatim and trims only nested-work lines to the last 8, replacing each
 dropped run with a counted marker. `captureLogs` (ReadLogs' path) is
 unchanged in behavior — it now just flattens captureLogLines.
 Unit tests: `core/mcp_test.go` TestAssembleLines + TestLimitIndirectLines.
-NOT yet integration-proven — and a live re-test says the assumption is WRONG.
+The abridging logic was right; the `direct` classification was not — see the
+fix below.
 
 LIVE RE-TEST (this session, one `delegateEdits` probe: sub-agent makes a
 net-empty edit and reports exactly 14 numbered lines):
@@ -129,30 +149,75 @@ net-empty edit and reports exactly 14 numbered lines):
   LINE 07–LINE 14 — i.e. the report was still head-snipped to the last 8
   lines, exactly the tail-only behavior the fix was supposed to remove.
 
-So the sub-agent's report lines are NOT being classified as `direct`. Most
-likely the direct-child span assumption doesn't hold for the delegate path
-(the report reaches the tool result via the delegate module's own print /
-`lastReply` surfacing, not via a log record on the tool-call span or a direct
-child of it). Next step is diagnosis, not more unit tests: run the probe
-above, then `ReadLogs` the delegate tool-call span and walk the actual span
-topology (tui-qa's `span(spanHex)`-style parent-chain view, or
-`/debug`-side inspection) to find where those log records really sit, then
-widen `captureLogLines`' direct-line rule to match.
+So the sub-agent's report lines were NOT being classified as `direct`.
 
-Remaining:
+MEASURED TOPOLOGY (instrumented captureLogLines, dumped real parent chains
+under `engineTest`):
 
-- Integration test still owed: an llmtest fixture whose tool prints a >8-line
-  report AFTER noisy nested work, asserting the whole report survives and only
-  the nested lines are abridged. Model it on TestToolLogsExcludeService. This
-  is the test that would VERIFY the direct-child span assumption — which the
-  live probe above says is currently FALSE, so expect it to fail first and
-  drive the fix. The unit tests only cover line-assembly and abridging logic,
-  not span topology.
-  Two delegation attempts failed (one changeset merge error, one step-limit
-  blowout at 40) — run it directly with engineTest, or after raising the
-  delegate step cap.
-- Re-test the live delegateEdits result: DONE (see LIVE RE-TEST). The
-  engine-metrics and SSE lines are gone; the abridging bug is not.
+    tool-call span (captured root)
+      └─ `Type.fn`                  dagql field-call span:
+                                    dag.digest=D, dag.call=<base64 ID>
+          └─ `module:Type.fn`       call_exec span — WHERE DANG'S PRINT LANDED:
+                                    dag.digest=D (same!), NO dag.call,
+                                    ui.passthrough=true
+
+Two hops, so the depth-1 rule could never see it. Worse than believed: in the
+repro NOT ONE report line survived (log-record arrival order ≠ wall-clock
+order, so the 8-line nested tail evicted the whole report), not merely the
+head.
+
+FIRST FIX — WRONG, REVERTED. I widened the classifier: a `directSpanFilter`
+in core/mcp.go that walked ParentSpanID to the root and accepted spans of the
+same dagql call (same `dag.digest`, no new `dag.call`). It passed, canary and
+all — and it was treating a symptom. The user caught it: `./logtest/`
+(gotest + dangtest, same trivial print) shows Go and Dang BOTH producing an
+outer user-visible span and an inner passthrough span, but **Go routes its
+logs to the OUTER span and Dang routed them to the INNER one**. Nothing was
+wrong with the classifier; the Dang SDK was misfiling its logs.
+
+REAL FIX (Dang SDK, both runtimes): `core/sdk/dang/v{1,2}/helpers.go` now bind
+stdout/stderr with
+`trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))` instead
+of raw `ctx`. The inner span is dagql's `call_exec` PROFILING span
+(dagql/otelprof_hooks.go `beginOTelCallExec`, `telemetry.Passthrough()`); its
+own doc block already warns that surfaces reading "the current span" must not
+attribute to it, "logs parented to a hidden span vanish from the row that
+should show them", and `MarkProfilingSpan`/`UserFacingSpanContext` exist
+precisely to escape it. Containerized SDKs get this free: the executor injects
+`dagql.UserFacingSpanContext(ctx)` as the container's traceparent
+(engine/engineutil/executor_spec.go:842), which parents everything the nested
+client emits. An in-engine runtime like Dang has to ask. With that, print
+lands on the field-call span — a DIRECT CHILD of the tool-call span — and the
+original depth-1 rule is correct as written.
+
+Tests: `core/integration/llmtest/report-agent/` fixture (tool does 20 lines of
+nested exec noise, then prints LINE-01…LINE-14) + `TestToolLogsKeepReport`
+(core/integration/llm_test.go), asserting all 14 report lines survive AND
+`NESTED-NOISE-01` is still abridged while `-20` (in the kept tail) remains.
+The fixture/test outlived the wrong fix and now proves the right one:
+`engineTest ./core/integration TestLLM/TestToolLogs` → PASS with the SDK fix
+and NO classifier change. CANARY-VERIFIED both ways: reverting the two
+`stdioCtx` lines makes KeepReport FAIL. Fixture gotcha caught in review: the
+noise loop must zero-pad (`printf 'NESTED-NOISE-%02d\n'`) or the NotContains
+assertion is vacuous.
+
+CAVEAT — not live-verifiable from inside a session: this runs in the engine
+hosting THIS conversation, built before the fix. Live `delegateEdits` reports
+keep truncating until it ships; the integration test is the proof, and the
+next session's first `delegateEdits` is the free confirmation.
+
+LESSON (the expensive one): I had the smoking gun and misread it. The print
+span was `ui.passthrough=true` — a span type whose entire purpose is "no
+frontend renders this row" — and I treated it as a legitimate place for a
+user's `print` to live, then taught the CONSUMER to cope. When telemetry shows
+up in a weird place, fix the PRODUCER's routing before widening any reader:
+every reader would have needed the same widening (ReadLogs, the TUI, error
+origins). Concretely: when two SDKs disagree, diff them (that's what
+`./logtest/` is for) — a cross-implementation A/B would have pointed at the
+Dang SDK in minutes instead of at core/mcp.go. And the same protocol as item
+0's `git apply` lesson applies: the answer was already written down in
+`beginOTelCallExec`'s doc comment; I dumped span attributes and never read the
+prose next to the code that created them.
 
 ### 2. Sub-agents do NOT see workspace edits to their own tool modules
 

@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 	"github.com/vito/dang/pkg/dang"
 	"github.com/vito/dang/pkg/hm"
 	"github.com/vito/dang/pkg/introspection"
@@ -92,7 +93,13 @@ func evalDangSource(
 			AutoImport: true,
 		})
 
-		stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+		// Route the program's stdout/stderr to the USER-FACING span, not
+		// whatever span happens to be current — see the v2 runtime's copy of
+		// this comment (core/sdk/dang/v2/helpers.go): a module function call
+		// runs under dagql's passthrough call_exec profiling span, and logs
+		// parented there vanish from the row that should show them.
+		stdioCtx := trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))
+		stdio := telemetry.SpanStdio(stdioCtx, core.InstrumentationLibrary)
 		ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 		ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
 

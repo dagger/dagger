@@ -427,6 +427,53 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "SERVICE-STOPPED")
 }
 
+// TestToolLogsKeepReport locks in that a module function's own print output
+// reaches the tool result in full, even after noisy nested work. It covers
+// both halves: the Dang runtime routes stdio to the user-facing span (the
+// function call the user sees) rather than the passthrough call_exec
+// profiling span it currently runs under — as containerized SDKs do via the
+// injected traceparent — and captureLogLines then classifies that output as
+// the tool's own and keeps it verbatim, abridging only nested work.
+func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	// Mirrors ReportAgent.drive's conversation (the first user message must
+	// match its withPrompt byte for byte). Tool results are placeholders —
+	// the real tool runs during replay.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// Every line of the tool's own report survives into the tool result.
+	for i := 1; i <= 14; i++ {
+		require.Contains(t, out, fmt.Sprintf("LINE-%02d", i))
+	}
+	// The nested exec's output is still abridged to its trailing lines.
+	require.NotContains(t, out, "NESTED-NOISE-01")
+	require.Contains(t, out, "NESTED-NOISE-20")
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
