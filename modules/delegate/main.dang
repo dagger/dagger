@@ -15,6 +15,12 @@
 # core/llm_object_tools.go), so it has the same tools. It runs to completion via
 # `loop` and we surface its `lastReply`.
 #
+# The sub-agent shares the parent's WORKSPACE, not its session:
+# `source.agents.compose` composes fresh module instances, so none of the
+# parent's live session state comes along — no running engine-lab engine, no
+# live tui-qa TUI session, no bound-object state (e.g. engine = null). Tools
+# that hold live state start fresh and would have to rebuild.
+#
 # Two flavors:
 #   - `delegate` reports back in text only: investigative / QA / analysis
 #     legwork. The sub-agent's own workspace edits are NOT merged into yours
@@ -50,7 +56,11 @@ type Delegate {
   instead of flooding yours. Reach for it to offload noisy, context-heavy, or
   well-scoped legwork — e.g. "build and run the agent, drive the TUI, and report
   just the final screen and whether it panicked" — and keep your own context
-  focused. Note: this tool does NOT merge the sub-agent's workspace edits back,
+  focused. The sub-agent shares your WORKSPACE, not your session: tools that
+  hold live state (engine-lab's engine, tui-qa's TUI session) start fresh and
+  would have to rebuild — so either delegate tasks that are cheap to set up,
+  or pass any needed endpoints/details explicitly in the task text.
+  Note: this tool does NOT merge the sub-agent's workspace edits back,
   so use it for investigation/QA/analysis; use `delegateEdits` to farm out
   editing work.
   """
@@ -90,6 +100,11 @@ type Delegate {
   other's toes TOO much: edits to unrelated files always merge cleanly, while
   conflicting edits to the same lines fail the merge. The sub-agent's final
   report is surfaced above the patch summary.
+
+  The sub-agent shares your WORKSPACE, not your session: tools that hold live
+  state (engine-lab's engine, tui-qa's TUI session) start fresh in its sandbox
+  and would have to rebuild — so keep delegated edits cheap to set up, or pass
+  any needed endpoints/details explicitly in the task text.
   """
   delegateEdits(
     """
@@ -133,6 +148,11 @@ type Delegate {
       keeps parallel editors safe). Use it to farm out distinct editing tasks
       and work streams — several at once is fine, as long as the tasks don't
       step on each other's toes too much.
+
+    The sub-agent shares your WORKSPACE, not your session: tools that hold
+    live state (engine-lab's engine, tui-qa's TUI session) start fresh and
+    would have to rebuild — so either delegate tasks that are cheap to set
+    up, or pass any needed endpoints/details explicitly in the task text.
 
     Delegate when a subtask is noisy (dumps a lot of output), context-heavy,
     or cleanly scoped — e.g. reproducing a bug end-to-end, exploring an
