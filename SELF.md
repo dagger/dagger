@@ -41,25 +41,16 @@ patch summary — the sub-agent's REPORT text was lost in 3 of 3 edit
 delegations. Plain `delegate` survived fine because the report IS its return
 value.
 
-DONE (SSE half): the noise came from `core/llm_otel.go`'s per-request "LLM
-HTTP %s %s" span, which teed raw request/response bodies to span stdio and
-carried only `telemetry.Encapsulate()` — never `telemetry.Internal()`, so
-captureLogs' internalSpanFilter had nothing to filter on. Now started with
-`telemetry.Internal()` (hidden below `ShowInternalVerbosity`, skipped by
-captureLogs AND ReadLogs), with `revealTransport` clearing the attribute
-again on transport error / HTTP >= 400 so failures still surface their
-bodies. Unit test: `core/llm_otel_test.go` TestLLMTransportSpanInternal
-(tracetest recorder + httptest server, 200 hidden / 500 revealed).
-
-Remaining:
-
-- Cheap module-side fix, still worth doing: in `modules/delegate/main.dang`,
+- First check the cheap module-side fix: in `modules/delegate/main.dang`,
   make delegateEdits' RETURN VALUE carry `lastReply` + patch summary as one
   string (like `delegate` does), instead of relying on logs to surface the
   report above the summary.
-- Re-test on a platform engine carrying BOTH this fix and the service-log
-  fix; the engine-metrics lines are nested-engine service logs and should
-  already be gone.
+- Then re-test after the platform engine includes this session's service-log
+  fix — the engine-metrics noise is nested-engine service logs and should
+  disappear; the SSE noise may not (those records likely sit on LLM-loop or
+  HTTP spans under the delegation span, not on LLMRole/LLMTool spans that
+  captureLogs already skips). If SSE noise persists, find which span carries
+  it (tuiQa `span` tool / ReadLogs) and extend the capture filter.
 
 ### 2. Sub-agents do NOT see workspace edits to their own tool modules
 
