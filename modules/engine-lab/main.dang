@@ -12,7 +12,11 @@
 #     endpoints enabled — the equivalent of `./hack/dev`.
 #   - `exec`: run a command in a client container bound to that engine, with
 #     the from-source `dagger` CLI on PATH — the equivalent of
-#     `./hack/with-dev ...`.
+#     `./hack/with-dev ...`. It takes the (auto-injected) `Workspace!` itself,
+#     so the *current* tree — including edits made since `start` — is mounted
+#     fresh on every call. Freshness is structural, not procedural: the engine
+#     *binary* still only changes on `restart` (rebuilding is expensive and
+#     deliberate), but the files a command sees always match the workspace.
 #   - `query`: send raw GraphQL straight to the engine.
 #   - `debugGet`/`debugJq`: curl the engine's debug HTTP server (routes are
 #     defined in cmd/engine/debug.go).
@@ -44,8 +48,10 @@ type EngineLab {
   # tool calls the same way tui-qa's `client`/`service` do) ------------------
 
   # client container bound to the running engine service: from-source `dagger`
-  # CLI on PATH, workspace source mounted at /src, curl + jq installed
-  let runner: Container! = container
+  # CLI on PATH, curl + jq + git installed. Deliberately does NOT carry a
+  # workspace mount: the tree is mounted per-call from the caller's current
+  # Workspace, so no tool can ever run against a stale snapshot.
+  let client: Container! = container
   # the started from-source engine service (null until `start`)
   let engine: Service = null
   # tcp://<host>:1234 address of the running engine, resolvable session-wide
@@ -118,17 +124,17 @@ type EngineLab {
     # The client container: installClient binds the engine service under the
     # `dagger-engine` hostname and points _EXPERIMENTAL_DAGGER_RUNNER_HOST at
     # it; we overwrite the CLI with our from-source build (same
-    # belt-and-suspenders as tui-qa).
+    # belt-and-suspenders as tui-qa). The workspace is NOT mounted here — the
+    # CLI and the engine binding are what's expensive and deliberate to pin,
+    # while the tree is re-mounted per call (see `withSource`).
     let base = container
       .from("alpine:3.20")
       .withExec(["apk", "add", "--no-cache", "curl", "jq", "git"])
     let cli = cliDev(ws: source, source: srcDir).binary
 
-    self.runner = dev
+    self.client = dev
       .installClient(client: base, service: svc)
       .withFile("/usr/local/bin/dagger", cli)
-      .withMountedDirectory(defaultWorkdir, srcDir)
-      .withWorkdir(defaultWorkdir)
     self.engine = svc
     self.engineEndpoint = "tcp://" + host + ":1234"
     print(
@@ -176,18 +182,21 @@ type EngineLab {
   """
   Run a command in the client container against the live from-source engine —
   the equivalent of `./hack/with-dev ...`. The from-source `dagger` CLI is on
-  PATH and connected to the engine; the workspace source is mounted at /src
-  (the working directory); curl, jq, and git are installed. args is a full
-  argv, e.g. ["dagger", "core", "version"] or ["sh", "-c", "..."]. Returns the
-  exit code plus tail-truncated stdout/stderr.
+  PATH and connected to the engine; the CURRENT workspace source is mounted at
+  /src (the working directory) on every call, so edits made since `start` are
+  always visible; curl, jq, and git are installed. args is a full argv, e.g.
+  ["dagger", "core", "version"] or ["sh", "-c", "..."]. Returns the exit code
+  plus tail-truncated stdout/stderr.
   """
-  exec(args: [String!]!): String! @cache(policy: FunctionCachePolicy.Never) {
+  exec(
+    source: Workspace!,
+    args: [String!]!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
       return "No engine session. Call the engine-lab start tool first."
     }
     report(
-      runner
-        .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      withSource(source)
         .withExec(args, expect: ReturnType.ANY),
     )
   }
@@ -197,13 +206,15 @@ type EngineLab {
   query` with no module loaded. Use for core API repros without CLI plumbing,
   e.g. querying `version` or driving `container { ... }` chains directly.
   """
-  query(graphql: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+  query(
+    source: Workspace!,
+    graphql: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
       return "No engine session. Call the engine-lab start tool first."
     }
     report(
-      runner
-        .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      withSource(source)
         .withExec(
           ["dagger", "api", "query", "--no-load-module"],
           stdin: graphql,
@@ -225,7 +236,7 @@ type EngineLab {
       return "No engine session. Call the engine-lab start tool first."
     }
     report(
-      runner
+      client
         .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
         .withExec(
           [
@@ -257,7 +268,7 @@ type EngineLab {
     # The URL and filter travel as env vars so no shell-quoting of user input
     # is needed inside the sh -c script.
     report(
-      runner
+      client
         .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
         .withEnvVariable("ENGINE_LAB_DEBUG_URL", debugURL(path))
         .withEnvVariable("ENGINE_LAB_JQ_FILTER", filter)
@@ -323,6 +334,23 @@ type EngineLab {
 
   # ---- helpers ------------------------------------------------------------
 
+  # The pinned client with the CALLER'S CURRENT workspace mounted at /src.
+  #
+  # This is the fix for a nasty class of bug: when the client container was
+  # built once (at `start`) with the workspace snapshot of that moment, every
+  # later `exec` silently ran a stale tree — three successive edits to a
+  # fixture "failing" with the byte-identical error, and even `cp -r /src/...`
+  # inside the container propagating the staleness. Taking `source:
+  # Workspace!` on each tool means the current tree (including edits made
+  # since `start`) is re-injected on every call, structurally.
+  let withSource(source: Workspace!): Container! {
+    client
+      # bust Dagger's exec cache so each call actually re-runs
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withMountedDirectory(defaultWorkdir, source.directory("/"))
+      .withWorkdir(defaultWorkdir)
+  }
+
   let debugURL(path: String!): String! {
     "http://dagger-engine:" + toString(debugPort) + path
   }
@@ -353,7 +381,9 @@ type EngineLab {
       running engine.
     - `exec(args: ["dagger", ...])` runs a command against the live engine:
       the from-source CLI is on PATH, the workspace is mounted at /src, and
-      curl/jq/git are available (["sh", "-c", ...] works too).
+      curl/jq/git are available (["sh", "-c", ...] works too). The workspace
+      is re-mounted from your CURRENT tree on every call, so your edits are
+      always visible — only the engine *binary* is pinned until `restart`.
     - `query` sends raw GraphQL straight to the engine (no module loaded).
     - `debugGet`/`debugJq` hit the engine's :6060 debug endpoints (routes in
       cmd/engine/debug.go), e.g. /debug/pprof/goroutine?debug=2 for hangs;
