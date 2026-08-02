@@ -20,6 +20,19 @@
 
 let defaultWorkdir = "/src"
 let defaultPort = 7777
+# Tail-truncate command output to keep tool results context-friendly.
+let tailLines = 200
+
+# Last `lines` lines of s, with a truncation marker when shortened.
+let tail(s: String!, lines: Int! = tailLines): String! {
+  let all = s.split("\n")
+  if (all.length <= lines) {
+    s
+  } else {
+    let marker = "… (" + toString(all.length - lines) + " earlier lines truncated) …"
+    marker + "\n" + all.takeLast(lines).join("\n")
+  }
+}
 
 type TuiQa {
   # ---- session state (private so it isn't exposed as tools; persists across
@@ -111,24 +124,49 @@ type TuiQa {
       .withEnvVariable("DAGGER_PROGRESS", "tty")
       .withExposedPort(port)
 
-    # run the command under test as a persistent service serving the console
-    let svc = runner
-      .asService(args: ["dagger"] + args)
-      .start
-
-    # a tiny client we curl the console from, on every interaction tool
-    let curlCtr = container
-      .from("alpine:3.20")
-      .withExec(["apk", "add", "--no-cache", "curl"])
-      .withServiceBinding("tui-qa", svc)
-
-    if (engine != "") {
-      print("Attached to existing engine at " + engine)
+    # run the command under test as a persistent service serving the console.
+    # Short-lived commands (e.g. ["version"]) exit before the console port's
+    # healthcheck ever passes, so `.start` fails with an opaque "service
+    # exited before healthcheck" error — rescue that by rerunning the command
+    # synchronously and reporting its output instead.
+    let svc = {
+      runner
+        .asService(args: ["dagger"] + args)
+        .start
+    } rescue {
+      e: Error => {
+        let ran = runner
+          .withExec(["dagger"] + args, expect: ReturnType.ANY)
+          .{{exitCode, combinedOutput}}
+        print(
+          "command exited immediately (exit code " + toString(ran.exitCode)
+            + ") — the TUI console never came up; for one-shot commands use"
+            + " the engine-lab exec tool\n\n"
+            + tail(ran.combinedOutput),
+        )
+        null
+      }
     }
-    self.client = curlCtr
-    self.service = svc
-    self.url = "http://tui-qa:" + toString(port)
-    self
+
+    if (svc == null) {
+      # failure path: leave client/service/url unset so later tools still
+      # report "No active TUI session. Call the tui-qa start tool first."
+      self
+    } else {
+      # a tiny client we curl the console from, on every interaction tool
+      let curlCtr = container
+        .from("alpine:3.20")
+        .withExec(["apk", "add", "--no-cache", "curl"])
+        .withServiceBinding("tui-qa", svc)
+
+      if (engine != "") {
+        print("Attached to existing engine at " + engine)
+      }
+      self.client = curlCtr
+      self.service = svc
+      self.url = "http://tui-qa:" + toString(port)
+      self
+    }
   }
 
   # NOTE: every tool that reads or drives the live console MUST be
@@ -198,6 +236,17 @@ type TuiQa {
   }
 
   """
+  Show one span in depth: name, status, timing, the dagui flags that shape how
+  the UI treats it (internal, passthrough, encapsulation, log/span roll-up,
+  service, …), and the parent chain up to the root with each ancestor's flags.
+  Get ids from `spans`; use this to answer "why is this span hidden / why
+  didn't its logs roll up".
+  """
+  span(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/span?id=" + spanHex)
+  }
+
+  """
   Show the console's own endpoint + keymap help.
   """
   help: String! {
@@ -223,7 +272,7 @@ type TuiQa {
 
   let get(path: String!): String! {
     if (url == "") {
-      return "No active TUI session. Call `start` first."
+      return "No active TUI session. Call the tui-qa start tool first."
     }
     client
       # bust Dagger's exec cache so each read hits the live console, not a
@@ -240,7 +289,7 @@ type TuiQa {
 
   let post(path: String!, body: String!): String! {
     if (url == "") {
-      return "No active TUI session. Call `start` first."
+      return "No active TUI session. Call the tui-qa start tool first."
     }
     client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
@@ -260,17 +309,22 @@ type TuiQa {
     affordance — see the `tui-console` skill).
 
     Workflow:
-    - `start(args: ["call", "test"])` builds the CLI from the workspace source,
-      runs the command against a from-source engine, and starts serving the TUI.
+    - the tui-qa start tool (e.g. args: ["call", "test"]) builds the CLI from
+      the workspace source, runs the command against a from-source engine, and
+      starts serving the TUI.
     - `screen` reads the current rendered terminal. Poll it to watch progress;
       startup takes a little while (build + engine connect), and the tools retry
       the connection for you.
     - `key`, `typeText`, `resize`, `zoom`, `spans` drive and inspect the TUI,
       exactly like the endpoints in the `tui-console` skill.
+    - `span(spanHex)` inspects one span in depth (status, timing, dagui flags
+      like internal/passthrough/roll-up, and the parent chain with each
+      ancestor's flags) — use it to answer "why is this span hidden / why
+      didn't its logs roll up". Get ids from `spans`.
     - Check for crashes explicitly: grep the screen for "panic:", "fatal error".
-    - `stop` when done.
+    - the tui-qa stop tool when done.
 
-    Interactive prompt mode works too: `start(args: ["agent"])` brings up the
+    Interactive prompt mode works too: starting with args: ["agent"] brings up the
     live `dagger agent` prompt. Drive it by `typeText`-ing a line into the
     editline and `key enter` to submit; `key esc` toggles nav/input mode.
     The runner uses experimentalPrivilegedNesting so it inherits the outer

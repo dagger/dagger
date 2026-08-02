@@ -144,7 +144,8 @@ type EngineLab {
   Rebuild the engine + CLI from the current workspace source and replace the
   running engine service. Call after editing engine code, then re-run your
   repro with `exec`. Breaks any TUI session attached to the old engine —
-  restart those after (tui-qa `start` with the freshly printed endpoint).
+  restart those after (the tui-qa start tool with the freshly printed
+  endpoint).
   """
   restart(
     source: Workspace!,
@@ -155,11 +156,12 @@ type EngineLab {
   """
   The tcp://<host>:1234 address of the running engine, resolvable from any
   container in this session. Pass it to the tui-qa start tool's `engine` arg
-  to point a TUI session at this engine. Empty until `start`.
+  to point a TUI session at this engine. Empty until the engine-lab start
+  tool runs.
   """
   endpoint: String! {
     if (engineEndpoint == "") {
-      "No engine session. Call `start` first."
+      "No engine session. Call the engine-lab start tool first."
     } else {
       engineEndpoint
     }
@@ -181,7 +183,7 @@ type EngineLab {
   """
   exec(args: [String!]!): String! @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
-      return "No engine session. Call `start` first."
+      return "No engine session. Call the engine-lab start tool first."
     }
     report(
       runner
@@ -197,7 +199,7 @@ type EngineLab {
   """
   query(graphql: String!): String! @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
-      return "No engine session. Call `start` first."
+      return "No engine session. Call the engine-lab start tool first."
     }
     report(
       runner
@@ -220,7 +222,7 @@ type EngineLab {
     path: String! = "/debug/pprof/",
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
-      return "No engine session. Call `start` first."
+      return "No engine session. Call the engine-lab start tool first."
     }
     report(
       runner
@@ -250,7 +252,7 @@ type EngineLab {
     filter: String! = ".",
   ): String! @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
-      return "No engine session. Call `start` first."
+      return "No engine session. Call the engine-lab start tool first."
     }
     # The URL and filter travel as env vars so no shell-quoting of user input
     # is needed inside the sh -c script.
@@ -345,9 +347,10 @@ type EngineLab {
     `./hack/with-dev` loop from the `engine-debugging` skill.
 
     Workflow:
-    - `start` builds the engine + CLI from the workspace source and runs the
-      engine as a persistent service with its debug endpoints enabled. The
-      first build takes a while; later tools reuse the running engine.
+    - the engine-lab start tool builds the engine + CLI from the workspace
+      source and runs the engine as a persistent service with its debug
+      endpoints enabled. The first build takes a while; later tools reuse the
+      running engine.
     - `exec(args: ["dagger", ...])` runs a command against the live engine:
       the from-source CLI is on PATH, the workspace is mounted at /src, and
       curl/jq/git are available (["sh", "-c", ...] works too).
@@ -363,12 +366,13 @@ type EngineLab {
     - Engine logs: ListServices shows the engine service's span ids;
       ReadLogs(span, grep, limit) reads them — the equivalent of
       `docker logs dagger-engine.dev | grep`.
-    - `start` prints the engine's tcp://<host>:1234 endpoint (`endpoint`
-      re-prints it). If tui-qa tools are available, pass it to their start
-      tool's `engine` arg to run a TUI session against THIS engine — then
-      `debugGet`/`debugJq`/ReadLogs introspect the very engine the TUI is
-      driving (e.g. reproduce a hang in the TUI, then pprof it live).
-      `restart`/`stop` break attached TUI sessions; restart them after.
-    - `stop` when done.
+    - the engine-lab start tool prints the engine's tcp://<host>:1234 endpoint
+      (`endpoint` re-prints it). If tui-qa tools are available, pass it to
+      their start tool's `engine` arg to run a TUI session against THIS
+      engine — then `debugGet`/`debugJq`/ReadLogs introspect the very engine
+      the TUI is driving (e.g. reproduce a hang in the TUI, then pprof it
+      live). `restart` and the engine-lab stop tool break attached TUI
+      sessions; restart them after.
+    - the engine-lab stop tool when done.
   """
 }
