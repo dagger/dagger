@@ -1060,7 +1060,16 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 		contributed := !result.failed && result.capture.changes.Self() != nil
 		switch {
 		case mergeErr != nil && contributed:
-			block.Text = fmt.Sprintf("failed to merge parallel changesets: %s", mergeErr)
+			if len(changes) == 1 {
+				// Nothing was merged with anything: a single tool call
+				// produced changes, and the failure is that call's own,
+				// surfacing here only because its changeset is evaluated
+				// lazily. Announcing it as a parallel merge failure would
+				// send the agent looking for a conflict that never existed.
+				block.Text = mergeErr.Error()
+			} else {
+				block.Text = fmt.Sprintf("failed to merge parallel changesets: %s", mergeErr)
+			}
 			block.Errored = true
 		case conflictNote != "" && contributed:
 			// The changes did land, so this is not a failed tool call — but the
