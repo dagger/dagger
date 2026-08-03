@@ -8,7 +8,7 @@ Dagger runs locally, in your CI server, or directly in the cloud!
 brew install dagger/tap/dagger
 ```
 
-## Why Dagger?
+## Why Dagger? (qa probe)
 
 Dagger makes your software delivery *programmable*, *local-first*, *repeatable* and *observable*.
 
