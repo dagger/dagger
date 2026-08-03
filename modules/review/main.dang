@@ -42,9 +42,10 @@ type Review {
     paths: [String!]! = [],
   ): String! {
     let stats = source.git.uncommitted.diffStats.{{kind, addedLines, removedLines, path}}
-    if (stats.isEmpty) {
-      return "No pending changes."
-    }
+    # Pending edits git cannot see at all — gitignored paths, paths inside a
+    # nested repository, or a file edited back to its committed content. They
+    # are written to the checkout on save, but there is nothing to commit.
+    let unmanaged = source.git.unmanaged.diffStats.{{addedLines, removedLines, path}}
     let scoped = if (paths.isEmpty) {
       stats
     } else {
@@ -52,8 +53,29 @@ type Review {
         paths.any { p => Path(p).contains(Path(s.path)) }
       }
     }
+    let scopedUnmanaged = if (paths.isEmpty) {
+      unmanaged
+    } else {
+      unmanaged.filter { s =>
+        paths.any { p => Path(p).contains(Path(s.path)) }
+      }
+    }
+    let unmanagedBlock = if (scopedUnmanaged.isEmpty) {
+      ""
+    } else {
+      let unmanagedRows = scopedUnmanaged.map { s =>
+        `?  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
+      }
+      "\n\n" + unmanagedHeader + "\n" + unmanagedRows.join("\n")
+    }
     if (scoped.isEmpty) {
-      return "No pending changes under the given paths."
+      if (scopedUnmanaged.isEmpty) {
+        if (paths.isEmpty) {
+          return "No pending changes."
+        }
+        return "No pending changes under the given paths."
+      }
+      return "No committable pending changes." + unmanagedBlock
     }
     let rows = scoped.map { s =>
       let mark = if (s.kind == DiffStatKind.ADDED) {
@@ -70,7 +92,7 @@ type Review {
     let added = scoped.reduce(0) { acc, s => acc + s.addedLines }
     let removed = scoped.reduce(0) { acc, s => acc + s.removedLines }
     let footer = `${toString(scoped.length)} files changed, +${toString(added)} -${toString(removed)}`
-    rows.join("\n") + "\n\n" + footer
+    rows.join("\n") + "\n\n" + footer + unmanagedBlock
   }
 
   """
@@ -92,12 +114,32 @@ type Review {
     paths: [String!]! = [],
   ): String! {
     let changes = source.git.uncommitted
+    # Files git cannot track: written to the checkout on save, but git sees
+    # nothing to commit for them, so they never appear in the patch. Note them
+    # by name after it.
+    let unmanagedFiles = source.git.unmanaged.diffStats.{{path}}.map { s => s.path }
+    let scopedUnmanaged = if (paths.isEmpty) {
+      unmanagedFiles
+    } else {
+      unmanagedFiles.filter { f =>
+        paths.any { p => Path(p).contains(Path(f)) }
+      }
+    }
+    let unmanagedNote = if (scopedUnmanaged.isEmpty) {
+      ""
+    } else {
+      let listed = scopedUnmanaged.map { f => "#   " + f }.join("\n")
+      `\n\n# ${toString(scopedUnmanaged.length)} file(s) ${unmanagedHeader}\n${listed}`
+    }
     if (changes.isEmpty) {
-      return "No pending changes."
+      if (scopedUnmanaged.isEmpty) {
+        return "No pending changes."
+      }
+      return "No committable pending changes." + unmanagedNote
     }
     let patch = changes.asPatch.contents
     if (paths.isEmpty) {
-      return patch
+      return patch + unmanagedNote
     }
     # Scope the patch by slicing it into its per-file sections: each one starts
     # with a "diff --git <old> <new>" header at the start of a line, and body
@@ -115,12 +157,20 @@ type Review {
       }
     }
     if (kept.isEmpty) {
-      return "No pending changes under the given paths."
+      if (scopedUnmanaged.isEmpty) {
+        return "No pending changes under the given paths."
+      }
+      return "No committable pending changes under the given paths." + unmanagedNote
     }
-    kept.map { section => patchHeader + section }.join("\n")
+    kept.map { section => patchHeader + section }.join("\n") + unmanagedNote
   }
 
   let patchHeader: String! = "diff --git "
+
+  # Worded by consequence, not cause: whatever the reason git cannot see the
+  # change, what matters is that saving writes it and committing cannot.
+  let unmanagedHeader: String! =
+    "UNTRACKED BY GIT (saved on ctrl+s; git sees nothing to commit here):"
 
   let systemPrompt: String! = """
     You can review your own pending workspace edits with the Review tools:
@@ -133,6 +183,14 @@ type Review {
     Both accept `paths` to scope the output to particular files or directories
     (a directory matches everything beneath it) — reach for it with `diff` in
     particular, since an unscoped patch can be huge.
+
+    Some pending edits are not visible to git at all — a gitignored path, a
+    path inside a nested repository, or a file you edited back to its committed
+    content. `status` lists these separately under "UNTRACKED BY GIT" (marked
+    `?`) and `diff` notes them. They ARE written to the user's checkout when the
+    session is saved, but git sees nothing to commit for them, so committing
+    those paths will fail — mention them in your summary instead of assuming
+    they landed in a commit.
 
     Both read the current state of your workspace, so re-run them after making
     edits to see updated results. They are read-only and never modify anything.

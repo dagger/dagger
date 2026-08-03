@@ -1525,6 +1525,56 @@ func (GitSuite) TestGitUncommittedLocal(ctx context.Context, t *testctx.T) {
 	require.True(t, empty)
 }
 
+// TestGitUncommittedLocalIgnoresGitignoredAndNestedRepos pins the repository
+// route's blind spots as deliberate. GitRepository.uncommitted diffs the dirty
+// tree against a cleaned copy of itself, and that copy is produced with
+// `git clean -fd` (see LocalGitRepository.Cleaned in core/git_local.go) — no
+// -x, so gitignored files survive, and no -ff, so anything inside an untracked
+// nested repository survives too. Both are therefore byte-identical on either
+// side of the diff and cancel out.
+//
+// This is the conservative choice: `clean -ffdx` would report every ignored
+// artifact and every file in every nested repo as ADDED, and committing them
+// would fail (`git add` on an ignored path exits 1) or silently stage a
+// gitlink. Workspace.git.unmanaged is the separate view that surfaces pending
+// *workspace* edits landing in these blind spots; this test exists so a future
+// change to the clean flags fails loudly rather than silently.
+func (GitSuite) TestGitUncommittedLocalIgnoresGitignoredAndNestedRepos(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithNewFile(".gitignore", "*.out\n").
+		WithNewFile("tracked.txt", "tracked\n").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		// An ignored file...
+		WithNewFile("probe.out", "ignored\n").
+		// ...and a file inside an untracked nested repository.
+		WithWorkdir("/src/nested").
+		WithExec([]string{"git", "init"}).
+		WithNewFile("/src/nested/inner.txt", "inner\n").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "nested initial"}).
+		WithNewFile("/src/nested/probe.txt", "probe\n").
+		WithWorkdir("/src")
+
+	changes := ctr.Directory(".").AsGit().Uncommitted()
+	empty, err := changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty, "neither ignored files nor nested-repo files are reported")
+
+	added, err := changes.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, added, "probe.out")
+	require.NotContains(t, added, "nested/probe.txt")
+	require.NotContains(t, added, "nested/inner.txt")
+}
+
 func gitUserConfig(ctr *dagger.Container) *dagger.Container {
 	return ctr.
 		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
