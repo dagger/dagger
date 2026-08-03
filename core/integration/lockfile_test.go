@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/semver"
 )
 
 type LockfileSuite struct{}
@@ -795,4 +796,104 @@ func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte) {
 		return
 	}
 	require.Fail(t, "expected git.latest entry in lockfile")
+}
+
+const containerFromLatestImageRefQuery = `{
+  container {
+    from(address: "alpine") {
+      imageRef
+    }
+  }
+}
+`
+
+func (LockfileSuite) TestContainerFromLatestLockLifecycle(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "latest-image-ref.graphql", containerFromLatestImageRefQuery)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	pin := assertContainerFromLatestLockEntry(t, lockBytes)
+	require.Contains(t, string(out), pin)
+
+	frozenOut, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(frozenOut), pin)
+
+	frozenLockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, lockBytes, frozenLockBytes)
+
+	stalePin := "docker.io/library/alpine:1.0.0@sha256:" + strings.Repeat("0", 64)
+	writeContainerFromLatestLock(t, workdir, lockTestPlatform(ctx, t), stalePin)
+
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
+	require.NoError(t, err)
+
+	updatedLockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	updatedPin := assertContainerFromLatestLockEntry(t, updatedLockBytes)
+	require.NotEqual(t, stalePin, updatedPin)
+}
+
+func writeContainerFromLatestLock(t *testctx.T, workdir, platform, pin string) {
+	t.Helper()
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		"",
+		"container.from.latest",
+		[]any{"docker.io/library/alpine", platform},
+		workspace.LookupResult{
+			Value:  pin,
+			Policy: workspace.PolicyPin,
+		},
+	))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, workspace.LockFileName),
+		lockBytes,
+		0o600,
+	))
+}
+
+func assertContainerFromLatestLockEntry(t *testctx.T, lockBytes []byte) string {
+	t.Helper()
+
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "container.from.latest" {
+			continue
+		}
+		require.Len(t, entry.Inputs, 2)
+		require.Equal(t, "docker.io/library/alpine", entry.Inputs[0])
+		require.Equal(t, string(workspace.PolicyPin), entry.Policy)
+
+		value, ok := entry.Value.(string)
+		require.True(t, ok)
+		tagAndDigest := strings.TrimPrefix(value, "docker.io/library/alpine:")
+		tag, imageDigest, found := strings.Cut(tagAndDigest, "@")
+		require.True(t, found, "expected tag and digest in %q", value)
+		require.True(t, strings.HasPrefix(imageDigest, "sha256:"), imageDigest)
+
+		version := tag
+		if !strings.HasPrefix(version, "v") {
+			version = "v" + version
+		}
+		require.True(t, semver.IsValid(version), "expected semantic-version tag in %q", value)
+		require.Empty(t, semver.Prerelease(version), "expected stable tag in %q", value)
+		return value
+	}
+
+	require.FailNow(t, "expected container.from.latest entry in lockfile")
+	return ""
 }
