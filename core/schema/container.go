@@ -1063,7 +1063,10 @@ func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], i
 	}
 }
 
-const lockContainerFromOperation = "container.from"
+const (
+	lockContainerFromOperation       = "container.from"
+	lockContainerFromLatestOperation = "container.from.latest"
+)
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
@@ -1126,8 +1129,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	// add a default :latest if no tag or digest, otherwise this is a no-op
-	refName = reference.TagNameOnly(refName)
+	lockOperation := lockContainerFromOperation
+	latestRelease := reference.IsNameOnly(refName)
+	if latestRelease {
+		refName = reference.TrimNamed(refName)
+		lockOperation = lockContainerFromLatestOperation
+	} else {
+		// TagNameOnly is deliberately called after testing IsNameOnly so an
+		// implicit tag remains distinguishable from an explicit latest tag.
+		refName = reference.TagNameOnly(refName)
+	}
 	if args.RegistryService.Valid {
 		service, err := args.RegistryService.Value.Load(ctx, srv)
 		if err != nil {
@@ -1233,7 +1244,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	// depending on registryService, so disable workspace lock entries when
 	// registryService is set.
 	if len(registryServices) == 0 {
-		lookupLock, err = lookupLockForAPI(ctx, query, lockContainerFromOperation)
+		lookupLock, err = lookupLockForAPI(ctx, query, lockOperation)
 		if err != nil {
 			return inst, err
 		}
@@ -1248,26 +1259,33 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 	lockResolution, err := resolveLookupFromLoadedLock(
 		lookupLock,
-		lockContainerFromOperation,
+		lockOperation,
 		lockInputs,
 		workspace.PolicyPin,
 	)
 	if err != nil {
-		return inst, fmt.Errorf("container.from lock resolution: %w", err)
+		return inst, fmt.Errorf("%s lock resolution: %w", lockOperation, err)
 	}
 
 	if lockResolution.Pin != nil {
 		pin, ok := lockResolution.Pin.(string)
 		if !ok || pin == "" {
-			return inst, fmt.Errorf("invalid lock digest %v for image %q", lockResolution.Pin, refName.String())
+			return inst, fmt.Errorf("invalid %s lock value %v", lockOperation, lockResolution.Pin)
 		}
-		resolvedDigest, err := digest.Parse(pin)
-		if err != nil {
-			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", pin, refName.String(), err)
-		}
-		refName, err = reference.WithDigest(refName, resolvedDigest)
-		if err != nil {
-			return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
+		if latestRelease {
+			refName, err = core.ParseContainerLatestPin(pin, refName.String())
+			if err != nil {
+				return inst, fmt.Errorf("%s lock value: %w", lockOperation, err)
+			}
+		} else {
+			resolvedDigest, err := digest.Parse(pin)
+			if err != nil {
+				return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", pin, refName.String(), err)
+			}
+			refName, err = reference.WithDigest(refName, resolvedDigest)
+			if err != nil {
+				return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
+			}
 		}
 	} else {
 		// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -1282,6 +1300,20 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 		defer detach()
+
+		if latestRelease {
+			tags, err := rslvr.ListImageTags(ctx, refName.String(), serverresolver.ListImageTagsOpts{
+				Network:           network,
+				RegistryTransport: registryTransport,
+			})
+			if err != nil {
+				return inst, fmt.Errorf("failed to list image tags for %q: %w", refName.String(), err)
+			}
+			refName, err = reference.WithTag(refName, core.SelectLatestContainerTag(tags))
+			if err != nil {
+				return inst, fmt.Errorf("failed to select latest release for image %q: %w", refName.String(), err)
+			}
+		}
 
 		_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
 			Platform:          ptr(platform.Spec()),
@@ -1298,16 +1330,20 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 
 		if lockResolution.ShouldWrite && lookupLock != nil {
+			lockValue := resolvedDigest.String()
+			if latestRelease {
+				lockValue = refName.String()
+			}
 			if err := lookupLock.SetLookup(
 				lockCoreNamespace,
-				lockContainerFromOperation,
+				lockOperation,
 				lockInputs,
 				workspace.LookupResult{
-					Value:  resolvedDigest.String(),
+					Value:  lockValue,
 					Policy: lockResolution.Policy,
 				},
 			); err != nil {
-				return inst, fmt.Errorf("set lock entry for container.from: %w", err)
+				return inst, fmt.Errorf("set lock entry for %s: %w", lockOperation, err)
 			}
 		}
 	}
