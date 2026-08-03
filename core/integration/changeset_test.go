@@ -10,8 +10,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -922,6 +924,68 @@ func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
 		return dest.WithChanges(source)
 	}, false)
 	s.testWithChangesSymlinks(t)
+}
+
+// Regression test for a snapshot use-after-release: Directory.withChanges with
+// an empty changeset used to store the parent's snapshot ref instance on the
+// derived directory instead of opening its own handle. Once the derived cache
+// entry was collected (session close plus cache prune), releasing its snapshot
+// handle invalidated the parent's still-cached snapshot, and every later use
+// of the parent from any session failed with "invalid immutable ref". A
+// dedicated nested engine is used because the repro requires an unrestricted
+// prune of the engine-wide cache.
+func (ChangesetSuite) TestWithChangesEmptyChangesetKeepsParentSnapshot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	keeper, err := dagger.Connect(ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { keeper.Close() })
+
+	parentOf := func(cl *dagger.Client) *dagger.Directory {
+		return cl.Directory().WithNewFile("marker.txt", "shared parent")
+	}
+
+	// keeper takes shared ownership of the parent's cache entry so it outlives
+	// the second session below.
+	_, err = parentOf(keeper).Sync(ctx)
+	require.NoError(t, err)
+
+	// A second session derives a directory from the same parent by applying an
+	// empty changeset, evaluates it, and disconnects.
+	poisoner, err := dagger.Connect(ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	_, err = parentOf(poisoner).WithChanges(poisoner.Changeset()).Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, poisoner.Close())
+
+	// The closed session's cache refs release asynchronously, and the derived
+	// entry is only collected once a prune removes its persisted edge. Keep
+	// pruning and re-mounting the parent long enough to cover both; with the
+	// shared-handle bug the glob fails with "invalid immutable ref" as soon as
+	// the derived entry is collected.
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		require.NoError(t, keeper.Engine().LocalCache().Prune(ctx))
+		// Vary the pattern so each call is a fresh (uncached) evaluation that
+		// has to mount the parent snapshot.
+		pattern := fmt.Sprintf("*%d*", time.Now().UnixNano())
+		_, err := parentOf(keeper).Glob(ctx, pattern)
+		require.NoError(t, err)
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 }
 
 func (s ChangesetSuite) TestChangesAsPatch(ctx context.Context, t *testctx.T) {
