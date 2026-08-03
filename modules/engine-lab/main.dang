@@ -95,7 +95,8 @@ type EngineLab {
     # (fresh state volume, engine entrypoint, incremented subnet for nesting)
     # and adds --debugaddr, which the stock Playground service doesn't enable.
     let svcDev = dev.incrementSubnet
-    let engineCtr = svcDev.container
+    let engineCtr = svcDev
+      .container
       .withExposedPort(1234)
       .withMountedCache(
         "/var/lib/dagger",
@@ -180,25 +181,21 @@ type EngineLab {
   # instead of re-running. The nonce env var busts the exec cache underneath
   # for the same reason (same trick as tui-qa).
   """
-  Run a command in the client container against the live from-source engine —
-  the equivalent of `./hack/with-dev ...`. The from-source `dagger` CLI is on
-  PATH and connected to the engine; the CURRENT workspace source is mounted at
-  /src (the working directory) on every call, so edits made since `start` are
-  always visible; curl, jq, and git are installed. args is a full argv, e.g.
-  ["dagger", "core", "version"] or ["sh", "-c", "..."]. Returns the exit code
-  plus tail-truncated stdout/stderr.
+  Run a `dagger` command against the live from-source engine - the equivalent
+  of `./hack/with-dev ./bin/dagger ...`.
   """
-  exec(
+  dagger(
     source: Workspace!,
     args: [String!]!,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
+  ): Void @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
-      return "No engine session. Call the engine-lab start tool first."
+      print("No engine session. Call the engine-lab start tool first.")
+      return null
     }
-    report(
-      withSource(source)
-        .withExec(args, expect: ReturnType.ANY),
-    )
+    withSource(source)
+      .withExec(["dagger"] + args)
+      .sync
+    null
   }
 
   """
@@ -209,18 +206,19 @@ type EngineLab {
   query(
     source: Workspace!,
     graphql: String!,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
+  ): Void @cache(policy: FunctionCachePolicy.Never) {
     if (engine == null) {
-      return "No engine session. Call the engine-lab start tool first."
+      print("No engine session. Call the engine-lab start tool first.")
+      return null
     }
-    report(
-      withSource(source)
-        .withExec(
-          ["dagger", "api", "query", "--no-load-module"],
-          stdin: graphql,
-          expect: ReturnType.ANY,
-        ),
-    )
+    withSource(source)
+      .withExec(
+        ["dagger", "api", "query", "--no-load-module"],
+        stdin: graphql,
+        expect: ReturnType.ANY,
+      )
+      .sync
+    null
   }
 
   """
@@ -235,19 +233,15 @@ type EngineLab {
     if (engine == null) {
       return "No engine session. Call the engine-lab start tool first."
     }
-    report(
-      client
-        .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
-        .withExec(
-          [
-            "curl", "-s",
-            "--retry", "5", "--retry-delay", "2", "--retry-connrefused",
-            "--max-time", "120",
-            debugURL(path),
-          ],
-          expect: ReturnType.ANY,
-        ),
-    )
+    client
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "5", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", "120",
+        debugURL(path),
+      ])
+      .stdout
   }
 
   """
@@ -267,19 +261,15 @@ type EngineLab {
     }
     # The URL and filter travel as env vars so no shell-quoting of user input
     # is needed inside the sh -c script.
-    report(
-      client
-        .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
-        .withEnvVariable("ENGINE_LAB_DEBUG_URL", debugURL(path))
-        .withEnvVariable("ENGINE_LAB_JQ_FILTER", filter)
-        .withExec(
-          [
-            "sh", "-c",
-            "curl -s --retry 5 --retry-delay 2 --retry-connrefused --max-time 120 \"$ENGINE_LAB_DEBUG_URL\" | jq \"$ENGINE_LAB_JQ_FILTER\"",
-          ],
-          expect: ReturnType.ANY,
-        ),
-    )
+    client
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withEnvVariable("ENGINE_LAB_DEBUG_URL", debugURL(path))
+      .withEnvVariable("ENGINE_LAB_JQ_FILTER", filter)
+      .withExec([
+        "sh", "-c",
+        "curl -s --retry 5 --retry-delay 2 --retry-connrefused --max-time 120 \"$ENGINE_LAB_DEBUG_URL\" | jq \"$ENGINE_LAB_JQ_FILTER\"",
+      ])
+      .stdout
   }
 
   """
@@ -304,16 +294,11 @@ type EngineLab {
     Enable verbose test output
     """
     testVerbose: Boolean! = false,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
+  ): Void @cache(policy: FunctionCachePolicy.Never) {
     # NOTE: engine-dev's test() is +cache="session" on its side, so an
     # identical re-run in one session may be served from the session cache;
     # any workspace edit changes the engine source and forces a real re-run.
-    {
-      engineDev(ws: source).test(pkg: pkg, run: run, testVerbose: testVerbose)
-      "PASS"
-    } rescue {
-      e: Error => "FAIL\n" + tail(e.message)
-    }
+    engineDev(ws: source).test(pkg: pkg, run: run, testVerbose: testVerbose)
   }
 
   # A self-call (`engineLab`) yields the module's own type as it lives in the
@@ -353,20 +338,6 @@ type EngineLab {
 
   let debugURL(path: String!): String! {
     "http://dagger-engine:" + toString(debugPort) + path
-  }
-
-  # Format an expect-ANY exec into a compact, tail-truncated report.
-  let report(ran: Container!): String! {
-    let res = ran.{{exitCode, stdout, stderr}}
-    [
-      "exit code: " + toString(res.exitCode),
-      "",
-      "== stdout ==",
-      tail(res.stdout),
-      "",
-      "== stderr ==",
-      tail(res.stderr),
-    ].join("\n")
   }
 
   let systemPrompt: String! = """
