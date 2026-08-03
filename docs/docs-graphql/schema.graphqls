@@ -6016,6 +6016,13 @@ type WorkspaceGit implements Node {
   Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
   """
   uncommitted: Changeset!
+
+  """
+  Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+
+  Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+  """
+  unmanaged: Changeset!
 }
 
 """A planned workspace migration."""

@@ -700,6 +700,159 @@ class Address(Type):
 
 
 @typecheck
+class Agent(Type):
+    async def description(self) -> str:
+        """The description of the agent
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this Agent.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Return the fully qualified name of the agent
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> "Module":
+        """The original module in which the agent has been defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the agent within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
+class AgentGroup(Type):
+    def compose(self, *, base: "LLM | None" = None) -> "LLM":
+        """Compose all selected agent middlewares onto a base LLM, in
+        alphabetical module:fn order, and return the composed LLM.
+
+        Parameters
+        ----------
+        base:
+            The base LLM to compose onto. Defaults to a fresh workspace-bound
+            LLM.
+        """
+        _args = [
+            Arg("base", base, None),
+        ]
+        _ctx = self._select("compose", _args)
+        return LLM(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this AgentGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def list_(self) -> list[Agent]:
+        """Return a list of individual agents and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(Agent)
+
+
+@typecheck
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
@@ -6964,6 +7117,12 @@ class Function(Type):
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
 
+    def with_agent(self) -> Self:
+        """Returns the function with a flag indicating it is an agent middleware."""
+        _args: list[Arg] = []
+        _ctx = self._select("withAgent", _args)
+        return Function(_ctx)
+
     def with_arg(
         self,
         name: str,
@@ -9313,7 +9472,10 @@ class LLM(Type):
         resolve in any session. Unlike id, which may return an engine-local
         runtime handle valid only within the current session, this returns the
         recipe form suitable for persisting and later restoring the
-        conversation.
+        conversation. The recipe is flattened: bindings superseded during the
+        session (workspace overlays recorded by each mutating tool call, and
+        re-bound toolsets) are dropped, while the current workspace binding —
+        including any pending, un-exported edits — is preserved.
 
         Returns
         -------
@@ -9358,6 +9520,28 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
+    async def reasoning_effort(self) -> str:
+        """The reasoning effort in use, e.g. "low", "medium", or "high". Empty or
+        "none" when reasoning is disabled.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reasoningEffort", _args)
+        return await _ctx.execute(str)
+
     async def replay(self) -> Self:
         """Re-emit telemetry spans for the full message history, so a loaded
         conversation displays in the TUI.
@@ -9371,6 +9555,15 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "replay", _args)
+
+    async def skills(self) -> list["LLMSkill"]:
+        """The skills visible to the model, exactly as the list_skills tool
+        serves them: engine-embedded skills, skills installed with withSkills,
+        and skills discovered in the workspace.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("skills", _args)
+        return await _ctx.execute_object_list(LLMSkill)
 
     def step(self, *, max_tokens: int | None = None) -> Self:
         """Advance the conversation by a single step: send the queued prompt or
@@ -9528,6 +9721,24 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
+    def with_reasoning_effort(self, effort: str) -> Self:
+        """Change the reasoning effort for the rest of the conversation,
+        overriding any configured default. The message history is preserved;
+        the new effort takes effect on the next step.
+
+        Parameters
+        ----------
+        effort:
+            The reasoning effort, e.g. "low", "medium", or "high"; "none"
+            disables reasoning. Supported levels are model-specific — some
+            models also accept e.g. "minimal", "xhigh", or "max".
+        """
+        _args = [
+            Arg("effort", effort),
+        ]
+        _ctx = self._select("withReasoningEffort", _args)
+        return LLM(_ctx)
+
     def with_response(
         self,
         content: list[LLMContentBlockInput],
@@ -9565,6 +9776,26 @@ class LLM(Type):
             Arg("totalTokens", total_tokens, 0),
         ]
         _ctx = self._select("withResponse", _args)
+        return LLM(_ctx)
+
+    def with_skills(self, directory: Directory) -> Self:
+        """Install skills from a directory, adding them to the skills the model
+        discovers with list_skills and reads with read_skill. Each skill is a
+        directory containing a SKILL.md with name and description frontmatter,
+        discovered anywhere in the tree. Installed skills take precedence over
+        skills discovered in the workspace, but cannot shadow the engine's
+        built-in skills.
+
+        Parameters
+        ----------
+        directory:
+            A directory containing skills, each a subdirectory holding a
+            SKILL.md.
+        """
+        _args = [
+            Arg("directory", directory),
+        ]
+        _ctx = self._select("withSkills", _args)
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
@@ -9921,6 +10152,82 @@ class LLMMessage(Type):
         _args: list[Arg] = []
         _ctx = self._select("tokenUsage", _args)
         return LLMTokenUsage(_ctx)
+
+
+@typecheck
+class LLMSkill(Type):
+    """A skill available to a model: task-specific guidance discovered
+    with list_skills and read with read_skill."""
+
+    async def description(self) -> str:
+        """The one-line description from the SKILL.md frontmatter.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMSkill.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The skill name, as passed to read_skill.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -11897,6 +12204,27 @@ class Query(Root):
         _args: list[Arg] = []
         _ctx = self._select("currentNode", _args)
         return _NodeClient(_ctx)
+
+    async def current_timestamp(self) -> str:
+        """The current UTC time in RFC3339 format. Never cached.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("currentTimestamp", _args)
+        return await _ctx.execute(str)
 
     async def current_type_defs(
         self,
@@ -14195,6 +14523,24 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
+    def agents(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> AgentGroup:
+        """Return all agent middlewares from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include agents matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("agents", _args)
+        return AgentGroup(_ctx)
+
     def changes(self) -> Changeset:
         """Return this workspace's pending overlay changes."""
         _args: list[Arg] = []
@@ -14590,6 +14936,15 @@ class Workspace(Type):
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
+    def reloaded(self) -> Self:
+        """Return this workspace with its cached host reads invalidated, so
+        subsequent file and directory reads re-read the live host instead of a
+        snapshot cached earlier in the session.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reloaded", _args)
+        return Workspace(_ctx)
+
     def sdk(self, name: str) -> "WorkspaceSDK":
         """An installed SDK, by name.
 
@@ -14706,6 +15061,55 @@ class Workspace(Type):
             Arg("changes", changes),
         ]
         _ctx = self._select("withChanges", _args)
+        return Workspace(_ctx)
+
+    def with_commit(
+        self,
+        message: str,
+        date: str,
+        *,
+        paths: list[str] | None = None,
+        author_name: str | None = None,
+        author_email: str | None = None,
+    ) -> Self:
+        """Return this workspace with its uncommitted changes staged as a git
+        commit, without mutating the source.
+
+        The commit is created engine-side, on top of the workspace's git HEAD
+        plus any previously staged commit: the local checkout is left
+        untouched. Afterwards Workspace.git.head resolves to the new commit,
+        and Workspace.git.uncommitted holds whatever was left out of it, still
+        pending on top.
+
+        The commit is deterministic: the same workspace state and the same
+        arguments always produce the same commit hash.
+
+        Parameters
+        ----------
+        message:
+            Commit message.
+        date:
+            RFC3339 author and committer date. Required, so that the resulting
+            commit hash does not depend on a hidden clock.
+        paths:
+            Restrict the commit to these paths, like `git commit -- <paths>`.
+            Relative paths resolve from the workspace cwd. Empty commits all
+            uncommitted changes.
+        author_name:
+            Author and committer name. Defaults to the git identity recorded
+            when the workspace was loaded, else "Dagger".
+        author_email:
+            Author and committer email. Defaults to the git identity recorded
+            when the workspace was loaded, else "dagger@localhost".
+        """
+        _args = [
+            Arg("message", message),
+            Arg("date", date),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("authorName", author_name, None),
+            Arg("authorEmail", author_email, None),
+        ]
+        _ctx = self._select("withCommit", _args)
         return Workspace(_ctx)
 
     def with_config_env(
@@ -14865,6 +15269,28 @@ class Workspace(Type):
         _ctx = self._select("withModule", _args)
         return Workspace(_ctx)
 
+    def with_mounted_cache(self, path: str, cache: CacheVolume) -> Self:
+        """Return this workspace with a cache volume mounted at a path.
+
+        The mounted cache shadows base workspace content at that path, is
+        excluded from Workspace.changes, and is committed into the volume on
+        export.
+
+        Parameters
+        ----------
+        path:
+            Mount path. Relative paths resolve from the workspace cwd;
+            absolute from the workspace root.
+        cache:
+            Cache volume to mount.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("cache", cache),
+        ]
+        _ctx = self._select("withMountedCache", _args)
+        return Workspace(_ctx)
+
     def with_new_directory(self, path: str, source: Directory) -> Self:
         """Return this workspace with a directory added, without mutating the
         source.
@@ -14910,6 +15336,52 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_reference_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory mounted read-only under the
+        reserved references prefix.
+
+        Referenced content is readable through the normal workspace file tools
+        but is excluded from the pending changeset: it never appears in
+        changes and is never exported.
+
+        Parameters
+        ----------
+        path:
+            Reference-relative mount path under the reserved references
+            prefix.
+        source:
+            Directory to mount read-only.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withReferenceDirectory", _args)
+        return Workspace(_ctx)
+
+    def with_reference_file(self, path: str, source: File) -> Self:
+        """Return this workspace with a file mounted read-only under the reserved
+        references prefix.
+
+        Referenced content is readable through the normal workspace file tools
+        but is excluded from the pending changeset: it never appears in
+        changes and is never exported.
+
+        Parameters
+        ----------
+        path:
+            Reference-relative mount path under the reserved references
+            prefix.
+        source:
+            File to mount read-only.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withReferenceFile", _args)
         return Workspace(_ctx)
 
     def with_sdk(
@@ -15064,6 +15536,21 @@ class Workspace(Type):
         _ctx = self._select("withoutModule", _args)
         return Workspace(_ctx)
 
+    def without_mount(self, path: str) -> Self:
+        """Return this workspace with a previously mounted cache volume removed.
+
+        Parameters
+        ----------
+        path:
+            Mount path to remove. Relative paths resolve from the workspace
+            cwd; absolute from the workspace root.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutMount", _args)
+        return Workspace(_ctx)
+
     def without_sdk(
         self,
         name: str,
@@ -15132,12 +15619,34 @@ class WorkspaceGit(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    async def staged_commits(self) -> list["WorkspaceStagedCommit"]:
+        """Commits staged in this workspace but not yet saved to the local
+        checkout.
+
+        Ordered oldest to newest, matching the order they were staged in on
+        top of the checkout's HEAD. Empty when nothing is staged.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("stagedCommits", _args)
+        return await _ctx.execute_object_list(WorkspaceStagedCommit)
+
     def uncommitted(self) -> Changeset:
         """Uncommitted changes in this workspace, using the same rules as
         GitRepository.uncommitted.
         """
         _args: list[Arg] = []
         _ctx = self._select("uncommitted", _args)
+        return Changeset(_ctx)
+
+    def unmanaged(self) -> Changeset:
+        """Pending workspace edits git cannot see - gitignored, or inside a
+        nested repository.
+
+        Workspace.export writes these to the local checkout, but they never
+        appear in `uncommitted` and cannot be committed.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("unmanaged", _args)
         return Changeset(_ctx)
 
 
@@ -15593,6 +16102,153 @@ class WorkspaceSDK(Type):
         return await _ctx.execute(str)
 
 
+@typecheck
+class WorkspaceStagedCommit(Type):
+    """A commit staged in a workspace but not yet saved to the local
+    checkout."""
+
+    async def author_email(self) -> str:
+        """The author and committer email the commit was made with.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("authorEmail", _args)
+        return await _ctx.execute(str)
+
+    async def author_name(self) -> str:
+        """The author and committer name the commit was made with.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("authorName", _args)
+        return await _ctx.execute(str)
+
+    def changes(self) -> Changeset:
+        """The changes this commit folded in, relative to the state staged before
+        it.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
+    async def date(self) -> str:
+        """The RFC3339 author and committer date the commit was made with.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("date", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceStagedCommit.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def message(self) -> str:
+        """The full commit message, subject and body.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("message", _args)
+        return await _ctx.execute(str)
+
+    async def sha(self) -> str:
+        """The full hash of the staged commit.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sha", _args)
+        return await _ctx.execute(str)
+
+
 class Client(Query):
     """The Dagger client.
 
@@ -15607,6 +16263,8 @@ __all__ = [
     "JSON",
     "LLM",
     "Address",
+    "Agent",
+    "AgentGroup",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",
@@ -15664,6 +16322,7 @@ __all__ = [
     "LLMContentBlockKind",
     "LLMMessage",
     "LLMMessageRole",
+    "LLMSkill",
     "LLMTokenUsage",
     "Label",
     "ListTypeDef",
@@ -15709,5 +16368,6 @@ __all__ = [
     "WorkspaceModule",
     "WorkspaceModuleSetting",
     "WorkspaceSDK",
+    "WorkspaceStagedCommit",
     "dag",
 ]

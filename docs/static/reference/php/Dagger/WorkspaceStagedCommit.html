@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\WorkspaceGit | API</title>
+    <title>Dagger\WorkspaceStagedCommit | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_WorkspaceGit" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_WorkspaceStagedCommit" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceGit</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceStagedCommit</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>WorkspaceGit    
+        <h1>WorkspaceStagedCommit    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>WorkspaceGit</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>WorkspaceStagedCommit</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>Local git state for a workspace.</p></p>                    </div>
+            <p><p>A commit staged in a workspace but not yet saved to the local checkout.</p></p>                    </div>
             
         
     
@@ -143,12 +143,42 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_head">head</a>()
+                    <a href="#method_authorEmail">authorEmail</a>()
         
-                                            <p><p>The checked-out HEAD of this workspace.</p></p>                </div>
+                                            <p><p>The author and committer email the commit was made with.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_authorName">authorName</a>()
+        
+                                            <p><p>The author and committer name the commit was made with.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_changes">changes</a>()
+        
+                                            <p><p>The changes this commit folded in, relative to the state staged before it.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_date">date</a>()
+        
+                                            <p><p>The RFC3339 author and committer date the commit was made with.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -158,37 +188,27 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this WorkspaceGit.</p></p>                </div>
+                                            <p><p>A unique identifier for this WorkspaceStagedCommit.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_stagedCommits">stagedCommits</a>()
+                    <a href="#method_message">message</a>()
         
-                                            <p><p>Commits staged in this workspace but not yet saved to the local checkout.</p></p>                </div>
+                                            <p><p>The full commit message, subject and body.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_uncommitted">uncommitted</a>()
+                    <a href="#method_sha">sha</a>()
         
-                                            <p><p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_unmanaged">unmanaged</a>()
-        
-                                            <p><p>Pending workspace edits git cannot see - gitignored, or inside a nested repository.</p></p>                </div>
+                                            <p><p>The full hash of the staged commit.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -287,10 +307,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_head">
+                    <h3 id="method_authorEmail">
         <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
-    <strong>head</strong>()
+        <code>                    string
+    <strong>authorEmail</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -298,7 +318,7 @@
             
 
         <div class="method-description">
-                            <p><p>The checked-out HEAD of this workspace.</p></p>                        
+                            <p><p>The author and committer email the commit was made with.</p></p>                        
         </div>
         <div class="tags">
             
@@ -306,7 +326,103 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></td>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_authorName">
+        <div class="location">at line 28</div>
+        <code>                    string
+    <strong>authorName</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The author and committer name the commit was made with.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_changes">
+        <div class="location">at line 37</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>changes</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The changes this commit folded in, relative to the state staged before it.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_date">
+        <div class="location">at line 46</div>
+        <code>                    string
+    <strong>date</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The RFC3339 author and committer date the commit was made with.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -320,7 +436,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 28</div>
+        <div class="location">at line 55</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -330,7 +446,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this WorkspaceGit.</p></p>                        
+                            <p><p>A unique identifier for this WorkspaceStagedCommit.</p></p>                        
         </div>
         <div class="tags">
             
@@ -351,10 +467,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_stagedCommits">
-        <div class="location">at line 39</div>
-        <code>                    array
-    <strong>stagedCommits</strong>()
+                    <h3 id="method_message">
+        <div class="location">at line 64</div>
+        <code>                    string
+    <strong>message</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -362,7 +478,7 @@
             
 
         <div class="method-description">
-                            <p><p>Commits staged in this workspace but not yet saved to the local checkout.</p></p>                <p><p>Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.</p></p>        
+                            <p><p>The full commit message, subject and body.</p></p>                        
         </div>
         <div class="tags">
             
@@ -370,7 +486,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -383,10 +499,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_uncommitted">
-        <div class="location">at line 48</div>
-        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-    <strong>uncommitted</strong>()
+                    <h3 id="method_sha">
+        <div class="location">at line 73</div>
+        <code>                    string
+    <strong>sha</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -394,7 +510,7 @@
             
 
         <div class="method-description">
-                            <p><p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p></p>                        
+                            <p><p>The full hash of the staged commit.</p></p>                        
         </div>
         <div class="tags">
             
@@ -402,39 +518,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_unmanaged">
-        <div class="location">at line 59</div>
-        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-    <strong>unmanaged</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Pending workspace edits git cannot see - gitignored, or inside a nested repository.</p></p>                <p><p>Workspace.export writes these to the local checkout, but they never appear in <code>uncommitted</code> and cannot be committed.</p></p>        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>

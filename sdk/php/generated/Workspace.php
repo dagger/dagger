@@ -23,6 +23,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return all agent middlewares from modules loaded in the workspace.
+     */
+    public function agents(?array $include = null): AgentGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agents');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\AgentGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace's pending overlay changes.
      */
     public function changes(): Changeset
@@ -257,6 +269,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+     */
+    public function reloaded(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('reloaded');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * An installed SDK, by name.
      */
     public function sdk(string $name): WorkspaceSDK
@@ -349,6 +370,35 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
         $innerQueryBuilder->setArgument('changes', $changes);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+     *
+     * The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+     *
+     * The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+     */
+    public function withCommit(
+        string $message,
+        string $date,
+        ?array $paths = [],
+        ?string $authorName = null,
+        ?string $authorEmail = null,
+    ): Workspace {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCommit');
+        $innerQueryBuilder->setArgument('message', $message);
+        $innerQueryBuilder->setArgument('date', $date);
+        if (null !== $paths) {
+        $innerQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $authorName) {
+        $innerQueryBuilder->setArgument('authorName', $authorName);
+        }
+        if (null !== $authorEmail) {
+        $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
+        }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -455,6 +505,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with a cache volume mounted at a path.
+     *
+     * The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+     */
+    public function withMountedCache(string $path, CacheVolume $cache): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedCache');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('cache', $cache);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a directory added, without mutating the source.
      */
     public function withNewDirectory(string $path, Directory $source): Workspace
@@ -476,6 +539,32 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a directory mounted read-only under the reserved references prefix.
+     *
+     * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+     */
+    public function withReferenceDirectory(string $path, Directory $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReferenceDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a file mounted read-only under the reserved references prefix.
+     *
+     * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+     */
+    public function withReferenceFile(string $path, File $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReferenceFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -575,6 +664,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a previously mounted cache volume removed.
+     */
+    public function withoutMount(string $path): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMount');
+        $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

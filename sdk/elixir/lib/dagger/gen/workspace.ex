@@ -27,6 +27,22 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return all agent middlewares from modules loaded in the workspace.
+  """
+  @spec agents(t(), [{:include, [String.t()]}]) :: Dagger.AgentGroup.t()
+  def agents(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("agents")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.AgentGroup{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace's pending overlay changes.
   """
   @spec changes(t()) :: Dagger.Changeset.t()
@@ -322,6 +338,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+  """
+  @spec reloaded(t()) :: Dagger.Workspace.t()
+  def reloaded(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("reloaded")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   An installed SDK, by name.
   """
   @spec sdk(t(), String.t()) :: Dagger.WorkspaceSDK.t()
@@ -442,6 +472,34 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+
+  The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+
+  The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+  """
+  @spec with_commit(t(), String.t(), String.t(), [
+          {:paths, [String.t()]},
+          {:author_name, String.t() | nil},
+          {:author_email, String.t() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_commit(%__MODULE__{} = workspace, message, date, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withCommit")
+      |> QB.put_arg("message", message)
+      |> QB.put_arg("date", date)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("authorName", optional_args[:author_name])
+      |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a named config environment created.
   """
   @spec with_config_env(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
@@ -551,6 +609,25 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a cache volume mounted at a path.
+
+  The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+  """
+  @spec with_mounted_cache(t(), String.t(), Dagger.CacheVolume.t()) :: Dagger.Workspace.t()
+  def with_mounted_cache(%__MODULE__{} = workspace, path, cache) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withMountedCache")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("cache", Dagger.ID.id!(cache))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a directory added, without mutating the source.
   """
   @spec with_new_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
@@ -579,6 +656,44 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("path", path)
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a directory mounted read-only under the reserved references prefix.
+
+  Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+  """
+  @spec with_reference_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
+  def with_reference_directory(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withReferenceDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a file mounted read-only under the reserved references prefix.
+
+  Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+  """
+  @spec with_reference_file(t(), String.t(), Dagger.File.t()) :: Dagger.Workspace.t()
+  def with_reference_file(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withReferenceFile")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -711,6 +826,20 @@ defmodule Dagger.Workspace do
       |> QB.select("withoutModule")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a previously mounted cache volume removed.
+  """
+  @spec without_mount(t(), String.t()) :: Dagger.Workspace.t()
+  def without_mount(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutMount") |> QB.put_arg("path", path)
 
     %Dagger.Workspace{
       query_builder: query_builder,

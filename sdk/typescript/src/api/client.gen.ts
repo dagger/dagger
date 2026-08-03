@@ -30,6 +30,13 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
+export type AgentGroupComposeOpts = {
+  /**
+   * The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
+   */
+  base?: LLM
+}
+
 export type BuildArg = {
   /**
    * The build argument name.
@@ -3033,6 +3040,13 @@ export function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceAgentsOpts = {
+  /**
+   * Only include agents matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -3155,6 +3169,28 @@ export type WorkspaceServicesOpts = {
    * Only include services matching the specified patterns
    */
   include?: string[]
+}
+
+export type WorkspaceWithCommitOpts = {
+  /**
+   * Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+   */
+  paths?: string[]
+
+  /**
+   * RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock.
+   */
+  date: string
+
+  /**
+   * Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+   */
+  authorName?: string
+
+  /**
+   * Author and committer email. Defaults to the git identity recorded when the workspace was loaded, else "dagger@localhost".
+   */
+  authorEmail?: string
 }
 
 export type WorkspaceWithConfigEnvOpts = {
@@ -3416,6 +3452,139 @@ export class Address extends BaseClient {
   volume = (): Volume => {
     const ctx = this._ctx.select("volume")
     return new Volume(ctx)
+  }
+}
+
+export class Agent extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this Agent.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the agent
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the agent
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original module in which the agent has been defined
+   */
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
+
+  /**
+   * The path of the agent within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
+export class AgentGroup extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this AgentGroup.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+   * @param opts.base The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
+   */
+  compose = (opts?: AgentGroupComposeOpts): LLM => {
+    const ctx = this._ctx.select("compose", { ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Return a list of individual agents and their details
+   */
+  list = async (): Promise<Agent[]> => {
+    type list = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Agent(ctx.copy().selectNode(r.id, "Agent")))
   }
 }
 
@@ -8106,6 +8275,14 @@ export class Function_ extends BaseClient {
   }
 
   /**
+   * Returns the function with a flag indicating it is an agent middleware.
+   */
+  withAgent = (): Function_ => {
+    const ctx = this._ctx.select("withAgent")
+    return new Function_(ctx)
+  }
+
+  /**
    * Returns the function with the provided argument
    * @param name The name of the argument
    * @param typeDef The type of the argument
@@ -9871,6 +10048,7 @@ export class LLM extends BaseClient {
   private readonly _model?: string = undefined
   private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
+  private readonly _reasoningEffort?: string = undefined
   private readonly _replay?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
@@ -9889,6 +10067,7 @@ export class LLM extends BaseClient {
     _model?: string,
     _portableID?: ID,
     _provider?: string,
+    _reasoningEffort?: string,
     _replay?: ID,
     _sync?: ID,
     _tools?: string,
@@ -9904,6 +10083,7 @@ export class LLM extends BaseClient {
     this._model = _model
     this._portableID = _portableID
     this._provider = _provider
+    this._reasoningEffort = _reasoningEffort
     this._replay = _replay
     this._sync = _sync
     this._tools = _tools
@@ -10037,7 +10217,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
    */
   portableID = async (): Promise<ID> => {
     if (this._portableID) {
@@ -10067,6 +10247,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+   */
+  reasoningEffort = async (): Promise<string> => {
+    if (this._reasoningEffort) {
+      return this._reasoningEffort
+    }
+
+    const ctx = this._ctx.select("reasoningEffort")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
    */
   replay = async (): Promise<LLM> => {
@@ -10075,6 +10270,23 @@ export class LLM extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return new LLM(ctx.copy().selectNode(response, "LLM"))
+  }
+
+  /**
+   * The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+   */
+  skills = async (): Promise<LLMSkill[]> => {
+    type skills = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("skills").select("id")
+
+    const response: Awaited<skills[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new LLMSkill(ctx.copy().selectNode(r.id, "LLMSkill")),
+    )
   }
 
   /**
@@ -10174,6 +10386,15 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+   * @param effort The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".
+   */
+  withReasoningEffort = (effort: string): LLM => {
+    const ctx = this._ctx.select("withReasoningEffort", { effort })
+    return new LLM(ctx)
+  }
+
+  /**
    * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
    * @param content The response content
    * @param opts.inputTokens Uncached input tokens sent
@@ -10187,6 +10408,15 @@ export class LLM extends BaseClient {
     opts?: LLMWithResponseOpts,
   ): LLM => {
     const ctx = this._ctx.select("withResponse", { content, ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+   * @param directory A directory containing skills, each a subdirectory holding a SKILL.md.
+   */
+  withSkills = (directory: Directory): LLM => {
+    const ctx = this._ctx.select("withSkills", { directory })
     return new LLM(ctx)
   }
 
@@ -10502,6 +10732,71 @@ export class LLMMessage extends BaseClient {
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
+  }
+}
+
+/**
+ * A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.
+ */
+export class LLMSkill extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this LLMSkill.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The one-line description from the SKILL.md frontmatter.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The skill name, as passed to read_skill.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -12145,6 +12440,7 @@ export class Port extends BaseClient {
  */
 export class Client extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _currentTimestamp?: string = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
@@ -12154,12 +12450,14 @@ export class Client extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _currentTimestamp?: string,
     _defaultPlatform?: Platform,
     _version?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._currentTimestamp = _currentTimestamp
     this._defaultPlatform = _defaultPlatform
     this._version = _version
   }
@@ -12265,6 +12563,17 @@ export class Client extends BaseClient {
   currentNode = (): Node => {
     const ctx = this._ctx.select("currentNode")
     return new _NodeClient(ctx)
+  }
+
+  /**
+   * The current UTC time in RFC3339 format. Never cached.
+   */
+  currentTimestamp = async (): Promise<string> => {
+    const ctx = this._ctx.select("currentTimestamp")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -14171,6 +14480,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return all agent middlewares from modules loaded in the workspace.
+   * @param opts.include Only include agents matching the specified patterns
+   */
+  agents = (opts?: WorkspaceAgentsOpts): AgentGroup => {
+    const ctx = this._ctx.select("agents", { ...opts })
+    return new AgentGroup(ctx)
+  }
+
+  /**
    * Return this workspace's pending overlay changes.
    */
   changes = (): Changeset => {
@@ -14403,6 +14721,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+   */
+  reloaded = (): Workspace => {
+    const ctx = this._ctx.select("reloaded")
+    return new Workspace(ctx)
+  }
+
+  /**
    * An installed SDK, by name.
    * @param name SDK name to look up.
    */
@@ -14475,6 +14801,23 @@ export class Workspace extends BaseClient {
    */
   withChanges = (changes: Changeset): Workspace => {
     const ctx = this._ctx.select("withChanges", { changes })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+   *
+   * The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+   *
+   * The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+   * @param message Commit message.
+   * @param opts.paths Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+   * @param opts.date RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock.
+   * @param opts.authorName Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+   * @param opts.authorEmail Author and committer email. Defaults to the git identity recorded when the workspace was loaded, else "dagger@localhost".
+   */
+  withCommit = (message: string, opts?: WorkspaceWithCommitOpts): Workspace => {
+    const ctx = this._ctx.select("withCommit", { message, ...opts })
     return new Workspace(ctx)
   }
 
@@ -14561,6 +14904,18 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a cache volume mounted at a path.
+   *
+   * The mounted cache shadows base workspace content at that path, is excluded from Workspace.changes, and is committed into the volume on export.
+   * @param path Mount path. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+   * @param cache Cache volume to mount.
+   */
+  withMountedCache = (path: string, cache: CacheVolume): Workspace => {
+    const ctx = this._ctx.select("withMountedCache", { path, cache })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a directory added, without mutating the source.
    * @param path Path of the added directory. Relative paths resolve from the workspace cwd.
    * @param source Directory to add.
@@ -14582,6 +14937,30 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source Directory to mount read-only.
+   */
+  withReferenceDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withReferenceDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source File to mount read-only.
+   */
+  withReferenceFile = (path: string, source: File): Workspace => {
+    const ctx = this._ctx.select("withReferenceFile", { path, source })
     return new Workspace(ctx)
   }
 
@@ -14674,6 +15053,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with a previously mounted cache volume removed.
+   * @param path Mount path to remove. Relative paths resolve from the workspace cwd; absolute from the workspace root.
+   */
+  withoutMount = (path: string): Workspace => {
+    const ctx = this._ctx.select("withoutMount", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with an SDK removed from its config.
    * @param name Name of the installed SDK entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -14732,10 +15120,42 @@ export class WorkspaceGit extends BaseClient {
   }
 
   /**
+   * Commits staged in this workspace but not yet saved to the local checkout.
+   *
+   * Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.
+   */
+  stagedCommits = async (): Promise<WorkspaceStagedCommit[]> => {
+    type stagedCommits = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("stagedCommits").select("id")
+
+    const response: Awaited<stagedCommits[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceStagedCommit(
+          ctx.copy().selectNode(r.id, "WorkspaceStagedCommit"),
+        ),
+    )
+  }
+
+  /**
    * Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
    */
   uncommitted = (): Changeset => {
     const ctx = this._ctx.select("uncommitted")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+   *
+   * Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+   */
+  unmanaged = (): Changeset => {
+    const ctx = this._ctx.select("unmanaged")
     return new Changeset(ctx)
   }
 }
@@ -15191,6 +15611,138 @@ export class WorkspaceSDK extends BaseClient {
     }
 
     const ctx = this._ctx.select("ref")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A commit staged in a workspace but not yet saved to the local checkout.
+ */
+export class WorkspaceStagedCommit extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _authorEmail?: string = undefined
+  private readonly _authorName?: string = undefined
+  private readonly _date?: string = undefined
+  private readonly _message?: string = undefined
+  private readonly _sha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _authorEmail?: string,
+    _authorName?: string,
+    _date?: string,
+    _message?: string,
+    _sha?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._authorEmail = _authorEmail
+    this._authorName = _authorName
+    this._date = _date
+    this._message = _message
+    this._sha = _sha
+  }
+
+  /**
+   * A unique identifier for this WorkspaceStagedCommit.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The author and committer email the commit was made with.
+   */
+  authorEmail = async (): Promise<string> => {
+    if (this._authorEmail) {
+      return this._authorEmail
+    }
+
+    const ctx = this._ctx.select("authorEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The author and committer name the commit was made with.
+   */
+  authorName = async (): Promise<string> => {
+    if (this._authorName) {
+      return this._authorName
+    }
+
+    const ctx = this._ctx.select("authorName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The changes this commit folded in, relative to the state staged before it.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * The RFC3339 author and committer date the commit was made with.
+   */
+  date = async (): Promise<string> => {
+    if (this._date) {
+      return this._date
+    }
+
+    const ctx = this._ctx.select("date")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The full commit message, subject and body.
+   */
+  message = async (): Promise<string> => {
+    if (this._message) {
+      return this._message
+    }
+
+    const ctx = this._ctx.select("message")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The full hash of the staged commit.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
 
     const response: Awaited<string> = await ctx.execute()
 

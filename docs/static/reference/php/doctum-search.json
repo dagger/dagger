@@ -1877,6 +1877,16 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceStagedCommit",
+			"p": "Dagger/WorkspaceStagedCommit.html",
+			"d": "<p>A commit staged in a workspace but not yet saved to the local checkout.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -2631,6 +2641,12 @@
 			"n": "Dagger\\Client::currentNode",
 			"p": "Dagger/Client.html#method_currentNode",
 			"d": "<p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentTimestamp",
+			"p": "Dagger/Client.html#method_currentTimestamp",
+			"d": "<p>The current UTC time in RFC3339 format. Never cached.</p>"
 		},
 		{
 			"t": "M",
@@ -5106,6 +5122,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withAgent",
+			"p": "Dagger/Function_.html#method_withAgent",
+			"d": "<p>Returns the function with a flag indicating it is an agent middleware.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withArg",
 			"p": "Dagger/Function_.html#method_withArg",
 			"d": "<p>Returns the function with the provided argument</p>"
@@ -5678,7 +5700,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::portableID",
 			"p": "Dagger/LLM.html#method_portableID",
-			"d": "<p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p>"
+			"d": "<p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding \u2014 including any pending, un-exported edits \u2014 is preserved.</p>"
 		},
 		{
 			"t": "M",
@@ -5688,9 +5710,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::reasoningEffort",
+			"p": "Dagger/LLM.html#method_reasoningEffort",
+			"d": "<p>The reasoning effort in use, e.g. &quot;low&quot;, &quot;medium&quot;, or &quot;high&quot;. Empty or &quot;none&quot; when reasoning is disabled.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::replay",
 			"p": "Dagger/LLM.html#method_replay",
 			"d": "<p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::skills",
+			"p": "Dagger/LLM.html#method_skills",
+			"d": "<p>The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -5748,9 +5782,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::withReasoningEffort",
+			"p": "Dagger/LLM.html#method_withReasoningEffort",
+			"d": "<p>Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::withResponse",
 			"p": "Dagger/LLM.html#method_withResponse",
 			"d": "<p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withSkills",
+			"p": "Dagger/LLM.html#method_withSkills",
+			"d": "<p>Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.</p>"
 		},
 		{
 			"t": "M",
@@ -7104,6 +7150,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::agents",
+			"p": "Dagger/Workspace.html#method_agents",
+			"d": "<p>Return all agent middlewares from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::changes",
 			"p": "Dagger/Workspace.html#method_changes",
 			"d": "<p>Return this workspace's pending overlay changes.</p>"
@@ -7212,6 +7264,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::reloaded",
+			"p": "Dagger/Workspace.html#method_reloaded",
+			"d": "<p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::sdk",
 			"p": "Dagger/Workspace.html#method_sdk",
 			"d": "<p>An installed SDK, by name.</p>"
@@ -7239,6 +7297,12 @@
 			"n": "Dagger\\Workspace::withChanges",
 			"p": "Dagger/Workspace.html#method_withChanges",
 			"d": "<p>Return this workspace with a changeset applied, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withCommit",
+			"p": "Dagger/Workspace.html#method_withCommit",
+			"d": "<p>Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.</p>"
 		},
 		{
 			"t": "M",
@@ -7272,6 +7336,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withMountedCache",
+			"p": "Dagger/Workspace.html#method_withMountedCache",
+			"d": "<p>Return this workspace with a cache volume mounted at a path.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withNewDirectory",
 			"p": "Dagger/Workspace.html#method_withNewDirectory",
 			"d": "<p>Return this workspace with a directory added, without mutating the source.</p>"
@@ -7281,6 +7351,18 @@
 			"n": "Dagger\\Workspace::withNewFile",
 			"p": "Dagger/Workspace.html#method_withNewFile",
 			"d": "<p>Return this workspace with a new or replaced file, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withReferenceDirectory",
+			"p": "Dagger/Workspace.html#method_withReferenceDirectory",
+			"d": "<p>Return this workspace with a directory mounted read-only under the reserved references prefix.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withReferenceFile",
+			"p": "Dagger/Workspace.html#method_withReferenceFile",
+			"d": "<p>Return this workspace with a file mounted read-only under the reserved references prefix.</p>"
 		},
 		{
 			"t": "M",
@@ -7332,6 +7414,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withoutMount",
+			"p": "Dagger/Workspace.html#method_withoutMount",
+			"d": "<p>Return this workspace with a previously mounted cache volume removed.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withoutSDK",
 			"p": "Dagger/Workspace.html#method_withoutSDK",
 			"d": "<p>Return this workspace with an SDK removed from its config.</p>"
@@ -7350,9 +7438,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\WorkspaceGit::stagedCommits",
+			"p": "Dagger/WorkspaceGit.html#method_stagedCommits",
+			"d": "<p>Commits staged in this workspace but not yet saved to the local checkout.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\WorkspaceGit::uncommitted",
 			"p": "Dagger/WorkspaceGit.html#method_uncommitted",
 			"d": "<p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceGit::unmanaged",
+			"p": "Dagger/WorkspaceGit.html#method_unmanaged",
+			"d": "<p>Pending workspace edits git cannot see - gitignored, or inside a nested repository.</p>"
 		},
 		{
 			"t": "M",
@@ -7491,6 +7591,48 @@
 			"n": "Dagger\\WorkspaceSDK::ref",
 			"p": "Dagger/WorkspaceSDK.html#method_ref",
 			"d": "<p>The module reference this SDK was installed from.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::authorEmail",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_authorEmail",
+			"d": "<p>The author and committer email the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::authorName",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_authorName",
+			"d": "<p>The author and committer name the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::changes",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_changes",
+			"d": "<p>The changes this commit folded in, relative to the state staged before it.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::date",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_date",
+			"d": "<p>The RFC3339 author and committer date the commit was made with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::id",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceStagedCommit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::message",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_message",
+			"d": "<p>The full commit message, subject and body.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceStagedCommit::sha",
+			"p": "Dagger/WorkspaceStagedCommit.html#method_sha",
+			"d": "<p>The full hash of the staged commit.</p>"
 		},
 		{
 			"t": "M",
