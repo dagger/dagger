@@ -21,7 +21,7 @@ func (fe *frontendPretty) servicesReport(_ tuist.Context, r *renderer, zoomed bo
 	if zoomed {
 		return nil
 	}
-	roots := fe.db.SurfacedServices()
+	roots := fe.reportServices()
 	if len(roots) == 0 {
 		return nil
 	}

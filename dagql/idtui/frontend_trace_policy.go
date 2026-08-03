@@ -128,7 +128,7 @@ func (fe *frontendPretty) renderPolicy() traceRenderPolicy {
 	// primary span (what the section itself renders from), not db.RootSpan: a
 	// nested run -- a propagated traceparent, e.g. dagger-in-dagger -- has no
 	// parentless root span at all.
-	if k == zoomRoot && len(fe.reportChecks()) == 0 && len(fe.db.SurfacedGenerators()) == 0 {
+	if k == zoomRoot && len(fe.reportChecks()) == 0 && len(fe.reportGenerators()) == 0 {
 		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailed() {
 			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
 				pol.showRootCauseLast = true

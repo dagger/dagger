@@ -158,11 +158,12 @@ type frontendPretty struct {
 	reportNestedLogLimit int
 
 	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
-	// single LLM tool call) rather than describing the whole run. Sections
-	// built from the entire trace -- the LLM CONVERSATION transcript and the
-	// SERVICES inventory -- are then suppressed: they ignore the zoom, so they
-	// would answer a question nobody asked (and, being rendered in place of
-	// the progress rows, hide the very subtree the report is about).
+	// single LLM tool call) rather than describing the whole run. The
+	// surfacing sections no longer need it -- they roll up relative to the
+	// zoom (see surfaceRoot) -- so it now gates exactly two things: the TRACE
+	// verdict header (the enclosing run's verdict, not the subtree's) and the
+	// live-tree promotions, which would reshape the shared, cached DB around
+	// the whole run instead of the subtree being reported on.
 	reportScopedSubtree bool
 
 	// updated as events are written
@@ -1542,10 +1543,14 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	// Hint for future rendering that this is the final, non-interactive render
 	// (so don't show key hints etc.). syncSpanTreeState copies this into each
 	// SpanTreeView and marks any changed tree dirty.
-	if !fe.finalRender {
-		fe.finalRender = true
-		fe.Update()
-	}
+	fe.finalRender = true
+	// Always mark the tree dirty, even on a repeat FinalRender: a reused
+	// reporter (core's per-session trace-report cache) renders the SAME
+	// component tree at a DIFFERENT zoom, and the report's content -- the
+	// surfaced checks/conversation/services rolled up beneath that zoom -- is
+	// a function of it. Serving cached lines here leaks the previous scope's
+	// report into this one.
+	fe.Update()
 
 	// Unfocus for the final render.
 	fe.focus(nil)
@@ -2671,8 +2676,13 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// zoom. When both checks and a conversation surface (rare), the conversation
 	// follows the checks with a blank line between.
 	//
-	// A subtree-scoped report skips it: the transcript is built from the whole
-	// trace, so it would describe the run that *contains* the subtree.
+	// A subtree-scoped report skips it. Zoom-relative surfacing is necessary
+	// but not sufficient here: the tool-call DISPLAY span (the thing the
+	// report zooms to, and the only span that sits BELOW the transcript) only
+	// exists when a live provider drives the call -- with no display span
+	// core scopes to a span at or above the conversation, so the enclosing
+	// run's transcript surfaces, and, being rendered in place of the progress
+	// rows, hides the very subtree the report is about.
 	if convLines := fe.conversationReport(ctx, r, zoomed || fe.reportScopedSubtree); len(convLines) > 0 {
 		if renderedRows {
 			ctx.Line("")
@@ -2699,9 +2709,9 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// in the raw tree (their exec spans are passthrough-hidden), and their
 	// logs are often the first thing a debugging session needs.
 	//
-	// A subtree-scoped report skips them: the inventory covers the whole trace,
-	// and a scoped report's reader (e.g. an LLM reading a tool result) is being
-	// shown one subtree, not the session's services.
+	// A subtree-scoped report skips them, for the same reason the CONVERSATION
+	// section does: without a tool-call display span to zoom to, the scope
+	// root sits at or above the services the enclosing run started.
 	if svcLines := fe.servicesReport(ctx, r, zoomed || fe.reportScopedSubtree); len(svcLines) > 0 {
 		if renderedRows {
 			ctx.Line("")
@@ -3315,7 +3325,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 				reqConversationLogs(n.Children)
 			}
 		}
-		reqConversationLogs(fe.db.SurfacedConversation())
+		reqConversationLogs(fe.reportConversation())
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
@@ -3354,7 +3364,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					fe.requestLogs(origin.ID)
 				}
 			})
-			eachFailedLeafGenerator(fe.db.SurfacedGenerators(), func(n *dagui.GeneratorNode) {
+			eachFailedLeafGenerator(fe.reportGenerators(), func(n *dagui.GeneratorNode) {
 				// The generator span's own rolled-up logs carry the exec failure
 				// (renderGeneratorFailureDetail); explicit origins render like a
 				// check's causes.
@@ -3404,71 +3414,62 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.applyTuistFocus()
 }
 
-// reportChecks returns the surfaced checks this render is *about*: the whole
-// trace's checks normally, and -- for a subtree-scoped report (an LLM tool
-// result, see reportScopedSubtree) -- only the checks that ran inside the
-// scoped subtree.
+// surfaceRoot returns the span the reveal-independent surfacing (checks,
+// conversation, services, generators) should roll up beneath for this render:
+// the currently ZOOMED span, or nil -- meaning the DB root, i.e. the whole
+// trace -- when the zoom IS the DB root or isn't loaded.
 //
-// DB.SurfacedChecks is a reveal-independent walk over every span in the DB,
-// and the DB behind a scoped report is the whole *session's* (it's cached and
-// reused across an agent's tool calls), so rendering it unfiltered hands a
-// tool result the checks some earlier tool call ran -- up to a complete
-// failure report for work this call never did. Filtering by subtree
-// membership (rather than dropping the section, as scoped mode does for
-// CONVERSATION/SERVICES) keeps a `check` tool call's own CHECKS summary.
-//
-// The returned nodes are copies, so the DB's cached tree is left intact.
+// Surfacing is zoom-relative (see DB.surfaceRoot): "what ran beneath what I'm
+// looking at". The unzoomed interactive case resolves to nil and is therefore
+// byte-for-byte what it always was, while a subtree-scoped report -- an LLM
+// tool result, whose primary/zoom is the tool-call display span -- gets the
+// checks that tool ran, even though the display span is itself a Boundary.
+func (fe *frontendPretty) surfaceRoot() *dagui.Span {
+	if fe.db == nil {
+		return nil
+	}
+	if !fe.ZoomedSpan.IsValid() {
+		return nil
+	}
+	span := fe.db.Spans.Map[fe.ZoomedSpan]
+	if span == nil || span == fe.db.RootSpan {
+		return nil
+	}
+	return span
+}
+
+// reportChecks returns the surfaced checks this render is *about*: the checks
+// that ran beneath the zoomed span (the whole trace when unzoomed). See
+// frontendPretty.surfaceRoot.
 func (fe *frontendPretty) reportChecks() []*dagui.CheckNode {
 	if fe.db == nil {
 		return nil
 	}
-	roots := fe.db.SurfacedChecks()
-	if !fe.reportScopedSubtree {
-		return roots
-	}
-	return checksInSubtree(roots, fe.reportScopeSpans())
+	return fe.db.SurfacedChecksForSpan(fe.surfaceRoot())
 }
 
-// reportScopeSpans returns the set of spans in the scoped render's subtree:
-// the primary span and everything beneath it. ChildSpans already folds in
-// cause-linked children, so this covers the same containment the report's tree
-// renders (mirroring core's expandedSpans).
-func (fe *frontendPretty) reportScopeSpans() map[dagui.SpanID]bool {
-	in := map[dagui.SpanID]bool{}
-	root, ok := fe.db.Spans.Map[fe.db.PrimarySpan]
-	if !ok {
-		return in
+// reportGenerators is reportChecks for `dagger generate` generator runs.
+func (fe *frontendPretty) reportGenerators() []*dagui.GeneratorNode {
+	if fe.db == nil {
+		return nil
 	}
-	queue := []*dagui.Span{root}
-	for len(queue) > 0 {
-		span := queue[0]
-		queue = queue[1:]
-		if in[span.ID] {
-			continue
-		}
-		in[span.ID] = true
-		queue = append(queue, span.ChildSpans.Order...)
-	}
-	return in
+	return fe.db.SurfacedGeneratorsForSpan(fe.surfaceRoot())
 }
 
-// checksInSubtree keeps only the checks whose representative span is in the
-// given span set, preserving nesting. A check that falls out of scope while a
-// nested check stays in it hoists that child to its level, so an in-scope
-// check is never dropped along with an out-of-scope parent.
-func checksInSubtree(nodes []*dagui.CheckNode, in map[dagui.SpanID]bool) []*dagui.CheckNode {
-	var out []*dagui.CheckNode
-	for _, node := range nodes {
-		children := checksInSubtree(node.Children, in)
-		if node.Span != nil && in[node.Span.ID] {
-			cp := *node
-			cp.Children = children
-			out = append(out, &cp)
-			continue
-		}
-		out = append(out, children...)
+// reportConversation is reportChecks for the LLM transcript.
+func (fe *frontendPretty) reportConversation() []*dagui.MessageNode {
+	if fe.db == nil {
+		return nil
 	}
-	return out
+	return fe.db.SurfacedConversationForSpan(fe.surfaceRoot())
+}
+
+// reportServices is reportChecks for surfaced service instances.
+func (fe *frontendPretty) reportServices() []*dagui.ServiceNode {
+	if fe.db == nil {
+		return nil
+	}
+	return fe.db.SurfacedServicesForSpan(fe.surfaceRoot())
 }
 
 // promoteChecksLocked mirrors the web UI (cloud/components/trace.go): when a

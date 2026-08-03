@@ -179,20 +179,28 @@ type DB struct {
 	// new span data.
 	mutations uint64
 
+	// The surfacing memos below are single-entry and key on BOTH db.mutations
+	// and the root the walk was relative to (see surfaceRoot): a zoom change
+	// doesn't bump mutations, so without the root in the key a render zoomed
+	// to one span would be served the tree built for another.
 	surfacedChecks     []*CheckNode
 	surfacedChecksAt   uint64
+	surfacedChecksRoot SpanID
 	surfacedChecksInit bool
 
 	surfacedConversation     []*MessageNode
 	surfacedConversationAt   uint64
+	surfacedConversationRoot SpanID
 	surfacedConversationInit bool
 
 	surfacedGenerators     []*GeneratorNode
 	surfacedGeneratorsAt   uint64
+	surfacedGeneratorsRoot SpanID
 	surfacedGeneratorsInit bool
 
 	surfacedServices     []*ServiceNode
 	surfacedServicesAt   uint64
+	surfacedServicesRoot SpanID
 	surfacedServicesInit bool
 
 	testIndex *TestIndex
@@ -520,6 +528,45 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 // to the span it created.
 func (db *DB) SetPrimarySpan(span SpanID) {
 	db.PrimarySpan = span
+}
+
+// surfaceRoot resolves the root a surfacing walk (SurfacedChecks and family)
+// is relative to: the span the caller gave, or the trace root when nil.
+//
+// Surfacing is a question about a subtree, not about the process: "what checks
+// / messages / services ran beneath THIS span". Every frontend asks it about
+// whatever it is zoomed to, and the whole-trace answer is just the zoom-to-the-
+// root case. Flags (Boundary/Encapsulate) on or above the root are outside the
+// question and never contain; flags strictly below it contain exactly as they
+// always have, so a fixture check wrapped in its own boundary stays hidden.
+func (db *DB) surfaceRoot(root *Span) *Span {
+	if root != nil {
+		return root
+	}
+	return db.RootSpan
+}
+
+// surfaceRootID keys a surfacing memo on the root it was built for.
+func surfaceRootID(root *Span) SpanID {
+	if root == nil {
+		return SpanID{}
+	}
+	return root.ID
+}
+
+// underSurfaceRoot reports whether span is root or one of its descendants. A
+// nil root means the whole trace, so everything qualifies -- which is what
+// keeps the no-arg HasX predicates exactly as cheap and as broad as they were.
+func underSurfaceRoot(span, root *Span) bool {
+	if root == nil {
+		return true
+	}
+	for p := span; p != nil; p = p.ParentSpan {
+		if p == root {
+			return true
+		}
+	}
+	return false
 }
 
 func (db *DB) initSpan(spanID SpanID) *Span {

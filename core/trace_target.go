@@ -47,8 +47,11 @@ func resolveTraceTarget(ctx context.Context, target traceTarget) (string, error)
 //
 // Resolution rules:
 //   - span: must be a valid hex span ID that the trace actually contains.
-//   - check: must name a surfaced check (see DB.SurfacedChecks); resolves to
-//     the most recently *started* span carrying that check name.
+//   - check: must name a check the trace contains (matched against span check
+//     names directly, NOT against DB.SurfacedChecks: a check run inside an LLM
+//     tool call always sits under the tool-call display span's Boundary, and a
+//     name lookup has no business inheriting that containment); resolves to the
+//     most recently *started* span carrying that check name.
 //   - test: matched against test cases first, then suites (by full name or
 //     leaf name, as TestView indexes both); resolves to the most recently
 //     started matching span.
@@ -74,20 +77,27 @@ func resolveTraceTargetIn(db *dagui.DB, target traceTarget) (string, error) {
 		return target.Span, nil
 
 	case target.Check != "":
-		names := surfacedCheckNames(db)
-		if !names[target.Check] {
-			return "", fmt.Errorf("no check named %q in this trace%s",
-				target.Check, listAvailable("checks", sortedKeys(names)))
-		}
+		// Resolve by scanning span check names directly, NOT via
+		// DB.SurfacedChecks: surfacing answers "should this check be listed in
+		// a report", which depends on Boundary/Encapsulate containment -- and a
+		// check run inside an LLM tool call always has a Boundary ancestor (the
+		// tool-call display span). A name lookup must not inherit that: the
+		// reader is naming something it just saw run.
+		names := map[string]bool{}
 		var best *dagui.Span
 		for span := range db.Spans.Iter() {
+			if span.CheckName == "" {
+				continue
+			}
+			names[span.CheckName] = true
 			if span.CheckName != target.Check {
 				continue
 			}
 			best = mostRecentSpan(best, span)
 		}
 		if best == nil {
-			return "", fmt.Errorf("no span found for check %q in this trace", target.Check)
+			return "", fmt.Errorf("no check named %q in this trace%s",
+				target.Check, listAvailable("checks", sortedKeys(names)))
 		}
 		return best.ID.SpanID.String(), nil
 
@@ -130,21 +140,6 @@ func mostRecentSpan(best, span *dagui.Span) *dagui.Span {
 		return span
 	}
 	return best
-}
-
-// surfacedCheckNames is the set of check names a reader can legitimately ask
-// for: the trace-level checks, flattened out of the surfaced check tree.
-func surfacedCheckNames(db *dagui.DB) map[string]bool {
-	names := map[string]bool{}
-	var walk func(nodes []*dagui.CheckNode)
-	walk = func(nodes []*dagui.CheckNode) {
-		for _, node := range nodes {
-			names[node.Name] = true
-			walk(node.Children)
-		}
-	}
-	walk(db.SurfacedChecks())
-	return names
 }
 
 // testNames is every name TestView can be looked up by (cases first, then

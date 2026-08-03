@@ -35,32 +35,43 @@ func (node *ServiceNode) Origin() *Span {
 	return nil
 }
 
-// SurfacedServices returns the trace's service instances as a tree,
-// independent of the `reveal` mechanism — the service analog of
-// DB.SurfacedChecks / DB.SurfacedConversation.
+// SurfacedServices returns the whole trace's service instances as a tree. It
+// is SurfacedServicesForSpan relative to the trace root.
+func (db *DB) SurfacedServices() []*ServiceNode {
+	return db.SurfacedServicesForSpan(nil)
+}
+
+// SurfacedServicesForSpan returns the service instances started beneath root
+// as a tree, independent of the `reveal` mechanism — the service analog of
+// DB.SurfacedChecksForSpan / DB.SurfacedConversationForSpan. A nil root means
+// the trace root.
 //
 // A span marked as a service (telemetryattrs.ServiceAttr) is surfaced only if
-// its ancestor chain reaches the trace root with no Boundary or Encapsulate
-// span in between — the same containment the other surfaced kinds apply, so a
-// service a test drives as a fixture stays hidden. A chain severed before the
-// root (an unreceived placeholder, or a reparenting seam the incremental fetch
-// never loaded) can't be proven boundary-free and is treated as contained too.
+// its ancestor chain reaches root with no Boundary or Encapsulate span in
+// between — the same zoom-relative containment the other surfaced kinds apply,
+// so a service a test drives as a fixture stays hidden, and a zoom sees only
+// the services its own subtree started. A chain severed before root (an
+// unreceived placeholder, or a reparenting seam the incremental fetch never
+// loaded) can't be proven boundary-free and is treated as contained too.
 //
 // Like the conversation there is no dedup: each service span is its own node,
 // nested under the nearest surfaced ancestor service. Roots and children are
-// ordered by start time. The result is cached per DB mutation; callers must
-// treat the returned nodes as read-only.
-func (db *DB) SurfacedServices() []*ServiceNode {
-	if db.surfacedServicesInit && db.surfacedServicesAt == db.mutations {
+// ordered by start time. The result is cached per DB mutation and per root;
+// callers must treat the returned nodes as read-only.
+func (db *DB) SurfacedServicesForSpan(root *Span) []*ServiceNode {
+	r := db.surfaceRoot(root)
+	key := surfaceRootID(r)
+	if db.surfacedServicesInit && db.surfacedServicesAt == db.mutations && db.surfacedServicesRoot == key {
 		return db.surfacedServices
 	}
-	db.surfacedServices = db.buildSurfacedServices()
+	db.surfacedServices = db.buildSurfacedServices(r)
 	db.surfacedServicesAt = db.mutations
+	db.surfacedServicesRoot = key
 	db.surfacedServicesInit = true
 	return db.surfacedServices
 }
 
-func (db *DB) buildSurfacedServices() []*ServiceNode {
+func (db *DB) buildSurfacedServices(root *Span) []*ServiceNode {
 	type info struct {
 		span     *Span
 		parentID SpanID
@@ -73,21 +84,24 @@ func (db *DB) buildSurfacedServices() []*ServiceNode {
 
 		contained := false
 		var parentID SpanID
-		reachedRoot := span == db.RootSpan
+		reachedRoot := span == root
 		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
-			if p.Boundary || p.Encapsulate {
+			atRoot := p == root
+			if !atRoot && (p.Boundary || p.Encapsulate) {
 				contained = true
 				break
 			}
 			if !parentID.IsValid() && p.Service {
 				parentID = p.ID
 			}
-			if p == db.RootSpan {
+			if atRoot {
+				// Stop at root: its own flags are outside the question, but it
+				// still nests (see SurfacedChecksForSpan).
 				reachedRoot = true
 				break
 			}
 		}
-		if !contained && db.RootSpan != nil && !reachedRoot {
+		if !contained && root != nil && !reachedRoot {
 			contained = true
 		}
 		if contained {
@@ -130,8 +144,14 @@ func (db *DB) buildSurfacedServices() []*ServiceNode {
 // HasServices reports whether the trace contains any service-instance spans,
 // for live affordances that want a cheap existence check (mirrors HasChecks).
 func (db *DB) HasServices() bool {
+	return db.HasServicesForSpan(nil)
+}
+
+// HasServicesForSpan is HasServices restricted to root's subtree; a nil root
+// means the whole trace.
+func (db *DB) HasServicesForSpan(root *Span) bool {
 	for _, span := range db.Spans.Order {
-		if span.Service {
+		if span.Service && underSurfaceRoot(span, root) {
 			return true
 		}
 	}
