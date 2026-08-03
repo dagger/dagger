@@ -156,6 +156,29 @@ func (l *spanLookup) causalChildrenOf(spanID string) []string {
 	return kids
 }
 
+// hasDescendants reports whether root has anything nested beneath it, over
+// the same edges descendants walks (child edges and cause-purpose link
+// edges). It only ever inspects root's own direct edges -- a span with any
+// child at all has a descendant -- so it is O(direct children) and never
+// materializes the subtree.
+func (l *spanLookup) hasDescendants(root string) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	for _, kid := range l.children[root] {
+		// A malformed self-parented row would otherwise report itself as its
+		// own descendant.
+		if kid != root {
+			return true
+		}
+	}
+	for _, kid := range l.causalChildren[root] {
+		if kid != root {
+			return true
+		}
+	}
+	return false
+}
+
 // descendants returns every span reachable from root via child edges and
 // cause-purpose link edges — the same containment dagui renders, where a
 // cause-linking span (e.g. a service's exec span) appears as a child of the
@@ -319,6 +342,16 @@ func (s *DB) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, error)
 // installed the Service value (Container.asService and friends).
 func (s *DB) CausalChildren(spanID string) []string {
 	return s.lookup.causalChildrenOf(spanID)
+}
+
+// HasDescendants reports whether any span is nested beneath spanID, following
+// the same edges as the log queries: parent→child plus cause-purpose links.
+//
+// It answers purely from the in-memory span index -- no stream reads, no
+// subtree materialization -- so it is cheap enough to use as a pre-filter
+// (e.g. "did this tool call produce any child telemetry worth rendering?").
+func (s *DB) HasDescendants(spanID string) bool {
+	return s.lookup.hasDescendants(spanID)
 }
 
 func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {

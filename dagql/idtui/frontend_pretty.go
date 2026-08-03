@@ -148,6 +148,23 @@ type frontendPretty struct {
 	// live TUI (which re-renders on arrival) and report mode.
 	fetchWaiter func()
 
+	// reportNestedLogLimit bounds how many log lines a *nested* row (depth > 0)
+	// renders in report mode; 0 means unbounded, the default. Report renders
+	// have no screen height to divide by, so an embedded report (a rendered
+	// trace handed back as an LLM tool result) would otherwise inline every
+	// line of every exec beneath it. The row at depth 0 is the thing the report
+	// is *about* -- its own output stays whole -- while everything below it is
+	// abridged to a tail, mirroring core's captured-log abridging.
+	reportNestedLogLimit int
+
+	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
+	// single LLM tool call) rather than describing the whole run. Sections
+	// built from the entire trace -- the LLM CONVERSATION transcript and the
+	// SERVICES inventory -- are then suppressed: they ignore the zoom, so they
+	// would answer a question nobody asked (and, being rendered in place of
+	// the progress rows, hide the very subtree the report is about).
+	reportScopedSubtree bool
+
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -750,12 +767,28 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	return newWithTerminal(w, db, tuist.NewStdTerminal())
 }
 
+// NewASCIIReporterWithDB returns a report-only pretty frontend backed by db
+// that always renders plain ASCII -- no ANSI escape sequences -- regardless of
+// the ambient color profile. Used to embed a rendered final report in an API
+// result (e.g. an LLM tool result), where the consumer is reading text.
+func NewASCIIReporterWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
+	fe := newWithTerminalProfile(w, db, tuist.NewStdTerminal(), termenv.Ascii)
+	fe.reportOnly = true
+	return fe
+}
+
 // newWithTerminal builds a pretty frontend whose TUI is backed by the given
 // terminal. Production uses NewWithDB (a real std terminal); the headless test
 // harness injects a tuist.HeadlessTerminal so it can drive the frontend
 // synchronously, without the event-loop goroutine.
 func newWithTerminal(w io.Writer, db *dagui.DB, term tuist.Terminal) *frontendPretty {
-	profile := ColorProfile()
+	return newWithTerminalProfile(w, db, term, ColorProfile())
+}
+
+// newWithTerminalProfile is newWithTerminal with an explicit color profile, so
+// callers that need deterministic plain-text output can pin termenv.Ascii
+// instead of inheriting the process environment's profile.
+func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, profile termenv.Profile) *frontendPretty {
 	tui := tuist.New(term)
 	fe := &frontendPretty{
 		db:        db,
@@ -1309,6 +1342,70 @@ func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 func (fe *frontendPretty) SetVerbosity(n int) {
 	fe.dispatch(func() {
 		fe.Opts().Verbosity = n
+		fe.Update()
+	})
+}
+
+// ReportRenderOpts are the knobs a caller embedding a rendered report (e.g.
+// core's scoped trace report) sets per render. They are deliberately separate
+// from FrontendOpts' interactive state: a report is rendered once, for a
+// reader who cannot expand a row or press '+'.
+type ReportRenderOpts struct {
+	// Verbosity is the render verbosity (dagui.ShowCompletedVerbosity and up).
+	Verbosity int
+
+	// ExpandCompleted leaves completed steps expanded.
+	ExpandCompleted bool
+
+	// ExpandSpans force-expands specific rows, exactly as if the reader had
+	// expanded them by hand -- IsExpanded consults this before anything else,
+	// so it punches through the roll-up/tool-call boundaries that would
+	// otherwise collapse a row to a bare status line and hide its output.
+	//
+	// This is deliberately *not* "crank Verbosity to ExpandCompletedVerbosity":
+	// that threshold also clears ShowInternalVerbosity and
+	// ShowEncapsulatedVerbosity, which would surface internal and encapsulated
+	// spans the report is meant to hide.
+	ExpandSpans map[dagui.SpanID]bool
+
+	// Filter prunes spans from the tree (dagui.WalkSkip skips the subtree).
+	Filter func(*dagui.Span) dagui.WalkDecision
+
+	// NestedLogLimit bounds the log lines rendered for rows below the top
+	// level; 0 leaves them unbounded. See frontendPretty.reportNestedLogLimit.
+	NestedLogLimit int
+
+	// ScopedSubtree suppresses whole-trace sections that ignore the zoom. See
+	// frontendPretty.reportScopedSubtree.
+	ScopedSubtree bool
+
+	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
+	// for a reader that has no `dagger` CLI to run. See
+	// dagui.FrontendOpts.RerunSuggestion; nil keeps the default CLI commands.
+	RerunSuggestion func(checkNames []string) (heading string, body []string)
+}
+
+// SetReportRenderOpts applies opts to this frontend ahead of a FinalRender.
+// It bumps the render version so memoized span trees rendered under the
+// previous options are invalidated -- reporters are reused across renders
+// (one per session), and a cached row would otherwise keep the old expansion
+// or log window.
+func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
+	fe.dispatch(func() {
+		feOpts := fe.Opts()
+		feOpts.Verbosity = opts.Verbosity
+		feOpts.ExpandCompleted = opts.ExpandCompleted
+		if opts.ExpandSpans != nil {
+			feOpts.SpanExpanded = opts.ExpandSpans
+		} else {
+			// Never leave it nil: the interactive expand path writes to it.
+			feOpts.SpanExpanded = map[dagui.SpanID]bool{}
+		}
+		feOpts.Filter = opts.Filter
+		feOpts.RerunSuggestion = opts.RerunSuggestion
+		fe.reportNestedLogLimit = opts.NestedLogLimit
+		fe.reportScopedSubtree = opts.ScopedSubtree
+		fe.renderVersion++
 		fe.Update()
 	})
 }
@@ -2498,7 +2595,9 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// Lead the whole-trace report with the overall verdict -- did it pass or
 	// fail, what command ran, and the top-level error -- the one-glance summary
 	// the server-computed summary used to provide. A zoom titles itself below.
-	if !zoomed {
+	// A subtree-scoped report skips it: the verdict is the enclosing run's, not
+	// the subtree's.
+	if !zoomed && !fe.reportScopedSubtree {
 		if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
 			ctx.Lines(hdr...)
 			ctx.Line("")
@@ -2571,7 +2670,10 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// trace that ran an LLM, without the reveal bubbling or the shell's manual
 	// zoom. When both checks and a conversation surface (rare), the conversation
 	// follows the checks with a blank line between.
-	if convLines := fe.conversationReport(ctx, r, zoomed); len(convLines) > 0 {
+	//
+	// A subtree-scoped report skips it: the transcript is built from the whole
+	// trace, so it would describe the run that *contains* the subtree.
+	if convLines := fe.conversationReport(ctx, r, zoomed || fe.reportScopedSubtree); len(convLines) > 0 {
 		if renderedRows {
 			ctx.Line("")
 		}
@@ -2596,7 +2698,11 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// after the main rows, never in place of them -- services are easy to lose
 	// in the raw tree (their exec spans are passthrough-hidden), and their
 	// logs are often the first thing a debugging session needs.
-	if svcLines := fe.servicesReport(ctx, r, zoomed); len(svcLines) > 0 {
+	//
+	// A subtree-scoped report skips them: the inventory covers the whole trace,
+	// and a scoped report's reader (e.g. an LLM reading a tool result) is being
+	// shown one subtree, not the session's services.
+	if svcLines := fe.servicesReport(ctx, r, zoomed || fe.reportScopedSubtree); len(svcLines) > 0 {
 		if renderedRows {
 			ctx.Line("")
 		}
@@ -2843,7 +2949,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 				walkChecks(n.Children)
 			}
 		}
-		walkChecks(fe.db.SurfacedChecks())
+		walkChecks(fe.reportChecks())
 		for _, node := range failingLeafTestCases(fe.db.TestView()) {
 			add(node.Span)
 		}
@@ -2855,7 +2961,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		// boundary-contained fixture failures doesn't surface those as drill-ins.
 		root := fe.db.RootSpan
 		if len(targets) == 0 && root != nil && root.IsFailed() &&
-			len(fe.db.SurfacedChecks()) == 0 {
+			len(fe.reportChecks()) == 0 {
 			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
 				for _, origin := range fe.checkRootCauses(root) {
 					add(origin)
@@ -2880,14 +2986,16 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // split by intent so the two very different actions read distinctly. For a Cloud
 // trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
 // cloud rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
-// check'); otherwise it emits just "RUN LOCALLY". Only outermost
+// check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
+// be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
+// a CLI to run. Only outermost
 // checks are re-runnable, so sub-checks roll up to their root. Returns nil when
 // no failed check applies. Gated by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
 	}
-	roots := fe.db.SurfacedChecks()
+	roots := fe.reportChecks()
 
 	var names []string
 	seen := map[string]bool{}
@@ -2934,15 +3042,27 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	}
 
 	// Run the check locally to reproduce (and then fix) the failure against your
-	// working tree.
+	// working tree. A caller may inject its own vocabulary here (e.g. a tool
+	// call instead of a CLI command) via FrontendOpts.RerunSuggestion.
+	heading := "RUN LOCALLY"
 	body := make([]string, 0, len(names))
 	for _, name := range names {
 		body = append(body, fmt.Sprintf("dagger check %q", name))
 	}
+	if hook := fe.RerunSuggestion; hook != nil {
+		hookHeading, hookBody := hook(names)
+		if hookHeading != "" {
+			heading = hookHeading
+		}
+		body = hookBody
+	}
+	if len(body) == 0 {
+		return lines
+	}
 	if len(lines) > 0 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, reportSectionLines(out, "RUN LOCALLY", body)...)
+	lines = append(lines, reportSectionLines(out, heading, body)...)
 
 	return lines
 }
@@ -2979,7 +3099,7 @@ func outermostSurfacedCheck(roots []*dagui.CheckNode, checkName string) *dagui.C
 // roots only; the per-level tallies live on the nested headers.
 func (fe *frontendPretty) renderChecksHeader() []string {
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	return []string{checksHeaderLine(out, fe.db.SurfacedChecks())}
+	return []string{checksHeaderLine(out, fe.reportChecks())}
 }
 
 // checksHeaderLine renders a "CHECKS" heading with the failed/passed tally for
@@ -3119,9 +3239,18 @@ func (fe *frontendPretty) formHeight() int {
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
-	fe.promoteChecksLocked()
-	fe.promoteConversationLocked()
-	fe.promoteGeneratorsLocked()
+	if !fe.reportScopedSubtree {
+		// Promotion reshapes the trace around what the whole run was about: it
+		// hangs the surfaced checks/conversation/generators off the zoomed span
+		// as revealed spans and marks it passthrough, so RowsView iterates
+		// those instead of its real children. A subtree-scoped report wants
+		// exactly the opposite -- the subtree it was scoped to -- and, since
+		// promotion mutates the (cached, reused) DB's spans, it would also
+		// leave that reshaping behind for every later render.
+		fe.promoteChecksLocked()
+		fe.promoteConversationLocked()
+		fe.promoteGeneratorsLocked()
+	}
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
@@ -3141,7 +3270,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// on render -- request it eagerly in both modes. It's a single span
 		// (descendants=false), not the rolled-up build log, so it isn't the
 		// over-fetch interactive cares about.
-		if fe.zoomKind() == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
+		if fe.zoomKind() == zoomRoot && len(fe.reportChecks()) == 0 {
 			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
 				if prim := fe.db.PrimarySpan; prim.IsValid() {
 					fe.requestLogsWith(prim, false)
@@ -3220,7 +3349,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					}
 				}
 			}
-			eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+			eachFailedLeafCheck(fe.reportChecks(), func(n *dagui.CheckNode) {
 				for _, origin := range fe.checkRootCauses(n.Span) {
 					fe.requestLogs(origin.ID)
 				}
@@ -3273,6 +3402,73 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// appearance). Now that syncSpanTreeState has created all
 	// SpanTreeViews, ensure the correct one has tuist keyboard focus.
 	fe.applyTuistFocus()
+}
+
+// reportChecks returns the surfaced checks this render is *about*: the whole
+// trace's checks normally, and -- for a subtree-scoped report (an LLM tool
+// result, see reportScopedSubtree) -- only the checks that ran inside the
+// scoped subtree.
+//
+// DB.SurfacedChecks is a reveal-independent walk over every span in the DB,
+// and the DB behind a scoped report is the whole *session's* (it's cached and
+// reused across an agent's tool calls), so rendering it unfiltered hands a
+// tool result the checks some earlier tool call ran -- up to a complete
+// failure report for work this call never did. Filtering by subtree
+// membership (rather than dropping the section, as scoped mode does for
+// CONVERSATION/SERVICES) keeps a `check` tool call's own CHECKS summary.
+//
+// The returned nodes are copies, so the DB's cached tree is left intact.
+func (fe *frontendPretty) reportChecks() []*dagui.CheckNode {
+	if fe.db == nil {
+		return nil
+	}
+	roots := fe.db.SurfacedChecks()
+	if !fe.reportScopedSubtree {
+		return roots
+	}
+	return checksInSubtree(roots, fe.reportScopeSpans())
+}
+
+// reportScopeSpans returns the set of spans in the scoped render's subtree:
+// the primary span and everything beneath it. ChildSpans already folds in
+// cause-linked children, so this covers the same containment the report's tree
+// renders (mirroring core's expandedSpans).
+func (fe *frontendPretty) reportScopeSpans() map[dagui.SpanID]bool {
+	in := map[dagui.SpanID]bool{}
+	root, ok := fe.db.Spans.Map[fe.db.PrimarySpan]
+	if !ok {
+		return in
+	}
+	queue := []*dagui.Span{root}
+	for len(queue) > 0 {
+		span := queue[0]
+		queue = queue[1:]
+		if in[span.ID] {
+			continue
+		}
+		in[span.ID] = true
+		queue = append(queue, span.ChildSpans.Order...)
+	}
+	return in
+}
+
+// checksInSubtree keeps only the checks whose representative span is in the
+// given span set, preserving nesting. A check that falls out of scope while a
+// nested check stays in it hoists that child to its level, so an in-scope
+// check is never dropped along with an out-of-scope parent.
+func checksInSubtree(nodes []*dagui.CheckNode, in map[dagui.SpanID]bool) []*dagui.CheckNode {
+	var out []*dagui.CheckNode
+	for _, node := range nodes {
+		children := checksInSubtree(node.Children, in)
+		if node.Span != nil && in[node.Span.ID] {
+			cp := *node
+			cp.Children = children
+			out = append(out, &cp)
+			continue
+		}
+		out = append(out, children...)
+	}
+	return out
 }
 
 // promoteChecksLocked mirrors the web UI (cloud/components/trace.go): when a
@@ -5201,6 +5397,10 @@ func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *r
 		if sh := ctx.ScreenHeight(); sh > 0 {
 			limit = sh / 3
 		}
+	}
+	// See renderInlineLogs: nested rows are abridged in an embedded report.
+	if fe.reportNestedLogLimit > 0 && row.Depth > 0 {
+		limit = fe.reportNestedLogLimit
 	}
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines

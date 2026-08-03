@@ -1,320 +1,310 @@
 # SELF.md — rolling toolset/prompt plan (re-verified against the tree)
 
-Previous plan (items 1–4, 6) is DONE: implemented via parallel
-delegate/delegateEdits waves, validated (unit + integration tests, live QA,
-one canary run), and committed one commit per task (the `commit-tasks.sh`
-helper it used is gone — don't look for it). This file records what landed,
-what remains, and what to do next, in priority order.
+This file records what landed, what remains, and what to do next, in priority
+order. Items 0 and 1 are CLOSED (kept for their lessons); items 2–5 are open.
 
-Accuracy pass (re-checked every claim below against the source): the
-"Completed" list, the DONE halves of item 1, and pending items 2–5 all still
-match the tree. The one correction is inside item 1 — see the live re-test.
+THIRD accuracy pass (this session): every claim below was re-checked against
+the source by a read-only pass, and item 1's one remaining caveat was
+discharged by a live probe. Corrections made this pass:
 
-SECOND accuracy pass (this session, every claim re-checked again): nothing has
-regressed and nothing new has landed. Spot-verified in the tree — item 0's
-`noRepoGitDir = "/nonexistent/dagger-no-repo"` + `gitDiagnostics`
-(core/directory.go:1791–1907, core/directory_patch_test.go, and the
-`corrupt patch reports what git said and where` subtest at
-core/integration/directory_test.go:1630); item 1's `telemetry.Internal()` +
-`revealTransport` (core/llm_otel.go:69,103,136,144) and
-`captureLogLines`/`limitIndirectLines` (core/mcp.go:1164,1719) with
-core/mcp_test.go's TestAssembleLines + TestLimitIndirectLines; item 2's
-delegate doc still SOURCE-silent; item 3's engineTest still returning bare
-PASS/FAIL (modules/engine-lab/main.dang:313–315); item 4's
-`workdir: String! = defaultWorkdir` (modules/tui-qa/main.dang:79); item 5's
-`var lastLogID int64` (core/mcp.go:1188). The owed integration test for item 1
-does NOT exist (core/integration/llm_test.go has only TestToolLogsExclude
-Internal/Service). Item 1's abridging bug was RE-REPRODUCED live, then
-DIAGNOSED AND FIXED this session (directSpanFilter + TestToolLogsKeepReport) —
-so the item-1 notes below now describe a closed loop, and the owed integration
-test exists.
+- Item 1 is now LIVE-CONFIRMED, not merely test-proven — see below.
+- Stale line refs fixed: `captureLogLines` is core/mcp.go:1275 and
+  `limitIndirectLines` core/mcp.go:1830 (were cited as 1164/1719); the
+  row-0 `var lastLogID int64` moved into `captureLogLines`
+  (core/mcp.go:1299, was cited as captureLogs:1188).
+- Removed a stale self-contradiction: the previous pass claimed the owed
+  integration test "does NOT exist" and credited `directSpanFilter`. Neither
+  is true — `TestToolLogsKeepReport` exists (core/integration/llm_test.go:437)
+  and `directSpanFilter` was reverted (no such symbol in the tree; the
+  classifier is still the depth-1 rule at core/mcp.go:1376–1377).
+- `./logtest/` (the gotest-vs-dangtest A/B harness the item-1 lesson points
+  at) NO LONGER EXISTS in the tree. The lesson still stands; the harness is
+  gone, so recreate it if a cross-SDK telemetry diff is needed again.
+
+Everything else verified TRUE: item 0's `noRepoGitDir` (core/directory.go:1873,
+used :1901) + `gitDiagnostics` (:1791–1867) + tests
+(core/directory_patch_test.go:135,180; core/integration/directory_test.go:1630);
+item 1's `telemetry.Internal()`/`revealTransport` (core/llm_otel.go:69,158) +
+TestLLMTransportSpanInternal + the Dang SDK stdio fix in BOTH runtimes
+(core/sdk/dang/v1/helpers.go:101–102, v2/helpers.go:124–125) + the
+report-agent fixture (zero-padded, main.dang:25) + core/mcp_test.go's
+TestAssembleLines/TestLimitIndirectLines; item 2's delegate doc still
+SOURCE-silent (modules/delegate/main.dang:18–22); item 3's bare PASS/FAIL
+(modules/engine-lab/main.dang:307–317); item 4's `workdir: String! =
+defaultWorkdir` (modules/tui-qa/main.dang:79). HANDOFF.md still carries the
+engine-lab workdir gotcha (:69–72) and the golangci/vet baseline (:90–94).
+`commit-tasks.sh` is gone — don't look for it.
 
 Context to have open: `modules/delegate/main.dang`, `modules/tui-qa/main.dang`,
-`modules/engine-lab/main.dang`, `core/mcp.go` (captureLogs /
-internalSpanFilter), `core/llm_object_tools.go` (toolLogs),
-`dagql/idtui/frontend_console.go`, `core/integration/llm_test.go`
-(TestToolLogsExcludeService + llmtest/svc-agent).
+`modules/engine-lab/main.dang`, `core/mcp.go` (captureLogLines /
+limitIndirectLines / internalSpanFilter), `core/llm_object_tools.go` (toolLogs),
+`dagql/idtui/frontend_console.go`, `core/integration/llm_test.go`.
 
-## Completed (previous plan — keep for reference, no action)
+## Landed this session: tool results render the trace report
+
+The agent-facing `check` tool returned a markdown table (pass/fail per check,
+no detail, no notion of tests). Now EVERY tool call whose span has descendants
+returns the pretty frontend's final report: the span tree plus CHECKS and
+TESTS sections, exactly what a user sees at the CLI.
+
+Nothing new was needed in idtui: `NewWithDB` + `FinalRender` is already a
+headless DB→string renderer (frontend_dots.go uses it that way), tests already
+surface via `DB.TestView()`/`renderGlobalTests`, and `core` already imports
+idtui (core/terminal.go:19). The work was plumbing, and the plumbing is where
+all the bugs were:
+
+- `core/checks_trace_report.go` — rebuilds a `dagui.DB` from clientdb
+  (`Span.ReadOnly()` → `ExportSpans`; logs re-exported from protobuf), cached
+  per session with incremental cursors (per-call rebuild was O(session):
+  80–125ms on a 3000-span session even when the output was empty), byte guard
+  (2000B/line, 16KiB total, middle dropped).
+- `core/llm_object_tools.go` — `toolLogs` routes: report when the tool-call
+  span has descendants, else the old flat path. `clientdb.DB.HasDescendants`
+  is the cheap in-memory pre-filter.
+- `core/mcp.go` — `ReadTrace` builtin (span / check / test → most recent
+  match), sibling of ReadLogs; `core/trace_target.go` resolves names.
+- `dagql/idtui` — `NewASCIIReporterWithDB` (color profile pinned, not
+  env-mutated); `FrontendOpts.RerunSuggestion` hook so the report can suggest
+  `ReadTrace(check: …)` instead of `dagger check …` without idtui learning any
+  tool names.
+- `modules/editor/main.dang` — `check` runs the checks, `rescue`s the error
+  `run` raises, and returns Void; the generic path renders the result. NOTE
+  the constraint that forces this: `routeObjectMethodResult` attaches tool
+  logs only for Changeset/Workspace/object/Void returns — a String return
+  goes straight to `outputToLLM` with no report, and an erroring tool returns
+  `toolErrorMessage` with no report either.
+
+An intermediate design added a check-specific API (`CheckGroup.RunReport`, a
+`runReport`/`traceReport` field, a `RunSpanID` anchor, a `Run`/`run` split) —
+all deleted once the generic path landed. `core/checks.go` and
+`core/schema/checks.go` are untouched by the final change. The lesson is worth
+keeping: the first version routed by TOOL IDENTITY (checks are special), the
+right one routes by TELEMETRY (anything with a subtree). Ask what the general
+rule is before adding an API for the specific case.
+
+SIX bugs found only by running it, each of which would have shipped silently:
+
+1. clientdb's `SelectSpansSince`/`SelectLogsSince` can return FEWER rows than
+   the limit while more remain (the store spills to files, a read stops at a
+   chunk boundary). Stopping on a short page truncated the trace and dropped
+   exactly the nested otelgotest spans, so `HasTests()` was false and TESTS
+   silently never rendered. Page until an EMPTY page.
+2. Feeding `db.LogExporter()` records only WHICH spans have logs; the rendered
+   `┃` lines come from the frontend's own buffers. The reporter must be built
+   first and fed the logs.
+3. `promoteConversationLocked` hung the caller's own transcript off the primary
+   span, so a tool result rendered the agent's conversation instead of its
+   work. Scoped renders skip promotion.
+4. Pruning `Service` spans isn't enough — dagui routes a service's logs to its
+   ORIGIN span by dag digest, so service noise leaked in until surfaced
+   services' origins were pruned too.
+5. `neverExpand` suppresses expansion for `LLMTool`/rolled-up spans — exactly
+   where a module tool's `print` lands — so the naive version ate the very
+   sub-agent reports item 1 fixed. Raising global verbosity would have
+   un-hidden internal+encapsulated spans (regressing TestToolLogsExcludeInternal);
+   the fix is `ExpandSpans` on the tool-call root, which `IsExpanded` consults
+   BEFORE `neverExpand`, plus an 8-line clamp on nested rows — the render-side
+   analogue of direct-vs-indirect provenance.
+6. `SurfacedChecks` is a reveal-independent walk over ALL spans, so the CHECKS
+   section ignored the report's scope: one tool call rendered another call's
+   checks, and a call that matched NO checks rendered someone else's failure
+   in full. Worse, a non-empty CHECKS section suppresses the progress-tree
+   fallback, so the tool call's own row and prints vanished. Scoped renders
+   filter checks to the scoped subtree (`fe.reportChecks()`).
+
+LESSON: same shape as items 0 and 1 below. Every one of these was invisible in
+the output (a missing section, a plausible-looking wrong tree) rather than an
+error, and each was found by rendering something real and reading it. The
+guard against this class is a live paste, not a passing test.
+
+GOTCHA for future live QA of tool results: the `replay/` model provider emits
+no per-tool-call display spans (`toolCallCtx`, core/mcp.go:809, falls back to
+the shared loop ctx), so every replayed tool call shares ONE scope span and
+scoping bugs are invisible. Use `ReadTrace` (same scoped-report code path) for
+offline A/B, or a live provider.
+
+## Completed (older plan — keep for reference, no action)
 
 1. Wording sweep: error strings + systemPrompts in engine-lab/tui-qa are
    module-relative ("Call the engine-lab start tool first").
 2. tui-qa `start` rescues short-lived commands: reruns synchronously, prints
-   exit code + tail-truncated output, leaves session state unset. QA'd via
-   `dagger shell` (see recipes below).
+   exit code + tail-truncated output, leaves session state unset.
 3. Service logs excluded from LLM tool results: `internalSpanFilter` gained
    `skipServices` (filters `dagger.io/service` spans AND install spans via
    `clientdb.CausalChildren` — service stdio lands on install spans, a
    plan-vs-reality find). toolLogs passes true, ReadLogs false.
-   `TestToolLogsExcludeService` proven red-without/green-with via a canary
-   delegate that reverted the flag and watched it fail.
-4. `GET /span?id=<hex>` console route (status/timing/dagui flags/parent chain
-   with per-ancestor flags) + unit test + tui-qa `span(spanHex)` tool.
-   QA'd live incl. internal spans and error cases.
-6. delegate module documents that sub-agents inherit no session state.
+4. `GET /span?id=<hex>` console route (status/timing/dagui flags/parent chain)
+   + unit test + tui-qa `span(spanHex)` tool.
+5. delegate module documents that sub-agents inherit no session STATE (but see
+   open item 2: it says nothing about SOURCE).
 
-## Prioritized next
+## Closed items (lessons only — do not re-open)
 
 ### 0. delegateEdits changeset merges failed on git-worktree checkouts (FIXED)
 
 `delegateEdits` died with `failed to merge parallel changesets: git apply:
-exit status 128`, discarding the sub-agent's entire work — including on a LONE
+exit status 128`, discarding the sub-agent's entire work — even on a LONE
 delegation, so it was never a parallel-merge race.
 
-ROOT CAUSE (found by reproducing the exact failing patch against a from-source
-engine): nothing to do with the patch at all. This workspace is a `git
-worktree` checkout, so its `.git` is a FILE reading
-`gitdir: /home/vito/src/dagger/.bare/worktrees/llm-workspace-wip`. That path
-doesn't exist inside the engine, so `git apply`, which discovers a repository
-even though patching a working tree needs none, died during discovery —
-`fatal: not a git repository: (null)` — before ever parsing the patch. Hence
-"the patch applies fine locally but not in the engine", and hence EVERY
-changeset apply against this workspace root failed, deterministically.
+ROOT CAUSE: nothing to do with the patch. This workspace is a `git worktree`
+checkout, so its `.git` is a FILE reading `gitdir: …/.bare/worktrees/…`. That
+path doesn't exist inside the engine, so `git apply` — which discovers a
+repository even though patching a working tree needs none — died during
+discovery (`fatal: not a git repository: (null)`) before parsing anything.
 
-FIX: `applyGitPatch` (core/directory.go) runs git with
-`GIT_DIR=/nonexistent/dagger-no-repo`, which stops discovery dead. Bonus:
-patching is now hermetic — config from a repo embedded in the tree
-(core.autocrlf, core.fileMode, …) can't change the result.
+FIX: `applyGitPatch` (core/directory.go:1901) runs git with
+`GIT_DIR=/nonexistent/dagger-no-repo`, stopping discovery dead. Bonus:
+patching is hermetic — an embedded repo's core.autocrlf/fileMode can't
+change the result.
 
-One supporting fix landed alongside, and it's the keeper:
-
-- The failure now explains itself. git's stdout/stderr are teed into a bounded
-  `gitDiagnostics` buffer and folded into the returned error (they only went
-  to span stdio before — invisible in the error text a caller or agent reads),
-  and the error QUOTES the patch around every `<stdin>:N` git names
-  (`> 6: "+bye"`), since patch corruption is whitespace-sensitive. This is the
-  ONLY reason the real cause was findable; the bare "exit status 128" had
-  already burned two sessions on wrong theories (binary hunks, truncation,
-  UTF-8 round-trips, an unterminated final line — all disproven).
-
-Tests (core/directory_patch_test.go, core/integration/directory_test.go):
-TestApplyGitPatchIgnoresEmbeddedRepo (no repo / dangling worktree pointer /
-garbage .git × FAIL and LEAVE_CONFLICT_MARKERS), TestGitDiagnosticsWrap, plus
-a `TestDirectory/TestPatch` subtest asserting a corrupt patch reports what git
-said and where. Canary-verified: with the GIT_DIR line removed the worktree
-case fails with the user's error verbatim. End-to-end: the real failing patch
-now applies to the real workspace tree on a rebuilt engine.
+Keeper alongside it: the failure now explains itself. git's stdout/stderr are
+teed into a bounded `gitDiagnostics` buffer folded into the returned error,
+and the error QUOTES the patch around every `<stdin>:N` git names
+(`> 6: "+bye"`). That is the ONLY reason the real cause was findable; the bare
+"exit status 128" had burned two sessions on wrong theories.
 
 A speculative fix (tolerating patches with no trailing newline) was written
-and then REMOVED once the real cause was found — it fixed nothing observed
-here, and unexplained leniency in a patch path is a liability, not a freebie.
+then REMOVED once the real cause was found — unexplained leniency in a patch
+path is a liability, not a freebie.
 
-LESSON (generalize this): an error that reports only a subprocess exit status
-is a bug in its own right. Two sessions of speculation collapsed into one
-reproduction the moment the subprocess's own words reached the error. Check
-other exec sites for the same silence — `core/changeset.go`'s `runGit` already
-does it right (`git %v: %w: %s` with CombinedOutput).
+LESSON: an error that reports only a subprocess exit status is a bug in its
+own right. Check other exec sites for the same silence — `core/changeset.go`'s
+`runGit` already does it right (`git %v: %w: %s` with CombinedOutput).
 
-### 1. delegateEdits results drown the sub-agent's final report (FIXED)
+### 1. delegateEdits results drown the sub-agent's final report (FIXED, LIVE-CONFIRMED)
 
-Observed in the implementation session: `delegateEdits` tool results were
-"… N lines omitted …" + a tail of raw LLM SSE events (`event:
-content_block_stop`, `data: {...}`) and engine-metrics log lines, then the
-patch summary — the sub-agent's REPORT text was lost in 3 of 3 edit
-delegations. Plain `delegate` survived fine because the report IS its return
-value.
+Symptom: `delegateEdits` tool results were "… N lines omitted …" + a tail of
+raw LLM SSE events and engine-metrics lines, then the patch summary — the
+sub-agent's REPORT was lost in 3 of 3 edit delegations.
 
-DONE (SSE half) — and now LIVE-CONFIRMED: the noise came from
-`core/llm_otel.go`'s per-request "LLM
-HTTP %s %s" span, which teed raw request/response bodies to span stdio and
-carried only `telemetry.Encapsulate()` — never `telemetry.Internal()`, so
-captureLogs' internalSpanFilter had nothing to filter on. Now started with
-`telemetry.Internal()` (hidden below `ShowInternalVerbosity`, skipped by
-captureLogs AND ReadLogs), with `revealTransport` clearing the attribute
-again on transport error / HTTP >= 400 so failures still surface their
-bodies. Unit test: `core/llm_otel_test.go` TestLLMTransportSpanInternal
-(tracetest recorder + httptest server, 200 hidden / 500 revealed).
+Three causes, all fixed:
 
-DONE (truncation half): `llmToolLogsMaxLines` = 8 was tail-only, so even a
-noise-free 12-line report arrived head-snipped. Tool results now abridge by
-PROVENANCE, not position: `captureLogLines` (core/mcp.go) tags each assembled
-line `direct` when its log record sits on the tool-call span or a DIRECT CHILD
-of it — where a Dang `print` lands, since Dang binds its stdout to
-`telemetry.SpanStdio` on the module function's dagql call span
-(core/sdk/dang/v2/helpers.go:112). `limitIndirectLines` keeps every direct
-line verbatim and trims only nested-work lines to the last 8, replacing each
-dropped run with a counted marker. `captureLogs` (ReadLogs' path) is
-unchanged in behavior — it now just flattens captureLogLines.
-Unit tests: `core/mcp_test.go` TestAssembleLines + TestLimitIndirectLines.
-The abridging logic was right; the `direct` classification was not — see the
-fix below.
+- SSE/metrics noise: `core/llm_otel.go`'s per-request "LLM HTTP" span teed raw
+  bodies to span stdio carrying only `telemetry.Encapsulate()`. Now started
+  with `telemetry.Internal()` (:69), with `revealTransport` (:158) clearing it
+  on transport error / HTTP >= 400 so failures still surface bodies.
+- Tail-only truncation: `llmToolLogsMaxLines` = 8 head-snipped even noise-free
+  reports. Tool results now abridge by PROVENANCE: `captureLogLines`
+  (core/mcp.go:1275) tags a line `direct` when its record sits on the tool-call
+  span or a direct child (:1376–1377); `limitIndirectLines` (:1830) keeps every
+  direct line verbatim and trims only nested work to the last 8 with a counted
+  marker.
+- The real bug: report lines weren't classified `direct` because the Dang SDK
+  bound stdout to dagql's `call_exec` PROFILING span (`ui.passthrough=true`),
+  two hops down. FIX in `core/sdk/dang/v{1,2}/helpers.go`: bind stdio with
+  `trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))`.
+  Containerized SDKs get this free (the executor injects the user-facing
+  traceparent, engine/engineutil/executor_spec.go); an in-engine runtime has
+  to ask.
 
-LIVE RE-TEST (this session, one `delegateEdits` probe: sub-agent makes a
-net-empty edit and reports exactly 14 numbered lines):
+An earlier "fix" — a `directSpanFilter` widening the CONSUMER's classifier —
+passed its canary and was REVERTED as symptom-treatment.
 
-- SSE/metrics noise: GONE. The result contained no `event:`/`data: {...}`
-  spam and no engine-metrics lines. The llm_otel fix works in practice.
-- Direct-line preservation: FAILED. The result was
-  `… 8 lines omitted (use ReadLogs(span: …) to read more) …` followed by
-  LINE 07–LINE 14 — i.e. the report was still head-snipped to the last 8
-  lines, exactly the tail-only behavior the fix was supposed to remove.
-
-So the sub-agent's report lines were NOT being classified as `direct`.
-
-MEASURED TOPOLOGY (instrumented captureLogLines, dumped real parent chains
-under `engineTest`):
-
-    tool-call span (captured root)
-      └─ `Type.fn`                  dagql field-call span:
-                                    dag.digest=D, dag.call=<base64 ID>
-          └─ `module:Type.fn`       call_exec span — WHERE DANG'S PRINT LANDED:
-                                    dag.digest=D (same!), NO dag.call,
-                                    ui.passthrough=true
-
-Two hops, so the depth-1 rule could never see it. Worse than believed: in the
-repro NOT ONE report line survived (log-record arrival order ≠ wall-clock
-order, so the 8-line nested tail evicted the whole report), not merely the
-head.
-
-FIRST FIX — WRONG, REVERTED. I widened the classifier: a `directSpanFilter`
-in core/mcp.go that walked ParentSpanID to the root and accepted spans of the
-same dagql call (same `dag.digest`, no new `dag.call`). It passed, canary and
-all — and it was treating a symptom. The user caught it: `./logtest/`
-(gotest + dangtest, same trivial print) shows Go and Dang BOTH producing an
-outer user-visible span and an inner passthrough span, but **Go routes its
-logs to the OUTER span and Dang routed them to the INNER one**. Nothing was
-wrong with the classifier; the Dang SDK was misfiling its logs.
-
-REAL FIX (Dang SDK, both runtimes): `core/sdk/dang/v{1,2}/helpers.go` now bind
-stdout/stderr with
-`trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))` instead
-of raw `ctx`. The inner span is dagql's `call_exec` PROFILING span
-(dagql/otelprof_hooks.go `beginOTelCallExec`, `telemetry.Passthrough()`); its
-own doc block already warns that surfaces reading "the current span" must not
-attribute to it, "logs parented to a hidden span vanish from the row that
-should show them", and `MarkProfilingSpan`/`UserFacingSpanContext` exist
-precisely to escape it. Containerized SDKs get this free: the executor injects
-`dagql.UserFacingSpanContext(ctx)` as the container's traceparent
-(engine/engineutil/executor_spec.go:842), which parents everything the nested
-client emits. An in-engine runtime like Dang has to ask. With that, print
-lands on the field-call span — a DIRECT CHILD of the tool-call span — and the
-original depth-1 rule is correct as written.
-
-Tests: `core/integration/llmtest/report-agent/` fixture (tool does 20 lines of
-nested exec noise, then prints LINE-01…LINE-14) + `TestToolLogsKeepReport`
-(core/integration/llm_test.go), asserting all 14 report lines survive AND
-`NESTED-NOISE-01` is still abridged while `-20` (in the kept tail) remains.
-The fixture/test outlived the wrong fix and now proves the right one:
-`engineTest ./core/integration TestLLM/TestToolLogs` → PASS with the SDK fix
-and NO classifier change. CANARY-VERIFIED both ways: reverting the two
-`stdioCtx` lines makes KeepReport FAIL. Fixture gotcha caught in review: the
-noise loop must zero-pad (`printf 'NESTED-NOISE-%02d\n'`) or the NotContains
-assertion is vacuous.
-
-CAVEAT — not live-verifiable from inside a session: this runs in the engine
-hosting THIS conversation, built before the fix. Live `delegateEdits` reports
-keep truncating until it ships; the integration test is the proof, and the
-next session's first `delegateEdits` is the free confirmation.
+Proof: `TestToolLogsKeepReport` (core/integration/llm_test.go:437) over the
+`core/integration/llmtest/report-agent/` fixture, canary-verified both ways.
+LIVE CONFIRMATION (this session, the free confirmation the last pass predicted):
+a `delegateEdits` probe emitting 20 nested-noise lines then a 14-line report
+returned ALL 14 report lines intact, with only the noise abridged ("779 lines
+omitted" + the last 8 indirect lines). Working in the shipped engine.
 
 LESSON (the expensive one): I had the smoking gun and misread it. The print
-span was `ui.passthrough=true` — a span type whose entire purpose is "no
-frontend renders this row" — and I treated it as a legitimate place for a
-user's `print` to live, then taught the CONSUMER to cope. When telemetry shows
-up in a weird place, fix the PRODUCER's routing before widening any reader:
-every reader would have needed the same widening (ReadLogs, the TUI, error
-origins). Concretely: when two SDKs disagree, diff them (that's what
-`./logtest/` is for) — a cross-implementation A/B would have pointed at the
-Dang SDK in minutes instead of at core/mcp.go. And the same protocol as item
-0's `git apply` lesson applies: the answer was already written down in
-`beginOTelCallExec`'s doc comment; I dumped span attributes and never read the
-prose next to the code that created them.
+span was `ui.passthrough=true` — a span type whose whole purpose is "no
+frontend renders this row" — and I taught the CONSUMER to cope instead of
+fixing the PRODUCER's routing; every reader (ReadLogs, TUI, error origins)
+would have needed the same widening. When two SDKs disagree, diff them
+(a cross-SDK A/B would have pointed at the Dang SDK in minutes — the
+`./logtest/` harness that did this is GONE; rebuild it if needed). And as in
+item 0, the answer was already in prose: `beginOTelCallExec`'s doc comment
+(dagql/otelprof_hooks.go) warns that "logs parented to a hidden span vanish
+from the row that should show them" and names
+`MarkProfilingSpan`/`UserFacingSpanContext` as the escape hatch. I dumped span
+attributes and never read the comment next to the code that created them.
+
+## Prioritized next
 
 ### 2. Sub-agents do NOT see workspace edits to their own tool modules
 
-Proven in the implementation session: a post-edit QA delegate had no `span`
-tool and old `start` behavior — tools are composed from module source as
-loaded at the PARENT session's start, not re-read from the workspace.
-STILL OPEN (verified: `modules/delegate/main.dang` lines 18–33 still talk
-only about live STATE — "fresh module instances", no mention of SOURCE).
+Proven earlier: a post-edit QA delegate had no `span` tool and old `start`
+behavior — tools are composed from module source as loaded at the PARENT
+session's start, not re-read from the workspace. STILL OPEN
+(modules/delegate/main.dang:18–22 talks only about live STATE).
 Actions:
 
-- Correct/extend the item-6 wording in `modules/delegate/main.dang`: "fresh
-  module instances" is right about STATE but misleads about SOURCE. Add:
-  module edits don't reach sub-agent toolsets; QA module edits via the CLI
-  against a from-source engine instead.
-- Record the QA recipe (see recipes below) somewhere durable (module doc or
-  skill), so the next session doesn't rediscover it.
+- Extend the doc: "fresh module instances" is right about STATE but misleads
+  about SOURCE. Add: module edits don't reach sub-agent toolsets; QA module
+  edits via the CLI against a from-source engine instead.
+- Record the QA recipe (below) somewhere durable (module doc or skill).
 
-### 3. engineTest should report test counts (promote from backlog)
+### 3. engineTest should report test counts
 
-"PASS" is indistinguishable from zero-matched tests. The implementation
-session mitigated with a canary delegate (revert the fix in a discarded
-sandbox, expect FAIL) — works but costs an engine build. Better:
-`modules/engine-lab/main.dang` engineTest parses `go test` output (or -json)
-and reports run/pass/fail/skip counts; fail loudly on 0 matched.
-STILL OPEN (verified: engine-lab's engineTest still just returns PASS or
-FAIL + error tail; no count parsing anywhere in the module).
-PROVEN THIS SESSION: `engineTest(pkg: ./core/integration, run:
-TestDirectory/TestPatchNoSuchTestZZZ)` returns **PASS**. A zero-match run is
-literally indistinguishable from a green one, so any "PASS" is worthless
-until this lands. Workaround until then: canary the assertion (flip it,
-expect FAIL, flip back) — used successfully here.
+"PASS" is indistinguishable from zero matched tests — PROVEN:
+`engineTest(pkg: ./core/integration, run: TestDirectory/TestPatchNoSuchTestZZZ)`
+returns **PASS**. Any green result is worthless until this lands.
+`modules/engine-lab/main.dang:307–317` should parse `go test` output (or
+-json) and report run/pass/fail/skip counts, failing loudly on 0 matched.
+Workaround used successfully this session: plant a `t.Fatal("VERIFY-MARKER-X")`
+in each test the filter should match, run, and read the markers back out of
+the telemetry — that proves both which tests matched AND that assertions bite,
+for one run instead of a canary rebuild. Note the trace report now renders
+TESTS sections with real counts, so the raw material for this is already
+reaching the engine.
 
 ### 4. INVESTIGATE: `dagger call` flag collision on module arg `workdir`
 
 `dagger call -m modules/tui-qa start --args version` fails with "flag already
-exists: workdir" (any cwd; `--help` works, `dagger shell` works). Either a
-CLI bug (module arg vs call's own/workspace-context flag registration) worth
-fixing in cmd/dagger, or rename tui-qa's `workdir` param. Repro is one
-command; diagnose before choosing.
-STILL OPEN (verified: `modules/tui-qa/main.dang:79` still declares
-`workdir: String! = defaultWorkdir`; note engine-lab already dodged this by
-dropping its own `workdir` arg — see HANDOFF.md's engine-lab gotcha).
+exists: workdir" (any cwd; `--help` and `dagger shell` work). Either a CLI bug
+(module arg vs call's own/workspace-context flag registration) worth fixing in
+cmd/dagger, or rename tui-qa's `workdir` param
+(modules/tui-qa/main.dang:79, used :121–122). Repro is one command; diagnose
+before choosing. engine-lab already dodged this by dropping its own `workdir`
+arg (HANDOFF.md:69–72).
 
-### 5. captureLogs perf follow-ups (from the item-3 investigation, verified)
+### 5. captureLogs perf follow-ups
 
 Each capture scans the whole session log stream from row 0
-(`core/mcp.go` captureLogs: `var lastLogID int64`) and does an unmemoized
-SelectSpan + proto unmarshal per log row for the LLMRole/LLMTool noise check;
-full text is assembled then thrown away down to 9 lines. Fine at current
-scale; fix if tool-call latency grows with session length. The service filter
-already prunes the worst repeat offender.
-STILL OPEN (verified: `core/mcp.go:1188` `var lastLogID int64` still starts
-the scan at row 0 on every capture).
+(`var lastLogID int64`, core/mcp.go:1299) and does an unmemoized SelectSpan +
+proto unmarshal per row for the LLMRole/LLMTool noise check; full text is
+assembled then thrown away down to 9 lines. Fine at current scale; fix if
+tool-call latency grows with session length. NOTE: this is now the FALLBACK
+path only (tool calls with no child telemetry) — the report path got the
+incremental-cursor treatment this session (core/checks_trace_report.go's
+per-session DB cache), which is the pattern to copy here.
 
 ## Recipes that worked — reuse them
 
 - Wave pattern: fire independent delegateEdits in parallel, keep one
-  read-only `delegate` for investigation; have the investigation emit an
-  exact implementation plan (file:line, edge cases, test design) and feed it
-  verbatim to a second delegateEdits. The svc-agent fix landed first try off
-  a plan like that.
+  read-only `delegate` for investigation; have the investigation emit an exact
+  implementation plan (file:line, edge cases, test design) and feed it verbatim
+  to a second delegateEdits.
 - Canary delegate: to prove a test bites, delegate (non-edits, sandbox
-  discarded) "revert X, run the test, expect FAIL". Report came back with
-  verbatim assertion output.
+  discarded) "revert X, run the test, expect FAIL".
+- Read-only accuracy pass: delegate "verify these N claims against the tree,
+  reading only, report TRUE/FALSE/CHANGED with file:line" — cheap, and it
+  caught three stale line refs and a dead `./logtest/` reference this session.
 - QA edited Dang modules via CLI (sub-agents won't see the edits):
   engineLab start, then
   `cd /src && dagger --progress=plain -m modules/tui-qa shell -c 'start --args version | screen'`.
-  Run from the repo root — contextual `Workspace!` binds to CWD (from /tmp it
-  built against an empty workspace and failed with a confusing go.mod error).
-  Private `let` fields aren't callable from shell; chain public tools.
-- Module typecheck without a full run: `dagger -m /src/modules/<m> functions`
-  (loads + compiles the Dang source).
+  Run from the repo root — contextual `Workspace!` binds to CWD. Private `let`
+  fields aren't callable from shell; chain public tools.
+- Module typecheck without a full run: `dagger -m /src/modules/<m> functions`.
 
 ## Parked backlog (no decision yet — don't act, don't lose)
 
-- delegate/delegateEdits step cap: REMOVED (the `maxSteps` arg is gone from
-  both tools; `loop` runs uncapped). It was too tight for real editing tasks —
-  a scoped "write an integration test + run it + prove it bites" task blew
-  through 40 steps without finishing, since an engine build burns several.
-  Watch for the opposite failure mode now (a runaway sub-agent) and consider
-  a much higher cap or a time budget if it shows up.
-  (The `git apply: exit status 128` merge failure that used to be filed here
-  is now item 0 — it recurred and is under active work.)
-
+- delegate/delegateEdits step cap: REMOVED (`maxSteps` gone from both tools;
+  `loop` runs uncapped) — it was too tight for real editing tasks. Watch for
+  the opposite failure mode (a runaway sub-agent) and consider a much higher
+  cap or a time budget if it shows up.
 - Workspace-returning tool with doc-string fallback: "Set the current
-  workspace." reproduced AGAIN this session — this time from a Write tool
-  call that DID create a file (commit-tasks.sh), so the patch summary was
-  non-empty yet the fallback still showed. Stronger repro than last time;
+  workspace." reproduced from a Write tool call that DID create a file, so the
+  patch summary was non-empty yet the fallback still showed.
   applyStateReturn/describeObject path in core.
 - Replay-probe recipe (canned conversation → `... | loop | transcript`) as a
-  skill/doc note; TestToolLogsExcludeService and TestToolLogsExcludeInternal
-  are both working references now.
+  skill/doc note; TestToolLogsExcludeService/Internal and TestToolLogsKeepReport
+  are working references.
 - engine-lab `exec` stdin param (query already has one); file-drop affordance.
-- golangci baseline as machine baseline (HANDOFF.md prose lists 8 findings;
-  `go vet ./core/` lostcancel at core/services.go is among them — don't
+- golangci baseline as machine baseline (HANDOFF.md:90–94 lists 8 findings;
+  `go vet ./core/` lostcancel at core/services.go:930 is among them — don't
   "fix" it in passing without checking HANDOFF context).
 - Separate repo: `go` tool needs persistent GOMODCACHE (every build re-dumps
   ~300 download lines) and explicit exit-status reporting like exec.
-- Item 5 from the old plan (reuse idtui/dagui semantics inside engine
-  captures) stays punted.
+- Reuse idtui/dagui semantics inside engine captures: still punted.
