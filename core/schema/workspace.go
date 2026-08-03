@@ -1599,6 +1599,119 @@ func (s *workspaceSchema) withNewDirectory(
 	})
 }
 
+// removeAndPruneSelectors builds the selector chain for a workspace removal:
+// the removal itself, followed by a withoutDirectory of the topmost ancestor
+// the removal empties (see emptiedAncestorDir). prune is workspace-relative and
+// an ancestor of targetPath, so it is only ever set for base-overlay edits,
+// where the two coordinate spaces coincide.
+func removeAndPruneSelectors(targetPath, removeField, prune string) []dagql.Selector {
+	sels := []dagql.Selector{{
+		Field: removeField,
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(targetPath)},
+		},
+	}}
+	if prune != "" {
+		sels = append(sels, dagql.Selector{
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(prune)},
+			},
+		})
+	}
+	return sels
+}
+
+// emptiedAncestorDir reports the topmost workspace-relative ancestor directory
+// of removedPath that the removal will leave empty, or "" when the removal
+// empties no ancestor. Callers remove that directory along with the path, which
+// prunes the whole emptied chain in one selection.
+//
+// Why prune at all: git cannot represent an empty directory, so a workspace
+// tree that keeps one after its last entry is deleted reports a phantom
+// `ADDED dir/ +0 -0` entry in git-anchored status — and can even make
+// Changeset.isEmpty (true) disagree with Changeset.diffStats (one bare dir
+// entry). Deleting the last file in a directory is expected to make the
+// directory go away, exactly as `git rm` leaves no empty parent behind.
+//
+// This is workspace-editor (`git rm`-like) behaviour only: the underlying
+// Directory.withoutFile/withoutDirectory keep their literal semantics, and a
+// directory that is genuinely empty on its own — never emptied by a removal —
+// is left untouched.
+//
+// Emptiness is decided against the workspace's own directory listing (the
+// pre-edit effective tree), never the overlay delta root: for host-backed
+// workspaces the delta only holds touched paths, so a directory that still has
+// untouched host files would look empty there and get wrongly whiteouted.
+func (s *workspaceSchema) emptiedAncestorDir(
+	ctx context.Context,
+	ws *core.Workspace,
+	removedPath string,
+) string {
+	// Cache mounts are not git-anchored (and mount edits stay off the base
+	// overlay), so an empty directory under one is harmless; skip them, which
+	// also keeps prune in the base overlay's coordinate space.
+	if _, _, ok := ws.MountForPath(removedPath); ok {
+		return ""
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return ""
+	}
+	topmost := ""
+	child := removedPath
+	for {
+		dir := path.Dir(child)
+		// Never prune the workspace root itself.
+		if dir == "." || dir == "/" || dir == "" {
+			break
+		}
+		if guardReferencePath(ws, dir) != nil || dir == core.WorkspaceReferencePrefix {
+			break
+		}
+		if _, _, ok := ws.MountForPath(dir); ok {
+			break
+		}
+		entries, err := s.workspaceDirEntries(ctx, srv, ws, dir)
+		if err != nil {
+			// Pruning is best-effort cleanup: an unreadable parent just means
+			// there is nothing to prune here.
+			break
+		}
+		// Stop at the first ancestor that still has entries of its own.
+		if len(entries) != 1 || strings.TrimSuffix(entries[0], "/") != path.Base(child) {
+			break
+		}
+		topmost = dir
+		child = dir
+	}
+	return topmost
+}
+
+// workspaceDirEntries lists a workspace directory through the same resolution
+// path that serves Workspace.directory, so it sees host content, overlay edits,
+// mounts and references alike.
+func (s *workspaceSchema) workspaceDirEntries(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws *core.Workspace,
+	dir string,
+) ([]string, error) {
+	root, err := s.resolveRootfs(ctx, ws, dir, core.CopyFilter{}, false)
+	if err != nil {
+		return nil, err
+	}
+	var entries dagql.Array[dagql.String]
+	if err := srv.Select(ctx, root, &entries, dagql.Selector{Field: "entries"}); err != nil {
+		return nil, err
+	}
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = string(e)
+	}
+	return out, nil
+}
+
 type workspaceWithoutFileArgs struct {
 	Path string
 }
@@ -1620,14 +1733,10 @@ func (s *workspaceSchema) withoutFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	prune := s.emptiedAncestorDir(ctx, parent.Self(), resolvedPath)
 	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, base, &updated, dagql.Selector{
-			Field: "withoutFile",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(targetPath)},
-			},
-		})
+		err := srv.Select(ctx, base, &updated, removeAndPruneSelectors(targetPath, "withoutFile", prune)...)
 		return updated, err
 	})
 }
@@ -1653,14 +1762,10 @@ func (s *workspaceSchema) withoutDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	prune := s.emptiedAncestorDir(ctx, parent.Self(), resolvedPath)
 	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, base, &updated, dagql.Selector{
-			Field: "withoutDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(targetPath)},
-			},
-		})
+		err := srv.Select(ctx, base, &updated, removeAndPruneSelectors(targetPath, "withoutDirectory", prune)...)
 		return updated, err
 	})
 }
@@ -1774,6 +1879,7 @@ type workspaceWithReferenceDirectoryArgs struct {
 	Source core.DirectoryID
 }
 
+//nolint:dupl // symmetric with (*workspaceSchema).withReferenceFile; sharing hides the directory vs file semantic
 func (s *workspaceSchema) withReferenceDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -1809,6 +1915,7 @@ type workspaceWithReferenceFileArgs struct {
 	Source core.FileID
 }
 
+//nolint:dupl // symmetric with (*workspaceSchema).withReferenceDirectory; sharing hides the file vs directory semantic
 func (s *workspaceSchema) withReferenceFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -2581,11 +2688,23 @@ func (s *workspaceSchema) workspaceGitRepository(
 		// workspace's own repository would still report the pre-commit HEAD.
 		dir = latest.Repo
 		// The staged tree's work tree is frozen at commit time, so overlay
-		// edits made *after* the commit are missing from it. Re-applying the
-		// overlay's current changeset brings the work tree back up to date
-		// (it is idempotent for the edits already folded in), which is what
-		// makes GitRepository.uncommitted report the true remainder.
-		if changes, ok := ws.OverlayChanges(); ok {
+		// edits made *after* the commit are missing from it. Applying the
+		// staged-anchored remainder — the diff between the staged tree and
+		// the overlay's current tree — brings the work tree back up to date,
+		// which is what makes GitRepository.uncommitted report the true
+		// remainder.
+		//
+		// It must be the remainder rather than the overlay's own changeset:
+		// the overlay is anchored on the pre-commit checkout, an anchor that
+		// cannot express deleting a path whose only existence is owed to a
+		// staged commit — there "add then delete" cancels out to an empty
+		// delta, so the deletion would silently vanish from the work tree
+		// (and from status, and from any commit naming the path).
+		changes, ok, err := s.workspaceOverlayChanges(ctx, ws)
+		if err != nil {
+			return inst, err
+		}
+		if ok && changes.Self() != nil {
 			changesID, err := changes.ID()
 			if err != nil {
 				return inst, err
