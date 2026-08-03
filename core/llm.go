@@ -602,6 +602,12 @@ type LLMRouter struct {
 	LocalModel     string
 	LocalAPICompat string
 	LocalAPIKey    string
+
+	// localClient is the client whose configuration supplied LocalBaseURL.
+	// A local endpoint is reachable from that client's host, so the tunnel
+	// (see LLM.Endpoint) must run through that client's session. Set by
+	// loadLLMRouter; nil when the router was built for a single client.
+	localClient *engine.ClientMetadata
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -977,8 +983,12 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	return nil
 }
 
-func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
-	router := new(LLMRouter)
+// LoadClientConfig loads LLM configuration from one client's environment into
+// the router: the client's ./.env file (if any) first, then its environment
+// variables. Only values the client actually provides overwrite fields already
+// set on the router, so configuration can be layered — e.g. the session's main
+// client as the base with the calling client's own values on top.
+func (router *LLMRouter) LoadClientConfig(ctx context.Context, srv *dagql.Server) error {
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
 		if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err == nil {
@@ -1000,8 +1010,6 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 		// If it's a regular plaintext:
 		return uriOrPlaintext, nil
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
 	env := make(map[string]string)
 	// Load .env from current directory, if it exists
 	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
@@ -1009,7 +1017,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 			env = e
 		}
 	}
-	err := router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
+	return router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
 			return loadSecret(ctx, v)
@@ -1021,6 +1029,13 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 		}
 		return "", nil
 	})
+}
+
+func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
+	router := new(LLMRouter)
+	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+	err := router.LoadClientConfig(ctx, srv)
 	return router, err
 }
 
@@ -1041,18 +1056,60 @@ func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error
 	}, nil
 }
 
-// loadLLMRouter creates an LLM router that routes to the root client
-func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, error) {
+// loadLLMRouter creates an LLM router for the calling client. LLM
+// configuration is a session-wide concern: the router is seeded from the
+// session's main client (the CLI on the host), then overlaid with the calling
+// (non-module) client's own configuration, which wins wherever it sets a
+// value.
+//
+// The seeding is what lets a nested client — e.g. an
+// experimentalPrivilegedNesting exec running `dagger agent` — inherit the
+// session's LLM auth without ever holding the credentials: the env:// and
+// file://.env lookups resolve through the *main* client's session, and only
+// the engine-side router sees the plaintext. Nothing is injected into the
+// nested container, so its processes cannot read the keys (its own env:// or
+// file:// secrets still resolve inside the container); they can only use the
+// LLM through the API.
+func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
 	parentClient, err := query.NonModuleParentClientMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ctx = engine.ContextWithClientMetadata(ctx, parentClient)
-	mainSrv, err := query.Server.Server(ctx)
+	router := new(LLMRouter)
+	loadFrom := func(client *engine.ClientMetadata) error {
+		clientCtx := engine.ContextWithClientMetadata(ctx, client)
+		srv, err := query.Server.Server(clientCtx)
+		if err != nil {
+			return err
+		}
+		localBefore := router.LocalBaseURL
+		if err := router.LoadClientConfig(clientCtx, srv); err != nil {
+			return err
+		}
+		// Remember which client supplied the local endpoint: a local base URL
+		// is reachable from that client's host, so the tunnel (see
+		// LLM.Endpoint) must run through that client's session.
+		if router.LocalBaseURL != localBefore {
+			router.localClient = client
+		}
+		return nil
+	}
+	mainClient, err := query.MainClientCallerMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return NewLLMRouter(ctx, mainSrv)
+	if mainClient.ClientID != parentClient.ClientID {
+		if err := loadFrom(mainClient); err != nil {
+			return nil, err
+		}
+	}
+	if err := loadFrom(parentClient); err != nil {
+		return nil, err
+	}
+	return router, nil
 }
 
 func (*LLM) Type() *ast.Type {
@@ -1168,9 +1225,16 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	// traffic through the client's session, then rebuild the client so it
 	// dials through the tunnel.
 	if endpoint.Provider == Local {
-		parentClient, err := query.NonModuleParentClientMetadata(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("local LLM: parent client metadata: %w", err)
+		// Tunnel through the session of the client that configured the local
+		// endpoint (the base URL is reachable from *its* host) — the calling
+		// client by default, the session's main client when the config was
+		// inherited from it.
+		tunnelClient := router.localClient
+		if tunnelClient == nil {
+			tunnelClient, err = query.NonModuleParentClientMetadata(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("local LLM: parent client metadata: %w", err)
+			}
 		}
 		// The tunnel serves the endpoint beyond this call, so scope it to the
 		// client's session: it shuts down when the session closes.
@@ -1178,7 +1242,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		if err != nil {
 			return nil, fmt.Errorf("local LLM: session context: %w", err)
 		}
-		tunnelCtx := engine.ContextWithClientMetadata(sessionCtx, parentClient)
+		tunnelCtx := engine.ContextWithClientMetadata(sessionCtx, tunnelClient)
 		if err := setupLocalTunnel(tunnelCtx, endpoint); err != nil {
 			return nil, fmt.Errorf("setup local LLM tunnel: %w", err)
 		}
