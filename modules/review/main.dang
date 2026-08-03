@@ -32,12 +32,30 @@ type Review {
   footer. This is the quick "git status"-style overview; reach for `diff` when
   you need the actual hunks.
   """
-  status(source: Workspace!): String! {
+  status(
+    source: Workspace!,
+    """
+    Relative paths (files or directories) to limit the summary to, like
+    `git status -- <paths>`. A directory matches everything beneath it. Empty
+    summarizes all pending changes.
+    """
+    paths: [String!]! = [],
+  ): String! {
     let stats = source.git.uncommitted.diffStats.{{kind, addedLines, removedLines, path}}
     if (stats.isEmpty) {
       return "No pending changes."
     }
-    let rows = stats.map { s =>
+    let scoped = if (paths.isEmpty) {
+      stats
+    } else {
+      stats.filter { s =>
+        paths.any { p => Path(p).contains(Path(s.path)) }
+      }
+    }
+    if (scoped.isEmpty) {
+      return "No pending changes under the given paths."
+    }
+    let rows = scoped.map { s =>
       let mark = if (s.kind == DiffStatKind.ADDED) {
         "A"
       } else if (s.kind == DiffStatKind.REMOVED) {
@@ -49,9 +67,9 @@ type Review {
       }
       `${mark}  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
     }
-    let added = stats.reduce(0) { acc, s => acc + s.addedLines }
-    let removed = stats.reduce(0) { acc, s => acc + s.removedLines }
-    let footer = `${toString(stats.length)} files changed, +${toString(added)} -${toString(removed)}`
+    let added = scoped.reduce(0) { acc, s => acc + s.addedLines }
+    let removed = scoped.reduce(0) { acc, s => acc + s.removedLines }
+    let footer = `${toString(scoped.length)} files changed, +${toString(added)} -${toString(removed)}`
     rows.join("\n") + "\n\n" + footer
   }
 
@@ -60,14 +78,49 @@ type Review {
   full hunks across every changed file. Use `status` first for a compact
   overview; use this to actually read the edits (e.g. before summarizing your
   work, or to confirm an edit landed as intended).
+
+  Pass `paths` to scope the output: the full diff of a workspace with a lot of
+  pending changes can be enormous.
   """
-  diff(source: Workspace!): String! {
+  diff(
+    source: Workspace!,
+    """
+    Relative paths (files or directories) to show the diff for, like
+    `git diff -- <paths>`. A directory matches everything beneath it. Empty
+    shows every pending change.
+    """
+    paths: [String!]! = [],
+  ): String! {
     let changes = source.git.uncommitted
     if (changes.isEmpty) {
       return "No pending changes."
     }
-    changes.asPatch.contents
+    let patch = changes.asPatch.contents
+    if (paths.isEmpty) {
+      return patch
+    }
+    # Scope the patch by slicing it into its per-file sections: each one starts
+    # with a "diff --git <old> <new>" header at the start of a line, and body
+    # lines are always prefixed (+/-/space/@/index...), so they can never be
+    # mistaken for a header.
+    let sections = patch.trimPrefix(patchHeader).split("\n" + patchHeader)
+    let kept = sections.filter { section =>
+      let header = section.split("\n", 2).takeFirst.join("")
+      header.split(" ").any { name =>
+        # the patch is rendered between a/ and b/ mount dirs; tolerate both the
+        # prefixed and the bare spelling of the path.
+        [name, name.trimPrefix("a/"), name.trimPrefix("b/")].uniq.any { candidate =>
+          paths.any { p => Path(p).contains(Path(candidate)) }
+        }
+      }
+    }
+    if (kept.isEmpty) {
+      return "No pending changes under the given paths."
+    }
+    kept.map { section => patchHeader + section }.join("\n")
   }
+
+  let patchHeader: String! = "diff --git "
 
   let systemPrompt: String! = """
     You can review your own pending workspace edits with the Review tools:
@@ -76,6 +129,10 @@ type Review {
       counts, with a totals footer). Start here to see what you've touched.
     - `diff` — the full Git-style unified patch of those same changes, when you
       need to read the actual hunks.
+
+    Both accept `paths` to scope the output to particular files or directories
+    (a directory matches everything beneath it) — reach for it with `diff` in
+    particular, since an unscoped patch can be huge.
 
     Both read the current state of your workspace, so re-run them after making
     edits to see updated results. They are read-only and never modify anything.
