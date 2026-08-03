@@ -198,6 +198,17 @@ type WorkspacePendingCommit struct {
 	// Repo is the repository tree whose .git holds this commit (and every
 	// commit staged before it).
 	Repo dagql.ObjectResult[*Directory]
+	// Committed is the cumulative content of every commit staged so far,
+	// expressed as a changeset from the workspace overlay's base to the staged
+	// state. Staging a commit never changes what the workspace tree contains —
+	// the overlay keeps carrying every edit — so this is what tells the diff
+	// views (Workspace.changes, WorkspaceGit.uncommitted) which part of the
+	// overlay is already committed: they diff the overlay's "after" tree
+	// against base+Committed, leaving exactly the uncommitted remainder.
+	//
+	// Unset for workspaces whose pending changes come from the repository
+	// rather than an overlay: those read their remainder from git directly.
+	Committed dagql.ObjectResult[*Changeset]
 }
 
 // PendingCommits returns the stack of engine-side staged commits, oldest first.
@@ -214,6 +225,17 @@ func (ws *Workspace) LatestPendingCommit() (WorkspacePendingCommit, bool) {
 		return WorkspacePendingCommit{}, false
 	}
 	return ws.pendingCommits[len(ws.pendingCommits)-1], true
+}
+
+// StagedChanges returns the cumulative content of the staged commits, as a
+// changeset anchored at the workspace overlay's base. Applying it to that base
+// yields the staged tree — the "HEAD" the uncommitted views diff against.
+func (ws *Workspace) StagedChanges() (dagql.ObjectResult[*Changeset], bool) {
+	latest, ok := ws.LatestPendingCommit()
+	if !ok || latest.Committed.Self() == nil {
+		return dagql.ObjectResult[*Changeset]{}, false
+	}
+	return latest.Committed, true
 }
 
 // WithPendingCommit returns a clone of the workspace with the given commit
@@ -726,6 +748,7 @@ type persistedWorkspacePendingCommit struct {
 	AuthorEmail  string   `json:"authorEmail,omitempty"`
 	Paths        []string `json:"paths,omitempty"`
 	RepoResultID uint64   `json:"repoResultID,omitempty"`
+	CommittedID  uint64   `json:"committedID,omitempty"`
 }
 
 type persistedWorkspaceSource struct {
@@ -929,6 +952,13 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 			}
 			persistedCommit.RepoResultID = repoID
 		}
+		if c.Committed.Self() != nil {
+			committedID, err := encodePersistedObjectRef(cache, c.Committed, "workspace pending commit committed changes")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			persistedCommit.CommittedID = committedID
+		}
 		payload.PendingCommits = append(payload.PendingCommits, persistedCommit)
 	}
 
@@ -1005,6 +1035,13 @@ func (*Workspace) DecodePersistedObject(
 				return nil, err
 			}
 			commit.Repo = repo
+		}
+		if persistedCommit.CommittedID != 0 {
+			committed, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dag, persistedCommit.CommittedID, "workspace pending commit committed changes")
+			if err != nil {
+				return nil, err
+			}
+			commit.Committed = committed
 		}
 		pendingCommits = append(pendingCommits, commit)
 	}
@@ -1124,19 +1161,30 @@ func (ws *Workspace) AttachDependencyResults(
 	}
 
 	for i := range ws.pendingCommits {
-		if ws.pendingCommits[i].Repo.Self() == nil {
-			continue
+		if ws.pendingCommits[i].Repo.Self() != nil {
+			attached, err := attach(ws.pendingCommits[i].Repo)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace pending commit repo: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace pending commit repo: unexpected result %T", attached)
+			}
+			ws.pendingCommits[i].Repo = typed
+			deps = append(deps, typed)
 		}
-		attached, err := attach(ws.pendingCommits[i].Repo)
-		if err != nil {
-			return nil, fmt.Errorf("attach workspace pending commit repo: %w", err)
+		if ws.pendingCommits[i].Committed.Self() != nil {
+			attached, err := attach(ws.pendingCommits[i].Committed)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace pending commit committed changes: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Changeset])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace pending commit committed changes: unexpected result %T", attached)
+			}
+			ws.pendingCommits[i].Committed = typed
+			deps = append(deps, typed)
 		}
-		typed, ok := attached.(dagql.ObjectResult[*Directory])
-		if !ok {
-			return nil, fmt.Errorf("attach workspace pending commit repo: unexpected result %T", attached)
-		}
-		ws.pendingCommits[i].Repo = typed
-		deps = append(deps, typed)
 	}
 
 	return deps, nil

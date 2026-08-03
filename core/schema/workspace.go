@@ -2080,6 +2080,64 @@ func (s *workspaceSchema) workspaceEdit(
 	}, nil)
 }
 
+// workspaceOverlayChanges returns an overlay workspace's pending changes as
+// seen from the staged commits: the overlay's own changeset when nothing is
+// staged, otherwise the diff between the staged tree — the overlay's base with
+// every staged commit's content applied — and the overlay's current tree, which
+// is exactly the uncommitted remainder.
+//
+// Staging a commit deliberately leaves the overlay itself alone, so the tree the
+// workspace serves (Workspace.file / .directory, and every container mount built
+// from them) is byte-identical before and after a commit. Only the diff views
+// move: they re-anchor on the staged tree.
+//
+// The staged tree is built by applying the staged changeset to the overlay's
+// (sparse, touched-paths-only) base, so this stays as sparse as the overlay
+// itself — no full-tree host read is forced by asking for status.
+//
+// The second return value reports whether the workspace has an overlay at all;
+// workspaces without one read their pending changes from git instead.
+func (s *workspaceSchema) workspaceOverlayChanges(
+	ctx context.Context,
+	ws *core.Workspace,
+) (dagql.ObjectResult[*core.Changeset], bool, error) {
+	overlay, ok := ws.OverlayChanges()
+	if !ok || overlay.Self() == nil {
+		return overlay, false, nil
+	}
+	staged, ok := ws.StagedChanges()
+	if !ok {
+		return overlay, true, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return overlay, true, err
+	}
+	stagedID, err := staged.ID()
+	if err != nil {
+		return overlay, true, err
+	}
+	var stagedTree dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, overlay.Self().Before, &stagedTree, dagql.Selector{
+		Field: "withChanges",
+		Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](stagedID)}},
+	}); err != nil {
+		return overlay, true, fmt.Errorf("resolve staged tree: %w", err)
+	}
+	stagedTreeID, err := stagedTree.ID()
+	if err != nil {
+		return overlay, true, err
+	}
+	var remainder dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, overlay.Self().After, &remainder, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](stagedTreeID)}},
+	}); err != nil {
+		return overlay, true, fmt.Errorf("resolve uncommitted remainder: %w", err)
+	}
+	return remainder, true, nil
+}
+
 func (s *workspaceSchema) changes(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -2090,14 +2148,18 @@ func (s *workspaceSchema) changes(
 	if err != nil {
 		return inst, err
 	}
-	if changes, ok := parent.Self().OverlayChanges(); ok {
-		return changes, nil
-	}
-	changes, err := core.NewEmptyChangeset(ctx)
+	changes, ok, err := s.workspaceOverlayChanges(ctx, parent.Self())
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, changes)
+	if ok {
+		return changes, nil
+	}
+	empty, err := core.NewEmptyChangeset(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, empty)
 }
 
 func (s *workspaceSchema) export(
@@ -2121,7 +2183,15 @@ func (s *workspaceSchema) export(
 	// Base export: write the primary overlay changeset to the local Git
 	// workspace. Only a non-empty base changeset requires a valid host path;
 	// cache mount write-through (below) runs regardless of the base source.
-	if changes, ok := ws.OverlayChanges(); ok && changes.Self() != nil {
+	//
+	// The changeset is the staged-relative one: the fast-forward above already
+	// wrote every committed path into the work tree, so what is left to write is
+	// exactly the uncommitted remainder — each path lands once.
+	changes, hasChanges, err := s.workspaceOverlayChanges(ctx, ws)
+	if err != nil {
+		return core.Void{}, err
+	}
+	if hasChanges && changes.Self() != nil {
 		isEmpty, err := changes.Self().IsEmpty(ctx)
 		if err != nil {
 			return core.Void{}, err
@@ -2623,11 +2693,15 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var inst dagql.ObjectResult[*core.Changeset]
 	ws := parent.Self().Workspace.Self()
-	if changes, ok := ws.OverlayChanges(); ok {
+	if _, ok := ws.OverlayChanges(); ok {
 		if ref, ok := ws.SourceGitRef(); ok {
 			return gitRefWorkspaceChanges(ctx, ws, ref)
 		}
-		return changes, nil
+		// Staged commits re-anchor this diff on the staged tree, so committed
+		// content stops showing as pending without ever leaving the workspace
+		// tree.
+		changes, _, err := s.workspaceOverlayChanges(ctx, ws)
+		return changes, err
 	}
 	if _, ok := ws.SourceGitRef(); ok {
 		empty, err := core.NewEmptyChangeset(ctx)
