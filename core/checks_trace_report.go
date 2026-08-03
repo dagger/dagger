@@ -109,6 +109,23 @@ type traceReportOpts struct {
 	// them unbounded.
 	NestedLogLines int
 
+	// OwnOutputOnly narrows what counts as the target's own output to the
+	// records on the root span itself, excluding its direct children.
+	//
+	// A tool call needs those children: a module function's print lands on
+	// its dagql field-call span, one hop below the tool-call span, so the
+	// depth-1 rule is what makes a tool's own report survive. An explicitly
+	// named target has no such indirection, and the children ARE the nested
+	// work -- for a test suite they're its cases, whose logs belong to the
+	// TESTS roll-up, not hoisted into (and duplicated out of) OUTPUT.
+	OwnOutputOnly bool
+
+	// HideLogSpans names spans (hex IDs) whose own logs the report must NOT
+	// render inline, because the caller prints them itself, verbatim and
+	// unabridged, as its own section. Without it the two would duplicate each
+	// other; see MCP.spanResult.
+	HideLogSpans map[string]bool
+
 	// SuggestReadTrace re-points the report's rerun section at the ReadTrace
 	// builtin instead of the `dagger check "<name>"` CLI commands. Set it on
 	// every render whose reader is an LLM: an agent has tools, not a shell, so
@@ -227,6 +244,10 @@ func (c *traceReportCacheState) touch(key traceReportKey) {
 // The DB is loaded and only then rendered, all under the cache lock:
 // dagui.DB has no internal locking, so it must not be written while the
 // frontend reads it.
+// The rendered report is NOT byte-guarded here: it is only ever half of what
+// reaches the reader (the other half being the target's own printed output),
+// and the budget has to bound the COMBINED text. guardTraceReport is applied
+// by the caller that assembles the final result.
 func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (string, error) {
 	clientDB, key, err := traceReportClientDB(ctx)
 	if err != nil {
@@ -234,11 +255,7 @@ func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (
 	}
 	defer clientDB.Close()
 
-	report, err := traceReportCache.render(ctx, key, clientDB, root, opts)
-	if err != nil {
-		return "", err
-	}
-	return guardTraceReport(report), nil
+	return traceReportCache.render(ctx, key, clientDB, root, opts)
 }
 
 // traceReportClientDB opens the main client's telemetry store and returns it
@@ -355,6 +372,17 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 	}
 	if opt.SuggestReadTrace {
 		renderOpts.RerunSuggestion = readTraceRerunSuggestion
+	}
+	if len(opt.HideLogSpans) > 0 {
+		hide := make(map[dagui.SpanID]bool, len(opt.HideLogSpans))
+		for hex := range opt.HideLogSpans {
+			spanID, err := trace.SpanIDFromHex(hex)
+			if err != nil {
+				continue
+			}
+			hide[dagui.SpanID{SpanID: spanID}] = true
+		}
+		renderOpts.HideLogSpans = hide
 	}
 	entry.reporter.SetReportRenderOpts(renderOpts)
 

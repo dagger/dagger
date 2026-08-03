@@ -157,6 +157,18 @@ type frontendPretty struct {
 	// abridged to a tail, mirroring core's captured-log abridging.
 	reportNestedLogLimit int
 
+	// reportHideLogSpans suppresses the inline logs of specific rows in report
+	// mode. It exists for one caller: core renders a scoped report ALONGSIDE
+	// the target's own printed output (kept verbatim, unabridged), and the
+	// report must not repeat what that section already shows. The caller knows
+	// exactly which spans it printed, so it names them here rather than the
+	// renderer guessing at "the root and its children".
+	//
+	// Only the span-tree's inline logs are suppressed; the roll-up sections
+	// (TESTS' failing-case output, surfaced failures) render through their own
+	// views and are unaffected.
+	reportHideLogSpans map[dagui.SpanID]bool
+
 	// reportScopedSubtree marks a report as scoped to one subtree (e.g. a
 	// single LLM tool call) rather than describing the whole run. The
 	// surfacing sections no longer need it -- they roll up relative to the
@@ -1376,6 +1388,11 @@ type ReportRenderOpts struct {
 	// level; 0 leaves them unbounded. See frontendPretty.reportNestedLogLimit.
 	NestedLogLimit int
 
+	// HideLogSpans suppresses the inline logs of these spans in the span tree,
+	// for a caller that renders their output itself (see
+	// frontendPretty.reportHideLogSpans).
+	HideLogSpans map[dagui.SpanID]bool
+
 	// ScopedSubtree marks the report as being about one subtree rather than the
 	// whole run: it drops the TRACE verdict header and skips the live-tree
 	// promotions. See frontendPretty.reportScopedSubtree.
@@ -1406,6 +1423,7 @@ func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
 		feOpts.Filter = opts.Filter
 		feOpts.RerunSuggestion = opts.RerunSuggestion
 		fe.reportNestedLogLimit = opts.NestedLogLimit
+		fe.reportHideLogSpans = opts.HideLogSpans
 		fe.reportScopedSubtree = opts.ScopedSubtree
 		fe.renderVersion++
 		fe.Update()
@@ -5373,6 +5391,10 @@ const llmLogsLastLines = 8
 
 func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
 	if fe.claims.hasLog(row.Span.ID) {
+		return false
+	}
+	if fe.reportHideLogSpans[row.Span.ID] {
+		// The report's caller prints this span's output itself, verbatim.
 		return false
 	}
 	// Structural lazy fetch: this row renders its own logs (message/rollup
