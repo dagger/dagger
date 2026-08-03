@@ -31,6 +31,12 @@ type Review {
   change kind (A/M/D/R) and added/removed line counts — followed by a totals
   footer. This is the quick "git status"-style overview; reach for `diff` when
   you need the actual hunks.
+
+  The marks are diff vocabulary describing the path's state relative to the
+  last commit, NOT `git status` porcelain: there is no index here, so a file
+  git would call untracked is simply `A`, and nothing distinguishes staged
+  from unstaged. One consequence worth knowing: committing without `paths`
+  picks up those `A` files too, unlike `git commit -a`.
   """
   status(
     source: Workspace!,
@@ -149,8 +155,8 @@ type Review {
     let kept = sections.filter { section =>
       let header = section.split("\n", 2).takeFirst.join("")
       header.split(" ").any { name =>
-        # the patch is rendered between a/ and b/ mount dirs; tolerate both the
-        # prefixed and the bare spelling of the path.
+        # headers are always rendered as "a/<path> b/<path>"; tolerate a bare
+        # spelling too, so scoping survives a change in patch prefixing.
         [name, name.trimPrefix("a/"), name.trimPrefix("b/")].uniq.any { candidate =>
           paths.any { p => Path(p).contains(Path(candidate)) }
         }
@@ -183,6 +189,11 @@ type Review {
     Both accept `paths` to scope the output to particular files or directories
     (a directory matches everything beneath it) — reach for it with `diff` in
     particular, since an unscoped patch can be huge.
+
+    The A/M/D/R marks describe each path relative to the last commit, not
+    `git status`'s index model — there is no staging area here, so a file git
+    would call untracked is just `A`. Note that committing without `paths`
+    includes those, unlike `git commit -a`.
 
     Some pending edits are not visible to git at all — a gitignored path, a
     path inside a nested repository, or a file you edited back to its committed
