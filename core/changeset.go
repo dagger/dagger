@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1675,24 +1676,35 @@ var gitEphemeralConfig = []string{
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
+	_, err := runGitEnv(ctx, dir, nil, args...)
+	return err
+}
+
+// runGitEnv runs git in dir with extra environment entries layered over the
+// hermetic base environment, returning its standard output. Errors carry the
+// standard error stream, which is where git reports what went wrong.
+func runGitEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
 	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
 	gitArgs = append(gitArgs, gitEphemeralConfig...)
 	gitArgs = append(gitArgs, args...)
 
 	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Dir = dir
-	cmd.Env = []string{
+	cmd.Env = append([]string{
 		"GIT_CONFIG_NOSYSTEM=1",
 		"HOME=/dev/null",
 		"GIT_AUTHOR_NAME=Dagger",
 		"GIT_AUTHOR_EMAIL=dagger@localhost",
 		"GIT_COMMITTER_NAME=Dagger",
 		"GIT_COMMITTER_EMAIL=dagger@localhost",
+	}, extraEnv...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()+stdout.String()))
 	}
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git %v: %w: %s", args, err, output)
-	}
-	return nil
+	return stdout.String(), nil
 }
 
 func initGitRepo(ctx context.Context, dir string) error {

@@ -158,6 +158,74 @@ type Workspace struct {
 	// kept off the overlay changeset (never appear in Workspace.changes) and
 	// are committed into the volume on export.
 	mounts []WorkspaceCacheMount
+
+	// GitAuthorName and GitAuthorEmail record the git identity observed on the
+	// client at workspace load time (user.name / user.email). They are read
+	// once, here, so that engine-side commits (Workspace.withCommit) are
+	// hermetic: nothing consults the client's git config per call.
+	GitAuthorName  string
+	GitAuthorEmail string
+
+	// BaseHeadSHA is the commit the workspace's git HEAD resolved to before any
+	// pending commit was staged. Recorded when the first pending commit is
+	// staged, so a later export can check that the local checkout has not moved
+	// out from under the staged stack.
+	BaseHeadSHA string
+
+	// pendingCommits is the stack of commits staged engine-side by
+	// Workspace.withCommit. They exist only in the engine: the user's checkout
+	// is untouched until the stack is exported. Internal only — not a GraphQL
+	// field, but persisted and dependency-tracked like mounts.
+	pendingCommits []WorkspacePendingCommit
+}
+
+// WorkspacePendingCommit is one commit staged engine-side on top of the
+// workspace's base HEAD (and any previously staged commits), without touching
+// the user's local checkout.
+type WorkspacePendingCommit struct {
+	// SHA is the resulting commit hash.
+	SHA string
+	// Message is the commit message.
+	Message string
+	// Date is the RFC3339 author *and* committer date the commit was made with.
+	Date string
+	// AuthorName and AuthorEmail are the identity the commit was made with.
+	AuthorName  string
+	AuthorEmail string
+	// Paths is the path scope the commit was made with, empty for "everything
+	// uncommitted at the time".
+	Paths []string
+	// Repo is the repository tree whose .git holds this commit (and every
+	// commit staged before it).
+	Repo dagql.ObjectResult[*Directory]
+}
+
+// PendingCommits returns the stack of engine-side staged commits, oldest first.
+func (ws *Workspace) PendingCommits() []WorkspacePendingCommit {
+	if ws == nil {
+		return nil
+	}
+	return ws.pendingCommits
+}
+
+// LatestPendingCommit returns the newest staged commit, if any.
+func (ws *Workspace) LatestPendingCommit() (WorkspacePendingCommit, bool) {
+	if ws == nil || len(ws.pendingCommits) == 0 {
+		return WorkspacePendingCommit{}, false
+	}
+	return ws.pendingCommits[len(ws.pendingCommits)-1], true
+}
+
+// WithPendingCommit returns a clone of the workspace with the given commit
+// pushed onto the pending commit stack. The slice is copied so the clone never
+// aliases the parent's backing array.
+func (ws *Workspace) WithPendingCommit(c WorkspacePendingCommit) *Workspace {
+	cp := ws.Clone()
+	commits := make([]WorkspacePendingCommit, 0, len(ws.pendingCommits)+1)
+	commits = append(commits, ws.pendingCommits...)
+	commits = append(commits, c)
+	cp.pendingCommits = commits
+	return cp
 }
 
 // WorkspaceCacheMount is a CacheVolume mounted as a mutable baseline at a
@@ -627,6 +695,12 @@ type persistedWorkspacePayload struct {
 
 	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
+	GitAuthorName  string `json:"gitAuthorName,omitempty"`
+	GitAuthorEmail string `json:"gitAuthorEmail,omitempty"`
+	BaseHeadSHA    string `json:"baseHeadSHA,omitempty"`
+
+	PendingCommits []persistedWorkspacePendingCommit `json:"pendingCommits,omitempty"`
+
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
 	LegacyConfigPath string `json:"configPath,omitempty"`
@@ -639,6 +713,19 @@ type persistedWorkspaceCacheMount struct {
 	Target         string `json:"target,omitempty"`
 	VolumeResultID uint64 `json:"volumeResultID,omitempty"`
 	ChangesID      uint64 `json:"changesID,omitempty"`
+}
+
+// persistedWorkspacePendingCommit is the on-disk encoding of a
+// WorkspacePendingCommit: its metadata plus a reference to the repository tree
+// holding the commit.
+type persistedWorkspacePendingCommit struct {
+	SHA          string   `json:"sha,omitempty"`
+	Message      string   `json:"message,omitempty"`
+	Date         string   `json:"date,omitempty"`
+	AuthorName   string   `json:"authorName,omitempty"`
+	AuthorEmail  string   `json:"authorEmail,omitempty"`
+	Paths        []string `json:"paths,omitempty"`
+	RepoResultID uint64   `json:"repoResultID,omitempty"`
 }
 
 type persistedWorkspaceSource struct {
@@ -783,6 +870,9 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		ClientID:         ws.ClientID,
 		HostPath:         ws.hostPath,
 		StagedGeneration: ws.StagedGeneration,
+		GitAuthorName:    ws.GitAuthorName,
+		GitAuthorEmail:   ws.GitAuthorEmail,
+		BaseHeadSHA:      ws.BaseHeadSHA,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -822,6 +912,24 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 			persistedMount.ChangesID = changesID
 		}
 		payload.Mounts = append(payload.Mounts, persistedMount)
+	}
+	for _, c := range ws.pendingCommits {
+		persistedCommit := persistedWorkspacePendingCommit{
+			SHA:         c.SHA,
+			Message:     c.Message,
+			Date:        c.Date,
+			AuthorName:  c.AuthorName,
+			AuthorEmail: c.AuthorEmail,
+			Paths:       c.Paths,
+		}
+		if c.Repo.Self() != nil {
+			repoID, err := encodePersistedObjectRef(cache, c.Repo, "workspace pending commit repo")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			persistedCommit.RepoResultID = repoID
+		}
+		payload.PendingCommits = append(payload.PendingCommits, persistedCommit)
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -881,6 +989,26 @@ func (*Workspace) DecodePersistedObject(
 		mounts = append(mounts, mount)
 	}
 
+	var pendingCommits []WorkspacePendingCommit
+	for _, persistedCommit := range persisted.PendingCommits {
+		commit := WorkspacePendingCommit{
+			SHA:         persistedCommit.SHA,
+			Message:     persistedCommit.Message,
+			Date:        persistedCommit.Date,
+			AuthorName:  persistedCommit.AuthorName,
+			AuthorEmail: persistedCommit.AuthorEmail,
+			Paths:       persistedCommit.Paths,
+		}
+		if persistedCommit.RepoResultID != 0 {
+			repo, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persistedCommit.RepoResultID, "workspace pending commit repo")
+			if err != nil {
+				return nil, err
+			}
+			commit.Repo = repo
+		}
+		pendingCommits = append(pendingCommits, commit)
+	}
+
 	cwd := persisted.Cwd
 	if cwd == "" {
 		cwd = persisted.LegacyPath
@@ -907,6 +1035,10 @@ func (*Workspace) DecodePersistedObject(
 		hostPath:         persisted.HostPath,
 		StagedGeneration: persisted.StagedGeneration,
 		mounts:           mounts,
+		GitAuthorName:    persisted.GitAuthorName,
+		GitAuthorEmail:   persisted.GitAuthorEmail,
+		BaseHeadSHA:      persisted.BaseHeadSHA,
+		pendingCommits:   pendingCommits,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
@@ -989,6 +1121,22 @@ func (ws *Workspace) AttachDependencyResults(
 			ws.mounts[i].Changes = typed
 			deps = append(deps, typed)
 		}
+	}
+
+	for i := range ws.pendingCommits {
+		if ws.pendingCommits[i].Repo.Self() == nil {
+			continue
+		}
+		attached, err := attach(ws.pendingCommits[i].Repo)
+		if err != nil {
+			return nil, fmt.Errorf("attach workspace pending commit repo: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach workspace pending commit repo: unexpected result %T", attached)
+		}
+		ws.pendingCommits[i].Repo = typed
+		deps = append(deps, typed)
 	}
 
 	return deps, nil

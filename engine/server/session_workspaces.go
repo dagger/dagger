@@ -853,7 +853,7 @@ func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
 // (directories are resolved lazily). For remote, it stores the prebuiltRootfs.
 func (srv *Server) buildCoreWorkspace(
 	ctx context.Context,
-	_ *daggerClient,
+	client *daggerClient,
 	detected *workspace.Workspace,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
@@ -873,6 +873,7 @@ func (srv *Server) buildCoreWorkspace(
 		LockFile:   detected.LockFile,
 		ClientID:   clientMetadata.ClientID,
 	}
+	coreWS.GitAuthorName, coreWS.GitAuthorEmail = workspaceGitIdentity(ctx, client)
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Cwd)
 	}
@@ -896,6 +897,31 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	return coreWS, nil
+}
+
+// workspaceGitIdentity reads the client's git author identity (user.name /
+// user.email) once, at workspace load. Engine-side commits staged onto the
+// workspace (Workspace.withCommit) use it, so no call ever has to reach back
+// out to the client's git config — the commits stay hermetic and cacheable.
+// Best-effort: a client without git, or without an identity configured, just
+// yields empty strings and callers fall back to the Dagger default identity.
+func workspaceGitIdentity(ctx context.Context, client *daggerClient) (name, email string) {
+	if client == nil || client.engineUtilClient == nil {
+		return "", ""
+	}
+	entries, err := client.engineUtilClient.GetGitConfig(ctx)
+	if err != nil {
+		return "", ""
+	}
+	for _, entry := range entries {
+		switch strings.ToLower(entry.GetKey()) {
+		case "user.name":
+			name = entry.GetValue()
+		case "user.email":
+			email = entry.GetValue()
+		}
+	}
+	return name, email
 }
 
 func localWorkspaceAddress(root, workspaceCwd string) string {
