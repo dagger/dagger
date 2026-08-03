@@ -452,12 +452,8 @@ func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
 		s.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
-	title := "Changes"
-	if n := len(changes.StagedCommits); n > 0 {
-		title = fmt.Sprintf("Changes · %d staged", n)
-	}
 	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title: title,
+		Title: "Changes",
 		ContentFunc: func(width int) string {
 			var buf strings.Builder
 			patchpreview.SummarizeChanges(idtui.NewOutput(&buf), changes.Uncommitted, changes.StagedCommits, width)
