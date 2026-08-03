@@ -16683,7 +16683,7 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
-// Selected native workspace config file relative to the workspace root, if any.
+// Selected native workspace config file relative to the workspace cwd, if any.
 func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
 	if r.configFile != nil {
 		return *r.configFile, nil
