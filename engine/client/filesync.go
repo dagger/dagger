@@ -632,6 +632,16 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 			return nil, errors.Join(parseErr, waitErr)
 		}
 		if errBuf.Len() > 0 {
+			// "No files were searched" just means the filters (e.g. --glob)
+			// excluded everything in this tree. That's an empty result, not a
+			// failure: the caller merges these results with the workspace
+			// overlay's, which may well contain a file that only exists there
+			// (a pending edit that hasn't been written to the host yet).
+			// Failing here made such files invisible to search even though
+			// read/find served them fine.
+			if engine.RipgrepNoFilesSearched(errBuf.String()) {
+				return []engine.LocalSearchResult{}, nil
+			}
 			return nil, fmt.Errorf("ripgrep error: %s", errBuf.String())
 		}
 		return nil, waitErr
