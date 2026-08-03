@@ -2,7 +2,7 @@
 
 Dagger is a platform for automating software delivery. It can build, test and ship any codebase, reliably and at scale.
 
-Dagger runs locally, in your CI server, or directly in the cloud.
+Dagger runs locally, in your CI server, or directly in the cloud. banana
 
 ```bash
 brew install dagger/tap/dagger
