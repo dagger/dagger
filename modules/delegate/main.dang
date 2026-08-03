@@ -75,6 +75,7 @@ type Delegate {
     source
       .agents
       .compose
+      .withTools(Dagger.delegate, except: ["delegate", "delegateEdits"])
       .withSystemPrompt(subAgentPrompt)
       .withPrompt(task)
       .loop
@@ -111,8 +112,9 @@ type Delegate {
     source: Workspace!,
   ): Changeset! {
     let worker = source
-      .agents
+      .agents # TODO: would be nice to just exclude delegate here
       .compose
+      .withTools(Dagger.delegate, except: ["delegate", "delegateEdits"])
       .withSystemPrompt(editorSubAgentPrompt)
       .withPrompt(task)
       .loop
