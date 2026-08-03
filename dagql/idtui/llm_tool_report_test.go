@@ -26,6 +26,7 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 	promptID := prettyTestSpanID(3)
 	callID := prettyTestSpanID(4)
 	execID := prettyTestSpanID(5)
+	displayID := prettyTestSpanID(6)
 	start := time.Unix(100, 0)
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{
@@ -37,8 +38,8 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 			Final:     true,
 		},
 		{
-			// The tool call runs beneath this span; core scopes the report to
-			// it. It's passthrough, like the real tool-call/loop spans.
+			// The conversation runs beneath this span. It's passthrough, like
+			// the real loop span.
 			ID:          loopID,
 			TraceID:     prettyTestTraceID(),
 			Name:        "LLM.loop",
@@ -60,10 +61,27 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 			Final:     true,
 		},
 		{
+			// The tool call's display span (displayPhases.StartToolCall):
+			// every provider builds one, replay included, and core scopes the
+			// tool result's report to it.
+			ID:          displayID,
+			TraceID:     prettyTestTraceID(),
+			Name:        "report",
+			ParentID:    loopID,
+			Boundary:    true,
+			RollUpLogs:  true,
+			RollUpSpans: true,
+			LLMTool:     "report",
+			LLMRole:     "assistant",
+			StartTime:   start.Add(time.Second),
+			EndTime:     start.Add(4 * time.Second),
+			Final:       true,
+		},
+		{
 			ID:        callID,
 			TraceID:   prettyTestTraceID(),
 			Name:      "ReportAgent.report",
-			ParentID:  loopID,
+			ParentID:  displayID,
 			StartTime: start.Add(time.Second),
 			EndTime:   start.Add(4 * time.Second),
 			Final:     true,
@@ -78,7 +96,7 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 			Final:     true,
 		},
 	})
-	db.SetPrimarySpan(loopID)
+	db.SetPrimarySpan(displayID)
 
 	fe := NewASCIIReporterWithDB(io.Discard, db)
 	fe.logs.Logs[callID] = testVterm(t, "LINE-01\nLINE-02\nLINE-03\n")
@@ -88,7 +106,7 @@ func TestASCIIReporterScopedToolCallReport(t *testing.T) {
 		Verbosity:       dagui.ShowCompletedVerbosity,
 		ExpandCompleted: true,
 		ExpandSpans: map[dagui.SpanID]bool{
-			loopID: true, promptID: true, callID: true, execID: true,
+			displayID: true, callID: true, execID: true,
 		},
 		NestedLogLimit: 2,
 		ScopedSubtree:  true,

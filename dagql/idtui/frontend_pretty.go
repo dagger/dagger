@@ -1376,8 +1376,9 @@ type ReportRenderOpts struct {
 	// level; 0 leaves them unbounded. See frontendPretty.reportNestedLogLimit.
 	NestedLogLimit int
 
-	// ScopedSubtree suppresses whole-trace sections that ignore the zoom. See
-	// frontendPretty.reportScopedSubtree.
+	// ScopedSubtree marks the report as being about one subtree rather than the
+	// whole run: it drops the TRACE verdict header and skips the live-tree
+	// promotions. See frontendPretty.reportScopedSubtree.
 	ScopedSubtree bool
 
 	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
@@ -2675,15 +2676,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// trace that ran an LLM, without the reveal bubbling or the shell's manual
 	// zoom. When both checks and a conversation surface (rare), the conversation
 	// follows the checks with a blank line between.
-	//
-	// A subtree-scoped report skips it. Zoom-relative surfacing is necessary
-	// but not sufficient here: the tool-call DISPLAY span (the thing the
-	// report zooms to, and the only span that sits BELOW the transcript) only
-	// exists when a live provider drives the call -- with no display span
-	// core scopes to a span at or above the conversation, so the enclosing
-	// run's transcript surfaces, and, being rendered in place of the progress
-	// rows, hides the very subtree the report is about.
-	if convLines := fe.conversationReport(ctx, r, zoomed || fe.reportScopedSubtree); len(convLines) > 0 {
+	if convLines := fe.conversationReport(ctx, r, zoomed); len(convLines) > 0 {
 		if renderedRows {
 			ctx.Line("")
 		}
@@ -2708,11 +2701,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// after the main rows, never in place of them -- services are easy to lose
 	// in the raw tree (their exec spans are passthrough-hidden), and their
 	// logs are often the first thing a debugging session needs.
-	//
-	// A subtree-scoped report skips them, for the same reason the CONVERSATION
-	// section does: without a tool-call display span to zoom to, the scope
-	// root sits at or above the services the enclosing run started.
-	if svcLines := fe.servicesReport(ctx, r, zoomed || fe.reportScopedSubtree); len(svcLines) > 0 {
+	if svcLines := fe.servicesReport(ctx, r, zoomed); len(svcLines) > 0 {
 		if renderedRows {
 			ctx.Line("")
 		}
