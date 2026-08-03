@@ -394,6 +394,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceStagedCommit](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
@@ -407,7 +408,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("The checked-out HEAD of this workspace."),
 		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
 			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
+		dagql.NodeFunc("stagedCommits", s.stagedCommits).
+			Doc("Commits staged in this workspace but not yet saved to the local checkout.",
+				"Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged."),
+		dagql.NodeFunc("__stagedCommitEntry", s.stagedCommitEntry).
+			IsPersistable().
+			Doc("(Internal-only) One entry of WorkspaceGit.stagedCommits.").
+			Args(
+				dagql.Arg("index").Doc("Zero-based index into the staged commit stack, oldest first."),
+			),
 	}.Install(srv)
+
+	dagql.Fields[*core.WorkspaceStagedCommit]{}.Install(srv)
 
 	dagql.Fields[*core.WorkspaceModule]{
 		dagql.NodeFunc("settings", s.moduleSettings).
