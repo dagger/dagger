@@ -610,6 +610,19 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	return s, nil
 }
 
+// Effort changes the reasoning effort for the rest of the conversation,
+// overriding any provider-configured default. "none" disables reasoning.
+func (s *LLMSession) Effort(effort string) (*LLMSession, error) {
+	s = s.Fork()
+	s.updateLLM(s.llm.WithReasoningEffort(effort))
+	// Resolve the endpoint eagerly so a configuration problem surfaces now
+	// rather than on the next prompt, mirroring Model above.
+	if _, err := s.llm.ReasoningEffort(s.plumbingCtx); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 //go:embed llm_branch_summary.md
 var branchSummaryPrompt string
 

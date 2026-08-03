@@ -99,6 +99,11 @@ type LLM struct {
 	model    string
 	provider string
 
+	// reasoningEffort, when set, overrides the provider-configured reasoning
+	// effort for this conversation (see LLMEndpoint.ReasoningEffort). "none"
+	// explicitly disables reasoning; empty defers to the provider config.
+	reasoningEffort string
+
 	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
 
@@ -1185,6 +1190,14 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		}
 	}
 
+	// Apply the conversation-level reasoning effort override, if any. Route()
+	// builds a fresh endpoint per call, so mutating it here is safe. "none" is
+	// passed through: providers treat it the same as empty (reasoning off),
+	// but it must override a non-empty provider-configured effort.
+	if llm.reasoningEffort != "" {
+		endpoint.ReasoningEffort = llm.reasoningEffort
+	}
+
 	llm.endpoint = endpoint
 
 	return llm.endpoint, nil
@@ -1214,6 +1227,20 @@ func (llm *LLM) WithModel(model, provider string) *LLM {
 	llm = llm.Clone()
 	llm.model = model
 	llm.provider = provider
+
+	llm.endpointMtx.Lock()
+	defer llm.endpointMtx.Unlock()
+	llm.endpoint = nil
+
+	return llm
+}
+
+// WithReasoningEffort changes the reasoning effort for the rest of the
+// conversation, overriding any provider-configured default. "none" explicitly
+// disables reasoning.
+func (llm *LLM) WithReasoningEffort(effort string) *LLM {
+	llm = llm.Clone()
+	llm.reasoningEffort = effort
 
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()

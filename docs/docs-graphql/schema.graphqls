@@ -3603,6 +3603,11 @@ type LLM implements Node & Syncer {
   provider: String!
 
   """
+  The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+  """
+  reasoningEffort: String!
+
+  """
   Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
   """
   replay: ID! @expectedType(name: "LLM")
@@ -3679,6 +3684,20 @@ type LLM implements Node & Syncer {
   withPromptFile(
     """The file to read the prompt from"""
     file: ID! @expectedType(name: "File")
+  ): LLM!
+
+  """
+  Change the reasoning effort for the rest of the conversation, overriding any
+  configured default. The message history is preserved; the new effort takes
+  effect on the next step.
+  """
+  withReasoningEffort(
+    """
+    The reasoning effort, e.g. "low", "medium", or "high"; "none" disables
+    reasoning. Supported levels are model-specific — some models also accept
+    e.g. "minimal", "xhigh", or "max".
+    """
+    effort: String!
   ): LLM!
 
   """

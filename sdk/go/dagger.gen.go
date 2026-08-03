@@ -9689,18 +9689,19 @@ func (r *JSONValue) AsNode() Node {
 type LLM struct {
 	query *querybuilder.Selection
 
-	contextTokens *int
-	contextWindow *int
-	hasPending    *bool
-	id            *ID
-	lastReply     *string
-	model         *string
-	portableID    *ID
-	provider      *string
-	replay        *ID
-	sync          *ID
-	tools         *string
-	transcript    *string
+	contextTokens   *int
+	contextWindow   *int
+	hasPending      *bool
+	id              *ID
+	lastReply       *string
+	model           *string
+	portableID      *ID
+	provider        *string
+	reasoningEffort *string
+	replay          *ID
+	sync            *ID
+	tools           *string
+	transcript      *string
 }
 type WithLLMFunc func(r *LLM) *LLM
 
@@ -9918,6 +9919,19 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+func (r *LLM) ReasoningEffort(ctx context.Context) (string, error) {
+	if r.reasoningEffort != nil {
+		return *r.reasoningEffort, nil
+	}
+	q := r.query.Select("reasoningEffort")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
 func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("replay")
@@ -10082,6 +10096,16 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+func (r *LLM) WithReasoningEffort(effort string) *LLM {
+	q := r.query.Select("withReasoningEffort")
+	q = q.Arg("effort", effort)
 
 	return &LLM{
 		query: q,

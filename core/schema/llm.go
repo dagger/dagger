@@ -66,6 +66,16 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					`The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.`).
 					View(AfterVersion("v1.0.0-0")),
 			),
+		dagql.Func("reasoningEffort", s.reasoningEffort).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.`),
+		dagql.Func("withReasoningEffort", s.withReasoningEffort).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.").
+			Args(
+				dagql.Arg("effort").Doc(
+					`The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".`),
+			),
 		dagql.Func("withPrompt", s.withPrompt).
 			Doc("Queue a user prompt, to be sent to the model on the next step or loop.").
 			Args(
@@ -290,6 +300,20 @@ func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	Provider dagql.Optional[dagql.String]
 }) (*core.LLM, error) {
 	return llm.WithModel(args.Model, args.Provider.Value.String()), nil
+}
+
+func (s *llmSchema) reasoningEffort(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return "", err
+	}
+	return ep.ReasoningEffort, nil
+}
+
+func (s *llmSchema) withReasoningEffort(ctx context.Context, llm *core.LLM, args struct {
+	Effort string
+}) (*core.LLM, error) {
+	return llm.WithReasoningEffort(args.Effort), nil
 }
 
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {

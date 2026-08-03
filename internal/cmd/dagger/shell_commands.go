@@ -287,6 +287,28 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			},
 		},
 		{
+			Use:         ".effort [level]",
+			Description: "Set the LLM reasoning effort (interactive picker if no level given)",
+			GroupID:     "llm",
+			Args:        MaximumArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				if len(args) == 0 {
+					return h.selectEffortInteractive(ctx)
+				}
+				llm, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				newLLM, err := llm.Effort(args[0])
+				if err != nil {
+					return err
+				}
+				h.llmSession = newLLM
+				return nil
+			},
+		},
+		{
 			Use:         ".resume [session]",
 			Description: "Resume a saved session (interactive picker if no id given)",
 			GroupID:     "llm",
@@ -427,6 +449,78 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 	h.llmSession = newLLM
 	h.llmModel = newLLM.model
 	return nil
+}
+
+// selectEffortInteractive presents a picker of the reasoning effort levels the
+// current model supports and applies the chosen one. It mirrors the
+// ".effort <level>" path once a level is selected, and no-ops if the user
+// aborts the form.
+func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
+	llm, err := h.llm(ctx)
+	if err != nil {
+		return err
+	}
+
+	options := reasoningEffortOptions(h.llmModel)
+
+	var selected string
+	form := idtui.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Reasoning effort").
+				Height(min(len(options)+2, 12)).
+				Options(options...).
+				Value(&selected),
+		),
+	)
+
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return err
+	}
+
+	if selected == "" {
+		return nil // user aborted
+	}
+
+	newLLM, err := llm.Effort(selected)
+	if err != nil {
+		return err
+	}
+	h.llmSession = newLLM
+	return nil
+}
+
+// reasoningEffortOptions builds the option list for the interactive ".effort"
+// picker from the current model's catwalk metadata: the levels the model
+// actually supports, plus "none" to disable reasoning. When the model isn't in
+// the catalog (e.g. a local or custom endpoint), it falls back to the
+// conventional low/medium/high levels.
+func reasoningEffortOptions(model string) []huh.Option[string] {
+	var levels []string
+	var defaultLevel string
+	for _, e := range llmconfig.ProviderEntries() {
+		if m, ok := llmconfig.ModelByID(e.ConfigKey, model); ok && m.CanReason {
+			levels = m.ReasoningLevels
+			defaultLevel = m.DefaultReasoningEffort
+			break
+		}
+	}
+	if len(levels) == 0 {
+		levels = []string{"low", "medium", "high"}
+	}
+	if !slices.Contains(levels, "none") {
+		levels = append([]string{"none"}, levels...)
+	}
+
+	var options []huh.Option[string]
+	for _, level := range levels {
+		label := level
+		if level == defaultLevel {
+			label += " (default)"
+		}
+		options = append(options, huh.NewOption(label, level))
+	}
+	return options
 }
 
 // availableModelOptions builds the option list for the interactive ".model"
