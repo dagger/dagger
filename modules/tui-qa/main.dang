@@ -10,8 +10,9 @@
 #
 # Shape of the loop (see `start` for the wiring):
 #   - build the `dagger` CLI from source (cliDev)
-#   - drop it into an engine-dev Playground container (a client with a bound
-#     from-source engine, so `dagger call/check/...` actually run) at a
+#   - drop it into a small client container run with privileged nesting (so it
+#     talks to this session's engine, and `dagger call/check/agent` actually
+#     run with the session's LLM auth) at a
 #     configurable workdir, with DAGGER_TUI_CONSOLE=:PORT + DAGGER_PROGRESS=tty
 #   - run the command under test as a Service and .start() it (so it persists
 #     across tool calls within this dagger session)
@@ -99,27 +100,41 @@ type TuiQa {
     # build the dagger CLI from source
     let cli = cliDev(ws: source, source: srcDir).binary
 
-    # The client container the command under test runs in. Default: an
-    # engine-dev Playground (a from-source engine bound + released CLI
-    # installed, with experimentalPrivilegedNesting for LLM auth). With
-    # `engine`: a lean client pointed at the existing engine by address —
-    # deliberately NOT the playground, whose engine binding would boot a
-    # second engine. The address resolves with no binding because engine-lab
-    # starts its service under the session DNS domain.
-    let base = if (engine == "") {
-      engineDev(source).playground
+    # The client container the command under test runs in. Default: a lean
+    # client run with experimentalPrivilegedNesting, so it talks to the
+    # session's own engine and inherits its LLM auth (required for `agent`).
+    # With `engine`: the same lean client, pointed at the existing engine by
+    # address instead — that engine is reachable with no service binding
+    # because engine-lab starts its service under the session DNS domain, but
+    # nothing forwards LLM credentials to it.
+    let lean = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl", "git"])
+
+    let nesting = engine == ""
+
+    let base = if (nesting) {
+      lean
     } else {
-      container
-        .from("alpine:3.20")
-        .withExec(["apk", "add", "--no-cache", "curl", "git"])
-        .withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
+      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
     }
 
     # we overwrite (or install) the CLI with our from-source build.
     let runner = base
       .withFile("/usr/local/bin/dagger", cli)
-      .withMountedDirectory(workdir, srcDir)
+      .withDirectory(workdir, srcDir)
       .withWorkdir(workdir)
+      # The workspace snapshot carries no usable .git — at best a worktree
+      # pointer file whose target only exists on the real host — but agent
+      # workspace tools (commit, git.uncommitted, ctrl+s) need an actual
+      # repository. Re-initialize one from the snapshot so `dagger agent`
+      # sessions can stage commits.
+      .withExec([
+        "sh", "-c",
+        "rm -rf .git && git init -q -b main && git add -A && git " +
+          "-c user.email=tui-qa@localhost -c user.name=tui-qa " +
+          "commit -qm 'workspace snapshot'",
+      ])
       .withEnvVariable("DAGGER_TUI_CONSOLE", ":" + toString(port))
       .withEnvVariable("DAGGER_PROGRESS", "tty")
       .withExposedPort(port)
@@ -131,12 +146,19 @@ type TuiQa {
     # synchronously and reporting its output instead.
     let svc = {
       runner
-        .asService(args: ["dagger"] + args)
+        .asService(
+          args: ["dagger"] + args,
+          experimentalPrivilegedNesting: nesting,
+        )
         .start
     } rescue {
       e: Error => {
         let ran = runner
-          .withExec(["dagger"] + args, expect: ReturnType.ANY)
+          .withExec(
+            ["dagger"] + args,
+            expect: ReturnType.ANY,
+            experimentalPrivilegedNesting: nesting,
+          )
           .{{exitCode, combinedOutput}}
         print(
           "command exited immediately (exit code " + toString(ran.exitCode)
