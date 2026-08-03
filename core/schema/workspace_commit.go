@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -208,30 +206,25 @@ func (s *workspaceSchema) stagedCommit(
 // exportPendingCommits lands the workspace's engine-side staged commits on the
 // user's local checkout, as a fast-forward of whatever ref HEAD points at.
 //
-// Mechanism: the newest staged commit carries a full repository tree whose .git
-// already holds every staged object, the advanced branch ref, and an index
-// read back from the new HEAD tree. Landing the stack is therefore a *merging*
-// export of that .git onto the host's .git — the file sync only transfers what
-// differs (new loose objects, the updated ref, HEAD, the index) and never
-// deletes, so anything the host has that the engine copy does not (other
-// branches created since load, reflogs, stashes) survives untouched. The
-// alternative — a new host-side session RPC shelling out to `git fetch` /
-// `git update-ref` — would need new proto surface and a git binary on the
-// client, for the same end state; the export path already exists, is used by
-// every other workspace write, and keeps the operation hermetic (no host git).
+// Mechanism: the engine packs exactly the staged commits into a git bundle and
+// hands it to the client over the session; the client's *own* git fetches the
+// bundle and fast-forwards the checkout. Doing it with host git is what makes
+// the result a normal git operation — reflog entries, an updated index, an
+// updated work tree — and what makes worktree and submodule checkouts work,
+// since their .git is a pointer file whose real repository lives elsewhere and
+// only host git knows how to write it. The client re-checks the checkout's
+// HEAD immediately before applying, so a checkout that moves mid-save is still
+// refused, and git itself refuses anything that is not a fast-forward or that
+// would clobber local work.
 //
-// It runs *before* the remaining overlay changeset is written to the work tree,
-// so by the time the work tree changes land, HEAD and the index already
-// describe the new commits and `git status` reports exactly the remainder.
+// It runs *before* the remaining overlay changeset is written to the work
+// tree: the fast-forward writes the committed content, and the changeset —
+// which is diffed against the staged tree — then adds exactly the uncommitted
+// remainder on top.
 func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Workspace) error {
 	latest, ok := ws.LatestPendingCommit()
 	if !ok || latest.Repo.Self() == nil {
 		return nil
-	}
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return err
 	}
 
 	// Preconditions first: nothing is written to the host until every check
@@ -244,19 +237,24 @@ func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Wor
 	if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
 		return fmt.Errorf("cannot save staged commits: %w", err)
 	}
-	isDir, err := s.workspaceHostGitDirIsPlain(ctx, ws)
+
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
-		return fmt.Errorf("cannot save staged commits: %w", err)
+		return err
 	}
-	if !isDir {
-		// A .git *pointer file* (worktree or submodule checkout) points at a
-		// git dir outside the workspace boundary; the staged objects would
-		// have to be merged there instead, which this path does not do yet.
-		return fmt.Errorf("cannot save staged commits: %s/.git is a pointer file "+
-			"(git worktree or submodule checkout), which is not supported yet", hostPath)
+	query, err := core.CurrentQuery(clientCtx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Engine(clientCtx)
+	if err != nil {
+		return fmt.Errorf("buildkit: %w", err)
 	}
 
-	curHead, err := s.workspaceHostHeadSHA(ctx, srv, ws, hostPath)
+	// Early, clear rejection before anything is packed or transferred. The
+	// client repeats this check under its own lock right before applying; this
+	// one exists to fail fast with an actionable message.
+	curHead, err := bk.GetGitHead(clientCtx, hostPath)
 	if err != nil {
 		return fmt.Errorf("cannot save staged commits: resolve local HEAD: %w", err)
 	}
@@ -267,167 +265,31 @@ func (s *workspaceSchema) exportPendingCommits(ctx context.Context, ws *core.Wor
 			ws.BaseHeadSHA, curHead)
 	}
 
-	var stagedGitDir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, latest.Repo, &stagedGitDir, dagql.Selector{
-		Field: "directory",
-		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".git")}},
-	}); err != nil {
-		return fmt.Errorf("cannot save staged commits: resolve staged git directory: %w", err)
-	}
-
-	exportCtx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return err
-	}
-
-	// Write the committed *content* to the work tree first. The commits were
-	// staged from the engine's view of the workspace, so their content may
-	// never have touched disk; without this the checkout would end up with a
-	// HEAD whose files are missing (`git status` full of deletions). The
-	// remaining uncommitted overlay comes along for the ride here, and is
-	// written again — identically — by the base export afterwards.
-	//
-	// Work tree before refs: if the export fails halfway the checkout is merely
-	// dirty, which is recoverable, whereas an advanced HEAD with no content is
-	// not.
-	worktreeChanges, err := s.stagedCommitWorktreeChanges(ctx, srv, ws, hostPath, latest)
+	bundle, err := core.WorkspaceStagedCommitsBundle(ctx, latest.Repo, latest.SHA, ws.BaseHeadSHA)
 	if err != nil {
 		return fmt.Errorf("cannot save staged commits: %w", err)
 	}
-	if err := worktreeChanges.Self().Export(exportCtx, hostPath); err != nil {
+
+	newHead, err := bk.ApplyGitBundle(
+		clientCtx, hostPath, latest.SHA, ws.BaseHeadSHA, core.WorkspaceStagedCommitsRef, bundle)
+	if err != nil {
 		return fmt.Errorf("cannot save staged commits: %w", err)
 	}
-
-	if err := stagedGitDir.Self().Export(exportCtx, stagedGitDir, path.Join(hostPath, ".git"), true); err != nil {
-		return fmt.Errorf("cannot save staged commits: %w", err)
+	if newHead != latest.SHA {
+		return fmt.Errorf("cannot save staged commits: local HEAD is %s after saving, expected %s",
+			newHead, latest.SHA)
 	}
 
 	// The checkout's HEAD changed, so the client's cached workspace detection
 	// and cached host reads are stale. Best-effort, like the base export's:
 	// bookkeeping must not fail a save that already landed.
-	if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
+	if err := core.InvalidateCurrentWorkspace(clientCtx); err != nil {
 		slog.Warn("could not invalidate workspace after saving staged commits", "error", err)
 	}
-	if err := core.BumpWorkspaceReadEpoch(exportCtx); err != nil {
+	if err := core.BumpWorkspaceReadEpoch(clientCtx); err != nil {
 		slog.Warn("could not bump workspace read epoch after saving staged commits", "error", err)
 	}
 	return nil
-}
-
-// stagedCommitWorktreeChanges is the changeset that brings the host work tree
-// up to the newest staged commit's tree: the fresh host content (minus .git) as
-// "before", the staged repository's work tree (minus .git) as "after". The
-// staged tree is the engine's full view of the workspace — the host tree plus
-// every overlay edit, committed or not — so exporting this changeset writes the
-// committed content that never touched disk, applies deletions the commits
-// recorded, and leaves the uncommitted remainder in place. .git is deliberately
-// excluded: refs and objects are merged separately, never diffed.
-func (s *workspaceSchema) stagedCommitWorktreeChanges(
-	ctx context.Context,
-	srv *dagql.Server,
-	ws *core.Workspace,
-	hostPath string,
-	latest core.WorkspacePendingCommit,
-) (inst dagql.ObjectResult[*core.Changeset], err error) {
-	hostTree, err := s.loadWorkspaceHostDir(ctx, srv, ws, hostPath)
-	if err != nil {
-		return inst, fmt.Errorf("read host work tree: %w", err)
-	}
-	before, err := withoutGitDir(ctx, srv, hostTree)
-	if err != nil {
-		return inst, err
-	}
-	after, err := withoutGitDir(ctx, srv, latest.Repo)
-	if err != nil {
-		return inst, err
-	}
-	beforeID, err := before.ID()
-	if err != nil {
-		return inst, err
-	}
-	if err := srv.Select(ctx, after, &inst, dagql.Selector{
-		Field: "changes",
-		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
-	}); err != nil {
-		return inst, fmt.Errorf("diff staged work tree: %w", err)
-	}
-	return inst, nil
-}
-
-func withoutGitDir(
-	ctx context.Context,
-	srv *dagql.Server,
-	dir dagql.ObjectResult[*core.Directory],
-) (out dagql.ObjectResult[*core.Directory], err error) {
-	if err := srv.Select(ctx, dir, &out, dagql.Selector{
-		Field: "withoutDirectory",
-		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(".git")}},
-	}); err != nil {
-		return out, fmt.Errorf("strip .git: %w", err)
-	}
-	return out, nil
-}
-
-// workspaceHostGitDirIsPlain reports whether the workspace's host .git is a
-// real directory (as opposed to a worktree/submodule pointer file).
-func (s *workspaceSchema) workspaceHostGitDirIsPlain(ctx context.Context, ws *core.Workspace) (bool, error) {
-	ctx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return false, err
-	}
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return false, err
-	}
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return false, fmt.Errorf("buildkit: %w", err)
-	}
-	statPath, err := pathutil.SandboxedRelativePath(".git", ws.HostPath())
-	if err != nil {
-		return false, err
-	}
-	_, st, err := core.NewCallerStatFS(bk).Stat(ctx, statPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("workspace is not in a git repository")
-	}
-	if err != nil {
-		return false, fmt.Errorf("workspace git metadata: %w", err)
-	}
-	return st.IsDir(), nil
-}
-
-// workspaceHostHeadSHA resolves the host checkout's *current* HEAD, read fresh
-// from disk (never from a snapshot taken when the workspace was loaded), so a
-// commit made in the checkout after loading is observed.
-func (s *workspaceSchema) workspaceHostHeadSHA(
-	ctx context.Context,
-	srv *dagql.Server,
-	ws *core.Workspace,
-	hostPath string,
-) (string, error) {
-	gitDir, err := s.loadWorkspaceHostDir(ctx, srv, ws, path.Join(hostPath, ".git"))
-	if err != nil {
-		return "", err
-	}
-	gitDirID, err := gitDir.ID()
-	if err != nil {
-		return "", err
-	}
-	var repo dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, srv.Root(), &repo,
-		dagql.Selector{Field: "directory"},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(".git")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](gitDirID)},
-			},
-		},
-	); err != nil {
-		return "", err
-	}
-	return core.WorkspaceRepoHeadSHA(ctx, repo)
 }
 
 // workspaceCommitScope is the resolved input to one staged commit.

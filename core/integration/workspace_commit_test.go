@@ -264,6 +264,11 @@ func (WorkspaceSuite) TestWorkspaceCommitExport(ctx context.Context, t *testctx.
 	require.Equal(t, "c1", gitOut(ctx, t, saved, "show", "HEAD:c.txt"))
 	require.Equal(t, "?? d.txt", gitOut(ctx, t, saved, "status", "--porcelain"))
 
+	// Landing goes through the client's own git, so the move is recorded in
+	// the reflog like any other fast-forward.
+	require.Equal(t, baseHead, gitOut(ctx, t, saved, "rev-parse", "HEAD@{1}"))
+	require.Contains(t, gitOut(ctx, t, saved, "reflog", "-1"), "Fast-forward")
+
 	// Both files are in the work tree.
 	contents, err := saved.File("c.txt").Contents(ctx)
 	require.NoError(t, err)
@@ -271,6 +276,98 @@ func (WorkspaceSuite) TestWorkspaceCommitExport(ctx context.Context, t *testctx.
 	contents, err = saved.File("d.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "d1", contents)
+}
+
+// TestWorkspaceCommitExportWorktree saves staged commits from a linked git
+// worktree, whose .git is a pointer file into the main checkout. The client's
+// own git applies the bundle, so the per-worktree branch advances and the main
+// checkout is left alone.
+func (WorkspaceSuite) TestWorkspaceCommitExportWorktree(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("tracked.txt", "v1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		WithExec([]string{"git", "worktree", "add", "-b", "feature", "/linked"}).
+		WithWorkdir("/linked")
+
+	baseHead := gitOut(ctx, t, base, "rev-parse", "HEAD")
+	mainBranch := gitOut(ctx, t, base, "-C", "/work", "symbolic-ref", "--short", "HEAD")
+	mainHead := gitOut(ctx, t, base, "-C", "/work", "rev-parse", "HEAD")
+
+	saved := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "feature.txt", contents: "f1") {
+      withCommit(message: "staged feature", date: "` + commitTestDate + `") {
+        export
+      }
+    }
+  }
+}`))
+
+	// The worktree's own branch advanced to the staged commit.
+	head := gitOut(ctx, t, saved, "rev-parse", "HEAD")
+	require.NotEqual(t, baseHead, head)
+	require.Equal(t, baseHead, gitOut(ctx, t, saved, "rev-parse", "HEAD~1"))
+	require.Equal(t, "staged feature", gitOut(ctx, t, saved, "log", "-1", "--pretty=%s"))
+	// ...and the branch ref lives in the main checkout's .git, so it is
+	// visible from there too.
+	require.Equal(t, head, gitOut(ctx, t, saved, "-C", "/work", "rev-parse", "feature"))
+
+	// The main checkout is untouched.
+	require.Equal(t, mainHead, gitOut(ctx, t, saved, "-C", "/work", "rev-parse", "HEAD"))
+	require.Equal(t, mainHead, gitOut(ctx, t, saved, "-C", "/work", "rev-parse", mainBranch))
+
+	// The committed content is in the linked work tree, which is clean.
+	contents, err := saved.File("/linked/feature.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "f1", contents)
+	require.Equal(t, "", gitOut(ctx, t, saved, "status", "--porcelain"))
+}
+
+// TestWorkspaceCommitExportSubmodule saves staged commits from a submodule
+// checkout, whose .git is a pointer file into the superproject's
+// .git/modules/<name>.
+func (WorkspaceSuite) TestWorkspaceCommitExportSubmodule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("tracked.txt", "v1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		// The submodule's upstream, a plain local repository.
+		WithWorkdir("/upstream").
+		WithExec([]string{"git", "init", "-q", "-b", "main", "."}).
+		WithNewFile("/upstream/sub.txt", "s1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "sub initial"}).
+		WithWorkdir("/work").
+		WithExec([]string{"git", "-c", "protocol.file.allow=always", "submodule", "add", "/upstream", "sub"}).
+		WithExec([]string{"git", "commit", "-m", "add submodule"}).
+		WithWorkdir("/work/sub")
+
+	baseHead := gitOut(ctx, t, base, "rev-parse", "HEAD")
+
+	saved := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "more.txt", contents: "m1") {
+      withCommit(message: "staged in submodule", date: "` + commitTestDate + `") {
+        export
+      }
+    }
+  }
+}`))
+
+	head := gitOut(ctx, t, saved, "rev-parse", "HEAD")
+	require.NotEqual(t, baseHead, head)
+	require.Equal(t, baseHead, gitOut(ctx, t, saved, "rev-parse", "HEAD~1"))
+	require.Equal(t, "staged in submodule", gitOut(ctx, t, saved, "log", "-1", "--pretty=%s"))
+
+	contents, err := saved.File("/work/sub/more.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "m1", contents)
+	require.Equal(t, "", gitOut(ctx, t, saved, "status", "--porcelain"))
 }
 
 // TestWorkspaceCommitExportChain saves a stack of two staged commits: both land
@@ -302,4 +399,3 @@ func (WorkspaceSuite) TestWorkspaceCommitExportChain(ctx context.Context, t *tes
 	require.Equal(t, "c1", gitOut(ctx, t, saved, "show", "HEAD:c.txt"))
 	require.Equal(t, "d1", gitOut(ctx, t, saved, "show", "HEAD:d.txt"))
 }
-

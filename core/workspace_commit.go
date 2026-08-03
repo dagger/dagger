@@ -120,6 +120,65 @@ func WorkspaceRepoHeadSHA(ctx context.Context, repoDir dagql.ObjectResult[*Direc
 	return sha, nil
 }
 
+// WorkspaceStagedCommitsRef is the ref a staged-commit bundle records for its
+// tip. Bundles can only carry commits under a ref name, and the client fetches
+// that name back out, so both ends agree on this one.
+const WorkspaceStagedCommitsRef = "refs/dagger/staged-commits"
+
+// WorkspaceStagedCommitsBundle packs the commits between baseSHA (exclusive)
+// and targetSHA (inclusive) from a staged repository tree into a git bundle,
+// returning its bytes. The bundle is how staged commits travel to the user's
+// checkout: the client's own git fetches it and fast-forwards, which is the
+// only way to update a checkout git itself understands — reflogs, index, work
+// tree, and worktree/submodule layouts included.
+func WorkspaceStagedCommitsBundle(
+	ctx context.Context,
+	repoDir dagql.ObjectResult[*Directory],
+	targetSHA string,
+	baseSHA string,
+) ([]byte, error) {
+	if targetSHA == "" {
+		return nil, fmt.Errorf("bundle target commit is required")
+	}
+	tmpDir, err := os.MkdirTemp("", "dagger-workspace-bundle")
+	if err != nil {
+		return nil, fmt.Errorf("create bundle temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	bundlePath := filepath.Join(tmpDir, "staged.bundle")
+
+	_, err = withGitMergeWorkspace(ctx, repoDir, "Workspace staged commits bundle", func(ws *gitMergeWorkspace) error {
+		// The tip has to be reachable through a ref for the bundle to record
+		// it under a name the client can fetch; the staged branch ref is not
+		// necessarily the one HEAD points at in every layout, so name it
+		// explicitly.
+		if _, err := runGitEnv(ctx, ws.workDir, nil, "update-ref", WorkspaceStagedCommitsRef, targetSHA); err != nil {
+			return err
+		}
+		args := []string{"bundle", "create", bundlePath, WorkspaceStagedCommitsRef}
+		if baseSHA != "" {
+			// Exactly the staged commits: everything the checkout already has
+			// is a prerequisite, not payload.
+			args = append(args, "--not", baseSHA)
+		}
+		if _, err := runGitEnv(ctx, ws.workDir, nil, args...); err != nil {
+			return err
+		}
+		heads, err := runGitEnv(ctx, ws.workDir, nil, "bundle", "list-heads", bundlePath)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(heads, WorkspaceStagedCommitsRef) {
+			return fmt.Errorf("git bundle does not record %s: %s", WorkspaceStagedCommitsRef, strings.TrimSpace(heads))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(bundlePath)
+}
+
 // normalizeGitDirAfterCommit strips the parts of .git that a commit writes with
 // nondeterministic content, so two identical commits produce byte-identical
 // repository trees:
