@@ -12517,6 +12517,11 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The current UTC time in RFC3339 format. Never cached.
+    pub async fn current_timestamp(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("currentTimestamp");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The TypeDef representations of the objects currently being served in the session.
     ///
     /// # Arguments
@@ -14931,6 +14936,18 @@ pub struct WorkspaceServicesOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithCommitOpts<'a> {
+    /// Author and committer email. Defaults to the git identity recorded when the workspace was loaded, else "dagger@localhost".
+    #[builder(setter(into, strip_option), default)]
+    pub author_email: Option<&'a str>,
+    /// Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+    #[builder(setter(into, strip_option), default)]
+    pub author_name: Option<&'a str>,
+    /// Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+    #[builder(setter(into, strip_option), default)]
+    pub paths: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithConfigEnvOpts {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
@@ -15227,6 +15244,7 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Write this workspace's pending changes to its local Git workspace.
+    /// Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.
     pub async fn export(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("export");
         query.execute(self.graphql_client.clone()).await
@@ -15568,6 +15586,58 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+    /// The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+    /// The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit(&self, message: impl Into<String>, date: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+    /// The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+    /// The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Commit message.
+    /// * `date` - RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_commit_opts<'a>(
+        &self,
+        message: impl Into<String>,
+        date: impl Into<String>,
+        opts: WorkspaceWithCommitOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withCommit");
+        query = query.arg("message", message.into());
+        query = query.arg("date", date.into());
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(author_name) = opts.author_name {
+            query = query.arg("authorName", author_name);
+        }
+        if let Some(author_email) = opts.author_email {
+            query = query.arg("authorEmail", author_email);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a named config environment created.
     ///
     /// # Arguments
@@ -15803,6 +15873,29 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a cache volume mounted at the given path, without mutating the source.
+    /// Like a mounted directory, the cache shadows the source at the mount path and stays out of the pending changeset: it never appears in changes and is never exported to the workspace. Unlike a mounted directory it is writable, and export commits the edits made under it back into the cache volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted cache. Relative paths resolve from the workspace cwd.
+    /// * `cache` - Cache volume to mount.
+    pub fn with_mounted_cache(&self, path: impl Into<String>, cache: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withMountedCache");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "cache",
+            Box::new(move || {
+                let cache = cache.clone();
+                Box::pin(async move { cache.into_id().await.unwrap().quote() })
+            }),
+        );
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -16134,6 +16227,21 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with the content mounted at the given path unmounted.
+    /// Removes whatever is mounted there — a cache volume, directory or file — along with anything mounted inside it. Pending edits to a mounted cache volume are discarded rather than committed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mount to remove. Relative paths resolve from the workspace cwd.
+    pub fn without_mount(&self, path: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutMount");
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with an SDK removed from its config.
     ///
     /// # Arguments
@@ -16223,9 +16331,37 @@ impl WorkspaceGit {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Commits staged in this workspace but not yet saved to the local checkout.
+    /// Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.
+    pub async fn staged_commits(&self) -> Result<Vec<WorkspaceStagedCommit>, DaggerError> {
+        let query = self.selection.select("stagedCommits");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceStagedCommit {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceStagedCommit"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
     /// Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
     pub fn uncommitted(&self) -> Changeset {
         let query = self.selection.select("uncommitted");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+    /// Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+    pub fn unmanaged(&self) -> Changeset {
+        let query = self.selection.select("unmanaged");
         Changeset {
             proc: self.proc.clone(),
             selection: query,
@@ -16595,6 +16731,83 @@ impl WorkspaceSdk {
     }
 }
 impl Node for WorkspaceSdk {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct WorkspaceStagedCommit {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for WorkspaceStagedCommit {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for WorkspaceStagedCommit {
+    fn graphql_type() -> &'static str {
+        "WorkspaceStagedCommit"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl WorkspaceStagedCommit {
+    /// The author and committer email the commit was made with.
+    pub async fn author_email(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authorEmail");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The author and committer name the commit was made with.
+    pub async fn author_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authorName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The changes this commit folded in, relative to the state staged before it.
+    pub fn changes(&self) -> Changeset {
+        let query = self.selection.select("changes");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The RFC3339 author and committer date the commit was made with.
+    pub async fn date(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("date");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this WorkspaceStagedCommit.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The full commit message, subject and body.
+    pub async fn message(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("message");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The full hash of the staged commit.
+    pub async fn sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sha");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for WorkspaceStagedCommit {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();

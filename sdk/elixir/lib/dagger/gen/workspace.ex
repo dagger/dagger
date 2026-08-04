@@ -163,6 +163,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Write this workspace's pending changes to its local Git workspace.
+
+  Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.
   """
   @spec export(t()) :: :ok | {:error, term()}
   def export(%__MODULE__{} = workspace) do
@@ -472,6 +474,34 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+
+  The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+
+  The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+  """
+  @spec with_commit(t(), String.t(), String.t(), [
+          {:paths, [String.t()]},
+          {:author_name, String.t() | nil},
+          {:author_email, String.t() | nil}
+        ]) :: Dagger.Workspace.t()
+  def with_commit(%__MODULE__{} = workspace, message, date, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withCommit")
+      |> QB.put_arg("message", message)
+      |> QB.put_arg("date", date)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("authorName", optional_args[:author_name])
+      |> QB.maybe_put_arg("authorEmail", optional_args[:author_email])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a named config environment created.
   """
   @spec with_config_env(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
@@ -581,6 +611,25 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("ref", ref)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a cache volume mounted at the given path, without mutating the source.
+
+  Like a mounted directory, the cache shadows the source at the mount path and stays out of the pending changeset: it never appears in changes and is never exported to the workspace. Unlike a mounted directory it is writable, and export commits the edits made under it back into the cache volume.
+  """
+  @spec with_mounted_cache(t(), String.t(), Dagger.CacheVolume.t()) :: Dagger.Workspace.t()
+  def with_mounted_cache(%__MODULE__{} = workspace, path, cache) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withMountedCache")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("cache", Dagger.ID.id!(cache))
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -787,6 +836,22 @@ defmodule Dagger.Workspace do
       |> QB.select("withoutModule")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with the content mounted at the given path unmounted.
+
+  Removes whatever is mounted there — a cache volume, directory or file — along with anything mounted inside it. Pending edits to a mounted cache volume are discarded rather than committed.
+  """
+  @spec without_mount(t(), String.t()) :: Dagger.Workspace.t()
+  def without_mount(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withoutMount") |> QB.put_arg("path", path)
 
     %Dagger.Workspace{
       query_builder: query_builder,

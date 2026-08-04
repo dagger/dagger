@@ -124,6 +124,15 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * The current UTC time in RFC3339 format. Never cached.
+     */
+    public function currentTimestamp(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTimestamp');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'currentTimestamp');
+    }
+
+    /**
      * The TypeDef representations of the objects currently being served in the session.
      */
     public function currentTypeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
