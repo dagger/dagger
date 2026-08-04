@@ -153,6 +153,28 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
 			),
+		dagql.NodeFunc("withCommit", s.withCommit).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.",
+				"The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.",
+				"The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else \"Dagger\"."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to the git identity recorded when the workspace was loaded, else \"dagger@localhost\"."),
+			),
+		dagql.NodeFunc("__stagedCommit", s.stagedCommit).
+			IsPersistable().
+			Doc("(Internal-only) The repository tree resulting from staging the commit Workspace.withCommit describes.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Restrict the commit to these paths."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date."),
+				dagql.Arg("authorName").Doc("Author and committer name."),
+				dagql.Arg("authorEmail").Doc("Author and committer email."),
+			),
 		dagql.NodeFunc("__withGeneratedLocalDependencies", s.withGeneratedLocalDependencies).
 			Doc("(Internal-only) Return this workspace with a module's generated local dependency closure applied and recorded.",
 				"Applies the changeset produced by ModuleSource.generateLocalDependencies for the module at the given path, and marks the workspace so a nested generateLocalDependencies call for that module short-circuits instead of re-staging.").
@@ -1987,6 +2009,17 @@ func (s *workspaceSchema) export(
 ) (core.Void, error) {
 	ws := parent.Self()
 
+	// Staged commits land first, as a fast-forward of the local checkout's
+	// current ref, so the remaining overlay changes below are written on top of
+	// the new HEAD (and `git status` on the host then shows exactly them).
+	// Preconditions are verified before anything is written, so a rejected save
+	// leaves the checkout untouched.
+	if len(ws.PendingCommits()) > 0 {
+		if err := s.exportPendingCommits(ctx, ws); err != nil {
+			return core.Void{}, err
+		}
+	}
+
 	// Base export: write the primary overlay changeset to the local Git
 	// workspace. Only a non-empty base changeset requires a valid host path;
 	// cache mount write-through (below) runs regardless of the base source.
@@ -2417,22 +2450,31 @@ func (s *workspaceSchema) workspaceGitRepository(
 	if ref, ok := ws.SourceGitRef(); ok {
 		return ref.Self().Repo, nil
 	}
-	if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
-		return inst, err
-	}
 
-	dir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
-	if err != nil {
-		return inst, fmt.Errorf("workspace git directory: %w", err)
-	}
+	var dir dagql.ObjectResult[*core.Directory]
+	if latest, ok := ws.LatestPendingCommit(); ok && latest.Repo.Self() != nil {
+		// Commits staged engine-side live in this tree's .git; reading the
+		// workspace's own repository would still report the pre-commit HEAD.
+		dir = latest.Repo
+	} else {
+		if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
+			return inst, err
+		}
 
-	// Git worktree and submodule checkouts have a .git *pointer file* at their
-	// root, whose target lives outside the workspace boundary. Follow the
-	// pointer against the host and flatten the real git dir into a standalone
-	// .git directory so the LocalGitRepository sees a plain repository.
-	dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
-	if err != nil {
-		return inst, fmt.Errorf("workspace git directory: %w", err)
+		var err error
+		dir, err = s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+		if err != nil {
+			return inst, fmt.Errorf("workspace git directory: %w", err)
+		}
+
+		// Git worktree and submodule checkouts have a .git *pointer file* at their
+		// root, whose target lives outside the workspace boundary. Follow the
+		// pointer against the host and flatten the real git dir into a standalone
+		// .git directory so the LocalGitRepository sees a plain repository.
+		dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
+		if err != nil {
+			return inst, fmt.Errorf("workspace git directory: %w", err)
+		}
 	}
 
 	backend := &core.LocalGitRepository{

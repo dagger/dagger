@@ -4665,6 +4665,9 @@ type Query implements Node {
   """
   currentNode: Node!
 
+  """The current UTC time in RFC3339 format. Never cached."""
+  currentTimestamp: String!
+
   """
   The TypeDef representations of the objects currently being served in the session.
   """
@@ -5808,6 +5811,43 @@ type Workspace implements Node {
   withChanges(
     """Changes to apply."""
     changes: ID! @expectedType(name: "Changeset")
+  ): Workspace!
+
+  """
+  Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+
+  The commit is created engine-side, on top of the workspace's git HEAD plus any
+  previously staged commit: the local checkout is left untouched. Afterwards
+  Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted
+  holds whatever was left out of it, still pending on top.
+
+  The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+  """
+  withCommit(
+    """Commit message."""
+    message: String!
+
+    """
+    Restrict the commit to these paths, like `git commit -- <paths>`. Relative
+    paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+    """
+    paths: [String!] = []
+
+    """
+    RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock.
+    """
+    date: String!
+
+    """
+    Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+    """
+    authorName: String
+
+    """
+    Author and committer email. Defaults to the git identity recorded when the
+    workspace was loaded, else "dagger@localhost".
+    """
+    authorEmail: String
   ): Workspace!
 
   """Return this workspace with a named config environment created."""
