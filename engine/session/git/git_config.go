@@ -12,7 +12,13 @@ import (
 	"time"
 )
 
-var gitConfigAllowedKeys = []string{}
+var gitConfigAllowedKeys = []string{
+	// Author identity, recorded once at workspace load so engine-side commits
+	// (Workspace.withCommit) can attribute to the user without consulting the
+	// client per call.
+	"user.name",
+	"user.email",
+}
 
 func isGitConfigKeyAllowed(key string) bool {
 	if slices.Contains(gitConfigAllowedKeys, key) {
