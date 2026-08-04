@@ -857,8 +857,10 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
 // grouping calls by destructiveness and server to avoid workspace conflicts
 // toolCallCtx returns the display span context a tool call's arguments streamed
-// into, so the tool's execution nests beneath it. Falls back to ctx when no
-// display span exists (e.g. replay or a provider that doesn't stream).
+// into, so the tool's execution nests beneath it. Every provider — including
+// replay — builds one display span per tool call (see displayPhases), so the
+// fallback to ctx only applies to a provider that returns no display spans at
+// all (none today) or a call ID the provider never announced.
 func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callID string) context.Context {
 	if tc, ok := displays[callID]; ok {
 		return tc.Ctx
