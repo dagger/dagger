@@ -1315,12 +1315,16 @@ func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T)
 	})
 
 	t.Run("dead git pointer fails loudly", func(ctx context.Context, t *testctx.T) {
+		// The .git pointer exists but its target is gone. The client's own
+		// git is the oracle: it fails to read the checkout as a repository, so
+		// the engine surfaces that hard failure rather than silently degrading
+		// (which is reserved for a checkout with no .git at all).
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 		_, err := brokenGit(c).With(daggerCall("optional-repo")).Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
-		require.Contains(t, logs.String(), ".git pointer target")
+		require.Contains(t, logs.String(), "not a git repository")
 	})
 
 	t.Run("optional repo resolves in a real repo", func(ctx context.Context, t *testctx.T) {
@@ -1382,7 +1386,8 @@ func (ModuleSuite) TestContextGitWorktree(ctx context.Context, t *testctx.T) {
 	// A linked worktree's .git is a pointer file into the main checkout's
 	// .git/worktrees/<name>, which holds only per-worktree state (HEAD,
 	// index) next to a commondir pointer at the shared git dir. The engine
-	// flattens all of it into a standalone repository.
+	// never interprets that raw layout: the client's own git packs the
+	// checkout's repository and the engine reconstructs a standalone one.
 	t.Run("linked worktree", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1430,8 +1435,9 @@ func (ModuleSuite) TestContextGitWorktree(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		headCommit = strings.TrimSpace(headCommit)
 
-		// The shared config says core.bare=true here; the flattened override
-		// is what makes the assembled repository usable.
+		// The worktree points at a bare repo; the client's own git still
+		// packs the checkout's repository, so the reconstruction is a normal,
+		// usable (non-bare) repository regardless of the host layout.
 		out, err := ctr.With(daggerCall("optional-repo")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "repo@"+headCommit, out)

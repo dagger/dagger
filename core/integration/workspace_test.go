@@ -164,10 +164,10 @@ func (WorkspaceSuite) TestWorkspaceGit(ctx context.Context, t *testctx.T) {
 
 // TestWorkspaceGitWorktree verifies Workspace.git works from a linked git
 // worktree checkout, whose .git is a pointer file into the main checkout's
-// .git/worktrees/<name>. The engine follows the pointer against the host,
-// pulls in the shared common dir, and flattens everything into a standalone
-// repository, so Workspace.git reports the per-worktree HEAD and detects
-// uncommitted changes just like a plain clone.
+// .git/worktrees/<name>. The engine never interprets that raw layout: the
+// client's own git packs the checkout's repository and the engine reconstructs
+// a standalone .git from the pack, so Workspace.git reports the per-worktree
+// HEAD and detects uncommitted changes just like a plain clone.
 func (WorkspaceSuite) TestWorkspaceGitWorktree(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

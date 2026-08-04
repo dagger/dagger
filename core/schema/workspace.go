@@ -763,7 +763,41 @@ func (s *workspaceSchema) workspaceReadPathExists(
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Local with overlay edits: sparse host base + changeset applied on top.
 // Remote: navigates the pre-fetched rootfs.
+//
+// A host-backed workspace's root carries the checkout's dangling .git pointer
+// file (worktree/submodule); the engine never interprets it -- git-ness is
+// provided canonically via materializeWorkspaceGit -- so it is dropped from the
+// root snapshot here, covering every route resolveRootfsInner takes to a root
+// read (host, overlay, references, mount) without disturbing their logic. Only
+// the workspace root carries the pointer, and DropRootGitPointerFile is a no-op
+// unless a `.git` *file* is actually present, so a plain .git directory and
+// value-backed workspaces are untouched.
 func (s *workspaceSchema) resolveRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (dagql.ObjectResult[*core.Directory], error) {
+	inst, err := s.resolveRootfsInner(ctx, ws, resolvedPath, filter, gitignore)
+	if err != nil {
+		return inst, err
+	}
+	isRoot := resolvedPath == "." || resolvedPath == "/" || resolvedPath == ""
+	if ws.HostPath() != "" && isRoot && inst.Self() != nil {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		inst, err = core.DropRootGitPointerFile(ctx, srv, inst)
+		if err != nil {
+			return inst, err
+		}
+	}
+	return inst, nil
+}
+
+func (s *workspaceSchema) resolveRootfsInner(
 	ctx context.Context,
 	ws *core.Workspace,
 	resolvedPath string,
@@ -2578,8 +2612,9 @@ func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *c
 		return fmt.Errorf("workspace git metadata: %w", err)
 	}
 	// Git worktree and submodule checkouts have a .git *file* pointing at
-	// metadata outside the workspace; that pointer is followed and flattened
-	// when the repository is resolved (see flattenWorkspaceGitPointer), so a
+	// metadata outside the workspace; that layout is never interpreted by the
+	// engine -- the repository is reconstructed canonically from the client's
+	// own git pack when it is resolved (see materializeWorkspaceGit) -- so a
 	// regular .git file is acceptable here.
 	if st.FileType != core.FileTypeRegular && !st.IsDir() {
 		return fmt.Errorf("workspace git metadata .git has type %s, expected directory or pointer file", st.FileType)
@@ -2607,11 +2642,12 @@ func (s *workspaceSchema) workspaceGitRepository(
 		return inst, fmt.Errorf("workspace git directory: %w", err)
 	}
 
-	// Git worktree and submodule checkouts have a .git *pointer file* at their
-	// root, whose target lives outside the workspace boundary. Follow the
-	// pointer against the host and flatten the real git dir into a standalone
-	// .git directory so the LocalGitRepository sees a plain repository.
-	dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
+	// Git worktree and submodule checkouts have a .git *pointer file* at
+	// their root, whose target lives outside the workspace boundary.
+	// Replace whatever .git the synced tree carries with a canonical
+	// reconstruction of the checkout's repository (packed by the client's
+	// own git), so the LocalGitRepository sees a plain repository.
+	dir, err = s.materializeWorkspaceGit(ctx, ws, dir)
 	if err != nil {
 		return inst, fmt.Errorf("workspace git directory: %w", err)
 	}
@@ -2631,13 +2667,20 @@ func (s *workspaceSchema) workspaceGitRepository(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
 }
 
-// flattenWorkspaceGitPointer resolves a .git pointer file (worktree/submodule
-// checkout) at the workspace root into a standalone .git directory, following
-// the pointer against the workspace's host. A plain .git directory is returned
-// unchanged. A workspace with no host (in-memory rootfs) has nowhere to follow
-// the pointer to, so a pointer file there stays unresolved and downstream git
-// operations report the plain failure.
-func (s *workspaceSchema) flattenWorkspaceGitPointer(
+// materializeWorkspaceGit replaces a host-backed workspace's synced .git with
+// a canonical reconstruction of the checkout's repository. The client's own
+// git packs the repository (HEAD plus all branches and tags) and the engine
+// rebuilds a standalone .git from that pack. The engine never interprets the
+// host checkout's raw git layout -- worktree/submodule pointer files,
+// commondirs, separate git dirs are all the client git's business -- so the
+// result is identical for a given ref state regardless of how the checkout is
+// laid out on the host.
+//
+// A workspace with no host (in-memory rootfs) keeps its embedded .git: there
+// is no client checkout to pack. A checkout that is not a git repository is
+// returned unchanged so downstream git operations surface the plain "not a git
+// repository" failure, matching pre-worktree behavior.
+func (s *workspaceSchema) materializeWorkspaceGit(
 	ctx context.Context,
 	ws *core.Workspace,
 	dir dagql.ObjectResult[*core.Directory],
@@ -2645,49 +2688,33 @@ func (s *workspaceSchema) flattenWorkspaceGitPointer(
 	if ws.HostPath() == "" {
 		return dir, nil
 	}
+	clientCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return dir, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dir, err
 	}
-	flattened, err := core.FlattenGitPointer(ctx, srv, dir, ws.HostPath(),
-		func(ctx context.Context, dag *dagql.Server, hostPath string) (dagql.ObjectResult[*core.Directory], error) {
-			return s.loadWorkspaceHostDir(ctx, dag, ws, hostPath)
-		})
+	// Pin the reconstruction to the session's cached view of the checkout by
+	// keying it on the workspace read epoch rather than the checkout's live
+	// ref state: a checkout that advances mid-session must NOT be silently
+	// re-read, or a staged-commit export could fast-forward over the user's
+	// own commit instead of detecting that the local branch moved. The epoch
+	// bumps on export/reload, exactly when the pinned view should be refreshed
+	// -- the same scoping Workspace.file/.directory host reads use.
+	epoch, err := core.WorkspaceReadEpoch(clientCtx)
+	if err != nil {
+		return dir, err
+	}
+	out, err := core.MaterializeHostGitCheckout(clientCtx, srv, dir, ws.HostPath(), "epoch:"+epoch)
 	if errors.Is(err, core.ErrNoGitContext) {
-		// No .git at all: leave the original directory so downstream
-		// callers surface the plain "not a git repository" failure, matching
+		// No .git at all: leave the original directory so downstream callers
+		// surface the plain "not a git repository" failure, matching
 		// pre-worktree behavior.
 		return dir, nil
 	}
-	return flattened, err
-}
-
-// loadWorkspaceHostDir loads an absolute host path as a Directory, routed
-// through the workspace's owning client session. Unlike workspace reads this
-// is not bounded to the workspace root: gitfile targets legitimately live
-// outside it (e.g. the main checkout's .git). FlattenGitPointer validates what
-// it loads.
-func (s *workspaceSchema) loadWorkspaceHostDir(
-	ctx context.Context,
-	dag *dagql.Server,
-	ws *core.Workspace,
-	hostPath string,
-) (inst dagql.ObjectResult[*core.Directory], err error) {
-	ctx, err = s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return inst, err
-	}
-	err = dag.Select(ctx, dag.Root(), &inst,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(hostPath)},
-				{Name: "noCache", Value: dagql.Boolean(true)},
-			},
-		},
-	)
-	return inst, err
+	return out, err
 }
 
 func (s *workspaceSchema) workspaceGitHead(
