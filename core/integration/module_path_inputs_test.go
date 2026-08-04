@@ -12,6 +12,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1441,6 +1442,63 @@ func (ModuleSuite) TestContextGitWorktree(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerCall("optional-repo")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "repo@"+headCommit, out)
+	})
+}
+
+// TestModuleWorktreeGoSDK locks in the fix for loading a Go SDK module from a
+// linked git worktree checkout.
+//
+// A linked worktree's .git is a POINTER FILE ("gitdir: .../.git/worktrees/<name>")
+// rather than a .git directory. The Go SDK's codegen container runs
+// `git config --global user.email <val>` (and user.name) with its workdir inside
+// the mounted module context whenever the client has a global git identity set.
+// Previously the dangling pointer was shipped into that context, so git could not
+// resolve the repository and every git invocation there died with
+// "fatal: not a git repository: (null)" — making module loading fail hard.
+//
+// The engine now drops a root .git regular file from the synced module-context
+// snapshot (git-ness is supplied canonically elsewhere), so codegen's git config
+// exec succeeds, the module loads, and the +defaultPath="/" context no longer
+// carries the .git pointer.
+func (ModuleSuite) TestModuleWorktreeGoSDK(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// goGitBase sets user.email/user.name GLOBALLY. That is load-bearing here:
+	// a global git identity is exactly what makes the engine inject the
+	// `git config --global ...` execs into the Go SDK codegen container that
+	// historically tripped over the dangling worktree pointer.
+	ctr := goGitBase(t, c).
+		WithNewFile("/work/tracked.txt", "v1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		// A linked worktree: its /linked/.git is a pointer file, not a dir.
+		WithExec([]string{"git", "worktree", "add", "-b", "feature", "/linked"}).
+		WithWorkdir("/linked").
+		// dagger.json sits AT the worktree root with source ".", so the module
+		// context root == worktree root and the include picks up the .git
+		// pointer file: the exact failing layout.
+		With(withModuleFixture(t, c, ".", "go/worktree-context-entries"))
+
+	t.Run("module loads and functions list", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "entries")
+	})
+
+	t.Run("context directory drops the .git pointer", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerQueryAt(".", `{ entries }`)).Stdout(ctx)
+		require.NoError(t, err)
+
+		var got struct {
+			Entries []string `json:"entries"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		t.Logf("worktree module context entries: %v", got.Entries)
+		// The committed worktree content is present...
+		require.Contains(t, got.Entries, "tracked.txt")
+		// ...but the dangling .git pointer file was dropped from the context.
+		require.NotContains(t, got.Entries, ".git")
+		require.NotContains(t, got.Entries, ".git/")
 	})
 }
 
