@@ -213,6 +213,7 @@ const (
 	persistedDirectoryLazyKindWithout                       = "directory.without"
 	persistedDirectoryLazyKindWithSymlink                   = "directory.withSymlink"
 	persistedDirectoryLazyKindChown                         = "directory.chown"
+	persistedDirectoryLazyKindCacheVolumeSnapshot           = "cacheVolume.__snapshotDirectory"
 )
 
 type persistedDirectoryPayload struct {
@@ -572,6 +573,10 @@ type persistedDirectoryChownLazy struct {
 	Owner          string `json:"owner"`
 }
 
+type persistedCacheVolumeSnapshotLazy struct {
+	VolumeResultID uint64 `json:"volumeResultID"`
+}
+
 func attachDirectoryResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res dagql.ObjectResult[*Directory], label string) (dagql.ObjectResult[*Directory], error) {
 	attached, err := attach(res)
 	if err != nil {
@@ -643,6 +648,9 @@ func encodePersistedDirectoryLazy(ctx context.Context, cache dagql.PersistedObje
 	case *DirectoryChownLazy:
 		payload, err := lazy.EncodePersisted(ctx, cache)
 		return persistedDirectoryLazyKindChown, payload, err
+	case *CacheVolumeSnapshotLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindCacheVolumeSnapshot, payload, err
 	default:
 		return "", nil, fmt.Errorf("encode persisted directory lazy: unsupported lazy type %T", lazy)
 	}
@@ -865,6 +873,16 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, lazyKi
 			return nil, err
 		}
 		return &DirectoryChownLazy{LazyState: NewLazyState(), Parent: parent, ChownPath: persisted.ChownPath, Owner: persisted.Owner}, nil
+	case persistedDirectoryLazyKindCacheVolumeSnapshot:
+		var persisted persistedCacheVolumeSnapshotLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return nil, fmt.Errorf("decode persisted cache volume snapshot lazy: %w", err)
+		}
+		volume, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persisted.VolumeResultID, "cache volume snapshot volume")
+		if err != nil {
+			return nil, err
+		}
+		return &CacheVolumeSnapshotLazy{LazyState: NewLazyState(), Volume: volume}, nil
 	default:
 		return nil, fmt.Errorf("decode persisted directory lazy payload: unsupported lazy kind %q", lazyKind)
 	}
