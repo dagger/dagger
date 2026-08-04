@@ -106,6 +106,37 @@ source = "modules/debugger"
 
 Write settings overlays with `dagger settings --env <name> <module> <key> <value>` (or `dagger workspace config --env <name> …` for raw access). Reads with `--env` show the effective view — the base configuration with the overlay applied — and the base is what every environment inherits.
 
+## User-level configuration
+
+Personal overrides that shouldn't be committed — private account profiles, local paths, personal environments — live in the user-level Dagger config file: `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`. The file is shared with other Dagger subsystems (such as `[llm]`); workspace overrides sit in a `[workspaces.*]` section keyed by the workspace's Git remote:
+
+```toml
+# Always applied when working in this workspace:
+[workspaces."github.com/acme/api".modules.eslint.settings]
+packageManager = "pnpm"
+
+# A personal environment, selected with `dagger --env dev ...`:
+[workspaces."github.com/acme/api".env.dev.modules.eslint.settings]
+baseImageAddress = "node:22-alpine"
+```
+
+The effective configuration is merged in a fixed order: base `dagger.toml`, then the matching user-level overrides, then the selected `--env` overlay. User-level values shadow repository values key by key, and user-level environments are added to (and merge over) the repository's, all without modifying `dagger.toml`.
+
+**Workspace key.** The key is the normalized `origin` remote: host and path, with no scheme, no user, and no `.git` suffix. Equivalent spellings all match — `git@github.com:acme/api.git`, `https://github.com/acme/api`, and `github.com/acme/api` identify the same workspace, both as the config key and in the repository's git config. A repository with multiple remotes is keyed by `origin` only; a repository with no remote (or a purely local one) matches no user-level overrides. Remote workspaces selected with `-W` are keyed by their clone address.
+
+**Writing.** Pass `-g/--global` to `dagger settings` or `dagger workspace config` to store a value user-level instead of in the repository:
+
+```shell
+dagger settings -g eslint packageManager pnpm
+dagger settings -g --env dev eslint baseImageAddress node:22-alpine
+dagger settings -g -u eslint packageManager        # remove the override
+dagger workspace config -g modules.eslint.settings.packageManager pnpm
+```
+
+`--global` selects where a write is stored; reads always show the effective merged view. Unsetting with `-g` removes only the user-level value — the repository value underneath is untouched.
+
+**Scope and safety.** Only module settings can be stored user-level: `modules.<name>.settings.*`, optionally under `env.<name>.*`. Because one key spans every branch and clone of a repository, an always-applied user entry for a module that doesn't exist in the current checkout is ignored there rather than being an error. User-level environments are validated normally when selected with `--env`.
+
 ## Other keys
 
 | Key | Description |

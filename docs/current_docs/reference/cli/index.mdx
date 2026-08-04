@@ -2541,8 +2541,9 @@ dagger settings [module] [key] [value...]
 ### Options
 
 ```
-      --here    Write workspace config at the selected workspace cwd
-  -u, --unset   Remove the setting from workspace config
+  -g, --global   Store the setting in user-level config instead of the repository, keyed by the workspace's git remote
+      --here     Write workspace config at the selected workspace cwd
+  -u, --unset    Remove the setting from workspace config
 ```
 
 ### Options inherited from parent commands
@@ -2873,8 +2874,9 @@ dagger workspace config [key] [value] [flags]
 ### Options
 
 ```
-      --here    Write workspace config at the selected workspace cwd
-  -u, --unset   Remove the value at the given key
+  -g, --global   Write to user-level config instead of the repository, keyed by the workspace's git remote
+      --here     Write workspace config at the selected workspace cwd
+  -u, --unset    Remove the value at the given key
 ```
 
 ### Options inherited from parent commands

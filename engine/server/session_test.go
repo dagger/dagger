@@ -1425,6 +1425,8 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 		false,
 		dagql.ObjectResult[*core.Directory]{},
 		nil,
+		nil,
+		"",
 	)
 	require.NoError(t, err)
 	require.Equal(t, "subdir", client.workspace.Cwd)
@@ -1484,6 +1486,8 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 		false,
 		dagql.ObjectResult[*core.Directory]{},
 		nil,
+		nil,
+		"",
 	)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join("subdir", "child"), client.workspace.Cwd)

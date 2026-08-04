@@ -185,18 +185,43 @@ func (s *workspaceSchema) configRead(
 		return dagql.String(result), nil
 	}
 
-	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
+	envName, envSelected := selectedWorkspaceEnv(ctx)
+	overlay := parent.UserConfigOverlay()
+	switch {
+	case envSelected && !isExplicitEnvConfigKey(args.Key):
+		// Env-scoped reads return the effective active config: base values
+		// with the user-level overlay and the selected env applied, env
+		// tables hidden.
 		cfg, err := readWorkspaceConfig(ctx, parent)
 		if err != nil {
 			return "", err
 		}
 
-		effective, err := effectiveWorkspaceConfigBytes(cfg, envName)
+		effective, err := effectiveWorkspaceConfigBytes(parent, cfg, envName)
 		if err != nil {
 			return "", err
 		}
 
 		result, err := workspace.ReadConfigValue(effective, args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+
+	case overlay != nil:
+		// User-level overrides merge over the repo config for reads; env
+		// tables stay visible (including user-added envs) since no env is
+		// being applied here.
+		cfg, err := readWorkspaceConfig(ctx, parent)
+		if err != nil {
+			return "", err
+		}
+		merged, err := workspace.ApplyUserOverlay(cfg, overlay)
+		if err != nil {
+			return "", err
+		}
+
+		result, err := workspace.ReadConfigValue(workspace.SerializeConfig(merged), args.Key)
 		if err != nil {
 			return "", err
 		}
@@ -239,8 +264,16 @@ func isExplicitEnvConfigKey(key string) bool {
 	return key == "env" || strings.HasPrefix(key, "env.")
 }
 
-func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string) ([]byte, error) {
-	applied, err := workspace.ApplyEnvOverlay(cfg, envName)
+// effectiveWorkspaceConfigBytes serializes cfg with the workspace's user-level
+// overlay and the selected env overlay (when envName is non-empty) applied.
+// The merge order matches module loading: base config, then user-level
+// overrides, then the selected environment.
+func effectiveWorkspaceConfigBytes(ws *core.Workspace, cfg *workspace.Config, envName string) ([]byte, error) {
+	applied, err := workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
+	applied, err = workspace.ApplyEnvOverlay(applied, envName)
 	if err != nil {
 		return nil, err
 	}

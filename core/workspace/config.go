@@ -228,11 +228,21 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 		return nil, fmt.Errorf("workspace env %q is not defined", envName)
 	}
 
-	for moduleName, overlay := range env.Modules {
+	if err := applyModuleOverlays(applied, env.Modules, fmt.Sprintf("workspace env %q", envName)); err != nil {
+		return nil, err
+	}
+
+	return applied, nil
+}
+
+// applyModuleOverlays merges module overlays into applied in place. origin
+// names the overlay source ("workspace env %q", "user config") for errors.
+func applyModuleOverlays(applied *Config, overlays map[string]EnvModuleOverlay, origin string) error {
+	for moduleName, overlay := range overlays {
 		entry, ok := applied.Modules[moduleName]
 		if !ok {
 			if overlay.Source == "" {
-				return nil, fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
+				return fmt.Errorf("%s references unknown module %q", origin, moduleName)
 			}
 			if applied.Modules == nil {
 				applied.Modules = map[string]ModuleEntry{}
@@ -255,8 +265,7 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 		}
 		applied.Modules[moduleName] = entry
 	}
-
-	return applied, nil
+	return nil
 }
 
 // EnvNames returns the configured environment names in deterministic order.

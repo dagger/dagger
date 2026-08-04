@@ -17,11 +17,74 @@ import (
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "hostPath", "ClientID"} {
+	for _, name := range []string{"source", "rootfs", "hostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
 	}
+}
+
+// TestEffectiveWorkspaceConfigBytesAppliesUserOverlay verifies the schema-level
+// effective-config path merges in the same order as module loading: base
+// config, then the workspace's user-level overlay, then the selected env.
+func TestEffectiveWorkspaceConfigBytesAppliesUserOverlay(t *testing.T) {
+	t.Parallel()
+
+	baseCfg := func() *workspace.Config {
+		return &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"aws": {
+					Source:   "github.com/dagger/aws",
+					Settings: map[string]any{"profile": "shared", "region": "us-east-1"},
+				},
+			},
+		}
+	}
+	ws := &core.Workspace{}
+	ws.SetUserConfigOverlay(&workspace.UserWorkspaceOverlay{
+		Modules: map[string]workspace.EnvModuleOverlay{
+			"aws": {Settings: map[string]any{"profile": "alice-dev"}},
+		},
+		Env: map[string]workspace.EnvOverlay{
+			"dev": {Modules: map[string]workspace.EnvModuleOverlay{
+				"aws": {Settings: map[string]any{"region": "us-west-2"}},
+			}},
+		},
+	})
+
+	t.Run("without env", func(t *testing.T) {
+		t.Parallel()
+		data, err := effectiveWorkspaceConfigBytes(ws, baseCfg(), "")
+		require.NoError(t, err)
+
+		profile, err := workspace.ReadConfigValue(data, "modules.aws.settings.profile")
+		require.NoError(t, err)
+		require.Equal(t, "alice-dev", profile)
+
+		region, err := workspace.ReadConfigValue(data, "modules.aws.settings.region")
+		require.NoError(t, err)
+		require.Equal(t, "us-east-1", region)
+	})
+
+	t.Run("with user-defined env", func(t *testing.T) {
+		t.Parallel()
+		data, err := effectiveWorkspaceConfigBytes(ws, baseCfg(), "dev")
+		require.NoError(t, err)
+
+		region, err := workspace.ReadConfigValue(data, "modules.aws.settings.region")
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", region)
+	})
+
+	t.Run("no overlay leaves config unchanged", func(t *testing.T) {
+		t.Parallel()
+		data, err := effectiveWorkspaceConfigBytes(&core.Workspace{}, baseCfg(), "")
+		require.NoError(t, err)
+
+		profile, err := workspace.ReadConfigValue(data, "modules.aws.settings.profile")
+		require.NoError(t, err)
+		require.Equal(t, "shared", profile)
+	})
 }
 
 // TestInitialWorkspaceConfigOmitsCheckGenerated verifies the default dagger.toml

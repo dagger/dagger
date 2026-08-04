@@ -147,6 +147,37 @@ func (c *Config) Save() error {
 	return nil
 }
 
+// UpdateFile applies fn to the current config file contents under the
+// cross-process lock and writes the result back atomically with 0600
+// permissions. fn receives nil when the file does not exist yet. The file is
+// shared between subsystems ([llm], [workspaces], ...), so fn must preserve
+// sections it does not own.
+func UpdateFile(fn func(existing []byte) ([]byte, error)) error {
+	if err := os.MkdirAll(filepath.Dir(ConfigFile), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	lock := flock.New(ConfigFile + ".lock")
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer lock.Unlock()
+
+	data, err := os.ReadFile(ConfigFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to read config file: %w", err)
+		}
+		data = nil
+	}
+
+	updated, err := fn(data)
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(ConfigFile, updated, 0600)
+}
+
 // atomicWriteFile writes data to path atomically by writing to a temporary
 // file in the same directory and renaming it into place (rename is atomic on
 // POSIX). The temp file is removed if the write or rename fails.
