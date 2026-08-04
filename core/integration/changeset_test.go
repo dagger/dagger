@@ -361,13 +361,10 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "RENAMED", diffStats[0].Kind)
 	})
 
-	t.Run("diffStats includes nested removed paths", func(ctx context.Context, t *testctx.T) {
+	t.Run("diffStats omits removed directories implied by removed files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create a directory tree that will be entirely removed.
-		// This tests whether DiffStats emits entries for every nested
-		// file and subdirectory (current behavior via AllRemoved) or
-		// only the top-level collapsed directory.
 		oldDir := c.Directory().
 			WithNewFile("keep.txt", "stay\n").
 			WithNewFile("dir/file1.txt", "one\ntwo\n").
@@ -397,26 +394,22 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			paths[i] = s.Path
 		}
 
-		// Current behavior: AllRemoved is uncollapsed, so DiffStats
-		// returns entries for the parent dir, the nested subdir, AND
-		// every removed file. This is intentional so that
-		// patchpreview.foldRemovedDirs can fold them at the rendering
-		// layer with summed line counts.
-		require.Contains(t, paths, "dir/")
-		require.Contains(t, paths, "dir/sub/")
-		require.Contains(t, paths, "dir/file1.txt")
-		require.Contains(t, paths, "dir/file2.txt")
-		require.Contains(t, paths, "dir/sub/deep.txt")
+		// Every removed file gets its own entry, but the directories
+		// holding them do not: their removal is fully implied by the file
+		// removals, git tracks no directories, and asPatch cannot express
+		// one.
+		require.ElementsMatch(t, []string{
+			"dir/file1.txt",
+			"dir/file2.txt",
+			"dir/sub/deep.txt",
+		}, paths)
 
 		// All entries should be REMOVED.
 		for _, s := range diffStats {
-			if s.Path == "keep.txt" {
-				continue
-			}
 			require.Equal(t, "REMOVED", s.Kind, "path %s should be REMOVED", s.Path)
 		}
 
-		// Verify line counts on the files (dirs have 0 lines).
+		// Verify line counts on the files.
 		for _, s := range diffStats {
 			switch s.Path {
 			case "dir/file1.txt":
@@ -433,6 +426,50 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		removedPaths, err := newDir.Changes(oldDir).RemovedPaths(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"dir/"}, removedPaths)
+	})
+
+	t.Run("diffStats reports only the file when a directory's last file goes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("keep.txt", "stay\n").
+			WithNewFile("qa2/alpha.txt", "a\nb\n")
+
+		newDir := c.Directory().
+			WithNewFile("keep.txt", "stay\n")
+
+		changes := newDir.Changes(oldDir)
+
+		var diffStats []struct {
+			Path         string `json:"path"`
+			Kind         string `json:"kind"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("node").
+			Arg("id", changes).
+			InlineFragment("Changeset").
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, diffStats, 1,
+			"a directory removal implied by its files must not be reported")
+		require.Equal(t, "qa2/alpha.txt", diffStats[0].Path)
+		require.Equal(t, "REMOVED", diffStats[0].Kind)
+		require.Equal(t, 2, diffStats[0].RemovedLines)
+
+		// isEmpty must agree with diffStats: this changeset has changes.
+		empty, err := changes.IsEmpty(ctx)
+		require.NoError(t, err)
+		require.False(t, empty)
+
+		// ...and the patch view, which cannot express a directory, agrees
+		// too: one file section, no mention of the directory on its own.
+		patch, err := changes.AsPatch().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 1, strings.Count(patch, "diff --git "), patch)
+		require.Contains(t, patch, "qa2/alpha.txt")
 	})
 
 	t.Run("layer basic", func(ctx context.Context, t *testctx.T) {
