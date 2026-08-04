@@ -34,7 +34,39 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.CacheVolume]{}.Install(srv)
+	dagql.Fields[*core.CacheVolume]{
+		dagql.NodeFunc("__snapshotDirectory", s.snapshotDirectory).
+			WithInput(dagql.PerSessionInput).
+			NotReplayable("Reads the live cache volume; a recorded read is a snapshot, not a reproducible value.").
+			Doc("(Internal-only) A point-in-time Directory view of the cache volume's current content, materialized lazily."),
+	}.Install(srv)
+}
+
+// snapshotDirectory returns a point-in-time Directory view of the cache
+// volume's mutable content. The Directory is lazy: nothing reads the volume
+// until something evaluates it, so callers that only carry the view around —
+// like a workspace cache mount nobody has touched yet — never pay for the copy.
+//
+// It is scoped per session and not replayable, the same treatment
+// host.directory gets: within a session the view is stable, and a later session
+// re-reads the volume. (It cannot be DoNotCache — the Directory owns a snapshot
+// ref, and a do-not-cache result may neither be lazy nor implement OnReleaser.)
+// The resulting snapshot's digest is content-derived, so downstream reads of an
+// unchanged cache still dedup.
+func (s *cacheSchema) snapshotDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.CacheVolume],
+	_ struct{},
+) (dagql.ObjectResult[*core.Directory], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	dir, err := parent.Self().SnapshotDirectory(ctx, parent)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 type cacheArgs struct {

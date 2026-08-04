@@ -16014,6 +16014,8 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 }
 
 // Write this workspace's pending changes to its local Git workspace.
+//
+// Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead.
 func (r *Workspace) Export(ctx context.Context) error {
 	if r.export != nil {
 		return nil
@@ -16580,6 +16582,20 @@ func (r *Workspace) WithModule(ref string, opts ...WorkspaceWithModuleOpts) *Wor
 	}
 }
 
+// Return this workspace with a cache volume mounted at the given path, without mutating the source.
+//
+// Like a mounted directory, the cache shadows the source at the mount path and stays out of the pending changeset: it never appears in changes and is never exported to the workspace. Unlike a mounted directory it is writable, and export commits the edits made under it back into the cache volume.
+func (r *Workspace) WithMountedCache(path string, cache *CacheVolume) *Workspace {
+	assertNotNil("cache", cache)
+	q := r.query.Select("withMountedCache")
+	q = q.Arg("path", path)
+	q = q.Arg("cache", cache)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // Return this workspace with a directory mounted read-only at the given path, without mutating the source.
 //
 // Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
@@ -16780,6 +16796,18 @@ func (r *Workspace) WithoutModule(name string, opts ...WorkspaceWithoutModuleOpt
 		}
 	}
 	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with the content mounted at the given path unmounted.
+//
+// Removes whatever is mounted there — a cache volume, directory or file — along with anything mounted inside it. Pending edits to a mounted cache volume are discarded rather than committed.
+func (r *Workspace) WithoutMount(path string) *Workspace {
+	q := r.query.Select("withoutMount")
+	q = q.Arg("path", path)
 
 	return &Workspace{
 		query: q,

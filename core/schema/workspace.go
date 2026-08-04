@@ -188,6 +188,22 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Location of the mounted file. Relative paths resolve from the workspace cwd."),
 				dagql.Arg("source").Doc("File to mount."),
 			),
+		dagql.NodeFunc("withMountedCache", s.withMountedCache).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a cache volume mounted at the given path, without mutating the source.",
+				"Like a mounted directory, the cache shadows the source at the mount path and stays out of the pending changeset: it never appears in changes and is never exported to the workspace. Unlike a mounted directory it is writable, and export commits the edits made under it back into the cache volume.").
+			Args(
+				dagql.Arg("path").Doc("Location of the mounted cache. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("cache").Doc("Cache volume to mount."),
+			),
+		dagql.NodeFunc("withoutMount", s.withoutMount).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with the content mounted at the given path unmounted.",
+				"Removes whatever is mounted there — a cache volume, directory or file — along with anything mounted inside it. Pending edits to a mounted cache volume are discarded rather than committed.").
+			Args(
+				dagql.Arg("path").Doc("Location of the mount to remove. Relative paths resolve from the workspace cwd."),
+			),
+
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a module installed in its config.").
@@ -294,7 +310,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("export", s.export).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Writes pending workspace changes to the local Git workspace").
-			Doc("Write this workspace's pending changes to its local Git workspace."),
+			Doc("Write this workspace's pending changes to its local Git workspace.",
+				"Edits made under a mounted cache volume are not pending changes; they are committed into that volume instead."),
 		dagql.NodeFunc("reloaded", s.reloaded).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
@@ -593,15 +610,16 @@ type workspaceDirectoryArgs struct {
 
 // resolveReadRootfs resolves a workspace read (Workspace.directory/file) with
 // mounted content visible:
-//   - Paths at or under a mount point resolve entirely against the read-only
-//     mounts tree — mounted content shadows the source.
+//   - Paths at or under a mount point resolve entirely against the mounts tree
+//     — mounted content shadows the source.
 //   - Paths with mount points beneath them get the mounted content overlaid on
 //     the source read, so listings include it. As with container mounts, the
 //     mount point's parents don't need to exist in the source.
 //
 // Everything that materializes the workspace *source* (module loading,
 // lockfiles, migration, git) resolves through resolveRootfs directly and never
-// sees mounts, mirroring how changes and export exclude them.
+// sees mounts, mirroring how changes excludes them and export writes them to
+// their own destination (a cache volume) rather than to the workspace.
 func (s *workspaceSchema) resolveReadRootfs(
 	ctx context.Context,
 	ws *core.Workspace,
@@ -1091,18 +1109,18 @@ func (s *workspaceSchema) withNewFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withNewFile",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(resolvedPath)},
+				{Name: "path", Value: dagql.NewString(targetPath)},
 				{Name: "contents", Value: dagql.NewString(args.Contents)},
 				{Name: "permissions", Value: dagql.NewInt(args.Permissions)},
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 type workspaceSearchArgs struct {
@@ -1489,17 +1507,17 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(resolvedPath)},
+				{Name: "path", Value: dagql.NewString(targetPath)},
 				{Name: "source", Value: dagql.NewID[*core.Directory](sourceID)},
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 type workspaceWithoutFileArgs struct {
@@ -1523,16 +1541,16 @@ func (s *workspaceSchema) withoutFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withoutFile",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(resolvedPath)},
+				{Name: "path", Value: dagql.NewString(targetPath)},
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 type workspaceWithoutDirectoryArgs struct {
@@ -1556,16 +1574,16 @@ func (s *workspaceSchema) withoutDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+	return s.workspaceEdit(ctx, parent, resolvedPath, func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
 			Field: "withoutDirectory",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(resolvedPath)},
+				{Name: "path", Value: dagql.NewString(targetPath)},
 			},
 		})
 		return updated, err
-	}, nil)
+	})
 }
 
 func (s *workspaceSchema) withChanges(
@@ -1629,6 +1647,13 @@ func (s *workspaceSchema) applyChangeset(
 	for _, p := range touched {
 		if err := guardMountedPath(parent.Self(), p); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		// v1: a changeset that reaches into a cache mount is rejected. Its edits
+		// would have to be split by mount and routed into the mounts tree to
+		// reach the volume; applied to the overlay they would silently sit under
+		// the mount, invisible to reads and never committed (a follow-up).
+		if mount, ok := parent.Self().CacheMountForPath(p); ok {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("withChanges path %q falls under cache mount %q; applying a changeset across a cache mount boundary is not supported", p, mount.Target)
 		}
 	}
 	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
@@ -1704,12 +1729,9 @@ func withMountedSource[T dagql.Typed](
 	source dagql.ID[T],
 	field string,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	resolvedPath, err := resolveWorkspacePath(path, parent.Self().Cwd)
+	resolvedPath, err := resolveMountPath(path, parent.Self().Cwd)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	if resolvedPath == "." {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("cannot mount over the workspace root")
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1719,11 +1741,9 @@ func withMountedSource[T dagql.Typed](
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	mounts, ok := parent.Self().MountsDir()
-	if !ok {
-		if err := srv.Select(ctx, srv.Root(), &mounts, dagql.Selector{Field: "directory"}); err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
+	mounts, err := workspaceMountsTree(ctx, srv, parent.Self())
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	var updated dagql.ObjectResult[*core.Directory]
 	if err := srv.Select(ctx, mounts, &updated, dagql.Selector{
@@ -1739,14 +1759,205 @@ func withMountedSource[T dagql.Typed](
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
+// resolveMountPath resolves a mount path argument to a workspace-root-relative
+// path, rejecting the workspace root: mounting over it would shadow the whole
+// source, which no mount kind supports.
+func resolveMountPath(p, cwd string) (string, error) {
+	resolvedPath, err := resolveWorkspacePath(p, cwd)
+	if err != nil {
+		return "", err
+	}
+	if resolvedPath == "." || resolvedPath == "" {
+		return "", fmt.Errorf("cannot mount over the workspace root")
+	}
+	return resolvedPath, nil
+}
+
+// workspaceMountsTree returns the workspace's mounts tree, or a fresh empty
+// directory when nothing is mounted yet. Every mount kind shares this one tree,
+// keyed by workspace-root-relative path, so reads, search, glob and findUp pick
+// mounted content up without knowing what was mounted.
+func workspaceMountsTree(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws *core.Workspace,
+) (dagql.ObjectResult[*core.Directory], error) {
+	if mounts, ok := ws.MountsDir(); ok {
+		return mounts, nil
+	}
+	var empty dagql.ObjectResult[*core.Directory]
+	err := srv.Select(ctx, srv.Root(), &empty, dagql.Selector{Field: "directory"})
+	return empty, err
+}
+
 // guardMountedPath rejects overlay edits that target a path at or under a
-// mount point, keeping mounted content read-only. It is a no-op when the
-// workspace has no mounts.
+// read-only mount point. Cache mounts are writable, so edits under them are
+// allowed and routed into the mounts tree instead (see workspaceEdit). It is a
+// no-op when the workspace has no mounts.
 func guardMountedPath(ws *core.Workspace, resolvedPath string) error {
+	if _, writable := ws.CacheMountForPath(resolvedPath); writable {
+		return nil
+	}
 	if ws.MountedPath(resolvedPath) {
 		return fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", resolvedPath)
 	}
 	return nil
+}
+
+type workspaceWithMountedCacheArgs struct {
+	Path  string
+	Cache core.CacheVolumeID
+}
+
+// withMountedCache mounts a cache volume like withMountedDirectory mounts a
+// Directory: the volume's content goes into the mounts tree at the resolved
+// workspace path, so reads, search, glob and findUp see it shadowing the source
+// and it stays out of Workspace.changes. What differs is that the mount is
+// writable — edits under it update the mounts tree (see workspaceEdit) and
+// export commits them back into the volume, diffed against the baseline taken
+// here.
+//
+// Mounting itself copies nothing: the baseline Directory is lazy, so the volume
+// is read only once something actually reaches into the mount.
+func (s *workspaceSchema) withMountedCache(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithMountedCacheArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	resolvedPath, err := resolveMountPath(args.Path, ws.Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	cache, err := args.Cache.Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if cache.Self() == nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("cache volume is nil")
+	}
+
+	// A lazy immutable view of the volume's mutable content — no copy happens
+	// until it is evaluated. The read is session-scoped and not replayable, like
+	// host.directory; depending on it taints this call the same way, so the
+	// field itself needs no marker.
+	var baseline dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, cache, &baseline, dagql.Selector{
+		Field: "__snapshotDirectory",
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("snapshot cache volume: %w", err)
+	}
+	baselineID, err := baseline.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	mounts, err := workspaceMountsTree(ctx, srv, ws)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	var updated dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, mounts, &updated, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(resolvedPath)},
+			{Name: "source", Value: dagql.NewID[*core.Directory](baselineID)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	newWS := ws.WithCacheMounted(updated, core.WorkspaceCacheMount{
+		Target:   resolvedPath,
+		Volume:   cache,
+		Baseline: baseline,
+	})
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, newWS)
+}
+
+type workspaceWithoutMountArgs struct {
+	Path string
+}
+
+// withoutMount drops whatever is mounted at the given path — a cache volume, a
+// directory or a file — along with anything mounted inside it, and removes its
+// content from the mounts tree so the workspace source shows through again.
+// Pending cache mount edits are discarded with the mount: only export commits
+// them.
+func (s *workspaceSchema) withoutMount(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithoutMountArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	ws := parent.Self()
+	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	mounts, ok := ws.MountsDir()
+	if !ok {
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.Clone())
+	}
+	// withoutDirectory removes the path whatever its type, so one call covers
+	// mounted files too.
+	var updated dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, mounts, &updated, dagql.Selector{
+		Field: "withoutDirectory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws.WithoutMountedAt(updated, resolvedPath))
+}
+
+// mountEdit applies an edit under a cache mount. Mounted content is keyed by
+// workspace-root-relative path, so the edit lands in the mounts tree at exactly
+// the path a base edit would have used — only the tree it writes to differs.
+// Nothing touches the overlay, so cache mount edits never show up in
+// Workspace.changes; export is what carries them into the volume.
+func (s *workspaceSchema) mountEdit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	resolvedPath string,
+	edit func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error),
+) (dagql.ObjectResult[*core.Workspace], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	mounts, ok := parent.Self().MountsDir()
+	if !ok {
+		// Unreachable: a path is only writable-mounted if something is mounted.
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("workspace path %q is under a cache mount but the workspace has no mounts", resolvedPath)
+	}
+	updated, err := edit(mounts, resolvedPath)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().WithMountsDir(updated))
+}
+
+// workspaceEdit dispatches a single-path edit to either a cache mount (when the
+// path lands under one) or the base overlay.
+func (s *workspaceSchema) workspaceEdit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	resolvedPath string,
+	edit func(base dagql.ObjectResult[*core.Directory], targetPath string) (dagql.ObjectResult[*core.Directory], error),
+) (dagql.ObjectResult[*core.Workspace], error) {
+	if _, ok := parent.Self().CacheMountForPath(resolvedPath); ok {
+		return s.mountEdit(ctx, parent, resolvedPath, edit)
+	}
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		return edit(base, resolvedPath)
+	}, nil)
 }
 
 func (s *workspaceSchema) changes(
@@ -1775,44 +1986,100 @@ func (s *workspaceSchema) export(
 	_ struct{},
 ) (core.Void, error) {
 	ws := parent.Self()
-	hostPath, err := ws.ExportHostPath()
-	if err != nil {
-		return core.Void{}, err
+
+	// Base export: write the primary overlay changeset to the local Git
+	// workspace. Only a non-empty base changeset requires a valid host path;
+	// cache mount write-through (below) runs regardless of the base source.
+	if changes, ok := ws.OverlayChanges(); ok && changes.Self() != nil {
+		isEmpty, err := changes.Self().IsEmpty(ctx)
+		if err != nil {
+			return core.Void{}, err
+		}
+		if !isEmpty {
+			hostPath, err := ws.ExportHostPath()
+			if err != nil {
+				return core.Void{}, err
+			}
+			exportCtx, err := s.withWorkspaceClientContext(ctx, ws)
+			if err != nil {
+				return core.Void{}, err
+			}
+			if err := changes.Self().Export(exportCtx, hostPath); err != nil {
+				return core.Void{}, err
+			}
+			if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
+				slog.Warn("could not invalidate workspace after export", "error", err)
+			}
+			// The export just changed the workspace's on-disk content, so host
+			// reads (Workspace.file / .directory) cached earlier in this
+			// session are stale — they are cached per client for the client's
+			// whole lifetime (dagql.PerClientInput). Bump the client's read
+			// epoch so subsequent reads land in a fresh per-client cache
+			// namespace and re-read the live host. Best-effort, like the
+			// invalidation above: a bookkeeping failure must not fail an
+			// export that already succeeded.
+			if err := core.BumpWorkspaceReadEpoch(exportCtx); err != nil {
+				slog.Warn("could not bump workspace read epoch after export", "error", err)
+			}
+		}
 	}
 
-	changes, ok := ws.OverlayChanges()
-	if !ok || changes.Self() == nil {
-		return core.Void{}, nil
-	}
-	isEmpty, err := changes.Self().IsEmpty(ctx)
-	if err != nil {
-		return core.Void{}, err
-	}
-	if isEmpty {
-		return core.Void{}, nil
+	// Cache mount write-through: commit each mount's edits into its volume so
+	// containers and modules mounting the same volume observe them. Mounted
+	// content lives in the mounts tree, deliberately outside the overlay
+	// changeset, so this is the only path that persists it — and it runs
+	// regardless of the base source, since a value or remote workspace can still
+	// carry a writable cache mount.
+	if mounts, ok := ws.MountsDir(); ok {
+		for _, mount := range ws.CacheMounts() {
+			if mount.Volume.Self() == nil || mount.Baseline.Self() == nil {
+				continue
+			}
+			changes, err := s.cacheMountChanges(ctx, mounts, mount)
+			if err != nil {
+				return core.Void{}, fmt.Errorf("diff cache mount %q: %w", mount.Target, err)
+			}
+			if err := mount.Volume.Self().CommitChanges(ctx, changes.Self()); err != nil {
+				return core.Void{}, fmt.Errorf("commit cache mount %q: %w", mount.Target, err)
+			}
+		}
 	}
 
-	exportCtx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return core.Void{}, err
-	}
-	if err := changes.Self().Export(exportCtx, hostPath); err != nil {
-		return core.Void{}, err
-	}
-	if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
-		slog.Warn("could not invalidate workspace after export", "error", err)
-	}
-	// The export just changed the workspace's on-disk content, so host reads
-	// (Workspace.file / .directory) cached earlier in this session are stale —
-	// they are cached per client for the client's whole lifetime
-	// (dagql.PerClientInput). Bump the client's read epoch so subsequent reads
-	// land in a fresh per-client cache namespace and re-read the live host.
-	// Best-effort, like the invalidation above: a bookkeeping failure must not
-	// fail an export that already succeeded.
-	if err := core.BumpWorkspaceReadEpoch(exportCtx); err != nil {
-		slog.Warn("could not bump workspace read epoch after export", "error", err)
-	}
 	return core.Void{}, nil
+}
+
+// cacheMountChanges diffs a cache mount's current content in the mounts tree
+// against the baseline captured when it was mounted. Diffing against the
+// baseline rather than the volume's present content keeps write-through to the
+// edits made through this workspace, leaving anything another writer added to
+// the volume meanwhile in place.
+func (s *workspaceSchema) cacheMountChanges(
+	ctx context.Context,
+	mounts dagql.ObjectResult[*core.Directory],
+	mount core.WorkspaceCacheMount,
+) (inst dagql.ObjectResult[*core.Changeset], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var current dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, mounts, &current, dagql.Selector{
+		Field: "directory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(mount.Target)}},
+	}); err != nil {
+		return inst, err
+	}
+	baselineID, err := mount.Baseline.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, current, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](baselineID)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
 }
 
 // reloaded returns the workspace unchanged, having invalidated the workspace
