@@ -1,0 +1,397 @@
+# contributor: let a Dagger coding agent contribute to a DIFFERENT repository.
+#
+# `modules/delegate` spawns a sub-agent in YOUR workspace. This module spawns
+# one in SOMEBODY ELSE'S: it fetches a foreign git repo as a Workspace
+# (GitRef.asWorkspace), binds that workspace to a fresh `llm`, composes the
+# `editor` tools onto it (their `Workspace!` args are auto-filled from the
+# bound workspace, so Read/Write/Edit/Grep/... all operate on the foreign
+# checkout), lets it work the task to completion, and then turns the resulting
+# delta into a pull request against that repo.
+#
+# The motivating case: while working on dagger you notice a bug in an upstream
+# dependency (say github.com/dagger/otel-go). Instead of context-switching,
+# hand the fix off — the sub-agent clones, fixes, and opens the PR, and all
+# that comes back to you is the PR URL and a short report.
+#
+# Only the publish step needs credentials: `githubToken` is wired through
+# dagger.toml settings (see the module's `new`), and reaches the container as
+# a secret env var (GH_TOKEN) consumed by a git credential helper — never
+# baked into an image layer, never echoed.
+
+# Tail-truncate command output to keep tool results context-friendly (same
+# helper shape as modules/tui-qa and modules/engine-lab).
+let tailLines = 200
+# Patches read top-down, so they get head-truncated instead.
+let patchLines = 400
+
+# Last `lines` lines of s, with a truncation marker when shortened.
+let tail(s: String!, lines: Int! = tailLines): String! {
+  let all = s.split("\n")
+  if (all.length <= lines) {
+    s
+  } else {
+    let marker = "… (" + toString(all.length - lines) + " earlier lines truncated) …"
+    marker + "\n" + all.takeLast(lines).join("\n")
+  }
+}
+
+# First `lines` lines of s, with a truncation marker when shortened.
+let head(s: String!, lines: Int! = patchLines): String! {
+  let all = s.split("\n")
+  if (all.length <= lines) {
+    s
+  } else {
+    let marker = "… (" + toString(all.length - lines) + " later lines truncated) …"
+    all.takeFirst(lines).join("\n") + "\n" + marker
+  }
+}
+
+"""
+Dispatch a sub-agent into another git repository and submit its work as a
+pull request.
+"""
+type Contributor {
+  # Private so the secret is never exposed as a field/tool argument.
+  let token: Secret = null
+
+  new(
+    """
+    A GitHub token with permission to push branches and open pull requests on
+    the repositories you want to contribute to.
+
+    Wire it up in dagger.toml settings rather than passing it around:
+
+        [env.dev.modules.contributor.settings]
+        githubToken = "env://GITHUB_TOKEN"
+
+    Without it, only `dryRun: true` contributions work.
+    """
+    githubToken: Secret = null,
+  ) {
+    self.token = githubToken
+    self
+  }
+
+  """
+  Compose the contributor tool onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Make a change in ANOTHER git repository and submit it as a pull request.
+
+  Fetches `repo`, spawns a fresh sub-agent with full editing tools bound to
+  that checkout, has it complete `task`, then commits the resulting diff onto
+  `branch`, pushes it, and opens a PR. Returns the PR URL plus the sub-agent's
+  final report.
+
+  The sub-agent starts with NONE of your context and only its final report
+  comes back, so phrase `task` self-contained: what to change, where to look,
+  and what "done" means.
+
+  Use `dryRun: true` first when you want to inspect the patch before anything
+  is pushed.
+  """
+  contribute(
+    """
+    Git URL of the repository to contribute to, e.g.
+    "https://github.com/dagger/otel-go".
+    """
+    repo: String!,
+    """
+    The work for the sub-agent to do in that repository. Must be
+    self-contained: the sub-agent has none of your conversation context.
+    """
+    task: String!,
+    """
+    Name of the feature branch to create and push, e.g. "fix-span-leak".
+    """
+    branch: String!,
+    """
+    Branch to base the work on. Empty means the repository's default branch.
+    """
+    baseBranch: String! = "",
+    """
+    Pull request title. Also used as the commit subject.
+    """
+    title: String!,
+    """
+    Pull request body. The sub-agent's final report is appended under an
+    "## Agent report" section either way.
+    """
+    body: String! = "",
+    """
+    Do everything except pushing and opening the PR: return the sub-agent's
+    report plus a summary and the patch it would have submitted.
+    """
+    dryRun: Boolean! = false,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): contributing is a side effect (a real branch, a real PR),
+    # not something to replay from the session cache.
+
+    # Fail fast, before burning a whole sub-agent conversation on work we
+    # couldn't possibly publish. (`publish` re-checks, which is what actually
+    # narrows the secret to non-null.)
+    if (!dryRun and token == null) {
+      raise noTokenError
+    }
+
+    let repository = git(repo)
+    let base = if (baseBranch == "") {
+      repository.head
+    } else {
+      repository.branch(baseBranch)
+    }
+    let source = base.asWorkspace
+
+    # A fresh conversation bound to the FOREIGN workspace: the editor tools'
+    # `Workspace!` args are auto-filled from it, so every read and edit lands
+    # in that repo's checkout rather than ours.
+    let worker = editor
+      .agent(base: llm.withWorkspace(source))
+      .withSystemPrompt(subAgentPrompt)
+      .withPrompt(task)
+      .loop
+
+    let report = worker.lastReply
+
+    # Only the sub-agent's own delta against the checkout it was handed.
+    let changes = worker
+      .workspace
+      .directory("/")
+      .changes(from: source.directory("/"))
+
+    if (changes.isEmpty) {
+      return [
+        "## Agent report",
+        "",
+        report,
+        "",
+        `No changes were made to ${repo}, so no pull request was opened.`,
+      ].join("\n")
+    }
+
+    let summary = renderStats(changes)
+    let patchFile = changes.asPatch
+
+    if (dryRun) {
+      let baseLabel = if (baseBranch == "") {
+        "(repository default)"
+      } else {
+        baseBranch
+      }
+      return [
+        "## Agent report",
+        "",
+        report,
+        "",
+        `## Would contribute to ${repo} (dry run — nothing pushed)`,
+        "",
+        `branch: ${branch}`,
+        `base: ${baseLabel}`,
+        `title: ${title}`,
+        "",
+        summary,
+        "",
+        "## Patch",
+        "",
+        head(patchFile.contents),
+      ].join("\n")
+    }
+
+    let prBody = if (body == "") {
+      ["## Agent report", "", report].join("\n")
+    } else {
+      [body, "", "## Agent report", "", report].join("\n")
+    }
+
+    let url = publish(
+      repo: repo,
+      branch: branch,
+      baseBranch: baseBranch,
+      title: title,
+      prBody: prBody,
+      patch: patchFile,
+      token: token,
+    )
+
+    [
+      `Opened pull request: ${url}`,
+      "",
+      summary,
+      "",
+      "## Agent report",
+      "",
+      report,
+    ].join("\n")
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  # Clone the repo authenticated, branch off, apply the patch, commit, push,
+  # and open the PR. Returns the `gh pr create` output (the PR URL).
+  #
+  # Everything variable is passed as an env var and quoted in the script, so
+  # no caller-supplied string is ever spliced into shell source. The token is
+  # a secret env var read only by a git credential helper.
+  let publish(
+    repo: String!,
+    branch: String!,
+    baseBranch: String!,
+    title: String!,
+    prBody: String!,
+    patch: File!,
+    token: Secret,
+  ): String! {
+    if (token == null) {
+      raise noTokenError
+    }
+
+    let commitMessage = title + "\n\n" + prBody
+
+    # Everything up to `gh pr create` writes to stderr, so stdout carries only
+    # the PR URL. `gh` infers the target repo from the clone's origin remote.
+    let script = """
+      set -eu
+      # Secret commands (e.g. `gh auth token`) commonly emit a trailing
+      # newline; git's credential helper tolerates it but HTTP headers do not
+      # (gh: 'invalid header field value for "Authorization"').
+      GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+      export GH_TOKEN
+      {
+        git config --global credential.helper '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+        git config --global user.name "Dagger Contributor Agent"
+        git config --global user.email "noreply@dagger.io"
+        if [ -n "$BASE_BRANCH" ]; then
+          git clone --depth 1 --branch "$BASE_BRANCH" "$REPO_URL" /work
+        else
+          git clone --depth 1 "$REPO_URL" /work
+        fi
+        cd /work
+        git checkout -b "$BRANCH"
+        git apply --verbose /tmp/contribution.patch
+        git add -A
+        git commit -F /tmp/commit.msg
+        # Force: retries of the same contribution re-push the same branch.
+        git push -fu origin "$BRANCH"
+      } >&2
+      cd /work
+      if [ -n "$BASE_BRANCH" ]; then
+        gh pr create --title "$PR_TITLE" --body-file /tmp/pr.md --base "$BASE_BRANCH" --head "$BRANCH"
+      else
+        gh pr create --title "$PR_TITLE" --body-file /tmp/pr.md --head "$BRANCH"
+      fi
+    """
+
+    let ctr = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "git", "github-cli"])
+      .withFile("/tmp/contribution.patch", patch)
+      .withNewFile("/tmp/commit.msg", commitMessage)
+      .withNewFile("/tmp/pr.md", prBody)
+      .withEnvVariable("REPO_URL", repo)
+      .withEnvVariable("BRANCH", branch)
+      .withEnvVariable("BASE_BRANCH", baseBranch)
+      .withEnvVariable("PR_TITLE", title)
+      # push + PR creation must actually happen every time, not be served from
+      # the exec cache
+      .withEnvVariable("CONTRIBUTOR_NONCE", Random.string)
+      .withSecretVariable("GH_TOKEN", token)
+
+    let ran = ctr
+      .withExec(["sh", "-c", script], expect: ReturnType.ANY).{{exitCode, stdout, combinedOutput}}
+
+    if (ran.exitCode != 0) {
+      raise `publishing the contribution failed (exit ${toString(ran.exitCode)}):` + "\n\n" + tail(ran.combinedOutput)
+    }
+
+    ran.stdout.trimSpace
+  }
+
+  let renderStats(changes: Changeset!): String! {
+    let stats = changes.diffStats.{{path, kind, addedLines, removedLines}}
+    let added = 0
+    let removed = 0
+    let lines = stats.map { s =>
+      added += s.addedLines
+      removed += s.removedLines
+      `${renderKind(s.kind)} ${s.path} (+${toString(s.addedLines)}/-${toString(s.removedLines)})`
+    }
+    let header = `## Changes (${toString(stats.length)} files, +${toString(added)}/-${toString(removed)})`
+    ([header, ""] + lines).join("\n")
+  }
+
+  let renderKind(kind: DiffStatKind!): String! {
+    case (kind) {
+      DiffStatKind.ADDED => "A"
+      DiffStatKind.MODIFIED => "M"
+      DiffStatKind.REMOVED => "D"
+      DiffStatKind.RENAMED => "R"
+      else => "?"
+    }
+  }
+
+  let noTokenError: String! = """
+    No GitHub token is configured, so the pull request cannot be created.
+    Wire one up in dagger.toml:
+
+        [env.dev.modules.contributor.settings]
+        githubToken = "env://GITHUB_TOKEN"
+
+    or re-run this tool with dryRun: true to review the patch instead.
+  """
+
+  # Instructions for the PARENT agent holding this tool.
+  let systemPrompt: String! = """
+    The `contribute` tool sends a fresh sub-agent into ANOTHER git repository
+    to do a task there, and submits the result as a pull request to that
+    repository.
+
+    Use it when the fix belongs somewhere else — e.g. an upstream bug in a
+    dependency like github.com/dagger/otel-go — instead of working around it
+    locally or context-switching to a separate checkout. Your own workspace is
+    untouched; the change lands as a PR on the target repo, and all that comes
+    back to you is the PR URL and the sub-agent's short report.
+
+    The sub-agent starts with NONE of your context — it can only see the
+    repository it is dropped into, and only its final report returns to you.
+    So phrase `task` self-contained: what's wrong, how you know, what the fix
+    should look like, and how to tell it worked. Give a real PR `title` and,
+    when the reasoning matters to a reviewer, a `body`.
+
+    Pass `dryRun: true` to run the whole loop but stop before pushing: you get
+    the patch and a diff summary to review. Do that first when you're unsure
+    the task is well-specified, or when you don't intend to open a PR yet.
+  """
+
+  # Instructions for the SUB-agent working inside the foreign repository.
+  let subAgentPrompt: String! = """
+    You are a sub-agent handling one self-contained task inside a repository
+    that is NOT the one your caller works in. Work autonomously to completion
+    using the available tools — do not ask follow-up questions.
+
+    Your change is destined for an upstream PULL REQUEST against this
+    repository, so:
+    - Follow the conventions of the repository you are in — read neighbouring
+      code, tests, and any contributing docs before writing anything. Your
+      caller's house style is irrelevant here.
+    - Keep the change minimal and reviewable: fix the thing you were asked to
+      fix, and nothing else. No drive-by refactors, no reformatting, no new
+      documentation files unless the task calls for them.
+    - Update or add tests when the repository has them and the change warrants
+      it.
+
+    Make your edits directly in your workspace: the changes you make to the
+    filesystem are collected automatically and turned into the pull request,
+    so do NOT commit, push, or otherwise try to deliver them yourself.
+
+    When done, reply with a single concise report: what you changed and why,
+    anything you deliberately left alone, and any errors or surprises. Your
+    reply is the only thing that returns to the caller, and it is published as
+    part of the pull request description — write it for a reviewer.
+  """
+}
