@@ -853,6 +853,11 @@ func toolCallReportOpts() traceReportOpts {
 		// the ReadTrace builtin for the failed checks instead of `dagger
 		// check "<name>"` commands it cannot run.
 		SuggestReadTrace: true,
+		// A tool result is about the RESULT, not about the machinery: keep
+		// what the call surfaced (CHECKS, TESTS, SERVICES, conversation) and
+		// the tool's own OUTPUT, and drop the span tree. An agent that wants
+		// the tree asks for it with ReadTrace, which keeps rendering it.
+		HideSpanTree: true,
 	}
 }
 
