@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pruning retained DAGQL cache metadata</title>
+  <title>Pruning zero-disk DAGQL cache populations</title>
   <style>
     :root {
       color-scheme: light dark;
-      --background: #fbfaf7;
+      --bg: #fbfaf7;
       --text: #20201d;
-      --muted: #64645e;
+      --muted: #66645e;
       --border: #d7d3c8;
       --panel: #f0eee7;
       --accent: #6a3dc1;
@@ -17,7 +17,7 @@
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --background: #181816;
+        --bg: #181816;
         --text: #e9e7e1;
         --muted: #aaa79f;
         --border: #44423d;
@@ -29,30 +29,30 @@
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: var(--background);
+      background: var(--bg);
       color: var(--text);
       font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     main { max-width: 1020px; margin: 0 auto; padding: 48px 28px 80px; }
     h1, h2, h3 { line-height: 1.2; letter-spacing: -.015em; }
-    h1 { font-size: 2.25rem; margin: 0 0 .45rem; }
-    h2 { font-size: 1.45rem; margin: 2.4rem 0 .7rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border); }
-    h3 { font-size: 1.08rem; margin: 1.55rem 0 .45rem; }
-    p, ul, ol { max-width: 86ch; }
-    li + li { margin-top: .35rem; }
+    h1 { margin: 0 0 .45rem; font-size: 2.25rem; }
+    h2 { margin: 2.4rem 0 .7rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border); font-size: 1.45rem; }
+    h3 { margin: 1.55rem 0 .45rem; font-size: 1.08rem; }
+    p, ul, ol { max-width: 88ch; }
+    li + li { margin-top: .38rem; }
     code {
-      background: var(--code);
-      border-radius: 4px;
       padding: .08rem .3rem;
+      border-radius: 4px;
+      background: var(--code);
       font: .9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
     pre { max-width: 90ch; overflow: auto; padding: 1rem; border-radius: 6px; background: var(--code); }
     pre code { padding: 0; }
     table { width: 100%; border-collapse: collapse; margin: 1rem 0 1.4rem; font-size: .94rem; }
-    th, td { border: 1px solid var(--border); padding: .58rem .65rem; text-align: left; vertical-align: top; }
+    th, td { padding: .58rem .65rem; border: 1px solid var(--border); text-align: left; vertical-align: top; }
     th { background: var(--panel); }
-    .summary { border-left: 5px solid var(--accent); background: var(--panel); padding: .9rem 1.1rem; margin: 1.4rem 0; }
-    .summary p { margin: 0; }
+    .decision { margin: 1.2rem 0; padding: .9rem 1.1rem; border-left: 5px solid var(--accent); background: var(--panel); }
+    .decision p { margin: 0; }
     .lede, .note { color: var(--muted); }
     .lede { margin: 0 0 1.4rem; }
     .note { font-size: .91rem; }
@@ -60,331 +60,223 @@
 </head>
 <body>
 <main>
-  <h1>Pruning retained DAGQL cache metadata</h1>
-  <p class="lede">Design and implementation plan. Verified against <code>upstream/main@1c6e07b197327c57e9db8584deb36e5166278677</code> on 3 August 2026. The brief's <code>b1c2c81eeea9e1b751194b7372b9a394cd5c5a7f</code> is an ancestor. The intervening commits do not change the code discussed here.</p>
+  <h1>Pruning zero-disk DAGQL cache populations</h1>
+  <p class="lede">Focused design and implementation plan. Verified against <code>upstream/main@1c6e07b197327c57e9db8584deb36e5166278677</code> on 4 August 2026. The brief's commit <code>b1c2c81eeea9e1b751194b7372b9a394cd5c5a7f</code> is an ancestor. The intervening commits do not change the code discussed here.</p>
 
-  <h2>1. Observed defect</h2>
+  <h2>1. Defect and current behavior</h2>
 
-  <p>A current-main experiment persisted 11,003 unique <code>Directory.glob</code> calls that returned no matches. They consumed effectively zero physical cache space. Calling <code>/debug/gc</code> did not change the counts because that endpoint invokes Go runtime heap collection and <code>debug.FreeOSMemory</code>; it does not prune the DAGQL cache (<code>cmd/engine/debug.go:53-57</code>). An explicit DAGQL prune-all removed all 11,003 persisted roots, reported only 4 KiB of physical bytes reclaimed, reduced live results from 15,336 to 4,332, and reduced allocated equivalence-class slots from 19,906 to 7,265.</p>
+  <p>DAGQL keeps a persistable result after its session ends by adding a persisted ownership edge. The persisted root also keeps its exact dependency closure alive. Only pruning removes that edge. Normal ownership collection then removes every result whose incoming ownership count reaches zero.</p>
 
-  <p>The result follows directly from the current implementation. <code>Cache.Prune</code> starts work only when a disk policy produces a physical-byte target. A scalar or metadata-only result often contributes zero <code>CacheUsageEntry.SizeBytes</code>. Thousands of such results can therefore keep result objects, call frames, dependency edges, terms, equivalence classes, digests, and indexes alive without ever starting automatic pruning.</p>
+  <p>The automatic prune decision uses physical cache bytes. In <code>dagql/cache_prune.go:58-163</code>, <code>Cache.Prune</code> loops over disk policies. For each policy it snapshots active session roots, calls <code>measureAllResultSizes</code>, builds <code>snapshotPruneState</code>, and calls <code>pruneTargetBytes</code>. If the disk thresholds produce no reclaim target, the function skips active-closure discovery, candidate selection, ownership simulation, persisted-edge cuts, equivalence-class compaction, and snapshot garbage collection.</p>
 
-  <div class="summary">
-    <p><strong>Proposed correction.</strong> Keep a coarse byte estimate for the DAGQL graph. Start a separate pruning pass when that estimate exceeds a finite maximum. First compact stale equivalence classes. If the estimate still exceeds the lower target, remove cold persisted edges through the existing ownership collector until a post-compaction estimate reaches the target or only protected results remain. Do not convert this estimate to physical cache bytes, and do not require disk measurement or a successful disk-stat call.</p>
+  <p><code>snapshotPruneState</code> derives <code>usedBytes</code> from <code>CacheUsageEntry.SizeBytes</code>. The measurement interfaces describe physical snapshots and other disk-backed records. A scalar, a metadata-only object, or a no-op lazy object commonly reports zero bytes. <code>pruneTargetBytes</code> returns zero unless a disk threshold fires, except for explicit <code>All</code> or filter policies with no thresholds (<code>dagql/cache_prune.go:579-617</code>).</p>
+
+  <p>The engine reinforces this dependency on disk. <code>engine/server/gc.go:207-236</code> returns when no worker disk policies exist and returns when <code>disk.GetDiskStat</code> fails. The five-second monitor starts only when worker disk policies exist and tests only free disk space (<code>engine/server/gc.go:238-285</code>). Session completion schedules the same GC path after one second, with a one-minute throttle (<code>engine/server/session.go:565-571</code>). Startup schedules it after one second (<code>engine/server/server.go:427-432</code>). Graceful shutdown also gates pruning on disk policies and a successful disk-stat call (<code>engine/server/server.go:766-780</code>).</p>
+
+  <p>The debug endpoint <code>/debug/gc</code> does not invoke DAGQL pruning. It calls Go runtime heap collection and <code>debug.FreeOSMemory</code> (<code>cmd/engine/debug.go:53-57</code>).</p>
+
+  <h3>Measured evidence</h3>
+
+  <ul>
+    <li>A current-main workload retained 11,003 unique persistable <code>Directory.glob</code> no-match calls with effectively zero physical disk use. Normal GC left the population unchanged because every disk policy saw <code>usedBytes=0</code>. Explicit prune-all removed 11,003 persisted roots while reporting only 4 KiB reclaimed. Live results fell from 15,336 to 4,332. Allocated equivalence-class slots fell from 19,906 to 7,265.</li>
+    <li>Controlled samples attributed about 3.12 KiB of <code>HeapAlloc</code> and 28 objects to a minimal persisted scalar, 4.78 KiB and 43.9 objects to a unique <code>Directory.glob</code>, and 5.48 KiB and 60.9 objects to a richer eight-argument call. These samples establish a population cost. They do not establish an exact per-structure decomposition.</li>
+    <li>A 200,000-result churn run added about 1,047–1,058 MiB, or 5.238–5.292 KiB per live result. Releasing the session without class compaction left about 198.7 MiB, or 994 bytes per peak result. Current class compaction reduced that floor to about 56.6 MiB. Later floors were 72.0–76.4 MiB. The residual map-bucket floor was about 5–7% of peak allocation.</li>
+    <li>Current forced class compaction took about 23 ms around 400,000 class slots in one experiment. A current 200,000-result full prune took about 5.7 seconds. These are calibration observations, not service guarantees.</li>
+    <li>A 400,000-root cut produced about 158 MiB of per-root output. The current apply loop clones call frames, derives digests, formats arguments, emits one INFO record, and appends one report entry for each removed root (<code>dagql/cache_prune.go:90-133</code>).</li>
+    <li>A separate module workload fell from 378 MiB to 58 MiB after forced prune. That result shows that persisted-root cuts can release substantial cache-owned state. It does not calibrate the estimate below because the workload contained other large pools.</li>
+  </ul>
+
+  <div class="decision">
+    <p><strong>Design choice.</strong> Add a separate trigger based on existing DAGQL graph cardinalities. When it fires, reuse the current prune snapshot, candidate order, ownership simulation, and live edge-cut path. Do not add per-result memory ledgers or exact retained-heap attribution.</p>
   </div>
 
-  <h3>Required outcome</h3>
+  <h2>2. Outcome and non-goals</h2>
 
-  <p>A growing set of zero-disk or tiny-disk persisted results must cross a configured threshold by itself. The pass must remove persisted ownership from cold roots, collect newly unowned dependency closures, run normal release hooks, and reduce the measured graph structures. Active sessions and engine-lifetime roots must keep their ownership.</p>
+  <p>A population of zero-disk or tiny-disk persisted results must eventually cross a finite threshold by itself. An automatic pass must then remove cold persisted roots, run the existing cascading collector, release snapshot leases through existing <code>OnRelease</code> hooks, compact stale equivalence classes, and report the new structural estimate. A failed disk-stat call and an empty worker disk-policy list must not prevent this pass.</p>
 
-  <h3>Non-goals</h3>
+  <p>This change does not promise an exact Go heap measurement. It does not guarantee that one pass reaches the lower target. It keeps the current best-effort snapshot/apply drift model. It does not add call-frame string sizing, payload sizing, imported-envelope sizing, runtime-heap triggers, GOMEMLIMIT control, SchemaBuilder eviction, content-hash changes, recipe-expansion fixes, paging, generic snapshot GC changes, or broad cache observability.</p>
 
-  <ul>
-    <li>Do not estimate exact retained heap for each root. Shared dependency closures make exact attribution non-additive.</li>
-    <li>Do not add a process-wide heap trigger, <code>GOMEMLIMIT</code>, Module <code>SchemaBuilder</code> eviction, content-hash redesign, recipe expansion fixes, paging, or a generic snapshot collector.</li>
-    <li>Do not inspect arbitrary object graphs. Direct byte sizing is limited to known call-frame strings, retained persistence envelopes, and payloads that implement a narrow sizing interface.</li>
-    <li>Do not rebuild every cache map in the first implementation. Add only the equivalence-class compaction required to make the proposed estimate fall after churn.</li>
-    <li>Do not redesign the public GraphQL cache API, security model, multi-user policy, or broad cache metrics.</li>
-  </ul>
+  <p>The change may evict a persisted root that owns expensive disk state because it does not measure physical usage in this pass. The current expiry and least-recent-use order limits that risk without introducing a second value model. A future policy can make a different tradeoff if measurements show unacceptable recomputation or disk-cache loss.</p>
 
-  <h2>2. Current code</h2>
+  <h2>3. Structural byte estimate</h2>
 
-  <h3>Disk pruning</h3>
+  <p>Add <code>cacheMetadataEstimateLocked</code>. Its caller holds <code>egraphMu</code> for reading or writing. The function reads three existing cardinalities and performs integer arithmetic:</p>
 
-  <ol>
-    <li><code>dagql/cache_prune.go:58-163</code> loops over disk policies. For each policy it snapshots active session result IDs, calls <code>measureAllResultSizes</code>, builds <code>snapshotPruneState</code>, and calls <code>pruneTargetBytes</code>.</li>
-    <li><code>snapshotPruneState</code> at lines 165-258 sums physical <code>CacheUsageEntry.SizeBytes</code>. Metadata-only and scalar entries commonly sum to zero.</li>
-    <li><code>pruneTargetBytes</code> at lines 579-617 returns no target unless <code>MaxUsedSpace</code>, <code>MinFreeSpace</code>, <code>TargetSpace</code>, or <code>ReservedSpace</code> requires one. An explicit all/filter policy without thresholds is the exception.</li>
-    <li>Only after it gets a positive target does the code compute the active dependency closure, candidates, and a prune plan. TTL expiry changes lookup and candidate order, but it does not start pruning.</li>
-    <li><code>collectPruneCandidates</code> at lines 289-359 considers persisted roots, excludes the active closure and unpruneable results, and orders candidates by expiry and age. <code>buildPrunePlan</code> at lines 361-450 simulates shared incoming ownership and physical usage identities.</li>
-    <li>The loop removes persisted edges at line 97. It invokes equivalence-class compaction and snapshot garbage collection only after at least one persisted edge was removed, at lines 146-160.</li>
-  </ol>
+  <pre><code>R = len(c.resultsByID)
+T = len(c.egraphTerms)
+C = max(0, len(c.egraphParents) - 1)
 
-  <p>A persisted edge is the ownership edge that keeps a result alive after its producing session ends. Removing that edge is only an eviction decision. <code>collectUnownedResultsLocked</code> decides which results actually became unreachable.</p>
-
-  <h3>Ownership, e-graph, and snapshots</h3>
-
-  <ul>
-    <li><code>ReleaseSession</code>, session-root snapshots, persisted and unpruneable edges, and recursive ownership collection are in <code>dagql/cache.go:715-967</code>. The collector releases a dependency only after all incoming owners disappear.</li>
-    <li><code>core/schema/coremod.go:80-110</code> creates unpruneable typedef roots for the engine lifetime.</li>
-    <li><code>dagql/cache.go:980-1107</code> attaches snapshot leases to result ownership. Normal collection invokes <code>OnRelease</code> and removes those leases.</li>
-    <li><code>removeResultFromEgraphLocked</code> at <code>dagql/cache_egraph.go:1673-1744</code> deletes a result from live result, term, and digest indexes. It does not delete old union-find class slots.</li>
-    <li><code>maybeResetEgraphLocked</code> clears all e-graph structures when no terms remain. Otherwise <code>compactEqClassesLocked</code> at lines 1772-1917 rebuilds class, digest, and reverse-term structures only when allocated slots are at least twice the number of live slots.</li>
-  </ul>
-
-  <p>The proposed estimate includes <code>len(egraphParents)-1</code>. That length is the allocated equivalence-class slot high-water mark. It falls only when compaction commits a shorter array. A pass that removes results but never compacts can therefore remain above its target and repeat forever.</p>
-
-  <h3>Server triggers and persistence</h3>
-
-  <ul>
-    <li><code>engine/server/gc.go:23-25,207-285</code> defines a one-minute session-GC throttle, a five-second disk check, and a 30-second disk-GC throttle. <code>gcLocked</code> currently returns on <code>disk.GetDiskStat</code> failure. It can also return when there are no worker disk policies.</li>
-    <li><code>engine/server/session.go:565-570</code> requests throttled GC after a session ends. <code>engine/server/server.go:427-432</code> schedules startup GC after one second. Graceful shutdown invokes GC before cache persistence at lines 732-787.</li>
-    <li><code>engine/config/config.go:92-142</code> contains disk-oriented GC configuration only.</li>
-    <li><code>dagql/cache_persistence_worker.go:27-264</code> snapshots the retained graph. <code>dagql/cache_persistence_import.go</code> reloads results, persisted edges, dependencies, terms, digests, and ownership before serving.</li>
-    <li>The persistence schema is version 17 at <code>dagql/cache.go:90-94</code>. A schema mismatch calls the paths at <code>engine/server/server.go:458-480,597-604</code>, which delete the worker root, including snapshots and content, as well as the DAGQL database.</li>
-    <li><code>PersistedResultEnvelope</code> at <code>dagql/cache_persistence_self.go:25-35</code> retains <code>ObjectJSON</code>, <code>ScalarJSON</code>, and recursive list <code>Items</code>. Eager import has no DAGQL server, so object payloads can remain as raw envelopes until first server-aware use at <code>dagql/cache_persistence_import.go:404-451,552-691</code>.</li>
-  </ul>
-
-  <h3>Current measurement and reporting limits</h3>
-
-  <ul>
-    <li><code>Cache.Size</code> at <code>dagql/cache.go:3213-3231</code> mixes selected index counts. <code>Cache.UsageEntries</code> at lines 3250-3578 measures typed values and snapshot identities. Neither includes every result, term, class, digest, index, payload, or stale map bucket.</li>
-    <li><code>dagql/cache_prune.go:109-131</code> clones a call frame, derives a digest, emits one INFO record, and appends one full usage entry for every selected root. <code>dagql/cache_debug.go:314-360</code> can emit per-candidate traces.</li>
-    <li><code>sharedResult.storeResultCall</code> at <code>dagql/cache.go:1550-1557</code> has no <code>Cache</code> pointer. The registered replacement is at <code>dagql/cache_egraph.go:1107</code>. Detached calls appear at <code>dagql/cache.go:1999,2380,2592,4246,4255</code>. Import stores a frame before inserting the result at <code>dagql/cache_persistence_import.go:175,185</code>. The temporary persistence-encoding result at <code>dagql/cache_persistence_worker.go:421-437</code> is never registered. A frame store alone does not prove that a cache owns the result.</li>
-    <li>Module functions are persistable by default at <code>core/typedef.go:301-322</code> and use a seven-day maximum by default at <code>core/modfunc.go:26</code>. <code>dagql/cache_persistence_self.go:183-203</code> serializes scalar payloads. Large zero-snapshot strings and JSON are supported cache values, not a theoretical case.</li>
-  </ul>
-
-  <h2>3. Measured evidence</h2>
-
-  <p>The following workload measurements came from the two investigations supplied to this council. This draft did not rerun those profiles.</p>
-
-  <ul>
-    <li>A minimal persisted scalar added about 3.12 KiB of <code>HeapAlloc</code> and 28 objects. A unique no-match <code>Directory.glob</code> added about 4.78 KiB and 43.9 objects. An eight-argument call added about 5.48 KiB and 60.9 objects.</li>
-    <li>Creating 200,000 live results over a 2,000-result unpruneable floor added 1,047-1,058 MiB, or 5.238-5.292 KiB per result. Releasing the session without class compaction left 198.7 MiB, or about 994 bytes per peak result. Current class compaction reduced that floor to 56.6 MiB. Later compacted floors were 72.0, 73.6, 76.4 MiB, about 5-7% of peak.</li>
-    <li>Current forced class compaction took about 23 ms over roughly 400,000 slots. Current full pruning of 200,000 roots took about 5.7 seconds. These observations calibrate the scale tests; they are not universal latency guarantees.</li>
-    <li>A 400,000-root cut produced roughly 158 MiB of logs because the current path logs and clones frames per root.</li>
-    <li>A separate module workload fell from 378 MiB to 58 MiB after forced full pruning. The modeled DAGQL metadata in that workload was reportedly about 35 MiB. The extra release came from pools such as module servers, so this does not establish a fixed estimate-to-RSS ratio.</li>
-    <li>A controlled v0.20.3 versus v0.21.7 graceful-restart experiment reproduced about 2.2 times the heap and RSS from the loaded in-memory DAGQL graph. Release-specific dependency and recipe expansion defects exist, but this design does not change them.</li>
-  </ul>
-
-  <p>Focused current-main tests passed: <code>go test ./dagql -run 'TestCachePrune|TestCacheMakeResultUnpruneable|TestCacheUsageEntriesAll' -count=1</code>, <code>go test ./dagql -run 'TestCompactEqClassesSkipsWhenBelowThreshold|TestCachePruneCompactsEqClassesAndPreservesLookup' -count=1</code>, and <code>go test ./engine/server -run 'Test(LocalCacheDiskPressureGCNeeded|GetDagqlGCPolicy|ResolveEngineLocalCachePrunePolicies)' -count=1</code>. The compaction tests confirm both the current two-times guard and compaction after a persisted-edge removal.</p>
-
-  <h2>4. Proposed byte estimate</h2>
-
-  <p>Add <code>Cache.EstimatedMetadataBytes()</code>. It returns estimated bytes for cache-owned DAGQL graph structures. It does not return RSS, <code>HeapAlloc</code>, physical cache bytes, or exact retained heap.</p>
-
-  <pre><code>estimatedBytes =
-    3,072 * len(resultsByID)
-  +   512 * len(egraphTerms)
-  + 1,024 * max(0, len(egraphParents) - 1)
-  + logicalVariableBytes</code></pre>
+estimatedBytes = K_result*R + K_term*T + K_class*C</code></pre>
 
   <table>
-    <thead><tr><th>Term</th><th>Source and unit</th><th>Reason</th></tr></thead>
+    <thead>
+      <tr><th>Term</th><th>Current storage</th><th>What it represents</th></tr>
+    </thead>
     <tbody>
-      <tr><td><code>resultsByID</code></td><td>3,072 estimated bytes per live result</td><td>Covers fixed result state, ownership, digests, and index overhead at coarse resolution.</td></tr>
-      <tr><td><code>egraphTerms</code></td><td>512 estimated bytes per live term</td><td>Charges recipe terms independently of result count.</td></tr>
-      <tr><td><code>egraphParents - 1</code></td><td>1,024 estimated bytes per allocated class slot</td><td>Includes stale class records until actual compaction releases them.</td></tr>
-      <tr><td><code>logicalVariableBytes</code></td><td>Logical string and byte-slice lengths</td><td>Prevents one supported multi-megabyte argument or result from looking like one fixed-size entry.</td></tr>
+      <tr><td><code>R</code></td><td><code>resultsByID</code></td><td>Live <code>sharedResult</code> objects. The fixed weight also stands in for ordinary result-owned call, dependency, payload, digest-index, and map overhead.</td></tr>
+      <tr><td><code>T</code></td><td><code>egraphTerms</code></td><td>Live symbolic operation terms and their ordinary index overhead.</td></tr>
+      <tr><td><code>C</code></td><td><code>egraphParents</code></td><td>The allocated union-find class-slot high-water. This count includes stale slots until compaction replaces the slice.</td></tr>
     </tbody>
   </table>
 
-  <p>The three cardinalities already exist. Reading them is O(1) under <code>egraphMu.RLock</code>. The fixed weights are intentionally coarse. They fit the observed 3.12-5.48 KiB live-result samples and the roughly 994-byte stale-class floor without adding counters for every edge, map membership, or digest.</p>
+  <p>All terms use bytes. The first calibration run starts with <code>K_result=3072</code>, <code>K_term=512</code>, and <code>K_class=1024</code>. Their sum is 4,608 bytes for a common one-result, one-term, one-class shape, which lies within the observed 3.12–5.48 KiB live-entry range. A 1,024-byte class weight also approximates the observed 994-byte stale floor in the churn fixture. These constants are a bundle of coarse weights. The evidence does not prove that one result object itself costs 3,072 bytes or that one term itself costs 512 bytes. The calibration benchmark may replace the constants before merge, but it must keep the formula and record the measured workloads and resulting error.</p>
 
-  <h3>Call-frame bytes</h3>
+  <p>The estimate is intentionally insensitive to map capacity, stale buckets, exact dependency fan-out, digest count, nested call-frame size, payload size, and allocator fragmentation. It can overstate a small scalar entry and understate a rich entry. It will severely understate a rare result that retains a multi-megabyte argument, decoded value, or imported envelope. That limitation is acceptable for v1 because the reproduced defect is population growth, and every added result, term, or class raises the estimate.</p>
 
-  <p>Add a logical byte sizer in <code>dagql/result_call_frame.go</code>. It counts every string-bearing field in a <code>ResultCall</code> graph, including type, module, field, argument, literal, effect, view, and digest strings. <code>ResultCallLiteral</code> keeps both <code>StringValue</code> and <code>DigestedStringValue</code>, so the sizer counts both.</p>
+  <p>Call-frame string accounting would not be free. Current production code has ten <code>storeResultCall</code> call sites and four direct <code>resultCall</code> initializers. Those paths include detached results, registered mutation, import before insertion into <code>resultsByID</code>, removal, and a temporary persistence-worker result. Payload accounting would also need to distinguish lazy imported envelopes from later decoded values and define sizing for each variable-size type. No supplied heap profile attributes the chosen defect to those outliers. V1 therefore adds no publication, replacement, import, decode, or removal hooks and adds no cache-global metadata mutex or owner protocol.</p>
 
-  <p>The walk visits each distinct <code>*ResultCall</code> pointer once within one installed root frame. It does not follow the runtime <code>ResultCallRef.shared</code> pointer. If two root frames point to the same child frame, each root receives the child charge. This conservative cross-root duplication avoids global reference counting. The visited set terminates even on malformed cycles. The walk never serializes a call frame.</p>
+  <p>Revisit variable-size accounting only after a controlled fixture or production heap profile holds <code>R</code>, <code>T</code>, and <code>C</code> roughly constant while cache-owned call strings, payloads, or envelopes grow enough to exceed the operator budget with the structural estimate still below its maximum. That evidence would identify the missing retained representation and justify its update protocol.</p>
 
-  <h3>Payload and imported-envelope bytes</h3>
+  <h2>4. Configuration, trigger, and scheduling</h2>
 
-  <p>Add this optional interface:</p>
+  <p>Add one nested engine JSON block under <code>gc</code>:</p>
 
-  <pre><code>type CacheMetadataSizer interface {
-    CacheMetadataSizeBytes() int64
+  <pre><code>"gc": {
+  "dagqlCache": {
+    "maxEstimatedBytes": 0,
+    "targetEstimatedBytes": 0
+  }
 }</code></pre>
 
-  <p><code>dagql.String</code> returns its length. <code>Scalar[T]</code> delegates when its wrapped value implements the interface. <code>core.JSON</code> returns its byte length. <code>core.JSONValue</code> returns <code>len(Data)</code>. The interface contract is pure, O(1), allocation-free, and limited to retained logical string or byte lengths; it must not call back into the cache. Other values receive only the fixed result charge.</p>
+  <p>The example uses zero only to show the field types. Zero means use the built-in finite default. The fields are absolute integer bytes. Percentages of disk and runtime RSS are not meaningful units for this estimate. The resolved target must be positive and lower than the resolved maximum. <code>gc.enabled=false</code> disables both disk and DAGQL structural pruning. The DAGQL defaults do not depend on worker disk policies.</p>
 
-  <p>An imported result can retain raw bytes instead of a decoded value. A recursive envelope sizer sums <code>len(ObjectJSON)</code> and <code>len(ScalarJSON)</code> for the root envelope and every nested <code>Items</code> envelope. It does not serialize the value. The raw-envelope charge stays in the total until materialization. Materialization replaces that charge with the decoded value's <code>CacheMetadataSizer</code> result. It never charges both representations at once.</p>
+  <p>The shipping default remains unresolved. The available experiments used deliberately small populations or focused stress fixtures. They do not show the steady-state distribution across engines or the cache-hit cost of a fleet-wide cut. Erik expects a substantially higher default than the earlier proposals. Before merge, a canary must collect the structural-estimate distribution after session release and restart, peak additional <code>HeapInuse</code> during pruning, prune frequency, removed-root count, cache-hit and recomputation changes, and physical cache loss caused by those cuts. Erik must then choose the maximum. The target must leave a gap larger than the measured peak prune scratch while still preventing immediate retriggering. This document does not invent either number.</p>
 
-  <h3>Registered-result charging protocol</h3>
-
-  <p>Add <code>metadataMu</code>, <code>metadataOwner *Cache</code>, <code>metadataFrameBytes</code>, and <code>metadataPayloadBytes</code> to <code>sharedResult</code>. Add one <code>atomic.Int64</code> named <code>logicalVariableBytes</code> to <code>Cache</code>. The per-result fields make cache ownership explicit.</p>
+  <h3>Server execution order</h3>
 
   <ol>
-    <li><code>storeResultCall</code> computes the new call-frame size before locking; installed call frames remain immutable. Under <code>metadataMu</code> and then <code>resultCallMu</code>, it swaps the frame and its local byte charge. If <code>metadataOwner</code> is non-nil, it applies the old-to-new delta to that cache's atomic total. Detached results update only their local charge.</li>
-    <li>Replace the remaining production struct literals that set <code>resultCall</code> directly with <code>storeResultCall</code>. This guarantees a local frame charge before first publication.</li>
-    <li>Add <code>publishResultLocked</code>. The caller must hold <code>egraphMu</code>. The helper takes <code>metadataMu</code>, computes the initial payload charge from the retained decoded payload or raw envelope under <code>payloadMu</code>, sets <code>metadataOwner</code>, adds both local charges, and inserts the result into <code>resultsByID</code>. Re-publishing the same result to the same ID is an idempotent validation. A conflicting cache, ID, or result pointer is an error.</li>
-    <li>Use <code>publishResultLocked</code> from normal e-graph indexing and version-17 import. Import stores its frame and retained envelope before publication. The temporary <code>sharedResult</code> used only by <code>cache_persistence_worker.go</code> is never published, so it never changes the cache total.</li>
-    <li>After publication, only a cache-aware payload replacement helper may exchange a retained envelope for a decoded payload. It takes <code>metadataMu</code> and then <code>payloadMu</code>, swaps the state and local charge together, and applies one delta to the owner. Refactor both eager and lazy import decode paths through this helper. Other payload fields that do not retain sized bytes continue to use <code>payloadMu</code> alone.</li>
-    <li>Add <code>unpublishResultMetadataLocked</code>. The caller holds <code>egraphMu</code>. The helper takes <code>metadataMu</code>, verifies the owner, clears it, and subtracts both local charges exactly once before <code>removeResultFromEgraphLocked</code> deletes the map entry.</li>
-    <li>A full e-graph reset or failed partial import calls the same unpublish helper for every mapped result before discarding maps. It then asserts that the atomic total is zero. It must not reset the total while any result still names the cache as owner.</li>
+    <li>The existing five-second monitor reads the structural estimate under <code>egraphMu.RLock</code>. This is an O(1) check. Rename the monitor to describe local-cache pressure rather than disk pressure. Start it whenever the engine cache exists and GC is enabled, even when worker disk policies are empty.</li>
+    <li>If free disk space requires disk pruning or the structural estimate exceeds its maximum, call the existing 30-second-throttled GC entry point.</li>
+    <li>Inside <code>gcLocked</code>, attempt <code>disk.GetDiskStat</code>. If it succeeds, run the unchanged disk policies with refreshed <code>CurrentFreeSpace</code>. If it fails, log the error and skip only disk policies. Do not return.</li>
+    <li>Read the structural estimate again because disk pruning may already have removed results. If it still exceeds the maximum, run the structural pass described below.</li>
+    <li>Use the same order in the one-second startup pass, the throttled session-completion pass, and graceful shutdown. Graceful shutdown runs the structural pass after sessions have been released and before <code>Cache.Close</code> snapshots the graph.</li>
   </ol>
 
-  <p>The combined lock order is <code>egraphMu → sessionMu</code> when a session check is needed, then <code>metadataMu → resultCallMu/payloadMu</code>. Paths without a session check go directly from <code>egraphMu</code> to <code>metadataMu</code>. Detached frame stores start at <code>metadataMu</code>. No result lock may acquire <code>egraphMu</code> or <code>sessionMu</code>. <code>metadataMu</code> decides races: a replacement that wins before unpublication contributes to the total and to the final subtraction; a replacement that wins afterward remains local and uncharged.</p>
+  <h3>Bare no-progress suppression</h3>
 
-  <p><code>EstimatedMetadataBytes</code> reads the three graph lengths under <code>egraphMu.RLock</code>, loads the atomic variable-byte total, and uses saturating arithmetic for the final sum. The variable total itself uses exact checked deltas. A concurrent replacement can make one sample contain a bounded before/after mix, but publication and removal cannot leak a permanent charge. The five-second poll reads it again.</p>
+  <p>A fully protected graph can remain over the maximum. Without a guard, the five-second monitor and 30-second throttle would repeat the same O(N) snapshot and simulation indefinitely. Keep one server-local tuple containing the post-pass values of <code>R</code>, <code>T</code>, and <code>C</code> only when a pass remains over maximum and removes zero persisted roots. The monitor suppresses another automatic pass while the current tuple is exactly equal. Any structural change clears the match. Startup, session-completion, and graceful-shutdown invocations bypass this monitor-only suppression because ownership can change without changing cardinalities. The mechanism has no threshold, timer, user control, or estimated growth ratio.</p>
 
-  <h3>Accuracy and alternatives</h3>
+  <h2>5. Structural pruning pass</h2>
 
-  <p>Known string and byte-backed values are exact in logical bytes. Fixed object and slot costs remain estimates. Unmodeled memory includes map bucket slack, allocator fragmentation, arbitrary payloads without <code>CacheMetadataSizer</code>, Module schema state, and unrelated engine allocations. On metadata-dominated calibration fixtures, the proposed engineering check is a post-GC estimate delta between 0.5 and 2 times the cache-owned <code>HeapAlloc</code> delta. Module-heavy process heap may be 3-10 times the estimate because pruning roots can indirectly release excluded pools.</p>
+  <p>Add a cache-internal entry point such as <code>PruneMetadataEstimate(ctx, maxBytes, targetBytes)</code>. It returns an aggregate <code>CacheMetadataPruneReport</code>. It does not return one entry per root.</p>
+
+  <ol>
+    <li><strong>Confirm the trigger and compact once.</strong> Acquire <code>egraphMu</code> for writing. Recompute the estimate. If it is at or below the maximum, release the lock and return. Otherwise call <code>compactEqClassesLocked(true)</code>, recompute <code>R</code>, <code>T</code>, <code>C</code>, and the estimate, then release the lock. If compaction lowered the estimate to the maximum or below, return without cutting a persisted edge.</li>
+    <li><strong>Take the existing prune snapshot in a structural mode.</strong> Snapshot active session result IDs through the existing <code>sessionMu</code> path. Call a factored <code>snapshotPruneState</code> that still copies result IDs, incoming ownership counts, exact dependencies, persisted-edge state, expiry, creation time, and last-use time under <code>egraphMu.RLock</code>. Do not call <code>measureAllResultSizes</code>. Do not collect physical usage identities, record types, descriptions, call labels, call frames, or snapshot links. Release the graph lock before closure discovery and simulation.</li>
+    <li><strong>Use current eligibility and order.</strong> Run <code>pruneActiveClosure</code>. Run the factored <code>collectPruneCandidates</code> with <code>All=true</code>, no filters, and <code>KeepDuration=0</code>. It excludes pass-start active closure and unpruneable persisted roots. It sorts expired edges first, then least recently used, oldest creation time, and stable result ID. The structural mode gives every candidate the same direct cost, so the current size tie-break does not change this order.</li>
+    <li><strong>Give the current simulation a coarse value.</strong> Let <code>R</code>, <code>T</code>, and <code>C</code> be the post-initial-compaction snapshot counts. For <code>R&gt;0</code>, compute:<pre><code>sharedGraphBytes = K_term*T + K_class*C
+directResultBytes = K_result + ceil(sharedGraphBytes / R)</code></pre>Store <code>directResultBytes</code> on each snapshot result. In <code>pruneSimulationState.applyCandidate</code>, add this value exactly once for every result that the existing incoming-count simulation actually collects. Keep the physical usage-identity logic unchanged for disk mode. Stop the greedy plan when its simulated structural bytes reach <code>estimateAfterInitialCompaction-targetBytes</code> or candidates are exhausted.</li>
+    <li><strong>Cut live persisted edges.</strong> Apply the plan with the current <code>removePersistedEdge</code>. Each call briefly takes <code>egraphMu</code>, removes an edge if it still exists, decrements ownership, and performs cascading collection. It releases <code>egraphMu</code> before running <code>OnRelease</code> callbacks (<code>dagql/cache.go:855-883</code>). Missing edges and changed ownership are accepted drift, as they are in disk pruning.</li>
+    <li><strong>Compact once after the cut loop.</strong> If the planner produced a plan, acquire <code>egraphMu</code> for writing, call <code>compactEqClassesLocked(true)</code> once, recompute the final counts and estimate, and release the lock. Do not rescan or replan in the same pass. A later scheduled pass reconciles attribution error and concurrent changes.</li>
+    <li><strong>Run cleanup and report aggregates.</strong> Trigger snapshot GC when the actual removed-persisted-root count is nonzero, not when report detail exists. Return the three estimates, component counts, simulated structural bytes, planned-root count, actual removed-root count, and compaction slot counts. Report no physical reclaimed bytes for this pass.</li>
+  </ol>
+
+  <p>The direct cost is not retained-memory attribution. Terms and classes can be shared, and one root can retain a large closure. Equal apportionment is the smallest value that lets the existing ownership simulation reward a candidate for every result its cut would actually collect. Protected results keep their share because the simulation never collects them. Post-pass compaction and the next O(1) estimate reveal over- or under-cutting.</p>
+
+  <p>For example, a zero-disk population can have <code>usedBytes=0</code> while <code>R</code>, <code>T</code>, and <code>C</code> make the structural estimate exceed the maximum. Each simulated collected result then contributes a positive <code>directResultBytes</code>. The planner selects cold persisted roots even though none has a physical usage identity. The live collector removes their unowned closures. The final compaction lowers the class-slot term. No disk threshold participates.</p>
+
+  <h2>6. Why forced class compaction is required</h2>
+
+  <p><code>removeResultFromEgraphLocked</code> deletes live result indexes and removes terms whose output class has no results. It does not delete union-find class slots (<code>dagql/cache_egraph.go:1673-1744</code>). <code>maybeResetEgraphLocked</code> clears all graph maps only when no terms remain. <code>compactEqClassesLocked</code> rebuilds the class ID space and related indexes, but its current guard declines work unless allocated slots are at least twice the live roots (<code>dagql/cache_egraph.go:1772-1917</code>).</p>
+
+  <p>Change the signature to <code>compactEqClassesLocked(force bool)</code>. Disk pruning passes <code>false</code> and keeps the current two-times guard. A structural pass passes <code>true</code> and rebuilds whenever <code>oldSlots&gt;newSlots</code>. The initial compaction can resolve pressure caused only by stale slots. The final compaction makes cuts lower the class term before the pass reports its result. This focused change is necessary because the structural estimate deliberately charges allocated class slots, and only compaction replaces that high-water allocation.</p>
+
+  <p>Do not rebuild all top-level maps in v1. The churn experiment proved that current class compaction releases the dominant stale floor. The residual 5–7% bucket floor becomes bounded when the new maximum bounds peak graph cardinality. Add a wider rebuild only if the focused retained-floor benchmark shows that current class compaction cannot keep post-prune memory within the chosen budget.</p>
+
+  <h2>7. Existing ownership and persistence behavior</h2>
 
   <ul>
-    <li>A persisted-root count misses transitive dependencies, terms, stale classes, and large arguments.</li>
-    <li>A live-result count misses term and class growth.</li>
-    <li>Exact retained-heap attribution would require expensive shared-closure and arbitrary-object analysis on a frequent control path.</li>
-    <li>A Go heap trigger cannot distinguish reclaimable cache state from active sessions or unrelated allocations.</li>
+    <li><strong>Active sessions.</strong> The pass-start active closure is excluded. A session acquired after the snapshot can cause its persisted edge to be removed, but its incoming session ownership prevents collection. The result may then disappear when that session ends. This is the current disk-prune drift behavior, not an atomic transaction.</li>
+    <li><strong>Unpruneable roots.</strong> Candidate selection excludes persisted edges whose snapshot has <code>unpruneable=true</code>. Core typedef roots use this path in <code>core/schema/coremod.go:80-110</code>. Exact dependencies of an unpruneable root remain owned even if pruning removes a redundant persisted edge on a dependency.</li>
+    <li><strong>Dependency closures.</strong> The simulation and live collector use <code>sharedResult.deps</code>, not e-graph term provenance. Shared incoming ownership can make a candidate reclaim zero immediately. The greedy planner may still cut that edge because a later cut can make the shared closure collectible.</li>
+    <li><strong>TTL and age.</strong> Expired persisted edges sort first. <code>KeepDuration=0</code> avoids the disk policy's 60-day barrier. Last-use and creation time remain value heuristics, not retention guarantees. TTL still does not proactively delete an edge; a pass must run.</li>
+    <li><strong>Snapshots and leases.</strong> Collection runs existing <code>OnRelease</code> callbacks after the graph lock is released. Snapshot owner leases therefore follow current result ownership. Snapshot metadata GC runs only after at least one persisted root was actually removed.</li>
+    <li><strong>Disk pruning.</strong> Existing policy order, physical measurement, usage-identity deduplication, per-policy post-mutation snapshots, reports, and explicit prune behavior stay unchanged. The implementation must not reuse one snapshot across disk policies.</li>
+    <li><strong>Graceful persistence.</strong> Startup imports the existing graph. Runtime pruning mutates that graph. Graceful <code>Cache.Close</code> writes only what remains. No mutation is streamed to SQLite during runtime.</li>
   </ul>
 
-  <h2>5. Trigger and pass execution</h2>
+  <h2>8. Bounded output and observability</h2>
 
-  <h3>Configuration and trigger times</h3>
+  <p>Automatic structural pruning emits one aggregate start/finish trace and one aggregate INFO record. It emits no per-candidate selected, skipped, edge-removed, ownership, dependency, or result-removed trace events. Pass an internal context marker through the live cut and cascade. Make <code>Cache.traceLazy</code> return immediately for that marker. The aggregate path must not clone a <code>ResultCall</code>, derive a recipe digest, format arguments, or append <code>CacheUsageEntry</code> values.</p>
 
-  <pre><code>type GCMetadataConfig struct {
-    MaxBytes    *DiskSpace `json:"maxBytes,omitempty"`
-    TargetBytes *DiskSpace `json:"targetBytes,omitempty"`
-}
+  <p>The aggregate record includes the trigger, maximum, target, estimates and component counts before compaction, after initial compaction, and after cuts; old and new class slots; candidate, plan, simulated-collection, and removed-root counts; snapshot GC outcome; and duration. A single O(1) gauge for the current structural estimate is justified to select and operate the default. Do not add per-type, per-field, per-root, or runtime-heap metrics.</p>
 
-// in GCConfig
-Metadata *GCMetadataConfig `json:"metadata,omitempty"`</code></pre>
+  <p>Explicit user prune retains today's complete response. Its unbounded prune-all response is a pre-existing limitation and is not changed here.</p>
 
-  <p>Reuse <code>DiskSpace</code> only for absolute-byte parsing. Reject percentages because there is no metadata-capacity denominator. Require <code>0 &lt; targetBytes &lt; maxBytes</code>. Omitted values use a finite production pair. Section 9 leaves the choice between 256/192 MiB and 512/384 MiB to Erik after canary measurements. <code>gc.enabled: false</code> disables both disk and graph GC. An operator can set a very large maximum to make graph pruning effectively dormant without disabling disk GC.</p>
+  <h2>9. Restart and migration</h2>
 
-  <p>Generalize the five-second disk monitor into a GC monitor. Each tick reads the O(1) graph estimate before doing any graph traversal. It starts <code>PruneMetadata</code> only when the estimate is greater than <code>maxBytes</code>. Once started, the pass aims for <code>targetBytes</code>. Concurrent insertions and the poll interval can overshoot the maximum; this is not an allocator limit.</p>
+  <p>The estimate uses state already present in persistence schema 17. Do not change <code>cachePersistenceSchemaVersion</code>. A schema mismatch causes engine startup to remove the entire worker root, including snapshots and content, not only the DAGQL SQLite mirror (<code>engine/server/server.go:458-480, 597-604</code>). This feature does not justify that loss.</p>
 
-  <p>The existing one-second startup GC, session-completion request, and graceful-stop GC perform the same comparison. The existing server GC lock serializes disk and graph passes.</p>
+  <p>Import the existing v17 graph normally. The one-second startup GC then reads its structural counts and trims cold persisted roots if the estimate is over the maximum. A legacy oversized graph is fully loaded before that pass, so the upgrade has a temporary import peak. The large-import benchmark below is a release gate. This is not a persistence-format hard cut, but it is an intentional retention-policy change: the first startup after upgrade may discard cold persisted roots down toward the target, and later use recomputes them.</p>
 
-  <p><code>gcLocked</code> must compute and act on the graph estimate even when <code>disk.GetDiskStat</code> fails. It logs that error and skips or defers only disk policies that need new <code>CurrentFreeSpace</code>. The five-second monitor also checks the graph estimate independently of the disk-stat result. Remove the current no-worker-policy early return when graph GC is enabled.</p>
-
-  <p>If a pass exhausts candidates above target because protected roots retain the graph, save the blocked byte count and the estimate sampled when suppression begins. Let <code>retryGrowth</code> be the larger of 5% of that saved estimate and 16 MiB. Suppress ticker retries until the current estimate is at least the saved estimate plus <code>retryGrowth</code>, or until a session closes. Startup, explicit calls, and session completion bypass suppression.</p>
-
-  <h3>Execution order</h3>
-
-  <ol>
-    <li>Read the estimate. Return with no allocation when it does not exceed <code>maxBytes</code>.</li>
-    <li>When it exceeds <code>maxBytes</code>, take one <code>egraphMu</code> write hold and run a forced equivalence-class liveness check before selecting a root. Release the lock, then remeasure. Stop if the result is at or below <code>targetBytes</code>; otherwise continue toward the target even if compaction moved it below the maximum.</li>
-    <li>Take a new <code>egraphMu</code> hold to snapshot and mark protected closures. While holding it, take <code>sessionMu</code> only long enough to read the active session roots, then release <code>sessionMu</code>. Mark the dependency closure of those roots and every unpruneable root, then release <code>egraphMu</code>. A closure means the root plus every result reachable through dependency edges. Use one generation field on <code>sharedResult</code> and an 8-byte result-ID queue. Drop the queue reference after marking. Peak-memory tests still count its backing array because no forced GC runs between phases.</li>
-    <li>Take a separate <code>egraphMu</code> hold and scan <code>persistedEdgesByResult</code> once. Exclude every result marked in the protected generation. Read the expired flag from the persisted edge. For each remaining result, briefly take <code>payloadMu</code>, copy last-use time, creation time, and whether <code>snapshotOwnerLinks</code> is non-empty, then release <code>payloadMu</code>. This follows <code>egraphMu → payloadMu</code> and does not clone the link slice. Store those fields with the result ID in a 32-byte candidate. Release <code>egraphMu</code> after building the vector.</li>
-    <li>Sort the vector with no cache lock held. Sort in this order: expired before unexpired; older last-use hour bucket first; no snapshot owners before snapshot owners inside one hour bucket; then exact last use, creation time, and result ID. There is no metadata <code>KeepDuration</code>. Snapshot-owning roots remain eligible, but the cheap existing flag delays destruction of large snapshot and recomputation state. This pass does not call <code>measureAllResultSizes</code>.</li>
-    <li>Before each cut, take <code>payloadMu</code>, reread <code>lastUsedAtUnixNano</code>, and release it. Skip a result touched after the pass began. Then call <code>removePersistedEdgeIfMetadataEligible</code>. The helper takes a short <code>egraphMu → sessionMu</code> hold, verifies that the persisted edge still exists, that the result is not directly unpruneable, and that no session directly owns it, and runs locked edge removal and cascading collection. It releases both locks before invoking any collected <code>OnRelease</code> callbacks.</li>
-    <li>Continue after a cut that immediately changes the estimate by zero. Several persisted roots can own one shared closure, so the last ownership cut can release most of the graph.</li>
-    <li>After modeled non-class removals reach 16 MiB, take a separate <code>egraphMu</code> write hold, force compaction, and release the lock before rereading the estimate. Repeat with a new lock hold at geometric thresholds of 32 MiB, 64 MiB, and so on. Compute these deltas from successive O(1) samples with the class term excluded; do not assign a retained closure cost to a root. Perform end compaction under one final separate write hold. Stop when the post-compaction estimate is at or below target, candidates are exhausted, or the context is cancelled.</li>
-    <li>Perform one additional candidate scan only when the final sample proves that concurrent additions or stale candidate state left removable results above target. Otherwise report the remaining protected bytes and activate retry suppression.</li>
-  </ol>
-
-  <p>The one-million-result benchmark applies the 500 ms single-write-hold gate separately to initial compaction, protected-closure marking, candidate-vector construction, every cut, and every later compaction. If closure marking or candidate construction exceeds that gate, implementation must stop before shipping and receive a reviewed bounded or chunked scan design with revalidation rules. This document does not pre-authorize an unspecified chunking change.</p>
-
-  <p>For a small example, suppose 10,000 persisted scalar roots report zero physical bytes but contribute more than 30 MiB through the result, term, class, and variable-byte terms. A 24 MiB maximum and 18 MiB target starts this pass without a disk target. The pass compacts stale class slots, removes the oldest persisted edges, and lets <code>collectUnownedResultsLocked</code> release dependencies. It stops only after the estimate is at most 18 MiB or protected roots prevent further removal. Reported physical bytes can remain zero.</p>
-
-  <h3>Concurrent ownership changes</h3>
-
-  <p>The pass-start closure is a planning snapshot. It is not an atomic promise for the entire pass. A session or unpruneable root added during the pass can cause a dependency's persisted edge to be removed after planning. The direct session and unpruneable checks occur at the cut. Existing incoming ownership prevents a result or dependency already acquired by that session or root from being collected. A post-start touch also causes a skip when the freshness recheck observes it. The design does not claim an atomic revalidation of the full dependency closure.</p>
-
-  <p>The snapshot-owner ordering is a value tradeoff, not a safety rule. If older snapshotless roots cannot reach target, the pass can remove a snapshot-owning root and release substantial disk or recomputation state for a small estimated-byte reduction. The pass accepts that consequence so zero-disk results cannot grow without a bound. It avoids physical measurement by using only the existing owner-link presence bit.</p>
-
-  <h2>6. Required equivalence-class compaction</h2>
-
-  <p>Change <code>compactEqClassesLocked()</code> to <code>compactEqClassesLocked(force bool)</code>. Disk pruning passes <code>false</code> and keeps the current two-times rule. A graph-estimate pass passes <code>true</code>. Forced mode performs the liveness walk and rebuilds whenever <code>oldSlots &gt; liveSlots</code>, even below two-times sparsity.</p>
-
-  <p>Keep <code>maybeResetEgraphLocked</code>'s existing empty-graph reset. Forced compaction applies only when live terms remain.</p>
-
-  <p>This change is required because allocated class slots are part of the estimate and <code>removeResultFromEgraphLocked</code> does not delete them. A separate removed-result counter is unnecessary and unsafe: the current sparsity guard can decline a rebuild, leaving unclear debt. With allocated length as the charge, a declined or no-op compaction changes no counter. A successful compaction lowers <code>len(egraphParents)</code> directly.</p>
-
-  <p>The current compactor holds a live-root hash map, a sorted root slice, a remap map, and replacement indexes together at <code>dagql/cache_egraph.go:1777-1914</code>. Replace the live-root and remap maps with dense mark and remap arrays indexed by class ID. Scan IDs in ascending order instead of sorting roots. Stage replacement indexes so temporary structures do not all peak together. Keep the final remap commit atomic under <code>egraphMu</code>. Do not invoke <code>runtime.GC</code> inside the pass.</p>
-
-  <p>Measure peak <code>HeapInuse</code> and RSS during compaction, not only after a forced GC. The max-to-target difference is not free memory before compaction, especially while loading an old large graph. At one million results, the closure queue backing array, candidate vector, and live compaction scratch must fit the selected gap: 64 MiB for the 256/192 arm or 128 MiB for the 512/384 arm. If they do not, reduce scratch or widen the gap before selecting defaults.</p>
-
-  <p>Do not rebuild unrelated top-level maps initially. The supplied churn run dropped from 198.7 MiB to 56.6 MiB with current class compaction, and later floors remained around 5-7% of peak. Bounding peak live cardinality also bounds that bucket floor. Add wider map rebuilding only as a separately reviewed follow-up if ten churn/compaction cycles exceed the retained-floor acceptance test in section 8.</p>
-
-  <h2>7. Unchanged disk path, persistence, and reporting</h2>
-
-  <h3>Disk policies</h3>
-
-  <p>Keep <code>Cache.Prune</code>, <code>CachePrunePolicy</code>, physical measurement, policy ordering, simulation, and physical-byte reports unchanged. Policy N+1 must continue to snapshot ownership after policy N. Do not reuse one snapshot across policies.</p>
-
-  <p>When both controllers need work, the server runs the existing disk policies first. It then rereads the graph estimate and starts <code>PruneMetadata</code> only if still required. A disk cut can make the second pass unnecessary. No code converts reclaimed physical bytes into estimated graph bytes or converts one target to the other.</p>
-
-  <h3>Persistence and restart</h3>
-
-  <p>Keep <code>cachePersistenceSchemaVersion</code> at 17. The record format does not change, and no estimate counter is persisted. Version-17 import rebuilds local call charges and raw envelope charges, then publishes every result through the same registered-result helper. Eager or later lazy decoding replaces the retained-envelope charge with the decoded charge.</p>
-
-  <p>The existing startup sequence imports the entire legacy graph before the one-second GC runs. A legacy graph above the new maximum is therefore resident during import and for that delay. Preserve that transient and benchmark it. Do not bump the schema and do not add a pre-import reset: the current mismatch path deletes worker snapshots and content as well as the SQLite mirror.</p>
-
-  <p>Graceful shutdown evaluates the graph estimate and prunes before the persistence worker snapshots the graph. Unclean persistence remains subject to the existing rejection rules.</p>
-
-  <h3>Reports, logs, and metrics</h3>
-
-  <pre><code>type CacheMetadataPrunePolicy struct {
-    MaxEstimatedBytes    int64
-    TargetEstimatedBytes int64
-}
-
-type CacheMetadataPruneRequest struct {
-    Policy      CacheMetadataPrunePolicy
-    DetailLimit int // automatic server calls use 20
-}
-
-type CacheMetadataPruneSample struct {
-    ID                string
-    Expired           bool
-    LastUsedUnixNano  int64
-    HadSnapshotOwners bool
-}
-
-type CacheMetadataPruneReport struct {
-    EstimatedBytesBefore  int64
-    EstimatedBytesAfter   int64
-    TargetBytes           int64
-    RemovedPersistedRoots int64
-    BlockedBytes          int64
-    Samples               []CacheMetadataPruneSample
-}
-
-func (c *Cache) EstimatedMetadataBytes() int64
-func (c *Cache) PruneMetadata(context.Context, CacheMetadataPruneRequest) (CacheMetadataPruneReport, error)</code></pre>
-
-  <p>The automatic caller sets <code>DetailLimit</code> to 20. The limit applies across selected, removed, and skipped details and traces. Emit one INFO summary per pass and optional DEBUG summaries per compaction. Check whether detail output is enabled before building it. Never clone a frame or derive a digest for an unsampled root.</p>
-
-  <p>Run snapshot GC when <code>RemovedPersistedRoots &gt; 0</code>, not when the report contains a sample. A compaction-only pass does not run snapshot GC. Keep existing <code>CachePruneReport.ReclaimedBytes</code> and <code>CacheUsageEntry.SizeBytes</code> in physical bytes. Explicit user prune-all can retain its current complete response; that response is already unbounded and is not changed here.</p>
-
-  <p>Add one O(1) gauge, <code>dagger_dagql_cache_metadata_estimated_bytes</code>, and one structured pass summary. Do not relabel <code>Cache.Size</code> and do not add per-root memory metrics.</p>
-
-  <h2>8. Implementation and verification</h2>
-
-  <h3>Files and changes</h3>
+  <h2>10. Implementation files and stages</h2>
 
   <table>
-    <thead><tr><th>Files</th><th>Change</th></tr></thead>
+    <thead>
+      <tr><th>File</th><th>Focused change</th></tr>
+    </thead>
     <tbody>
-      <tr><td><code>dagql/cache_metadata.go</code><br><code>dagql/result_call_frame.go</code><br><code>dagql/cache.go</code></td><td>Add the four-term formula, checked atomic deltas, final saturating sum, call/envelope/payload sizers, per-result charge fields, publication and unpublication helpers, import rollback/reset invariant, and frame/payload replacement helpers. Replace production direct <code>resultCall</code> initializers with <code>storeResultCall</code>.</td></tr>
-      <tr><td><code>dagql/types.go</code><br><code>core/json.go</code><br><code>core/jsonvalue.go</code></td><td>Add <code>CacheMetadataSizer</code> for <code>String</code>, delegated wrapped scalars, <code>JSON</code>, and <code>JSONValue</code>.</td></tr>
-      <tr><td><code>dagql/cache_persistence_import.go</code><br><code>dagql/cache_persistence_worker.go</code></td><td>Publish imported results through the new helper. Charge recursive raw envelopes before publication. Replace that charge during eager or lazy decode. Keep the worker's encoding-only result detached. Write no counter to disk.</td></tr>
-      <tr><td><code>dagql/cache_egraph.go</code></td><td>Add <code>compactEqClassesLocked(force bool)</code>, dense class mark/remap scratch, and forced rebuild below the current two-times guard.</td></tr>
-      <tr><td><code>dagql/cache_prune.go</code><br><code>dagql/cache.go</code></td><td>Add <code>PruneMetadata</code>, generation-mark closure scan, one bounded candidate vector and sort, ranking, freshness and direct-ownership rechecks, geometric/end compaction, one drift retry, and <code>removePersistedEdgeIfMetadataEligible</code>. Reuse existing cascading collection.</td></tr>
-      <tr><td><code>engine/config/config.go</code><br><code>engine/server/gc.go</code><br><code>engine/server/session.go</code><br><code>engine/server/server.go</code></td><td>Add and validate <code>GCMetadataConfig</code>. Read the estimate independently of disk stats. Remove disk-policy early exits when graph GC is enabled. Invoke the new pass from the five-second monitor, startup, session completion, and graceful shutdown.</td></tr>
-      <tr><td><code>cmd/engine/metrics.go</code><br><code>internal-docs/cache_pruning.md</code><br><code>internal-docs/cache_persistence.md</code><br><code>docs/current_docs/reference/configuration/engine.mdx</code></td><td>Add the single gauge, bounded summary fields, and operator documentation. Regenerate schema artifacts through the normal generation workflow.</td></tr>
+      <tr><td><code>dagql/cache.go</code></td><td>Add the aggregate structural estimate/report types and an O(1) public read used by the server. Do not add cache fields or mutation counters.</td></tr>
+      <tr><td><code>dagql/cache_prune.go</code></td><td>Factor the existing snapshot, candidate collection, simulation, and apply loop into disk and structural modes. Add equal-apportioned direct result cost, aggregate-only reporting, and the initial/final compaction calls. Leave disk policy iteration unchanged.</td></tr>
+      <tr><td><code>dagql/cache_egraph.go</code></td><td>Change <code>compactEqClassesLocked</code> to accept <code>force bool</code>. Keep current behavior for disk mode. Allow a structural pass to rebuild below the two-times guard.</td></tr>
+      <tr><td><code>dagql/cache_debug.go</code></td><td>Add the internal aggregate-only context check and aggregate pass trace. Suppress per-result cascade traces only for automatic structural pruning.</td></tr>
+      <tr><td><code>engine/config/config.go</code></td><td>Add <code>gc.dagqlCache.maxEstimatedBytes</code> and <code>targetEstimatedBytes</code> as absolute <code>int64</code> byte fields. Validate resolved values in server policy construction.</td></tr>
+      <tr><td><code>engine/server/gc.go</code></td><td>Resolve finite defaults, make the monitor test disk and structural triggers independently, run structural pruning after the optional disk pass, and keep the exact-tuple monitor suppression.</td></tr>
+      <tr><td><code>engine/server/server.go</code></td><td>Store the resolved structural limits and suppression tuple. Start the monitor without requiring disk policies. Run the structural pass during graceful shutdown even when disk stats fail.</td></tr>
+      <tr><td><code>engine/server/session.go</code></td><td>Keep the existing one-second scheduling and one-minute throttle. Its GC target now checks both independent quantities.</td></tr>
+      <tr><td><code>docs/current_docs/reference/configuration/engine.mdx</code> and <code>internal-docs/cache_pruning.md</code></td><td>Document the absolute estimate controls, approximation, independent trigger, aggregate report, and unchanged explicit disk prune. Generated engine schema artifacts follow normal generation.</td></tr>
     </tbody>
   </table>
+
+  <ol>
+    <li>Add the estimate helper, proposed constants, forced-compaction option, and unit tests. Run the calibration and churn benchmarks before fixing the final constants.</li>
+    <li>Factor the existing prune pipeline. Add structural snapshot mode, direct cost, aggregate report, trace suppression, and post-pass estimate. Preserve disk tests before adding new behavior.</li>
+    <li>Add server configuration, independent monitor and lifecycle checks, disk-stat failure behavior, and the exact-tuple no-progress suppression.</li>
+    <li>Run scale, restart, race, and output benchmarks. Choose the finite default with Erik from canary evidence. Update current public and internal documentation and generate the engine configuration schema.</li>
+  </ol>
+
+  <h2>11. Tests, benchmarks, and acceptance</h2>
 
   <h3>Focused correctness tests</h3>
 
   <ul>
-    <li><strong>Estimate:</strong> construct known result, term, class, frame, and payload counts and assert the formula. Random concurrent publication, import, frame replacement, payload replacement, removal, reset, and failed-import sequences must equal a full test-only recomputation.</li>
-    <li><strong>Registered ownership:</strong> assert idempotent publication, exactly-once unpublication, zero after reset, and no charge from detached results or the persistence worker's temporary result. Race a registered frame replacement and lazy payload swap against removal.</li>
-    <li><strong>Large variable values:</strong> persist 1-10 MiB plain and digested call arguments, <code>String</code>, wrapped scalar, <code>JSON</code>, and <code>JSONValue</code>. Verify logical lengths without serialization and automatic removal with zero physical use.</li>
-    <li><strong>Version-17 import:</strong> restart with a multi-megabyte cold <code>JSONValue</code> object and a nested list containing object and scalar envelopes. Verify raw <code>ObjectJSON</code>/<code>ScalarJSON</code> charges before materialization, one replacement delta afterward, no snapshot/content deletion, and eventual startup trim.</li>
-    <li><strong>Zero and tiny disk:</strong> create thousands of persisted scalar and no-match glob roots. Verify that disk pruning has no target, the graph estimate crosses a small test maximum, and the new pass reaches its target with near-zero physical reclaim.</li>
-    <li><strong>Compaction first:</strong> build a graph with dead class slots below the current two-times ratio. Verify forced compaction occurs before any persisted edge is removed. If compaction reaches target, verify zero evictions. Verify lookup remains correct.</li>
-    <li><strong>Ownership races:</strong> exclude pass-start active and unpruneable closures. Verify direct session/unpruneable membership and observed post-start touches skip a cut. Verify a dependency acquired during the pass remains alive through incoming ownership even if its persisted edge is removed.</li>
-    <li><strong>Ranking:</strong> verify expired roots first, then age bucket, snapshotless preference, exact age, creation time, and ID. Verify snapshot-owning roots remain eligible and no <code>KeepDuration</code> blocks the target.</li>
-    <li><strong>Independent disk state:</strong> keep existing disk-only tests unchanged. Verify a graph-only pass never calls physical sizing. Inject <code>disk.GetDiskStat</code> failure in <code>engine/server/gc_test.go</code> and verify both the monitor and <code>gcLocked</code> still run an over-budget graph pass.</li>
-    <li><strong>Combined run:</strong> trigger both controllers. Verify disk policy N+1 still sees post-policy-N ownership, the graph estimate is reread after disk pruning, no root is removed twice, and reports retain separate units.</li>
-    <li><strong>Output bound:</strong> prune 400,000 roots. Verify at most 20 total details, O(number of compactions) summaries, no unsampled frame clone or digest derivation, and snapshot GC after any root removal.</li>
+    <li><strong>Structural estimate:</strong> under <code>egraphMu</code>, verify exact formula arithmetic for empty, populated, sparse-class, and post-compaction graphs. Verify no call publication, payload swap, import decode, or removal path updates a new counter because no such counter exists.</li>
+    <li><strong>Zero and tiny disk:</strong> create persistable scalar or no-match-style results with no usage identities. Put the estimate above a test maximum. Verify the pass runs without <code>measureAllResultSizes</code>, removes persisted roots in expired/LRU/creation order, cascades through exact dependencies, and lowers result, term, and post-compaction class counts. Repeat with tiny physical usage and prove the disk target is irrelevant.</li>
+    <li><strong>Planning value:</strong> verify <code>directResultBytes</code> equals <code>K_result+ceil((K_term*T+K_class*C)/R)</code>. Verify the existing simulation counts only results it collects, preserves zero-immediate-value prerequisite cuts, and stops at the structural target or candidate exhaustion.</li>
+    <li><strong>Compaction:</strong> construct <code>oldSlots&gt;newSlots</code> but <code>oldSlots&lt;2*newSlots</code>. Verify normal disk compaction declines and forced compaction rebuilds. Verify a pass compacts before candidate planning and can return without eviction if that drops below maximum. Verify it compacts once after a nonempty cut plan.</li>
+    <li><strong>Ownership:</strong> reuse current tests for active session roots, active exact dependencies, unpruneable roots, shared closures, and term-provenance non-ownership. Add structural-mode variants and a race test that accepts current snapshot/apply drift while proving incoming ownership prevents collection of a concurrently acquired result.</li>
+    <li><strong>Snapshots:</strong> verify lease cleanup uses existing <code>OnRelease</code>. Verify snapshot GC runs when actual removed-root count is positive even though detail entries are empty, and does not run when the plan removes nothing.</li>
+    <li><strong>Server independence:</strong> inject a disk-stat failure and verify structural pruning still runs. Verify it runs with no worker disk policies. Verify disk policies and their reports are unchanged when structural usage is below maximum.</li>
+    <li><strong>No progress:</strong> build an over-maximum graph whose persisted roots are all active or unpruneable. Verify the first monitor pass performs one snapshot and removes nothing, equal monitor samples suppress repeats, a changed tuple allows a pass, and session completion and graceful shutdown bypass suppression.</li>
+    <li><strong>Restart:</strong> import an oversized valid schema-17 database, verify startup does not wipe worker state, then verify the one-second pass trims cold roots. Measure and assert the expected retention-policy change after the next graceful snapshot.</li>
+    <li><strong>Mass output:</strong> remove at least 400,000 roots with debug e-graph tracing enabled. Verify automatic structural mode emits bounded aggregate output, returns no per-root entries, performs no call-frame clone or digest derivation, and still reports the actual root count.</li>
   </ul>
 
-  <h3>Scale benchmarks and proposed engineering gates</h3>
+  <h3>Calibration and scale benchmarks</h3>
+
+  <p>Run isolated-process benchmarks at 200,000 and 1,000,000 results. Include minimal persisted scalars, unique no-match <code>Directory.glob</code> calls, richer calls, a shared-dependency graph, a 200,000-result churn over a 2,000-result unpruneable floor, and a large schema-17 import. Record <code>R</code>, <code>T</code>, <code>C</code>, estimate, <code>HeapAlloc</code>, <code>HeapInuse</code>, RSS, allocations, result and term removal, class slots before and after compaction, cache-lock hold times, compaction time, total pass time, and post-GC retained floors.</p>
+
+  <p>Disable physical size measurement and all per-root output in the structural-mode benchmark. Sample memory during snapshot construction, simulation, live cuts, and compaction; a post-GC endpoint alone misses peak scratch. The current O(N) snapshot allocates a result map, dependency slices, candidate slice, and simulation maps. That is a code-based concern, but no isolated measurement yet proves it is unacceptable.</p>
+
+  <p>The initial implementation passes the scale gate only if peak additional <code>HeapInuse</code> fits within the chosen <code>maxEstimatedBytes-targetEstimatedBytes</code> gap, no single graph-lock hold exceeds 500 ms on the documented one-million-result reference host, and the total pass completes within the existing 30-second pressure-throttle interval. The 500 ms limit is an engineering gate for publication and session-release stalls, not a product latency SLO. If the current factored snapshot fails any gate, stop and review a leaner snapshot or bounded scan as a separate design. Do not predesign that replacement here.</p>
+
+  <h3>Acceptance criteria</h3>
 
   <ul>
-    <li>At one million live results, a below-maximum poll must be O(1) and allocate zero bytes.</li>
-    <li>An over-maximum pass performs one candidate scan and at most one evidence-triggered rescan. It performs no more than <code>2 + ceil(log2(max(1, initialExcess / 16 MiB)))</code> compactions.</li>
-    <li>The closure queue uses 8 bytes per visited result. Its reference is dropped before the 32-byte-per-eligible-root candidate vector, but the peak calculation includes both backing stores plus compaction scratch. The total must fit the chosen max-to-target gap.</li>
-    <li>On the recorded benchmark host, no single write-lock hold may exceed 500 ms and the complete one-million-result pass must finish within 60 seconds. Record the host, result count, slots, roots per second, scans, compactions, and peak scratch.</li>
-    <li>Across ten 200,000-result churn and class-compaction cycles, the retained floor must remain below 15% of the configured maximum and grow by less than 2% of that maximum per cycle. Failing this gate triggers a separate design review for wider map rebuilding.</li>
-    <li>Measure a large version-17 import from process start through the one-second trim. Record peak <code>HeapInuse</code>, RSS, import time, trim time, and final estimate. The final estimate must reach target unless the report identifies protected bytes.</li>
-    <li>Re-run the three representative metadata workloads after a forced Go GC. The estimate delta should remain between 0.5 and 2 times the cache-owned <code>HeapAlloc</code> delta. Re-run the 11,003-glob case and require automatic reduction of result and class counts with near-zero physical reclaim.</li>
+    <li>A zero-disk persisted population triggers from structural cardinality alone and loses cold persisted roots.</li>
+    <li>The final estimate is at or below target, or the report states that candidates were exhausted or live-state drift prevented it. If actual removals occurred and the estimate remains above maximum, a later throttled pass tries again.</li>
+    <li>Class compaction alone can clear stale-slot pressure, and cuts lower the reported class term after final compaction.</li>
+    <li>Active ownership, unpruneable roots, exact dependencies, release hooks, snapshot leases, restart import, and disk pruning retain their current behavior and best-effort drift model.</li>
+    <li>A disk-stat error cannot suppress an over-maximum structural pass.</li>
+    <li>Automatic mass pruning has bounded output and report memory.</li>
+    <li>The calibrated constants, finite default, target, and one-million-result scratch measurements are recorded before merge.</li>
   </ul>
 
-  <p>Place tests beside current coverage in <code>dagql/cache_test.go</code>, <code>dagql/cache_prune_test.go</code>, <code>dagql/cache_persistence_import_test.go</code>, <code>dagql/cache_persistence_worker_test.go</code>, <code>engine/server/gc_test.go</code>, <code>engine/config/load_test.go</code>, and <code>core/integration/localcache_test.go</code>.</p>
+  <h2>12. Unresolved decision</h2>
 
-  <h2>9. Migration and Erik's decision</h2>
+  <p>Erik must choose the finite default maximum and target from the canary and scale data listed above. The formula, initial coefficient hypotheses, absolute-byte configuration, trigger, planner reuse, forced compaction, aggregate output, disk-stat independence, and monitor no-progress rule do not depend on that choice.</p>
 
-  <p>There is no persistence-format hard cut or wholesale cache wipe. Existing version-17 state imports. The new process derives its estimate from the loaded graph and retained envelopes. It can temporarily load an oversized legacy graph before the startup pass. This is nevertheless an intentional retention-policy change: on first startup after upgrade, a version-17 graph above the selected maximum can lose cold persisted roots until it reaches the target. Later use recomputes those results. The large-import benchmark makes both the transient and the first-startup eviction consequence explicit.</p>
-
-  <p><strong>Unresolved:</strong> current evidence does not choose a finite production default between 256 MiB maximum / 192 MiB target and 512 MiB maximum / 384 MiB target. Run canary arms with both pairs. Collect the per-engine estimate distribution, RSS-to-estimate multiplier, time above maximum, pass frequency and duty, roots removed, protected bytes, compaction and total-pass pauses, peak scratch, cache hits, and recomputation latency. Erik must choose the production pair from the observed memory-headroom and recomputation tradeoff. This document sets no numerical launch SLO. Shipping with no finite default would preserve the observed zero-disk retention defect.</p>
-
-  <p class="note">Sources checked: current code, the internal cache basics, e-graph, pruning, persistence, lazy evaluation, mutable cache, session resources, and typedef documents, focused current-main tests, and the explicitly labeled supplied measurements. This document proposes no production-code change by itself.</p>
+  <p class="note">No production code is part of this artifact.</p>
 </main>
 </body>
 </html>
