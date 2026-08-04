@@ -1191,15 +1191,15 @@ const llmLogsBatchSize = 1000
 // long-lived service exec spans are skipped — they enter tool-call subtrees
 // via cause links and would otherwise drown out deliberate print output.
 func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs bool) ([]string, error) {
-	lines, err := m.captureLogLines(ctx, spanID, excludeServiceLogs)
+	captured, err := m.captureLogLines(ctx, spanID, excludeServiceLogs, false)
 	if err != nil {
 		return nil, err
 	}
-	if len(lines) == 0 {
+	if len(captured.lines) == 0 {
 		return nil, nil
 	}
-	texts := make([]string, len(lines))
-	for i, line := range lines {
+	texts := make([]string, len(captured.lines))
+	for i, line := range captured.lines {
 		texts[i] = line.text
 	}
 	return texts, nil
@@ -1214,20 +1214,37 @@ type capturedLine struct {
 	direct bool
 }
 
+// capturedOutput is one capture: the assembled lines, plus the set of spans
+// whose records were classified `direct`.
+//
+// The span set is what lets a rendered trace report and a flat "own output"
+// section coexist without printing the same line twice: the report is told to
+// suppress the inline logs of exactly these spans, because the caller prints
+// them itself, verbatim. Deriving it here — rather than re-deriving "the root
+// and its children" in the renderer against dagui's own (cause-link-folded)
+// parentage — keeps the two halves classified by one rule, so no line can be
+// both hidden and unprinted.
+type capturedOutput struct {
+	lines []capturedLine
+	// directSpans holds hex span IDs; empty when nothing direct was captured.
+	directSpans map[string]bool
+}
+
 // captureLogLines is captureLogs' structured form: the same filtering and
 // line assembly, but each line retains its direct/nested provenance.
-func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs bool) ([]capturedLine, error) {
+func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool) (capturedOutput, error) {
+	out := capturedOutput{directSpans: map[string]bool{}}
 	root, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	mainMeta, err := root.MainClientCallerMetadata(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get main client caller metadata: %w", err)
+		return out, fmt.Errorf("get main client caller metadata: %w", err)
 	}
 	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	defer q.Close()
 
@@ -1252,7 +1269,7 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			Limit:  llmLogsBatchSize,
 		})
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		if len(logs) == 0 {
 			break
@@ -1290,16 +1307,22 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			var direct bool
 			if log.SpanID.Valid {
 				if !log.TraceID.Valid {
-					return nil, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
+					return out, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
 				}
 				hidden, d, err := internalSpans.classifyLogSpan(ctx, log.TraceID.String, log.SpanID.String)
 				if err != nil {
-					return nil, err
+					return out, err
 				}
 				if hidden {
 					continue
 				}
-				direct = d
+				// ownOnly narrows direct provenance to the captured span
+				// itself; classifyLogSpan's other half (a direct child of the
+				// root) then counts as nested like everything else.
+				direct = d && (!ownOnly || log.SpanID.String == spanID)
+				if direct {
+					out.directSpans[log.SpanID.String] = true
+				}
 			}
 
 			var bodyPb otlpcommonv1.AnyValue
@@ -1323,7 +1346,8 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			segments = append(segments, capturedLine{text: text, direct: direct})
 		}
 	}
-	return assembleLines(segments), nil
+	out.lines = assembleLines(segments)
+	return out, nil
 }
 
 // assembleLines splits accumulated log segments into lines, carrying a line
@@ -1874,40 +1898,26 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 }
 
 // readTraceTool renders the pretty trace report for a span, check or test --
-// the same report a tool call's own result is rendered as, so what the reader
-// gets back is in the vocabulary it already sees, just unabridged for the
-// target it asked about.
+// in the same shape a tool call's own result is rendered as (the target's own
+// output, then the report), so what the reader gets back is in the vocabulary
+// it already sees, just scoped to the target it asked about.
 func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
 		Span  string `default:""`
 		Check string `default:""`
 		Test  string `default:""`
 	}) (any, error) {
-		spanID, err := resolveTraceTarget(ctx, traceTarget{
+		target := traceTarget{
 			Span:  args.Span,
 			Check: args.Check,
 			Test:  args.Test,
-		})
+		}
+		spanID, err := resolveTraceTarget(ctx, target)
 		if err != nil {
 			return nil, err
 		}
-		// Mirror toolTraceReport's options, so a ReadTrace result reads like
-		// the tool results the reader is already used to -- only scoped to what
-		// it asked for.
-		report, err := renderTraceReport(ctx, spanID, traceReportOpts{
-			ExpandAll:      true,
-			HideNoise:      true,
-			Scoped:         true,
-			NestedLogLines: llmToolLogsMaxLines,
-			// The reader is an LLM: point the rerun section at ReadTrace
-			// rather than at a `dagger check` command it cannot run.
-			SuggestReadTrace: true,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to render trace report: %w", err)
-		}
-		if decorated := decorateToolReport(spanID, report); decorated != "" {
-			return decorated, nil
+		if result := m.spanResult(ctx, spanID, readTraceReportOpts(target)); result != "" {
+			return result, nil
 		}
 		// A subtree can legitimately render to nothing (dagui hides internal,
 		// passthrough and encapsulated spans); say so rather than returning an
@@ -1915,6 +1925,39 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs)",
 			spanID, spanID), nil
 	})
+}
+
+// readTraceReportOpts picks the render options that suit the KIND of target
+// ReadTrace was given.
+//
+// A span target keeps the tool-call options: the caller named that subtree, so
+// it wants that subtree unwrapped.
+//
+// A test or check target does not. ExpandAll's unwrap ("descend through
+// wrapper spans to the first real work, then stop") is tuned for a tool-call
+// scope, where the scope root is a roll-up boundary that would otherwise
+// swallow the tool's output. A test or check span is not that: it is the head
+// of a roll-up the report already knows how to summarise, and force-expanding
+// it enumerates every dagql field call beneath -- measured on
+// ReadTrace(test: "TestToolLogsExcludeService") as hundreds of rows of
+// LLMMessage.role / LLMContentBlock.text micro-spans, which are the test's own
+// API traffic, not conversation. Left to the normal IsExpanded rules, those
+// collapse and the TESTS / CHECKS roll-ups (with their failing-case logs) are
+// what the reader gets -- the CLI's end-of-run report for that target. The
+// target's own logs still reach the reader: spanResult prints them as OUTPUT --
+// but only the records on the target span ITSELF (OwnOutputOnly). The depth-1
+// rule that OUTPUT normally uses exists because a module function's print lands
+// one hop below the tool-call span; a named target has no such indirection, and
+// its direct children ARE the nested work -- for a suite, its cases, whose logs
+// belong to the TESTS roll-up rather than hoisted into (and duplicated out of)
+// OUTPUT.
+func readTraceReportOpts(target traceTarget) traceReportOpts {
+	opts := toolCallReportOpts()
+	opts.OwnOutputOnly = true
+	if target.Span == "" {
+		opts.ExpandAll = false
+	}
+	return opts
 }
 
 // describeObject renders an object result for the model: its type plus any
