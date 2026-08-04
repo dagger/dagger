@@ -17295,6 +17295,17 @@ func (r *WorkspaceGit) Uncommitted() *Changeset {
 	}
 }
 
+// Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+//
+// Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+func (r *WorkspaceGit) Unmanaged() *Changeset {
+	q := r.query.Select("unmanaged")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // AsNode returns this WorkspaceGit as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *WorkspaceGit) AsNode() Node {
