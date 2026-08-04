@@ -456,6 +456,126 @@ func (WorkspaceSuite) TestWorkspaceCommitScopedRemainder(ctx context.Context, t 
 	require.Empty(t, staged.Git.Uncommitted.AddedPaths)
 }
 
+// TestWorkspaceStagedCommitsList covers the read side of the staged commit
+// stack: WorkspaceGit.stagedCommits reports each engine-side commit, oldest
+// first, with exactly what that commit folded in.
+func (WorkspaceSuite) TestWorkspaceStagedCommitsList(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	const secondCommitDate = "2024-02-03T04:05:06Z"
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    before: git { stagedCommits { sha } }
+    withNewFile(path: "a.txt", contents: "a2") {
+      withNewFile(path: "b.txt", contents: "b2") {
+        withNewFile(path: "c.txt", contents: "c1") {
+          withCommit(message: "first commit\n\nwith a body", date: "` + commitTestDate + `", paths: ["a.txt"], authorName: "Ada", authorEmail: "ada@example.com") {
+            withCommit(message: "second commit", date: "` + secondCommitDate + `", paths: ["b.txt"], authorName: "Bob", authorEmail: "bob@example.com") {
+              git {
+                head { commit }
+                uncommitted { addedPaths modifiedPaths }
+                stagedCommits {
+                  sha
+                  message
+                  date
+                  authorName
+                  authorEmail
+                  changes { diffStats { path kind } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	type stagedCommit struct {
+		SHA         string `json:"sha"`
+		Message     string `json:"message"`
+		Date        string `json:"date"`
+		AuthorName  string `json:"authorName"`
+		AuthorEmail string `json:"authorEmail"`
+		Changes     struct {
+			DiffStats []struct {
+				Path string `json:"path"`
+				Kind string `json:"kind"`
+			} `json:"diffStats"`
+		} `json:"changes"`
+	}
+	var got struct {
+		CurrentWorkspace struct {
+			Before struct {
+				StagedCommits []stagedCommit `json:"stagedCommits"`
+			} `json:"before"`
+			WithNewFile struct {
+				WithNewFile struct {
+					WithNewFile struct {
+						WithCommit struct {
+							WithCommit struct {
+								Git struct {
+									Head struct {
+										Commit string `json:"commit"`
+									} `json:"head"`
+									Uncommitted   uncommittedPaths `json:"uncommitted"`
+									StagedCommits []stagedCommit   `json:"stagedCommits"`
+								} `json:"git"`
+							} `json:"withCommit"`
+						} `json:"withCommit"`
+					} `json:"withNewFile"`
+				} `json:"withNewFile"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+
+	// Nothing staged yet: an empty list, not an error and not a null.
+	require.Empty(t, got.CurrentWorkspace.Before.StagedCommits)
+
+	git := got.CurrentWorkspace.WithNewFile.WithNewFile.WithNewFile.WithCommit.WithCommit.Git
+	staged := git.StagedCommits
+	require.Len(t, staged, 2)
+
+	// Oldest first: the last entry is the staged HEAD.
+	require.Len(t, staged[0].SHA, 40)
+	require.Len(t, staged[1].SHA, 40)
+	require.NotEqual(t, staged[0].SHA, staged[1].SHA)
+	require.Equal(t, git.Head.Commit, staged[1].SHA)
+
+	// Metadata is reported exactly as it was recorded.
+	require.Equal(t, "first commit\n\nwith a body", staged[0].Message)
+	require.Equal(t, commitTestDate, staged[0].Date)
+	require.Equal(t, "Ada", staged[0].AuthorName)
+	require.Equal(t, "ada@example.com", staged[0].AuthorEmail)
+	require.Equal(t, "second commit", staged[1].Message)
+	require.Equal(t, secondCommitDate, staged[1].Date)
+	require.Equal(t, "Bob", staged[1].AuthorName)
+	require.Equal(t, "bob@example.com", staged[1].AuthorEmail)
+
+	// Each entry reports what that commit alone folded in: not the other
+	// commit's change, and not the file that is still pending.
+	firstPaths := map[string]string{}
+	for _, stat := range staged[0].Changes.DiffStats {
+		firstPaths[stat.Path] = stat.Kind
+	}
+	require.Equal(t, map[string]string{"a.txt": "MODIFIED"}, firstPaths)
+
+	secondPaths := map[string]string{}
+	for _, stat := range staged[1].Changes.DiffStats {
+		secondPaths[stat.Path] = stat.Kind
+	}
+	require.Equal(t, map[string]string{"b.txt": "MODIFIED"}, secondPaths)
+
+	// ...and c.txt is still uncommitted.
+	require.Equal(t, []string{"c.txt"}, git.Uncommitted.AddedPaths)
+	require.Empty(t, git.Uncommitted.ModifiedPaths)
+}
+
 // gitOut runs a git command in the container and returns its trimmed stdout.
 func gitOut(ctx context.Context, t *testctx.T, ctr *dagger.Container, args ...string) string {
 	t.Helper()
