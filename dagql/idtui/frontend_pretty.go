@@ -178,6 +178,22 @@ type frontendPretty struct {
 	// the whole run instead of the subtree being reported on.
 	reportScopedSubtree bool
 
+	// reportHideSpanTree suppresses the span-tree body of a report: the
+	// surfaced sections (CHECKS, TESTS, SERVICES, CONVERSATION, generators)
+	// and the target's own output still render, the raw progress rows don't.
+	//
+	// It exists for the LLM tool-call result, whose reader wants the OUTPUT
+	// its tool produced plus what was SURFACED beneath it -- not a rendering
+	// of every dagql call the call happened to make.
+	reportHideSpanTree bool
+
+	// reportPrimary overrides the primary span for this render WITHOUT
+	// touching the shared DB. A report is scoped by pointing it at a root
+	// span; doing that by mutating db.PrimarySpan (as this used to) leaves
+	// one render's scope behind on a DB that other renders share. See
+	// frontendPretty.primarySpan.
+	reportPrimary dagui.SpanID
+
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -1394,9 +1410,21 @@ type ReportRenderOpts struct {
 	HideLogSpans map[dagui.SpanID]bool
 
 	// ScopedSubtree marks the report as being about one subtree rather than the
-	// whole run: it drops the TRACE verdict header and skips the live-tree
-	// promotions. See frontendPretty.reportScopedSubtree.
+	// whole run: it drops the TRACE verdict header, skips the live-tree
+	// promotions, and confines every part of the report -- the span tree AND
+	// the surfaced sections -- to Root's real subtree. See
+	// frontendPretty.reportScopedSubtree and dagui.FrontendOpts.StrictSubtree.
 	ScopedSubtree bool
+
+	// Root is the span the report is about: its primary and zoom span. It is
+	// applied to this render only; the shared DB is never mutated. An invalid
+	// Root means the whole trace (the DB's own primary span).
+	Root dagui.SpanID
+
+	// HideSpanTree drops the span-tree body from the report, leaving the
+	// surfaced sections (CHECKS, TESTS, SERVICES, CONVERSATION, generators)
+	// and the target's own output. See frontendPretty.reportHideSpanTree.
+	HideSpanTree bool
 
 	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
 	// for a reader that has no `dagger` CLI to run. See
@@ -1405,10 +1433,10 @@ type ReportRenderOpts struct {
 }
 
 // SetReportRenderOpts applies opts to this frontend ahead of a FinalRender.
-// It bumps the render version so memoized span trees rendered under the
-// previous options are invalidated -- reporters are reused across renders
-// (one per session), and a cached row would otherwise keep the old expansion
-// or log window.
+//
+// A report frontend is constructed fresh per render (see ReportSession), so
+// this is the whole of its render configuration: nothing carries over from a
+// previous report.
 func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
 	fe.dispatch(func() {
 		feOpts := fe.Opts()
@@ -1422,12 +1450,30 @@ func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
 		}
 		feOpts.Filter = opts.Filter
 		feOpts.RerunSuggestion = opts.RerunSuggestion
+		// A scoped report renders exactly the root span's real subtree: no
+		// cause-linked or otherwise foreign span may appear in it.
+		feOpts.StrictSubtree = opts.ScopedSubtree
 		fe.reportNestedLogLimit = opts.NestedLogLimit
 		fe.reportHideLogSpans = opts.HideLogSpans
 		fe.reportScopedSubtree = opts.ScopedSubtree
+		fe.reportHideSpanTree = opts.HideSpanTree
+		fe.reportPrimary = opts.Root
 		fe.renderVersion++
 		fe.Update()
 	})
+}
+
+// primarySpan is the span this render is *about*: the report's own root when
+// one was given (see ReportRenderOpts.Root), otherwise the DB's primary span.
+//
+// Reports go through the override so a render never has to mutate the shared
+// DB to scope itself -- which is what used to let one report's scope leak into
+// the next render over the same (cached) DB.
+func (fe *frontendPretty) primarySpan() dagui.SpanID {
+	if fe.reportPrimary.IsValid() {
+		return fe.reportPrimary
+	}
+	return fe.db.PrimarySpan
 }
 
 func (fe *frontendPretty) SetTelemetryError(err error) {
@@ -1563,12 +1609,9 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	// (so don't show key hints etc.). syncSpanTreeState copies this into each
 	// SpanTreeView and marks any changed tree dirty.
 	fe.finalRender = true
-	// Always mark the tree dirty, even on a repeat FinalRender: a reused
-	// reporter (core's per-session trace-report cache) renders the SAME
-	// component tree at a DIFFERENT zoom, and the report's content -- the
-	// surfaced checks/conversation/services rolled up beneath that zoom -- is
-	// a function of it. Serving cached lines here leaks the previous scope's
-	// report into this one.
+	// Always mark the tree dirty, even on a repeat FinalRender: nothing
+	// downstream should serve lines memoized under a previous render's
+	// configuration.
 	fe.Update()
 
 	// Unfocus for the final render.
@@ -1580,7 +1623,7 @@ func (fe *frontendPretty) setupFinalRenderLocked() {
 	if fe.pinnedZoom.IsValid() {
 		fe.ZoomedSpan = fe.pinnedZoom
 	} else {
-		fe.ZoomedSpan = fe.db.PrimarySpan
+		fe.ZoomedSpan = fe.primarySpan()
 	}
 	fe.viewDirty = false
 	fe.recalculateViewLocked()
@@ -2019,7 +2062,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 				// Only the error re-print is redundant, though: the stdout
 				// stream is the command's own result (e.g. a shell script's
 				// output from before it failed), so still replay it.
-				if err := replayPrimaryOutput(w, fe.db, false); err != nil {
+				if err := replayPrimaryOutput(w, fe.db, fe.primarySpan(), false); err != nil {
 					return err
 				}
 			}
@@ -2054,11 +2097,11 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// errors, whose "Run '... --help' for usage." hint lives on the
 		// primary span's stderr), so nothing above covered that stream and
 		// dropping it here would lose it entirely.
-		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailedOrCausedFailure() {
-			return replayPrimaryOutput(w, fe.db, !fe.hasShownRootError())
+		if primary := fe.db.Spans.Map[fe.primarySpan()]; primary != nil && primary.IsFailedOrCausedFailure() {
+			return replayPrimaryOutput(w, fe.db, fe.primarySpan(), !fe.hasShownRootError())
 		}
 	}
-	return renderPrimaryOutput(w, fe.db)
+	return renderPrimaryOutputFor(w, fe.db, fe.primarySpan())
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -2614,7 +2657,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
 	pol := fe.renderPolicy()
 	zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
-		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
+		fe.rowsView.Zoomed.ID != fe.primarySpan()
 
 	// Lead the whole-trace report with the overall verdict -- did it pass or
 	// fail, what command ran, and the top-level error -- the one-glance summary
@@ -2701,7 +2744,8 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		ctx.Lines(convLines...)
 		renderedRows = true
 	}
-	if !renderedRows && (!rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity) {
+	if !renderedRows && !fe.reportHideSpanTree &&
+		(!rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity) {
 		// Only fall back to the raw progress tree when there's nothing better.
 		// A plain `dagger call` failure renders its root cause above; dumping
 		// the bootstrap spans (connect / load workspace / parsing args) under
@@ -3277,7 +3321,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// setExpanded) silently no-ops on them, leaving the zoomed view empty.
 	// Report mode already fetches the pinned subtree up front (trace.go --span),
 	// so this is interactive-only; requestSubtree dedups against that.
-	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.primarySpan() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
 
@@ -3288,8 +3332,8 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// (descendants=false), not the rolled-up build log, so it isn't the
 		// over-fetch interactive cares about.
 		if fe.zoomKind() == zoomRoot && len(fe.reportChecks()) == 0 {
-			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
-				if prim := fe.db.PrimarySpan; prim.IsValid() {
+			if tv := fe.reportTestView(); tv == nil || !tv.HasTests() {
+				if prim := fe.primarySpan(); prim.IsValid() {
 					fe.requestLogsWith(prim, false)
 				}
 			}
@@ -3477,6 +3521,33 @@ func (fe *frontendPretty) reportServices() []*dagui.ServiceNode {
 		return nil
 	}
 	return fe.db.SurfacedServicesForSpan(fe.surfaceRoot())
+}
+
+// reportTestRoot is surfaceRoot for the TESTS section.
+//
+// The test index is trace-global, so asking it for "the tests" hands back
+// every test span in the session -- which is how a report scoped to a tool
+// call that ran no tests at all could still close with a TESTS section
+// belonging to a DIFFERENT call minutes earlier. A scoped report asks about
+// its own subtree instead; unscoped renders (the CLI's end-of-run report,
+// the live TUI) keep the whole-trace view they always had.
+func (fe *frontendPretty) reportTestRoot() *dagui.Span {
+	if !fe.reportScopedSubtree {
+		return nil
+	}
+	return fe.surfaceRoot()
+}
+
+// reportTestView is the test view this render is *about*: the whole trace,
+// or -- for a scoped report -- only the tests beneath its root span.
+func (fe *frontendPretty) reportTestView() *dagui.TestView {
+	if fe.db == nil {
+		return nil
+	}
+	if root := fe.reportTestRoot(); root != nil {
+		return fe.db.TestViewForSpan(root)
+	}
+	return fe.db.TestView()
 }
 
 // promoteChecksLocked mirrors the web UI (cloud/components/trace.go): when a

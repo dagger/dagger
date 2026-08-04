@@ -210,3 +210,22 @@ func TestExpandedSpansUnwrapsToFirstRealWork(t *testing.T) {
 		t.Errorf("an unscoped render must not force anything open, got %v", unscoped)
 	}
 }
+
+// TestToolCallReportOptsHideTreeButReadTraceKeepsIt pins the one difference
+// between the two LLM-facing report shapes: a tool result carries only what
+// its call surfaced, while ReadTrace -- whose whole purpose is showing the
+// shape of what ran -- keeps the span tree.
+func TestToolCallReportOptsHideTreeButReadTraceKeepsIt(t *testing.T) {
+	if !toolCallReportOpts().HideSpanTree {
+		t.Error("a tool call's own report must not render the span tree")
+	}
+	for _, target := range []traceTarget{
+		{Span: "cafef00d"},
+		{Check: "ci:bootstrap"},
+		{Test: "TestSomething"},
+	} {
+		if readTraceReportOpts(target).HideSpanTree {
+			t.Errorf("ReadTrace(%+v) must keep the span tree", target)
+		}
+	}
+}
