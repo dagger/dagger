@@ -1092,13 +1092,15 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 	}
 
 	var mergeErr error
+	var conflictNote string
 	if len(changes) > 0 {
 		srv, err := m.Server(ctx)
 		if err != nil {
 			mergeErr = err
 		} else {
-			merged, err := mergeChangesets(ctx, srv, changes)
+			merged, note, err := mergeChangesets(ctx, srv, changes)
 			if err == nil {
+				conflictNote = note
 				err = m.applyChangeset(ctx, srv, merged)
 			}
 			mergeErr = err
@@ -1108,9 +1110,16 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 	messages := make([]*LLMMessage, len(callResults))
 	for i, result := range callResults {
 		block := result.message.Content[0]
-		if mergeErr != nil && !result.failed && result.capture.changes.Self() != nil {
+		contributed := !result.failed && result.capture.changes.Self() != nil
+		switch {
+		case mergeErr != nil && contributed:
 			block.Text = fmt.Sprintf("failed to merge parallel changesets: %s", mergeErr)
 			block.Errored = true
+		case conflictNote != "" && contributed:
+			// The changes did land, so this is not a failed tool call — but the
+			// merged result has conflict markers in it, which the agent must
+			// resolve before building on top of them.
+			block.Text += "\n\n" + conflictNote
 		}
 		endToolCallDisplay(toolCallDisplays, block.CallID, block.Errored, block.Text)
 		messages[i] = result.message
@@ -1118,11 +1127,57 @@ func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCall
 	return messages
 }
 
-func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+// mergeChangesets combines the changesets produced by a batch of parallel tool
+// calls into one.
+//
+// The fast path is git's octopus merge (Changeset.withChangesets), which is
+// efficient and gives full git merge semantics — including rename detection —
+// but it refuses to resolve any content-level conflict. Worse, "conflict" there
+// includes merely *adjacent* edits, and a single conflicting pair fails the
+// whole batch. Discarding the result would throw away every participating
+// call's work, which is the expensive part: the agents have already done their
+// reasoning, edits and verification by the time we get here.
+//
+// So on failure, fall back to replaying the changesets as patches onto their
+// common base with PatchConflictLeaveMarkers, which applies every hunk that
+// fits and leaves git-style conflict markers where it doesn't. The work is
+// preserved and the agent gets a tree it can inspect and repair, rather than an
+// error and an empty workspace. The returned note is non-empty in that case, so
+// the caller can tell the agent to resolve the markers.
+func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], string, error) {
 	if len(changes) == 1 {
-		return changes[0], nil
+		return changes[0], "", nil
 	}
 
+	merged, mergeErr := octopusMergeChangesets(ctx, srv, changes)
+	if mergeErr == nil {
+		return merged, "", nil
+	}
+
+	merged, err := patchMergeChangesets(ctx, srv, changes)
+	if err != nil {
+		// Preserving the work didn't pan out either; report the original merge
+		// failure, with the fallback's own failure as context.
+		return dagql.ObjectResult[*Changeset]{}, "", errors.Join(mergeErr, err)
+	}
+	return merged, conflictMarkerNote(mergeErr), nil
+}
+
+// conflictMarkerNote tells the agent what happened to its changes when the
+// clean merge failed. The underlying git error names the conflicting paths
+// (e.g. "CONFLICT (content): Merge conflict in foo.go"), which is the most
+// useful part, so it is quoted verbatim.
+func conflictMarkerNote(mergeErr error) string {
+	return fmt.Sprintf(`NOTE: parallel edits from this batch overlapped, so they could not be merged cleanly.
+Rather than discarding them, every change that applied cleanly was kept, and
+git-style conflict markers (<<<<<<< / ======= / >>>>>>>) were left where it did not.
+Search the workspace for conflict markers and resolve them before building on these changes.
+
+The merge reported:
+%s`, mergeErr)
+}
+
+func octopusMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
 	otherIDs := make(dagql.ArrayInput[dagql.ID[*Changeset]], len(changes)-1)
 	for i, changeset := range changes[1:] {
 		id, err := changeset.ID()
@@ -1141,6 +1196,62 @@ func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.Obj
 		},
 	}); err != nil {
 		return dagql.ObjectResult[*Changeset]{}, err
+	}
+	return merged, nil
+}
+
+// patchMergeChangesets replays each changeset as a patch onto their shared base
+// directory, in order, tolerating hunks that no longer apply by leaving conflict
+// markers. It is the conflict-preserving fallback for octopusMergeChangesets.
+//
+// Parallel tool calls in one batch all diff against the same workspace
+// snapshot, so changes[0]'s Before is the common base for all of them.
+func patchMergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+	base := changes[0].Self().Before
+	if base.Self() == nil {
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("changeset has no before directory")
+	}
+	baseID, err := base.ID()
+	if err != nil {
+		return dagql.ObjectResult[*Changeset]{}, err
+	}
+
+	current := base
+	for i, changeset := range changes {
+		var patch dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, changeset, &patch, dagql.Selector{
+			View:  srv.View,
+			Field: "asPatch",
+		}); err != nil {
+			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("render changeset %d as patch: %w", i, err)
+		}
+		patchID, err := patch.ID()
+		if err != nil {
+			return dagql.ObjectResult[*Changeset]{}, err
+		}
+		var patched dagql.ObjectResult[*Directory]
+		if err := srv.Select(ctx, current, &patched, dagql.Selector{
+			View:  srv.View,
+			Field: "withPatchFile",
+			Args: []dagql.NamedInput{
+				{Name: "patch", Value: dagql.NewID[*File](patchID)},
+				{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("apply changeset %d as patch: %w", i, err)
+		}
+		current = patched
+	}
+
+	var merged dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, current, &merged, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](baseID)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("rebuild changeset from patched base: %w", err)
 	}
 	return merged, nil
 }
