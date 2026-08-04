@@ -22,6 +22,21 @@ func (node *ServiceNode) Name() string {
 	return node.Span.Name
 }
 
+// Origin returns the API span that produced the Service value (e.g.
+// Container.asService), reached via the service span's cause links — the
+// engine links the exec span to every install span. Returns nil when no named
+// install span is loaded (a replayed or partially fetched trace). The report
+// noise filter uses it to prune a service's origin from a tool-call report,
+// since the service's log stream is routed there.
+func (node *ServiceNode) Origin() *Span {
+	for _, cause := range node.Span.causesViaLinks.Order {
+		if cause.Name != "" {
+			return cause
+		}
+	}
+	return nil
+}
+
 // SurfacedServices returns the trace's service instances as a tree,
 // independent of the `reveal` mechanism — the service analog of
 // DB.SurfacedChecks / DB.SurfacedConversation.

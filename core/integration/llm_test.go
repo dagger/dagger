@@ -432,8 +432,13 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 // both halves: the Dang runtime routes stdio to the user-facing span (the
 // function call the user sees) rather than the passthrough call_exec
 // profiling span it currently runs under — as containerized SDKs do via the
-// injected traceparent — and captureLogLines then classifies that output as
+// injected traceparent — and the tool result then classifies that output as
 // the tool's own and keeps it verbatim, abridging only nested work.
+//
+// It also locks in the shape of the result: a tool call that produced child
+// telemetry is rendered as the pretty TRACE REPORT (the span tree), scoped to
+// the tool call, rather than a flat log dump — with the same abridging
+// guarantees and a ReadLogs breadcrumb for the rest.
 func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -444,7 +449,7 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 		WithMountedDirectory(".", c.Host().Directory(srcPath))
 
 	// Mirrors ReportAgent.drive's conversation (the first user message must
-	// match its withPrompt byte for byte). Tool results are placeholders —
+	// match its withPrompt text byte for byte). Tool results are placeholders —
 	// the real tool runs during replay.
 	model := cannedReplayModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
@@ -472,6 +477,61 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 	// The nested exec's output is still abridged to its trailing lines.
 	require.NotContains(t, out, "NESTED-NOISE-01")
 	require.Contains(t, out, "NESTED-NOISE-20")
+
+	// The tool call produced child telemetry, so its result is the rendered
+	// span tree — the function call the tool ran — not a bare log dump...
+	require.Contains(t, out, "ReportAgent.report")
+	// ...closed by the breadcrumb that keeps the full logs reachable.
+	require.Contains(t, out, "to read the full logs")
+	require.Contains(t, out, "ReadLogs(span:")
+}
+
+// TestToolReadTrace exercises the ReadTrace builtin end to end: it is
+// registered alongside ReadLogs, it is dispatchable by the model, and it
+// resolves its target against the session's real trace -- an unknown check
+// name comes back as an actionable error rather than an empty result.
+//
+// The happy path (a span/check name that exists) can't be canned: the span IDs
+// of a replayed run aren't known when the conversation is recorded, and no
+// check runs in this fixture. The rendering half is covered by the unit tests
+// in core (resolution) and dagql/idtui (report shape).
+func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Looking at the trace."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadTrace",
+				Arguments: dagger.JSON(`{"check":"nope:check"}`)},
+		}).
+		WithToolResult("call_2", "", true).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The builtin was dispatched and resolved against the real trace, which
+	// has no checks -- and said so in terms the caller can act on.
+	require.Contains(t, out, `no check named "nope:check"`)
 }
 
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {

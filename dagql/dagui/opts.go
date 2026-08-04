@@ -62,6 +62,23 @@ type FrontendOpts struct {
 
 	// UsingCloudEngine indicates whether the connected engine is a Cloud Engine
 	UsingCloudEngine bool
+
+	// RerunSuggestion, when set, replaces the body (and optionally the heading)
+	// of the final report's "RUN LOCALLY" section, which by default suggests
+	// `dagger check "<name>"` commands.
+	//
+	// It exists because the report is not always read in a terminal: when it is
+	// rendered headlessly as the result of an LLM tool call, the reader is an
+	// agent that has *tools* rather than a `dagger` CLI, so a shell command is
+	// useless to it. The renderer keeps owning the layout while the caller owns
+	// the vocabulary -- no knowledge of any particular harness or tool name
+	// belongs in the frontend.
+	//
+	// It is given the re-runnable (outermost, failed) check names in report
+	// order and returns the replacement heading and body lines. An empty heading
+	// means "keep the default heading"; empty body lines mean "omit the section
+	// entirely". When nil, the default `dagger check ...` body is rendered.
+	RerunSuggestion func(checkNames []string) (heading string, body []string)
 }
 
 const (

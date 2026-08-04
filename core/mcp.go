@@ -1637,6 +1637,35 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call:   m.readLogsTool(srv),
 	})
 	allTools.Add(LLMTool{
+		Name: "ReadTrace",
+		Description: "Render the trace report for a span, check, or test: the span tree, plus the CHECKS and TESTS sections, exactly as they appear at the end of a run." + "\n" +
+			"Tool results are abridged; this is how you see the full detail behind one - pass the span ID from a report's footer, or the name of a check or test you saw run." + "\n" +
+			"Prefer ReadTrace when you want the shape of what ran (which steps, which checks/tests, where it failed); use ReadLogs when you want the raw log lines of a span." + "\n" +
+			"When a name matches several spans, the most recent one is rendered.",
+		ReadOnly: true, // Read-only operation
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Span ID (hex) to render the report for, scoped to that span's subtree.",
+				},
+				"check": map[string]any{
+					"type":        "string",
+					"description": "Check name to render the report for, e.g. \"shellcheck:check\".",
+				},
+				"test": map[string]any{
+					"type":        "string",
+					"description": "Test case or suite name to render the report for.",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Strict: false,
+		Call:   m.readTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
 		Name: "ListServices",
 		Description: "List the services currently running in this session: hostname, exposed ports, and span IDs." + "\n" +
 			"Read a service's logs with ReadLogs(span: <spanID>) — useful for tailing a server or engine that runs as a service." + "\n" +
@@ -1840,6 +1869,50 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 	logs = limitLines(spanID, logs, limit, llmLogsMaxLineLen)
 
 	return strings.Join(logs, "\n"), nil
+}
+
+// readTraceTool renders the pretty trace report for a span, check or test --
+// the same report a tool call's own result is rendered as, so what the reader
+// gets back is in the vocabulary it already sees, just unabridged for the
+// target it asked about.
+func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Span  string `default:""`
+		Check string `default:""`
+		Test  string `default:""`
+	}) (any, error) {
+		spanID, err := resolveTraceTarget(ctx, traceTarget{
+			Span:  args.Span,
+			Check: args.Check,
+			Test:  args.Test,
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Mirror toolTraceReport's options, so a ReadTrace result reads like
+		// the tool results the reader is already used to -- only scoped to what
+		// it asked for.
+		report, err := renderTraceReport(ctx, spanID, traceReportOpts{
+			ExpandAll:      true,
+			HideNoise:      true,
+			Scoped:         true,
+			NestedLogLines: llmToolLogsMaxLines,
+			// The reader is an LLM: point the rerun section at ReadTrace
+			// rather than at a `dagger check` command it cannot run.
+			SuggestReadTrace: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to render trace report: %w", err)
+		}
+		if decorated := decorateToolReport(spanID, report); decorated != "" {
+			return decorated, nil
+		}
+		// A subtree can legitimately render to nothing (dagui hides internal,
+		// passthrough and encapsulated spans); say so rather than returning an
+		// empty result, and point at the path that does show raw output.
+		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs)",
+			spanID, spanID), nil
+	})
 }
 
 // describeObject renders an object result for the model: its type plus any

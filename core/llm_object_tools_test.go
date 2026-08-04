@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -133,4 +134,27 @@ func TestArgTypeToJSONSchema(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "array", got["type"])
 	require.Equal(t, "string", got["items"].(map[string]any)["type"])
+}
+
+// TestDecorateToolReport covers the report path's fallback contract: a
+// subtree that renders to nothing must yield "" so the caller falls back to
+// the flat captured logs (never an empty tool result), while a real report
+// keeps the ReadLogs breadcrumb that teaches the model how to read what was
+// abridged.
+func TestDecorateToolReport(t *testing.T) {
+	const spanID = "00000000000000aa"
+
+	// Renders to nothing: dagui filters internal/passthrough/encapsulated
+	// spans, so a tool call with children can still produce a blank report.
+	require.Empty(t, decorateToolReport(spanID, ""))
+	require.Empty(t, decorateToolReport(spanID, "\n \n\t\n"))
+
+	got := decorateToolReport(spanID, "TRACE REPORT\n\n• Foo.bar 1.0s\n\n")
+	require.Contains(t, got, "• Foo.bar")
+	// The breadcrumb names the tool-call span, in the same vocabulary as the
+	// flat path's "... N lines omitted (use ReadLogs(span: X) to read more)".
+	require.Contains(t, got, "use ReadLogs(span: "+spanID+") to read the full logs")
+	// ...and comes last, after the report's own trailing sections.
+	lines := strings.Split(got, "\n")
+	require.Contains(t, lines[len(lines)-1], "ReadLogs")
 }

@@ -1,10 +1,12 @@
 package idtui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -772,6 +774,37 @@ func TestRerunSectionLocalOnlyWithoutNativeCI(t *testing.T) {
 	}
 	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
 		t.Fatalf("missing local reproduce section:\n%s", joined)
+	}
+}
+
+// TestRerunSuggestionHookReplacesRunLocally covers the injectable rerun
+// suggestion: a headless consumer of the report (e.g. an LLM tool call result)
+// has tools rather than a `dagger` CLI, so it swaps in its own vocabulary. The
+// renderer still owns the layout.
+func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var gotNames []string
+	fe := NewASCIIReporterWithDB(io.Discard, rerunReportDB(t))
+	fe.Verbosity = dagui.ShowCompletedVerbosity
+	fe.RerunSuggestion = func(names []string) (string, []string) {
+		gotNames = names
+		return "RE-RUN THIS CHECK", []string{`call the check tool with name="` + names[0] + `"`}
+	}
+
+	var buf bytes.Buffer
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
+	}
+	got := buf.String()
+	if !slices.Equal(gotNames, []string{"ci:bootstrap"}) {
+		t.Fatalf("hook got names %v, want [ci:bootstrap]", gotNames)
+	}
+	if !strings.Contains(got, "RE-RUN THIS CHECK") ||
+		!strings.Contains(got, `call the check tool with name="ci:bootstrap"`) {
+		t.Fatalf("final render missing injected rerun suggestion:\n%s", got)
+	}
+	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
+		t.Fatalf("final render still suggests the CLI command:\n%s", got)
 	}
 }
 
