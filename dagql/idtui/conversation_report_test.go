@@ -73,6 +73,59 @@ func TestConversationReportFlagsToolResultTokens(t *testing.T) {
 	}
 }
 
+// TestConversationReportTruncatesMultilineToolArg verifies that an unrecognized
+// tool call whose first argument is a large multiline string (e.g. a commit
+// message body) is collapsed to just its first line with an ellipsis, so it
+// doesn't dominate the row.
+func TestConversationReportTruncatesMultilineToolArg(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	toolCallID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	end := start.Add(10 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "shell",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:      toolCallID,
+			TraceID: prettyTestTraceID(),
+			Name:    "Commit",
+			LLMRole: "assistant",
+			LLMTool: "Commit",
+			// Unrecognized arg name -> falls back to dumping the first arg,
+			// which here is a multi-paragraph commit body.
+			LLMToolArgNames:  []string{"contents"},
+			LLMToolArgValues: []string{"First line summary.\n\nA long body paragraph that should not appear in the row.\n- bullet one\n- bullet two"},
+			ParentID:         rootID,
+			StartTime:        start.Add(2 * time.Second),
+			EndTime:          start.Add(3 * time.Second),
+			Final:            true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: 120}, r, false)
+	joined := strings.Join(lines, "\n")
+
+	if !strings.Contains(joined, "First line summary. …") {
+		t.Fatalf("tool-call row missing truncated first line:\n%s", joined)
+	}
+	if strings.Contains(joined, "long body paragraph") {
+		t.Fatalf("tool-call row leaked multiline body:\n%s", joined)
+	}
+}
+
 // TestConversationReportNestsSubAgent verifies the final report surfaces the LLM
 // conversation under a CONVERSATION heading, in start-time order, with a
 // sub-agent's turns nested one level under the tool call that spawned them.
