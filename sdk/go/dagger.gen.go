@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -22,6 +24,35 @@ func Tracer() trace.Tracer {
 
 // reassigned at runtime after the span is initialized
 var marshalCtx = context.Background()
+
+// marshalMu serializes swaps of the package-level marshaling state
+// (marshalCtx) performed by MarshalJSON.
+var marshalMu sync.Mutex
+
+// IDClient is the minimal client surface needed to reconstruct Dagger
+// objects from their IDs. *Client implements it.
+type IDClient interface {
+	// QueryBuilder returns the root query builder, bound to the client's
+	// underlying GraphQL client.
+	QueryBuilder() *querybuilder.Selection
+	// GraphQLClient returns the underlying graphql.Client.
+	GraphQLClient() graphql.Client
+}
+
+// MarshalJSON serializes v to JSON, resolving any Dagger objects it contains
+// to their IDs using the given ctx.
+//
+// Prefer this over calling json.Marshal directly on values containing Dagger
+// objects: their MarshalJSON implementations must query the API to resolve
+// IDs, and this function makes the context used for those queries explicit.
+func MarshalJSON(ctx context.Context, v any) ([]byte, error) {
+	marshalMu.Lock()
+	defer marshalMu.Unlock()
+	prevCtx := marshalCtx
+	marshalCtx = ctx
+	defer func() { marshalCtx = prevCtx }()
+	return json.Marshal(v)
+}
 
 // assertNotNil panic if the given value is nil.
 // This function is used to validate that input with pointer type are not nil.

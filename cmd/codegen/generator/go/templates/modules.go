@@ -244,7 +244,10 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 
 	// A lot of the "work" actually happens when we're marshalling the return
 	// value, which entails getting object IDs, which happens in MarshalJSON,
-	// which has no ctx argument, so we use this lovely global variable.
+	// which has no ctx argument. The explicit call sites below use
+	// dagger.MarshalJSON/dagger.UnmarshalJSON to scope that state to each
+	// operation; this call remains so that user code that marshals Dagger
+	// objects directly (e.g. via json.Marshal) keeps working.
 	setMarshalContext(ctx)
 
 	fnCall := dag.CurrentFunctionCall()
@@ -290,7 +293,7 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 	if err != nil {
 		return err
 	}
-	resultBytes, err := json.Marshal(result)
+	resultBytes, err := dagger.MarshalJSON(ctx, result)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
@@ -610,7 +613,7 @@ func (ps *parseState) fillObjectFunctionCase(
 	parentVarName := "parent"
 	statements = append(statements,
 		Var().Id(parentVarName).Id(objName),
-		Err().Op("=").Qual("json", "Unmarshal").Call(Id(parentJSONVar), Op("&").Id(parentVarName)),
+		Err().Op("=").Qual("dagger", "UnmarshalJSON").Call(Id("dag"), Id(parentJSONVar), Op("&").Id(parentVarName)),
 		checkErrStatement("failed to unmarshal parent object"),
 	)
 
@@ -664,7 +667,8 @@ func (ps *parseState) fillObjectFunctionCase(
 
 		statements = append(statements,
 			If(Id(inputArgsVar).Index(Lit(spec.name)).Op("!=").Nil()).Block(
-				Err().Op("=").Qual("json", "Unmarshal").Call(
+				Err().Op("=").Qual("dagger", "UnmarshalJSON").Call(
+					Id("dag"),
 					Index().Byte().Parens(Id(inputArgsVar).Index(Lit(spec.name))),
 					Op("&").Add(target),
 				),
