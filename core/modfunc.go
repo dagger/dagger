@@ -1138,7 +1138,7 @@ func (fn *ModuleFunction) loadContextualArg(
 			// how strictly to treat a null. A .git that exists but is
 			// unusable -- a dead submodule/worktree pointer, a corrupt repo
 			// -- is a broken environment and fails the call instead (see
-			// ModuleSource.resolveGitPointer).
+			// ModuleSource.LoadContextGit / MaterializeHostGitCheckout).
 			slog.Warn("skipping contextual git argument: module context has no git checkout",
 				"function", fn.metadata.Name,
 				"arg", arg.OriginalName,

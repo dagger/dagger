@@ -122,6 +122,15 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc(`Name of the image to access.`),
 			),
+
+		dagql.NodeFunc("__gitDir", s.gitDir).
+			WithInput(dagql.PerClientInput).
+			Doc(`(Internal-only) A canonical .git directory for the client checkout at path, reconstructed from the client's own git pack.`,
+				`The engine never interprets a host checkout's raw git layout (worktree/submodule pointer files, commondirs, separate git dirs): the client's own git packs the repository and the engine rebuilds a standalone .git from the pack.`).
+			Args(
+				dagql.Arg("path").Doc(`Absolute host path of the client checkout to reconstruct a .git directory for.`),
+				dagql.Arg("stateDigest").Doc(`Digest of the checkout's current ref state. It keys the cache to the checkout, so the reconstruction is reused until the checkout's refs move.`),
+			),
 	}.Install(srv)
 }
 
@@ -764,6 +773,46 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	return inst, errors.New("invalid save config")
+}
+
+type hostGitDirArgs struct {
+	Path        string
+	StateDigest string
+}
+
+// gitDir reconstructs a canonical .git directory for the client checkout at
+// Path from the client's own git pack (see core.MaterializeGitCheckoutPack).
+// The engine is never the interpreter of a host checkout's raw git layout;
+// the client's git is the oracle.
+func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostGitDirArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	// args.StateDigest is deliberately unused in the body: it is a pure dagql
+	// cache key, keying this reconstruction to the checkout's ref state so the
+	// result is reused until the checkout's refs move.
+
+	pack, err := bk.PackGitCheckout(ctx, args.Path)
+	if err != nil {
+		return inst, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
+	}
+
+	dir, err := core.MaterializeGitCheckoutPack(ctx, pack)
+	if err != nil {
+		return inst, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 type hostServiceArgs struct {
