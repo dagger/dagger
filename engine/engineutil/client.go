@@ -488,6 +488,114 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 	}
 }
 
+// applyBundleChunkSize bounds each streamed bundle message, keeping it well
+// under gRPC's default 4MiB limit.
+const applyBundleChunkSize = 1 << 20
+
+// applyBundleMethod is the RPC's fully qualified name, used to detect clients
+// too old to know about it.
+const applyBundleMethod = "/dagger.git.Git/ApplyBundle"
+
+// GetGitHead asks the client for the current HEAD commit of a local checkout.
+// The client's own git resolves it, so worktree and submodule checkouts (whose
+// .git is a pointer file into another repository) work.
+func (c *Client) GetGitHead(ctx context.Context, checkoutPath string) (string, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+
+	response, err := git.NewGitClient(caller.Conn()).GetHead(ctx, &git.GitHeadRequest{
+		CheckoutPath: checkoutPath,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to query git HEAD: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *git.GitHeadResponse_HeadSha:
+		return result.HeadSha, nil
+	case *git.GitHeadResponse_Error:
+		return "", errors.New(result.Error.Message)
+	default:
+		return "", fmt.Errorf("unexpected response type")
+	}
+}
+
+// ApplyGitBundle streams a git bundle to the client and has the client's own
+// git fast-forward a local checkout onto targetSHA. It returns the checkout's
+// resulting HEAD.
+func (c *Client) ApplyGitBundle(
+	ctx context.Context,
+	checkoutPath string,
+	targetSHA string,
+	expectedBaseSHA string,
+	bundleRef string,
+	bundle []byte,
+) (string, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(applyBundleMethod) {
+		return "", fmt.Errorf("client does not support applying git bundles; upgrade the dagger CLI")
+	}
+
+	stream, err := git.NewGitClient(caller.Conn()).ApplyBundle(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to open bundle stream: %w", err)
+	}
+
+	err = stream.Send(&git.ApplyBundleRequest{
+		Msg: &git.ApplyBundleRequest_Metadata{
+			Metadata: &git.ApplyBundleMetadata{
+				CheckoutPath:    checkoutPath,
+				TargetSha:       targetSHA,
+				ExpectedBaseSha: expectedBaseSHA,
+				BundleRef:       bundleRef,
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to send bundle metadata: %w", err)
+	}
+	for len(bundle) > 0 {
+		chunk := bundle
+		if len(chunk) > applyBundleChunkSize {
+			chunk = chunk[:applyBundleChunkSize]
+		}
+		bundle = bundle[len(chunk):]
+		err := stream.Send(&git.ApplyBundleRequest{
+			Msg: &git.ApplyBundleRequest_Chunk{Chunk: chunk},
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to send bundle: %w", err)
+		}
+	}
+
+	response, err := stream.CloseAndRecv()
+	if err != nil {
+		return "", fmt.Errorf("failed to apply bundle: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *git.ApplyBundleResponse_Applied:
+		return result.Applied.HeadSha, nil
+	case *git.ApplyBundleResponse_Error:
+		return "", errors.New(result.Error.Message)
+	default:
+		return "", fmt.Errorf("unexpected response type")
+	}
+}
+
 type TerminalClient struct {
 	Stdin    io.ReadCloser
 	Stdout   io.WriteCloser

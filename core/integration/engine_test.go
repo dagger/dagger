@@ -301,6 +301,24 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (EngineSuite) TestCurrentTimestamp(_ context.Context, t *testctx.T) {
+	type currentTimestampResult struct {
+		CurrentTimestamp string
+	}
+
+	res1, err := testutil.Query[currentTimestampResult](t, `{currentTimestamp}`, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, res1.CurrentTimestamp)
+	_, err = time.Parse(time.RFC3339, res1.CurrentTimestamp)
+	require.NoError(t, err)
+
+	res2, err := testutil.Query[currentTimestampResult](t, `{currentTimestamp}`, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, res2.CurrentTimestamp)
+	_, err = time.Parse(time.RFC3339, res2.CurrentTimestamp)
+	require.NoError(t, err)
+}
+
 func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

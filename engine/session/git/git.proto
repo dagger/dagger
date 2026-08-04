@@ -7,6 +7,8 @@ option go_package = "git";
 service Git {
   rpc GetCredential(GitCredentialRequest) returns (GitCredentialResponse);
   rpc GetConfig(GitConfigRequest) returns (GitConfigResponse);
+  rpc GetHead(GitHeadRequest) returns (GitHeadResponse);
+  rpc ApplyBundle(stream ApplyBundleRequest) returns (ApplyBundleResponse);
 }
 
 message GitCredentialRequest {
@@ -47,6 +49,52 @@ message GitConfigEntry {
   string value = 2;
 }
 
+// GitHeadRequest asks the client for the current HEAD commit of a local
+// checkout. The client's own git resolves it, so worktree and submodule
+// checkouts (whose .git is a pointer file) work natively.
+message GitHeadRequest {
+  string checkout_path = 1;
+}
+
+message GitHeadResponse {
+  oneof result {
+    string head_sha = 1;
+    ErrorInfo error = 2;
+  }
+}
+
+// ApplyBundleRequest streams a git bundle to the client: one metadata message
+// first, then the bundle bytes in chunks.
+message ApplyBundleRequest {
+  oneof msg {
+    ApplyBundleMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message ApplyBundleMetadata {
+  // checkout_path is the local checkout the bundle is applied in.
+  string checkout_path = 1;
+  // target_sha is the commit the checkout must end up at.
+  string target_sha = 2;
+  // expected_base_sha is the commit the checkout must currently be at; the
+  // client re-verifies this immediately before applying anything.
+  string expected_base_sha = 3;
+  // bundle_ref is the ref the bundle records for target_sha, fetched by name.
+  string bundle_ref = 4;
+}
+
+message ApplyBundleResponse {
+  oneof result {
+    ApplyBundleResult applied = 1;
+    ErrorInfo error = 2;
+  }
+}
+
+message ApplyBundleResult {
+  string head_sha = 1;
+}
+
 message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
@@ -55,6 +103,8 @@ message ErrorInfo {
     TIMEOUT = 3;
     CREDENTIAL_RETRIEVAL_FAILED = 4;
     CONFIG_RETRIEVAL_FAILED = 5;
+    HEAD_MISMATCH = 6;
+    BUNDLE_APPLY_FAILED = 7;
 }
   ErrorType type = 1;
   string message = 2;
