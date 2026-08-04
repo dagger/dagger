@@ -9,6 +9,8 @@ service Git {
   rpc GetConfig(GitConfigRequest) returns (GitConfigResponse);
   rpc GetHead(GitHeadRequest) returns (GitHeadResponse);
   rpc ApplyBundle(stream ApplyBundleRequest) returns (ApplyBundleResponse);
+  rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
+  rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
 }
 
 message GitCredentialRequest {
@@ -95,6 +97,55 @@ message ApplyBundleResult {
   string head_sha = 1;
 }
 
+// CheckoutStateRequest asks the client for a digest identifying the current
+// git state of a local checkout: HEAD, the symbolic HEAD, and all branch and
+// tag refs. The engine uses it as a cache key so a checkout is only re-packed
+// (PackCheckout) when its refs actually move.
+message CheckoutStateRequest {
+  string checkout_path = 1;
+}
+
+message CheckoutStateResponse {
+  oneof result {
+    string state_digest = 1;
+    ErrorInfo error = 2;
+  }
+}
+
+// PackCheckoutRequest asks the client to pack a local checkout's repository
+// with its own git (a bundle of HEAD plus all branches and tags). Host git
+// natively understands every checkout layout - worktrees, submodules,
+// separate git dirs, alternates, partial clones - so the engine never has to
+// interpret raw .git state; it reconstructs a canonical repository from the
+// returned pack. Mirror image of ApplyBundle, which flows engine to client.
+message PackCheckoutRequest {
+  string checkout_path = 1;
+}
+
+// PackCheckoutResponse streams one metadata message first, then the bundle
+// bytes in chunks.
+message PackCheckoutResponse {
+  oneof msg {
+    PackCheckoutMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PackCheckoutMetadata {
+  // head_sha is the commit HEAD resolves to. Empty for a repository with no
+  // commits yet (unborn HEAD), in which case no bundle chunks follow.
+  string head_sha = 1;
+  // head_ref is the symbolic ref HEAD points at (e.g. "refs/heads/main"),
+  // empty when HEAD is detached.
+  string head_ref = 2;
+  // object_format is the repository's object hash algorithm ("sha1" or
+  // "sha256"), so the engine reconstructs with the same format.
+  string object_format = 3;
+  // error reports a failure instead of a pack: NOT_A_REPO when the checkout
+  // has no .git entry at its root, NOT_FOUND when git is not installed.
+  ErrorInfo error = 4;
+}
+
 message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
@@ -105,6 +156,8 @@ message ErrorInfo {
     CONFIG_RETRIEVAL_FAILED = 5;
     HEAD_MISMATCH = 6;
     BUNDLE_APPLY_FAILED = 7;
+    NOT_A_REPO = 8;
+    PACK_FAILED = 9;
 }
   ErrorType type = 1;
   string message = 2;

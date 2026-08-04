@@ -46,6 +46,7 @@ import (
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type SessionCaller interface {
@@ -594,6 +595,141 @@ func (c *Client) ApplyGitBundle(
 	default:
 		return "", fmt.Errorf("unexpected response type")
 	}
+}
+
+// checkoutStateMethod and packCheckoutMethod are the RPCs' fully qualified
+// names, used to detect clients too old to know about them.
+const (
+	checkoutStateMethod = "/dagger.git.Git/CheckoutState"
+	packCheckoutMethod  = "/dagger.git.Git/PackCheckout"
+)
+
+// ErrGitPackUnsupported reports that the client cannot pack a checkout with
+// its own git: either the client predates the PackCheckout RPC or it has no
+// git binary. Callers may degrade to whatever git state the synced tree
+// itself carries.
+var ErrGitPackUnsupported = errors.New("client cannot pack git checkouts")
+
+// GitCheckoutState asks the client for a digest of a local checkout's current
+// git state (HEAD, symbolic HEAD, branch and tag refs), resolved by the
+// client's own git so every checkout layout works. The digest changes exactly
+// when the checkout's refs move, making it the cache key for PackGitCheckout.
+//
+// A checkout that is not a git repository reports gitutil.ErrGitNoRepo.
+func (c *Client) GitCheckoutState(ctx context.Context, checkoutPath string) (string, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(checkoutStateMethod) {
+		return "", ErrGitPackUnsupported
+	}
+
+	response, err := git.NewGitClient(caller.Conn()).CheckoutState(ctx, &git.CheckoutStateRequest{
+		CheckoutPath: checkoutPath,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to query git checkout state: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *git.CheckoutStateResponse_StateDigest:
+		return result.StateDigest, nil
+	case *git.CheckoutStateResponse_Error:
+		switch result.Error.Type {
+		case git.NOT_A_REPO:
+			return "", fmt.Errorf("%s: %w", result.Error.Message, gitutil.ErrGitNoRepo)
+		case git.NOT_FOUND:
+			return "", fmt.Errorf("%s: %w", result.Error.Message, ErrGitPackUnsupported)
+		default:
+			return "", errors.New(result.Error.Message)
+		}
+	default:
+		return "", fmt.Errorf("unexpected response type")
+	}
+}
+
+// GitCheckoutPack is a client checkout's repository, packed by the client's
+// own git: a bundle of HEAD plus all branches and tags, with the metadata
+// needed to reconstruct a standalone repository from it. A repository with no
+// commits yet (unborn HEAD) has an empty HeadSHA and no Bundle.
+type GitCheckoutPack struct {
+	HeadSHA      string
+	HeadRef      string
+	ObjectFormat string
+	Bundle       []byte
+}
+
+// PackGitCheckout asks the client to pack a local checkout's repository with
+// its own git. See GitCheckoutPack. A checkout that is not a git repository
+// reports gitutil.ErrGitNoRepo.
+func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath string) (*GitCheckoutPack, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(packCheckoutMethod) {
+		return nil, ErrGitPackUnsupported
+	}
+
+	stream, err := git.NewGitClient(caller.Conn()).PackCheckout(ctx, &git.PackCheckoutRequest{
+		CheckoutPath: checkoutPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pack stream: %w", err)
+	}
+
+	var pack *GitCheckoutPack
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive checkout pack: %w", err)
+		}
+		switch msg := resp.Msg.(type) {
+		case *git.PackCheckoutResponse_Metadata:
+			if pack != nil {
+				return nil, fmt.Errorf("received more than one pack metadata message")
+			}
+			if errInfo := msg.Metadata.GetError(); errInfo != nil {
+				switch errInfo.Type {
+				case git.NOT_A_REPO:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+				case git.NOT_FOUND:
+					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitPackUnsupported)
+				default:
+					return nil, errors.New(errInfo.Message)
+				}
+			}
+			pack = &GitCheckoutPack{
+				HeadSHA:      msg.Metadata.HeadSha,
+				HeadRef:      msg.Metadata.HeadRef,
+				ObjectFormat: msg.Metadata.ObjectFormat,
+			}
+		case *git.PackCheckoutResponse_Chunk:
+			if pack == nil {
+				return nil, fmt.Errorf("received bundle data before pack metadata")
+			}
+			pack.Bundle = append(pack.Bundle, msg.Chunk...)
+		}
+	}
+	if pack == nil {
+		return nil, fmt.Errorf("missing pack metadata message")
+	}
+	if pack.HeadSHA != "" && len(pack.Bundle) == 0 {
+		return nil, fmt.Errorf("missing bundle for checkout at %s", pack.HeadSHA)
+	}
+	return pack, nil
 }
 
 type TerminalClient struct {
