@@ -96,6 +96,19 @@ type FrontendOpts struct {
 	// means "keep the default heading"; empty body lines mean "omit the section
 	// entirely". When nil, the default `dagger check ...` body is rendered.
 	RerunSuggestion func(checkNames []string) (heading string, body []string)
+
+	// AgentStyle renders for an AI agent rather than a human at a terminal:
+	// section headings become flat, greppable "== TITLE ==" markers instead of
+	// bold TTY text, bodies stay at the margin, purely decorative elements (the
+	// braille roll-up dots) are dropped, and span IDs are surfaced as handles.
+	//
+	// It is an option rather than pure environment detection because rendering
+	// also happens INSIDE the engine, where there is no agent env var to sniff
+	// (the engine is a daemon) but every report is assembled for an LLM: core
+	// sets it on the idtui.ReportRenderOpts it renders trace reports with. For
+	// the CLI it stays false and idtui.RunningInAgent() supplies the answer;
+	// idtui.agentStyle is where the two halves are combined.
+	AgentStyle bool
 }
 
 const (

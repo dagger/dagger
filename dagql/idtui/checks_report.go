@@ -102,7 +102,7 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 	// under it.
 	if len(node.Children) > 0 {
 		subIndent := strings.Repeat("  ", depth+1)
-		fmt.Fprintf(out, "%s%s\n", subIndent, checksHeaderLine(out, node.Children))
+		fmt.Fprintf(out, "%s%s\n", subIndent, checksHeaderLine(out, fe.agentStyle(), node.Children))
 		for _, child := range node.Children {
 			fe.renderCheckNode(ctx, out, r, child, depth+2)
 		}
@@ -346,7 +346,7 @@ func (s *SpanTreeView) renderInlineChecks(ctx tuist.Context, r *renderer, row *d
 // unbounded.
 func (fe *frontendPretty) checksRollupLines(ctx tuist.Context, r *renderer, children []*dagui.CheckNode, height int) []string {
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	header := checksHeaderLine(out, children)
+	header := checksHeaderLine(out, fe.agentStyle(), children)
 
 	bodyBuf := new(strings.Builder)
 	bodyOut := NewOutput(bodyBuf, termenv.WithProfile(fe.profile))

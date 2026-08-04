@@ -72,6 +72,11 @@ type TestView struct {
 	Logs         map[dagui.SpanID]*Vterm
 	SpanChildren func(*dagui.Span) tuist.Component
 
+	// AgentStyle renders the summary heading as a greppable "== TESTS =="
+	// marker rather than bold TTY text. Frontends seed it from their own
+	// dagui.FrontendOpts.AgentStyle (see idtui.agentStyle).
+	AgentStyle bool
+
 	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
 	// tail point at 'dagger cloud logs <trace> <span>' for the full output.
 	TraceID string
@@ -746,7 +751,7 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 // there is room for.
 func (tv *TestView) renderTestSummaryOneLine(out TermOutput, counts dagui.TestCounts, width int) string {
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
-	line := prefix + reportHeadingLine(out, tv.summaryHeading())
+	line := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading())
 	if parts := renderTestCountParts(out, counts); len(parts) > 0 {
 		line += "  " + strings.Join(parts, "  ")
 	}
@@ -857,7 +862,7 @@ func (tv *TestView) renderTestSummaryCountsCompact(out TermOutput, counts dagui.
 }
 
 func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
-	heading := prefix + reportHeadingLine(out, tv.summaryHeading())
+	heading := prefix + reportHeadingLine(out, tv.AgentStyle, tv.summaryHeading())
 	if tv.ShowTestViewerHint && !tv.testSummaryFinal() {
 		heading += " " + renderTestViewerHint(out)
 	}
@@ -1563,6 +1568,7 @@ func (fe *frontendPretty) inlineTestView(root dagui.SpanID) *TestView {
 func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *TestView {
 	tv := &TestView{
 		Profile:      fe.profile,
+		AgentStyle:   fe.agentStyle(),
 		Logs:         fe.logs.Logs,
 		RequestLogs:  fe.requestLogsOnRender,
 		ScopeName:    scopeName,
@@ -1753,6 +1759,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		}
 		tv := &TestView{
 			Profile:         s.fe.profile,
+			AgentStyle:      s.fe.agentStyle(),
 			Logs:            s.fe.logs.Logs,
 			SummaryIndent:   2,
 			SummaryLogLines: -1,
