@@ -1,13 +1,16 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
 )
@@ -63,6 +66,34 @@ func TestCacheMetadataDirectResultBytesUsesCeiling(t *testing.T) {
 	want := cacheMetadataResultEstimatedBytes + (shared+2)/3
 	assert.Equal(t, want, metadataDirectResultBytes(estimate))
 	assert.Equal(t, int64(0), metadataDirectResultBytes(CacheMetadataEstimate{}))
+}
+
+func TestCachePruneMetadataEstimateLogsOnlyAfterTrigger(t *testing.T) {
+	var logs bytes.Buffer
+	ctx := cacheTestContext(slog.WithLogger(t.Context(), slog.New(slog.NewTextHandler(&logs, nil))))
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	report, err := c.PruneMetadataEstimate(ctx, 2, 1)
+	assert.NilError(t, err)
+	assert.Assert(t, !report.Triggered)
+	assert.Assert(t, !strings.Contains(logs.String(), "dagql metadata prune finished"))
+
+	call := cacheTestIntCall("metadata-prune-aggregate-log")
+	_, err = c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), noopTypeResolver{}, &CallRequest{
+		ResultCall:    call,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(NewInt(1), call)
+	})
+	assert.NilError(t, err)
+	cacheTestReleaseSession(t, c, ctx)
+
+	logs.Reset()
+	report, err = c.PruneMetadataEstimate(ctx, c.MetadataEstimate().EstimatedBytes-1, 1)
+	assert.NilError(t, err)
+	assert.Assert(t, report.Triggered)
+	assert.Equal(t, 1, strings.Count(logs.String(), "dagql metadata prune finished"))
 }
 
 func TestCacheMetadataPruneCandidateOrder(t *testing.T) {
