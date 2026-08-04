@@ -33,6 +33,7 @@ func TestPromptSlashCommandMapping(t *testing.T) {
 		// arguments are carried through verbatim
 		{"/resume abc123", ".resume abc123", true},
 		{"/model claude-sonnet-4-5", ".model claude-sonnet-4-5", true},
+		{"/effort high", ".effort high", true},
 		{"/help\tcreate", ".help\tcreate", true},
 		// hidden builtins are still runnable as slash commands
 		{"/cd ./sub", ".cd ./sub", true},
