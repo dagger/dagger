@@ -13,12 +13,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 )
 
-// ErrNoGitContext reports that the module context has no git checkout at
-// all: no .git entry at its root. Unlike a .git that exists but is unusable
-// (which is a broken environment and fails the call), absence is a
-// legitimate state -- `dagger init` before `git init`, an exported source
-// tree -- so contextual GitRepository/GitRef args degrade to null on it.
-var ErrNoGitContext = errors.New("module context has no git checkout")
+// ErrNoGitContext is declared in git_hostdir.go.
 
 // Checkouts created by `git submodule` and `git worktree` don't have a .git
 // *directory* at the tree root: they have a .git pointer file (a "gitfile")
