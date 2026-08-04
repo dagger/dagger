@@ -6226,6 +6226,14 @@ type WorkspaceGit implements Node {
   id: ID!
 
   """
+  Commits staged in this workspace but not yet saved to the local checkout.
+
+  Ordered oldest to newest, matching the order they were staged in on top of the
+  checkout's HEAD. Empty when nothing is staged.
+  """
+  stagedCommits: [WorkspaceStagedCommit!]!
+
+  """
   Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
   """
   uncommitted: Changeset!
@@ -6319,5 +6327,33 @@ type WorkspaceSDK implements Node {
 
   """The module reference this SDK was installed from."""
   ref: String!
+}
+
+"""
+A commit staged in a workspace but not yet saved to the local checkout.
+"""
+type WorkspaceStagedCommit implements Node {
+  """The author and committer email the commit was made with."""
+  authorEmail: String!
+
+  """The author and committer name the commit was made with."""
+  authorName: String!
+
+  """
+  The changes this commit folded in, relative to the state staged before it.
+  """
+  changes: Changeset!
+
+  """The RFC3339 author and committer date the commit was made with."""
+  date: String!
+
+  """A unique identifier for this WorkspaceStagedCommit."""
+  id: ID!
+
+  """The full commit message, subject and body."""
+  message: String!
+
+  """The full hash of the staged commit."""
+  sha: String!
 }
 

@@ -225,6 +225,119 @@ func (s *workspaceSchema) stagedCommit(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
+// stagedCommits exposes the workspace's engine-side staged commit stack, oldest
+// first, so clients can show what is waiting to be saved to the local checkout.
+func (s *workspaceSchema) stagedCommits(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.ObjectResultArray[*core.WorkspaceStagedCommit], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	commits := parent.Self().Workspace.Self().PendingCommits()
+	results := make(dagql.ObjectResultArray[*core.WorkspaceStagedCommit], 0, len(commits))
+	for i := range commits {
+		var result dagql.ObjectResult[*core.WorkspaceStagedCommit]
+		if err := srv.Select(ctx, parent, &result, dagql.Selector{
+			Field: "__stagedCommitEntry",
+			Args:  []dagql.NamedInput{{Name: "index", Value: dagql.NewInt(i)}},
+		}); err != nil {
+			return nil, fmt.Errorf("staged commits: entry %d: %w", i, err)
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// stagedCommitEntry is the internal field backing one element of
+// WorkspaceGit.stagedCommits. It is a field of its own so each entry is an
+// ordinary dagql result with a real ID (like Workspace.__workspaceModule).
+func (s *workspaceSchema) stagedCommitEntry(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	args struct {
+		Index int
+	},
+) (inst dagql.ObjectResult[*core.WorkspaceStagedCommit], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	commits := parent.Self().Workspace.Self().PendingCommits()
+	if args.Index < 0 || args.Index >= len(commits) {
+		return inst, fmt.Errorf("staged commit index %d out of range (%d staged)", args.Index, len(commits))
+	}
+	commit := commits[args.Index]
+	changes, err := s.stagedCommitChanges(ctx, commits, args.Index)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.WorkspaceStagedCommit{
+		SHA:         commit.SHA,
+		Message:     commit.Message,
+		Date:        commit.Date,
+		AuthorName:  commit.AuthorName,
+		AuthorEmail: commit.AuthorEmail,
+		Changes:     changes,
+	})
+}
+
+// stagedCommitChanges derives what one staged commit alone folded in.
+//
+// WorkspacePendingCommit.Committed is *cumulative*: it records the content of
+// every commit staged so far, as a changeset from the workspace overlay's base
+// to the staged state (that is what the uncommitted views need to diff
+// against). The per-commit delta is therefore the step between consecutive
+// staged states: from the previous commit's staged tree to this one's.
+func (s *workspaceSchema) stagedCommitChanges(
+	ctx context.Context,
+	commits []core.WorkspacePendingCommit,
+	index int,
+) (inst dagql.ObjectResult[*core.Changeset], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	commit := commits[index]
+
+	// Commits staged on a workspace with no overlay record nothing: their
+	// pending changes are read from the repository instead. Report an empty
+	// changeset rather than a null one.
+	if commit.Committed.Self() == nil {
+		repoID, err := commit.Repo.ID()
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, commit.Repo, &inst, dagql.Selector{
+			Field: "changes",
+			Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](repoID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("staged commit changes: %w", err)
+		}
+		return inst, nil
+	}
+
+	// The state staged before this commit: the previous commit's staged tree,
+	// or — for the first commit — the base the cumulative record is anchored on.
+	before := commit.Committed.Self().Before
+	if index > 0 && commits[index-1].Committed.Self() != nil {
+		before = commits[index-1].Committed.Self().After
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, commit.Committed.Self().After, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, fmt.Errorf("staged commit changes: %w", err)
+	}
+	return inst, nil
+}
+
 // exportPendingCommits lands the workspace's engine-side staged commits on the
 // user's local checkout, as a fast-forward of whatever ref HEAD points at.
 //
