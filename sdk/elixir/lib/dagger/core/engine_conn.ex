@@ -48,7 +48,6 @@ defmodule Dagger.Core.EngineConn do
     else
       :error -> {:error, :no_executable}
       nil -> {:error, :no_executable}
-      otherwise -> otherwise
     end
   end
 
