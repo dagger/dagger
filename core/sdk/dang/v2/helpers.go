@@ -24,6 +24,7 @@ import (
 	"github.com/vito/dang/v2/pkg/introspection"
 	"github.com/vito/dang/v2/pkg/ioctx"
 	"github.com/vito/dang/v2/pkg/querybuilder"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
@@ -109,7 +110,19 @@ func evalDangSource(
 			AutoImport: true,
 		})
 
-		stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+		// Route the program's stdout/stderr to the USER-FACING span, not
+		// whatever span happens to be current. A module function call runs
+		// under dagql's call_exec profiling span (dagql/otelprof_hooks.go
+		// beginOTelCallExec), which is telemetry.Passthrough() — no frontend
+		// renders it as a row, and log capture treats it as nested work. Logs
+		// parented there vanish from the row that should show them: a Dang
+		// `print` would land one hop deeper than the function call the user
+		// sees. Containerized SDKs get this right by construction, since the
+		// executor injects the same user-facing span context as the
+		// container's traceparent (engineutil executor_spec.go); an in-engine
+		// runtime has to ask for it explicitly.
+		stdioCtx := trace.ContextWithSpanContext(ctx, dagql.UserFacingSpanContext(ctx))
+		stdio := telemetry.SpanStdio(stdioCtx, core.InstrumentationLibrary)
 		ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 		ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
 
