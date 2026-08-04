@@ -320,6 +320,20 @@ func (c *traceReportCacheState) load(ctx context.Context, key traceReportKey, cl
 // mutation of the shared DB: the DB's own primary span is left exactly as
 // ingestion set it, so no render can observe another render's scope.
 func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, clientDB *clientdb.DB, root string, opt traceReportOpts) (string, error) {
+	// Every report rendered here is assembled for an LLM: a tool call's own
+	// result, or the ReadTrace builtin. Inside the engine there is no agent
+	// env var to sniff (it's a daemon), so say so explicitly, at the only
+	// place that renders. The effect is twofold, and wanted in both cases:
+	// section headings render as greppable "== TITLE ==" markers instead of
+	// bold-TTY text, and the color profile stays ASCII so no escape codes
+	// reach the model.
+	//
+	// Deliberately here rather than in an init() or in NewReportSession: the
+	// flag is process-wide, so it must be flipped by an actual LLM-facing
+	// render, not merely by linking (or constructing) the report machinery --
+	// otherwise it leaks into test binaries that assert the human rendering.
+	idtui.ForceRunningInAgent()
+
 	var primary dagui.SpanID
 	if root != "" {
 		spanID, err := trace.SpanIDFromHex(root)

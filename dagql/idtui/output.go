@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
@@ -77,9 +78,39 @@ var agentEnvVars = []string{
 // than a human at a terminal. Agents consume the output as text, so escape
 // codes are just noise.
 //
+// It is true either when the environment says so (the CLI case) or when
+// ForceRunningInAgent has been called (the engine case: everything the engine
+// renders with this package is a report assembled for an LLM).
+func RunningInAgent() bool {
+	if forcedRunningInAgent.Load() {
+		return true
+	}
+	return runningInAgentEnv()
+}
+
+// forcedRunningInAgent is the programmatic override behind
+// ForceRunningInAgent. Atomic rather than a plain bool: it is flipped from
+// whichever goroutine first renders an LLM-facing report, while the render
+// loop reads it per row per frame.
+var forcedRunningInAgent atomic.Bool
+
+// ForceRunningInAgent makes RunningInAgent report true for the rest of the
+// process, regardless of the environment.
+//
+// It exists for rendering done INSIDE the engine, where there is no agent env
+// var to sniff (the engine is a daemon) but the reader of every rendered
+// report is an LLM: core flips it when rendering a trace report. It is
+// deliberately one-way and process-wide -- there is no "back to a human
+// terminal" in a process that renders for LLMs.
+func ForceRunningInAgent() {
+	forcedRunningInAgent.Store(true)
+}
+
+// runningInAgentEnv is the environment half of the detection.
+//
 // Memoized: the render loop consults it per row per frame, the environment
 // can't change mid-process, and each os.Getenv takes the runtime's env lock.
-var RunningInAgent = sync.OnceValue(func() bool {
+var runningInAgentEnv = sync.OnceValue(func() bool {
 	return runningInAgent(os.Getenv)
 })
 
