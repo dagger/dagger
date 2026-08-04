@@ -1,0 +1,3 @@
+[imports.Dagger]
+dagger = true
+service = ["/home/vito/src/dagger/llm-workspace/hack/with-dev", "/home/vito/src/dagger/llm-workspace/bin/dagger", "session"]

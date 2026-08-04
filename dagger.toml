@@ -204,7 +204,7 @@ source = "github.com/dagger/dang-sdk"
 source = "github.com/dagger/go-sdk"
 
 [env.dev.modules.editor]
-source = "github.com/vito/editor"
+source = "modules/editor"
 
 [env.dev.modules.tui-qa]
 source = "modules/tui-qa"
