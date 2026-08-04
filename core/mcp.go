@@ -1189,6 +1189,32 @@ const llmLogsBatchSize = 1000
 // long-lived service exec spans are skipped — they enter tool-call subtrees
 // via cause links and would otherwise drown out deliberate print output.
 func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs bool) ([]string, error) {
+	lines, err := m.captureLogLines(ctx, spanID, excludeServiceLogs)
+	if err != nil {
+		return nil, err
+	}
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	texts := make([]string, len(lines))
+	for i, line := range lines {
+		texts[i] = line.text
+	}
+	return texts, nil
+}
+
+// capturedLine is one assembled log line, tagged with whether it was printed
+// by the captured span itself (or one of its direct children — where a tool
+// function's own print output lands) rather than by nested work deeper in the
+// subtree. Tool results keep direct output in full and abridge the rest.
+type capturedLine struct {
+	text   string
+	direct bool
+}
+
+// captureLogLines is captureLogs' structured form: the same filtering and
+// line assembly, but each line retains its direct/nested provenance.
+func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs bool) ([]capturedLine, error) {
 	root, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1203,7 +1229,10 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs
 	}
 	defer q.Close()
 
-	buf := new(strings.Builder)
+	// segments accumulates log bodies in arrival order, each tagged with its
+	// provenance; lines are assembled from them afterwards, since a single log
+	// record needn't be line-aligned.
+	var segments []capturedLine
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
 	// roll-up behavior.
@@ -1248,6 +1277,9 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs
 				continue
 			}
 
+			// Logs we can't locate are treated as nested work: abridging them is
+			// the conservative default.
+			var direct bool
 			if log.SpanID.Valid {
 				if !log.TraceID.Valid {
 					return nil, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
@@ -1283,6 +1315,8 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs
 					// don't surface logs from spans hidden as internal
 					continue
 				}
+				direct = log.SpanID.String == spanID ||
+					(span.ParentSpanID.Valid && span.ParentSpanID.String == spanID)
 			}
 
 			var bodyPb otlpcommonv1.AnyValue
@@ -1290,25 +1324,70 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs
 				slog.Warn("failed to unmarshal log body", "error", err, "client", mainMeta.ClientID, "log", log.ID)
 				continue
 			}
+			var text string
 			switch x := bodyPb.GetValue().(type) {
 			case *otlpcommonv1.AnyValue_StringValue:
-				fmt.Fprint(buf, x.StringValue)
+				text = x.StringValue
 			case *otlpcommonv1.AnyValue_BytesValue:
-				buf.Write(x.BytesValue)
+				text = string(x.BytesValue)
 			default:
 				// default to something troubleshootable
-				fmt.Fprintf(buf, "UNHANDLED: %+v", x)
+				text = fmt.Sprintf("UNHANDLED: %+v", x)
+			}
+			if text == "" {
+				continue
+			}
+			if n := len(segments); n > 0 && segments[n-1].direct == direct {
+				segments[n-1].text += text
+				continue
+			}
+			segments = append(segments, capturedLine{text: text, direct: direct})
+		}
+	}
+	return assembleLines(segments), nil
+}
+
+// assembleLines splits accumulated log segments into lines, carrying a line
+// that straddles segments across the boundary. A line's provenance is that of
+// the segment that started it — log records aren't guaranteed to be
+// line-aligned, though a Dang `print` (Fprintln to the span's stdout) is.
+func assembleLines(segments []capturedLine) []capturedLine {
+	var lines []capturedLine
+	// pending accumulates a line across segment boundaries; its provenance is
+	// claimed by the first segment to contribute actual text, so the empty
+	// chunk that trails a newline-terminated record doesn't hand the next
+	// record's line to the wrong span.
+	var pending string
+	var pendingDirect, pendingSet bool
+	for _, seg := range segments {
+		chunks := strings.Split(seg.text, "\n")
+		for i, chunk := range chunks {
+			if chunk != "" {
+				if !pendingSet {
+					pendingDirect = seg.direct
+					pendingSet = true
+				}
+				pending += chunk
+			}
+			if i < len(chunks)-1 {
+				// a "\n" followed this chunk: the line is complete
+				direct := seg.direct
+				if pendingSet {
+					direct = pendingDirect
+				}
+				lines = append(lines, capturedLine{text: pending, direct: direct})
+				pending, pendingDirect, pendingSet = "", false, false
 			}
 		}
 	}
-	if buf.Len() == 0 {
-		return nil, nil
+	if pending != "" {
+		lines = append(lines, capturedLine{text: pending, direct: pendingDirect})
 	}
-	return strings.Split(
-		// ensure trailing linebreaks don't contribute to line limits
-		strings.TrimRight(buf.String(), "\n"),
-		"\n",
-	), nil
+	// ensure trailing linebreaks don't contribute to line limits
+	for len(lines) > 0 && lines[len(lines)-1].text == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 // internalSpanFilter reports whether spans sit within a subtree marked
@@ -1682,6 +1761,63 @@ func limitLines(spanID string, logs []string, limit, maxLineLen int) []string {
 		}
 	}
 	return logs
+}
+
+// limitIndirectLines abridges a captured log stream for a tool result: lines
+// the tool printed itself survive in full, while logs from nested work
+// underneath it are limited to the last `limit` lines, with each dropped run
+// replaced by a count. A tool's report is deliberate output and stays intact
+// no matter how noisy the work beneath it was; nested logs remain fully
+// readable via ReadLogs.
+func limitIndirectLines(spanID string, lines []capturedLine, limit, maxLineLen int) []string {
+	// Indirect lines are kept from the tail: the most recent nested output is
+	// the most relevant (e.g. the error that ended a build).
+	keepFrom := 0
+	if limit > 0 {
+		var indirect int
+		for _, line := range lines {
+			if !line.direct {
+				indirect++
+			}
+		}
+		if indirect > limit {
+			keepFrom = indirect - limit
+		}
+	}
+
+	var out []string
+	var seen, dropped int
+	flush := func() {
+		if dropped == 0 {
+			return
+		}
+		out = append(out, fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...",
+			dropped, spanID))
+		dropped = 0
+	}
+	for _, line := range lines {
+		if line.direct {
+			flush()
+			out = append(out, line.text)
+			continue
+		}
+		if seen < keepFrom {
+			seen++
+			dropped++
+			continue
+		}
+		seen++
+		flush()
+		out = append(out, line.text)
+	}
+	flush()
+
+	for i, line := range out {
+		if len(line) > maxLineLen {
+			out[i] = line[:maxLineLen] + fmt.Sprintf("[... %d chars truncated]", len(line)-maxLineLen)
+		}
+	}
+	return out
 }
 
 // Hide functions from the largest and most commonly used core types, to prevent

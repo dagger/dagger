@@ -59,6 +59,14 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	spanName := fmt.Sprintf("LLM HTTP %s %s", req.Method, req.URL.Path)
 	ctx, span := Tracer(ctx).Start(ctx, spanName,
 		telemetry.Encapsulate(),
+		// This span exists purely for debugging the provider wire protocol:
+		// its stdio is raw request/response bodies (SSE event streams for
+		// streaming providers). Mark it internal so it's revealed only at
+		// -vvv in the TUI, and — crucially — so log captures skip it:
+		// captureLogs' internalSpanFilter refuses to surface logs from
+		// beneath internal spans, which keeps a nested (sub-agent) LLM
+		// loop's SSE traffic out of the enclosing tool call's result.
+		telemetry.Internal(),
 		trace.WithAttributes(
 			attribute.String("llm.provider", t.provider),
 			attribute.String("http.method", req.Method),
@@ -92,6 +100,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		revealTransport(span)
 		fmt.Fprintf(stdio.Stderr, "<<< error: %s\n", err)
 		span.End()
 		stdio.Close()
@@ -124,6 +133,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		}
 		if resp.StatusCode >= 400 {
 			span.SetStatus(codes.Error, httpErrorStatus(resp.StatusCode, fullBody))
+			revealTransport(span)
 		}
 		span.End()
 		stdio.Close()
@@ -131,12 +141,22 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		fmt.Fprintf(stdio.Stdout, "<<< %d (no body)\n", resp.StatusCode)
 		if resp.StatusCode >= 400 {
 			span.SetStatus(codes.Error, httpErrorStatus(resp.StatusCode, nil))
+			revealTransport(span)
 		}
 		span.End()
 		stdio.Close()
 	}
 
 	return resp, nil
+}
+
+// revealTransport un-hides a failed LLM HTTP span. The span is marked
+// internal at start so its wire-protocol stdio (SSE dumps) stays out of the
+// TUI and out of log captures on the happy path; when the request actually
+// fails, the request/response bodies are the diagnosis, so clear the flag
+// before ending the span.
+func revealTransport(span trace.Span) {
+	span.SetAttributes(attribute.Bool(telemetry.UIInternalAttr, false))
 }
 
 // teeReadCloser wraps a tee'd reader with the original body's Close, and
