@@ -7,8 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/dagql"
@@ -39,6 +37,15 @@ var ErrNoGitContext = errors.New("module context has no git checkout")
 // carries. ctx must carry the owning client's metadata (it routes both the
 // session RPCs and the Host.__gitDir selection).
 //
+// cacheKey keys the reconstruction. Empty means "key it to the checkout's live
+// ref state" (a fresh reconstruction whenever the refs move): the right choice
+// for a module context, resolved fresh per load. A caller that wants the
+// reconstruction pinned to a session's cached view of the checkout -- so a
+// checkout that advances mid-session is not silently re-read -- passes a stable
+// token instead (a workspace passes its read epoch, which bumps on
+// export/reload). The token only selects a cache entry; the pack itself is
+// always taken from the live checkout when a new entry is computed.
+//
 // A checkout that is not a git repository reports ErrNoGitContext with the
 // tree unchanged. A client that cannot pack checkouts (predates the RPCs, or
 // has no git binary) degrades to the tree as synced: a plain .git directory
@@ -49,6 +56,7 @@ func MaterializeHostGitCheckout(
 	dag *dagql.Server,
 	tree dagql.ObjectResult[*Directory],
 	hostPath string,
+	cacheKey string,
 ) (dagql.ObjectResult[*Directory], error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -69,6 +77,13 @@ func MaterializeHostGitCheckout(
 		return tree, fmt.Errorf("git checkout state for %q: %w", hostPath, err)
 	}
 
+	// The live ref-state digest keys the reconstruction unless the caller
+	// pinned it to a stable token of its own.
+	stateDigest := state
+	if cacheKey != "" {
+		stateDigest = cacheKey
+	}
+
 	var gitDir dagql.ObjectResult[*Directory]
 	if err := dag.Select(ctx, dag.Root(), &gitDir,
 		dagql.Selector{
@@ -78,7 +93,7 @@ func MaterializeHostGitCheckout(
 			Field: "__gitDir",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(hostPath)},
-				{Name: "stateDigest", Value: dagql.String(state)},
+				{Name: "stateDigest", Value: dagql.String(stateDigest)},
 			},
 		},
 	); err != nil {
@@ -207,7 +222,11 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		// The bundle carries every branch and tag; fetching validates object
 		// connectivity along the way, so a torn or truncated pack fails here
 		// rather than surfacing later as a subtly broken repository.
-		if _, err := runGitEnv(ctx, root, nil, "fetch", "--quiet", "--no-tags", bundle.Name(), "+refs/*:refs/*"); err != nil {
+		// --update-head-ok lets the fetch advance the branch HEAD symbolically
+		// points at (set just above): this is a scratch reconstruction with no
+		// meaningful work tree, so git's "refusing to fetch into checked-out
+		// branch" guard does not apply.
+		if _, err := runGitEnv(ctx, root, nil, "fetch", "--quiet", "--no-tags", "--update-head-ok", bundle.Name(), "+refs/*:refs/*"); err != nil {
 			return fmt.Errorf("fetch checkout pack: %w", err)
 		}
 
@@ -284,6 +303,3 @@ func DropRootGitPointerFile(
 	}
 	return cleaned, nil
 }
-
-var _ = slices.Clone[[]string] // placate imports during staged edits
-var _ = strings.TrimSpace
