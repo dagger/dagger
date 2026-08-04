@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -59,15 +58,6 @@ const traceReportHeadBytes = traceReportMaxBytes * 2 / 3
 // always safe, it just means the next render for that session pays for a
 // full rebuild.
 const traceReportMaxCachedSessions = 8
-
-// traceReporter is the slice of idtui's report-only frontend that we drive.
-// idtui.NewASCIIReporterWithDB returns an unexported type, so name the
-// behavior instead.
-type traceReporter interface {
-	LogExporter() sdklog.Exporter
-	FinalRender(io.Writer) error
-	SetReportRenderOpts(idtui.ReportRenderOpts)
-}
 
 // traceReportOpts tunes a single scoped render. The zero value shows
 // completed spans expanded, prunes nothing, and leaves log lines unbounded.
@@ -133,6 +123,18 @@ type traceReportOpts struct {
 	// something it can actually call to see the full detail behind an abridged
 	// result. Interactive CLI rendering never sets this.
 	SuggestReadTrace bool
+
+	// HideSpanTree drops the span tree from the report, leaving only what the
+	// run SURFACED beneath the root -- CHECKS, TESTS, SERVICES, the
+	// conversation, the generators -- alongside the caller's own OUTPUT
+	// section.
+	//
+	// Set for a successful tool call's own result: the agent asked what its
+	// tool did, and a transcription of every dagql field call beneath it is
+	// noise it did not ask for (and, at 16 KiB of budget, noise that crowds
+	// out the answer). ReadTrace, whose entire purpose is "show me the shape
+	// of what ran", never sets it.
+	HideSpanTree bool
 }
 
 // readTraceRerunSuggestion is the LLM-facing replacement for the report's
@@ -158,14 +160,13 @@ type traceReportKey struct {
 
 // traceReportSession is one session's incrementally-loaded trace.
 //
-// The DB and the reporter are created together and always reused together:
-// feeding db.LogExporter() alone does *not* produce the rendered ┃ log lines
-// -- those come from the frontend's own log buffers -- so the logs have to
-// flow into this exact reporter, and the reporter has to be the one that
-// renders.
+// Only INGESTION state is cached: the DB and the log buffers (both owned by
+// the idtui.ReportSession). Every render builds a fresh frontend over them,
+// so no render state -- scope, expansion, claims, memoized rows -- is ever
+// shared between two reports. See idtui.ReportSession for the invariant that
+// buys: a scoped report renders exactly the root span's real subtree.
 type traceReportSession struct {
-	db       *dagui.DB
-	reporter traceReporter
+	reports *idtui.ReportSession
 
 	// spanCursor/logCursor are the highest clientdb row IDs already exported.
 	// clientdb rows are append-only with monotonic IDs (the engine's SSE
@@ -173,13 +174,9 @@ type traceReportSession struct {
 	// strictly greater ID.
 	spanCursor int64
 	logCursor  int64
-
-	// defaultPrimary is the primary span dagui.DB picks on its own (the root
-	// span) before any explicit scoping. Restored before each load so a
-	// previous render's SetPrimarySpan doesn't change how new rows are
-	// ingested.
-	defaultPrimary dagui.SpanID
 }
+
+func (s *traceReportSession) db() *dagui.DB { return s.reports.DB() }
 
 // traceReportCacheState is the process-wide cache of per-session trace DBs.
 //
@@ -203,11 +200,7 @@ var traceReportCache = &traceReportCacheState{
 func (c *traceReportCacheState) get(key traceReportKey) *traceReportSession {
 	entry, ok := c.entries[key]
 	if !ok {
-		db := dagui.NewDB()
-		fe := idtui.NewASCIIReporterWithDB(io.Discard, db)
-		// Render options are (re)applied per render, in render() -- a cached
-		// reporter serves renders with different options.
-		entry = &traceReportSession{db: db, reporter: fe}
+		entry = &traceReportSession{reports: idtui.NewReportSession(dagui.NewDB())}
 		c.entries[key] = entry
 	}
 	c.touch(key)
@@ -234,8 +227,8 @@ func (c *traceReportCacheState) touch(key traceReportKey) {
 // the pretty frontend's final report as plain text -- the same span tree,
 // CHECKS and TESTS sections a user sees at the end of a CLI run.
 //
-// Loading is incremental: the session's DB (and its reporter) are cached, and
-// each call only pages in the clientdb rows appended since the last one. A
+// Loading is incremental: the session's DB (and its log buffers) are cached,
+// and each call only pages in the clientdb rows appended since the last one. A
 // full rebuild is linear in session size (~20-25µs/span row, ~150µs/log row),
 // so re-loading everything on every call would be quadratic over a session
 // that keeps growing -- which is exactly what happens when a report is
@@ -299,7 +292,7 @@ func withTraceReportDB(ctx context.Context, fn func(*dagui.DB) error) error {
 	if err != nil {
 		return err
 	}
-	return fn(entry.db)
+	return fn(entry.db())
 }
 
 // load brings the cached session up to date with clientDB. Callers must hold
@@ -307,28 +300,25 @@ func withTraceReportDB(ctx context.Context, fn func(*dagui.DB) error) error {
 func (c *traceReportCacheState) load(ctx context.Context, key traceReportKey, clientDB *clientdb.DB) (*traceReportSession, error) {
 	entry := c.get(key)
 
-	// Ingest as if nothing had been scoped yet, so the DB's own
-	// "primary defaults to the root span" logic behaves the same as on a
-	// fresh build.
-	entry.db.PrimarySpan = entry.defaultPrimary
-
-	if err := loadTraceSpans(ctx, clientDB, entry.db, &entry.spanCursor); err != nil {
+	if err := loadTraceSpans(ctx, clientDB, entry.db(), &entry.spanCursor); err != nil {
 		return nil, err
 	}
-	// Feed logs through the frontend's exporter, not the DB's: the DB only
-	// tracks which spans have logs, while the rendered ┃ output lines come from
-	// the frontend's own log buffers. Report mode dispatches synchronously, so
-	// this is safe outside the event loop.
-	if err := loadTraceLogs(ctx, clientDB, entry.reporter.LogExporter(), &entry.logCursor); err != nil {
+	// Feed logs through the report session's exporter, not the DB's: the DB
+	// only tracks which spans have logs, while the rendered ┃ output lines come
+	// from the session's own log buffers.
+	if err := loadTraceLogs(ctx, clientDB, entry.reports.LogExporter(), &entry.logCursor); err != nil {
 		return nil, err
 	}
 
-	entry.defaultPrimary = entry.db.PrimarySpan
 	return entry, nil
 }
 
 // render brings the cached session up to date with clientDB and renders it
 // scoped to root.
+//
+// Scoping is a per-render option (idtui.ReportRenderOpts.Root), never a
+// mutation of the shared DB: the DB's own primary span is left exactly as
+// ingestion set it, so no render can observe another render's scope.
 func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, clientDB *clientdb.DB, root string, opt traceReportOpts) (string, error) {
 	var primary dagui.SpanID
 	if root != "" {
@@ -346,14 +336,8 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 	if err != nil {
 		return "", err
 	}
+	db := entry.db()
 
-	if primary.IsValid() {
-		entry.db.SetPrimarySpan(primary)
-	}
-
-	// Reporters are cached (and so reused) per session, while options are
-	// per-render: apply them every time, including the zero values, so a
-	// previous render's options never leak into this one.
 	renderOpts := idtui.ReportRenderOpts{
 		// Show completed spans; without this the final render bails out
 		// entirely unless something failed or a special section
@@ -363,12 +347,14 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 		ExpandCompleted: true,
 		NestedLogLimit:  opt.NestedLogLines,
 		ScopedSubtree:   opt.Scoped,
+		Root:            primary,
+		HideSpanTree:    opt.HideSpanTree,
 	}
 	if opt.ExpandAll {
-		renderOpts.ExpandSpans = expandedSpans(entry.db, primary)
+		renderOpts.ExpandSpans = expandedSpans(db, primary)
 	}
 	if opt.HideNoise {
-		renderOpts.Filter = reportNoiseFilter(entry.db, primary)
+		renderOpts.Filter = reportNoiseFilter(db, primary)
 	}
 	if opt.SuggestReadTrace {
 		renderOpts.RerunSuggestion = readTraceRerunSuggestion
@@ -384,10 +370,9 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 		}
 		renderOpts.HideLogSpans = hide
 	}
-	entry.reporter.SetReportRenderOpts(renderOpts)
 
 	var buf bytes.Buffer
-	if err := entry.reporter.FinalRender(&buf); err != nil {
+	if err := entry.reports.Render(&buf, renderOpts); err != nil {
 		// A failing trace surfaces as an ExitError; that's expected here -- the
 		// report itself is still what we want.
 		var exitErr idtui.ExitError

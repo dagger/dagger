@@ -60,6 +60,23 @@ type FrontendOpts struct {
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision
 
+	// StrictSubtree confines the walk to the REAL-PARENTAGE descendants of
+	// ZoomedSpan: a span whose ParentSpan chain doesn't reach the zoomed span
+	// is never rendered, no matter how it was attached.
+	//
+	// The DB deliberately blurs containment for the live TUI: a cause-linked
+	// span is added to its cause's ChildSpans (see DB.integrateSpan and
+	// DB.linkResumedOutput), and WalkSpans additionally walks a span's
+	// CausalSpans inline so a chained call shows what produced its input.
+	// Both are the right call when the tree is "everything that happened",
+	// and both are wrong when the tree IS the answer to "what did THIS span
+	// do" -- a scoped report (see idtui.ReportRenderOpts.ScopedSubtree), whose
+	// invariant is that it renders exactly the root span's own subtree.
+	// Without this, a report scoped to one LLM tool call could render an
+	// unrelated (even still-running) subtree from a previous call, reached via
+	// a cause link.
+	StrictSubtree bool
+
 	// UsingCloudEngine indicates whether the connected engine is a Cloud Engine
 	UsingCloudEngine bool
 

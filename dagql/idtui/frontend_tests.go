@@ -56,8 +56,10 @@ func (row testSidebarRow) testCount() int {
 		}
 		return row.counts.Total()
 	}
-	if row.node != nil && row.node.Kind == dagui.TestNodeCase {
-		return 1
+	if row.node != nil {
+		// Only counted cases (leaves, plus a parent that failed on its own)
+		// contribute, so the "N more tests" tally matches the header totals.
+		return row.node.SelfCounts().Total()
 	}
 	return 0
 }
@@ -1943,13 +1945,15 @@ func (fe *frontendPretty) orphanTestView() *dagui.TestView {
 	// identifies the set.
 	if fe.orphanViewMemo.valid &&
 		fe.orphanViewMemo.mutations == fe.db.MutationCount() &&
+		fe.orphanViewMemo.root == surfaceRootID(fe.reportTestRoot()) &&
 		fe.orphanViewMemo.claims == fe.claims &&
 		fe.orphanViewMemo.claimed == fe.claims.testCaseCount() {
 		return fe.orphanViewMemo.view
 	}
-	view := fe.db.TestView()
+	// Scoped reports ask only about their own subtree; see reportTestView.
+	view := fe.reportTestView()
 	var orphan *dagui.TestView
-	if view.HasTests() {
+	if view != nil && view.HasTests() {
 		orphan = view.FilterCases(func(node *dagui.TestNode) bool {
 			return node.Span == nil || !fe.claims.hasTestCase(node.Span.ID)
 		})
@@ -1957,6 +1961,7 @@ func (fe *frontendPretty) orphanTestView() *dagui.TestView {
 	fe.orphanViewMemo = orphanViewMemo{
 		valid:     true,
 		mutations: fe.db.MutationCount(),
+		root:      surfaceRootID(fe.reportTestRoot()),
 		claims:    fe.claims,
 		claimed:   fe.claims.testCaseCount(),
 		view:      orphan,
@@ -1964,11 +1969,21 @@ func (fe *frontendPretty) orphanTestView() *dagui.TestView {
 	return orphan
 }
 
+// surfaceRootID keys the orphan-view memo on the root it was built for, so a
+// scoped and an unscoped view can never be served for one another.
+func surfaceRootID(root *dagui.Span) dagui.SpanID {
+	if root == nil {
+		return dagui.SpanID{}
+	}
+	return root.ID
+}
+
 // orphanViewMemo caches orphanTestView's filtered clone for repeated reads
 // within a render pass.
 type orphanViewMemo struct {
 	valid     bool
 	mutations uint64
+	root      dagui.SpanID
 	claims    *renderClaims
 	claimed   int
 	view      *dagui.TestView
@@ -2579,8 +2594,8 @@ func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNo
 }
 
 // nonEmptyTestNodes drops packages/suites that discovered no tests (0 total) so
-// they don't clutter the sidebar and push real results off-screen. A test case
-// always counts >=1 and counts roll up to parents, so this only removes
+// they don't clutter the sidebar and push real results off-screen. Every leaf
+// test case counts >=1 and counts roll up to parents, so this only removes
 // genuinely empty suites; a package with only skipped tests (Skipped > 0) stays.
 func nonEmptyTestNodes(nodes []*dagui.TestNode) []*dagui.TestNode {
 	out := make([]*dagui.TestNode, 0, len(nodes))
