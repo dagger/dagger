@@ -297,8 +297,7 @@ type Contributor {
       .withSecretVariable("GH_TOKEN", token)
 
     let ran = ctr
-      .withExec(["sh", "-c", script], expect: ReturnType.ANY)
-      .{{exitCode, stdout, combinedOutput}}
+      .withExec(["sh", "-c", script], expect: ReturnType.ANY).{{exitCode, stdout, combinedOutput}}
 
     if (ran.exitCode != 0) {
       raise `publishing the contribution failed (exit ${toString(ran.exitCode)}):` + "\n\n" + tail(ran.combinedOutput)

@@ -315,4 +315,4 @@ source = "modules/review"
 source = "modules/contributor"
 
 [env.dev.modules.contributor.settings]
-githubToken = "env://GITHUB_TOKEN"
+githubToken = "cmd://\"gh auth token\""

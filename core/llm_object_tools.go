@@ -31,6 +31,13 @@ const llmToolLogsMaxLines = 8
 // from the generated tool schema.
 const workspaceTypeName = "Workspace"
 
+// llmTypeName is the object type the engine auto-injects into a module
+// function's arguments from the conversation making the call (see
+// core/llm_context.go). Like Workspace, such arguments are hidden from the
+// generated tool schema. A method returning it is a continuation: the loop
+// resumes from the returned conversation (MCP.adoptLLM).
+const llmTypeName = "LLM"
+
 // boundTool is one object bound into the LLM's toolset via withTools. It carries
 // enough to build the toolset (the object's type, via objType) and to dispatch a
 // tool call (the object itself, as the receiver). The object may be held lazily
@@ -418,11 +425,16 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
-			// A method that returns the bound object's own type or a Workspace
-			// mutates shared state and must run sequentially. Changeset-returning
-			// methods run in parallel; CallBatch merges their results before applying
-			// them to the workspace.
-			ReadOnly:         retType != typeName && retType != "Changeset" && retType != "Workspace",
+			// A method that returns the bound object's own type, a Workspace, or
+			// an LLM mutates shared state and must run sequentially — an LLM
+			// return replaces the whole conversation, and at most one may be
+			// adopted per turn. Changeset-returning methods run in parallel;
+			// CallBatch merges their results before applying them to the
+			// workspace.
+			ReadOnly: retType != typeName &&
+				retType != "Changeset" &&
+				retType != workspaceTypeName &&
+				retType != llmTypeName,
 			ReturnsChangeset: retType == "Changeset",
 			Call:             m.callObjectMethod(srv, typeName, field),
 			Server:           typeName,
@@ -456,8 +468,9 @@ func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
 		return false
 	}
 	for _, arg := range field.Arguments {
-		if isWorkspaceArg(arg) {
-			// Auto-injected from the bound Workspace; treated as optional.
+		if isAutoInjectedArg(arg) {
+			// Auto-injected from the bound Workspace / current conversation;
+			// treated as optional.
 			continue
 		}
 		required := arg.Type.NonNull && arg.DefaultValue == nil
@@ -474,27 +487,33 @@ func isObjectArg(arg *ast.ArgumentDefinition) bool {
 	return arg.Directives.ForName("expectedType") != nil
 }
 
-// isWorkspaceArg reports whether an argument is the auto-injected Workspace,
-// identified by @expectedType(name: "Workspace"). Such args are filled from the
-// bound Workspace and never shown to the model.
-func isWorkspaceArg(arg *ast.ArgumentDefinition) bool {
+// isAutoInjectedArg reports whether an argument is filled in by the engine
+// rather than by the model: the bound Workspace (@expectedType(name:
+// "Workspace")), or the conversation making the call (an `LLM!` arg — see
+// core/llm_context.go). Both are hidden from the generated tool schema and
+// never disqualify a method from being a tool.
+func isAutoInjectedArg(arg *ast.ArgumentDefinition) bool {
+	return isExpectedTypeArg(arg, workspaceTypeName) || isExpectedTypeArg(arg, llmTypeName)
+}
+
+func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
 	d := arg.Directives.ForName("expectedType")
 	if d == nil {
 		return false
 	}
 	name := d.Arguments.ForName("name")
-	return name != nil && name.Value != nil && name.Value.Raw == workspaceTypeName
+	return name != nil && name.Value != nil && name.Value.Raw == typeName
 }
 
 // objectMethodSchema builds a tool's JSON-schema parameters from a field's
 // visible arguments — its scalars, enums, lists, and input objects — omitting the
-// auto-injected Workspace argument. Object args (when optional) render as ID
-// strings, annotated with their expected type.
+// auto-injected Workspace and LLM arguments. Object args (when optional) render
+// as ID strings, annotated with their expected type.
 func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
 	properties := map[string]any{}
 	var required []string
 	for _, arg := range field.Arguments {
-		if isWorkspaceArg(arg) {
+		if isAutoInjectedArg(arg) {
 			continue
 		}
 		argSchema, err := argTypeToJSONSchema(schema, arg.Type)
@@ -666,14 +685,16 @@ func buildObjectMethodSelector(srv *dagql.Server, recvType dagql.ObjectType, fie
 // return-type table in hack/designs/workspace-agents.md:
 //   - Changeset: overlay onto the workspace, return the patch summary.
 //   - Workspace: replace the current workspace, return the diff summary.
+//   - LLM: replace the conversation — the loop resumes from it (a continuation).
 //   - the bound object's own type: rebind it as the new state, return its print.
 //   - any other object: sync it, return its print (else a type description).
 //   - Void/null: return its print, else "(done)".
 //   - scalar/list/record: return the value.
 func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, typeName string, val dagql.AnyResult) (any, error) {
-	// A Changeset overlays onto the workspace (and a Workspace replaces it),
-	// returning a patch summary. step() persists the resulting workspace via a
-	// withWorkspace selector.
+	// A Changeset overlays onto the workspace (a Workspace replaces it, an LLM
+	// replaces the whole conversation), returning a summary. step() persists the
+	// resulting workspace via a withWorkspace selector, or resumes from the
+	// returned conversation.
 	if handled, out, err := m.applyStateReturn(ctx, srv, val); handled {
 		if logs := m.toolLogs(ctx); logs != "" {
 			if out == "" {

@@ -99,6 +99,18 @@ type MCP struct {
 	// the model through list_skills/read_skill alongside the engine-embedded and
 	// workspace-discovered skills.
 	skillDirs []dagql.ObjectResult[*Directory]
+	// selfLLM is the conversation dispatching the current step's tool calls —
+	// inst + withResponse, i.e. up to and including the in-flight tool call.
+	// step() sets it before CallBatch; MCP.Call threads it into tool dispatch
+	// (LLMToContext) so a tool's `LLM!` argument auto-fills with it. Transient:
+	// cleared by Clone, never persisted.
+	selfLLM dagql.ObjectResult[*LLM]
+	// continuation is an LLM returned by a tool during this step (see
+	// applyStateReturn / adoptLLM). When set, step() appends the turn's tool
+	// results to IT rather than to the LLM that made the call, so the loop
+	// resumes from the returned conversation — env, tools, prompts and all.
+	// Transient: cleared by Clone.
+	continuation dagql.ObjectResult[*LLM]
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -150,8 +162,36 @@ func (m *MCP) Clone() *MCP {
 	cp.mcpServers = maps.Clone(cp.mcpServers)
 	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
+	// Per-step scratch state: the dispatching conversation and any continuation
+	// a tool returned belong to the step that set them, not to the clone.
+	cp.selfLLM = dagql.ObjectResult[*LLM]{}
+	cp.continuation = dagql.ObjectResult[*LLM]{}
 	cp.mu = &sync.Mutex{}
 	return &cp
+}
+
+// SetSelfLLM records the conversation dispatching this step's tool calls, so
+// MCP.Call can hand it to a tool that declares an `LLM!` argument. Called by
+// step() on its transient MCP clone, immediately before CallBatch.
+func (m *MCP) SetSelfLLM(llm dagql.ObjectResult[*LLM]) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.selfLLM = llm
+}
+
+// Continuation returns the LLM a tool returned during this step, if any. step()
+// resumes from it instead of the LLM that made the call.
+func (m *MCP) Continuation() dagql.ObjectResult[*LLM] {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.continuation
+}
+
+// currentLLM returns the conversation dispatching this step's tool calls.
+func (m *MCP) currentLLM() dagql.ObjectResult[*LLM] {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.selfLLM
 }
 
 func (m *MCP) Returned() bool {
@@ -413,7 +453,7 @@ type changesetCapture struct {
 }
 
 // applyStateReturn implements the state-mutation convention shared by tool calls
-// and Dang eval results. Two kinds of value advance the agent's workspace:
+// and Dang eval results. Three kinds of value advance the agent's state:
 //
 //   - a Changeset overlays onto the bound workspace (via Workspace.withChanges,
 //     yielding a new immutable overlay Workspace) so the agent's edits accumulate
@@ -421,12 +461,20 @@ type changesetCapture struct {
 //   - a Workspace *replaces* the bound one — a tool that produces a whole new
 //     workspace (e.g. a checkout or install) makes it the agent's current
 //     workspace, mirroring the Changeset convention.
+//   - an LLM *replaces the conversation*: the tool acts as a continuation and
+//     the loop resumes from the returned LLM — its env, tools, system prompts
+//     and history — instead of the one that made the call. Since an LLM binds a
+//     workspace, this subsumes the Workspace case. See adoptLLM.
 //
-// Either way it summarizes the resulting patch. step() persists the new workspace
-// via a withWorkspace selector so the change survives history rebuilds. It reports
-// handled=false for any other value so the caller can fall through to normal
-// object/scalar output.
+// Either way it summarizes what changed. step() persists a new workspace via a
+// withWorkspace selector, or resumes from the continuation, so the change
+// survives history rebuilds. It reports handled=false for any other value so the
+// caller can fall through to normal object/scalar output.
 func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql.Typed) (handled bool, out string, err error) {
+	if next, ok := dagql.UnwrapAs[dagql.ObjectResult[*LLM]](val); ok {
+		out, err := m.adoptLLM(ctx, next)
+		return true, out, err
+	}
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
 		if capture, ok := ctx.Value(changesetCaptureKey{}).(*changesetCapture); ok {
 			capture.changes = changes
@@ -479,6 +527,157 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 		return "", err
 	}
 	return m.summarizePatch(ctx, srv, changes), nil
+}
+
+// adoptLLM makes a tool-returned LLM the conversation the agent loop resumes
+// from — the continuation ring of the state-return convention. The tool is
+// handed the current conversation through an auto-injected `LLM!` argument
+// (see loadLLMArg), transforms it, and returns the result; step() then appends
+// this turn's tool results to the RETURNED LLM instead of the one that made the
+// call, so the swap takes effect mid-turn without restarting the session.
+//
+// Three guardrails, all of which turn a bad swap into an ordinary failed tool
+// call (the agent survives, the old conversation stands):
+//
+//   - lineage: the returned conversation must CONTINUE the current one — its
+//     message history must extend the current history, not replace or rewrite
+//     it. That keeps the tool a transform (`install`, `reload`) rather than a
+//     hand-off, which is what `delegate` is for. Note this deliberately
+//     constrains history only: env, tools and system prompts MUST be free to
+//     change, since changing them is the whole point. Relaxing the history rule
+//     is what self-compaction (llm.compacted) would need.
+//   - eager validation: the returned LLM's env/tools are loaded HERE rather
+//     than lazily on the next turn, so e.g. installing a module that fails to
+//     load fails the tool call instead of bricking the loop.
+//   - one per turn: LLMs do not merge the way Changesets do, so at most one
+//     continuation may be adopted per batch of tool calls.
+func (m *MCP) adoptLLM(ctx context.Context, next dagql.ObjectResult[*LLM]) (string, error) {
+	if next.Self() == nil {
+		return "", fmt.Errorf("cannot continue from a null LLM")
+	}
+	current, ok := LLMFromContext(ctx)
+	if !ok {
+		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
+	}
+	if !continuesHistory(current.Self(), next.Self()) {
+		return "", fmt.Errorf("returned LLM does not continue the current conversation: " +
+			"a continuation must transform the LLM it was given (e.g. `llm.withWorkspace(...)`), " +
+			"preserving its message history; to start a fresh conversation, delegate to a sub-agent instead")
+	}
+
+	// Load the new toolset now, so a broken env fails the tool call rather than
+	// the next turn. Doubles as the material for the summary below.
+	after, err := next.Self().mcp.Tools(ctx)
+	if err != nil {
+		return "", fmt.Errorf("returned LLM's tools failed to load: %w", err)
+	}
+	before, err := current.Self().mcp.Tools(ctx)
+	if err != nil {
+		// Non-fatal: without the old toolset we just can't diff it.
+		slog.Warn("failed to load current LLM tools for continuation summary", "error", err)
+		before = nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.continuation.Self() != nil {
+		return "", fmt.Errorf("a conversation-replacing tool call already ran this turn; only one is allowed")
+	}
+	m.continuation = next
+	return summarizeToolsetChange(before, after), nil
+}
+
+// continuesHistory reports whether next's message history extends current's:
+// same messages, in the same order, possibly with more appended.
+//
+// This is the continuation lineage check. Comparing the histories by VALUE
+// rather than chasing the dagql ID chain is deliberate: a Result's ID is an
+// opaque runtime handle, and an LLM is usually transformed by being PASSED to
+// something (`agents.compose(base: llm)`) rather than received by it, so ID
+// ancestry is both awkward to compute and easy to get wrong. The history is the
+// thing the guardrail actually protects.
+func continuesHistory(current, next *LLM) bool {
+	if current == nil || next == nil {
+		return false
+	}
+	if len(next.Messages) < len(current.Messages) {
+		return false
+	}
+	for i, msg := range current.Messages {
+		if !messagesEqual(msg, next.Messages[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func messagesEqual(a, b *LLMMessage) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Role != b.Role || len(a.Content) != len(b.Content) {
+		return false
+	}
+	for i, blockA := range a.Content {
+		blockB := b.Content[i]
+		if blockA == blockB {
+			continue
+		}
+		if blockA == nil || blockB == nil {
+			return false
+		}
+		if blockA.Kind != blockB.Kind ||
+			blockA.Text != blockB.Text ||
+			blockA.CallID != blockB.CallID ||
+			blockA.ToolName != blockB.ToolName ||
+			string(blockA.Arguments) != string(blockB.Arguments) ||
+			blockA.Errored != blockB.Errored ||
+			blockA.Signature != blockB.Signature {
+			return false
+		}
+	}
+	return true
+}
+
+// summarizeToolsetChange reports how a continuation changed the agent's
+// toolset — the thing the model most needs to know after an install/reload.
+func summarizeToolsetChange(before, after []LLMTool) string {
+	beforeNames := make(map[string]bool, len(before))
+	for _, t := range before {
+		beforeNames[t.Name] = true
+	}
+	afterNames := make(map[string]bool, len(after))
+	for _, t := range after {
+		afterNames[t.Name] = true
+	}
+	var added, removed []string
+	for _, t := range after {
+		if !beforeNames[t.Name] {
+			added = append(added, t.Name)
+		}
+	}
+	for _, t := range before {
+		if !afterNames[t.Name] {
+			removed = append(removed, t.Name)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+
+	lines := []string{"Continuing from the returned conversation."}
+	if len(added) > 0 {
+		lines = append(lines, "Tools added: "+strings.Join(added, ", "))
+	}
+	if len(removed) > 0 {
+		lines = append(lines, "Tools removed: "+strings.Join(removed, ", "))
+	}
+	if len(added) == 0 && len(removed) == 0 {
+		lines = append(lines, fmt.Sprintf("Toolset unchanged (%d tools).", len(after)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // applyChangeset overlays a Changeset onto the bound workspace and updates
@@ -783,6 +982,13 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		// Bind the LLM's Workspace so the tool's contextual (+defaultPath) and
 		// Workspace-typed args resolve against it, not the ambient workspace.
 		toolCtx = WorkspaceToContext(toolCtx, m.workspace)
+	}
+	if self := m.currentLLM(); self.Self() != nil {
+		// Bind the conversation making this call so the tool's LLM-typed args
+		// auto-fill with it — the continuation hook (see adoptLLM). Note this
+		// must happen here rather than on the loop's ctx: a tool call runs under
+		// its display span's context, captured while the response streamed.
+		toolCtx = LLMToContext(toolCtx, self)
 	}
 	result, err := tool.Call(toolCtx, args)
 	if err != nil {

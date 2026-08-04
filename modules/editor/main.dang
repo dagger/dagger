@@ -30,6 +30,47 @@ type Editor {
       .withSystemPrompt(reminderPrompt(base.workspace))
   }
 
+  """
+  Install a Dagger module and continue with its tools available immediately.
+
+  The module is added to the workspace config and the conversation is
+  recomposed against the updated workspace, so the new tools show up in THIS
+  session — no restart, no lost context. If the module fails to load, the call
+  fails and the session carries on unchanged.
+
+  NOTE: this replaces the whole agent composition, so system prompts added
+  outside it (e.g. a one-off prompt supplied at session start) are dropped;
+  every module's own prompts and tools are rebuilt from the updated workspace.
+  """
+  install(
+    llm: LLM!,
+    """
+    Module reference to install, e.g. a local path like ./modules/review or a
+    remote address like github.com/dagger/dagger/modules/foo.
+    """
+    ref: String!,
+  ): LLM! {
+    let updated = llm.workspace.withModule(ref)
+    updated.agents.compose(base: llm.withWorkspace(updated).withoutSystemPrompts)
+  }
+
+  """
+  Reload the agent's own modules from the current workspace source.
+
+  Use this after editing a module that provides your tools (self-repair): the
+  conversation is recomposed against the workspace as it stands now — pending
+  edits included — so the edited tool takes effect immediately, with the
+  conversation intact. If the edited module fails to load, the call fails and
+  the session carries on with the previous toolset.
+
+  NOTE: as with install, system prompts added outside the agent composition are
+  dropped.
+  """
+  reload(llm: LLM!): LLM! {
+    let current = llm.workspace.reloaded
+    current.agents.compose(base: llm.withWorkspace(current).withoutSystemPrompts)
+  }
+
   let todos: [TODO!]! = []
 
   """

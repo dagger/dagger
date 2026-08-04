@@ -1,0 +1,265 @@
+# COMMIT_BUGS.txt
+
+Bug report from a live agent session exercising the `status` / `diff` / `commit`
+editor tools (Workspace.withCommit and friends). Written for the agent
+implementing that feature. This is revision 3: every rev-2 finding was
+re-tested and reproduces as FIXED; two new defects were found.
+
+STATUS (annotated after the fact): both rev-3 findings were reproduced in
+integration tests and fixed in commit 6d302e8, "workspace: fix deleting
+session-committed paths". Each finding below carries a RESOLUTION block with
+the real root cause, which differs from the report's inference in one place
+(finding 1's prediction (c) was wrong). Not yet re-QA'd from a live agent
+session — the evidence is `core/integration` coverage, not a replay of the
+session shape above.
+
+Each finding is tagged with a certainty level:
+
+  OBSERVED   — directly reproduced in this session; the evidence is quoted.
+  INFERRED   — a model that explains all observations; not proven by reading
+               the implementation.
+  SPECULATION — plausible cause / suggested fix direction; unverified.
+
+Session shape (all against the workspace, no host shell). The workspace began
+with the same 6 pre-existing uncommitted changes inherited from earlier
+sessions:
+
+  A  2026-08-01-174352-lets-investigate-this.txt
+  A  COMMIT_BUGS.txt
+  A  HANDOFF.md
+  A  RESTORE.md
+  A  committing.txt
+  M  dagger.toml
+  (6 files changed, +2300 -1)
+
+Four commits were staged, in order:
+
+  a3e8500  QA: probe README heading            (README.md)
+  5cba5ee  QA: add probe file in new directory (qa-probe-dir/probe.txt)
+  b25df92  QA: revert probe changes            (README.md)
+  3ea919a  QA: remove probe file               (qa-probe-dir/probe.txt, D)
+
+All four are throwaway QA probes; README nets to zero across a3e8500/b25df92
+and the probe file nets to nothing across 5cba5ee/3ea919a. **The user exported
+the first three with ctrl+s mid-session** — that export is load-bearing for
+finding 1's timeline, see below.
+
+
+## 1. Within a session, deleting a file whose only presence in HEAD comes from
+##    a session-staged commit is invisible to status/diff and uncommittable
+
+CERTAINTY: OBSERVED (behaviour) / INFERRED (the two-route model) /
+SPECULATION (the precise mechanism)
+
+This is the same two-anchor disease rev 2 diagnosed, in the opposite
+direction, and with the same tell: a ctrl+s rebind makes the symptom vanish.
+
+Decisive sequence, all before any export:
+
+  write("qa-probe-dir/probe.txt", "probe\n")
+  status()                            -> A +1 -0 qa-probe-dir/probe.txt
+                                         (correct; and no bare-directory
+                                          entry — the rev-2 cosmetic fix holds)
+  commit(subject: "...", paths: ["qa-probe-dir"])
+                                      -> [5cba5ee] A qa-probe-dir/probe.txt
+                                         (+1/-0)
+  status()                            -> exactly the 6 inherited files
+                                         (correct: committed delta subtracted)
+
+  rm("qa-probe-dir/probe.txt")        -> echoes a correct deletion diff
+  status()                            -> exactly the 6 inherited files
+                                         (WRONG: no D entry)
+  diff()                              -> nothing for that path either
+  read("qa-probe-dir/probe.txt")      -> error: ... no such file or directory
+
+So the tree said the file was gone while `status`/`diff` said nothing had
+changed relative to staged HEAD — even though staged HEAD (5cba5ee) contained
+it. Worse, a commit naming the deleted path *explicitly* silently skipped it:
+
+  commit(subject: "QA: revert probe changes",
+         paths: ["README.md", "qa-probe-dir/probe.txt"])
+    -> [b25df92] M README.md (+1/-1)          (the deletion is simply absent)
+
+DISCRIMINATOR: only paths whose presence in HEAD is owed to a session-staged
+commit are affected. Deleting a file that predates the session works fine:
+
+  rm(".gitattributes")     -> status: D +0 -1 .gitattributes    (correct)
+  write(".gitattributes", <original contents>)
+                           -> status: clean again               (correct)
+
+WHAT UNSTUCK IT (the important clue): the deletion later appeared in `status`
+as `D +0 -1 qa-probe-dir/probe.txt`, and `commit(paths:
+["qa-probe-dir/probe.txt"])` then committed it correctly as
+`[3ea919a] D qa-probe-dir/probe.txt (+0/-1)`. At the time this looked like an
+unrelated `write` had shaken it loose; **the user then confirmed the real
+cause: they had hit ctrl+s just before**, exporting a3e8500/5cba5ee/b25df92 to
+the local branch and re-binding the workspace. Once `qa-probe-dir/probe.txt`
+was in the *checkout's* HEAD rather than only in session-staged commits, its
+absence from the tree became ordinary checkout dirt and the repository route
+reported it normally.
+
+INFERRED model: exactly the rev-2 shape. `committing.txt` records that
+host-backed workspaces answer `git.uncommitted` via the repository route (one
+diff against staged HEAD) and that the staged repository "re-applies the live
+overlay so its work tree tracks the workspace". Re-applying the overlay
+evidently cannot express a *deletion* of a path the checkout never contained:
+the marker no-ops, the work tree keeps the file, HEAD has it too, and the diff
+comes out empty. The tree served to `read` honours the overlay deletion, hence
+the divergence. Commit scoping "projects committed paths onto the overlay's own
+changeset", which explains why naming the path in `paths` still committed
+nothing — there was no visible delta to project. And rebinding cures it because
+the path graduates from overlay-only to checkout-backed, exactly as rev 2's
+ctrl+s "restored" the vanished dirt.
+
+SPECULATION (fix direction): reconstruct the staged repository's work tree by
+applying the overlay to the *staged HEAD* tree rather than to the checkout, so
+deletions (and edits) of session-committed paths are expressible in the diff.
+Regression tests worth having, none of which need an export: (a) write →
+scoped commit → rm → assert `D` in `status`; (b) same, then unscoped commit,
+assert the deletion lands; (c) write → scoped commit → **edit** → assert `M`
+in `status` — this case was never tested and the model predicts it is broken
+too; (d) rename whose source is session-committed — also untested; (e) keep
+the pre-session-file deletion (`.gitattributes` above) as the control that
+already passes.
+
+Consequence if unfixed: an agent that creates a file, commits it, then removes
+it gets no signal that its removal did not take. Saving is the accidental
+workaround, so the danger window is exactly the sessions that don't save
+often — and the failure is silent in both `status` and `commit`.
+
+RESOLUTION (6d302e8): confirmed and fixed; the INFERRED model was right.
+`workspaceGitRepository` (core/schema/workspace.go) takes the newest staged
+commit's tree and re-applies the overlay so the work tree tracks the
+workspace — but it re-applied `ws.OverlayChanges()`, the overlay's *own*
+changeset, which is a Before/After directory pair anchored on the pre-commit
+checkout. A path created and then committed inside the session does not exist
+in that Before, so "add then delete" cancels to an empty delta: nothing to
+apply, the file survives in the staged work tree, the diff against staged HEAD
+is empty, and a `paths:`-scoped commit has no delta to project. It now applies
+the staged-anchored remainder from `workspaceOverlayChanges` instead — the diff
+between the staged tree (overlay base + cumulative staged commits) and the
+overlay's current tree — which is exactly the "apply the overlay to the staged
+HEAD tree" the SPECULATION asked for, and where a deletion is a real `D`.
+
+Observed before/after on the decisive sequence, as an integration test:
+`uncommitted { isEmpty: true, diffStats: [] }` became
+`REMOVED qa/probe.txt +0 -1`; the follow-up `commit(paths:
+["qa/probe.txt"])`, which failed with `withCommit: nothing to commit for
+paths [...]`, now succeeds and records `stagedCommits = [ADDED, REMOVED]`.
+
+Of the suggested regression tests, (a), (b), (d) and (e) landed in
+core/integration/workspace_commit_test.go as
+TestWorkspaceCommitDeleteOfCommittedFile, ...IsCommittable,
+...RenameOfCommittedFile and ...DeleteOfPreexistingFile. **Prediction (c) was
+wrong**: an *edit* of a session-committed path was never broken, and a test
+(...EditOfCommittedFile) now pins that — modified content differs from the
+overlay base either way, so it survives the checkout anchor. Only removals are
+inexpressible there, which is why the rename in (d) lost its source half while
+reporting the destination as ADDED; it is now detected as RENAMED.
+
+
+## 2. Phantom bare-directory entry for a directory that no longer exists
+
+CERTAINTY: OBSERVED, cause unclear, low impact
+
+After 3ea919a committed the deletion of `qa-probe-dir/probe.txt` — the only
+file in that directory — `status` reports:
+
+  A  +0  -0  qa-probe-dir/
+
+while `find("qa-probe-dir")` and `find("qa-probe-dir/**")` both return "No
+files found", i.e. the directory has no presence in the tree at all. git would
+report nothing here (it does not track empty directories). This looks like the
+rev-2 "stray bare-directory DiffStat" in a new shape: that one duplicated a
+directory alongside the files inside it and is fixed (verified below), but a
+directory entry can evidently still be synthesised on its own, with a +0/-0
+stat, once its last file is gone. Suggest suppressing zero-stat directory
+entries in `status`/`diff` output regardless of where they originate.
+
+RESOLUTION (6d302e8): fixed, but not by suppressing the entry — that shape of
+fix was rejected. The entry was honest: `Workspace.withoutFile` delegated
+straight to `Directory.withoutFile`, which removes only the named path, so
+deleting the last file in a directory left the now-empty directory in the
+workspace tree. Once the deletion was committed, staged HEAD (git, which
+cannot hold an empty directory) no longer had `qa-probe-dir/` while the tree
+still did — hence `A +0 -0`, and hence `find`, which lists files, showing
+nothing. Suppressing zero-stat directory entries in `DiffStats` would have
+broken a deliberate contract: an *added* empty directory is the only record of
+itself, asserted in core/integration/changeset_test.go.
+
+So the root cause was fixed at the workspace-editor layer instead:
+`withoutFile`/`withoutDirectory` now prune the topmost ancestor the removal
+empties, exactly as `git rm` leaves no empty parent behind. Emptiness is
+decided from the workspace's own directory listing rather than the overlay
+delta root — the delta holds only touched paths, so a directory still holding
+untouched host files would look empty there and get wrongly whiteouted — and
+the workspace root, cache mounts and references are excluded. Covered by
+TestWorkspaceRemovalPrunesEmptiedDirectories in
+core/integration/workspace_test.go, with controls for "removing one of two
+files prunes nothing", "pruning stops at the first ancestor that still has
+entries", and "a directory that was already empty is left alone".
+
+Related, found while reproducing this one and fixed by the same change: with
+the phantom entry present, `Changeset.isEmpty` reported true while
+`Changeset.diffStats` reported the one bare directory — two views of the same
+changeset disagreeing.
+
+
+## Previously reported, verified FIXED in this session
+
+Every finding of rev 2 was re-tested directly and none reproduce.
+
+- "Applying an edit REPLACES the uncommitted set instead of merging into it"
+  (rev 2's finding 1). Fixed. Starting from the 6 inherited changes, one
+  unrelated `edit("README.md", ...)` yields `status` with 7 files — the 6 dirt
+  entries untouched plus `M README.md` — and `diff` shows all of them. The
+  regression test rev 2 asked for ("a dirty file the agent never touches
+  survives an unrelated edit") passes live.
+
+- "Path-scoped commit mis-accounting". Still correct. `commit(paths:
+  ["README.md"])` printed `[a3e8500] M README.md (+1/-1)` and `status`
+  returned to exactly the 6 inherited files — precisely the committed delta
+  subtracted, dirt left pending.
+
+- "The file-serving path ignores staged commits". Still correct. After
+  a3e8500, both `read` and `grep` returned the committed-but-unexported
+  content (`## Why Dagger? (qa probe)`).
+
+- "Stray bare-directory DiffStat" (rev 2 minor #1). Fixed in the shape
+  reported: adding `qa-probe-dir/probe.txt` — a new file in a new directory —
+  produced exactly one entry in `status` and exactly one line in the commit
+  summary (`A qa-probe-dir/probe.txt (+1/-0)`), with no accompanying
+  `qa-probe-dir/` entry in either. Directory-scoped `paths: ["qa-probe-dir"]`
+  also resolved correctly. See finding 2 for a different shape that survives.
+
+- "The commit tool echoes a reversed diff". Still gone. All four commits
+  printed only the `[hash] subject` line plus the per-file `A/M/D (+n/-n)`
+  summary.
+
+- Not re-tested: the ambiguous-`edit` error message (rev 2 minor #2) — no
+  ambiguous edit was attempted — and the old "stale `read`" finding.
+
+
+## What a good end state looks like, from the agent's side
+
+Unchanged, and still the right target: **at any moment, the tree seen by
+`read`, by `grep`, and by any container the toolchains mount is the same tree —
+staged HEAD plus uncommitted — and `status` describes the difference between
+the two, nothing more.** Rev 2 fixed the case where the uncommitted layer
+under-reported inherited checkout dirt. Finding 1 is the mirror image and the
+more dangerous one: the tree moves, `status` does not, `commit` cannot be
+talked into noticing, and only an export brings the two back into agreement.
+The recurring signature — "a ctrl+s rebind makes it correct" — is worth
+treating as the diagnostic for this whole class: anything that only works
+after rebinding means the overlay route and the repository route still
+disagree about what the base is.
+
+With 6d302e8 the two routes agree about the base in the case rev 3 found: the
+repository route now diffs against the same staged-anchored tree the overlay
+route uses. What is still worth probing in the next live session, since none
+of it was exercised here: a deletion of a session-committed path carried
+*through an export* (does the checkout lose the file, and does the emptied
+directory go with it?); the same sequences with more than two staged commits;
+and a removal under a cache mount or a reference, which pruning deliberately
+skips.
+
