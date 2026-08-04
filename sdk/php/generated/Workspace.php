@@ -257,6 +257,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+     */
+    public function reloaded(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('reloaded');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * An installed SDK, by name.
      */
     public function sdk(string $name): WorkspaceSDK

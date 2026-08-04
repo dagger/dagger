@@ -47,9 +47,10 @@ func InvalidateCurrentWorkspace(ctx context.Context) error {
 // (dagql.PerClientInput), so within one session — such as a `dagger agent`
 // conversation — a file read earlier in the session keeps returning its
 // original snapshot even after the agent's edits are exported to disk. Bumping
-// the epoch on withResetWorkspace gives subsequent reads a fresh per-client
-// cache namespace, so they re-read the (now updated) host instead of the stale
-// snapshot.
+// the epoch on Workspace.export (and on Workspace.reloaded, when an agent
+// discards its overlay to re-sync with the host) gives subsequent reads a
+// fresh per-client cache namespace, so they re-read the (now updated) host
+// instead of the stale snapshot.
 //
 // Both hooks are registered by engine/server (which owns the per-client cache);
 // nil in contexts without a server, where the epoch is empty and bumping is a

@@ -217,7 +217,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// Let core scope and bump each client's "workspace read epoch", so a
 	// long-lived session (e.g. `dagger agent`) can invalidate its cached host
 	// reads once the workspace's on-disk content changes under it (export) or
-	// the agent's overlay is reset (withResetWorkspace).
+	// the agent discards its overlay to re-sync with the host
+	// (Workspace.reloaded).
 	core.SetWorkspaceReadEpochHooks(srv.currentWorkspaceReadEpoch, srv.bumpClientWorkspaceReadEpoch)
 
 	// start the global namespace worker pool, which is used for running Go funcs

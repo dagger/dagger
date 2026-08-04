@@ -137,7 +137,7 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+  A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
   """
   @spec portable_id(t()) :: {:ok, String.t()} | {:error, term()}
   def portable_id(%__MODULE__{} = llm) do
@@ -330,20 +330,6 @@ defmodule Dagger.LLM do
   def with_prompt_file(%__MODULE__{} = llm, file) do
     query_builder =
       llm.query_builder |> QB.select("withPromptFile") |> QB.put_arg("file", Dagger.ID.id!(file))
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
-  Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
-  """
-  @spec with_reset_workspace(t()) :: Dagger.LLM.t()
-  def with_reset_workspace(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("withResetWorkspace")
 
     %Dagger.LLM{
       query_builder: query_builder,

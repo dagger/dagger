@@ -1287,7 +1287,7 @@
 <abbr title="Dagger\Generator">Generator</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
                     <dd><p>The path of the generator within its module</p></dd><dt><a href="Dagger/LLM.html#method_portableID">
 <abbr title="Dagger\LLM">LLM</abbr>::portableID</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p></dd><dt><a href="Dagger/LLM.html#method_provider">
+                    <dd><p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.</p></dd><dt><a href="Dagger/LLM.html#method_provider">
 <abbr title="Dagger\LLM">LLM</abbr>::provider</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>The provider serving the model, e.g. &quot;anthropic&quot;, &quot;openai&quot;, &quot;google&quot;, or &quot;local&quot;.</p></dd><dt><a href="Dagger/ModuleSource.html#method_pin">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::pin</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1373,7 +1373,9 @@
 <abbr title="Dagger\Up">Up</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>Execute the service function</p></dd><dt><a href="Dagger/UpGroup.html#method_run">
 <abbr title="Dagger\UpGroup">UpGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></em></dt>
-                    <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_ref">
+                    <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/Workspace.html#method_reloaded">
+<abbr title="Dagger\Workspace">Workspace</abbr>::reloaded</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p></dd><dt><a href="Dagger/WorkspaceSDK.html#method_ref">
 <abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a></em></dt>
                     <dd><p>The module reference this SDK was installed from.</p></dd>        </dl><h2 id="letterS">S</h2>
         <dl id="indexS"><dt><a href="Dagger/Address.html#method_secret">
@@ -2023,9 +2025,7 @@
 <abbr title="Dagger\LLM">LLM</abbr>::withPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Queue a user prompt, to be sent to the model on the next step or loop.</p></dd><dt><a href="Dagger/LLM.html#method_withPromptFile">
 <abbr title="Dagger\LLM">LLM</abbr>::withPromptFile</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withResetWorkspace">
-<abbr title="Dagger\LLM">LLM</abbr>::withResetWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
+                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
 <abbr title="Dagger\LLM">LLM</abbr>::withResponse</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></dd><dt><a href="Dagger/LLM.html#method_withSkills">
 <abbr title="Dagger\LLM">LLM</abbr>::withSkills</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>

@@ -9625,7 +9625,7 @@ impl Llm {
         let query = self.selection.select("model");
         query.execute(self.graphql_client.clone()).await
     }
-    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
     pub async fn portable_id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("portableID");
         query.execute(self.graphql_client.clone()).await
@@ -9811,15 +9811,6 @@ impl Llm {
                 Box::pin(async move { file.into_id().await.unwrap().quote() })
             }),
         );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
-    pub fn with_reset_workspace(&self) -> Llm {
-        let query = self.selection.select("withResetWorkspace");
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -14886,6 +14877,15 @@ impl Workspace {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
+    }
+    /// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+    pub fn reloaded(&self) -> Workspace {
+        let query = self.selection.select("reloaded");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// An installed SDK, by name.
     ///

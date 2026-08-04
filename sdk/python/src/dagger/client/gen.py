@@ -9313,7 +9313,10 @@ class LLM(Type):
         resolve in any session. Unlike id, which may return an engine-local
         runtime handle valid only within the current session, this returns the
         recipe form suitable for persisting and later restoring the
-        conversation.
+        conversation. The recipe is flattened: bindings superseded during the
+        session (workspace overlays recorded by each mutating tool call, and
+        re-bound toolsets) are dropped, while the current workspace binding —
+        including any pending, un-exported edits — is preserved.
 
         Returns
         -------
@@ -9535,18 +9538,6 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
-        return LLM(_ctx)
-
-    def with_reset_workspace(self) -> Self:
-        """Return a new LLM with the workspace reset to its base, dropping any
-        accumulated changes. The conversation and configuration are re-emitted
-        as a flat recipe bound to the live workspace, so a persisted session
-        (globalID) no longer replays workspace edits when loaded. Use after
-        exporting changes (Workspace.export) so a resumed session continues
-        from the workspace's on-disk state.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("withResetWorkspace", _args)
         return LLM(_ctx)
 
     def with_response(
@@ -14730,6 +14721,15 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
+
+    def reloaded(self) -> Self:
+        """Return this workspace with its cached host reads invalidated, so
+        subsequent file and directory reads re-read the live host instead of a
+        snapshot cached earlier in the session.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reloaded", _args)
+        return Workspace(_ctx)
 
     def sdk(self, name: str) -> "WorkspaceSDK":
         """An installed SDK, by name.

@@ -5684,7 +5684,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::portableID",
 			"p": "Dagger/LLM.html#method_portableID",
-			"d": "<p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p>"
+			"d": "<p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding \u2014 including any pending, un-exported edits \u2014 is preserved.</p>"
 		},
 		{
 			"t": "M",
@@ -5757,12 +5757,6 @@
 			"n": "Dagger\\LLM::withPromptFile",
 			"p": "Dagger/LLM.html#method_withPromptFile",
 			"d": "<p>Queue a file's contents as a user prompt, like withPrompt.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\LLM::withResetWorkspace",
-			"p": "Dagger/LLM.html#method_withResetWorkspace",
-			"d": "<p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p>"
 		},
 		{
 			"t": "M",
@@ -7233,6 +7227,12 @@
 			"n": "Dagger\\Workspace::modules",
 			"p": "Dagger/Workspace.html#method_modules",
 			"d": "<p>List modules defined in the workspace configuration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::reloaded",
+			"p": "Dagger/Workspace.html#method_reloaded",
+			"d": "<p>Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.</p>"
 		},
 		{
 			"t": "M",
