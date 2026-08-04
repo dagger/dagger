@@ -38,7 +38,7 @@ func (fe *frontendPretty) servicesReport(_ tuist.Context, r *renderer, zoomed bo
 	body := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 
 	hdrOut := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
-	return append([]string{reportHeadingLine(hdrOut, "SERVICES")}, body...)
+	return append([]string{reportHeadingLine(hdrOut, fe.agentStyle(), "SERVICES")}, body...)
 }
 
 // renderServiceNode renders one surfaced service at the given depth: its

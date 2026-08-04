@@ -436,7 +436,7 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 // the tool's own and keeps it verbatim, abridging only nested work.
 //
 // It also locks in the shape of the result: a tool call that produced child
-// telemetry is rendered as the pretty TRACE REPORT (the span tree), scoped to
+// telemetry is rendered as the pretty report (the span tree), scoped to
 // the tool call, rather than a flat log dump — with the same abridging
 // guarantees and a ReadLogs breadcrumb for the rest.
 func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {

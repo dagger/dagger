@@ -137,10 +137,11 @@ func TestArgTypeToJSONSchema(t *testing.T) {
 }
 
 // TestCombineSpanResult covers the combined result's contract: the target's
-// own output and the trace report are BOTH carried, labelled, in that order,
-// with no empty sections and a closing ReadLogs breadcrumb. A subtree that
-// renders to nothing yields "" so the caller falls back to the flat captured
-// logs (never an empty tool result).
+// own output and the trace report are BOTH carried, in that order, with the
+// output under its own "== OUTPUT ==" heading, the report unlabelled (its own
+// sections are already headed), no empty sections and a closing ReadLogs
+// breadcrumb. A subtree that renders to nothing yields "" so the caller falls
+// back to the flat captured logs (never an empty tool result).
 func TestCombineSpanResult(t *testing.T) {
 	const spanID = "00000000000000aa"
 
@@ -149,17 +150,21 @@ func TestCombineSpanResult(t *testing.T) {
 	require.Empty(t, combineSpanResult(spanID, "", ""))
 	require.Empty(t, combineSpanResult(spanID, "LINE-01", "\n \n\t\n"))
 
-	// Report only: no empty OUTPUT section for a target that printed nothing.
-	quiet := combineSpanResult(spanID, "", "CHECKS  ✔ 1 passed\n✔ lint:check 0.1s OK")
+	// Report only: no empty OUTPUT section for a target that printed nothing,
+	// and no heading over the report itself.
+	quiet := combineSpanResult(spanID, "", "== CHECKS ==  ✔ 1 passed\n✔ lint:check 0.1s OK")
 	require.NotContains(t, quiet, "OUTPUT")
-	require.Contains(t, quiet, "TRACE REPORT\nCHECKS")
+	require.NotContains(t, quiet, "TRACE REPORT")
+	require.True(t, strings.HasPrefix(quiet, "== CHECKS =="), "got %q", quiet)
 
 	got := combineSpanResult(spanID, "LINE-01\nLINE-02", "• Foo.bar 1.0s")
 	// The tool's own output comes first, verbatim, under its own heading...
-	require.Contains(t, got, "OUTPUT\nLINE-01\nLINE-02")
-	// ...then the report.
-	require.Contains(t, got, "TRACE REPORT\n• Foo.bar")
-	require.Less(t, strings.Index(got, "OUTPUT"), strings.Index(got, "TRACE REPORT"))
+	require.Contains(t, got, "== OUTPUT ==\nLINE-01\nLINE-02")
+	// ...then the report, bare.
+	require.Contains(t, got, "LINE-02\n\n• Foo.bar")
+	require.NotContains(t, got, "TRACE REPORT")
+	require.Less(t, strings.Index(got, "== OUTPUT =="), strings.Index(got, "• Foo.bar"))
+
 	// The breadcrumb names the span, in the same vocabulary as the flat
 	// path's "... N lines omitted (use ReadLogs(span: X) to read more)".
 	require.Contains(t, got, "use ReadLogs(span: "+spanID+") to read the full logs")

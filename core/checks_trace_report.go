@@ -349,6 +349,13 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 		ScopedSubtree:   opt.Scoped,
 		Root:            primary,
 		HideSpanTree:    opt.HideSpanTree,
+		// Every report rendered here is assembled for an LLM: a tool call's own
+		// result, or the ReadTrace builtin. Inside the engine there is no agent
+		// env var to sniff (it's a daemon), so say so explicitly, per render.
+		// Section headings then render as greppable "== TITLE ==" markers
+		// instead of bold-TTY text. (The color profile needs no opt: the report
+		// session pins termenv.Ascii, so no escape codes reach the model.)
+		AgentStyle: true,
 	}
 	if opt.ExpandAll {
 		renderOpts.ExpandSpans = expandedSpans(db, primary)
