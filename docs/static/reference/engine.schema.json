@@ -36,6 +36,20 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "DagqlCacheGCConfig": {
+      "properties": {
+        "maxEstimatedBytes": {
+          "type": "integer",
+          "description": "MaxEstimatedBytes triggers structural DAGQL cache pruning when the coarse metadata estimate exceeds this absolute number of bytes. Zero uses the built-in default."
+        },
+        "targetEstimatedBytes": {
+          "type": "integer",
+          "description": "TargetEstimatedBytes is the lower structural estimate a pruning pass attempts to reach. Zero uses the built-in default."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "DiskSpace": {
       "anyOf": [
         {
@@ -73,6 +87,10 @@
         "enabled": {
           "type": "boolean",
           "description": "Enabled controls whether the garbage collector is enabled - it is switched on by default (and generally shouldn't be turned off, except for very short-lived dagger instances)."
+        },
+        "dagqlCache": {
+          "$ref": "#/$defs/DagqlCacheGCConfig",
+          "description": "DagqlCache configures structural memory pruning for the in-memory DAGQL cache independently of physical cache disk usage."
         },
         "reservedSpace": {
           "$ref": "#/$defs/DiskSpace",

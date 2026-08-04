@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -20,10 +21,45 @@ import (
 type dagqlCachePrunePolicy = dagql.CachePrunePolicy
 
 const (
-	localCacheSessionGCThrottle      = time.Minute
-	localCacheDiskPressureCheckEvery = 5 * time.Second
-	localCacheDiskPressureGCThrottle = 30 * time.Second
+	localCacheSessionGCThrottle                 = time.Minute
+	localCachePressureCheckEvery                = 5 * time.Second
+	localCachePressureGCThrottle                = 30 * time.Second
+	dagqlCacheDefaultMaxEstimatedBytes    int64 = 4 << 30
+	dagqlCacheDefaultTargetEstimatedBytes int64 = 3 << 30
 )
+
+type localCacheGCReason uint8
+
+const (
+	localCacheGCScheduled localCacheGCReason = iota
+	localCacheGCMonitor
+	localCacheGCGracefulShutdown
+)
+
+func resolveDagqlCacheGCConfig(gcCfg config.GCConfig, bkCfg bkconfig.GCConfig) (enabled bool, maximumBytes, targetBytes int64, _ error) {
+	maximumBytes = gcCfg.DagqlCache.MaxEstimatedBytes
+	if maximumBytes == 0 {
+		maximumBytes = dagqlCacheDefaultMaxEstimatedBytes
+	}
+	targetBytes = gcCfg.DagqlCache.TargetEstimatedBytes
+	if targetBytes == 0 {
+		targetBytes = dagqlCacheDefaultTargetEstimatedBytes
+	}
+	if maximumBytes <= 0 {
+		return false, 0, 0, fmt.Errorf("gc.dagqlCache.maxEstimatedBytes must be positive")
+	}
+	if targetBytes <= 0 || targetBytes >= maximumBytes {
+		return false, 0, 0, fmt.Errorf("gc.dagqlCache.targetEstimatedBytes must be positive and lower than maxEstimatedBytes")
+	}
+	enabled = true
+	if gcCfg.Enabled != nil && !*gcCfg.Enabled {
+		enabled = false
+	}
+	if bkCfg.GC != nil && !*bkCfg.GC {
+		enabled = false
+	}
+	return enabled, maximumBytes, targetBytes, nil
+}
 
 func (srv *Server) EngineLocalCachePolicy() *dagqlCachePrunePolicy {
 	return srv.workerDefaultGCPolicy
@@ -41,6 +77,7 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.EngineCachePruneOptions) (*core.EngineCacheEntrySet, error) {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
+	srv.metadataPruneMonitorBlocked.Store(false)
 
 	dstat, _ := disk.GetDiskStat(srv.rootDir)
 	prunePolicies, err := resolveEngineLocalCachePrunePolicies(
@@ -188,60 +225,103 @@ func (srv *Server) gc() {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 
-	srv.gcLocked(context.Background())
+	if err := srv.gcLocked(context.Background(), localCacheGCScheduled); err != nil {
+		bklog.G(context.Background()).Errorf("gc error: %+v", err)
+	}
 }
 
-func (srv *Server) gcIfDiskPressure() {
+func (srv *Server) gcAfterSessionCompletion() {
+	srv.metadataPruneMonitorBlocked.Store(false)
+	srv.gc()
+}
+
+func (srv *Server) gcIfLocalCachePressure() {
 	ctx := context.Background()
 
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 
-	if !srv.diskPressureGCNeeded(ctx) {
+	if !srv.localCachePressureGCNeeded(ctx) {
 		return
 	}
 
-	srv.gcLocked(ctx)
-}
-
-func (srv *Server) gcLocked(ctx context.Context) {
-	if srv.isShuttingDown() {
-		return
-	}
-
-	if len(srv.workerGCPolicies) == 0 {
-		return
-	}
-
-	dstat, err := disk.GetDiskStat(srv.rootDir)
-	if err != nil {
-		bklog.G(ctx).Warnf("gc skipped: failed to get disk stats: %+v", err)
-		return
-	}
-
-	// Refresh policy free-space inputs per GC pass. The default policy values are
-	// static and must not be mutated in place.
-	prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
-	for i := range prunePolicies {
-		prunePolicies[i].CurrentFreeSpace = dstat.Available
-	}
-
-	report, err := srv.engineCache.Prune(ctx, prunePolicies)
-	if err != nil {
-		bklog.G(ctx).Errorf("gc error: %+v", err)
-	}
-	if report.ReclaimedBytes > 0 {
-		bklog.G(ctx).Debugf("gc cleaned up %d bytes", report.ReclaimedBytes)
+	if err := srv.gcLocked(ctx, localCacheGCMonitor); err != nil {
+		bklog.G(ctx).Errorf("local cache pressure gc error: %+v", err)
 	}
 }
 
-func (srv *Server) startDiskPressureGCMonitor() {
-	if srv.engineCache == nil || len(srv.workerGCPolicies) == 0 {
+func (srv *Server) gcLocked(ctx context.Context, reason localCacheGCReason) error {
+	if srv.isShuttingDown() && reason != localCacheGCGracefulShutdown {
+		return nil
+	}
+
+	var rerr error
+	if len(srv.workerGCPolicies) > 0 {
+		dstat, err := disk.GetDiskStat(srv.rootDir)
+		if err != nil {
+			bklog.G(ctx).Warnf("disk gc skipped: failed to get disk stats: %+v", err)
+			rerr = errors.Join(rerr, fmt.Errorf("get disk stats for gc: %w", err))
+		} else {
+			// Refresh policy free-space inputs per GC pass. The default policy
+			// values are static and must not be mutated in place.
+			prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
+			for i := range prunePolicies {
+				prunePolicies[i].CurrentFreeSpace = dstat.Available
+			}
+
+			report, err := srv.engineCache.Prune(ctx, prunePolicies)
+			if err != nil {
+				bklog.G(ctx).Errorf("disk gc error: %+v", err)
+				rerr = errors.Join(rerr, fmt.Errorf("prune disk cache metadata: %w", err))
+			} else if report.ReclaimedBytes > 0 {
+				bklog.G(ctx).Debugf("gc cleaned up %d bytes", report.ReclaimedBytes)
+			}
+		}
+	}
+
+	if !srv.localCacheGCEnabled || srv.engineCache == nil {
+		return rerr
+	}
+
+	estimate := srv.engineCache.MetadataEstimate()
+	if estimate.EstimatedBytes <= srv.dagqlCacheMaxEstimatedBytes {
+		srv.metadataPruneMonitorBlocked.Store(false)
+		return rerr
+	}
+	if reason == localCacheGCMonitor && srv.metadataPruneMonitorBlocked.Load() {
+		return rerr
+	}
+
+	report, err := srv.engineCache.PruneMetadataEstimate(
+		ctx,
+		srv.dagqlCacheMaxEstimatedBytes,
+		srv.dagqlCacheTargetEstimatedBytes,
+	)
+	if err != nil {
+		bklog.G(ctx).Errorf("dagql metadata gc error: %+v", err)
+		return errors.Join(rerr, fmt.Errorf("prune dagql cache metadata: %w", err))
+	}
+	srv.updateMetadataPruneMonitorBlocked(reason, report)
+	return rerr
+}
+
+func (srv *Server) updateMetadataPruneMonitorBlocked(reason localCacheGCReason, report dagql.CacheMetadataPruneReport) {
+	if report.RemovedPersistedRootCount > 0 || report.AfterPrune.EstimatedBytes <= srv.dagqlCacheMaxEstimatedBytes {
+		srv.metadataPruneMonitorBlocked.Store(false)
+		return
+	}
+	if reason == localCacheGCMonitor {
+		srv.metadataPruneMonitorBlocked.Store(true)
+	}
+}
+
+func (srv *Server) startLocalCachePressureGCMonitor() {
+	if srv.engineCache == nil || !srv.localCacheGCEnabled {
 		return
 	}
 
 	go func() {
-		ticker := time.NewTicker(localCacheDiskPressureCheckEvery)
+		ticker := time.NewTicker(localCachePressureCheckEvery)
 		defer ticker.Stop()
 
 		for {
@@ -249,30 +329,34 @@ func (srv *Server) startDiskPressureGCMonitor() {
 			case <-srv.shutdownCtx.Done():
 				return
 			case <-ticker.C:
-				if srv.diskPressureGCNeeded(context.Background()) {
-					srv.throttledDiskPressureGC()
+				if srv.localCachePressureGCNeeded(context.Background()) {
+					srv.throttledLocalCachePressureGC()
 				}
 			}
 		}
 	}()
 }
 
-func (srv *Server) diskPressureGCNeeded(ctx context.Context) bool {
+func (srv *Server) localCachePressureGCNeeded(ctx context.Context) bool {
 	if srv.isShuttingDown() {
 		return false
 	}
 
-	if len(srv.workerGCPolicies) == 0 {
-		return false
+	diskPressure := false
+	if len(srv.workerGCPolicies) > 0 {
+		dstat, err := disk.GetDiskStat(srv.rootDir)
+		if err != nil {
+			bklog.G(ctx).Warnf("disk pressure check skipped: failed to get disk stats: %+v", err)
+		} else {
+			diskPressure = localCacheDiskPressureGCNeeded(srv.workerGCPolicies, dstat)
+		}
 	}
 
-	dstat, err := disk.GetDiskStat(srv.rootDir)
-	if err != nil {
-		bklog.G(ctx).Warnf("disk pressure gc skipped: failed to get disk stats: %+v", err)
-		return false
+	metadataPressure := false
+	if srv.localCacheGCEnabled && srv.engineCache != nil && !srv.metadataPruneMonitorBlocked.Load() {
+		metadataPressure = srv.engineCache.MetadataEstimate().EstimatedBytes > srv.dagqlCacheMaxEstimatedBytes
 	}
-
-	return localCacheDiskPressureGCNeeded(srv.workerGCPolicies, dstat)
+	return diskPressure || metadataPressure
 }
 
 func localCacheDiskPressureGCNeeded(policies []dagqlCachePrunePolicy, dstat disk.DiskStat) bool {

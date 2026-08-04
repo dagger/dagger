@@ -398,7 +398,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		if srv.isShuttingDown() {
 			return
 		}
-		time.AfterFunc(time.Second, srv.throttledGC)
+		time.AfterFunc(time.Second, srv.throttledSessionGC)
 	}()
 
 	srv.daggerSessionsMu.Lock()
