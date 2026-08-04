@@ -80,15 +80,12 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	started := time.Now()
 	report.MaximumEstimatedBytes = maximumBytes
 	report.TargetEstimatedBytes = targetBytes
-	if c != nil {
-		c.traceMetadataPruneStarted(ctx, maximumBytes, targetBytes)
-	}
 	defer func() {
 		report.Duration = time.Since(started)
-		if c != nil {
+		if report.Triggered && c != nil {
 			c.traceMetadataPruneFinished(ctx, report, rerr)
+			metadataPruneLog(ctx, report, rerr)
 		}
-		metadataPruneLog(ctx, report, rerr)
 	}()
 
 	if c == nil {
@@ -113,6 +110,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		return report, nil
 	}
 	report.Triggered = true
+	c.traceMetadataPruneStarted(ctx, maximumBytes, targetBytes)
 	_, report.InitialCompactionOldClassSlots, report.InitialCompactionNewClassSlots = c.compactEqClassesLocked(true)
 	report.AfterInitialCompaction = c.cacheMetadataEstimateLocked()
 	report.AfterPrune = report.AfterInitialCompaction
