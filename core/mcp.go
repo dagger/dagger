@@ -1203,6 +1203,10 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 
 	buf := new(strings.Builder)
 
+	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
+	// roll-up behavior.
+	internalSpans := newInternalSpanFilter(q, spanID)
+
 	var lastLogID int64
 
 	for {
@@ -1269,6 +1273,14 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 					// don't show logs from the LLM spans themselves
 					continue
 				}
+				internal, err := internalSpans.beneathInternal(ctx, log.TraceID.String, log.SpanID.String)
+				if err != nil {
+					return nil, err
+				}
+				if internal {
+					// don't surface logs from spans hidden as internal
+					continue
+				}
 			}
 
 			var bodyPb otlpcommonv1.AnyValue
@@ -1295,6 +1307,67 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 		strings.TrimRight(buf.String(), "\n"),
 		"\n",
 	), nil
+}
+
+// internalSpanFilter reports whether spans sit within a subtree marked
+// internal (dagger.io/ui.internal) beneath a captured root span, so their
+// logs can be skipped — mirroring how the TUI refuses to roll logs up across
+// an internal span. Results are memoized per span so captureLogs doesn't
+// re-walk the parent chain for every log line.
+type internalSpanFilter struct {
+	db   *clientdb.DB
+	root string
+	memo map[string]bool
+}
+
+func newInternalSpanFilter(db *clientdb.DB, rootSpanID string) *internalSpanFilter {
+	return &internalSpanFilter{db: db, root: rootSpanID, memo: map[string]bool{}}
+}
+
+// beneathInternal reports whether the given span, or any ancestor strictly
+// below the captured root span, is marked internal. Internal-ness at or above
+// the root doesn't hide the logs beneath it: explicitly capturing an internal
+// span's subtree still returns its logs.
+func (f *internalSpanFilter) beneathInternal(ctx context.Context, traceID, spanID string) (bool, error) {
+	if spanID == "" || spanID == f.root {
+		return false, nil
+	}
+	if internal, ok := f.memo[spanID]; ok {
+		return internal, nil
+	}
+	span, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+		TraceID: traceID,
+		SpanID:  spanID,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// span not stored; nothing to hide
+			f.memo[spanID] = false
+			return false, nil
+		}
+		return false, err
+	}
+	var spanAttrs []*otlpcommonv1.KeyValue
+	if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
+		slog.Warn("failed to unmarshal span attributes", "error", err)
+		f.memo[spanID] = false
+		return false, nil
+	}
+	var internal bool
+	for _, attr := range spanAttrs {
+		if attr.Key == telemetry.UIInternalAttr && attr.Value.GetBoolValue() {
+			internal = true
+			break
+		}
+	}
+	if !internal && span.ParentSpanID.Valid {
+		internal, err = f.beneathInternal(ctx, traceID, span.ParentSpanID.String)
+		if err != nil {
+			return false, err
+		}
+	}
+	f.memo[spanID] = internal
+	return internal, nil
 }
 
 func toolErrorMessage(err error) string {
