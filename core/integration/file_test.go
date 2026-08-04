@@ -1038,7 +1038,10 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 		replaced := file.WithReplaced("World", "Universe")
 		_, err := replaced.Contents(ctx)
 		require.Error(t, err)
-		require.Contains(t, strings.ToLower(err.Error()), "multiple")
+		// The error leads with the match count and lists only the first few
+		// positions, so a search string matching dozens of times stays
+		// readable.
+		require.Contains(t, err.Error(), "search string found 2 times")
 	})
 
 	t.Run("first occurrence after non-existent line", func(ctx context.Context, t *testctx.T) {

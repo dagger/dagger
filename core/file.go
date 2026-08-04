@@ -937,7 +937,8 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 	} else if firstFrom != nil || len(matchedLocs) == 1 {
 		contents = bytes.Replace(contents, search, replacement, 1)
 	} else if len(matchedLocs) > 0 {
-		return fmt.Errorf("search string found multiple times: %s", strings.Join(matchedLocs, ", "))
+		return fmt.Errorf("search string found %d times (%s); include more surrounding context to make it unique, or replace all occurrences",
+			len(matchedLocs), summarizeMatchLocations(matchedLocs, 5))
 	}
 
 	// If we replaced after a certain line, bring the content before it back
@@ -983,6 +984,16 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 	}
 	file.Snapshot.setValue(snap)
 	return nil
+}
+
+// summarizeMatchLocations renders at most max match locations, followed by a
+// count of the rest. An exhaustive list of every position is unreadable —
+// dozens of line/column pairs say nothing the count does not.
+func summarizeMatchLocations(locs []string, max int) string {
+	if len(locs) <= max {
+		return strings.Join(locs, ", ")
+	}
+	return fmt.Sprintf("%s, and %d more", strings.Join(locs[:max], ", "), len(locs)-max)
 }
 
 func (file *File) Digest(ctx context.Context, self dagql.ObjectResult[*File], excludeMetadata bool) (string, error) {
