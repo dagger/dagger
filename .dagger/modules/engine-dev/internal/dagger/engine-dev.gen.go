@@ -95,6 +95,21 @@ func (r *EngineDev) Generate() *Changeset {
 	}
 }
 
+// Build a lightweight Go build environment with the from-source Dagger CLI
+// installed on $PATH.
+//
+// Unlike Container, which builds the whole engine, this is just a Wolfi Go base
+// with the `dagger` binary available. It's intended for use as the `base` of the
+// golang toolchain, so Go commands (including the integration tests, which shell
+// out to `dagger`) can find the CLI without paying the cost of an engine build.
+func (r *EngineDev) GoContainer() *Container {
+	q := r.query.Select("goContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
 	Version string
