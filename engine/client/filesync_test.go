@@ -152,4 +152,3 @@ exit 2
 		require.ErrorContains(t, err, "something actually went wrong")
 	})
 }
-
