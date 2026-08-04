@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -733,23 +734,122 @@ func (m *MCP) logsOrDone(ctx context.Context) string {
 	return "(done)"
 }
 
-// toolLogs captures the print output emitted beneath the current tool-call span
-// (created by MCP.Call). Empty when nothing was printed.
+// toolLogs captures the output emitted beneath the current tool-call span
+// (created by MCP.Call). Empty when nothing was captured.
+//
+// A tool call that produced child telemetry is rendered as the pretty TRACE
+// REPORT -- the same span tree (and CHECKS/TESTS sections) a user sees at the
+// end of a CLI run, scoped to the tool call. A tool call that ran no nested
+// work has no tree worth drawing, so it falls back to the flat captured-log
+// text, as does a subtree that renders to nothing (dagui filters
+// internal/passthrough/encapsulated spans, so a report can legitimately come
+// out empty).
 func (m *MCP) toolLogs(ctx context.Context) string {
 	spanID := trace.SpanContextFromContext(ctx).SpanID()
 	if !spanID.IsValid() {
 		return ""
 	}
+	if report := m.toolTraceReport(ctx, spanID.String()); report != "" {
+		return report
+	}
+	return m.toolFlatLogs(ctx, spanID.String())
+}
+
+// toolTraceReport renders the tool call's subtree as the pretty final report,
+// or returns "" when this tool call has no report to show (nothing nested
+// beneath it, a render failure, or a subtree that renders to nothing) and the
+// flat capture should be used instead.
+func (m *MCP) toolTraceReport(ctx context.Context, spanID string) string {
+	if !toolSpanHasDescendants(ctx, spanID) {
+		// Nothing ran beneath the call: there is no tree to draw, only
+		// whatever the tool printed itself.
+		return ""
+	}
+	report, err := renderTraceReport(ctx, spanID, traceReportOpts{
+		// The tool call's own span is a roll-up/boundary span and every module
+		// function beneath it may be too; without forcing rows open, a tool
+		// that prints a report would render as a bare status line and lose it.
+		ExpandAll: true,
+		// Same reason captureLogLines excludes them: a long-lived service's
+		// exec span joins the subtree via cause links and streams noise that
+		// drowns out deliberate output, and the LLM's own message spans are
+		// conversation rather than work. ReadLogs remains the discovery path.
+		HideNoise: true,
+		// The report is about this tool call, not about the agent that made
+		// it: drop the whole-trace CONVERSATION/SERVICES sections, which would
+		// otherwise render the caller's own transcript back at it.
+		Scoped: true,
+		// Nested work is abridged to a tail, exactly as in the flat path; the
+		// tool's own output (depth 0) stays whole.
+		NestedLogLines: llmToolLogsMaxLines,
+		// The reader is an LLM, which has tools rather than a shell: suggest
+		// the ReadTrace builtin for the failed checks instead of `dagger
+		// check "<name>"` commands it cannot run.
+		SuggestReadTrace: true,
+	})
+	if err != nil {
+		slog.Warn("failed to render tool call trace report", "span", spanID, "error", err)
+		return ""
+	}
+	return decorateToolReport(spanID, report)
+}
+
+// decorateToolReport finishes a rendered report for use as a tool result, or
+// returns "" when there is nothing to show and the caller should fall back to
+// the flat captured logs.
+//
+// A subtree can legitimately render to nothing -- dagui hides internal,
+// passthrough and encapsulated spans -- and an empty tool result would be a
+// regression on the flat path, which surfaces those spans' logs.
+//
+// A non-empty report keeps the flat path's breadcrumb, in the same vocabulary:
+// the report clamps nested log tails (and the byte guard may drop its middle),
+// so the reader is told where the unabridged logs live.
+func decorateToolReport(spanID, report string) string {
+	report = strings.TrimRight(report, "\n")
+	if strings.TrimSpace(report) == "" {
+		return ""
+	}
+	return report + "\n" +
+		fmt.Sprintf("... use ReadLogs(span: %s) to read the full logs ...", spanID)
+}
+
+// toolSpanHasDescendants reports whether anything ran beneath the tool-call
+// span. It is a pure in-memory index lookup on the client's telemetry store --
+// no queries, no subtree walk -- so it is cheap enough to gate every tool
+// result on.
+func toolSpanHasDescendants(ctx context.Context, spanID string) bool {
+	root, err := CurrentQuery(ctx)
+	if err != nil {
+		return false
+	}
+	mainMeta, err := root.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return false
+	}
+	// NB: this flushes the session's clients, so spans that just ended are
+	// visible in the index.
+	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
+	if err != nil {
+		return false
+	}
+	defer q.Close()
+	return q.HasDescendants(spanID)
+}
+
+// toolFlatLogs is the flat capture: the print output emitted beneath the
+// tool-call span, joined into lines. Empty when nothing was printed.
+func (m *MCP) toolFlatLogs(ctx context.Context, spanID string) string {
 	// Exclude service exec span logs: long-lived services stream noise into
 	// the tool-call subtree via cause links, drowning out deliberate prints.
 	// ReadLogs remains the discovery path for service logs.
-	lines, err := m.captureLogLines(ctx, spanID.String(), true)
+	lines, err := m.captureLogLines(ctx, spanID, true)
 	if err != nil || len(lines) == 0 {
 		return ""
 	}
 	// Whatever the tool printed itself survives in full — a sub-agent's report
 	// or a tool's summary is the point of the call. Only logs from nested work
 	// beneath it are abridged to a tail.
-	logs := limitIndirectLines(spanID.String(), lines, llmToolLogsMaxLines, llmLogsMaxLineLen)
+	logs := limitIndirectLines(spanID, lines, llmToolLogsMaxLines, llmLogsMaxLineLen)
 	return strings.TrimRight(strings.Join(logs, "\n"), "\n")
 }
