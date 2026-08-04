@@ -351,7 +351,7 @@ func (c *traceReportCacheState) render(ctx context.Context, key traceReportKey, 
 		renderOpts.ExpandSpans = expandedSpans(entry.db, primary)
 	}
 	if opt.HideNoise {
-		renderOpts.Filter = reportNoiseFilter(entry.db)
+		renderOpts.Filter = reportNoiseFilter(entry.db, primary)
 	}
 	if opt.SuggestReadTrace {
 		renderOpts.RerunSuggestion = readTraceRerunSuggestion
@@ -608,7 +608,12 @@ func isReportWrapperSpan(span *dagui.Span) bool {
 // verbatim even with the exec span itself pruned.
 //
 // Messages: the LLM conversation spans the tool call is part of.
-func reportNoiseFilter(db *dagui.DB) func(*dagui.Span) dagui.WalkDecision {
+//
+// The services are surfaced relative to root -- the span the report is scoped
+// to -- because that is where the report's services live: a service a tool
+// started sits beneath the tool-call display span, which is a Boundary, so the
+// whole-trace surfacing treats it as contained and would never mark its origin.
+func reportNoiseFilter(db *dagui.DB, root dagui.SpanID) func(*dagui.Span) dagui.WalkDecision {
 	origins := map[dagui.SpanID]bool{}
 	var mark func(nodes []*dagui.ServiceNode)
 	mark = func(nodes []*dagui.ServiceNode) {
@@ -619,7 +624,11 @@ func reportNoiseFilter(db *dagui.DB) func(*dagui.Span) dagui.WalkDecision {
 			mark(node.Children)
 		}
 	}
-	mark(db.SurfacedServices())
+	var rootSpan *dagui.Span
+	if root.IsValid() {
+		rootSpan = db.Spans.Map[root]
+	}
+	mark(db.SurfacedServicesForSpan(rootSpan))
 	return func(span *dagui.Span) dagui.WalkDecision {
 		if span.Service || origins[span.ID] {
 			return dagui.WalkSkip
