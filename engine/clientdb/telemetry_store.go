@@ -148,6 +148,14 @@ func (l *spanLookup) first(traceID, spanID string) (int64, bool) {
 	return id, found
 }
 
+// causalChildrenOf returns the span IDs that cause-link to the given span.
+func (l *spanLookup) causalChildrenOf(spanID string) []string {
+	l.mu.RLock()
+	kids := append([]string(nil), l.causalChildren[spanID]...)
+	l.mu.RUnlock()
+	return kids
+}
+
 // descendants returns every span reachable from root via child edges and
 // cause-purpose link edges — the same containment dagui renders, where a
 // cause-linking span (e.g. a service's exec span) appears as a child of the
@@ -304,6 +312,13 @@ func (s *DB) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, error)
 		return Span{}, fmt.Errorf("indexed span row %d: %w", id, sql.ErrNoRows)
 	}
 	return row, nil
+}
+
+// CausalChildren returns the span IDs that cause-link to the given span —
+// e.g. a service's long-lived exec span cause-links to the API spans that
+// installed the Service value (Container.asService and friends).
+func (s *DB) CausalChildren(spanID string) []string {
+	return s.lookup.causalChildrenOf(spanID)
 }
 
 func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {

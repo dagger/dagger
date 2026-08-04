@@ -740,7 +740,10 @@ func (m *MCP) toolLogs(ctx context.Context) string {
 	if !spanID.IsValid() {
 		return ""
 	}
-	logs, err := m.captureLogs(ctx, spanID.String())
+	// Exclude service exec span logs: long-lived services stream noise into
+	// the tool-call subtree via cause links, drowning out deliberate prints.
+	// ReadLogs remains the discovery path for service logs.
+	logs, err := m.captureLogs(ctx, spanID.String(), true)
 	if err != nil || len(logs) == 0 {
 		return ""
 	}
