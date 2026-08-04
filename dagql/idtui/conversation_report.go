@@ -39,7 +39,7 @@ func (fe *frontendPretty) renderConversationHeader() []string {
 // (see DB.SurfacedConversation) is rendered in start-time order, with a sub-agent's
 // turns nested under the tool call that spawned them.
 func (fe *frontendPretty) renderConversationSection(ctx tuist.Context, r *renderer) []string {
-	roots := fe.db.SurfacedConversation()
+	roots := fe.reportConversation()
 	if len(roots) == 0 {
 		return nil
 	}

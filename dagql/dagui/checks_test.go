@@ -163,3 +163,134 @@ func TestSurfacedChecksMemoizedPerFrame(t *testing.T) {
 		t.Fatalf("failed check must sort first, got %+v", fresh[0])
 	}
 }
+
+// toolCallSnapshot mirrors the display span core creates for an LLM tool call
+// (displayPhases.StartToolCall): a Boundary that also rolls up its logs and
+// spans, and carries the tool name. MCP.Call adopts this span's context, so
+// EVERY tool call's work -- including any check it runs -- nests beneath a
+// Boundary.
+//
+// Replay-driven integration tests never create this span (toolCallCtx falls
+// back to the shared ctx), which is exactly why the containment bug was
+// invisible to them; a regression test has to inject it explicitly.
+func toolCallSnapshot(id, parent byte, toolName string) SpanSnapshot {
+	snap := checkSnapshot(id, toolName, SpanID{SpanID: trace.SpanID{parent}}, "")
+	snap.Boundary = true
+	snap.RollUpLogs = true
+	snap.RollUpSpans = true
+	snap.LLMTool = toolName
+	snap.LLMRole = "assistant"
+	return snap
+}
+
+// TestSurfacedChecksForSpan covers zoom-relative surfacing: a check run inside
+// an LLM tool call is contained by the tool-call display span's Boundary, so it
+// never surfaces for the trace as a whole -- but rolling up relative to that
+// tool call is asking what ran INSIDE it, and must see it. Flags strictly below
+// the given root keep containing, so a fixture check wrapped in its own nested
+// boundary stays hidden either way, and checks outside the root drop out.
+func TestSurfacedChecksForSpan(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		toolID
+		toolCheckID
+		nestedBoundaryID
+		fixtureCheckID
+		outsideCheckID
+	)
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		checkSnapshot(rootID, "shell", SpanID{}, ""),
+		toolCallSnapshot(toolID, rootID, "check"),
+		checkSnapshot(toolCheckID, "shellcheck:check", SpanID{SpanID: trace.SpanID{toolID}}, "shellcheck:check"),
+		// A boundary strictly BELOW the root still contains what's under it.
+		boundarySnapshot(nestedBoundaryID, toolID),
+		checkSnapshot(fixtureCheckID, "fixture:check", SpanID{SpanID: trace.SpanID{nestedBoundaryID}}, "fixture:check"),
+		// A plain trace-level check outside the tool call, for the unzoomed
+		// baseline.
+		checkSnapshot(outsideCheckID, "outside:check", SpanID{SpanID: trace.SpanID{rootID}}, "outside:check"),
+	})
+
+	// At the DB root (every unzoomed frontend): the tool call's Boundary hides
+	// both checks beneath it, exactly as before.
+	unscoped := surfacedNames(db.SurfacedChecks())
+	if !unscoped["outside:check"] {
+		t.Errorf("unzoomed surfacing lost the trace-level check: %v", unscoped)
+	}
+	for _, hidden := range []string{"shellcheck:check", "fixture:check"} {
+		if unscoped[hidden] {
+			t.Errorf("unzoomed surfacing must not surface %q (got %v)", hidden, unscoped)
+		}
+	}
+
+	// Relative to the tool-call boundary: its own check surfaces...
+	toolSpan := db.Spans.Map[SpanID{SpanID: trace.SpanID{toolID}}]
+	if toolSpan == nil {
+		t.Fatal("tool call span not loaded")
+	}
+	scoped := surfacedNames(db.SurfacedChecksForSpan(toolSpan))
+	if !scoped["shellcheck:check"] {
+		t.Errorf("zoomed surfacing dropped the tool call's own check: %v", scoped)
+	}
+	// ...while the nested boundary below it still contains its fixture...
+	if scoped["fixture:check"] {
+		t.Errorf("a boundary below the root must still contain: %v", scoped)
+	}
+	// ...and a check that ran outside the zoom doesn't leak in.
+	if scoped["outside:check"] {
+		t.Errorf("zoomed surfacing leaked a check from outside the root: %v", scoped)
+	}
+
+	// Going back to the DB root restores the unzoomed result byte for byte --
+	// the memo keys on the root, not just on db.mutations.
+	again := surfacedNames(db.SurfacedChecks())
+	if len(again) != len(unscoped) {
+		t.Fatalf("re-rooting changed surfacing: %v vs %v", again, unscoped)
+	}
+	for name := range unscoped {
+		if !again[name] {
+			t.Fatalf("re-rooting changed surfacing: %v vs %v", again, unscoped)
+		}
+	}
+}
+
+// TestSurfacedConversationForSpan is the conversation half of the same rule:
+// roll-up is uniform across the surfacing family, so a sub-agent's turns
+// beneath a tool call surface when rolled up relative to that tool call, and
+// the enclosing agent's own turns do not.
+func TestSurfacedConversationForSpan(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		outerPromptID
+		toolID
+		subPromptID
+	)
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		checkSnapshot(rootID, "shell", SpanID{}, ""),
+		messageSnapshot(outerPromptID, "outer prompt", SpanID{SpanID: trace.SpanID{rootID}}, "user"),
+		toolCallSnapshot(toolID, rootID, "sub-agent"),
+		messageSnapshot(subPromptID, "sub prompt", SpanID{SpanID: trace.SpanID{toolID}}, "user"),
+	})
+
+	// At the DB root: the outer prompt and the tool call are the conversation;
+	// the sub-agent's turn nests under the tool call.
+	roots := db.SurfacedConversation()
+	got := surfacedMessageNames(roots)
+	if !got["outer prompt"] || !got["sub-agent"] {
+		t.Fatalf("unzoomed conversation lost a top-level message: %v", got)
+	}
+
+	// Relative to the tool call: only what ran inside it.
+	toolSpan := db.Spans.Map[SpanID{SpanID: trace.SpanID{toolID}}]
+	if toolSpan == nil {
+		t.Fatal("tool call span not loaded")
+	}
+	scoped := surfacedMessageNames(db.SurfacedConversationForSpan(toolSpan))
+	if !scoped["sub prompt"] {
+		t.Fatalf("zoomed conversation dropped the sub-agent's own turn: %v", scoped)
+	}
+	if scoped["outer prompt"] {
+		t.Fatalf("zoomed conversation leaked the enclosing run's transcript: %v", scoped)
+	}
+}
