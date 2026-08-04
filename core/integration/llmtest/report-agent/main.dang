@@ -1,0 +1,31 @@
+"""
+An agent whose tool function does noisy nested work and then prints a
+multi-line report, for LLM tool-log capture tests (replay-driven, no live
+provider).
+"""
+type ReportAgent {
+  model: String = null
+
+  """
+  Set up the agent's LLM with its tools and assignment.
+  """
+  drive(assignment: String!): LLM! {
+    llm(model: model)
+      .withTools(currentNode, except: ["drive"])
+      .withPrompt("You are an agent that writes a report.\n" + "Use the report tool to do the work and write the report.\n" + "\n" + "Assignment: " + assignment + "\n")
+  }
+
+  """
+  Do noisy nested work, then print a multi-line report.
+  """
+  report: ReportAgent! {
+    # Nested work: 20 lines of noise, well past the 8-line indirect tail.
+    container
+      .from("alpine")
+      .withExec(["sh", "-c", "for i in $(seq 20); do printf 'NESTED-NOISE-%02d\\n' $i; done"])
+      .sync
+    # The report itself: every line must survive into the tool result.
+    print("LINE-01\nLINE-02\nLINE-03\nLINE-04\nLINE-05\nLINE-06\nLINE-07\nLINE-08\nLINE-09\nLINE-10\nLINE-11\nLINE-12\nLINE-13\nLINE-14")
+    self
+  }
+}
