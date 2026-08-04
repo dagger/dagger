@@ -224,6 +224,173 @@ func (WorkspaceSuite) TestWorkspaceGitWorktree(ctx context.Context, t *testctx.T
 	require.JSONEq(t, `{"currentWorkspace":{"git":{"uncommitted":{"isEmpty":false}}}}`, out)
 }
 
+// TestWorkspaceWorktreeTreeNeutralized locks in that a linked worktree's
+// dangling .git POINTER FILE is neutralized in the workspace *tree* while its
+// git-ness is preserved. Workspace.directory(".") must NOT list the .git pointer
+// (the engine drops the root .git regular file from the synced workspace rootfs),
+// yet Workspace.git.head.commit must still resolve to the per-worktree HEAD,
+// because git-ness is reconstructed canonically from a pack of the client's own
+// checkout rather than read from the raw on-disk .git layout.
+func (WorkspaceSuite) TestWorkspaceWorktreeTreeNeutralized(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("tracked.txt", "v1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		WithExec([]string{"git", "worktree", "add", "-b", "feature", "/linked"}).
+		WithWorkdir("/linked").
+		WithNewFile("/linked/feature.txt", "feature work").
+		WithExec([]string{"git", "add", "feature.txt"}).
+		WithExec([]string{"git", "commit", "-m", "feature commit"})
+
+	wtHead, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	wtHead = strings.TrimSpace(wtHead)
+
+	out, err := ctr.With(daggerQuery(`{
+  currentWorkspace {
+    directory(path: ".") { entries }
+    git { head { commit } }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			Directory struct {
+				Entries []string `json:"entries"`
+			} `json:"directory"`
+			Git struct {
+				Head struct {
+					Commit string `json:"commit"`
+				} `json:"head"`
+			} `json:"git"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+
+	entries := got.CurrentWorkspace.Directory.Entries
+	t.Logf("worktree workspace directory entries: %v", entries)
+	// The worktree's tracked content is present in the workspace tree...
+	require.Contains(t, entries, "tracked.txt")
+	require.Contains(t, entries, "feature.txt")
+	// ...but the dangling .git pointer file has been dropped.
+	require.NotContains(t, entries, ".git")
+	require.NotContains(t, entries, ".git/")
+	// Git-ness is preserved: HEAD resolves to the per-worktree commit.
+	require.Equal(t, wtHead, got.CurrentWorkspace.Git.Head.Commit)
+}
+
+// worktreeParityProbe is the decoded shape for the plain-clone vs worktree
+// parity query: the workspace tree's own listing plus git-anchored HEAD and
+// uncommitted state.
+type worktreeParityProbe struct {
+	CurrentWorkspace struct {
+		Directory struct {
+			Entries []string `json:"entries"`
+		} `json:"directory"`
+		Git struct {
+			Head struct {
+				Commit string `json:"commit"`
+			} `json:"head"`
+			Uncommitted uncommittedChanges `json:"uncommitted"`
+		} `json:"git"`
+	} `json:"currentWorkspace"`
+}
+
+// TestWorkspaceWorktreePlainParity locks in that a linked worktree checkout and
+// a plain clone at the SAME commit report identical Workspace.git state — the
+// worktree's neutralized .git pointer must not perturb head/uncommitted
+// reporting, including the uncommitted diffStats. It also pins the tree-level
+// asymmetry between the two checkout shapes (worktree .git pointer dropped;
+// plain clone .git directory left as-is).
+func (WorkspaceSuite) TestWorkspaceWorktreePlainParity(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("tracked.txt", "v1").
+		WithNewFile("keep.txt", "k1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		// A linked worktree at the current HEAD (explicit branch name).
+		WithExec([]string{"git", "worktree", "add", "-b", "wt", "/worktree"}).
+		// A plain clone at the same HEAD.
+		WithExec([]string{"git", "clone", "/work", "/clone"})
+
+	head, err := base.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	head = strings.TrimSpace(head)
+
+	query := `{
+  currentWorkspace {
+    directory(path: ".") { entries }
+    git {
+      head { commit }
+      uncommitted {
+        isEmpty
+        diffStats { path kind addedLines removedLines }
+      }
+    }
+  }
+}`
+
+	// Apply IDENTICAL uncommitted edits in a checkout, then read its workspace.
+	probe := func(dir string) worktreeParityProbe {
+		out, err := base.
+			WithNewFile(dir+"/tracked.txt", "v2"). // modify a tracked file
+			WithNewFile(dir+"/added.txt", "new").  // add an untracked file
+			WithWorkdir(dir).
+			With(daggerQuery(query)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		var p worktreeParityProbe
+		require.NoError(t, json.Unmarshal([]byte(out), &p))
+		return p
+	}
+
+	worktree := probe("/worktree")
+	clone := probe("/clone")
+
+	t.Logf("worktree directory entries: %v", worktree.CurrentWorkspace.Directory.Entries)
+	t.Logf("plain clone directory entries: %v", clone.CurrentWorkspace.Directory.Entries)
+
+	// Same commit for both checkout shapes.
+	require.Equal(t, head, worktree.CurrentWorkspace.Git.Head.Commit)
+	require.Equal(t, head, clone.CurrentWorkspace.Git.Head.Commit)
+
+	// Identical uncommitted changeset: the worktree's neutralized .git pointer
+	// does not perturb git-anchored reporting relative to a plain clone.
+	require.Equal(t,
+		clone.CurrentWorkspace.Git.Uncommitted.IsEmpty,
+		worktree.CurrentWorkspace.Git.Uncommitted.IsEmpty)
+	require.ElementsMatch(t,
+		clone.CurrentWorkspace.Git.Uncommitted.DiffStats,
+		worktree.CurrentWorkspace.Git.Uncommitted.DiffStats)
+
+	// And the changeset is what we actually edited (not vacuously empty).
+	require.False(t, worktree.CurrentWorkspace.Git.Uncommitted.IsEmpty)
+	_, ok := worktree.CurrentWorkspace.Git.Uncommitted.find("tracked.txt")
+	require.True(t, ok, "expected tracked.txt in worktree diffStats")
+	_, ok = worktree.CurrentWorkspace.Git.Uncommitted.find("added.txt")
+	require.True(t, ok, "expected added.txt in worktree diffStats")
+
+	// Tree-level asymmetry: the worktree's .git pointer FILE is dropped from
+	// the workspace tree, while a plain clone's .git DIRECTORY is left as-is.
+	hasGit := func(entries []string) bool {
+		for _, e := range entries {
+			if e == ".git" || e == ".git/" {
+				return true
+			}
+		}
+		return false
+	}
+	require.False(t, hasGit(worktree.CurrentWorkspace.Directory.Entries),
+		"worktree .git pointer file should be dropped from the workspace tree")
+	require.True(t, hasGit(clone.CurrentWorkspace.Directory.Entries),
+		"plain clone .git directory should still be listed in the workspace tree")
+}
+
 // TestEntrypointWithFieldHidden verifies that the synthetic `with` field
 // installed on Query for entrypoint constructors with arguments is hidden
 // from user-facing CLI listings (`dagger functions`, `dagger call --help`)
