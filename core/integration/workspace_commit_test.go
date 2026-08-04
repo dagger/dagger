@@ -216,6 +216,246 @@ func (WorkspaceSuite) TestWorkspaceWithCommitNothingToCommit(ctx context.Context
 	})
 }
 
+// TestWorkspaceCommitFileVisibility covers the report's finding 1: content that
+// is in a staged commit but not yet exported stayed visible to the diff views
+// while vanishing from the tree — Workspace.file, Workspace.directory, and
+// therefore every container mounting the workspace, which made checks re-run on
+// pre-commit source. Staging a commit must not change what the tree contains.
+func (WorkspaceSuite) TestWorkspaceCommitFileVisibility(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "probe.txt", contents: "probe") {
+      withCommit(message: "add probe", date: "` + commitTestDate + `") {
+        file(path: "probe.txt") { contents }
+        directory(path: ".") {
+          entries
+          file(path: "probe.txt") { contents }
+        }
+        git { uncommitted { isEmpty } }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithCommit struct {
+					File struct {
+						Contents string `json:"contents"`
+					} `json:"file"`
+					Directory struct {
+						Entries []string `json:"entries"`
+						File    struct {
+							Contents string `json:"contents"`
+						} `json:"file"`
+					} `json:"directory"`
+					Git workspaceCommitGitSnapshot `json:"git"`
+				} `json:"withCommit"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	staged := got.CurrentWorkspace.WithNewFile.WithCommit
+
+	// The committed file is still readable...
+	require.Equal(t, "probe", staged.File.Contents)
+	// ...and still in the directory the toolchains mount into containers.
+	require.Contains(t, staged.Directory.Entries, "probe.txt")
+	require.Equal(t, "probe", staged.Directory.File.Contents)
+	// ...while no longer counting as pending.
+	require.True(t, staged.Git.Uncommitted.IsEmpty)
+}
+
+// TestWorkspaceCommitTreeInvariant covers the root of the report's finding 2:
+// the commit tool echoed a reversed diff because the workspace tree changed
+// across withCommit. Committing moves content between the staged and pending
+// layers; the tree itself must be byte-identical before and after.
+func (WorkspaceSuite) TestWorkspaceCommitTreeInvariant(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a.txt", contents: "a2") {
+      withNewFile(path: "new.txt", contents: "new") {
+        before: directory(path: ".") { digest }
+        withCommit(message: "staged", date: "` + commitTestDate + `") {
+          after: directory(path: ".") { digest }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					Before struct {
+						Digest string `json:"digest"`
+					} `json:"before"`
+					WithCommit struct {
+						After struct {
+							Digest string `json:"digest"`
+						} `json:"after"`
+					} `json:"withCommit"`
+				} `json:"withNewFile"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	snap := got.CurrentWorkspace.WithNewFile.WithNewFile
+	require.NotEmpty(t, snap.Before.Digest)
+	require.Equal(t, snap.Before.Digest, snap.WithCommit.After.Digest,
+		"withCommit must not change the workspace tree")
+}
+
+// TestWorkspaceCommitNoResurrection is the report's finding 3, verbatim: commit
+// a change to an already-tracked file, then make a *path-scoped* commit of
+// something else. The first commit's content must not come back as uncommitted,
+// and saving must land both commits with a clean work tree.
+func (WorkspaceSuite) TestWorkspaceCommitNoResurrection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+	baseHead := gitOut(ctx, t, base, "rev-parse", "HEAD")
+
+	saved := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a.txt", contents: "a2") {
+      withCommit(message: "edit a", date: "` + commitTestDate + `") {
+        first: git { uncommitted { isEmpty } }
+        withNewFile(path: "probe.txt", contents: "probe") {
+          withCommit(message: "add probe", date: "` + commitTestDate + `", paths: ["probe.txt"]) {
+            second: git { uncommitted { isEmpty } }
+            export
+          }
+        }
+      }
+    }
+  }
+}`))
+
+	out, err := saved.Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithCommit struct {
+					First struct {
+						Uncommitted struct {
+							IsEmpty bool `json:"isEmpty"`
+						} `json:"uncommitted"`
+					} `json:"first"`
+					WithNewFile struct {
+						WithCommit struct {
+							Second struct {
+								Uncommitted struct {
+									IsEmpty bool `json:"isEmpty"`
+								} `json:"uncommitted"`
+							} `json:"second"`
+						} `json:"withCommit"`
+					} `json:"withNewFile"`
+				} `json:"withCommit"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	first := got.CurrentWorkspace.WithNewFile.WithCommit
+	require.True(t, first.First.Uncommitted.IsEmpty,
+		"committing everything must leave nothing pending")
+	require.True(t, first.WithNewFile.WithCommit.Second.Uncommitted.IsEmpty,
+		"a path-scoped commit must not resurrect the earlier commit as pending")
+
+	// Both commits landed, in order, and the work tree is clean: nothing was
+	// written twice, nothing was left behind.
+	require.Equal(t, "add probe\nedit a\ninitial",
+		gitOut(ctx, t, saved, "log", "-3", "--pretty=%s"))
+	require.Equal(t, baseHead, gitOut(ctx, t, saved, "rev-parse", "HEAD~2"))
+	require.Equal(t, "", gitOut(ctx, t, saved, "status", "--porcelain"))
+
+	contents, err := saved.File("a.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a2", contents)
+	contents, err = saved.File("probe.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "probe", contents)
+}
+
+// TestWorkspaceCommitScopedRemainder pins the other half of the same invariant:
+// a path-scoped commit leaves every other change exactly where it was — in the
+// tree, out of the staged commit, and therefore still uncommitted.
+func (WorkspaceSuite) TestWorkspaceCommitScopedRemainder(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a.txt", contents: "a2") {
+      withNewFile(path: "b.txt", contents: "b2") {
+        withCommit(message: "just a", date: "` + commitTestDate + `", paths: ["a.txt"]) {
+          committed: file(path: "a.txt") { contents }
+          pending: file(path: "b.txt") { contents }
+          git {
+            uncommitted {
+              isEmpty
+              modifiedPaths
+              addedPaths
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					WithCommit struct {
+						Committed struct {
+							Contents string `json:"contents"`
+						} `json:"committed"`
+						Pending struct {
+							Contents string `json:"contents"`
+						} `json:"pending"`
+						Git struct {
+							Uncommitted struct {
+								IsEmpty       bool     `json:"isEmpty"`
+								ModifiedPaths []string `json:"modifiedPaths"`
+								AddedPaths    []string `json:"addedPaths"`
+							} `json:"uncommitted"`
+						} `json:"git"`
+					} `json:"withCommit"`
+				} `json:"withNewFile"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	staged := got.CurrentWorkspace.WithNewFile.WithNewFile.WithCommit
+
+	// Both edits are still in the tree, committed or not.
+	require.Equal(t, "a2", staged.Committed.Contents)
+	require.Equal(t, "b2", staged.Pending.Contents)
+
+	// ...and the remainder is exactly the change that was not committed.
+	require.False(t, staged.Git.Uncommitted.IsEmpty)
+	require.Equal(t, []string{"b.txt"}, staged.Git.Uncommitted.ModifiedPaths)
+	require.Empty(t, staged.Git.Uncommitted.AddedPaths)
+}
+
 // gitOut runs a git command in the container and returns its trimmed stdout.
 func gitOut(ctx context.Context, t *testctx.T, ctr *dagger.Container, args ...string) string {
 	t.Helper()
