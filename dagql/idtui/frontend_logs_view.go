@@ -123,6 +123,11 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 			limit = sh / 3
 		}
 	}
+	// An embedded report has no screen to divide by: bound nested rows so one
+	// noisy exec can't drown out the output the report is about (depth 0).
+	if s.fe.reportNestedLogLimit > 0 && row.Depth > 0 {
+		limit = s.fe.reportNestedLogLimit
+	}
 	if span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
 	}

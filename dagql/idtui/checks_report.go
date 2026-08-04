@@ -44,7 +44,7 @@ func (fe *frontendPretty) checksReport(ctx tuist.Context, r *renderer, zoomed bo
 // checks kept to a single line and failed checks carrying their inline error
 // cause -- the same detail the live tree shows on a failed row.
 func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []string {
-	roots := fe.db.SurfacedChecks()
+	roots := fe.reportChecks()
 	if len(roots) == 0 {
 		return nil
 	}
