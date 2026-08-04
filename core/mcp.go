@@ -1371,6 +1371,70 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Strict: false,
 		Call:   m.readLogsTool(srv),
 	})
+	allTools.Add(LLMTool{
+		Name: "ListServices",
+		Description: "List the services currently running in this session: hostname, exposed ports, and span IDs." + "\n" +
+			"Read a service's logs with ReadLogs(span: <spanID>) — useful for tailing a server or engine that runs as a service." + "\n" +
+			"installSpanIDs are the API calls that produced the service (e.g. Container.asService); they work with ReadLogs too.",
+		ReadOnly: true, // Read-only operation
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Strict: false,
+		Call:   m.listServicesTool(srv),
+	})
+}
+
+func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, _ struct{}) (any, error) {
+		root, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		mainMeta, err := root.MainClientCallerMetadata(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get main client caller metadata: %w", err)
+		}
+		svcs, err := root.Services(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		type serviceInfo struct {
+			Hostname       string   `json:"hostname"`
+			Ports          []string `json:"ports,omitempty"`
+			SpanID         string   `json:"spanID,omitempty"`
+			InstallSpanIDs []string `json:"installSpanIDs,omitempty"`
+		}
+		running := svcs.RunningServices(mainMeta.SessionID)
+		infos := make([]serviceInfo, 0, len(running))
+		for _, svc := range running {
+			info := serviceInfo{Hostname: svc.Host}
+			for _, port := range svc.Ports {
+				desc := fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network())
+				if port.Description != nil && *port.Description != "" {
+					desc += " (" + *port.Description + ")"
+				}
+				info.Ports = append(info.Ports, desc)
+			}
+			if spanCtx := svc.ServiceSpanContext(); spanCtx.HasSpanID() {
+				info.SpanID = spanCtx.SpanID().String()
+			}
+			for _, installCtx := range svc.InstallSpanContexts() {
+				if !installCtx.HasSpanID() {
+					continue
+				}
+				info.InstallSpanIDs = append(info.InstallSpanIDs, installCtx.SpanID().String())
+			}
+			infos = append(infos, info)
+		}
+		return toolStructuredResponse(map[string]any{
+			"services": infos,
+		})
+	})
 }
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
