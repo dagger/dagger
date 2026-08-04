@@ -1769,7 +1769,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (c *Cache) compactEqClassesLocked() (changed bool, oldSlots int, newSlots int) {
+func (c *Cache) compactEqClassesLocked(force bool) (changed bool, oldSlots int, newSlots int) {
 	if len(c.egraphParents) <= 1 {
 		return false, 0, 0
 	}
@@ -1801,7 +1801,7 @@ func (c *Cache) compactEqClassesLocked() (changed bool, oldSlots int, newSlots i
 
 	oldSlots = len(c.egraphParents) - 1
 	newSlots = len(liveRoots)
-	if newSlots == 0 || oldSlots < newSlots*2 {
+	if newSlots == 0 || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
 		return false, oldSlots, newSlots
 	}
 
