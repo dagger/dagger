@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 	"github.com/vito/dang/pkg/dang"
 	"github.com/vito/dang/pkg/hm"
 	"github.com/vito/dang/pkg/introspection"
