@@ -25,6 +25,29 @@ func SetWorkspaceInvalidator(fn func(context.Context) error) {
 	workspaceInvalidator = fn
 }
 
+// workspaceOverlayModuleLoader resolves the workspace-config modules a
+// workspace's pending overlay affects, loading their source through the overlay
+// instead of the session's served (on-disk) snapshot. Set by core/schema (which
+// owns overlay rootfs resolution); nil in contexts without the workspace
+// schema, where overlay module resolution degrades to the served set.
+var workspaceOverlayModuleLoader func(context.Context, dagql.ObjectResult[*Workspace]) ([]dagql.ObjectResult[*Module], error)
+
+// SetWorkspaceOverlayModuleLoader registers the hook used to re-resolve
+// overlay-affected workspace modules. Mirrors SetWorkspaceInvalidator.
+func SetWorkspaceOverlayModuleLoader(fn func(context.Context, dagql.ObjectResult[*Workspace]) ([]dagql.ObjectResult[*Module], error)) {
+	workspaceOverlayModuleLoader = fn
+}
+
+// WorkspaceOverlayModules re-resolves the workspace-config modules the given
+// workspace's pending overlay affects, or nil when there is no overlay (or no
+// registered loader). See core/schema's workspaceOverlayModules for semantics.
+func WorkspaceOverlayModules(ctx context.Context, ws dagql.ObjectResult[*Workspace]) ([]dagql.ObjectResult[*Module], error) {
+	if workspaceOverlayModuleLoader == nil {
+		return nil, nil
+	}
+	return workspaceOverlayModuleLoader(ctx, ws)
+}
+
 // InvalidateCurrentWorkspace drops the calling client's cached workspace
 // detection so the next access re-detects it from the host. Used after writing
 // workspace config files to the host (e.g. applying a migration changeset),

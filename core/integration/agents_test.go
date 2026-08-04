@@ -13,7 +13,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"dagger.io/dagger"
@@ -162,6 +164,163 @@ func (AgentsSuite) TestAgentReadsSeedWorkspace(ctx context.Context, t *testctx.T
 		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
+}
+
+// editorSourceWithDoc is the editor fixture's source with readFile's doc string
+// swapped for the given marker, used to prove overlay-staged module edits are
+// visible to agent composition.
+func editorSourceWithDoc(doc string) string {
+	return fmt.Sprintf(`"""A basic coding agent, for @agent integration tests."""
+type Editor {
+  """Compose the editor's tools onto a base LLM. Base named `+"`base`"+`."""
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt("editor agent system prompt")
+  }
+
+  """%s"""
+  readFile(path: String!): String! {
+    `+"`read ${path}`"+`
+  }
+
+  """shared tool from editor"""
+  shared(x: String!): String! {
+    `+"`editor shared ${x}`"+`
+  }
+}
+`, doc)
+}
+
+// TestOverlayModuleSourceIsResolvedThroughOverlay pins the half of the overlay
+// module machinery that works today: Workspace.moduleSource, resolved off a
+// workspace carrying a staged (unexported) edit, loads the module from the
+// overlay rather than from disk. workspaceOverlayModules (core/schema/
+// workspace_overlay_modules.go) resolves its modules exactly this way.
+func (AgentsSuite) TestOverlayModuleSourceIsResolvedThroughOverlay(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+
+	const marker = "OVERLAY EDITED DOC MARKER"
+	out, err := modGen.
+		With(daggerQuery(
+			`{workspace: currentWorkspace{withNewFile(path:"/modules/editor/main.dang", contents:%s){moduleSource(path:"/modules/editor"){asModule{name objects{asObject{name functions{name description}}}}}}}}`,
+			strconv.Quote(editorSourceWithDoc(marker)),
+		)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, marker)
+	require.NotContains(t, out, "Read a file (stub).")
+}
+
+// TestOverlayModuleSourceEdit locks in the self-repair loop: an agent that
+// edits a module's source and recomposes itself must see its own STAGED edit,
+// with nothing exported to disk. The edit is staged and the toolset selected in
+// a single query, off the Workspace returned by withNewFile. Two layers
+// cooperate: workspaceOverlayModules re-resolves the module through the overlay
+// for composition (Workspace.agents), and WorkspaceServedSchema layers the same
+// overlay modules onto the served schema LLM.tools renders from.
+func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+
+	const marker = "OVERLAY EDITED DOC MARKER"
+
+	out, err := modGen.
+		With(daggerQuery(
+			`{workspace: currentWorkspace{withNewFile(path:"/modules/editor/main.dang", contents:%s){agents{compose{tools}}}}}`,
+			strconv.Quote(editorSourceWithDoc(marker)),
+		)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "## readFile")
+	require.Contains(t, out, marker)
+	require.NotContains(t, out, "Read a file (stub).")
+
+	// Control: the un-staged workspace still composes the on-disk source.
+	out, err = modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Read a file (stub).")
+	require.NotContains(t, out, marker)
+}
+
+// TestOverlayWithModule covers the other half: a module installed into the
+// workspace config through the overlay (Workspace.withModule, i.e. the agent's
+// `install` tool) contributes its agent's tools without any export to disk —
+// including its type existing in the LLM's bound schema, which the served
+// (on-disk) module set alone cannot provide.
+func (AgentsSuite) TestOverlayWithModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// Only editor is installed on disk; godoc arrives via the overlay.
+	modGen, err := installAgents(t, c, "editor")
+	require.NoError(t, err)
+
+	out, err := modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{withModule(ref:"../godoc"){agents{compose{tools}}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	// Both fixtures define `shared`, so the collision namespaces both toolsets
+	// — the same shape TestComposeToolset asserts for the on-disk install.
+	require.Contains(t, out, "## godoc_goDoc")
+	require.Contains(t, out, "## godoc_shared")
+	require.Contains(t, out, "shared tool from godoc")
+	require.Contains(t, out, "## editor_readFile")
+	require.Contains(t, out, "## editor_shared")
+}
+
+// TestOverlayUnrelatedEditKeepsToolset is the regression guard: an overlay that
+// touches nothing module-related must compose exactly the served toolset, i.e.
+// the overlay re-resolution must not kick in (or duplicate anything) for
+// unrelated edits.
+func (AgentsSuite) TestOverlayUnrelatedEditKeepsToolset(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor", "godoc")
+	require.NoError(t, err)
+
+	baseline, err := modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	out, err := modGen.
+		With(daggerQuery(
+			`{workspace: currentWorkspace{withNewFile(path:"/README.md", contents:%s){agents{compose{tools}}}}}`,
+			strconv.Quote("unrelated overlay edit\n"),
+		)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, agentToolsFromQuery(t, baseline), agentToolsFromQuery(t, out))
+}
+
+// agentToolsFromQuery digs the composed `tools` string out of a
+// `dagger query` response, whatever wrapper fields the query nested it under.
+func agentToolsFromQuery(t *testctx.T, out string) string {
+	t.Helper()
+	var res any
+	require.NoError(t, json.Unmarshal([]byte(out), &res))
+	var find func(any) (string, bool)
+	find = func(v any) (string, bool) {
+		obj, ok := v.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		if tools, ok := obj["tools"].(string); ok {
+			return tools, true
+		}
+		for _, child := range obj {
+			if tools, ok := find(child); ok {
+				return tools, true
+			}
+		}
+		return "", false
+	}
+	tools, ok := find(res)
+	require.True(t, ok, "no tools field in %s", out)
+	return tools
 }
 
 func (AgentsSuite) TestEmptySelectionComposesBareLLM(ctx context.Context, t *testctx.T) {

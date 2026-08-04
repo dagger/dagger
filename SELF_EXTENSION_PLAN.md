@@ -179,7 +179,7 @@ The feature was exercised in anger: a live agent session reloaded itself to
 gain the `contributor` module's `contribute` tool mid-conversation, then used
 reload twice more to pick up config and code fixes. Findings:
 
-1. **Reload syncs from disk, not the agent's pending overlay.**
+1. **Reload syncs from disk, not the agent's pending overlay.** FIXED.
    `Workspace.reloaded` + `agents.compose` re-read module source AND settings
    from the host checkout — verified empirically: the agent's staged edits to
    dagger.toml and to a module's source were both invisible to recomposition
@@ -187,6 +187,43 @@ reload twice more to pick up config and code fixes. Findings:
    loop the feature exists for (edit module → reload → new behavior, fully
    in-session). Module/config loading needs to resolve through the workspace
    overlay.
+
+   Fixed in two layers, both required:
+   - **Composition** (`core/schema/workspace_overlay_modules.go`):
+     `Workspace.agents` re-resolves, through the overlay rootfs
+     (`Directory.asModuleSource` → `asModule`, so the module identity keys on
+     the overlay's content digest), every workspace-config entry the overlay
+     affects — entries whose source tree the overlay touches, and all entries
+     when dagger.toml itself is staged (an install). Overlay modules replace
+     same-named served modules; newly-configured ones are appended. Env
+     overlays (`--env=dev`) apply before resolution.
+   - **Schema** (`core/workspace_context.go`): composition alone was not
+     enough — `LLM.tools` renders and dispatches against
+     `WorkspaceServedSchema` → `CurrentServedDeps`, the on-disk served
+     snapshot, so a replaced module showed stale docs and an overlay-installed
+     module failed with `bound object type ... is not an object in the
+     workspace schema`. `WorkspaceServedSchema` now layers the same overlay
+     modules onto the served deps via `SchemaBuilder.Replacing` (the existing
+     `With` deliberately keeps the old module on name collision), through a
+     core→schema hook (`SetWorkspaceOverlayModuleLoader`), memoized per
+     (served-deps instance, workspace ID).
+
+   Deliberate limitations, documented in code: entries *removed* from staged
+   dagger.toml still serve until export (merge only adds/replaces); legacy
+   +defaultPath entries and absolute-path/remote refs have no overlay
+   representation (remote refs still re-resolve after a staged config edit, so
+   overlay `install` of a remote module works); root-field introspection under
+   `WorkspaceServedContext` (e.g. currentTypeDefs) still sees the served
+   snapshot — the layering applies to the derived schema only.
+
+   Covered by `TestAgents/TestOverlay*` (core/integration/agents_test.go):
+   staged source edit visible in composed tools, staged `withModule` adds a
+   module's toolset, unrelated overlay edits change nothing. Verified against
+   the real repo (env=dev, staged edit to modules/editor) through a
+   from-source engine. NOTE for live QA: the tui-qa module's default mode
+   binds the *session's own* engine, not one built from the workspace — a live
+   `dagger agent` reload QA only exercises this fix when run against an engine
+   that has it (engine-lab), which currently lacks LLM auth; see "Still open".
 2. **`cmd://` secrets should trim trailing whitespace.** `gh auth token` (and
    most credential commands) emit a trailing newline; git's credential helper
    tolerates it, but HTTP Authorization headers reject it ("invalid header
