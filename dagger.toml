@@ -310,3 +310,9 @@ source = "modules/delegate"
 
 [env.dev.modules.review]
 source = "modules/review"
+
+[env.dev.modules.contributor]
+source = "modules/contributor"
+
+[env.dev.modules.contributor.settings]
+githubToken = "env://GITHUB_TOKEN"
