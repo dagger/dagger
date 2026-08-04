@@ -228,6 +228,7 @@ func TestASCIIReporterScopedChecksExcludeOtherToolCalls(t *testing.T) {
 	}
 
 	// The unscoped render of the same DB still covers the whole trace.
+	db.SetPrimarySpan(prettyTestSpanID(1)) // back to the session root
 	fe2 := NewASCIIReporterWithDB(io.Discard, db)
 	fe2.SetReportRenderOpts(ReportRenderOpts{
 		Verbosity:       dagui.ShowCompletedVerbosity,
@@ -348,6 +349,107 @@ func TestReportRenderOptsRerunSuggestion(t *testing.T) {
 	}
 	if strings.Contains(got, `dagger check "ci:bootstrap"`) || strings.Contains(got, "RUN LOCALLY") {
 		t.Fatalf("report still suggests the CLI command:\n%s", got)
+	}
+}
+
+// TestASCIIReporterScopedChecksUnderToolBoundary is the render-level half of
+// zoom-relative surfacing. core's tool-call display span
+// (displayPhases.StartToolCall) is a Boundary, and MCP.Call adopts its context,
+// so EVERY check a tool runs sits under a Boundary -- which the whole-trace
+// containment walk treats as containment. The result was a tool result with no
+// CHECKS section at all, falling back to the raw span tree. Rolled up relative
+// to the tool call itself, that boundary sits AT the root and is irrelevant.
+//
+// Note the Boundary attribute is what makes this a reproduction: replay-driven
+// integration tests never create the display span, so the bug is invisible to
+// them.
+func TestASCIIReporterScopedChecksUnderToolBoundary(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	toolID := prettyTestSpanID(2)
+	checkID := prettyTestSpanID(3)
+	noiseID := prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	end := start.Add(3 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "shell",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			// Mirrors StartToolCall: boundary + roll-ups + tool name.
+			ID:          toolID,
+			TraceID:     prettyTestTraceID(),
+			Name:        "check",
+			ParentID:    rootID,
+			Boundary:    true,
+			RollUpLogs:  true,
+			RollUpSpans: true,
+			LLMTool:     "check",
+			LLMRole:     "assistant",
+			StartTime:   start,
+			EndTime:     end,
+			Final:       true,
+		},
+		{
+			ID:        checkID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "shellcheck:check",
+			ParentID:  toolID,
+			CheckName: "shellcheck:check",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:        noiseID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "Container.withExec",
+			ParentID:  checkID,
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+	})
+
+	render := func(primary dagui.SpanID, scoped bool) string {
+		t.Helper()
+		db.SetPrimarySpan(primary)
+		fe := NewASCIIReporterWithDB(io.Discard, db)
+		fe.SetReportRenderOpts(ReportRenderOpts{
+			Verbosity:       dagui.ShowCompletedVerbosity,
+			ExpandCompleted: true,
+			ScopedSubtree:   scoped,
+		})
+		var buf bytes.Buffer
+		if err := fe.FinalRender(&buf); err != nil {
+			t.Fatalf("FinalRender: %v", err)
+		}
+		return buf.String()
+	}
+
+	// Unzoomed at the DB root, the boundary contains the check: no CHECKS
+	// section -- the whole-trace behavior is unchanged.
+	before := render(rootID, false)
+	if strings.Contains(before, "CHECKS") {
+		t.Fatalf("expected the boundary to contain the check at the DB root:\n%s", before)
+	}
+
+	// Zoomed to the tool call, the check is what ran inside it.
+	got := render(toolID, true)
+	t.Logf("rendered report:\n%s", got)
+	if !strings.Contains(got, "CHECKS") || !strings.Contains(got, "shellcheck:check") {
+		t.Fatalf("scoped report has no CHECKS section for the check it ran:\n%s", got)
+	}
+	// The compact CHECKS summary replaces the raw tree, so the module-internal
+	// work the check did stays out of the tool result.
+	if strings.Contains(got, "Container.withExec") {
+		t.Errorf("scoped report fell back to the raw tree:\n%s", got)
 	}
 }
 

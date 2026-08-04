@@ -147,7 +147,7 @@ func (fe *frontendPretty) checkNodeForSpan(span *dagui.Span) *dagui.CheckNode {
 		}
 		return nil
 	}
-	return find(fe.db.SurfacedChecks())
+	return find(fe.reportChecks())
 }
 
 // renderCauseDetail renders a failed check's cause -- the surfaced command and

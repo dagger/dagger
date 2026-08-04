@@ -120,6 +120,69 @@ func TestResolveTraceTargetUnknownNames(t *testing.T) {
 	}
 }
 
+// TestResolveTraceTargetChecksUnderToolBoundary covers the ReadTrace name
+// lookup for a check that ran inside an LLM tool call. MCP.Call adopts the
+// tool-call display span's context, and that span is a Boundary
+// (displayPhases.StartToolCall), so the check is "contained" as far as
+// DB.SurfacedChecks is concerned -- which used to make
+// `ReadTrace(check: "shellcheck:check")` fail with "no checks in this trace"
+// for the very check the reader had just watched run.
+//
+// A name lookup must not depend on surfacing containment at all.
+func TestResolveTraceTargetChecksUnderToolBoundary(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		toolID
+		checkID
+	)
+	start := time.Unix(100, 0)
+	snap := func(id byte, name string, parent dagui.SpanID) dagui.SpanSnapshot {
+		return dagui.SpanSnapshot{
+			ID:        traceTargetSpanID(id),
+			TraceID:   dagui.TraceID{TraceID: trace.TraceID{1}},
+			Name:      name,
+			StartTime: start,
+			EndTime:   start.Add(time.Second),
+			ParentID:  parent,
+			Final:     true,
+		}
+	}
+	// Mirrors StartToolCall's attributes: the bug is invisible without them,
+	// since replay-driven runs create no display span at all.
+	tool := snap(toolID, "check", traceTargetSpanID(rootID))
+	tool.Boundary = true
+	tool.RollUpLogs = true
+	tool.RollUpSpans = true
+	tool.LLMTool = "check"
+	check := snap(checkID, "shellcheck:check", traceTargetSpanID(toolID))
+	check.CheckName = "shellcheck:check"
+
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		snap(rootID, "shell", dagui.SpanID{}), tool, check,
+	})
+
+	// Precondition: surfacing does hide it, so this test really exercises the
+	// decoupling rather than a trace where it never mattered.
+	if len(db.SurfacedChecks()) != 0 {
+		t.Fatalf("expected the tool boundary to contain the check, got %+v", db.SurfacedChecks())
+	}
+
+	got, err := resolveTraceTargetIn(db, traceTarget{Check: "shellcheck:check"})
+	if err != nil {
+		t.Fatalf("resolve check under a tool boundary: %v", err)
+	}
+	if want := traceTargetSpanID(checkID).SpanID.String(); got != want {
+		t.Fatalf("resolved to %q, want %q", got, want)
+	}
+
+	// And an unknown name still lists it as available.
+	_, err = resolveTraceTargetIn(db, traceTarget{Check: "nope:check"})
+	if err == nil || !strings.Contains(err.Error(), "shellcheck:check") {
+		t.Fatalf("expected the available-names listing to include the check, got %v", err)
+	}
+}
+
 func TestResolveTraceTargetSpanErrors(t *testing.T) {
 	db := traceTargetDB(t)
 
