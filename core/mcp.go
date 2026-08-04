@@ -1954,6 +1954,9 @@ func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
 func readTraceReportOpts(target traceTarget) traceReportOpts {
 	opts := toolCallReportOpts()
 	opts.OwnOutputOnly = true
+	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
+	// tree the tool-call result drops.
+	opts.HideSpanTree = false
 	if target.Span == "" {
 		opts.ExpandAll = false
 	}

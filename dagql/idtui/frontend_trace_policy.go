@@ -69,7 +69,7 @@ func policyForZoom(k zoomKind) traceRenderPolicy {
 // fe.ZoomedSpan).
 func (fe *frontendPretty) zoomKind() zoomKind {
 	id := fe.ZoomedSpan
-	if !id.IsValid() || id == fe.db.PrimarySpan {
+	if !id.IsValid() || id == fe.primarySpan() {
 		return zoomRoot
 	}
 	span, ok := fe.db.Spans.Map[id]
@@ -129,8 +129,8 @@ func (fe *frontendPretty) renderPolicy() traceRenderPolicy {
 	// nested run -- a propagated traceparent, e.g. dagger-in-dagger -- has no
 	// parentless root span at all.
 	if k == zoomRoot && len(fe.reportChecks()) == 0 && len(fe.reportGenerators()) == 0 {
-		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailed() {
-			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+		if primary := fe.db.Spans.Map[fe.primarySpan()]; primary != nil && primary.IsFailed() {
+			if tv := fe.reportTestView(); tv == nil || !tv.HasTests() {
 				pol.showRootCauseLast = true
 			}
 		}

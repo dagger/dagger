@@ -147,6 +147,24 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 }
 
 func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) { //nolint:gocyclo
+	// Strict scoping: the walk root a span must descend from by real
+	// parentage. See FrontendOpts.StrictSubtree -- this is what makes a scoped
+	// report render exactly the root span's own subtree.
+	var scopeRoot *Span
+	if opts.StrictSubtree && opts.ZoomedSpan.IsValid() {
+		scopeRoot = db.Spans.Map[opts.ZoomedSpan]
+	}
+	inScope := func(span *Span) bool {
+		if scopeRoot == nil {
+			return true
+		}
+		for p := span; p != nil; p = p.ParentSpan {
+			if p == scopeRoot {
+				return true
+			}
+		}
+		return false
+	}
 	var lastTree *TraceTree
 	var lastCall *TraceTree
 	seen := make(map[SpanID]bool)
@@ -157,6 +175,13 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			return false
 		}
 		seen[spanID] = true
+
+		// Strictly-scoped walks never leave the root's own subtree: a span
+		// attached by a link (cause/effect) or reached via the inline-cause
+		// walk below can live anywhere in the trace.
+		if !inScope(span) {
+			return false
+		}
 
 		// If the span should be hidden, don't even collect it into the tree so we
 		// can track relationships between rows accurately (e.g. chaining pipeline
