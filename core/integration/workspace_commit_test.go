@@ -888,6 +888,354 @@ func (WorkspaceSuite) TestWorkspaceCommitExportSubmodule(ctx context.Context, t 
 	require.Equal(t, "", gitOut(ctx, t, saved, "status", "--porcelain"))
 }
 
+// workspaceDiffStat is the shape of one Changeset.diffStats entry.
+type workspaceDiffStat struct {
+	Path         string `json:"path"`
+	Kind         string `json:"kind"`
+	AddedLines   int    `json:"addedLines"`
+	RemovedLines int    `json:"removedLines"`
+}
+
+// uncommittedChanges is the shape of a Workspace.git.uncommitted changeset,
+// read as a diff rather than as path lists.
+type uncommittedChanges struct {
+	IsEmpty   bool                `json:"isEmpty"`
+	DiffStats []workspaceDiffStat `json:"diffStats"`
+}
+
+// find returns the diff stat for path, if any.
+func (u uncommittedChanges) find(path string) (workspaceDiffStat, bool) {
+	for _, stat := range u.DiffStats {
+		if stat.Path == path {
+			return stat, true
+		}
+	}
+	return workspaceDiffStat{}, false
+}
+
+// paths returns the diff stat paths, dropping bare-directory entries. The
+// changeset sometimes carries a synthetic entry for a directory that only
+// exists inside a staged commit (a separate defect); these tests are about the
+// files, so directory entries are filtered out rather than asserted on.
+func (u uncommittedChanges) paths() []string {
+	var out []string
+	for _, stat := range u.DiffStats {
+		if strings.HasSuffix(stat.Path, "/") {
+			continue
+		}
+		out = append(out, stat.Path)
+	}
+	return out
+}
+
+// TestWorkspaceCommitDeleteOfCommittedFile guards the "delete what a staged
+// commit added" bug: with a commit staged engine-side, the pending remainder
+// used to be computed from the raw session overlay, which is anchored on the
+// *pre-commit* checkout. Against that anchor "create qa/probe.txt then delete
+// it" cancels out to nothing, so the deletion was invisible — status and diff
+// reported a clean workspace even though the staged HEAD still contained the
+// file. The remainder must instead be anchored on the staged commit, where the
+// deletion is a real REMOVED entry.
+func (WorkspaceSuite) TestWorkspaceCommitDeleteOfCommittedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+      withCommit(message: "add probe", date: "` + commitTestDate + `", paths: ["qa"]) {
+        withoutFile(path: "qa/probe.txt") {
+          git {
+            uncommitted {
+              isEmpty
+              diffStats { path kind addedLines removedLines }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithCommit struct {
+					WithoutFile struct {
+						Git struct {
+							Uncommitted uncommittedChanges `json:"uncommitted"`
+						} `json:"git"`
+					} `json:"withoutFile"`
+				} `json:"withCommit"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	pending := got.CurrentWorkspace.WithNewFile.WithCommit.WithoutFile.Git.Uncommitted
+
+	require.False(t, pending.IsEmpty,
+		"deleting a file that only exists in the staged commit is a real change")
+	stat, ok := pending.find("qa/probe.txt")
+	require.True(t, ok, "expected qa/probe.txt in %v", pending.DiffStats)
+	require.Equal(t, "REMOVED", stat.Kind)
+}
+
+// TestWorkspaceCommitDeleteOfCommittedFileIsCommittable is the other half of
+// the same bug: because the deletion cancelled out of the overlay it was not
+// merely invisible, it was uncommittable — withCommit reported "nothing to
+// commit" and the file could never be removed within the session. Committing
+// the deletion must produce a second staged commit that removes it.
+func (WorkspaceSuite) TestWorkspaceCommitDeleteOfCommittedFileIsCommittable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+      withCommit(message: "add probe", date: "` + commitTestDate + `", paths: ["qa"]) {
+        withoutFile(path: "qa/probe.txt") {
+          withCommit(message: "drop probe", date: "` + commitTestDate + `", paths: ["qa/probe.txt"]) {
+            git {
+              head { commit }
+              uncommitted {
+                isEmpty
+                diffStats { path kind addedLines removedLines }
+              }
+              stagedCommits {
+                message
+                changes { diffStats { path kind addedLines removedLines } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithCommit struct {
+					WithoutFile struct {
+						WithCommit struct {
+							Git struct {
+								Head struct {
+									Commit string `json:"commit"`
+								} `json:"head"`
+								Uncommitted   uncommittedChanges `json:"uncommitted"`
+								StagedCommits []struct {
+									Message string `json:"message"`
+									Changes struct {
+										DiffStats []workspaceDiffStat `json:"diffStats"`
+									} `json:"changes"`
+								} `json:"stagedCommits"`
+							} `json:"git"`
+						} `json:"withCommit"`
+					} `json:"withoutFile"`
+				} `json:"withCommit"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	git := got.CurrentWorkspace.WithNewFile.WithCommit.WithoutFile.WithCommit.Git
+
+	require.Len(t, git.Head.Commit, 40)
+
+	// Two staged commits: the one that added the file, then the one that
+	// removed it.
+	require.Len(t, git.StagedCommits, 2)
+	require.Equal(t, "add probe", git.StagedCommits[0].Message)
+	require.Equal(t, "drop probe", git.StagedCommits[1].Message)
+
+	firstKinds := map[string]string{}
+	for _, stat := range git.StagedCommits[0].Changes.DiffStats {
+		firstKinds[stat.Path] = stat.Kind
+	}
+	require.Equal(t, "ADDED", firstKinds["qa/probe.txt"])
+
+	secondKinds := map[string]string{}
+	for _, stat := range git.StagedCommits[1].Changes.DiffStats {
+		secondKinds[stat.Path] = stat.Kind
+	}
+	require.Equal(t, "REMOVED", secondKinds["qa/probe.txt"])
+
+	// The file itself is fully accounted for by the commits: nothing about
+	// qa/probe.txt is left pending. (Other entries, e.g. a bare "qa/"
+	// directory, are deliberately not asserted on here.)
+	_, ok := git.Uncommitted.find("qa/probe.txt")
+	require.False(t, ok, "qa/probe.txt should be fully committed, got %v", git.Uncommitted.DiffStats)
+}
+
+// TestWorkspaceCommitEditOfCommittedFile is the modify-shaped variant of the
+// same anchoring bug: editing a file whose only presence in the staged HEAD
+// comes from a session commit. Against the pre-commit checkout the overlay just
+// says "added, with the new contents"; against the staged commit it is a
+// MODIFIED line-level diff, which is what status must report.
+func (WorkspaceSuite) TestWorkspaceCommitEditOfCommittedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+      withCommit(message: "add probe", date: "` + commitTestDate + `", paths: ["qa"]) {
+        withNewFile(path: "qa/probe.txt", contents: "probe v2\n") {
+          git {
+            uncommitted {
+              isEmpty
+              diffStats { path kind addedLines removedLines }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithCommit struct {
+					WithNewFile struct {
+						Git struct {
+							Uncommitted uncommittedChanges `json:"uncommitted"`
+						} `json:"git"`
+					} `json:"withNewFile"`
+				} `json:"withCommit"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	pending := got.CurrentWorkspace.WithNewFile.WithCommit.WithNewFile.Git.Uncommitted
+
+	require.False(t, pending.IsEmpty)
+	stat, ok := pending.find("qa/probe.txt")
+	require.True(t, ok, "expected qa/probe.txt in %v", pending.DiffStats)
+	require.Equal(t, "MODIFIED", stat.Kind)
+	require.Equal(t, 1, stat.AddedLines)
+	require.Equal(t, 1, stat.RemovedLines)
+}
+
+// TestWorkspaceCommitRenameOfCommittedFile renames a file that only exists in
+// the staged HEAD. The half that used to be lost is the *source deletion*: the
+// overlay, anchored pre-commit, collapsed "add qa/probe.txt then move it" into
+// a plain add of the destination, so qa/probe.txt was never reported as gone
+// and the rename could not be committed as such.
+//
+// Observed behaviour with the fix: the changeset reports this as a single
+// RENAMED entry on the destination path, so qa/probe.txt appears only as the
+// rename's source, not as a separate REMOVED entry.
+func (WorkspaceSuite) TestWorkspaceCommitRenameOfCommittedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+      withCommit(message: "add probe", date: "` + commitTestDate + `", paths: ["qa"]) {
+        withoutFile(path: "qa/probe.txt") {
+          withNewFile(path: "qa/renamed.txt", contents: "probe\n") {
+            git {
+              uncommitted {
+                isEmpty
+                diffStats { path kind addedLines removedLines }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithCommit struct {
+					WithoutFile struct {
+						WithNewFile struct {
+							Git struct {
+								Uncommitted uncommittedChanges `json:"uncommitted"`
+							} `json:"git"`
+						} `json:"withNewFile"`
+					} `json:"withoutFile"`
+				} `json:"withCommit"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	pending := got.CurrentWorkspace.WithNewFile.WithCommit.WithoutFile.WithNewFile.Git.Uncommitted
+
+	require.False(t, pending.IsEmpty)
+
+	// Observed: one RENAMED entry on the destination. The pre-fix symptom was
+	// a bare ADDED qa/renamed.txt with the source deletion missing entirely —
+	// the changeset can only pair the two up when the deletion survives.
+	dst, ok := pending.find("qa/renamed.txt")
+	require.True(t, ok, "expected qa/renamed.txt in %v", pending.DiffStats)
+	require.Equal(t, "RENAMED", dst.Kind,
+		"source deletion lost, so the move was reported as a plain add: %v", pending.DiffStats)
+}
+
+// TestWorkspaceCommitDeleteOfPreexistingFile is the control for the delete
+// tests above: a.txt exists in HEAD from before the session, so its deletion is
+// visible against either anchor. It must keep working once an unrelated
+// path-scoped commit has been staged.
+func (WorkspaceSuite) TestWorkspaceCommitDeleteOfPreexistingFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+      withCommit(message: "add probe", date: "` + commitTestDate + `", paths: ["qa"]) {
+        withoutFile(path: "a.txt") {
+          git {
+            uncommitted {
+              isEmpty
+              diffStats { path kind addedLines removedLines }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithCommit struct {
+					WithoutFile struct {
+						Git struct {
+							Uncommitted uncommittedChanges `json:"uncommitted"`
+						} `json:"git"`
+					} `json:"withoutFile"`
+				} `json:"withCommit"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	pending := got.CurrentWorkspace.WithNewFile.WithCommit.WithoutFile.Git.Uncommitted
+
+	require.False(t, pending.IsEmpty)
+	stat, ok := pending.find("a.txt")
+	require.True(t, ok, "expected a.txt in %v", pending.DiffStats)
+	require.Equal(t, "REMOVED", stat.Kind)
+	require.Contains(t, pending.paths(), "a.txt")
+}
+
 // TestWorkspaceCommitExportChain saves a stack of two staged commits: both land
 // on the branch, in order, and the work tree comes out clean.
 func (WorkspaceSuite) TestWorkspaceCommitExportChain(ctx context.Context, t *testctx.T) {
