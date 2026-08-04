@@ -578,10 +578,14 @@ defmodule Dagger.Directory do
   >
   > "This API is highly experimental and may be removed or replaced entirely."
   """
-  @spec with_patch(t(), String.t()) :: Dagger.Directory.t()
-  def with_patch(%__MODULE__{} = directory, patch) do
+  @spec with_patch(t(), String.t(), [{:on_conflict, Dagger.PatchConflict.t() | nil}]) ::
+          Dagger.Directory.t()
+  def with_patch(%__MODULE__{} = directory, patch, optional_args \\ []) do
     query_builder =
-      directory.query_builder |> QB.select("withPatch") |> QB.put_arg("patch", patch)
+      directory.query_builder
+      |> QB.select("withPatch")
+      |> QB.put_arg("patch", patch)
+      |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -596,12 +600,14 @@ defmodule Dagger.Directory do
   >
   > "This API is highly experimental and may be removed or replaced entirely."
   """
-  @spec with_patch_file(t(), Dagger.File.t()) :: Dagger.Directory.t()
-  def with_patch_file(%__MODULE__{} = directory, patch) do
+  @spec with_patch_file(t(), Dagger.File.t(), [{:on_conflict, Dagger.PatchConflict.t() | nil}]) ::
+          Dagger.Directory.t()
+  def with_patch_file(%__MODULE__{} = directory, patch, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("withPatchFile")
       |> QB.put_arg("patch", Dagger.ID.id!(patch))
+      |> QB.maybe_put_arg("onConflict", optional_args[:on_conflict])
 
     %Dagger.Directory{
       query_builder: query_builder,

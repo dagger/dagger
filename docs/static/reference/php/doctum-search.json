@@ -7236,6 +7236,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withoutDirectory",
+			"p": "Dagger/Workspace.html#method_withoutDirectory",
+			"d": "<p>Return this workspace with a directory removed, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutFile",
+			"p": "Dagger/Workspace.html#method_withoutFile",
+			"d": "<p>Return this workspace with a file removed, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withoutModule",
 			"p": "Dagger/Workspace.html#method_withoutModule",
 			"d": "<p>Return this workspace with a module removed from its config.</p>"
