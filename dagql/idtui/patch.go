@@ -178,4 +178,3 @@ func PreviewWorkspaceChanges(ctx context.Context, dag *dagger.Client, workspace 
 	}
 	return changes, nil
 }
-

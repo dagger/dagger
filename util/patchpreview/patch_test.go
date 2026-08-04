@@ -188,4 +188,3 @@ func TestSummarizeChangesEmptySubject(t *testing.T) {
 
 	require.Equal(t, "abcdef1\nbar.txt +2", got)
 }
-
