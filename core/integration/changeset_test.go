@@ -294,6 +294,43 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.Equal(t, 1, diffStats[2].RemovedLines)
 	})
 
+	t.Run("diffStats folds added directories into their files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().WithNewFile("keep.txt", "keep\n")
+
+		// A brand new directory holding one file, plus an empty one: the
+		// first is fully described by its file, the second is only visible
+		// as a directory.
+		newDir := oldDir.
+			WithNewFile("core/probe.txt", "probe\n").
+			WithDirectory("empty", c.Directory())
+
+		var diffStats []struct {
+			Path         string `json:"path"`
+			Kind         string `json:"kind"`
+			AddedLines   int    `json:"addedLines"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("node").
+			Arg("id", newDir.Changes(oldDir)).
+			InlineFragment("Changeset").
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
+		require.NoError(t, err)
+
+		paths := make([]string, len(diffStats))
+		for i, s := range diffStats {
+			paths[i] = s.Path
+		}
+		require.Contains(t, paths, "core/probe.txt")
+		require.NotContains(t, paths, "core/",
+			"an added directory must not double-count the files it contains")
+		require.Contains(t, paths, "empty/",
+			"an added directory with no files is the only record of itself")
+	})
+
 	t.Run("diffStats rename includes oldPath", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
