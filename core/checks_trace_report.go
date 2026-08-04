@@ -72,11 +72,11 @@ type traceReporter interface {
 // traceReportOpts tunes a single scoped render. The zero value shows
 // completed spans expanded, prunes nothing, and leaves log lines unbounded.
 type traceReportOpts struct {
-	// ExpandAll force-expands every row in the scoped subtree, so output that
-	// lives behind a roll-up or tool-call boundary (which collapses to a bare
-	// status line by default) still reaches the reader. See
-	// idtui.ReportRenderOpts.ExpandSpans for why this isn't done by raising
-	// verbosity to ExpandCompletedVerbosity.
+	// ExpandAll unwraps the scoped subtree just far enough for the tool's own
+	// output to reach the reader: the scope root and the pure wrapper spans
+	// beneath it are force-expanded, stopping at the first real work span. See
+	// expandedSpans, and idtui.ReportRenderOpts.ExpandSpans for why this isn't
+	// done by raising verbosity to ExpandCompletedVerbosity.
 	ExpandAll bool
 
 	// HideNoise prunes the spans a tool result has no use for: a started
@@ -87,11 +87,22 @@ type traceReportOpts struct {
 	HideNoise bool
 
 	// Scoped marks the report as being about root's subtree specifically,
-	// rather than about the run as a whole: the sections built from the entire
-	// trace regardless of scope (the LLM CONVERSATION transcript, the SERVICES
-	// inventory) are dropped. Without this a report scoped to an LLM tool call
-	// renders the containing agent's own transcript -- in place of the subtree
-	// it was asked for.
+	// rather than about the run as a whole. Two things still depend on it,
+	// both about the *frame* of the report rather than about which spans it
+	// rolls up:
+	//
+	//  1. The TRACE verdict header is dropped: "did the RUN pass" is the
+	//     enclosing run's verdict, not the subtree's, and it is rendered from
+	//     db.RootSpan regardless of zoom.
+	//  2. The live-tree promotions (promoteChecks/Conversation/Generators) are
+	//     skipped: they MUTATE the cached, session-wide DB -- marking the host
+	//     Passthrough and wiring RevealedSpans -- which would both replace the
+	//     subtree's own rows and leave that reshaping behind for every later
+	//     render of the same DB.
+	//
+	// Everything the surfacing sections themselves show (CHECKS, CONVERSATION,
+	// SERVICES, GENERATORS) is now rolled up relative to the zoomed span, so
+	// none of them need this flag any more.
 	Scoped bool
 
 	// NestedLogLines bounds the log lines rendered per nested row; 0 leaves
@@ -515,29 +526,38 @@ func clampLineBytes(line string, max int) string {
 	return line[:cut] + fmt.Sprintf("[... %d bytes truncated]", len(line)-cut)
 }
 
-// expandedSpans returns an expansion map marking every span beneath root (and
-// root itself) as expanded, as if a reader had opened each row by hand. When
-// root is unset the whole trace is marked.
+// expandedSpans returns the expansion map for a scoped report: the scope root,
+// plus the pure wrapper spans between it and the first real work span on each
+// branch, plus that work span itself.
 //
-// Walking the subtree rather than the whole DB keeps this proportional to what
-// is actually rendered: the cached DB holds the entire session, which for an
-// agent loop grows with every tool call. ChildSpans already includes
-// cause-linked children (dagui folds those edges in), so this covers the same
-// containment the report renders.
+// The point of forcing rows open at all is narrow: the scope root is an LLM
+// tool-call span (LLMTool set), and the module function beneath it may roll up
+// its logs, so TraceTree.IsExpanded -- which consults this map before its own
+// neverExpand rule -- would otherwise collapse the tool's own printed output to
+// a bare status line. Everything past that first real span is left to the
+// normal rules (ExpandCompleted already keeps ordinary completed rows open),
+// which is what keeps roll-up boundaries deeper in the subtree intact.
+//
+// Marking the whole subtree instead (what this used to do) punched open EVERY
+// roll-up in it: module-internal glob matching, long `$ .withDirectory(...)
+// CACHED` runs with verbatim arguments -- measured at 713 lines over the 16 KiB
+// report budget for a single check.
+//
+// An unset root means nothing to unwrap: without a scope there is no tool-call
+// boundary to punch through.
 func expandedSpans(db *dagui.DB, root dagui.SpanID) map[dagui.SpanID]bool {
 	expanded := map[dagui.SpanID]bool{}
-	var queue []*dagui.Span
-	if root.IsValid() {
-		span, ok := db.Spans.Map[root]
-		if !ok {
-			return expanded
-		}
-		queue = append(queue, span)
-	} else {
-		for span := range db.AllSpans() {
-			queue = append(queue, span)
-		}
+	if !root.IsValid() {
+		return expanded
 	}
+	rootSpan, ok := db.Spans.Map[root]
+	if !ok {
+		return expanded
+	}
+	// ChildSpans already includes cause-linked children (dagui folds those
+	// edges in), so this follows the same containment the report renders.
+	expanded[rootSpan.ID] = true
+	queue := append([]*dagui.Span{}, rootSpan.ChildSpans.Order...)
 	for len(queue) > 0 {
 		span := queue[0]
 		queue = queue[1:]
@@ -545,9 +565,37 @@ func expandedSpans(db *dagui.DB, root dagui.SpanID) map[dagui.SpanID]bool {
 			continue
 		}
 		expanded[span.ID] = true
-		queue = append(queue, span.ChildSpans.Order...)
+		if isReportWrapperSpan(span) {
+			// A pure frame: keep descending toward the actual work.
+			queue = append(queue, span.ChildSpans.Order...)
+		}
+		// Otherwise stop: this is the tool's own work, and its children are
+		// nested work that the normal expansion rules govern.
 	}
 	return expanded
+}
+
+// isReportWrapperSpan reports whether span is a pure wrapper on the way from a
+// tool call to the work it did: a span that carries no output of its own and
+// exists only to frame what runs beneath it.
+//
+// The three shapes that show up between an LLM tool-call span and the module
+// function it invoked are the passthrough/internal spans dagui already renders
+// through, the `POST /query` API span, and the `<module>:<Type>.<fn>` profiling
+// twin -- which has no logs and exactly one child, the rule the last clause
+// generalizes. A roll-up or tool-call span is never treated as a wrapper: those
+// are precisely the boundaries whose contents must stay collapsed.
+func isReportWrapperSpan(span *dagui.Span) bool {
+	if span.Passthrough || span.Internal {
+		return true
+	}
+	if span.Name == "POST /query" {
+		return true
+	}
+	if span.HasLogs || span.RollUpLogs || span.RollUpSpans || span.LLMTool != "" {
+		return false
+	}
+	return len(span.ChildSpans.Order) == 1
 }
 
 // reportNoiseFilter prunes what a tool-call-scoped report has no use for.

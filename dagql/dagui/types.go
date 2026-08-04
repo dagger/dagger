@@ -63,8 +63,14 @@ func (db *DB) AllSpans() iter.Seq[*Span] {
 }
 
 func (db *DB) HasChecks() bool {
+	return db.HasChecksForSpan(nil)
+}
+
+// HasChecksForSpan is HasChecks restricted to root's subtree; a nil root means
+// the whole trace.
+func (db *DB) HasChecksForSpan(root *Span) bool {
 	for _, span := range db.Spans.Order {
-		if span.CheckName != "" {
+		if span.CheckName != "" && underSurfaceRoot(span, root) {
 			return true
 		}
 	}

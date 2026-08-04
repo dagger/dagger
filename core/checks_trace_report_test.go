@@ -4,7 +4,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
+
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql/dagui"
 )
 
 // TestTraceReportGuardPassesThroughSmallReports covers the common case: the
@@ -126,5 +131,82 @@ func TestTraceReportGuardTruncatesMiddle(t *testing.T) {
 	}
 	if len(head) < traceReportMaxBytes/2 {
 		t.Fatalf("head is only %d bytes of a %d-byte budget", len(head), traceReportMaxBytes)
+	}
+}
+
+// TestExpandedSpansUnwrapsToFirstRealWork covers the narrow unwrap a scoped
+// tool-call report needs. Force-expanding the WHOLE subtree (what this used to
+// do) punches open every roll-up boundary in it -- module-internal glob
+// matching, long CACHED call chains with verbatim arguments -- which measured
+// 713 lines over the 16 KiB report budget for a single check.
+//
+// What actually has to be forced open is the path from the tool-call span
+// (LLMTool + roll-ups, which TraceTree.IsExpanded would otherwise collapse to a
+// bare status line) down to the tool's own work. Everything below that is left
+// to the normal rules.
+func TestExpandedSpansUnwrapsToFirstRealWork(t *testing.T) {
+	const (
+		toolID byte = iota + 1
+		queryID
+		profID
+		workID
+		nestedID
+		deepID
+	)
+	start := time.Unix(100, 0)
+	snap := func(id byte, name string, parent byte) dagui.SpanSnapshot {
+		s := dagui.SpanSnapshot{
+			ID:        traceTargetSpanID(id),
+			TraceID:   dagui.TraceID{TraceID: trace.TraceID{1}},
+			Name:      name,
+			StartTime: start,
+			EndTime:   start.Add(time.Second),
+			Final:     true,
+		}
+		if parent != 0 {
+			s.ParentID = traceTargetSpanID(parent)
+		}
+		return s
+	}
+
+	tool := snap(toolID, "check", 0)
+	tool.LLMTool = "check"
+	tool.Boundary = true
+	tool.RollUpLogs = true
+	tool.RollUpSpans = true
+
+	// A pure API frame, then the module-function profiling twin (no logs, one
+	// child): both are wrappers on the way to the work.
+	query := snap(queryID, "POST /query", toolID)
+	prof := snap(profID, "dagger-dev:Workspace.check", queryID)
+
+	// The tool's own work: it rolls up its logs, which is exactly the boundary
+	// the unwrap must punch through so its printed output survives.
+	work := snap(workID, "Workspace.check", profID)
+	work.RollUpLogs = true
+
+	// Nested work below it: another roll-up, which must stay closed.
+	nested := snap(nestedID, "Container.withExec", workID)
+	nested.RollUpSpans = true
+	deep := snap(deepID, "Directory.glob", nestedID)
+
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{tool, query, prof, work, nested, deep})
+
+	got := expandedSpans(db, traceTargetSpanID(toolID))
+	for _, want := range []byte{toolID, queryID, profID, workID} {
+		if !got[traceTargetSpanID(want)] {
+			t.Errorf("span %d should be force-expanded, got %v", want, got)
+		}
+	}
+	for _, unwanted := range []byte{nestedID, deepID} {
+		if got[traceTargetSpanID(unwanted)] {
+			t.Errorf("span %d must be left to the normal expansion rules, got %v", unwanted, got)
+		}
+	}
+
+	// Without a scope there is no tool-call boundary to punch through.
+	if unscoped := expandedSpans(db, dagui.SpanID{}); len(unscoped) != 0 {
+		t.Errorf("an unscoped render must not force anything open, got %v", unscoped)
 	}
 }

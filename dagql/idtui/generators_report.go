@@ -26,7 +26,7 @@ func (fe *frontendPretty) generatorsReport(ctx tuist.Context, r *renderer, zoome
 		return nil
 	}
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	header := generatorsHeaderLine(out, fe.db.SurfacedGenerators())
+	header := generatorsHeaderLine(out, fe.reportGenerators())
 	return append([]string{header}, genLines...)
 }
 
@@ -36,7 +36,7 @@ func (fe *frontendPretty) generatorsReport(ctx tuist.Context, r *renderer, zoome
 // passing generators kept to a single line and failed generators carrying their
 // inline error cause -- the same detail the live tree shows on a failed row.
 func (fe *frontendPretty) renderGeneratorsSection(ctx tuist.Context, r *renderer) []string {
-	roots := fe.db.SurfacedGenerators()
+	roots := fe.reportGenerators()
 	if len(roots) == 0 {
 		return nil
 	}

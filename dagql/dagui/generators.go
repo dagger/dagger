@@ -13,33 +13,42 @@ type GeneratorNode struct {
 	Children []*GeneratorNode
 }
 
-// SurfacedGenerators returns the trace's `dagger generate` generator runs as a
-// tree, independent of the `reveal` mechanism -- the generator analog of
-// DB.SurfacedChecks.
+// SurfacedGenerators returns the whole trace's `dagger generate` generator
+// runs as a tree. It is SurfacedGeneratorsForSpan relative to the trace root.
+func (db *DB) SurfacedGenerators() []*GeneratorNode {
+	return db.SurfacedGeneratorsForSpan(nil)
+}
+
+// SurfacedGeneratorsForSpan returns the generator runs beneath root as a tree,
+// independent of the `reveal` mechanism -- the generator analog of
+// DB.SurfacedChecksForSpan. A nil root means the trace root.
 //
 // A span with a GeneratorName is surfaced only if its ancestor chain reaches
-// the trace root with no Boundary or Encapsulate span in between, and severed
-// chains are treated as contained -- the same containment rules as checks (see
-// SurfacedChecks for the full rationale), so generator runs a test drives as a
-// fixture stay hidden.
+// root with no Boundary or Encapsulate span in between, and severed chains are
+// treated as contained -- the same zoom-relative containment rules as checks
+// (see SurfacedChecksForSpan for the full rationale), so generator runs a test
+// drives as a fixture stay hidden.
 //
 // Generators are deduped by name (a generator is failed if any of its spans
 // failed) and nested under the nearest surfaced ancestor generator. Roots and
 // children are ordered failed-first, then by name.
 //
-// The result is cached per DB mutation, like SurfacedChecks; callers must treat
-// the returned nodes as read-only.
-func (db *DB) SurfacedGenerators() []*GeneratorNode {
-	if db.surfacedGeneratorsInit && db.surfacedGeneratorsAt == db.mutations {
+// The result is cached per DB mutation and per root, like SurfacedChecks;
+// callers must treat the returned nodes as read-only.
+func (db *DB) SurfacedGeneratorsForSpan(root *Span) []*GeneratorNode {
+	r := db.surfaceRoot(root)
+	key := surfaceRootID(r)
+	if db.surfacedGeneratorsInit && db.surfacedGeneratorsAt == db.mutations && db.surfacedGeneratorsRoot == key {
 		return db.surfacedGenerators
 	}
-	db.surfacedGenerators = db.buildSurfacedGenerators()
+	db.surfacedGenerators = db.buildSurfacedGenerators(r)
 	db.surfacedGeneratorsAt = db.mutations
+	db.surfacedGeneratorsRoot = key
 	db.surfacedGeneratorsInit = true
 	return db.surfacedGenerators
 }
 
-func (db *DB) buildSurfacedGenerators() []*GeneratorNode {
+func (db *DB) buildSurfacedGenerators(root *Span) []*GeneratorNode {
 	type info struct {
 		span       *Span
 		parentName string
@@ -50,29 +59,32 @@ func (db *DB) buildSurfacedGenerators() []*GeneratorNode {
 		if span.GeneratorName == "" {
 			continue
 		}
-		// Walk ancestors toward the root: a Boundary/Encapsulate between this
-		// generator and the root contains it (hide it); otherwise remember the
-		// nearest ancestor generator to nest under, and note whether we reach the
+		// Walk ancestors toward root: a Boundary/Encapsulate between this
+		// generator and root contains it (hide it); otherwise remember the
+		// nearest ancestor generator to nest under, and note whether we reach
 		// root at all.
 		contained := false
 		parentName := ""
-		reachedRoot := span == db.RootSpan
+		reachedRoot := span == root
 		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
-			if p.Boundary || p.Encapsulate {
+			atRoot := p == root
+			if !atRoot && (p.Boundary || p.Encapsulate) {
 				contained = true
 				break
 			}
 			if parentName == "" && p.GeneratorName != "" && p.GeneratorName != span.GeneratorName {
 				parentName = p.GeneratorName
 			}
-			if p == db.RootSpan {
+			if atRoot {
+				// Stop at root: its own flags are outside the question, but its
+				// name still nests (see SurfacedChecksForSpan).
 				reachedRoot = true
 				break
 			}
 		}
-		// A chain severed before the root can't be proven boundary-free; treat it
-		// as contained, exactly as SurfacedChecks does.
-		if !contained && db.RootSpan != nil && !reachedRoot {
+		// A chain severed before root can't be proven boundary-free; treat it
+		// as contained, exactly as SurfacedChecksForSpan does.
+		if !contained && root != nil && !reachedRoot {
 			contained = true
 		}
 		if contained {
@@ -139,8 +151,14 @@ func (n *GeneratorNode) HasFailedChild() bool {
 // HasGenerators reports whether the trace contains any generator spans, so the
 // live view can promote them to the top level (mirrors HasChecks).
 func (db *DB) HasGenerators() bool {
+	return db.HasGeneratorsForSpan(nil)
+}
+
+// HasGeneratorsForSpan is HasGenerators restricted to root's subtree; a nil
+// root means the whole trace.
+func (db *DB) HasGeneratorsForSpan(root *Span) bool {
 	for _, span := range db.Spans.Order {
-		if span.GeneratorName != "" {
+		if span.GeneratorName != "" && underSurfaceRoot(span, root) {
 			return true
 		}
 	}
