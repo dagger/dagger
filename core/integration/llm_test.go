@@ -318,6 +318,59 @@ func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T)
 	require.Contains(t, out, "generated from: B-OVERLAY")
 }
 
+// TestToolLogsExcludeInternal locks in captureLogs' internal-span filtering:
+// a tool result surfaces the print output of the tool's real work, but not
+// logs from beneath spans marked dagger.io/ui.internal — e.g. ComputePaths'
+// "computing paths" task prints (added:/removed:/...), which used to leak
+// into Workspace-returning tool results ahead of the patch summary.
+func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/go-programmer/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	// Mirrors GoProgrammer.drive's conversation (the first user message must
+	// match its withPrompt byte for byte): write main.go, then build it. Tool
+	// results are placeholders — the real tools run during replay.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
+			"Use the read, write, build tools to complete the following assignment.\n"+
+			"Do not try to access the container directly.\n"+
+			"Don't stop until your code builds.\n"+
+			"\n"+
+			"Assignment: write a hello world program\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Writing main.go."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
+				Arguments: dagger.JSON(`{"content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"}`)},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Building."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "build"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "write a hello world program" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The write tool (Workspace-returning) reports the patch summary...
+	require.Contains(t, out, "diff --git")
+	// ...without the internal "computing paths" span's prints leaking in.
+	require.NotContains(t, out, "added: [")
+	// The build tool's real work still surfaces: its exec output sits beneath
+	// non-internal spans, so logsOrDone returns it rather than "(done)".
+	require.Contains(t, out, "creating new go.mod")
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
