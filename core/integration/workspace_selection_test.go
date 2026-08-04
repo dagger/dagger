@@ -16,8 +16,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -82,6 +84,19 @@ func workspaceSelectionDangSource(typeName, fnName, result string) string {
 type ` + typeName + ` {
   pub ` + fnName + `: String! {
     "` + result + `"
+  }
+}
+`
+}
+
+func workspaceSelectionConfigurableDangSource(typeName, fieldName, defaultValue string) string {
+	return `
+type ` + typeName + ` {
+  pub ` + fieldName + `: String!
+
+  new(` + fieldName + `: String! = "` + defaultValue + `") {
+    self.` + fieldName + ` = ` + fieldName + `
+    self
   }
 }
 `
@@ -836,12 +851,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceEnvOverlay(ctx context.Conte
 // workspace binding survives once a session is established and other clients
 // are created from it.
 func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx context.Context, t *testctx.T) {
-	// TODO(#13054): Re-enable once container commands can explicitly inherit a
-	// workspace. The intended contract is command-scoped inheritance, not
-	// implicit inheritance from the module function that created the exec.
 	t.Run("nested clients inherit the declared workspace binding", func(ctx context.Context, t *testctx.T) {
-		t.Skip("TODO(#13054): waiting for command-scoped inheritWorkspace")
-
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
@@ -865,9 +875,24 @@ greeting = "selected-ci"
 		require.JSONEq(t, `{"currentWorkspace":{"cwd":"/selected","configFile":"dagger.toml"}}`, out)
 	})
 
-	t.Run("nested clients inherit the declared workspace env overlay", func(ctx context.Context, t *testctx.T) {
-		t.Skip("TODO(#13054): waiting for command-scoped inheritWorkspace")
+	t.Run("nested explicit workspace beats inherited workspace", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
+			WithWorkdir("/work/selected").
+			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
+			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
+source = ".dagger/modules/nester"
+entrypoint = true
+`).
+			WithWorkdir("/work/caller")
 
+		out, err := ctr.With(workspaceSelectionDaggerCall("-W", "../selected", "nested-explicit-workspace", "--cli", testCLIBinPath)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"cwd":"/","configFile":"dagger.toml"}}`, out)
+	})
+
+	t.Run("nested clients inherit the declared workspace env overlay", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
@@ -889,5 +914,222 @@ greeting = "selected-ci"
 		out, err := ctr.With(workspaceSelectionDaggerCall("-W", "../selected", "--env", "ci", "nested-greeting", "--cli", testCLIBinPath)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "selected-ci", strings.TrimSpace(out))
+
+		out, err = ctr.With(workspaceSelectionDaggerCall("-W", "../selected", "--env", "ci", "nested-config-read", "--cli", testCLIBinPath)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"configRead":"selected-ci"}}`, out)
 	})
+
+	t.Run("a parent SDK that did not load modules can supply them", func(ctx context.Context, t *testctx.T) {
+		root := t.TempDir()
+		initGitRepo(ctx, t, root)
+		moduleDir := filepath.Join(root, ".dagger", "modules", "greeter")
+		require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, "dagger.toml"), []byte(`[modules.greeter]
+source = ".dagger/modules/greeter"
+entrypoint = true
+
+[modules.greeter.settings]
+greeting = "top-level-sdk"
+`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "dagger.json"), []byte(`{"name":"greeter","sdk":{"source":"dang"}}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "main.dang"), []byte(workspaceSelectionConfigurableDangSource("Greeter", "greeting", "default")), 0o644))
+
+		c := connect(ctx, t, dagger.WithWorkspace(root))
+		out, err := c.Container().
+			From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithExec([]string{"mkdir", "-p", "/empty"}).
+			WithWorkdir("/empty").
+			WithExec(
+				[]string{"dagger", "--progress=report", "call", "greeting"},
+				dagger.ContainerWithExecOpts{InheritWorkspace: c.CurrentWorkspace()},
+			).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "top-level-sdk", strings.TrimSpace(out))
+	})
+
+	t.Run("nested core queries do not load unrelated broken inherited modules", func(ctx context.Context, t *testctx.T) {
+		root := t.TempDir()
+		initGitRepo(ctx, t, root)
+		require.NoError(t, os.WriteFile(filepath.Join(root, "marker.txt"), []byte("caller workspace"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(root, "dagger.toml"), []byte(`[modules.broken]
+source = ".dagger/modules/does-not-exist"
+`), 0o644))
+
+		c := connect(ctx, t, dagger.WithWorkspace(root))
+		out, err := c.Container().
+			From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithExec([]string{"mkdir", "-p", "/detected/.git"}).
+			WithNewFile("/detected/dagger.toml", "# container-local workspace\n").
+			WithWorkdir("/detected").
+			WithExec(
+				[]string{"dagger", "--progress=report", "query"},
+				dagger.ContainerWithExecOpts{
+					InheritWorkspace: c.CurrentWorkspace(),
+					Stdin:            `{currentWorkspace{file(path:"marker.txt"){contents}}}`,
+				},
+			).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"currentWorkspace":{"file":{"contents":"caller workspace"}}}`, out)
+	})
+}
+
+func (WorkspaceSelectionSuite) TestInheritedWorkspaceExecutionPaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("Go SDK connection prefers the inherited workspace over container detection", func(ctx context.Context, t *testctx.T) {
+		const markerPath = "marker.txt"
+		const expected = "caller workspace"
+		root := newWorkspaceConfigWorkdir(ctx, t, "# caller workspace\n")
+		require.NoError(t, os.WriteFile(filepath.Join(root, markerPath), []byte(expected), 0o644))
+		c := connect(ctx, t, dagger.WithWorkspace(root))
+
+		repoPath, err := filepath.Abs("../..")
+		require.NoError(t, err)
+		code := c.Host().Directory(repoPath, dagger.HostDirectoryOpts{
+			Include: []string{
+				"core/integration/testdata/workspace-inherit-sdk/",
+				"sdk/go/",
+				"go.mod",
+				"go.sum",
+			},
+		})
+
+		out, err := c.Container().
+			From(golangImage).
+			With(goCache(c)).
+			WithDirectory("/src", code).
+			WithWorkdir("/src/core/integration/testdata/workspace-inherit-sdk").
+			WithNewFile("dagger.toml", "# container-local workspace\n").
+			WithNewFile(markerPath, "container workspace").
+			WithExec([]string{"mkdir", "-p", ".git"}).
+			WithExec(
+				[]string{"go", "run", "."},
+				dagger.ContainerWithExecOpts{InheritWorkspace: c.CurrentWorkspace()},
+			).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expected, out)
+	})
+
+	workspace := c.Directory().
+		WithNewFile("marker.txt", "service workspace").
+		AsWorkspace()
+	query := `{currentWorkspace{file(path:"marker.txt"){contents}}}`
+	serviceCmd := `printf '%s\n' '` + query + `' | dagger --progress=report query > /tmp/result && while true; do cat /tmp/result | nc -l -p 8080; done`
+	base := c.Container().
+		From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithExposedPort(8080)
+
+	readService := func(ctx context.Context, t *testctx.T, service *dagger.Service) string {
+		t.Helper()
+		out, err := c.Container().
+			From(alpineImage).
+			WithServiceBinding("workspace-svc", service).
+			WithExec([]string{"nc", "workspace-svc", "8080"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("direct asService", func(ctx context.Context, t *testctx.T) {
+		service := base.AsService(dagger.ContainerAsServiceOpts{
+			Args:             []string{"sh", "-c", serviceCmd},
+			InheritWorkspace: workspace,
+		})
+		require.JSONEq(t, `{"currentWorkspace":{"file":{"contents":"service workspace"}}}`, readService(ctx, t, service))
+	})
+
+	t.Run("withExec to asService preserves the binding", func(ctx context.Context, t *testctx.T) {
+		service := base.
+			WithExec([]string{"true"}, dagger.ContainerWithExecOpts{InheritWorkspace: workspace}).
+			AsService(dagger.ContainerAsServiceOpts{Args: []string{"sh", "-c", serviceCmd}})
+		require.JSONEq(t, `{"currentWorkspace":{"file":{"contents":"service workspace"}}}`, readService(ctx, t, service))
+	})
+
+	t.Run("container up forwards the binding to its service command", func(ctx context.Context, t *testctx.T) {
+		resultCache := c.CacheVolume("workspace-up-" + identity.NewID())
+		upCmd := `printf '%s\n' '` + query + `' | dagger --progress=report query > /result/workspace.json && while true; do printf 'ready\n' | nc -l -p 8080; done`
+		upCtr := base.WithMountedCache("/result", resultCache)
+
+		upCtx, cancelUp := context.WithCancel(ctx)
+		upErr := make(chan error, 1)
+		go func() {
+			upErr <- upCtr.Up(upCtx, dagger.ContainerUpOpts{
+				Args:             []string{"sh", "-c", upCmd},
+				InheritWorkspace: workspace,
+				Random:           true,
+			})
+		}()
+
+		var result string
+		deadline := time.NewTimer(2 * time.Minute)
+		poll := time.NewTicker(time.Second)
+		defer deadline.Stop()
+		defer poll.Stop()
+		for result == "" {
+			select {
+			case err := <-upErr:
+				t.Fatalf("Container.up exited before its service became ready: %v", err)
+			case <-poll.C:
+				result, _ = c.Container().
+					From(alpineImage).
+					WithMountedCache("/result", resultCache).
+					WithEnvVariable("POLL", time.Now().String()).
+					WithExec([]string{"cat", "/result/workspace.json"}).
+					Stdout(ctx)
+			case <-deadline.C:
+				t.Fatal("Container.up service did not become ready")
+			}
+		}
+		require.JSONEq(t, `{"currentWorkspace":{"file":{"contents":"service workspace"}}}`, result)
+
+		cancelUp()
+		select {
+		case <-upErr:
+		case <-time.After(30 * time.Second):
+			t.Fatal("Container.up did not stop after cancellation")
+		}
+	})
+}
+
+func (WorkspaceSelectionSuite) TestInheritedArbitraryWorkspaceDoesNotLoadModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	workspace := workspaceSelectionSimpleWorkspaceDir(c, "greeter", "Greeter", "synthetic").
+		WithNewFile("marker.txt", "arbitrary workspace").
+		AsWorkspace()
+	base := c.Container().
+		From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithExec([]string{"mkdir", "-p", "/empty"}).
+		WithWorkdir("/empty")
+
+	out, err := base.
+		WithExec(
+			[]string{"dagger", "--progress=report", "query"},
+			dagger.ContainerWithExecOpts{
+				InheritWorkspace: workspace,
+				Stdin:            `{currentWorkspace{file(path:"marker.txt"){contents}}}`,
+			},
+		).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"currentWorkspace":{"file":{"contents":"arbitrary workspace"}}}`, out)
+
+	out, err = base.
+		WithExec(
+			[]string{"dagger", "--progress=report", "call", "identify"},
+			dagger.ContainerWithExecOpts{
+				InheritWorkspace: workspace,
+				Expect:           dagger.ReturnTypeFailure,
+			},
+		).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `unknown command "identify"`)
 }

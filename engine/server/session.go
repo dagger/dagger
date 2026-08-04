@@ -216,6 +216,9 @@ type daggerClient struct {
 	// the set of modules being served to this client, with per-module
 	// install policy (constructor vs type-only)
 	servedMods *core.SchemaBuilder
+	// Workspace-origin modules only. Kept separate so an inherited workspace
+	// cannot also inherit parent -m or explicitly served modules.
+	servedWorkspaceMods *core.SchemaBuilder
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.SchemaBuilder
 
@@ -225,6 +228,9 @@ type daggerClient struct {
 
 	// If the client is executing in an Env context, this is that Env.
 	env dagql.ObjectResult[*core.Env]
+	// Explicit workspace context inherited by the command that started this
+	// nested client.
+	inheritedWorkspace dagql.ObjectResult[*core.Workspace]
 
 	// engine utility job-related state/config
 	hostServiceProxyClientID string
@@ -259,6 +265,20 @@ type daggerClient struct {
 	// Cached workspace result from ensureWorkspaceLoaded.
 	workspace *core.Workspace
 
+	// Stable identity and environment for the loaded workspace binding.
+	workspaceBindingID string
+	workspaceEnv       string
+	workspaceEnvSet    bool
+	// workspaceModulesRequested lets an inherited child ask this client to
+	// gather workspace module state even when the client did not request that
+	// schema for itself.
+	workspaceModulesRequested atomic.Bool
+
+	// Serializes inherited demand, ancestor loading, and snapshot application.
+	// This preserves one-shot module scope and monotonic snapshots across
+	// concurrent requests.
+	inheritedWorkspaceModulesMu sync.Mutex
+
 	pendingModules      []pendingModule      // gathered in detectAndLoadWorkspaceWithRootfs
 	pendingExtraModules []engine.ExtraModule // populated from clientMD, can arrive late
 	modulesMu           sync.Mutex
@@ -271,6 +291,8 @@ type daggerClient struct {
 	entrypointServed bool
 	// resolved identities already served, for cross-batch deduplication
 	servedModuleKeys map[string]struct{}
+	// Resolved identities served specifically from workspace configuration.
+	servedWorkspaceModuleKeys map[string]struct{}
 	// served workspace module names, so demand filters recognize them without
 	// reloading
 	servedWorkspaceModuleNames map[string]struct{}
@@ -278,6 +300,7 @@ type daggerClient struct {
 	// scope is one-shot so later introspections load everything (guarded by
 	// modulesMu)
 	workspaceModuleScopeConsumed bool
+	workspaceEntrypointServed    bool
 	singleQueryMu                sync.Mutex
 	singleQueryServed            bool
 
@@ -778,6 +801,9 @@ type ClientInitOpts struct {
 
 	// If the client is executing in an Env context, this is that Env.
 	EnvContext dagql.ObjectResult[*core.Env]
+
+	// If the command explicitly inherited a workspace, this is that workspace.
+	InheritedWorkspace dagql.ObjectResult[*core.Workspace]
 }
 
 // requires that client.stateMu is held
@@ -886,6 +912,10 @@ func (srv *Server) initializeDaggerClient(
 			return fmt.Errorf("attach env context during client init: expected %T, got %T", opts.EnvContext, attached)
 		}
 		client.env = envInst
+	}
+
+	if err := initializeInheritedWorkspace(ctx, client, opts); err != nil {
+		return err
 	}
 
 	if opts.ModuleContext.Self() != nil {
@@ -1012,6 +1042,26 @@ func (srv *Server) initializeDaggerClient(
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
 	client.state = clientStateInitialized
+	return nil
+}
+
+func initializeInheritedWorkspace(ctx context.Context, client *daggerClient, opts *ClientInitOpts) error {
+	if opts.InheritedWorkspace.Self() == nil {
+		return nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get engine cache for inherited workspace: %w", err)
+	}
+	attached, err := cache.AttachResult(ctx, opts.SessionID, client.dag, opts.InheritedWorkspace)
+	if err != nil {
+		return fmt.Errorf("attach inherited workspace during client init: %w", err)
+	}
+	workspace, ok := attached.(dagql.ObjectResult[*core.Workspace])
+	if !ok {
+		return fmt.Errorf("attach inherited workspace during client init: expected %T, got %T", opts.InheritedWorkspace, attached)
+	}
+	client.inheritedWorkspace = workspace
 	return nil
 }
 
@@ -1447,6 +1497,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
 	envCtx dagql.AnyObjectResult,
+	workspaceCtx dagql.AnyObjectResult,
 ) {
 	if nestedClientMetadata == nil {
 		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
@@ -1488,6 +1539,18 @@ func (srv *Server) ServeHTTPToNestedClient(
 		}
 	}
 
+	var inheritedWorkspace dagql.ObjectResult[*core.Workspace]
+	if workspaceCtx != nil {
+		typed, ok := workspaceCtx.(dagql.ObjectResult[*core.Workspace])
+		if !ok {
+			http.Error(w, fmt.Sprintf("nested client workspace context is %T, not Workspace", workspaceCtx), http.StatusInternalServerError)
+			return
+		}
+		if typed.Self() != nil {
+			inheritedWorkspace = typed
+		}
+	}
+
 	var hostServiceProxyClientID string
 	if hostServiceProxyToCaller {
 		hostServiceProxyClientID = callerClientID
@@ -1500,6 +1563,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 		ModuleContext:            moduleContext,
 		FunctionCall:             fnCall,
 		EnvContext:               envContext,
+		InheritedWorkspace:       inheritedWorkspace,
 	}).ServeHTTP(w, r)
 }
 
@@ -1920,27 +1984,43 @@ func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *dagge
 // sensitive tests can observe the client immediately after module loading
 // returns, before any subsequent request finalization.
 func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, client *daggerClient, r *http.Request, postLoad func()) error {
+	mode, _ := workspaceBindingMode(client)
+	inheritWorkspaceModules := mode == workspaceBindingInherited && clientLoadsWorkspaceModules(client)
+
+	var rootFields []string
+	hasRootFields := false
+	if client.hasPendingWorkspaceModules() || inheritWorkspaceModules {
+		if ok, fields, err := dagql.PeekRootFields(r); err == nil && ok {
+			rootFields = fields
+			hasRootFields = true
+		}
+	}
+
+	if inheritWorkspaceModules {
+		if err := srv.inheritExplicitWorkspaceModules(ctx, client, rootFields, hasRootFields); err != nil {
+			return err
+		}
+	}
+
 	var filter func([]pendingModule) []pendingModule
 	scopeApplied := false
-	if client.hasPendingWorkspaceModules() {
-		if ok, rootFields, err := dagql.PeekRootFields(r); err == nil && ok {
-			filter = func(mods []pendingModule) []pendingModule {
-				// runs under client.modulesMu, which also guards
-				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
-				scope := client.pendingWorkspaceModuleScopeLocked()
-				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, client.failedModules, rootFields, scope, client.entrypointServed)
-				if applied {
-					scopeApplied = true
-					names := make([]string, 0, len(selected))
-					for _, mod := range selected {
-						names = append(names, moduleProgressName(mod))
-					}
-					slog.Debug("narrowing workspace module load to client scope",
-						"scope", scope,
-						"modules", names)
+	if client.hasPendingWorkspaceModules() && hasRootFields {
+		filter = func(mods []pendingModule) []pendingModule {
+			// runs under client.modulesMu, which also guards
+			// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
+			scope := client.pendingWorkspaceModuleScopeLocked()
+			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, client.failedModules, rootFields, scope, client.entrypointServed)
+			if applied {
+				scopeApplied = true
+				names := make([]string, 0, len(selected))
+				for _, mod := range selected {
+					names = append(names, moduleProgressName(mod))
 				}
-				return selected
+				slog.Debug("narrowing workspace module load to client scope",
+					"scope", scope,
+					"modules", names)
 			}
+			return selected
 		}
 	}
 	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, false, func() {
@@ -2145,17 +2225,37 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 //
 // Not threadsafe: client.stateMu must be held when calling.
 func (srv *Server) serveModule(client *daggerClient, mod core.Mod, opts core.InstallOpts) error {
-	existing, ok := client.servedMods.Lookup(mod.Name())
+	builder, err := schemaBuilderWithModule(client.servedMods, client.dagqlRoot, mod, opts)
+	if err != nil {
+		return err
+	}
+	client.servedMods = builder
+	return nil
+}
+
+func (srv *Server) serveWorkspaceModule(client *daggerClient, mod core.Mod, opts core.InstallOpts) error {
+	builder, err := schemaBuilderWithModule(client.servedWorkspaceMods, client.dagqlRoot, mod, opts)
+	if err != nil {
+		return err
+	}
+	client.servedWorkspaceMods = builder
+	return nil
+}
+
+func schemaBuilderWithModule(builder *core.SchemaBuilder, root *core.Query, mod core.Mod, opts core.InstallOpts) (*core.SchemaBuilder, error) {
+	if builder == nil {
+		builder = core.NewSchemaBuilder(root, nil)
+	}
+	existing, ok := builder.Lookup(mod.Name())
 	if ok {
 		if !isSameModuleReference(existing.GetSource(), mod.GetSource()) {
-			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
+			return nil, fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
 				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), existing.GetSource().AsString(), existing.GetSource().Pin(),
 			)
 		}
 	}
 	// With handles deduplication and promotion internally.
-	client.servedMods = client.servedMods.With(mod, opts)
-	return nil
+	return builder.With(mod, opts), nil
 }
 
 // Returns true if the module source a is the same as b or they come from the

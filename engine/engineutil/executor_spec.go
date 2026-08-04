@@ -125,6 +125,7 @@ type execState struct {
 	nestedClientModule       dagql.AnyObjectResult
 	nestedClientFunctionCall dagql.Typed
 	nestedClientEnv          dagql.AnyObjectResult
+	nestedClientWorkspace    dagql.AnyObjectResult
 
 	doneErr error
 	done    chan struct{}
@@ -144,6 +145,7 @@ func newExecState(
 	nestedClientModule dagql.AnyObjectResult,
 	nestedClientFunctionCall dagql.Typed,
 	nestedClientEnv dagql.AnyObjectResult,
+	nestedClientWorkspace dagql.AnyObjectResult,
 ) *execState {
 	execMDCopy := &ExecutionMetadata{}
 	if execMD != nil {
@@ -166,6 +168,7 @@ func newExecState(
 		nestedClientModule:       nestedClientModule,
 		nestedClientFunctionCall: nestedClientFunctionCall,
 		nestedClientEnv:          nestedClientEnv,
+		nestedClientWorkspace:    nestedClientWorkspace,
 		done:                     make(chan struct{}),
 	}
 }
@@ -1085,7 +1088,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall, state.nestedClientEnv)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall, state.nestedClientEnv, state.nestedClientWorkspace)
 		}),
 		Protocols: protocols,
 	}

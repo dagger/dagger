@@ -48,6 +48,82 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")
 }
 
+func TestInheritWorkspaceArgumentViews(t *testing.T) {
+	t.Parallel()
+
+	schemaForView := func(t *testing.T, view call.View) *codegenintrospection.Schema {
+		t.Helper()
+		ctx := context.Background()
+		cache, err := dagql.NewCache(ctx, "", nil, nil)
+		require.NoError(t, err)
+		ctx = dagql.ContextWithCache(ctx, cache)
+		ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  "inherit-workspace-schema-client",
+			SessionID: "inherit-workspace-schema-session",
+		})
+		srv := &currentTypeDefsTestServer{}
+		root := core.NewRoot(srv)
+		coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+		require.NoError(t, err)
+		dag, err := coreSchemaBase.Fork(ctx, root, view)
+		require.NoError(t, err)
+		data, err := getSchemaJSON(nil, nil, dag.View, dag)
+		require.NoError(t, err)
+		return decodeSchemaResponse(t, data).Schema
+	}
+
+	findArg := func(field *codegenintrospection.Field, name string) *codegenintrospection.InputValue {
+		if field == nil {
+			return nil
+		}
+		for _, arg := range field.Args {
+			if arg.Name == name {
+				return &arg
+			}
+		}
+		return nil
+	}
+
+	assertSurface := func(t *testing.T, schema *codegenintrospection.Schema, present bool) {
+		t.Helper()
+		for _, target := range []struct {
+			typeName  string
+			fieldName string
+		}{
+			{"Container", "withExec"},
+			{"Container", "asService"},
+			{"Container", "up"},
+			{"Container", "terminal"},
+			{"Directory", "terminal"},
+		} {
+			field := schemaField(schema.Types.Get(target.typeName), target.fieldName)
+			if !present && field == nil {
+				continue
+			}
+			require.NotNil(t, field, "%s.%s", target.typeName, target.fieldName)
+			arg := findArg(field, "inheritWorkspace")
+			if !present {
+				require.Nil(t, arg, "%s.%s", target.typeName, target.fieldName)
+				continue
+			}
+			require.NotNil(t, arg, "%s.%s", target.typeName, target.fieldName)
+			require.True(t, arg.TypeRef.ReferencesType("ID"))
+			require.Equal(t, "Workspace", arg.Directives.ExpectedType())
+		}
+
+		serviceTerminal := schemaField(schema.Types.Get("Service"), "terminal")
+		require.NotNil(t, serviceTerminal)
+		require.Nil(t, findArg(serviceTerminal, "inheritWorkspace"))
+	}
+
+	t.Run("v1", func(t *testing.T) {
+		assertSurface(t, schemaForView(t, "v1.0.0"), true)
+	})
+	t.Run("older view", func(t *testing.T) {
+		assertSurface(t, schemaForView(t, baseSchemaView()), false)
+	})
+}
+
 func TestSchemaJSONScrubbing(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)

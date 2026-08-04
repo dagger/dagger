@@ -229,10 +229,23 @@ type workspaceConfigKeyArgs struct {
 
 func selectedWorkspaceEnv(ctx context.Context) (string, bool) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil || clientMetadata.WorkspaceEnv == nil || *clientMetadata.WorkspaceEnv == "" {
+	if err != nil {
 		return "", false
 	}
-	return *clientMetadata.WorkspaceEnv, true
+	if clientMetadata.WorkspaceEnv != nil {
+		if *clientMetadata.WorkspaceEnv == "" {
+			return "", false
+		}
+		return *clientMetadata.WorkspaceEnv, true
+	}
+	// The inherited env is effective only while the inherited workspace wins.
+	// An explicit workspace without --env selects that workspace's base config.
+	if clientMetadata.Workspace == nil &&
+		clientMetadata.InheritedWorkspaceEnvSet &&
+		clientMetadata.InheritedWorkspaceEnv != "" {
+		return clientMetadata.InheritedWorkspaceEnv, true
+	}
+	return "", false
 }
 
 func isExplicitEnvConfigKey(key string) bool {

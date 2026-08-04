@@ -68,6 +68,10 @@ type ContainerExecOpts struct {
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
 
+	// Provide the executed command access back to the Dagger API with this
+	// workspace as the default for nested clients.
+	InheritWorkspace dagql.Optional[dagql.ID[*Workspace]]
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
@@ -95,6 +99,8 @@ type ContainerExecState struct {
 	ExecMD        *engineutil.ExecutionMetadata
 	ModuleContext dagql.ObjectResult[*Module]
 	FunctionCall  *FunctionCall
+
+	InheritedWorkspace *InheritedWorkspaceBinding
 }
 
 type ContainerExecLazy struct {
@@ -106,6 +112,10 @@ type persistedContainerExecLazy struct {
 	ModuleContextResultID          uint64                        `json:"moduleContextResultID,omitempty"`
 	Opts                           ContainerExecOpts             `json:"opts"`
 	ExecMD                         *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	InheritedWorkspaceResultID     uint64                        `json:"inheritedWorkspaceResultID,omitempty"`
+	InheritedWorkspaceBindingID    string                        `json:"inheritedWorkspaceBindingID,omitempty"`
+	InheritedWorkspaceEnv          string                        `json:"inheritedWorkspaceEnv,omitempty"`
+	InheritedWorkspaceEnvSet       bool                          `json:"inheritedWorkspaceEnvSet,omitempty"`
 	VolatileCacheHitParentResultID uint64                        `json:"volatileCacheHitParentResultID,omitempty"`
 	VolatileCacheHitVolatileEnv    []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
 }
@@ -150,6 +160,18 @@ func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach fu
 		lazy.State.ModuleContext = moduleContext
 		deps = append(deps, moduleContext)
 	}
+	if binding := lazy.State.InheritedWorkspace; binding != nil && binding.Workspace.Self() != nil {
+		attached, err := attach(binding.Workspace)
+		if err != nil {
+			return nil, fmt.Errorf("attach container withExec inherited workspace: %w", err)
+		}
+		workspace, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach container withExec inherited workspace: expected %T, got %T", binding.Workspace, attached)
+		}
+		binding.Workspace = workspace
+		deps = append(deps, workspace)
+	}
 
 	return deps, nil
 }
@@ -172,11 +194,23 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 			return nil, err
 		}
 	}
+	var inheritedWorkspaceResultID uint64
+	if binding := lazy.State.InheritedWorkspace; binding != nil && binding.Workspace.Self() != nil {
+		inheritedWorkspaceResultID, err = encodePersistedObjectRef(cache, binding.Workspace, "container withExec inherited workspace")
+		if err != nil {
+			return nil, err
+		}
+	}
+	binding := lazy.State.InheritedWorkspace
 	return json.Marshal(persistedContainerExecLazy{
-		ParentResultID:        parentID,
-		ModuleContextResultID: moduleContextID,
-		Opts:                  lazy.State.Opts,
-		ExecMD:                lazy.State.ExecMD,
+		ParentResultID:              parentID,
+		ModuleContextResultID:       moduleContextID,
+		Opts:                        lazy.State.Opts,
+		ExecMD:                      lazy.State.ExecMD,
+		InheritedWorkspaceResultID:  inheritedWorkspaceResultID,
+		InheritedWorkspaceBindingID: inheritedWorkspaceBindingID(binding),
+		InheritedWorkspaceEnv:       inheritedWorkspaceEnv(binding),
+		InheritedWorkspaceEnvSet:    binding != nil && binding.HasWorkspaceEnv,
 	})
 }
 
@@ -1186,13 +1220,19 @@ func (container *Container) WithExec(
 	moduleContext dagql.ObjectResult[*Module],
 	functionCall *FunctionCall,
 ) error {
+	inheritedWorkspace, err := CaptureInheritedWorkspaceBinding(ctx, opts.InheritWorkspace)
+	if err != nil {
+		return err
+	}
+	opts.InheritWorkspace = dagql.Optional[dagql.ID[*Workspace]]{}
 	state := &ContainerExecState{
-		LazyState:     NewLazyState(),
-		Parent:        parent,
-		Opts:          opts,
-		ExecMD:        execMD,
-		ModuleContext: moduleContext,
-		FunctionCall:  functionCall,
+		LazyState:          NewLazyState(),
+		Parent:             parent,
+		Opts:               opts,
+		ExecMD:             execMD,
+		ModuleContext:      moduleContext,
+		FunctionCall:       functionCall,
+		InheritedWorkspace: inheritedWorkspace,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -2052,7 +2092,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 					rerr = err
 					return
 				}
-				if err := terminalContainer.TerminalExecError(ctx, callID, callDig, terminalContainerRes, execMD, &meta, rerr); err != nil {
+				if err := terminalContainer.TerminalExecError(ctx, callID, callDig, terminalContainerRes, state.InheritedWorkspace, execMD, &meta, rerr); err != nil {
 					rerr = err
 					return
 				}
@@ -2130,17 +2170,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			defer stopServiceMonitors()
 		}
 
-		var nestedClientMetadata *engine.ClientMetadata
-		if opts.ExperimentalPrivilegedNesting {
-			nestedClientMetadata = &engine.ClientMetadata{
-				ClientID:              identity.NewID(),
-				ClientVersion:         engine.Version,
-				SessionID:             clientMetadata.SessionID,
-				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
-				LockMode:              clientMetadata.LockMode,
-				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
-			}
-		}
+		nestedClientMetadata := nestedClientMetadataForExec(clientMetadata, execMD, opts.ExperimentalPrivilegedNesting, state.InheritedWorkspace)
 
 		procInfo := executor.ProcessInfo{Meta: meta}
 		if opts.Stdin != "" {
@@ -2156,6 +2186,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			if ok {
 				envContext = env
 			}
+		}
+		var workspaceContext dagql.ObjectResult[*Workspace]
+		if state.InheritedWorkspace != nil {
+			workspaceContext = state.InheritedWorkspace.Workspace
 		}
 
 		execErrCh := make(chan error, 1)
@@ -2175,6 +2209,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				state.ModuleContext,
 				state.FunctionCall,
 				envContext,
+				workspaceContext,
 			)
 		}()
 
@@ -2279,12 +2314,26 @@ func decodePersistedContainerExecLazy(
 	if err != nil {
 		return err
 	}
+	inheritedWorkspace, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.InheritedWorkspaceResultID, "container exec inherited workspace")
+	if err != nil {
+		return err
+	}
+	var inheritedBinding *InheritedWorkspaceBinding
+	if inheritedWorkspace.Self() != nil {
+		inheritedBinding = &InheritedWorkspaceBinding{
+			Workspace:       inheritedWorkspace,
+			BindingID:       persisted.InheritedWorkspaceBindingID,
+			WorkspaceEnv:    persisted.InheritedWorkspaceEnv,
+			HasWorkspaceEnv: persisted.InheritedWorkspaceEnvSet,
+		}
+	}
 	state := &ContainerExecState{
-		LazyState:     NewLazyState(),
-		Parent:        parent,
-		Opts:          persisted.Opts,
-		ExecMD:        persisted.ExecMD,
-		ModuleContext: moduleContext,
+		LazyState:          NewLazyState(),
+		Parent:             parent,
+		Opts:               persisted.Opts,
+		ExecMD:             persisted.ExecMD,
+		ModuleContext:      moduleContext,
+		InheritedWorkspace: inheritedBinding,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""

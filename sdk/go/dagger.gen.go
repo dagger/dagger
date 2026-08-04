@@ -1781,6 +1781,12 @@ type ContainerAsServiceOpts struct {
 	UseEntrypoint bool
 	// Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
+	// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+	//
+	// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+	//
+	// Only grant this access to trusted commands.
+	InheritWorkspace *Workspace
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1808,6 +1814,10 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `inheritWorkspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritWorkspace) {
+			q = q.Arg("inheritWorkspace", opts[i].InheritWorkspace)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -2619,6 +2629,12 @@ type ContainerTerminalOpts struct {
 	Cmd []string
 	// Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
+	// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+	//
+	// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+	//
+	// Only grant this access to trusted commands.
+	InheritWorkspace *Workspace
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 }
@@ -2634,6 +2650,10 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `inheritWorkspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritWorkspace) {
+			q = q.Arg("inheritWorkspace", opts[i].InheritWorkspace)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -2662,6 +2682,12 @@ type ContainerUpOpts struct {
 	UseEntrypoint bool
 	// Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
+	// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+	//
+	// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+	//
+	// Only grant this access to trusted commands.
+	InheritWorkspace *Workspace
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -2700,6 +2726,10 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `inheritWorkspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritWorkspace) {
+			q = q.Arg("inheritWorkspace", opts[i].InheritWorkspace)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -2980,6 +3010,12 @@ type ContainerWithExecOpts struct {
 	Expect ReturnType
 	// Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
+	// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+	//
+	// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+	//
+	// Only grant this access to trusted commands.
+	InheritWorkspace *Workspace
 	// Execute the command with all root capabilities. Like --privileged in Docker
 	//
 	// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -3023,6 +3059,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `inheritWorkspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritWorkspace) {
+			q = q.Arg("inheritWorkspace", opts[i].InheritWorkspace)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
@@ -5194,6 +5234,12 @@ type DirectoryTerminalOpts struct {
 	Cmd []string
 	// Provides Dagger access to the executed command.
 	ExperimentalPrivilegedNesting bool
+	// Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+	//
+	// When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+	//
+	// Only grant this access to trusted commands.
+	InheritWorkspace *Workspace
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 }
@@ -5213,6 +5259,10 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `inheritWorkspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritWorkspace) {
+			q = q.Arg("inheritWorkspace", opts[i].InheritWorkspace)
 		}
 		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {

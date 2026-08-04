@@ -1677,6 +1677,139 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	require.Same(t, existing, child.workspace)
 }
 
+func TestInheritedWorkspaceCopiesMatchingAncestorModuleState(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	workspace := sessionTestWorkspaceResult(t)
+	bound := workspace.Self()
+	parentMod := sessionTestModuleResultWithSource(t, "greeter", "parent")
+	childMod := sessionTestModuleResultWithSource(t, "greeter", "child")
+	workspaceMods := core.NewSchemaBuilder(core.NewRoot(srv), nil).
+		With(core.NewUserMod(parentMod), core.InstallOpts{Entrypoint: true})
+	matching := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		dagqlRoot:                 core.NewRoot(srv),
+		workspace:                 bound,
+		pendingWorkspaceLoad:      true,
+		workspaceLoaded:           true,
+		workspaceBindingID:        "matching-binding",
+		workspaceEnv:              "ci",
+		workspaceEnvSet:           true,
+		servedMods:                core.NewSchemaBuilder(core.NewRoot(srv), nil),
+		servedWorkspaceMods:       workspaceMods,
+		servedWorkspaceModuleKeys: map[string]struct{}{"workspace-module": {}},
+		workspaceEntrypointServed: true,
+		extraModulesLoaded:        true,
+		extraModulesErr:           errors.New("broken parent extra"),
+	}
+	carrier := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		inheritedWorkspace: workspace,
+		workspace:          bound,
+		workspaceLoaded:    true,
+		workspaceBindingID: "matching-binding",
+		extraModulesLoaded: true,
+		extraModulesErr:    errors.New("broken carrier extra"),
+	}
+	child := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		dagqlRoot: core.NewRoot(srv),
+		servedMods: core.NewSchemaBuilder(core.NewRoot(srv), nil).
+			With(core.NewUserMod(childMod), core.InstallOpts{Entrypoint: true}),
+		workspace:          bound,
+		workspaceBindingID: "matching-binding",
+		workspaceEnv:       "ci",
+		workspaceEnvSet:    true,
+		parents:            []*daggerClient{matching, carrier},
+	}
+
+	require.NoError(t, srv.inheritExplicitWorkspaceModules(context.Background(), child, nil, false))
+	require.NotNil(t, child.servedWorkspaceMods)
+	require.NotSame(t, workspaceMods, child.servedWorkspaceMods)
+	require.True(t, child.workspaceEntrypointServed)
+	require.True(t, child.entrypointServed)
+	require.Empty(t, child.servedModuleKeys)
+	got, ok := child.servedMods.Lookup("greeter")
+	require.True(t, ok)
+	require.Same(t, childMod.Self(), got.ModuleResult().Self(), "the child's explicit module must win a name collision")
+
+	secondParentMod := sessionTestModuleResultWithSource(t, "farewell", "parent")
+	matching.modulesMu.Lock()
+	matching.stateMu.Lock()
+	matching.servedWorkspaceMods = matching.servedWorkspaceMods.
+		With(core.NewUserMod(secondParentMod), core.InstallOpts{})
+	matching.servedWorkspaceModuleKeys["second-workspace-module"] = struct{}{}
+	matching.stateMu.Unlock()
+	matching.modulesMu.Unlock()
+
+	require.NoError(t, srv.inheritExplicitWorkspaceModules(context.Background(), child, nil, false))
+	require.Len(t, child.servedWorkspaceMods.Mods(), 2, "successive snapshots must be cumulative")
+}
+
+func TestInheritedWorkspaceWithoutMatchingAncestorKeepsCoreSchema(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	servedMods := core.NewSchemaBuilder(core.NewRoot(srv), nil)
+	child := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		dagqlRoot:          core.NewRoot(srv),
+		servedMods:         servedMods,
+		workspace:          &core.Workspace{ClientID: "workspace-owner"},
+		workspaceBindingID: "missing-binding",
+	}
+
+	require.NoError(t, srv.inheritExplicitWorkspaceModules(context.Background(), child, nil, false))
+	require.Same(t, servedMods, child.servedMods)
+	require.Nil(t, child.servedWorkspaceMods)
+}
+
+func TestInheritedWorkspaceModuleFailureIsRetried(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	workspace := sessionTestWorkspaceResult(t)
+	parent := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		dagqlRoot:                 core.NewRoot(srv),
+		servedMods:                core.NewSchemaBuilder(core.NewRoot(srv), nil),
+		servedWorkspaceMods:       core.NewSchemaBuilder(core.NewRoot(srv), nil),
+		workspace:                 workspace.Self(),
+		pendingWorkspaceLoad:      true,
+		workspaceLoaded:           true,
+		workspaceErr:              errors.New("transient workspace load"),
+		workspaceBindingID:        "binding",
+		workspaceEntrypointServed: true,
+	}
+	child := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules:        true,
+			InheritedWorkspaceBindingID: "binding",
+		},
+		dagqlRoot:          core.NewRoot(srv),
+		servedMods:         core.NewSchemaBuilder(core.NewRoot(srv), nil),
+		inheritedWorkspace: workspace,
+		parents:            []*daggerClient{parent},
+	}
+
+	require.NoError(t, srv.loadInheritedWorkspaceBinding(child))
+	require.ErrorContains(t, srv.inheritExplicitWorkspaceModules(context.Background(), child, nil, false), "transient workspace load")
+
+	parent.workspaceErr = nil
+	require.NoError(t, srv.inheritExplicitWorkspaceModules(context.Background(), child, nil, false))
+}
+
 func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *testing.T) {
 	t.Parallel()
 
@@ -1749,7 +1882,8 @@ func TestWorkspaceBindingMode(t *testing.T) {
 		t.Parallel()
 
 		client := &daggerClient{
-			pendingWorkspaceLoad: false,
+			pendingWorkspaceLoad: true,
+			inheritedWorkspace:   sessionTestWorkspaceResult(t),
 			clientMetadata: &engine.ClientMetadata{
 				Workspace: stringPtr("github.com/dagger/dagger@main"),
 			},
@@ -1758,6 +1892,20 @@ func TestWorkspaceBindingMode(t *testing.T) {
 		mode, workspaceRef := workspaceBindingMode(client)
 		require.Equal(t, workspaceBindingDeclared, mode)
 		require.Equal(t, "github.com/dagger/dagger@main", workspaceRef)
+	})
+
+	t.Run("inherited workspace takes precedence over host detection", func(t *testing.T) {
+		t.Parallel()
+
+		client := &daggerClient{
+			pendingWorkspaceLoad: true,
+			inheritedWorkspace:   sessionTestWorkspaceResult(t),
+			clientMetadata:       &engine.ClientMetadata{},
+		}
+
+		mode, workspaceRef := workspaceBindingMode(client)
+		require.Equal(t, workspaceBindingInherited, mode)
+		require.Empty(t, workspaceRef)
 	})
 
 	t.Run("non-module defaults to host detection", func(t *testing.T) {
@@ -1863,13 +2011,16 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			ExtraModules: []engine.ExtraModule{{
 				Ref: "github.com/dagger/base-extra",
 			}},
-			LoadWorkspaceModules:  true,
-			EagerRuntime:          true,
-			LockMode:              string(workspace.LockModeFrozen),
-			Workspace:             stringPtr("github.com/dagger/base@main"),
-			WorkspaceEnv:          stringPtr("parent-ci"),
-			WorkspaceModuleScope:  "parent-scope",
-			UseRecipeIDsByDefault: true,
+			LoadWorkspaceModules:        true,
+			EagerRuntime:                true,
+			LockMode:                    string(workspace.LockModeFrozen),
+			Workspace:                   stringPtr("github.com/dagger/base@main"),
+			WorkspaceEnv:                stringPtr("parent-ci"),
+			WorkspaceModuleScope:        "parent-scope",
+			UseRecipeIDsByDefault:       true,
+			InheritedWorkspaceBindingID: "trusted-binding",
+			InheritedWorkspaceEnv:       "trusted-ci",
+			InheritedWorkspaceEnvSet:    true,
 		}
 	}
 
@@ -1896,6 +2047,9 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Nil(t, md.WorkspaceEnv)
 		require.Empty(t, md.WorkspaceModuleScope)
 		require.True(t, md.UseRecipeIDsByDefault)
+		require.Equal(t, "trusted-binding", md.InheritedWorkspaceBindingID)
+		require.Equal(t, "trusted-ci", md.InheritedWorkspaceEnv)
+		require.True(t, md.InheritedWorkspaceEnvSet)
 
 		base.AllowedLLMModules[0] = "mutated"
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
@@ -1929,6 +2083,9 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Workspace:                      &workspaceRef,
 			WorkspaceEnv:                   &workspaceEnv,
 			WorkspaceModuleScope:           "good-mod",
+			InheritedWorkspaceBindingID:    "forged-binding",
+			InheritedWorkspaceEnv:          "forged-env",
+			InheritedWorkspaceEnvSet:       true,
 		}
 
 		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
@@ -1955,6 +2112,9 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Entrypoint: true,
 		}}, md.ExtraModules)
 		require.True(t, md.UseRecipeIDsByDefault)
+		require.Equal(t, "trusted-binding", md.InheritedWorkspaceBindingID)
+		require.Equal(t, "trusted-ci", md.InheritedWorkspaceEnv)
+		require.True(t, md.InheritedWorkspaceEnvSet)
 	})
 
 	t.Run("keeps parent lock mode when forwarded metadata omits it", func(t *testing.T) {
@@ -2268,6 +2428,10 @@ func stringPtr(v string) *string {
 }
 
 func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core.Module] {
+	return sessionTestModuleResultWithSource(t, name, name)
+}
+
+func sessionTestModuleResultWithSource(t *testing.T, name, source string) dagql.ObjectResult[*core.Module] {
 	t.Helper()
 
 	dag, err := dagql.NewServer(t.Context(), &core.Module{})
@@ -2275,7 +2439,21 @@ func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core
 	res, err := dagql.NewObjectResultForCall(
 		&core.Module{NameField: name},
 		dag,
-		&dagql.ResultCall{SyntheticOp: "session-test-module-" + name},
+		&dagql.ResultCall{SyntheticOp: "session-test-module-" + source},
+	)
+	require.NoError(t, err)
+	return res
+}
+
+func sessionTestWorkspaceResult(t *testing.T) dagql.ObjectResult[*core.Workspace] {
+	t.Helper()
+
+	dag, err := dagql.NewServer(t.Context(), &core.Workspace{})
+	require.NoError(t, err)
+	res, err := dagql.NewObjectResultForCall(
+		&core.Workspace{Address: "test://workspace"},
+		dag,
+		&dagql.ResultCall{SyntheticOp: "session-test-workspace"},
 	)
 	require.NoError(t, err)
 	return res

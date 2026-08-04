@@ -258,6 +258,15 @@ export type ContainerAsServiceOpts = {
   experimentalPrivilegedNesting?: boolean
 
   /**
+   * Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
+   */
+  inheritWorkspace?: Workspace
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -497,6 +506,15 @@ export type ContainerTerminalOpts = {
   experimentalPrivilegedNesting?: boolean
 
   /**
+   * Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
+   */
+  inheritWorkspace?: Workspace
+
+  /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   insecureRootCapabilities?: boolean
@@ -531,6 +549,15 @@ export type ContainerUpOpts = {
    * Provides Dagger access to the executed command.
    */
   experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
+   */
+  inheritWorkspace?: Workspace
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -680,6 +707,15 @@ export type ContainerWithExecOpts = {
    * Provides Dagger access to the executed command.
    */
   experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
+   */
+  inheritWorkspace?: Workspace
 
   /**
    * Execute the command with all root capabilities. Like --privileged in Docker
@@ -1297,6 +1333,15 @@ export type DirectoryTerminalOpts = {
    * Provides Dagger access to the executed command.
    */
   experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
+   */
+  inheritWorkspace?: Workspace
 
   /**
    * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
@@ -4532,6 +4577,11 @@ export class Container extends BaseClient {
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.inheritWorkspace Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -5112,6 +5162,11 @@ export class Container extends BaseClient {
    * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.inheritWorkspace Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   terminal = (opts?: ContainerTerminalOpts): Container => {
@@ -5132,6 +5187,11 @@ export class Container extends BaseClient {
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.inheritWorkspace Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
@@ -5298,6 +5358,11 @@ export class Container extends BaseClient {
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.inheritWorkspace Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
    *
    * DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
@@ -6717,6 +6782,11 @@ export class Directory extends BaseClient {
    * @param opts.container If set, override the default container used for the terminal.
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   * @param opts.inheritWorkspace Provides Dagger access to the executed command and uses this workspace by default for nested Dagger clients.
+   *
+   * When this is the caller's current workspace, its selected environment and module commands are inherited. Other workspace values are available through currentWorkspace, but do not provide module commands.
+   *
+   * Only grant this access to trusted commands.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   terminal = (opts?: DirectoryTerminalOpts): Directory => {

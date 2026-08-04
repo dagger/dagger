@@ -1729,6 +1729,7 @@ class Container(Type):
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        inherit_workspace: "Workspace | None" = None,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -1747,6 +1748,14 @@ class Container(Type):
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+        inherit_workspace:
+            Provides Dagger access to the executed command and uses this
+            workspace by default for nested Dagger clients.
+            When this is the caller's current workspace, its selected
+            environment and module commands are inherited. Other workspace
+            values are available through currentWorkspace, but do not provide
+            module commands.
+            Only grant this access to trusted commands.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -1769,6 +1778,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("inheritWorkspace", inherit_workspace, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -2637,6 +2647,7 @@ class Container(Type):
         *,
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
+        inherit_workspace: "Workspace | None" = None,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal for this container using its configured
@@ -2650,6 +2661,14 @@ class Container(Type):
             invoke these command arguments instead.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+        inherit_workspace:
+            Provides Dagger access to the executed command and uses this
+            workspace by default for nested Dagger clients.
+            When this is the caller's current workspace, its selected
+            environment and module commands are inherited. Other workspace
+            values are available through currentWorkspace, but do not provide
+            module commands.
+            Only grant this access to trusted commands.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -2662,6 +2681,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("inheritWorkspace", inherit_workspace, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
@@ -2675,6 +2695,7 @@ class Container(Type):
         args: list[str] | None = None,
         use_entrypoint: bool | None = False,
         experimental_privileged_nesting: bool | None = False,
+        inherit_workspace: "Workspace | None" = None,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -2700,6 +2721,14 @@ class Container(Type):
             If the container has an entrypoint, prepend it to the args.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+        inherit_workspace:
+            Provides Dagger access to the executed command and uses this
+            workspace by default for nested Dagger clients.
+            When this is the caller's current workspace, its selected
+            environment and module commands are inherited. Other workspace
+            values are available through currentWorkspace, but do not provide
+            module commands.
+            Only grant this access to trusted commands.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -2737,6 +2766,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("inheritWorkspace", inherit_workspace, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -3028,6 +3058,7 @@ class Container(Type):
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
         experimental_privileged_nesting: bool | None = False,
+        inherit_workspace: "Workspace | None" = None,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
@@ -3063,6 +3094,14 @@ class Container(Type):
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+        inherit_workspace:
+            Provides Dagger access to the executed command and uses this
+            workspace by default for nested Dagger clients.
+            When this is the caller's current workspace, its selected
+            environment and module commands are inherited. Other workspace
+            values are available through currentWorkspace, but do not provide
+            module commands.
+            Only grant this access to trusted commands.
         insecure_root_capabilities:
             Execute the command with all root capabilities. Like --privileged
             in Docker
@@ -3090,6 +3129,7 @@ class Container(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("inheritWorkspace", inherit_workspace, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -5164,6 +5204,7 @@ class Directory(Type):
         container: Container | None = None,
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
+        inherit_workspace: "Workspace | None" = None,
         insecure_root_capabilities: bool | None = False,
     ) -> Self:
         """Opens an interactive terminal in new container with this directory
@@ -5178,6 +5219,14 @@ class Directory(Type):
             invoke these command arguments instead.
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
+        inherit_workspace:
+            Provides Dagger access to the executed command and uses this
+            workspace by default for nested Dagger clients.
+            When this is the caller's current workspace, its selected
+            environment and module commands are inherited. Other workspace
+            values are available through currentWorkspace, but do not provide
+            module commands.
+            Only grant this access to trusted commands.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
             running a command with "sudo" or executing "docker run" with the "
@@ -5191,6 +5240,7 @@ class Directory(Type):
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
+            Arg("inheritWorkspace", inherit_workspace, None),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
