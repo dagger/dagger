@@ -28,6 +28,7 @@ type pruneSnapshotResult struct {
 	resultID                 sharedResultID
 	incomingCount            int64
 	deps                     []sharedResultID
+	directResultBytes        int64
 	usageIdentities          []string
 	entry                    CacheUsageEntry
 	callLabel                string
@@ -55,6 +56,167 @@ type pruneSimulationState struct {
 	collected                 map[sharedResultID]struct{}
 }
 
+type pruneSnapshotMode uint8
+
+const (
+	pruneSnapshotDisk pruneSnapshotMode = iota
+	pruneSnapshotMetadata
+)
+
+func metadataDirectResultBytes(estimate CacheMetadataEstimate) int64 {
+	if estimate.ResultCount <= 0 {
+		return 0
+	}
+	sharedGraphBytes := cacheMetadataTermEstimatedBytes*int64(estimate.TermCount) +
+		cacheMetadataClassSlotEstimatedBytes*int64(estimate.ClassSlotCount)
+	return cacheMetadataResultEstimatedBytes +
+		(sharedGraphBytes+int64(estimate.ResultCount)-1)/int64(estimate.ResultCount)
+}
+
+// PruneMetadataEstimate removes cold persisted roots when the coarse DAGQL
+// structural estimate exceeds maximumBytes. It deliberately skips physical
+// usage measurement and returns only aggregate information.
+func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetBytes int64) (report CacheMetadataPruneReport, rerr error) {
+	started := time.Now()
+	report.MaximumEstimatedBytes = maximumBytes
+	report.TargetEstimatedBytes = targetBytes
+	if c != nil {
+		c.traceMetadataPruneStarted(ctx, maximumBytes, targetBytes)
+	}
+	defer func() {
+		report.Duration = time.Since(started)
+		if c != nil {
+			c.traceMetadataPruneFinished(ctx, report, rerr)
+		}
+		metadataPruneLog(ctx, report, rerr)
+	}()
+
+	if c == nil {
+		return report, fmt.Errorf("metadata prune: nil cache")
+	}
+	if maximumBytes <= 0 {
+		return report, fmt.Errorf("metadata prune: maximum estimated bytes must be positive")
+	}
+	if targetBytes <= 0 || targetBytes >= maximumBytes {
+		return report, fmt.Errorf("metadata prune: target estimated bytes must be positive and lower than maximum")
+	}
+	if err := ctx.Err(); err != nil {
+		return report, err
+	}
+
+	c.egraphMu.Lock()
+	report.BeforeCompaction = c.cacheMetadataEstimateLocked()
+	report.AfterInitialCompaction = report.BeforeCompaction
+	report.AfterPrune = report.BeforeCompaction
+	if report.BeforeCompaction.EstimatedBytes <= maximumBytes {
+		c.egraphMu.Unlock()
+		return report, nil
+	}
+	report.Triggered = true
+	_, report.InitialCompactionOldClassSlots, report.InitialCompactionNewClassSlots = c.compactEqClassesLocked(true)
+	report.AfterInitialCompaction = c.cacheMetadataEstimateLocked()
+	report.AfterPrune = report.AfterInitialCompaction
+	c.egraphMu.Unlock()
+
+	if report.AfterInitialCompaction.EstimatedBytes <= maximumBytes {
+		return report, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return report, err
+	}
+
+	pruneCtx := withMetadataPruneContext(ctx)
+	activeRoots := c.snapshotSessionResultIDs()
+	directResultBytes := metadataDirectResultBytes(report.AfterInitialCompaction)
+	snapshot := c.snapshotPruneState(activeRoots, pruneSnapshotMetadata, directResultBytes)
+	activeClosure := pruneActiveClosure(snapshot, activeRoots)
+	candidates := c.collectPruneCandidates(
+		pruneCtx,
+		-1,
+		snapshot,
+		activeClosure,
+		CachePrunePolicy{All: true},
+		time.Now(),
+	)
+	report.CandidateCount = len(candidates)
+
+	reclaimTarget := report.AfterInitialCompaction.EstimatedBytes - targetBytes
+	plan, simulatedReclaimed, simulatedCollected := buildPrunePlan(snapshot, candidates, reclaimTarget)
+	report.PlannedRootCount = len(plan)
+	report.SimulatedStructuralBytes = simulatedReclaimed
+	report.SimulatedCollectedResultCount = simulatedCollected
+	report.CandidatesExhausted = len(plan) == len(candidates) && simulatedReclaimed < reclaimTarget
+
+	for _, planEntry := range plan {
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
+		removed, err := c.removePersistedEdge(pruneCtx, planEntry.candidate.resultID)
+		if err != nil {
+			return report, err
+		}
+		if removed {
+			report.RemovedPersistedRootCount++
+		}
+	}
+
+	if len(plan) > 0 {
+		c.egraphMu.Lock()
+		_, report.FinalCompactionOldClassSlots, report.FinalCompactionNewClassSlots = c.compactEqClassesLocked(true)
+		report.AfterPrune = c.cacheMetadataEstimateLocked()
+		c.egraphMu.Unlock()
+	} else {
+		report.AfterPrune = c.MetadataEstimate()
+	}
+
+	if report.RemovedPersistedRootCount > 0 && c.snapshotGC != nil {
+		report.SnapshotGCAttempted = true
+		if err := c.snapshotGC(pruneCtx); err != nil {
+			return report, fmt.Errorf("snapshot gc after metadata prune: %w", err)
+		}
+		report.SnapshotGCSucceeded = true
+	}
+
+	return report, nil
+}
+
+func metadataPruneLog(ctx context.Context, report CacheMetadataPruneReport, err error) {
+	attrs := []any{
+		"triggered", report.Triggered,
+		"maximumEstimatedBytes", report.MaximumEstimatedBytes,
+		"targetEstimatedBytes", report.TargetEstimatedBytes,
+		"beforeEstimatedBytes", report.BeforeCompaction.EstimatedBytes,
+		"beforeResults", report.BeforeCompaction.ResultCount,
+		"beforeTerms", report.BeforeCompaction.TermCount,
+		"beforeClassSlots", report.BeforeCompaction.ClassSlotCount,
+		"afterInitialCompactionEstimatedBytes", report.AfterInitialCompaction.EstimatedBytes,
+		"afterInitialCompactionResults", report.AfterInitialCompaction.ResultCount,
+		"afterInitialCompactionTerms", report.AfterInitialCompaction.TermCount,
+		"afterInitialCompactionClassSlots", report.AfterInitialCompaction.ClassSlotCount,
+		"afterPruneEstimatedBytes", report.AfterPrune.EstimatedBytes,
+		"afterPruneResults", report.AfterPrune.ResultCount,
+		"afterPruneTerms", report.AfterPrune.TermCount,
+		"afterPruneClassSlots", report.AfterPrune.ClassSlotCount,
+		"initialCompactionOldClassSlots", report.InitialCompactionOldClassSlots,
+		"initialCompactionNewClassSlots", report.InitialCompactionNewClassSlots,
+		"finalCompactionOldClassSlots", report.FinalCompactionOldClassSlots,
+		"finalCompactionNewClassSlots", report.FinalCompactionNewClassSlots,
+		"candidateCount", report.CandidateCount,
+		"plannedRootCount", report.PlannedRootCount,
+		"simulatedCollectedResultCount", report.SimulatedCollectedResultCount,
+		"simulatedStructuralBytes", report.SimulatedStructuralBytes,
+		"removedPersistedRootCount", report.RemovedPersistedRootCount,
+		"candidatesExhausted", report.CandidatesExhausted,
+		"snapshotGCAttempted", report.SnapshotGCAttempted,
+		"snapshotGCSucceeded", report.SnapshotGCSucceeded,
+		"duration", report.Duration,
+	}
+	if err != nil {
+		attrs = append(attrs, "error", err)
+	}
+	slog.InfoContext(ctx, "dagql metadata prune finished", attrs...)
+}
+
 func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
 	report := CachePruneReport{}
 	if len(policies) == 0 {
@@ -66,7 +228,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	for policyIdx, policy := range policies {
 		activeRoots := c.snapshotSessionResultIDs()
 		c.measureAllResultSizes(ctx)
-		snapshot := c.snapshotPruneState(activeRoots)
+		snapshot := c.snapshotPruneState(activeRoots, pruneSnapshotDisk, 0)
 
 		targetBytes, _ := pruneTargetBytes(policy, snapshot.usedBytes)
 		if targetBytes <= 0 {
@@ -82,7 +244,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			continue
 		}
 
-		plan, plannedReclaim := buildPrunePlan(snapshot, candidates, targetBytes)
+		plan, plannedReclaim, _ := buildPrunePlan(snapshot, candidates, targetBytes)
 		if len(plan) == 0 {
 			continue
 		}
@@ -145,7 +307,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 
 	if compactedNeeded {
 		c.egraphMu.Lock()
-		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(); compacted {
+		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(false); compacted {
 			slog.Debug("dagql prune compacted eq classes",
 				"oldSlots", oldSlots,
 				"newSlots", newSlots)
@@ -162,7 +324,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	return report, nil
 }
 
-func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) pruneSnapshot {
+func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}, mode pruneSnapshotMode, directResultBytes int64) pruneSnapshot {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 
@@ -174,20 +336,22 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		return snapshot
 	}
 
-	for resID, res := range c.resultsByID {
-		if res == nil {
-			continue
-		}
-		for _, usageIdentity := range cacheUsageIdentities(res) {
-			identityState := snapshot.usageIdentities[usageIdentity]
-			if identityState.ownerID == 0 || resID < identityState.ownerID {
-				identityState.ownerID = resID
+	if mode == pruneSnapshotDisk {
+		for resID, res := range c.resultsByID {
+			if res == nil {
+				continue
 			}
-			if sizeBytes, ok := res.cacheUsageSizeByIdentity[usageIdentity]; ok && sizeBytes > identityState.sizeBytes {
-				identityState.sizeBytes = sizeBytes
+			for _, usageIdentity := range cacheUsageIdentities(res) {
+				identityState := snapshot.usageIdentities[usageIdentity]
+				if identityState.ownerID == 0 || resID < identityState.ownerID {
+					identityState.ownerID = resID
+				}
+				if sizeBytes, ok := res.cacheUsageSizeByIdentity[usageIdentity]; ok && sizeBytes > identityState.sizeBytes {
+					identityState.sizeBytes = sizeBytes
+				}
+				identityState.aliveMembers++
+				snapshot.usageIdentities[usageIdentity] = identityState
 			}
-			identityState.aliveMembers++
-			snapshot.usageIdentities[usageIdentity] = identityState
 		}
 	}
 
@@ -195,14 +359,6 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		if res == nil {
 			continue
 		}
-		usageIdentities := cacheUsageIdentities(res)
-		sizeBytes := int64(0)
-		for _, measured := range res.cacheUsageSizeByIdentity {
-			if measured > 0 {
-				sizeBytes += measured
-			}
-		}
-
 		state := res.loadPayloadState()
 		createdAt := state.createdAtUnixNano
 		lastUsedAt := state.lastUsedAtUnixNano
@@ -212,12 +368,6 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		if lastUsedAt == 0 {
 			lastUsedAt = createdAt
 		}
-		recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
-		recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
-		description := res.description
-		if description == "" {
-			description = fmt.Sprintf("dagql cache result %d", resID)
-		}
 		_, activelyUsed := activeRoots[resID]
 
 		deps := make([]sharedResultID, 0, len(res.deps))
@@ -226,33 +376,51 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		}
 		slices.Sort(deps)
 
-		callFrame := res.loadResultCall()
-		callLabel := c.cacheUsageDagqlCallLocked(res)
-
 		edge, hasPersistedEdge := c.persistedEdgesByResult[resID]
-		snapshot.results[resID] = pruneSnapshotResult{
-			resultID:        resID,
-			incomingCount:   res.incomingOwnershipCount,
-			deps:            deps,
-			usageIdentities: usageIdentities,
+		snapshotResult := pruneSnapshotResult{
+			resultID:      resID,
+			incomingCount: res.incomingOwnershipCount,
+			deps:          deps,
 			entry: CacheUsageEntry{
-				ID:                        fmt.Sprintf("dagql.result.%d", resID),
-				Description:               description,
-				RecordType:                recordType,
-				RecordTypes:               recordTypes,
-				DagqlCall:                 callLabel,
-				SizeBytes:                 sizeBytes,
 				CreatedTimeUnixNano:       createdAt,
 				MostRecentUseTimeUnixNano: lastUsedAt,
 				ActivelyUsed:              activelyUsed,
 			},
-			callLabel:                callLabel,
-			callFrame:                callFrame,
 			hasPersistedEdge:         hasPersistedEdge,
 			persistedEdgeUnpruneable: edge.unpruneable,
 			expiresAtUnix:            edge.expiresAtUnix,
 		}
-		snapshot.usedBytes += sizeBytes
+		if mode == pruneSnapshotMetadata {
+			snapshotResult.directResultBytes = directResultBytes
+			snapshotResult.entry.SizeBytes = directResultBytes
+		} else {
+			usageIdentities := cacheUsageIdentities(res)
+			sizeBytes := int64(0)
+			for _, measured := range res.cacheUsageSizeByIdentity {
+				if measured > 0 {
+					sizeBytes += measured
+				}
+			}
+			recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
+			recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
+			description := res.description
+			if description == "" {
+				description = fmt.Sprintf("dagql cache result %d", resID)
+			}
+			callFrame := res.loadResultCall()
+			callLabel := c.cacheUsageDagqlCallLocked(res)
+			snapshotResult.usageIdentities = usageIdentities
+			snapshotResult.entry.ID = fmt.Sprintf("dagql.result.%d", resID)
+			snapshotResult.entry.Description = description
+			snapshotResult.entry.RecordType = recordType
+			snapshotResult.entry.RecordTypes = recordTypes
+			snapshotResult.entry.DagqlCall = callLabel
+			snapshotResult.entry.SizeBytes = sizeBytes
+			snapshotResult.callLabel = callLabel
+			snapshotResult.callFrame = callFrame
+			snapshot.usedBytes += sizeBytes
+		}
+		snapshot.results[resID] = snapshotResult
 	}
 
 	return snapshot
@@ -350,6 +518,10 @@ func (c *Cache) collectPruneCandidates(ctx context.Context, policyIndex int, sna
 			return -1
 		case a.entry.ID > b.entry.ID:
 			return 1
+		case a.resultID < b.resultID:
+			return -1
+		case a.resultID > b.resultID:
+			return 1
 		default:
 			return 0
 		}
@@ -358,25 +530,27 @@ func (c *Cache) collectPruneCandidates(ctx context.Context, policyIndex int, sna
 	return candidates
 }
 
-func buildPrunePlan(snapshot pruneSnapshot, candidates []pruneCandidate, targetBytes int64) ([]prunePlanEntry, int64) {
+func buildPrunePlan(snapshot pruneSnapshot, candidates []pruneCandidate, targetBytes int64) ([]prunePlanEntry, int64, int) {
 	if len(candidates) == 0 {
-		return nil, 0
+		return nil, 0, 0
 	}
 	sim := newPruneSimulationState(snapshot)
 	plan := make([]prunePlanEntry, 0, len(candidates))
 	var reclaimed int64
+	var collected int
 	for _, candidate := range candidates {
-		immediateReclaim := sim.applyCandidate(snapshot, candidate.resultID)
+		immediateReclaim, immediateCollected := sim.applyCandidate(snapshot, candidate.resultID)
 		plan = append(plan, prunePlanEntry{
 			candidate:    candidate,
 			reclaimBytes: immediateReclaim,
 		})
 		reclaimed += immediateReclaim
+		collected += immediateCollected
 		if reclaimed >= targetBytes {
 			break
 		}
 	}
-	return plan, reclaimed
+	return plan, reclaimed, collected
 }
 
 func newPruneSimulationState(snapshot pruneSnapshot) pruneSimulationState {
@@ -396,10 +570,10 @@ func newPruneSimulationState(snapshot pruneSnapshot) pruneSimulationState {
 	return state
 }
 
-func (s *pruneSimulationState) applyCandidate(snapshot pruneSnapshot, resultID sharedResultID) int64 {
+func (s *pruneSimulationState) applyCandidate(snapshot pruneSnapshot, resultID sharedResultID) (int64, int) {
 	curCount, ok := s.remainingIncomingCount[resultID]
 	if !ok {
-		return 0
+		return 0, 0
 	}
 	s.remainingIncomingCount[resultID] = curCount - 1
 
@@ -409,6 +583,7 @@ func (s *pruneSimulationState) applyCandidate(snapshot pruneSnapshot, resultID s
 	}
 
 	var reclaimed int64
+	var collected int
 	for len(queue) > 0 {
 		curID := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
@@ -420,11 +595,13 @@ func (s *pruneSimulationState) applyCandidate(snapshot pruneSnapshot, resultID s
 			continue
 		}
 		s.collected[curID] = struct{}{}
+		collected++
 
 		cur, ok := snapshot.results[curID]
 		if !ok {
 			continue
 		}
+		reclaimed += cur.directResultBytes
 		for _, identity := range cur.usageIdentities {
 			alive := s.aliveCountByUsageIdentity[identity] - 1
 			s.aliveCountByUsageIdentity[identity] = alive
@@ -446,7 +623,7 @@ func (s *pruneSimulationState) applyCandidate(snapshot pruneSnapshot, resultID s
 		}
 	}
 
-	return reclaimed
+	return reclaimed, collected
 }
 
 func resultInActiveClosure(activeClosure map[sharedResultID]struct{}, resultID sharedResultID) bool {
