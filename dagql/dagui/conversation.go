@@ -64,11 +64,19 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 		if span.LLMRole == "" || span.Internal {
 			continue
 		}
+		if span == root {
+			// The root is the FRAME of the question ("what was said beneath
+			// this span"), not content within it. A scoped tool result zooms
+			// to the tool-call display span, which is itself a message span --
+			// surfacing it would render the tool call's own row in place of
+			// the subtree the report is about.
+			continue
+		}
 
 		contained := false
 		anchoredToMessage := false
 		var parentID SpanID
-		reachedRoot := span == root
+		reachedRoot := false
 		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
 			atRoot := p == root
 			if !atRoot && (p.Boundary || p.Encapsulate) {
@@ -82,7 +90,10 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 				contained = true
 				break
 			}
-			if !parentID.IsValid() && p.LLMRole != "" {
+			if !atRoot && !parentID.IsValid() && p.LLMRole != "" {
+				// Anchor only to messages strictly BELOW root: root itself is
+				// the frame and isn't part of the surfaced tree, so a message
+				// anchored to it would have no node to nest under.
 				parentID = p.ID
 			}
 			if atRoot {
