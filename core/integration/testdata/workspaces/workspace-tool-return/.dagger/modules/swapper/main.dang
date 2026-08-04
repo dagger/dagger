@@ -11,6 +11,27 @@ type Swapper {
     ws.withNewFile("SWAPPED.txt", "swapped by tool")
   }
 
+  """
+  Continue the conversation with a workspace that has a marker file.
+
+  The auto-injected LLM! is the conversation up to and including this tool
+  call; returning a derived LLM makes the tool a continuation — the agent loop
+  resumes from the returned conversation instead of the one that called it.
+  """
+  continueWithMarker(llm: LLM!): LLM! {
+    llm.withWorkspace(llm.workspace.withNewFile("CONTINUED.txt", "swapped by continuation"))
+  }
+
+  """
+  Hand back a conversation whose history has been wiped.
+
+  A continuation must EXTEND the history it was given, so this must be
+  rejected as an ordinary failed tool call, leaving the agent alive.
+  """
+  hijack(llm: LLM!): LLM! {
+    llm.withoutMessageHistory
+  }
+
   addFirst(ws: Workspace!): Changeset! {
     let root = ws.directory("/")
     root.withNewFile("FIRST.txt", "first parallel change").changes(root)

@@ -1,6 +1,7 @@
 # Self-Extension: LLM-Returning Tools as Continuations
 
-Status: PARKED — design agreed in principle, not yet started.
+Status: IMPLEMENTED. See the "As built" section at the end for what changed
+relative to this design, and what is still open.
 
 ## Problem
 
@@ -95,3 +96,50 @@ QA:
   edit take effect after `reload`.
 - Unit tests around applyStateReturn arm: success swap, error containment,
   lineage rejection, batch restriction.
+
+## As built
+
+Landed as designed, with three deviations worth knowing:
+
+1. **The lineage guardrail is history-based, not ID ancestry.** A dagql
+   `Result`'s `ID()` is an opaque runtime handle (`call.NewEngineResultID`);
+   `Receiver()`/`Args()` panic on it, so there is no ID chain to walk. Worse,
+   an LLM is usually transformed by being PASSED to something
+   (`agents.compose(base: llm)`) rather than received by it, so even in recipe
+   form the ancestor sits in an argument literal, not the receiver chain.
+   `continuesHistory` (core/mcp.go) instead requires the returned LLM's message
+   history to EXTEND the current one, compared by value. That is the property
+   the guardrail actually protects — env, tools and system prompts stay free to
+   change, which install/reload need. Relaxing the history rule is still what
+   self-compaction (`llm.compacted`) would take.
+
+2. **Compose idempotence** (§5) is resolved on the module side:
+   `install`/`reload` call `withoutSystemPrompts` before recomposing, so
+   repeated reloads don't stack duplicate prompts and `withTools`' one-binding-
+   per-type rule handles the tools. The cost, documented on both tools: system
+   prompts added OUTSIDE the agent composition are dropped.
+
+3. **Persistence** (§4) needs no new selector. The continuation is the receiver
+   of the turn's `withToolResult` selectors, so the transform is already part
+   of the resulting LLM's ID and replay lands on it.
+
+`step()` now materializes `withResponse` BEFORE dispatching tool calls (so the
+continuation is handed the conversation up to and including its own call) and
+appends the turn's results to the continuation. When a swap happens the
+workspace/bound-tool persistence is skipped: whatever the continuation binds is
+already in its own ID.
+
+Still open:
+- Live QA against a real model was NOT completed. tui-qa binds a cached engine,
+  not one rebuilt from the workspace, so its `dagger agent` never saw the new
+  tools; engine-lab's client has the right engine but no LLM credentials.
+  Verified instead by (a) composing the dev-env `editor:agent` through the
+  engine-lab CLI and reading `LLM.tools` — `install` and `reload` are generated,
+  with the `llm` argument hidden from the model — and (b) the replay-driven
+  integration tests below.
+- Tests: `TestContinuesHistory`/`TestMessagesEqual`/`TestSummarizeToolsetChange`
+  (core/llm_continuation_test.go) and `TestLLM/TestToolReturningLLMContinues`
+  (core/integration/llm_object_tools_test.go, 5 subtests over the
+  `workspace-tool-return` fixture) cover success swap, error containment,
+  lineage rejection and the one-per-batch restriction.
+

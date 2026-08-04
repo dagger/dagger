@@ -171,3 +171,115 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 		require.Error(t, err)
 	})
 }
+
+// TestToolReturningLLMContinues locks in the continuation ring of the state-return
+// convention: a tool that returns an LLM replaces the conversation, and the loop
+// resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
+// adoptLLM). The tool's LLM! argument is auto-injected with the conversation up
+// to and including its own call, so `install`/`reload`-style self-extension is a
+// plain transform.
+func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	t.Run("the loop resumes from the returned conversation", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("continue").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// continueWithMarker returns llm.withWorkspace(<workspace + marker>). The
+		// marker is only reachable if the loop adopted the RETURNED LLM: without
+		// the continuation arm the returned LLM would merely be synced and
+		// described, leaving the original workspace bound, and this would error.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue" | loop | workspace | file CONTINUED.txt | contents`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "swapped by continuation", strings.TrimSpace(out))
+	})
+
+	t.Run("the conversation survives the swap", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("continue").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// The turn's tool result is appended to the returned LLM, and the loop
+		// carries on from there — the prompt, the tool call and the final reply
+		// are all in one transcript.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "continue")
+		require.Contains(t, out, "Continuing from the returned conversation.")
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("a conversation that does not continue the current one is rejected", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("hijack").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "hijack"},
+			}).
+			WithToolResult("call_1", "", true).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// hijack wipes the history it was handed. That is a failed tool call, not a
+		// dead agent: the loop runs to completion on the ORIGINAL conversation.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "hijack" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "does not continue the current conversation")
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("at most one continuation per turn", func(ctx context.Context, t *testctx.T) {
+		model := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt("continue twice").
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "continueWithMarker"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "continueWithMarker"},
+			}).
+			WithToolResult("call_1", "", false).
+			WithToolResult("call_2", "", true).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// LLMs do not merge the way Changesets do, so the second swap in a batch is
+		// refused rather than silently discarding the first.
+		out, err := base.With(daggerShell(fmt.Sprintf(
+			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "continue twice" | loop | transcript`,
+			model,
+		))).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "only one is allowed")
+		require.Contains(t, out, "done")
+	})
+
+	t.Run("the base workspace does not already contain the marker", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerShell(
+			`current-workspace | file CONTINUED.txt | contents`,
+		)).Stdout(ctx)
+		require.Error(t, err)
+	})
+}
+
