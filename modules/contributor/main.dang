@@ -257,6 +257,11 @@ type Contributor {
     # the PR URL. `gh` infers the target repo from the clone's origin remote.
     let script = """
       set -eu
+      # Secret commands (e.g. `gh auth token`) commonly emit a trailing
+      # newline; git's credential helper tolerates it but HTTP headers do not
+      # (gh: 'invalid header field value for "Authorization"').
+      GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+      export GH_TOKEN
       {
         git config --global credential.helper '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
         git config --global user.name "Dagger Contributor Agent"
@@ -271,7 +276,8 @@ type Contributor {
         git apply --verbose /tmp/contribution.patch
         git add -A
         git commit -F /tmp/commit.msg
-        git push -u origin "$BRANCH"
+        # Force: retries of the same contribution re-push the same branch.
+        git push -fu origin "$BRANCH"
       } >&2
       cd /work
       if [ -n "$BASE_BRANCH" ]; then

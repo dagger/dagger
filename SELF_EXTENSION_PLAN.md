@@ -173,3 +173,29 @@ Still open:
 - Unblocked by dropping the lineage gate, not yet built: self-compaction
   (`llm.compacted`), summarize-and-restart, sub-agent hand-back.
 
+## Follow-ups from first real-world use (live install/reload session)
+
+The feature was exercised in anger: a live agent session reloaded itself to
+gain the `contributor` module's `contribute` tool mid-conversation, then used
+reload twice more to pick up config and code fixes. Findings:
+
+1. **Reload syncs from disk, not the agent's pending overlay.**
+   `Workspace.reloaded` + `agents.compose` re-read module source AND settings
+   from the host checkout — verified empirically: the agent's staged edits to
+   dagger.toml and to a module's source were both invisible to recomposition
+   until the user saved the workspace to disk. This breaks the self-repair
+   loop the feature exists for (edit module → reload → new behavior, fully
+   in-session). Module/config loading needs to resolve through the workspace
+   overlay.
+2. **`cmd://` secrets should trim trailing whitespace.** `gh auth token` (and
+   most credential commands) emit a trailing newline; git's credential helper
+   tolerates it, but HTTP Authorization headers reject it ("invalid header
+   field value"). engine/client/secretprovider/cmd.go should TrimSpace, as
+   credential tooling conventionally does. (Worked around in
+   modules/contributor's publish script meanwhile.)
+3. **Cosmetic:** one recomposition reported "Conversation history replaced:
+   196 -> 197 messages" for what was semantically a pure extension — the
+   prefix check may be tripping on system-prompt-adjacent block equality;
+   worth a look.
+
+
