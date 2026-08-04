@@ -127,7 +127,7 @@ func (s *workspaceSchema) withCommit(
 	}
 
 	opts := args.commitOpts(ws)
-	newWS := ws.WithPendingCommit(core.WorkspacePendingCommit{
+	pending := core.WorkspacePendingCommit{
 		SHA:         sha.String(),
 		Message:     opts.Message,
 		Date:        opts.Date,
@@ -135,43 +135,42 @@ func (s *workspaceSchema) withCommit(
 		AuthorEmail: opts.AuthorEmail,
 		Paths:       slices.Clone(args.Paths),
 		Repo:        repo,
-	})
-	newWS.BaseHeadSHA = baseHead
+	}
 
-	// The committed changes must stop showing up as pending. For an overlay
-	// workspace the pending changeset is the overlay itself, so rebase it onto
-	// the committed state: its new "before" is the base plus exactly what was
-	// just committed, leaving the remainder as the pending delta. Workspaces
-	// with no overlay read their pending changes from the repository, which now
-	// resolves against the staged commit, so there is nothing to rewrite.
+	// The committed changes must stop showing up as pending — but the workspace
+	// tree must not change at all: for a host workspace the overlay changeset is
+	// also what reconstructs the tree (resolveHostOverlayRootfs), so draining it
+	// would delete just-committed content from Workspace.file / .directory and
+	// from every container mounting the workspace.
+	//
+	// So the overlay is left exactly as it is, and instead the commit records
+	// what it folded in, as a changeset from the overlay's base to the staged
+	// state. The diff views (Workspace.changes, WorkspaceGit.uncommitted) diff
+	// the overlay's tree against base+that, which leaves precisely the
+	// uncommitted remainder — including for a later path-scoped commit, whose
+	// remainder is then computed from the staged state rather than from the
+	// base checkout. Workspaces with no overlay read their pending changes from
+	// the repository, which now resolves against the staged commit, so there is
+	// nothing to record.
 	if overlay, ok := ws.OverlayChanges(); ok {
-		afterID, err := overlay.Self().After.ID()
+		overlayBaseID, err := overlay.Self().Before.ID()
 		if err != nil {
 			return inst, err
 		}
-		scopedAfterID, err := scope.scopedAfter.ID()
-		if err != nil {
-			return inst, err
-		}
-		afterResult, err := dagql.NewID[*core.Directory](afterID).Load(ctx, srv)
-		if err != nil {
-			return inst, err
-		}
-		var remainder dagql.ObjectResult[*core.Changeset]
-		if err := srv.Select(ctx, afterResult, &remainder, dagql.Selector{
+		var committed dagql.ObjectResult[*core.Changeset]
+		if err := srv.Select(ctx, scope.scopedAfter, &committed, dagql.Selector{
 			Field: "changes",
 			Args: []dagql.NamedInput{
-				{Name: "from", Value: dagql.NewID[*core.Directory](scopedAfterID)},
+				{Name: "from", Value: dagql.NewID[*core.Directory](overlayBaseID)},
 			},
 		}); err != nil {
-			return inst, fmt.Errorf("rebase pending changes: %w", err)
+			return inst, fmt.Errorf("record staged changes: %w", err)
 		}
-		newWS.SetSource(core.NewWorkspaceSourceOverlay(
-			ws.BaseSource(),
-			ws.OverlayTouchedPaths(),
-			remainder,
-		))
+		pending.Committed = committed
 	}
+
+	newWS := ws.WithPendingCommit(pending)
+	newWS.BaseHeadSHA = baseHead
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, newWS)
 }
