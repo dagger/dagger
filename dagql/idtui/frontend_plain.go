@@ -483,6 +483,7 @@ func (fe *frontendPlain) renderFinalTests() bool {
 	}
 	tv := &TestView{
 		Profile:         fe.profile,
+		AgentStyle:      agentStyle(fe.Opts()),
 		Logs:            fe.testLogs,
 		SummaryLogLines: -1,
 	}

@@ -164,7 +164,8 @@ distinguishes zoomRoot/zoomCheck/zoomTest/zoomSpan for the zoomed views.
   args vanish.
 - Report sections return `nil` when zoomed; the zoom views render themselves.
 - Section headings render `== X ==` under an agent, bold for humans
-  (`reportHeadingLine` / `RunningInAgent`).
+  (`reportHeadingLine` / `agentStyle`, i.e. `FrontendOpts.AgentStyle ||
+  RunningInAgent()`).
 - Build filter for this repo: `go build ./... 2>&1 | grep -v my-module`.
 - Handle-form IDs panic on `.Digest()`/`Field()` — guard before reading call
   digests off a span (see `stableIDDigest` in `core/mcp.go`).

@@ -738,8 +738,8 @@ func (m *MCP) logsOrDone(ctx context.Context) string {
 // (created by MCP.Call). Empty when nothing was captured.
 //
 // A tool call that ran nested work is rendered as TWO sections (see
-// spanResult): the tool's own printed output, verbatim, and the pretty TRACE
-// REPORT of what ran beneath it. A tool call that ran no nested work has no
+// spanResult): the tool's own printed output, verbatim, and the pretty
+// report of what ran beneath it. A tool call that ran no nested work has no
 // tree worth drawing, so it falls back to the flat captured-log text -- which
 // is also what spanResult falls back to when the subtree renders to nothing
 // (dagui filters internal/passthrough/encapsulated spans, so a report can
@@ -757,14 +757,15 @@ func (m *MCP) toolLogs(ctx context.Context) string {
 	return m.spanResult(ctx, spanID.String(), toolCallReportOpts())
 }
 
-// Section headings for a combined result. Uppercase single-word headings are
-// the report's own vocabulary (CHECKS, TESTS, CONVERSATION, SERVICES), so the
-// two halves read as more sections of the same document rather than as a new
-// kind of wrapper.
-const (
-	spanResultOutputHeading = "OUTPUT"
-	spanResultReportHeading = "TRACE REPORT"
-)
+// Section heading for a combined result. It matches the report's own agent
+// vocabulary -- "== CHECKS ==", "== TESTS ==", "== SERVICES ==" and friends,
+// see idtui's reportHeadingLine -- so the tool's own output reads as one more
+// section of the same document rather than as a new kind of wrapper.
+//
+// The report body itself carries no heading: its sections speak for
+// themselves, and a "TRACE REPORT" banner over them was pure redundancy (the
+// tool that asks for one is literally called ReadTrace).
+const spanResultOutputHeading = "== OUTPUT =="
 
 // spanResult renders what happened beneath spanID for an LLM reader.
 //
@@ -775,8 +776,9 @@ const (
 //     deliberate report is the point of the call, and letting a rendered
 //     summary stand in for it is exactly the regression the provenance-based
 //     abridging already fixed once for the flat path.
-//   - TRACE REPORT: the structure of the nested work, with its logs clamped
-//     per row, plus the CHECKS/TESTS roll-ups.
+//   - the report: the structure of the nested work, with its logs clamped
+//     per row, plus the CHECKS/TESTS roll-ups. It carries no heading of its
+//     own -- its sections are already labelled.
 //
 // OUTPUT comes first for two reasons: it is the answer, while the report is
 // the supporting evidence; and guardTraceReport drops the MIDDLE of an
@@ -809,10 +811,13 @@ func (m *MCP) spanResult(ctx context.Context, spanID string, opts traceReportOpt
 	return combineSpanResult(spanID, directLogs(captured.lines), report)
 }
 
-// combineSpanResult assembles the two sections, bounds the COMBINED text, and
+// combineSpanResult assembles the sections, bounds the COMBINED text, and
 // closes with the ReadLogs breadcrumb. own may be empty -- a target that
-// printed nothing gets no OUTPUT section, not an empty one.
+// printed nothing gets no OUTPUT section, not an empty one. The report is
+// appended unlabelled: its own sections (CHECKS, TESTS, SERVICES, ...) are
+// already headed, and the span tree needs no banner.
 func combineSpanResult(spanID, own, report string) string {
+	report = strings.TrimLeft(report, "\n")
 	if strings.TrimSpace(report) == "" {
 		return ""
 	}
@@ -820,7 +825,7 @@ func combineSpanResult(spanID, own, report string) string {
 	if own != "" {
 		sections = append(sections, spanResultOutputHeading+"\n"+own)
 	}
-	sections = append(sections, spanResultReportHeading+"\n"+report)
+	sections = append(sections, report)
 	// The report clamps nested log tails (and the byte guard may drop its
 	// middle), so tell the reader where the unabridged logs live.
 	return guardTraceReport(strings.Join(sections, "\n\n")) + "\n" +
