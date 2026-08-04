@@ -290,6 +290,53 @@ func (svc *RunningService) originSpanContextsSnapshot() []trace.SpanContext {
 	return slices.Clone(svc.originSpanContexts)
 }
 
+// ServiceSpanContext returns the span context of the service's long-lived
+// exec span — the span whose subtree carries the service's stdout/stderr —
+// or an invalid SpanContext when the runtime did not record one (e.g.
+// tunnels, or a start that predates telemetry).
+func (svc *RunningService) ServiceSpanContext() trace.SpanContext {
+	if svc == nil {
+		return trace.SpanContext{}
+	}
+	svc.originMu.Lock()
+	defer svc.originMu.Unlock()
+	if svc.serviceSpan == nil {
+		return trace.SpanContext{}
+	}
+	return svc.serviceSpan.SpanContext()
+}
+
+// InstallSpanContexts returns the span contexts of the API spans that
+// returned/own this service in the current session (e.g. Container.asService)
+// — the spans a UI attributes the service to, and valid roots for reading the
+// service's logs beneath.
+func (svc *RunningService) InstallSpanContexts() []trace.SpanContext {
+	return svc.originSpanContextsSnapshot()
+}
+
+// RunningServices returns a snapshot of the currently running services for
+// the given session, or for every session when sessionID is empty. The
+// listing is ordered by hostname (then digest) so repeated calls are
+// deterministic.
+func (ss *Services) RunningServices(sessionID string) []*RunningService {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+	var out []*RunningService
+	for key, svc := range ss.running {
+		if sessionID != "" && key.SessionID != sessionID {
+			continue
+		}
+		out = append(out, svc)
+	}
+	slices.SortFunc(out, func(a, b *RunningService) int {
+		if cmp := bytes.Compare([]byte(a.Host), []byte(b.Host)); cmp != 0 {
+			return cmp
+		}
+		return bytes.Compare([]byte(a.Key.Digest), []byte(b.Key.Digest))
+	})
+	return out
+}
+
 func (svc *RunningService) setServiceSpan(span trace.Span, alreadyLinked []trace.SpanContext) {
 	if svc == nil || span == nil {
 		return
