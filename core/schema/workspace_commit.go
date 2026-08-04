@@ -145,20 +145,43 @@ func (s *workspaceSchema) withCommit(
 	//
 	// So the overlay is left exactly as it is, and instead the commit records
 	// what it folded in, as a changeset from the overlay's base to the staged
-	// state. The diff views (Workspace.changes, WorkspaceGit.uncommitted) diff
-	// the overlay's tree against base+that, which leaves precisely the
-	// uncommitted remainder — including for a later path-scoped commit, whose
+	// state. Workspace.changes (the export payload) diffs the overlay's tree
+	// against base+that, which leaves precisely the uncommitted remainder of
+	// the *overlay* — including for a later path-scoped commit, whose
 	// remainder is then computed from the staged state rather than from the
-	// base checkout. Workspaces with no overlay read their pending changes from
-	// the repository, which now resolves against the staged commit, so there is
-	// nothing to record.
+	// base checkout. Workspaces with no overlay read their pending changes
+	// from the repository, which now resolves against the staged commit, so
+	// there is nothing to record.
+	//
+	// The record is deliberately anchored on the overlay, not on the commit's
+	// own (repository-anchored) scope: a commit can also fold in changes the
+	// checkout already carried before the overlay existed, and those are not
+	// part of the overlay's sparse before/after trees. Mixing the two anchors
+	// would make the export remainder claim the untouched rest of the
+	// workspace was deleted. Those changes still drop out of
+	// Workspace.git.uncommitted, which diffs against the staged HEAD.
 	if overlay, ok := ws.OverlayChanges(); ok {
 		overlayBaseID, err := overlay.Self().Before.ID()
 		if err != nil {
 			return inst, err
 		}
+		// The overlay's own pending remainder (what is left of it on top of
+		// any previously staged commit), scoped down to the paths this commit
+		// actually folded in. Paths outside the overlay are ignored.
+		overlayPending, _, err := s.workspaceOverlayChanges(ctx, ws)
+		if err != nil {
+			return inst, fmt.Errorf("record staged changes: %w", err)
+		}
+		committedPaths, err := changesetTouchedPaths(ctx, scope.scoped.Self())
+		if err != nil {
+			return inst, fmt.Errorf("record staged changes: %w", err)
+		}
+		_, stagedTree, err := s.scopeChangesetToPaths(ctx, overlayPending, committedPaths)
+		if err != nil {
+			return inst, fmt.Errorf("record staged changes: %w", err)
+		}
 		var committed dagql.ObjectResult[*core.Changeset]
-		if err := srv.Select(ctx, scope.scopedAfter, &committed, dagql.Selector{
+		if err := srv.Select(ctx, stagedTree, &committed, dagql.Selector{
 			Field: "changes",
 			Args: []dagql.NamedInput{
 				{Name: "from", Value: dagql.NewID[*core.Directory](overlayBaseID)},
@@ -300,9 +323,6 @@ type workspaceCommitScope struct {
 	// scoped is the portion of the workspace's uncommitted changes this commit
 	// records.
 	scoped dagql.ObjectResult[*core.Changeset]
-	// scopedAfter is scoped's "after" tree: the pending base with exactly the
-	// committed changes applied.
-	scopedAfter dagql.ObjectResult[*core.Directory]
 }
 
 func (s *workspaceSchema) workspaceCommitScope(
@@ -348,7 +368,6 @@ func (s *workspaceSchema) workspaceCommitScope(
 			return scope, fmt.Errorf("withCommit: nothing to commit")
 		}
 		scope.scoped = uncommitted
-		scope.scopedAfter = uncommitted.Self().After
 		return scope, nil
 	}
 
@@ -370,15 +389,46 @@ func (s *workspaceSchema) workspaceCommitScope(
 		return scope, fmt.Errorf("withCommit: nothing to commit for paths %v", args.Paths)
 	}
 
-	before := uncommitted.Self().Before
-	after := uncommitted.Self().After
-	scopedAfter := before
+	scoped, _, err := s.scopeChangesetToPaths(ctx, uncommitted, resolved)
+	if err != nil {
+		return scope, err
+	}
+	scope.scoped = scoped
+	return scope, nil
+}
+
+// scopeChangesetToPaths rebuilds a changeset restricted to the given resolved
+// paths: the result keeps the original Before, and its After is that Before
+// with exactly the in-scope additions, modifications and removals applied.
+// Paths in the scope that the changeset does not mention are simply ignored,
+// so the same scope can be projected onto several changesets (the workspace's
+// uncommitted set and the overlay's own pending edits).
+func (s *workspaceSchema) scopeChangesetToPaths(
+	ctx context.Context,
+	cs dagql.ObjectResult[*core.Changeset],
+	resolved []string,
+) (scoped dagql.ObjectResult[*core.Changeset], scopedAfter dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return scoped, scopedAfter, err
+	}
+	paths, err := cs.Self().ComputePaths(ctx)
+	if err != nil {
+		return scoped, scopedAfter, fmt.Errorf("compute changeset paths: %w", err)
+	}
+	added := commitPathsInScope(paths.Added, resolved)
+	modified := commitPathsInScope(paths.Modified, resolved)
+	removed := commitPathsInScope(paths.AllRemoved, resolved)
+
+	before := cs.Self().Before
+	after := cs.Self().After
+	scopedAfter = before
 	for _, p := range removed {
 		if err := srv.Select(ctx, scopedAfter, &scopedAfter, dagql.Selector{
 			Field: "withoutDirectory",
 			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(strings.TrimSuffix(p, "/"))}},
 		}); err != nil {
-			return scope, err
+			return scoped, scopedAfter, err
 		}
 	}
 	for _, p := range slices.Concat(added, modified) {
@@ -389,11 +439,11 @@ func (s *workspaceSchema) workspaceCommitScope(
 				Field: "directory",
 				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(p)}},
 			}); err != nil {
-				return scope, err
+				return scoped, scopedAfter, err
 			}
 			srcID, err := src.ID()
 			if err != nil {
-				return scope, err
+				return scoped, scopedAfter, err
 			}
 			if err := srv.Select(ctx, scopedAfter, &scopedAfter, dagql.Selector{
 				Field: "withDirectory",
@@ -402,7 +452,7 @@ func (s *workspaceSchema) workspaceCommitScope(
 					{Name: "source", Value: dagql.NewID[*core.Directory](srcID)},
 				},
 			}); err != nil {
-				return scope, err
+				return scoped, scopedAfter, err
 			}
 			continue
 		}
@@ -411,11 +461,11 @@ func (s *workspaceSchema) workspaceCommitScope(
 			Field: "file",
 			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(p)}},
 		}); err != nil {
-			return scope, err
+			return scoped, scopedAfter, err
 		}
 		srcID, err := src.ID()
 		if err != nil {
-			return scope, err
+			return scoped, scopedAfter, err
 		}
 		if err := srv.Select(ctx, scopedAfter, &scopedAfter, dagql.Selector{
 			Field: "withFile",
@@ -424,24 +474,21 @@ func (s *workspaceSchema) workspaceCommitScope(
 				{Name: "source", Value: dagql.NewID[*core.File](srcID)},
 			},
 		}); err != nil {
-			return scope, err
+			return scoped, scopedAfter, err
 		}
 	}
 
 	beforeID, err := before.ID()
 	if err != nil {
-		return scope, err
+		return scoped, scopedAfter, err
 	}
-	var scoped dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, scopedAfter, &scoped, dagql.Selector{
 		Field: "changes",
 		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
 	}); err != nil {
-		return scope, err
+		return scoped, scopedAfter, err
 	}
-	scope.scoped = scoped
-	scope.scopedAfter = scopedAfter
-	return scope, nil
+	return scoped, scopedAfter, nil
 }
 
 // workspaceCommitBaseRepo returns the repository tree the next staged commit

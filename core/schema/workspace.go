@@ -2964,6 +2964,27 @@ func (s *workspaceSchema) workspaceGitRepository(
 		// Commits staged engine-side live in this tree's .git; reading the
 		// workspace's own repository would still report the pre-commit HEAD.
 		dir = latest.Repo
+		// The staged tree's work tree is frozen at commit time, so overlay
+		// edits made *after* the commit are missing from it. Re-applying the
+		// overlay's current changeset brings the work tree back up to date
+		// (it is idempotent for the edits already folded in), which is what
+		// makes GitRepository.uncommitted report the true remainder.
+		if changes, ok := ws.OverlayChanges(); ok {
+			changesID, err := changes.ID()
+			if err != nil {
+				return inst, err
+			}
+			srv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return inst, err
+			}
+			if err := srv.Select(ctx, dir, &dir, dagql.Selector{
+				Field: "withChanges",
+				Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)}},
+			}); err != nil {
+				return inst, fmt.Errorf("workspace git directory (overlay): %w", err)
+			}
+		}
 	} else {
 		if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
 			return inst, err
@@ -3093,11 +3114,27 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 		if ref, ok := ws.SourceGitRef(); ok {
 			return gitRefWorkspaceChanges(ctx, ws, ref)
 		}
-		// Staged commits re-anchor this diff on the staged tree, so committed
-		// content stops showing as pending without ever leaving the workspace
-		// tree.
-		changes, _, err := s.workspaceOverlayChanges(ctx, ws)
-		return changes, err
+		if !ws.ClientLocalBase() {
+			// Value/rootless overlays have no local checkout to diff against:
+			// their pending set *is* the overlay. Staged commits re-anchor
+			// this diff on the staged tree, so committed content stops showing
+			// as pending without ever leaving the workspace tree.
+			changes, _, err := s.workspaceOverlayChanges(ctx, ws)
+			return changes, err
+		}
+		// Host-backed overlays fall through to the repository route below.
+		//
+		// "Uncommitted" means the same thing whether or not the agent has
+		// edited anything: everything the work tree holds that the (staged)
+		// HEAD does not. Answering from the overlay changeset instead would
+		// re-anchor the diff on the host's *dirty* state at the moment the
+		// overlay was created, silently dropping every change the checkout
+		// already carried — so a single edit would make files the user had
+		// been working on disappear from status/diff, and from a commit made
+		// with no paths. The repository route diffs the effective tree
+		// (host + overlay, plus the staged commits' .git — see
+		// workspaceGitRepository) against the cleaned HEAD work tree, which
+		// covers both layers at once.
 	}
 	if _, ok := ws.SourceGitRef(); ok {
 		empty, err := core.NewEmptyChangeset(ctx)

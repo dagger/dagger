@@ -464,6 +464,164 @@ func gitOut(ctx context.Context, t *testctx.T, ctr *dagger.Container, args ...st
 	return strings.TrimSpace(out)
 }
 
+// uncommittedPaths is the shape of a Workspace.git.uncommitted path summary.
+type uncommittedPaths struct {
+	IsEmpty       bool     `json:"isEmpty"`
+	AddedPaths    []string `json:"addedPaths"`
+	ModifiedPaths []string `json:"modifiedPaths"`
+}
+
+// TestWorkspaceCommitPreexistingChangesStayPending is the report's finding 1:
+// a workspace that already carried uncommitted work when the agent arrived
+// must keep reporting it. Editing an unrelated file creates an overlay, and
+// the overlay used to become the *whole* answer to "what is uncommitted",
+// silently dropping everything the checkout was already dirty with — so
+// status/diff went blind exactly when the user had work in flight, and a
+// commit with no paths quietly left it behind.
+func (WorkspaceSuite) TestWorkspaceCommitPreexistingChangesStayPending(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// b.txt is dirty on disk before anything else happens, and the agent
+	// never touches it.
+	base := withCommitBase(t, c).WithNewFile("b.txt", "b2")
+
+	t.Run("an unrelated edit keeps it pending", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "new.txt", contents: "new") {
+      git {
+        uncommitted {
+          isEmpty
+          addedPaths
+          modifiedPaths
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+
+		var got struct {
+			CurrentWorkspace struct {
+				WithNewFile struct {
+					Git struct {
+						Uncommitted uncommittedPaths `json:"uncommitted"`
+					} `json:"git"`
+				} `json:"withNewFile"`
+			} `json:"currentWorkspace"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		pending := got.CurrentWorkspace.WithNewFile.Git.Uncommitted
+		require.False(t, pending.IsEmpty)
+		require.Equal(t, []string{"new.txt"}, pending.AddedPaths)
+		require.Equal(t, []string{"b.txt"}, pending.ModifiedPaths,
+			"the pre-existing dirty file must still be reported")
+	})
+
+	t.Run("an unscoped commit picks up both", func(ctx context.Context, t *testctx.T) {
+		saved := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "new.txt", contents: "new") {
+      withCommit(message: "everything", date: "` + commitTestDate + `") {
+        git { uncommitted { isEmpty addedPaths modifiedPaths } }
+        export
+      }
+    }
+  }
+}`))
+
+		out, err := saved.Stdout(ctx)
+		require.NoError(t, err)
+		var got struct {
+			CurrentWorkspace struct {
+				WithNewFile struct {
+					WithCommit struct {
+						Git struct {
+							Uncommitted uncommittedPaths `json:"uncommitted"`
+						} `json:"git"`
+					} `json:"withCommit"`
+				} `json:"withNewFile"`
+			} `json:"currentWorkspace"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		require.True(t, got.CurrentWorkspace.WithNewFile.WithCommit.Git.Uncommitted.IsEmpty,
+			"committing everything must leave nothing pending")
+
+		// Both layers landed in the one commit, and the checkout is clean.
+		require.Equal(t, "b2", gitOut(ctx, t, saved, "show", "HEAD:b.txt"))
+		require.Equal(t, "new", gitOut(ctx, t, saved, "show", "HEAD:new.txt"))
+		require.Equal(t, "", gitOut(ctx, t, saved, "status", "--porcelain"))
+	})
+
+	t.Run("a scoped commit leaves it pending", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "new.txt", contents: "new") {
+      withCommit(message: "just the new file", date: "` + commitTestDate + `", paths: ["new.txt"]) {
+        git { uncommitted { isEmpty addedPaths modifiedPaths } }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+
+		var got struct {
+			CurrentWorkspace struct {
+				WithNewFile struct {
+					WithCommit struct {
+						Git struct {
+							Uncommitted uncommittedPaths `json:"uncommitted"`
+						} `json:"git"`
+					} `json:"withCommit"`
+				} `json:"withNewFile"`
+			} `json:"currentWorkspace"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		pending := got.CurrentWorkspace.WithNewFile.WithCommit.Git.Uncommitted
+		require.False(t, pending.IsEmpty)
+		require.Empty(t, pending.AddedPaths, "the committed file must drop out")
+		require.Equal(t, []string{"b.txt"}, pending.ModifiedPaths,
+			"the pre-existing dirty file must survive a scoped commit")
+	})
+}
+
+// TestWorkspaceCommitPreexistingChangesExportRemainder pins the export half of
+// finding 1: with pre-existing dirty content left *out* of the commit, saving
+// must still land the commit and write exactly the overlay's remainder —
+// without touching, duplicating or reverting the work the checkout carried.
+func (WorkspaceSuite) TestWorkspaceCommitPreexistingChangesExportRemainder(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := withCommitBase(t, c).WithNewFile("b.txt", "b2")
+	baseHead := gitOut(ctx, t, base, "rev-parse", "HEAD")
+
+	saved := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "c.txt", contents: "c1") {
+      withNewFile(path: "d.txt", contents: "d1") {
+        withCommit(message: "staged c", date: "` + commitTestDate + `", paths: ["c.txt"]) {
+          export
+        }
+      }
+    }
+  }
+}`))
+
+	require.Equal(t, "staged c", gitOut(ctx, t, saved, "log", "-1", "--pretty=%s"))
+	require.Equal(t, baseHead, gitOut(ctx, t, saved, "rev-parse", "HEAD~1"))
+	require.Equal(t, "c1", gitOut(ctx, t, saved, "show", "HEAD:c.txt"))
+
+	// The untouched dirty file is still dirty, with its own content; the
+	// uncommitted edit landed as an untracked file.
+	require.Equal(t, "M b.txt\n?? d.txt", gitOut(ctx, t, saved, "status", "--porcelain"))
+	contents, err := saved.File("b.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "b2", contents)
+	contents, err = saved.File("d.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "d1", contents)
+}
+
 // TestWorkspaceCommitExport saves a workspace holding one staged commit plus
 // uncommitted remainder: the commit lands on the checked-out branch as a
 // fast-forward, and only the remainder is left dirty in the work tree.

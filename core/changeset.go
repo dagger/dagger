@@ -638,6 +638,14 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 
 	var entries []*DiffStat
 	for _, path := range paths.Added {
+		// An added directory is reported by the files it contains; emitting
+		// the directory itself as well would double-count the same change
+		// (e.g. "core/ ADDED" next to "core/probe.txt ADDED"). A directory
+		// that adds no files is still worth reporting — it is the only
+		// evidence the directory appeared at all.
+		if strings.HasSuffix(path, "/") && pathHasReportedChildren(path, paths) {
+			continue
+		}
 		if oldPath, isRenamed := paths.Renamed[path]; isRenamed {
 			entry := addEntry(path, DiffStatKindRenamed)
 			entry.OldPath = &oldPath
@@ -662,6 +670,23 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 		return strings.Compare(a.Path, b.Path)
 	})
 	return entries, nil
+}
+
+// pathHasReportedChildren reports whether any added or modified path lies
+// beneath the given directory path (which carries a trailing "/"), i.e.
+// whether the directory's appearance is already described by per-file entries.
+func pathHasReportedChildren(dir string, paths *ChangesetPaths) bool {
+	for _, group := range [][]string{paths.Added, paths.Modified} {
+		for _, p := range group {
+			if p == dir || strings.HasSuffix(p, "/") {
+				continue
+			}
+			if strings.HasPrefix(p, dir) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {

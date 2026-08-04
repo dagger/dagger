@@ -153,7 +153,20 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundle []byte) 
 	if _, err := runHostGit(ctx, checkout, "fetch", "--no-tags", bundlePath, meta.GetBundleRef()); err != nil {
 		return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
 	}
+	// A staged commit can fold in work the checkout was already carrying — a
+	// file the user had modified (or created) before the agent ever ran. Its
+	// work tree content is then byte-identical to what the commit holds, but
+	// git still refuses to fast-forward over a locally modified or untracked
+	// path. Staging exactly those paths first makes the index agree with the
+	// incoming commit, which git fast-forwards without touching the work tree
+	// at all, leaving the file clean afterwards.
+	staged := stageAlreadyMatchingPaths(ctx, checkout, meta.GetTargetSha())
 	if _, err := runHostGit(ctx, checkout, "merge", "--ff-only", meta.GetTargetSha()); err != nil {
+		// Put the index back the way it was found, so a refused save leaves
+		// the checkout untouched.
+		for _, p := range staged {
+			_, _ = runHostGit(ctx, checkout, "restore", "--staged", "--", p)
+		}
 		return newApplyBundleErrorResponse(BUNDLE_APPLY_FAILED, err.Error()), nil
 	}
 
@@ -169,6 +182,59 @@ func applyBundle(ctx context.Context, meta *ApplyBundleMetadata, bundle []byte) 
 }
 
 const gitMissingMessage = "git is not installed or not in PATH"
+
+// stageAlreadyMatchingPaths stages the work tree paths that the incoming
+// commits change and that already hold exactly the content those commits
+// carry — the case where a staged commit folded in work the checkout was
+// already dirty with.
+//
+// git refuses to fast-forward over a locally modified or untracked path even
+// when the incoming content is byte-identical, because it compares the *index*
+// (still at the old blob) with the work tree. Staging such a path makes the
+// index entry equal the incoming tree's entry, which git resolves by keeping
+// the work tree as-is — no overwrite, no data at risk — and the file ends up
+// clean once HEAD moves.
+//
+// Every step is best-effort: anything that cannot be verified is left alone,
+// and the fast-forward then fails with git's own diagnostics, as before.
+func stageAlreadyMatchingPaths(ctx context.Context, checkout, targetSHA string) []string {
+	out, err := runHostGit(ctx, checkout, "diff", "--name-only", "HEAD", targetSHA)
+	if err != nil {
+		return nil
+	}
+	var staged []string
+	for _, p := range strings.Split(strings.TrimSpace(out), "\n") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		// Only paths the checkout is actually dirty with are candidates:
+		// clean ones fast-forward normally.
+		status, err := runHostGit(ctx, checkout, "status", "--porcelain", "--untracked-files=all", "--", p)
+		if err != nil || strings.TrimSpace(status) == "" {
+			continue
+		}
+		// The work tree content must already be exactly what the commit
+		// holds; otherwise this really is a conflicting local change and git
+		// must be left to refuse it.
+		have, err := runHostGit(ctx, checkout, "hash-object", "--", p)
+		if err != nil {
+			continue
+		}
+		want, err := runHostGit(ctx, checkout, "rev-parse", targetSHA+":"+p)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(have) != strings.TrimSpace(want) {
+			continue
+		}
+		if _, err := runHostGit(ctx, checkout, "add", "--", p); err != nil {
+			continue
+		}
+		staged = append(staged, p)
+	}
+	return staged
+}
 
 // runHostGit runs a git command against a local checkout, returning its
 // standard output. Errors carry git's standard error, which is where it
