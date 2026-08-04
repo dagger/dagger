@@ -76,6 +76,7 @@ func scopedReportOpts(root dagui.SpanID, hideTree bool) ReportRenderOpts {
 		ScopedSubtree:   true,
 		Root:            root,
 		HideSpanTree:    hideTree,
+		AgentStyle:      true,
 	}
 }
 

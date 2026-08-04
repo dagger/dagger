@@ -26,7 +26,7 @@ func (fe *frontendPretty) generatorsReport(ctx tuist.Context, r *renderer, zoome
 		return nil
 	}
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	header := generatorsHeaderLine(out, fe.reportGenerators())
+	header := generatorsHeaderLine(out, fe.agentStyle(), fe.reportGenerators())
 	return append([]string{header}, genLines...)
 }
 
@@ -82,7 +82,7 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 
 	if len(node.Children) > 0 {
 		subIndent := strings.Repeat("  ", depth+1)
-		fmt.Fprintf(out, "%s%s\n", subIndent, generatorsHeaderLine(out, node.Children))
+		fmt.Fprintf(out, "%s%s\n", subIndent, generatorsHeaderLine(out, fe.agentStyle(), node.Children))
 		for _, child := range node.Children {
 			fe.renderGeneratorNode(ctx, out, r, child, depth+2)
 		}
@@ -131,8 +131,8 @@ func (fe *frontendPretty) generatorStatusLine(out TermOutput, r *renderer, node 
 // with the CHECKS and TESTS headers. The nodes are the generators listed
 // directly beneath this header -- a level -- so the tally agrees with what's
 // rendered right under it.
-func generatorsHeaderLine(out TermOutput, nodes []*dagui.GeneratorNode) string {
-	line := reportHeadingLine(out, "GENERATORS")
+func generatorsHeaderLine(out TermOutput, agent bool, nodes []*dagui.GeneratorNode) string {
+	line := reportHeadingLine(out, agent, "GENERATORS")
 	var counts dagui.TestCounts
 	for _, n := range nodes {
 		if n.Failed {

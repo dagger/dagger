@@ -4,7 +4,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"sync/atomic"
 
 	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
@@ -32,6 +31,10 @@ func NewOutput(w io.Writer, opts ...termenv.OutputOption) *termenv.Output {
 // Note that color profiles beyond simple ANSI are not used by Progrock. 16
 // colors is all you need. Anything else disrespects the user's color scheme
 // preferences.
+//
+// This is process-level and CLI-oriented, so it stays purely env-based: it has
+// no FrontendOpts to consult. Engine-side report rendering doesn't need an opt
+// here either -- it pins termenv.Ascii explicitly.
 func ColorProfile() termenv.Profile {
 	if termenv.EnvNoColor() || RunningInAgent() {
 		return termenv.Ascii
@@ -78,38 +81,17 @@ var agentEnvVars = []string{
 // than a human at a terminal. Agents consume the output as text, so escape
 // codes are just noise.
 //
-// It is true either when the environment says so (the CLI case) or when
-// ForceRunningInAgent has been called (the engine case: everything the engine
-// renders with this package is a report assembled for an LLM).
-func RunningInAgent() bool {
-	if forcedRunningInAgent.Load() {
-		return true
-	}
-	return runningInAgentEnv()
-}
-
-// forcedRunningInAgent is the programmatic override behind
-// ForceRunningInAgent. Atomic rather than a plain bool: it is flipped from
-// whichever goroutine first renders an LLM-facing report, while the render
-// loop reads it per row per frame.
-var forcedRunningInAgent atomic.Bool
-
-// ForceRunningInAgent makes RunningInAgent report true for the rest of the
-// process, regardless of the environment.
-//
-// It exists for rendering done INSIDE the engine, where there is no agent env
-// var to sniff (the engine is a daemon) but the reader of every rendered
-// report is an LLM: core flips it when rendering a trace report. It is
-// deliberately one-way and process-wide -- there is no "back to a human
-// terminal" in a process that renders for LLMs.
-func ForceRunningInAgent() {
-	forcedRunningInAgent.Store(true)
-}
-
-// runningInAgentEnv is the environment half of the detection.
+// This is purely environment detection, and thus only meaningful for the CLI.
+// Rendering done INSIDE the engine has no agent env var to sniff (the engine
+// is a daemon) but is always assembled for an LLM; that case is expressed with
+// dagui.FrontendOpts.AgentStyle instead (see agentStyle).
 //
 // Memoized: the render loop consults it per row per frame, the environment
 // can't change mid-process, and each os.Getenv takes the runtime's env lock.
+func RunningInAgent() bool {
+	return runningInAgentEnv()
+}
+
 var runningInAgentEnv = sync.OnceValue(func() bool {
 	return runningInAgent(os.Getenv)
 })

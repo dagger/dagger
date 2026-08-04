@@ -31,7 +31,7 @@ func (fe *frontendPretty) conversationReport(ctx tuist.Context, r *renderer, zoo
 // CHECKS it carries no pass/fail tally -- a conversation has no verdict.
 func (fe *frontendPretty) renderConversationHeader() []string {
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
-	return []string{reportHeadingLine(out, "CONVERSATION")}
+	return []string{reportHeadingLine(out, fe.agentStyle(), "CONVERSATION")}
 }
 
 // renderConversationSection renders the trace's LLM conversation for the final
