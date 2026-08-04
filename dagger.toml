@@ -119,7 +119,28 @@ source = ".dagger/modules/engine-lab"
 source = ".dagger/modules/tui-qa"
 
 [env.dev.modules.editor]
-source = "github.com/vito/editor"
+source = "modules/editor"
+
+[env.dev.modules.golang]
+source = "github.com/vito/dagger-go@go-doc"
+
+[env.dev.modules.golang.settings]
+base = "engine-dev:go-container"
+
+[env.dev.modules.delegate]
+source = "modules/delegate"
+
+[env.dev.modules.review]
+source = "modules/review"
+
+[env.dev.modules.contributor]
+source = "modules/contributor"
+
+[env.dev.modules.contributor.settings]
+githubToken = "cmd://gh auth token"
+
+[modules.history]
+source = "modules/history"
 
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"
