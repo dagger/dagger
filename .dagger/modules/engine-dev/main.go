@@ -235,6 +235,29 @@ func (dev *EngineDev) Container(
 	return ctr, nil
 }
 
+// Build a lightweight Go build environment with the from-source Dagger CLI
+// installed on $PATH.
+//
+// Unlike Container, which builds the whole engine, this is just a Wolfi Go base
+// with the `dagger` binary available. It's intended for use as the `base` of the
+// golang toolchain, so Go commands (including the integration tests, which shell
+// out to `dagger`) can find the CLI without paying the cost of an engine build.
+func (dev *EngineDev) GoContainer() *dagger.Container {
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{
+		VcsCommit: dev.VCSCommit,
+		VcsDirty:  dev.VCSDirty,
+		Ws:        dev.Ws,
+	}).Binary()
+	return dag.Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: []string{"go", "git"},
+		}).
+		WithFile("/usr/local/bin/dagger", cli, dagger.ContainerWithFileOpts{
+			Permissions: 0o755,
+		}).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/local/bin/dagger")
+}
+
 // Create a test engine service
 func (dev *EngineDev) Service(
 	ctx context.Context,

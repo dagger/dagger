@@ -1,0 +1,215 @@
+# review: give a Dagger coding agent read-only insight into its own pending
+# changes — the "what have I changed so far?" view a shell agent gets from
+# `git status` / `git diff`.
+#
+# A Dagger-native agent (the `editor` @agent) has no Bash tool, and the mounted
+# Workspace is a plain snapshot with NO .git (see toolchains/ci/bootstrap.dang),
+# so `git diff` isn't an option. Instead we use the Dagger-native Changeset:
+# `Workspace.git.uncommitted` is the repo's modified state, and its
+# `.diffStats` and `.asPatch` render a per-file summary and a Git-compatible
+# unified patch.
+#
+# Modeled on ./modules/tui-qa (the @agent-tools shape), but stateless: every
+# tool takes the Workspace — auto-filled by the agent from its bound workspace
+# (see core/llm_object_tools.go, which fills Workspace!-typed args and hides
+# them from the model) — and reads its changes. Nothing to start or stop.
+"""
+Read-only self-review of your workspace's pending changes.
+"""
+type Review {
+  """
+  Compose the review tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Summarize the workspace's pending changes: one line per changed file — its
+  change kind (A/M/D/R) and added/removed line counts — followed by a totals
+  footer. This is the quick "git status"-style overview; reach for `diff` when
+  you need the actual hunks.
+
+  The marks are diff vocabulary describing the path's state relative to the
+  last commit, NOT `git status` porcelain: there is no index here, so a file
+  git would call untracked is simply `A`, and nothing distinguishes staged
+  from unstaged. One consequence worth knowing: committing without `paths`
+  picks up those `A` files too, unlike `git commit -a`.
+  """
+  status(
+    source: Workspace!,
+    """
+    Relative paths (files or directories) to limit the summary to, like
+    `git status -- <paths>`. A directory matches everything beneath it. Empty
+    summarizes all pending changes.
+    """
+    paths: [String!]! = [],
+  ): String! {
+    let stats = source.git.uncommitted.diffStats.{{kind, addedLines, removedLines, path, oldPath}}
+    # Pending edits git cannot see at all — gitignored paths, paths inside a
+    # nested repository, or a file edited back to its committed content. They
+    # are written to the checkout on save, but there is nothing to commit.
+    let unmanaged = source.git.unmanaged.diffStats.{{addedLines, removedLines, path}}
+    let scoped = if (paths.isEmpty) {
+      stats
+    } else {
+      stats.filter { s =>
+        # A rename is ONE stat, keyed on the NEW path with the old one
+        # alongside in oldPath (null for every other kind). `diff` keeps a
+        # section when EITHER name in its header is scoped, so match either
+        # name here too, or the two tools disagree about renames. An absent
+        # oldPath spells "" and would match the whole tree, so drop it.
+        let names = [s.path] + [s.oldPath ?? ""].filter { n => n != "" }
+        names.any { n => paths.any { p => Path(p).contains(Path(n)) } }
+      }
+    }
+    let scopedUnmanaged = if (paths.isEmpty) {
+      unmanaged
+    } else {
+      unmanaged.filter { s =>
+        paths.any { p => Path(p).contains(Path(s.path)) }
+      }
+    }
+    let unmanagedBlock = if (scopedUnmanaged.isEmpty) {
+      ""
+    } else {
+      let unmanagedRows = scopedUnmanaged.map { s =>
+        `?  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
+      }
+      "\n\n" + unmanagedHeader + "\n" + unmanagedRows.join("\n")
+    }
+    if (scoped.isEmpty) {
+      if (scopedUnmanaged.isEmpty) {
+        if (paths.isEmpty) {
+          return "No pending changes."
+        }
+        return "No pending changes under the given paths."
+      }
+      return "No committable pending changes." + unmanagedBlock
+    }
+    let rows = scoped.map { s =>
+      let mark = if (s.kind == DiffStatKind.ADDED) {
+        "A"
+      } else if (s.kind == DiffStatKind.REMOVED) {
+        "D"
+      } else if (s.kind == DiffStatKind.RENAMED) {
+        "R"
+      } else {
+        "M"
+      }
+      `${mark}  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
+    }
+    let added = scoped.reduce(0) { acc, s => acc + s.addedLines }
+    let removed = scoped.reduce(0) { acc, s => acc + s.removedLines }
+    let footer = `${toString(scoped.length)} files changed, +${toString(added)} -${toString(removed)}`
+    rows.join("\n") + "\n\n" + footer + unmanagedBlock
+  }
+
+  """
+  Show the workspace's pending changes as a Git-compatible unified diff — the
+  full hunks across every changed file. Use `status` first for a compact
+  overview; use this to actually read the edits (e.g. before summarizing your
+  work, or to confirm an edit landed as intended).
+
+  Pass `paths` to scope the output: the full diff of a workspace with a lot of
+  pending changes can be enormous.
+  """
+  diff(
+    source: Workspace!,
+    """
+    Relative paths (files or directories) to show the diff for, like
+    `git diff -- <paths>`. A directory matches everything beneath it. Empty
+    shows every pending change.
+    """
+    paths: [String!]! = [],
+  ): String! {
+    let changes = source.git.uncommitted
+    # Files git cannot track: written to the checkout on save, but git sees
+    # nothing to commit for them, so they never appear in the patch. Note them
+    # by name after it.
+    let unmanagedFiles = source.git.unmanaged.diffStats.{{path}}.map { s => s.path }
+    let scopedUnmanaged = if (paths.isEmpty) {
+      unmanagedFiles
+    } else {
+      unmanagedFiles.filter { f =>
+        paths.any { p => Path(p).contains(Path(f)) }
+      }
+    }
+    let unmanagedNote = if (scopedUnmanaged.isEmpty) {
+      ""
+    } else {
+      let listed = scopedUnmanaged.map { f => "#   " + f }.join("\n")
+      `\n\n# ${toString(scopedUnmanaged.length)} file(s) ${unmanagedHeader}\n${listed}`
+    }
+    if (changes.isEmpty) {
+      if (scopedUnmanaged.isEmpty) {
+        return "No pending changes."
+      }
+      return "No committable pending changes." + unmanagedNote
+    }
+    let patch = changes.asPatch.contents
+    if (paths.isEmpty) {
+      return patch + unmanagedNote
+    }
+    # Scope the patch by slicing it into its per-file sections: each one starts
+    # with a "diff --git <old> <new>" header at the start of a line, and body
+    # lines are always prefixed (+/-/space/@/index...), so they can never be
+    # mistaken for a header.
+    let sections = patch.trimPrefix(patchHeader).split("\n" + patchHeader)
+    let kept = sections.filter { section =>
+      let header = section.split("\n", 2).takeFirst.join("")
+      header.split(" ").any { name =>
+        # headers are always rendered as "a/<path> b/<path>"; tolerate a bare
+        # spelling too, so scoping survives a change in patch prefixing.
+        [name, name.trimPrefix("a/"), name.trimPrefix("b/")].uniq.any { candidate =>
+          paths.any { p => Path(p).contains(Path(candidate)) }
+        }
+      }
+    }
+    if (kept.isEmpty) {
+      if (scopedUnmanaged.isEmpty) {
+        return "No pending changes under the given paths."
+      }
+      return "No committable pending changes under the given paths." + unmanagedNote
+    }
+    kept.map { section => patchHeader + section }.join("\n") + unmanagedNote
+  }
+
+  let patchHeader: String! = "diff --git "
+
+  # Worded by consequence, not cause: whatever the reason git cannot see the
+  # change, what matters is that saving writes it and committing cannot.
+  let unmanagedHeader: String! =
+    "UNTRACKED BY GIT (saved on ctrl+s; git sees nothing to commit here):"
+
+  let systemPrompt: String! = """
+    You can review your own pending workspace edits with the Review tools:
+
+    - `status` — a compact per-file overview (change kind + added/removed line
+      counts, with a totals footer). Start here to see what you've touched.
+    - `diff` — the full Git-style unified patch of those same changes, when you
+      need to read the actual hunks.
+
+    Both accept `paths` to scope the output to particular files or directories
+    (a directory matches everything beneath it) — reach for it with `diff` in
+    particular, since an unscoped patch can be huge.
+
+    The A/M/D/R marks describe each path relative to the last commit, not
+    `git status`'s index model — there is no staging area here, so a file git
+    would call untracked is just `A`. Note that committing without `paths`
+    includes those, unlike `git commit -a`.
+
+    Some pending edits are not visible to git at all — a gitignored path, a
+    path inside a nested repository, or a file you edited back to its committed
+    content. `status` lists these separately under "UNTRACKED BY GIT" (marked
+    `?`) and `diff` notes them. They ARE written to the user's checkout when the
+    session is saved, but git sees nothing to commit for them, so committing
+    those paths will fail — mention them in your summary instead of assuming
+    they landed in a commit.
+
+    Both read the current state of your workspace, so re-run them after making
+    edits to see updated results. They are read-only and never modify anything.
+  """
+}

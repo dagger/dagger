@@ -22,9 +22,6 @@
 #     defined in cmd/engine/debug.go).
 #   - `engineTest`: run engine tests via the engine-dev toolchain (spins its
 #     own ephemeral engine; independent of `start`).
-#   - `dumpId`: build and run the repo's own `cmd/dump-id` against a file in
-#     the workspace — recipe forensics on a saved session's `llm_id`, with no
-#     engine needed.
 #
 # Engine log access deliberately has no tool here: the engine service's spans
 # are discoverable via ListServices, and ReadLogs(span: ..., grep: ...) reads
@@ -32,45 +29,17 @@
 
 let defaultWorkdir = "/src"
 let debugPort = 6060
+# Tail-truncate command output to keep tool results context-friendly.
+let tailLines = 200
 
-# Where forwarded Dagger Cloud credentials are mounted. The CLI reads its
-# credentials from $XDG_CONFIG_HOME/dagger/credentials.json (see configRoot in
-# internal/cloud/auth/auth.go), so pointing XDG_CONFIG_HOME at a directory we
-# control is all it takes for a forwarded token to be found.
-let configHome = "/config"
-
-# Forward Dagger Cloud credentials and user config into a container. A no-op
-# when neither is configured.
-#
-# Mounted as secrets: credentials never land in a filesystem layer, and the
-# plaintext is only resolved (from the host, via the secret URI) when an exec
-# actually runs. The mounts are read-only; host-side updates are picked up by
-# the next tool call.
-let withCredentials(
-  ctr: Container!,
-  credentials: Secret,
-  daggerConfig: Secret,
-): Container! {
-  let configured = if (credentials == null and daggerConfig == null) {
-    ctr
+# Last `lines` lines of s, with a truncation marker when shortened.
+let tail(s: String!, lines: Int! = tailLines): String! {
+  let all = s.split("\n")
+  if (all.length <= lines) {
+    s
   } else {
-    ctr.withEnvVariable("XDG_CONFIG_HOME", configHome)
-  }
-  let withCloud = if (credentials == null) {
-    configured
-  } else {
-    configured.withMountedSecret(
-      configHome + "/dagger/credentials.json",
-      credentials,
-    )
-  }
-  if (daggerConfig == null) {
-    withCloud
-  } else {
-    withCloud.withMountedSecret(
-      configHome + "/dagger/config.toml",
-      daggerConfig,
-    )
+    let marker = "… (" + toString(all.length - lines) + " earlier lines truncated) …"
+    marker + "\n" + all.takeLast(lines).join("\n")
   }
 }
 
@@ -90,53 +59,13 @@ type EngineLab {
   # tui-qa's `start`) use to attach to THIS engine ("" until `start`)
   let engineEndpoint: String! = ""
 
-  # The skills shipped alongside this module (skills/<name>/SKILL.md), installed
-  # onto the agent's LLM instead of a static system prompt: the model discovers
-  # them with ListSkills and reads them with ReadSkill only when relevant, so
-  # the engine-lab workflow never pollutes context until it's actually needed.
-  let skills: Directory! = currentModule.source.directory("skills")
-
-  # Dagger Cloud credentials and user-level config forwarded into the `dagger`
-  # commands this module runs. Private so secrets are never exposed as fields
-  # or tool arguments: they are configuration, not something the model steers
-  # per call.
-  let cloudCredentials: Secret = null
-  let daggerConfig: Secret = null
-
-  new(
-    """
-    Dagger Cloud credentials for the from-source CLI — the contents of the
-    host's ~/.config/dagger/credentials.json — so debugging commands that talk
-    to Cloud (`dagger cloud ...`, Cloud-backed traces) runs authenticated
-    instead of logged out.
-
-    Wire it up in dagger.toml settings rather than passing it around:
-
-        [env.dev.modules.engine-lab.settings]
-        cloudCredentials = "file://~/.config/dagger/credentials.json"
-
-    Without it, the CLI runs logged out.
-    """
-    cloudCredentials: Secret = null,
-    """
-    User-level Dagger config for the from-source CLI — the contents of the
-    host's ~/.config/dagger/config.toml. This forwards LLM provider settings
-    into clients connected to a nested engine.
-    """
-    daggerConfig: Secret = null,
-  ) {
-    self.cloudCredentials = cloudCredentials
-    self.daggerConfig = daggerConfig
-    self
-  }
-
   """
   Compose the engine-lab tools onto a base LLM.
   """
   agent(base: LLM!): LLM! @agent {
     base
       .withTools(currentNode)
-      .withSkills(skills)
+      .withSystemPrompt(systemPrompt)
   }
 
   """
@@ -179,12 +108,19 @@ type EngineLab {
       "--network-cidr", svcDev.networkCidr,
       "--debugaddr", "0.0.0.0:" + toString(debugPort),
     ]
-
+    # Dang bug workaround: a let-bound `.start` result materializes as the
+    # service's string ID, so no methods can be called on it. Derive the
+    # service twice from the same let-bound container (identical args ->
+    # identical service ID): one unbroken chain for the hostname, one to
+    # start. The digest hostname resolves session-wide (session DNS domain),
+    # so OTHER modules' containers can dial it with no binding — that's the
+    # tui-qa handoff.
+    let host = engineCtr
+      .asService(args: engineArgs, useEntrypoint: true, insecureRootCapabilities: true)
+      .hostname
     let svc = engineCtr
       .asService(args: engineArgs, useEntrypoint: true, insecureRootCapabilities: true)
       .start
-
-    let host = svc.hostname
 
     # The client container: installClient binds the engine service under the
     # `dagger-engine` hostname and points _EXPERIMENTAL_DAGGER_RUNNER_HOST at
@@ -203,7 +139,10 @@ type EngineLab {
     self.engine = svc
     self.engineEndpoint = "tcp://" + host + ":1234"
     print(
-      "Engine listening at " + self.engineEndpoint + " — pass this to the tui-qa start tool's `engine` arg to QA the TUI" + " against THIS engine (debugGet/debugJq/ReadLogs then introspect the" + " same engine the TUI is driving).",
+      "Engine listening at " + self.engineEndpoint
+        + " — pass this to the tui-qa start tool's `engine` arg to QA the TUI"
+        + " against THIS engine (debugGet/debugJq/ReadLogs then introspect the"
+        + " same engine the TUI is driving)."
     )
     self
   }
@@ -362,88 +301,6 @@ type EngineLab {
     engineDev(ws: source).test(pkg: pkg, run: run, testVerbose: testVerbose)
   }
 
-  """
-  Compile and run `./cmd/dump-id` from the workspace source: decode a dagql
-  call ID (a "recipe") and report on it.
-
-  `file` is a workspace-relative path to a file holding a base64 call ID, or a
-  saved-session JSON file — the `llm_id` field is extracted automatically, so
-  a session save file can be passed straight in. Modes match the command's own
-  flags; with none, the human-readable idtui dump is printed.
-
-  The binary is compiled from the CURRENT workspace on every call, so edits to
-  cmd/dump-id take effect immediately. No engine session is needed.
-  """
-  dumpId(
-    source: Workspace!,
-    """
-    Workspace-relative path to the input: a file containing a base64 call ID,
-    or a saved-session JSON file, e.g. "testdata/after.json".
-    """
-    file: String!,
-    """
-    Emit per-field counts, chain depth and expansion (re-execution) counts —
-    the mode for "how many times does this recipe run that call?".
-    """
-    stats: Boolean! = false,
-    """
-    Emit the receiver spine, with ID-valued arguments expanded inline.
-    """
-    tree: Boolean! = false,
-    """
-    Emit the decoded callpbv1.DAG as structured JSON (lossless, and large).
-    """
-    json: Boolean! = false,
-    """
-    Emit every call whose Type.field name matches this regexp, e.g. "spawn".
-    """
-    find: String! = "",
-    """
-    Structurally diff the input recipe against the recipe in this file (also
-    workspace-relative, also session-JSON-aware).
-    """
-    diff: String! = "",
-    """
-    Truncate literal values to this many characters (0 = no truncation).
-    """
-    lit: Int! = 72,
-    """
-    Show at most this many trailing receiver selectors in a path (0 = all).
-    """
-    spine: Int! = 12,
-    """
-    In `tree`, only recurse this many levels into ID arguments (0 = unlimited).
-    """
-    depth: Int! = 0,
-    """
-    Keep at most this many lines of output (0 = unlimited).
-    """
-    limit: Int! = 300,
-  ): String! @cache(policy: FunctionCachePolicy.Never) {
-    let args: [String!]! = []
-    if (stats) { args += ["-stats"] }
-    if (tree) { args += ["-tree"] }
-    if (json) { args += ["-json"] }
-    if (find != "") { args += ["-find", find] }
-    if (diff != "") { args += ["-diff", diff] }
-    args += [
-      "-lit", toString(lit),
-      "-spine", toString(spine),
-      "-depth", toString(depth),
-      file,
-    ]
-
-    let out = goEnv(source)
-      # The build is deliberately NOT nonce-busted: it is a pure function of
-      # the mounted source, so an unchanged tree replays from the exec cache
-      # and only the run below actually re-executes.
-      .withExec(["go", "build", "-o", "/usr/local/bin/dump-id", "./cmd/dump-id"])
-      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
-      .withExec(["dump-id"] + args)
-      .stdout
-    clip(out, limit)
-  }
-
   # A self-call (`engineLab`) yields the module's own type as it lives in the
   # runtime schema — a Dagger.EngineLab, which carries a GraphQL id and
   # implements Node. Declaring the return as Dagger.EngineLab! (rather than
@@ -472,7 +329,7 @@ type EngineLab {
   # Workspace!` on each tool means the current tree (including edits made
   # since `start`) is re-injected on every call, structurally.
   let withSource(source: Workspace!): Container! {
-    withCredentials(client, cloudCredentials, daggerConfig)
+    client
       # bust Dagger's exec cache so each call actually re-runs
       .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
       .withMountedDirectory(defaultWorkdir, source.directory("/"))
@@ -483,37 +340,40 @@ type EngineLab {
     "http://dagger-engine:" + toString(debugPort) + path
   }
 
-  # A Go toolchain with the caller's CURRENT workspace mounted at /src, for
-  # building the repo's own commands (cmd/dump-id today).
-  #
-  # engine-dev's goContainer is the same base the repo's golang toolchain uses
-  # (dagger.toml: `base = "engine-dev:go-container"`), so the Go version always
-  # matches go.mod without this module pinning one of its own. The module and
-  # build caches are cache volumes, so only the first build pays for them.
-  let goEnv(source: Workspace!): Container! {
-    engineDev(ws: source)
-      .goContainer
-      .withEnvVariable("GOMODCACHE", "/go/pkg/mod")
-      .withMountedCache("/go/pkg/mod", cacheVolume("engine-lab-gomodcache"))
-      .withEnvVariable("GOCACHE", "/go/build-cache")
-      .withMountedCache("/go/build-cache", cacheVolume("engine-lab-gobuildcache"))
-      .withMountedDirectory(defaultWorkdir, source.directory("/"))
-      .withWorkdir(defaultWorkdir)
-  }
+  let systemPrompt: String! = """
+    You can build and debug the Dagger engine from the workspace source with
+    the EngineLab tools — the sandbox equivalent of the `./hack/dev` +
+    `./hack/with-dev` loop from the `engine-debugging` skill.
 
-  # Head-truncate a report to keep tool results context-friendly. Head, not
-  # tail: dump-id's modes lead with what a caller came for (the stats totals,
-  # the tree's root spine, the first matches), unlike the exec output the rest
-  # of this module returns, where the error is at the end.
-  let clip(s: String!, lines: Int!): String! {
-    let all = s.split("\n")
-    if (lines <= 0 or all.length <= lines) {
-      s
-    } else {
-      let dropped = toString(all.length - lines)
-      all.takeFirst(lines).join("\n")
-        + "\n… (" + dropped + " more lines truncated; raise `limit`, or narrow"
-        + " the report with `find`/`spine`/`depth`) …"
-    }
-  }
+    Workflow:
+    - the engine-lab start tool builds the engine + CLI from the workspace
+      source and runs the engine as a persistent service with its debug
+      endpoints enabled. The first build takes a while; later tools reuse the
+      running engine.
+    - `exec(args: ["dagger", ...])` runs a command against the live engine:
+      the from-source CLI is on PATH, the workspace is mounted at /src, and
+      curl/jq/git are available (["sh", "-c", ...] works too). The workspace
+      is re-mounted from your CURRENT tree on every call, so your edits are
+      always visible — only the engine *binary* is pinned until `restart`.
+    - `query` sends raw GraphQL straight to the engine (no module loaded).
+    - `debugGet`/`debugJq` hit the engine's :6060 debug endpoints (routes in
+      cmd/engine/debug.go), e.g. /debug/pprof/goroutine?debug=2 for hangs;
+      use debugJq to filter big JSON like /debug/dagql/cache.
+    - After editing engine code, `restart` rebuilds and replaces the running
+      engine; then re-run your repro with `exec`.
+    - `engineTest(pkg, run)` runs engine tests with their own ephemeral
+      engine (no `start` needed), e.g. pkg "./core/integration" with
+      run "TestSuite/TestSub".
+    - Engine logs: ListServices shows the engine service's span ids;
+      ReadLogs(span, grep, limit) reads them — the equivalent of
+      `docker logs dagger-engine.dev | grep`.
+    - the engine-lab start tool prints the engine's tcp://<host>:1234 endpoint
+      (`endpoint` re-prints it). If tui-qa tools are available, pass it to
+      their start tool's `engine` arg to run a TUI session against THIS
+      engine — then `debugGet`/`debugJq`/ReadLogs introspect the very engine
+      the TUI is driving (e.g. reproduce a hang in the TUI, then pprof it
+      live). `restart` and the engine-lab stop tool break attached TUI
+      sessions; restart them after.
+    - the engine-lab stop tool when done.
+  """
 }

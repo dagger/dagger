@@ -35,6 +35,9 @@ __pycache__
 # Built Binary
 /bin
 
+# Scratch space for QA/debug artifacts (e.g. tui-qa's tmp/ids/<hash>)
+/tmp/
+
 # Local environment variables, usually secrets
 .env
 /.envrc
