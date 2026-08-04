@@ -499,6 +499,16 @@ func (s *workspaceSchema) workspaceCommitScope(
 	modified := commitPathsInScope(paths.Modified, resolved)
 	removed := commitPathsInScope(paths.AllRemoved, resolved)
 	if len(added)+len(modified)+len(removed) == 0 {
+		// The paths may still have pending edits that git cannot see at all
+		// (gitignored, or inside a nested repository). Those are written to
+		// the checkout on save, but git has nothing to commit for them, so
+		// say that rather than reporting a bare no-op.
+		if unmanaged, err := s.unmanagedPathsInScope(ctx, ws, uncommitted, resolved); err == nil && len(unmanaged) > 0 {
+			return scope, fmt.Errorf(
+				"withCommit: %v have pending changes git cannot track (gitignored, or inside a nested repository); "+
+					"they will still be written to the checkout on save, but cannot be committed",
+				unmanaged)
+		}
 		return scope, fmt.Errorf("withCommit: nothing to commit for paths %v", args.Paths)
 	}
 
