@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -79,6 +80,17 @@ func workspaceClientContext(ctx context.Context, ws *Workspace) (context.Context
 // workspace, the owning client is the current client, so this resolves to the
 // same schema the CLI serves. For a value/synthetic Workspace (no owning client
 // or config) it degrades gracefully to the current client's schema.
+//
+// When the workspace carries a pending overlay that affects module loading —
+// staged edits to a module's source, or to dagger.toml itself — the affected
+// modules are re-resolved through the overlay and REPLACE their served
+// counterparts in the derived schema (newly-configured ones are appended). The
+// served set is a snapshot of the on-disk workspace taken at session start;
+// without this, an agent that edits its own modules and recomposes
+// (Workspace.agents) would compose the fresh module but serve tools from the
+// stale schema. Callers that resolve client-scoped root fields directly under
+// [WorkspaceServedContext] (e.g. currentTypeDefs introspection) still see the
+// served snapshot; the overlay layering applies to the derived schema only.
 func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*dagql.Server, error) {
 	wsCtx, err := WorkspaceServedContext(ctx, ws)
 	if err != nil {
@@ -92,7 +104,80 @@ func WorkspaceServedSchema(ctx context.Context, ws dagql.ObjectResult[*Workspace
 	if err != nil {
 		return nil, fmt.Errorf("workspace served deps: %w", err)
 	}
+	deps, err = workspaceOverlayServedDeps(wsCtx, ws, deps)
+	if err != nil {
+		return nil, fmt.Errorf("workspace overlay modules: %w", err)
+	}
 	return deps.Schema(wsCtx)
+}
+
+// overlayDepsCache memoizes the overlay-layered SchemaBuilder per (served deps
+// instance, workspace value). The layered builder must be a stable instance so
+// its own lazily-built schema server is reused across LLM steps: MCP.Server
+// derives the schema on every tool listing and dispatch, and rebuilding it each
+// time would re-install every module's typedefs per call. Keying on the served
+// builder's pointer identity makes a change to the client's served set (which
+// produces a new builder) miss naturally; keying on the workspace ID digest
+// makes any further overlay edit miss naturally. Bounded: reaching the cap
+// (many distinct overlay states composed in one engine's lifetime) clears the
+// map, which only costs a rebuild on next use.
+var overlayDepsCache = struct {
+	sync.Mutex
+	m map[string]*SchemaBuilder
+}{m: map[string]*SchemaBuilder{}}
+
+const overlayDepsCacheLimit = 64
+
+// workspaceOverlayServedDeps layers the workspace overlay's re-resolved modules
+// onto the served deps, replacing same-named entries. No overlay influence
+// returns deps unchanged.
+func workspaceOverlayServedDeps(ctx context.Context, ws dagql.ObjectResult[*Workspace], deps *SchemaBuilder) (*SchemaBuilder, error) {
+	if _, ok := ws.Self().OverlayChanges(); !ok {
+		return deps, nil
+	}
+
+	wsID, err := ws.ID()
+	if err != nil {
+		return nil, err
+	}
+	// A workspace loaded in this session may carry a handle-form ID (an engine
+	// result handle) instead of a recipe; handles have no digest but their
+	// result ID is just as unique to the value.
+	var wsKey string
+	if wsID.IsHandle() {
+		wsKey = fmt.Sprintf("handle:%d", wsID.EngineResultID())
+	} else {
+		wsKey = wsID.Digest().String()
+	}
+	key := fmt.Sprintf("%p|%s", deps, wsKey)
+
+	overlayDepsCache.Lock()
+	cached, ok := overlayDepsCache.m[key]
+	overlayDepsCache.Unlock()
+	if ok {
+		return cached, nil
+	}
+
+	overlayMods, err := WorkspaceOverlayModules(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	layered := deps
+	if len(overlayMods) > 0 {
+		mods := make([]Mod, len(overlayMods))
+		for i, mod := range overlayMods {
+			mods[i] = NewUserMod(mod)
+		}
+		layered = deps.Replacing(mods...)
+	}
+
+	overlayDepsCache.Lock()
+	if len(overlayDepsCache.m) >= overlayDepsCacheLimit {
+		overlayDepsCache.m = map[string]*SchemaBuilder{}
+	}
+	overlayDepsCache.m[key] = layered
+	overlayDepsCache.Unlock()
+	return layered, nil
 }
 
 // WorkspaceServedContext switches ctx to the Workspace's owning client and
