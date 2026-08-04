@@ -202,6 +202,27 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, fe.consoleSpans(r.URL.Query().Get("q")))
 	})
+	mux.HandleFunc("/span", func(w http.ResponseWriter, r *http.Request) {
+		hex := r.URL.Query().Get("id")
+		if hex == "" {
+			http.Error(w, "want ?id=<span hex>", http.StatusBadRequest)
+			return
+		}
+		sid, err := oteltrace.SpanIDFromHex(hex)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("bad span hex %q: %v", hex, err), http.StatusBadRequest)
+			return
+		}
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
+		detail, ok := fe.consoleSpanDetail(dagui.SpanID{SpanID: sid})
+		if !ok {
+			http.Error(w, fmt.Sprintf("unknown span %s", hex), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		io.WriteString(w, detail)
+	})
 	mux.HandleFunc("/help", fe.consoleHelp)
 	mux.HandleFunc("/", fe.consoleHelp)
 
@@ -307,19 +328,6 @@ func (fe *frontendPretty) consoleSpans(q string) string {
 		if q != "" && !strings.Contains(sp.Name, q) && !strings.Contains(sp.ServiceName, q) {
 			continue
 		}
-		// A span often passes its own OTel status through while the failure rides
-		// on a link (a test/check whose error is on a descendant or linked span).
-		// Surface that as FAIL so a caller can still find it by name, distinct
-		// from ERROR (the span itself errored).
-		status := "ok"
-		switch {
-		case sp.IsFailed():
-			status = "ERROR"
-		case sp.IsFailedOrCausedFailure():
-			status = "FAIL"
-		case sp.IsRunning():
-			status = "run"
-		}
 		name := sp.Name
 		if sp.Service {
 			tag := "service"
@@ -328,9 +336,110 @@ func (fe *frontendPretty) consoleSpans(q string) string {
 			}
 			name += "  [" + tag + "]"
 		}
-		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, status, name)
+		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, consoleSpanStatus(sp), name)
 	}
 	return b.String()
+}
+
+// consoleSpanStatus classifies a span with the same vocabulary /spans uses.
+// A span often passes its own OTel status through while the failure rides on a
+// link (a test/check whose error is on a descendant or linked span). Surface
+// that as FAIL so a caller can still find it by name, distinct from ERROR (the
+// span itself errored).
+func consoleSpanStatus(sp *dagui.Span) string {
+	switch {
+	case sp.IsFailed():
+		return "ERROR"
+	case sp.IsFailedOrCausedFailure():
+		return "FAIL"
+	case sp.IsRunning():
+		return "run"
+	default:
+		return "ok"
+	}
+}
+
+// consoleSpanFlags lists the dagui flags set on a span that shape how the UI
+// treats it (visibility, encapsulation, log/span roll-up) — only the ones that
+// are actually set, so ancestor-chain lines stay compact.
+func consoleSpanFlags(sp *dagui.Span) []string {
+	var flags []string
+	set := func(on bool, name string) {
+		if on {
+			flags = append(flags, name)
+		}
+	}
+	set(sp.Internal, "internal")
+	set(sp.Boundary, "boundary")
+	set(sp.Encapsulate, "encapsulate")
+	set(sp.Encapsulated, "encapsulated")
+	set(sp.Passthrough, "passthrough")
+	set(sp.Ignore, "ignore")
+	set(sp.Reveal, "reveal")
+	set(sp.RollUpLogs, "rollUpLogs")
+	set(sp.RollUpSpans, "rollUpSpans")
+	set(sp.Cached, "cached")
+	set(sp.Canceled, "canceled")
+	switch {
+	case sp.Service && sp.ServiceName != "":
+		flags = append(flags, "service="+sp.ServiceName)
+	case sp.Service:
+		flags = append(flags, "service")
+	case sp.ServiceName != "":
+		flags = append(flags, "serviceName="+sp.ServiceName)
+	}
+	if sp.LLMRole != "" {
+		flags = append(flags, "llmRole="+sp.LLMRole)
+	}
+	if sp.LLMTool != "" {
+		flags = append(flags, "llmTool="+sp.LLMTool)
+	}
+	return flags
+}
+
+// consoleSpanDetail reports one span in depth: status, timing, the UI-shaping
+// flags, and the parent chain up to the root — each ancestor with its own set
+// flags, which is what debugging "why is this span hidden / why didn't its
+// logs roll up" needs. Returns false if the span isn't loaded in the DB.
+func (fe *frontendPretty) consoleSpanDetail(id dagui.SpanID) (string, bool) {
+	sp, ok := fe.db.Spans.Map[id]
+	if !ok || sp == nil {
+		return "", false
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "span:     %s  %s\n", sp.ID, sp.Name)
+	fmt.Fprintf(&b, "status:   %s\n", consoleSpanStatus(sp))
+	if sp.StartTime.IsZero() {
+		fmt.Fprintf(&b, "started:  (unknown)\n")
+	} else {
+		fmt.Fprintf(&b, "started:  %s\n", sp.StartTime.Format(time.RFC3339Nano))
+		if sp.IsRunning() {
+			// Running spans have no end time yet (dagui encodes that as
+			// EndTime < StartTime); show elapsed time instead.
+			fmt.Fprintf(&b, "ended:    (still running)\n")
+			fmt.Fprintf(&b, "duration: %s (so far)\n", time.Since(sp.StartTime).Truncate(time.Millisecond))
+		} else {
+			fmt.Fprintf(&b, "ended:    %s\n", sp.EndTime.Format(time.RFC3339Nano))
+			fmt.Fprintf(&b, "duration: %s\n", sp.EndTime.Sub(sp.StartTime).Truncate(time.Millisecond))
+		}
+	}
+	if flags := consoleSpanFlags(sp); len(flags) > 0 {
+		fmt.Fprintf(&b, "flags:    %s\n", strings.Join(flags, " "))
+	} else {
+		fmt.Fprintf(&b, "flags:    (none)\n")
+	}
+	fmt.Fprintf(&b, "parents (nearest first):\n")
+	if sp.ParentSpan == nil {
+		fmt.Fprintf(&b, "  (none — root span)\n")
+	}
+	for parent := sp.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		line := fmt.Sprintf("  %s  %s", parent.ID, parent.Name)
+		if flags := consoleSpanFlags(parent); len(flags) > 0 {
+			line += "  [" + strings.Join(flags, " ") + "]"
+		}
+		fmt.Fprintf(&b, "%s\n", line)
+	}
+	return b.String(), true
 }
 
 func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
@@ -342,6 +451,7 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  POST /zoom  <hex>    zoom to a span, return frame\n"+
 		"  POST /resize <CxR>   resize the terminal (e.g. 120x12), return frame\n"+
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
+		"  GET  /span?id=<hex>  span detail: status, timing, flags, parent chain\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
 		"r error origin · L logs · +/- verbosity · / search\n")
