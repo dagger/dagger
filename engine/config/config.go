@@ -95,6 +95,10 @@ type GCConfig struct {
 	// for very short-lived dagger instances).
 	Enabled *bool `json:"enabled,omitempty"`
 
+	// DagqlCache configures structural memory pruning for the in-memory DAGQL
+	// cache independently of physical cache disk usage.
+	DagqlCache DagqlCacheGCConfig `json:"dagqlCache,omitempty"`
+
 	// GCSpace is the amount of space to allow for the entire dagger engine,
 	// only used in computing the default Policies.
 	GCSpace
@@ -103,6 +107,17 @@ type GCConfig struct {
 	// an automatic default will be generated from the top-level disk space
 	// parameters.
 	Policies []GCPolicy `json:"policies,omitempty"`
+}
+
+type DagqlCacheGCConfig struct {
+	// MaxEstimatedBytes triggers structural DAGQL cache pruning when the coarse
+	// metadata estimate exceeds this absolute number of bytes. Zero uses the
+	// built-in default.
+	MaxEstimatedBytes int64 `json:"maxEstimatedBytes,omitempty"`
+
+	// TargetEstimatedBytes is the lower structural estimate a pruning pass
+	// attempts to reach. Zero uses the built-in default.
+	TargetEstimatedBytes int64 `json:"targetEstimatedBytes,omitempty"`
 }
 
 type GCPolicy struct {
