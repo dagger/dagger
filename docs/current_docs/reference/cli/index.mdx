@@ -237,6 +237,9 @@ SDK, plans the generated files and workspace config change, then returns a
 Changeset that the CLI previews and applies through the standard preview/apply
 flow.
 
+The SDK's generators run scoped to &lt;path&gt;, so the client's bindings come with
+it. Pass --no-generate to record and scaffold the client without them.
+
 ```
 dagger api client init <sdk> <path> <module>
 ```
@@ -245,6 +248,12 @@ dagger api client init <sdk> <path> <module>
 
 ```
 dagger api client init typescript ./lib/cli .dagger/modules/api
+```
+
+### Options
+
+```
+      --no-generate   Skip running the SDK's generators for the new client
 ```
 
 ### Options inherited from parent commands
@@ -2175,6 +2184,9 @@ What the engine does (atomically, in one Changeset):
      &lt;path&gt;.
   4. When --path is the default (.dagger/modules/&lt;name&gt;), also installs
      the new module as [modules.&lt;name&gt;] so it's callable here.
+  5. Runs the SDK's generators scoped to &lt;path&gt;, so the new module is
+     loadable without a separate 'dagger generate'. Pass --no-generate to
+     skip this.
 
 --path defaults to .dagger/modules/&lt;name&gt;. Custom paths skip the
 [modules.&lt;name&gt;] install (the user is managing workspace layout
@@ -2193,6 +2205,7 @@ dagger sdk install go && dagger module init go my-module
 ### Options
 
 ```
+      --no-generate   Skip running the SDK's generators for the new module
       --path string   Module path relative to the workspace root (default: .dagger/modules/<name>)
 ```
 

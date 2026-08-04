@@ -5633,7 +5633,11 @@ type Workspace implements Node {
     here: Boolean = false
   ): Workspace!
 
-  """Return this workspace with a generated API client initialized."""
+  """
+  Return this workspace with a generated API client initialized.
+
+  The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
+  """
   withInitClient(
     """Workspace-relative output directory for the generated client."""
     path: String!
@@ -5651,9 +5655,16 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+
+    """Skip running the SDK's generators for the new client."""
+    noGenerate: Boolean = false
   ): Workspace!
 
-  """Return this workspace with a new module initialized."""
+  """
+  Return this workspace with a new module initialized.
+
+  The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
+  """
   withInitModule(
     """Name of the new module."""
     name: String!
@@ -5675,6 +5686,9 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+
+    """Skip running the SDK's generators for the new module."""
+    noGenerate: Boolean = false
   ): Workspace!
 
   """Return this workspace with a module installed in its config."""

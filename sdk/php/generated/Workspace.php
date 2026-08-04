@@ -384,6 +384,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return this workspace with a generated API client initialized.
+     *
+     * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
      */
     public function withInitClient(
         string $path,
@@ -391,6 +393,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         string $module,
         ?Json $args = null,
         ?bool $here = false,
+        ?bool $noGenerate = false,
     ): Workspace {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInitClient');
         $innerQueryBuilder->setArgument('path', $path);
@@ -402,11 +405,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
+        if (null !== $noGenerate) {
+        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
+        }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Return this workspace with a new module initialized.
+     *
+     * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
      */
     public function withInitModule(
         string $name,
@@ -416,6 +424,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         ?array $include = [],
         ?Json $args = null,
         ?bool $here = false,
+        ?bool $noGenerate = false,
     ): Workspace {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInitModule');
         $innerQueryBuilder->setArgument('name', $name);
@@ -434,6 +443,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
+        }
+        if (null !== $noGenerate) {
+        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

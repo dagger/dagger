@@ -93,7 +93,7 @@ my-module/
 ```
 
 :::note
-`dagger module init` writes `dagger-module.toml` and `main.go` and updates the workspace config. After accepting those changes, run `dagger generate` once to create `go.mod`, `go.sum`, and the generated Go files shown above. Commit the generated Go files along with the rest of the module. Dagger needs the generated client to load the module, both from your local checkout and from a Git reference.
+`dagger module init` writes `dagger-module.toml` and `main.go`, updates the workspace config, and runs the Go SDK's generator for the new module — so `go.mod`, `go.sum`, and the generated Go files shown above are part of the same changeset. Commit the generated Go files along with the rest of the module. Dagger needs the generated client to load the module, both from your local checkout and from a Git reference. Pass `--no-generate` to scaffold without generating.
 :::
 
 The module config records the runtime separately from the SDK that authors it:
@@ -940,7 +940,7 @@ jobs:
 
 ## IDE setup, `go.mod` and `go.work`
 
-The first `dagger generate` creates a `go.mod` and `go.sum` inside your Dagger module. These files tell Go which dependencies the generated client needs. If the Dagger module lives inside a larger Go project, the additional `go.mod` can make an editor choose the wrong Go module for a file.
+`dagger module init` creates a `go.mod` and `go.sum` inside your Dagger module. These files tell Go which dependencies the generated client needs. If the Dagger module lives inside a larger Go project, the additional `go.mod` can make an editor choose the wrong Go module for a file.
 
 Two options:
 

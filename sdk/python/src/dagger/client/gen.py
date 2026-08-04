@@ -14794,8 +14794,12 @@ class Workspace(Type):
         *,
         args: JSON | None = None,
         here: bool | None = False,
+        no_generate: bool | None = False,
     ) -> Self:
         """Return this workspace with a generated API client initialized.
+
+        The SDK's generators run for the new client, so the returned workspace
+        carries its generated bindings.
 
         Parameters
         ----------
@@ -14810,6 +14814,8 @@ class Workspace(Type):
             SDK-specific init arguments.
         here:
             Write to the workspace config directory at the workspace cwd.
+        no_generate:
+            Skip running the SDK's generators for the new client.
         """
         _args = [
             Arg("path", path),
@@ -14817,6 +14823,7 @@ class Workspace(Type):
             Arg("module", module),
             Arg("args", args, None),
             Arg("here", here, False),
+            Arg("noGenerate", no_generate, False),
         ]
         _ctx = self._select("withInitClient", _args)
         return Workspace(_ctx)
@@ -14831,8 +14838,12 @@ class Workspace(Type):
         include: list[str] | None = None,
         args: JSON | None = None,
         here: bool | None = False,
+        no_generate: bool | None = False,
     ) -> Self:
         """Return this workspace with a new module initialized.
+
+        The SDK's generators run for the new module, so the returned workspace
+        carries the generated code it needs to be loadable.
 
         Parameters
         ----------
@@ -14850,6 +14861,8 @@ class Workspace(Type):
             SDK-specific init arguments.
         here:
             Write to the workspace config directory at the workspace cwd.
+        no_generate:
+            Skip running the SDK's generators for the new module.
         """
         _args = [
             Arg("name", name),
@@ -14859,6 +14872,7 @@ class Workspace(Type):
             Arg("include", [] if include is None else include, []),
             Arg("args", args, None),
             Arg("here", here, False),
+            Arg("noGenerate", no_generate, False),
         ]
         _ctx = self._select("withInitModule", _args)
         return Workspace(_ctx)

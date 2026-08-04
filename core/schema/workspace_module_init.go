@@ -15,13 +15,14 @@ import (
 )
 
 type workspaceInitModuleArgs struct {
-	Name    string
-	SDK     string
-	Path    string    `default:""`
-	Source  string    `default:""`
-	Include []string  `default:"[]"`
-	Args    core.JSON `default:""`
-	Here    bool      `default:"false"`
+	Name       string
+	SDK        string
+	Path       string    `default:""`
+	Source     string    `default:""`
+	Include    []string  `default:"[]"`
+	Args       core.JSON `default:""`
+	Here       bool      `default:"false"`
+	NoGenerate bool      `default:"false"`
 }
 
 // initModuleChanges builds the workspace edits required to create a new module
@@ -41,18 +42,21 @@ type workspaceInitModuleArgs struct {
 // Every change is staged into one Changeset and returned. No filesystem write
 // happens inside this function.
 //
+// The returned initScope names what was created, so the caller can generate for
+// exactly it (see workspaceSchema.withScopedGeneration).
+//
 //nolint:gocyclo // inherently branchy orchestration (validate args, resolve SDK, plan changes)
 func (s *workspaceSchema) initModuleChanges(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceInitModuleArgs,
-) (res dagql.ObjectResult[*core.Changeset], _ error) {
+) (res dagql.ObjectResult[*core.Changeset], scope initScope, _ error) {
 	ws := parent.Self()
 	if args.Name == "" {
-		return res, fmt.Errorf("module name is required")
+		return res, scope, fmt.Errorf("module name is required")
 	}
 	if args.SDK == "" {
-		return res, fmt.Errorf("SDK name is required")
+		return res, scope, fmt.Errorf("SDK name is required")
 	}
 
 	// Resolve the workspace-relative path for the new module. Empty = default
@@ -64,27 +68,27 @@ func (s *workspaceSchema) initModuleChanges(
 	}
 	relPath = filepath.Clean(relPath)
 	if filepath.IsAbs(relPath) {
-		return res, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
+		return res, scope, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
 	}
 	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
-		return res, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
+		return res, scope, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
 	}
 
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, args.Here)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	cfg := staged.Config
 	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	// Reject name conflicts in installed modules and reject path conflicts
 	// across any SDK's authored modules. Two SDKs claiming the same path is
 	// a corruption we shouldn't silently extend.
 	if _, exists := cfg.Modules[args.Name]; exists {
-		return res, fmt.Errorf("module %q is already installed in this workspace", args.Name)
+		return res, scope, fmt.Errorf("module %q is already installed in this workspace", args.Name)
 	}
 	for installedName, installed := range cfg.Modules {
 		if installed.AsSDK == nil {
@@ -92,7 +96,7 @@ func (s *workspaceSchema) initModuleChanges(
 		}
 		for _, m := range installed.AsSDK.Modules {
 			if filepath.Clean(m.Path) == relPath {
-				return res, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
+				return res, scope, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
 			}
 		}
 	}
@@ -102,23 +106,23 @@ func (s *workspaceSchema) initModuleChanges(
 
 	loadedSDK, err := s.loadWorkspaceSDK(ctx, ws, staged.ConfigDir, sdkRef)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	// By default the SDK module is also the runtime. SDKs that split authoring
 	// from execution advertise RuntimeTarget and provide the runtime ref.
 	defaultRuntimeRef, err := moduleEntrySourceWithPinRelativeTo(staged.ConfigDir, relPath, sdkEntry)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	runtimeRef := defaultRuntimeRef
 	if target, ok := loadedSDK.AsRuntimeTarget(); ok {
 		runtimeRef, err = target.TargetRuntime(ctx)
 		if err != nil {
-			return res, fmt.Errorf("resolve SDK target runtime: %w", err)
+			return res, scope, fmt.Errorf("resolve SDK target runtime: %w", err)
 		}
 		if runtimeRef == "" {
-			return res, fmt.Errorf("SDK target runtime is empty")
+			return res, scope, fmt.Errorf("SDK target runtime is empty")
 		}
 	}
 
@@ -129,7 +133,7 @@ func (s *workspaceSchema) initModuleChanges(
 	// Render new dagger.toml bytes through the format-preserving editor.
 	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, cfg)
 	if err != nil {
-		return res, fmt.Errorf("update workspace config: %w", err)
+		return res, scope, fmt.Errorf("update workspace config: %w", err)
 	}
 
 	// Generate the new module's config file (dagger-module.toml) ONLY. The
@@ -145,45 +149,45 @@ func (s *workspaceSchema) initModuleChanges(
 	// diff is computed at the end.
 	baseDir, err := s.workspaceOverlayRootfs(ctx, ws)
 	if err != nil {
-		return res, fmt.Errorf("resolve workspace rootfs: %w", err)
+		return res, scope, fmt.Errorf("resolve workspace rootfs: %w", err)
 	}
 	moduleDiff, err := s.workspaceModuleInitConfigDiff(ctx, baseDir, args, relPath, runtimeRef)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	configRelPath := staged.ConfigFile
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return res, fmt.Errorf("dagql server: %w", err)
+		return res, scope, fmt.Errorf("dagql server: %w", err)
 	}
 
 	updatedDir := baseDir
 	updatedDir, err = workspaceWithFile(ctx, dag, updatedDir, configRelPath, newConfigBytes)
 	if err != nil {
-		return res, fmt.Errorf("stage workspace config update: %w", err)
+		return res, scope, fmt.Errorf("stage workspace config update: %w", err)
 	}
 	updatedDir, err = workspaceWithDirectoryOverlay(ctx, dag, updatedDir, moduleDiff)
 	if err != nil {
-		return res, fmt.Errorf("stage module generated context: %w", err)
+		return res, scope, fmt.Errorf("stage module generated context: %w", err)
 	}
 
 	engineChanges, err := workspaceMigrationChanges(ctx, updatedDir, baseDir)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	sdkArgs, err := coresdk.DecodeInitArgs(args.Args)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	moduleInitializer, ok := loadedSDK.AsModuleInitializer()
 	if !ok {
-		return res, fmt.Errorf("%q does not support module init", args.SDK)
+		return res, scope, fmt.Errorf("%q does not support module init", args.SDK)
 	}
 	sdkChanges, err := moduleInitializer.InitModule(ctx, parent, args.Name, relPath, sdkArgs)
 	if err != nil {
-		return res, fmt.Errorf("sdk module init: %w", err)
+		return res, scope, fmt.Errorf("sdk module init: %w", err)
 	}
 
 	// Enforce the ownership split: the SDK's initModule must not touch the
@@ -191,12 +195,12 @@ func (s *workspaceSchema) initModuleChanges(
 	// error instead of a cryptic "added in both changesets" from the merge
 	// below (or, worse, an SDK silently clobbering config the engine wrote).
 	if err := validateSDKInitChangesetOwnership(ctx, args.SDK, sdkChanges, configRelPath, relPath); err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	merged, err := mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	// Changesets are merged through Git, which does not track directory modes.
@@ -204,7 +208,11 @@ func (s *workspaceSchema) initModuleChanges(
 	// umask instead of retaining the mode staged by the engine or SDK. Normalize
 	// only the module root here: it is owned by module init, while directories
 	// below it remain owned by the SDK and keep their explicitly authored modes.
-	return changesetWithDirectoryMode(ctx, merged, relPath, 0o755)
+	res, err = changesetWithDirectoryMode(ctx, merged, relPath, 0o755)
+	if err != nil {
+		return res, scope, err
+	}
+	return res, initScope{sdk: sdkName, path: relPath}, nil
 }
 
 // changesetWithDirectoryMode returns changes with path's mode explicitly set

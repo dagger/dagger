@@ -310,6 +310,10 @@ func (sdk *module) AsClientInitializer() (core.ClientInitializer, bool) {
 	return &clientInitializerModule{mod: sdk, funcs: sdk.funcs}, true
 }
 
+func (sdk *module) AsModule() (dagql.ObjectResult[*core.Module], bool) {
+	return sdk.mod, true
+}
+
 func (sdk *module) AsRuntimeTarget() (core.RuntimeTarget, bool) {
 	if _, ok := sdk.funcs["targetRuntime"]; !ok {
 		return nil, false

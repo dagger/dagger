@@ -427,6 +427,12 @@ type SDK interface {
 	// Transform the SDK into a RuntimeTarget if it implements it.
 	AsRuntimeTarget() (RuntimeTarget, bool)
 
+	// AsModule returns the Dagger module backing this SDK, for SDKs that are
+	// themselves modules. Callers use it to reach the SDK's own functions —
+	// notably its generators — without going through workspace module loading.
+	// Builtin SDKs are packaged binaries rather than modules and return false.
+	AsModule() (dagql.ObjectResult[*Module], bool)
+
 	// AttachDependencyResults attaches any cache-backed results embedded in the
 	// SDK implementation and returns the results the owning ModuleSource must
 	// retain.

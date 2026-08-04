@@ -15656,9 +15656,13 @@ type WorkspaceWithInitClientOpts struct {
 	Args JSON
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+	// Skip running the SDK's generators for the new client.
+	NoGenerate bool
 }
 
 // Return this workspace with a generated API client initialized.
+//
+// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
 func (r *Workspace) WithInitClient(path string, sdk string, module string, opts ...WorkspaceWithInitClientOpts) *Workspace {
 	q := r.query.Select("withInitClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -15669,6 +15673,10 @@ func (r *Workspace) WithInitClient(path string, sdk string, module string, opts 
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
+		}
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 	q = q.Arg("path", path)
@@ -15692,9 +15700,13 @@ type WorkspaceWithInitModuleOpts struct {
 	Args JSON
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+	// Skip running the SDK's generators for the new module.
+	NoGenerate bool
 }
 
 // Return this workspace with a new module initialized.
+//
+// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
 func (r *Workspace) WithInitModule(name string, sdk string, opts ...WorkspaceWithInitModuleOpts) *Workspace {
 	q := r.query.Select("withInitModule")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -15717,6 +15729,10 @@ func (r *Workspace) WithInitModule(name string, sdk string, opts ...WorkspaceWit
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
+		}
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 	q = q.Arg("name", name)

@@ -576,6 +576,15 @@ func (sdk *persistedModuleSourceLazySDK) AsRuntimeTarget() (RuntimeTarget, bool)
 	return persistedModuleSourceLazyRuntimeTarget{sdk: sdk}, true
 }
 
+// AsModule reports no module. Every other capability is a behavior this wrapper
+// can defer behind a recorded flag; a module result is a value, so handing one
+// back would mean loading the SDK eagerly and defeating the laziness. Callers
+// that need the SDK's own module (workspace init's scoped generation) hold a
+// freshly loaded SDK, never a rehydrated one.
+func (sdk *persistedModuleSourceLazySDK) AsModule() (dagql.ObjectResult[*Module], bool) {
+	return dagql.ObjectResult[*Module]{}, false
+}
+
 type persistedModuleSourceLazyRuntime struct {
 	sdk *persistedModuleSourceLazySDK
 }

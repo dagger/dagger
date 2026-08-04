@@ -15,57 +15,62 @@ import (
 )
 
 type workspaceInitClientArgs struct {
-	Path   string
-	SDK    string
-	Module string
-	Args   core.JSON `default:""`
-	Here   bool      `default:"false"`
+	Path       string
+	SDK        string
+	Module     string
+	Args       core.JSON `default:""`
+	Here       bool      `default:"false"`
+	NoGenerate bool      `default:"false"`
 }
 
+// initClientChanges stages the workspace config edit recording the new client
+// plus whatever the SDK's initClient scaffolds. The returned initScope names
+// what was created, so the caller can generate for exactly it (see
+// workspaceSchema.withScopedGeneration).
 func (s *workspaceSchema) initClientChanges(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceInitClientArgs,
-) (res dagql.ObjectResult[*core.Changeset], _ error) {
+) (res dagql.ObjectResult[*core.Changeset], scope initScope, _ error) {
 	ws := parent.Self()
 	lockMode := ""
 	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
 		lockMode = clientMetadata.LockMode
 	}
 	if args.Path == "" {
-		return res, fmt.Errorf("client path is required")
+		return res, scope, fmt.Errorf("client path is required")
 	}
 	if args.SDK == "" {
-		return res, fmt.Errorf("SDK name is required")
+		return res, scope, fmt.Errorf("SDK name is required")
 	}
 	if args.Module == "" {
-		return res, fmt.Errorf("module ref is required")
+		return res, scope, fmt.Errorf("module ref is required")
 	}
 
 	clientPath, err := cleanWorkspaceClientPath(args.Path)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(ws, args.Module)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, args.Here)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	cfg := staged.Config
 	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	workspaceCtx := ctx
 	if ws.ClientID != "" {
 		workspaceCtx, err = s.withWorkspaceClientContext(ctx, ws)
 		if err != nil {
-			return res, fmt.Errorf("workspace client context: %w", err)
+			return res, scope, fmt.Errorf("workspace client context: %w", err)
 		}
 	}
 	if lockMode != "" {
@@ -75,7 +80,7 @@ func (s *workspaceSchema) initClientChanges(
 
 	targetModule, err := s.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, "")
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	modulePin := targetModule.Self().Pin()
 
@@ -90,49 +95,64 @@ func (s *workspaceSchema) initClientChanges(
 
 	newConfigBytes, err := workspace.UpdateConfigBytes(staged.Data, cfg)
 	if err != nil {
-		return res, fmt.Errorf("update workspace config: %w", err)
+		return res, scope, fmt.Errorf("update workspace config: %w", err)
 	}
 
 	configRelPath := staged.ConfigFile
 	baseDir, err := s.workspaceOverlayRootfs(ctx, ws)
 	if err != nil {
-		return res, fmt.Errorf("resolve workspace rootfs: %w", err)
+		return res, scope, fmt.Errorf("resolve workspace rootfs: %w", err)
 	}
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return res, fmt.Errorf("dagql server: %w", err)
+		return res, scope, fmt.Errorf("dagql server: %w", err)
 	}
 
 	updatedDir := baseDir
 	updatedDir, err = workspaceWithFile(ctx, dag, updatedDir, configRelPath, newConfigBytes)
 	if err != nil {
-		return res, fmt.Errorf("stage workspace config update: %w", err)
+		return res, scope, fmt.Errorf("stage workspace config update: %w", err)
 	}
 
 	engineChanges, err := workspaceMigrationChanges(ctx, updatedDir, baseDir)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 
 	sdkArgs, err := coresdk.DecodeInitArgs(args.Args)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	loadedSDK, err := s.loadWorkspaceSDK(ctx, ws, staged.ConfigDir, sdkRef)
 	if err != nil {
-		return res, err
+		return res, scope, err
 	}
 	clientInitializer, ok := loadedSDK.AsClientInitializer()
 	if !ok {
-		return res, fmt.Errorf("%q does not support client init", args.SDK)
+		return res, scope, fmt.Errorf("%q does not support client init", args.SDK)
 	}
 	sdkChanges, err := clientInitializer.InitClient(ctx, parent, clientPath, moduleRef, sdkArgs)
 	if err != nil {
-		return res, fmt.Errorf("sdk client init: %w", err)
+		return res, scope, fmt.Errorf("sdk client init: %w", err)
 	}
 
-	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
+	res, err = mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
+	if err != nil {
+		return res, scope, err
+	}
+
+	// Create the client directory, even when the SDK's initClient scaffolds
+	// nothing into it (the Go SDK stages an empty changeset). Generation runs
+	// with this path as the workspace cwd, and a cwd that exists in neither the
+	// overlay nor the host cannot be resolved — "stat <path>: no such file or
+	// directory". Module init gets this for free from the dagger-module.toml the
+	// engine writes; a client has no engine-owned file of its own.
+	res, err = changesetWithDirectoryMode(ctx, res, clientPath, 0o755)
+	if err != nil {
+		return res, scope, err
+	}
+	return res, initScope{sdk: sdkName, path: clientPath}, nil
 }
 
 func (s *workspaceSchema) resolveClientTargetModule(

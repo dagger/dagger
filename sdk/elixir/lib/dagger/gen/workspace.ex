@@ -482,10 +482,13 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a generated API client initialized.
+
+  The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
   """
   @spec with_init_client(t(), String.t(), String.t(), String.t(), [
           {:args, Dagger.JSON.t() | nil},
-          {:here, boolean() | nil}
+          {:here, boolean() | nil},
+          {:no_generate, boolean() | nil}
         ]) :: Dagger.Workspace.t()
   def with_init_client(%__MODULE__{} = workspace, path, sdk, module, optional_args \\ []) do
     query_builder =
@@ -496,6 +499,7 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("module", module)
       |> QB.maybe_put_arg("args", optional_args[:args])
       |> QB.maybe_put_arg("here", optional_args[:here])
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
 
     %Dagger.Workspace{
       query_builder: query_builder,
@@ -505,13 +509,16 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a new module initialized.
+
+  The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
   """
   @spec with_init_module(t(), String.t(), String.t(), [
           {:path, String.t() | nil},
           {:source, String.t() | nil},
           {:include, [String.t()]},
           {:args, Dagger.JSON.t() | nil},
-          {:here, boolean() | nil}
+          {:here, boolean() | nil},
+          {:no_generate, boolean() | nil}
         ]) :: Dagger.Workspace.t()
   def with_init_module(%__MODULE__{} = workspace, name, sdk, optional_args \\ []) do
     query_builder =
@@ -524,6 +531,7 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("args", optional_args[:args])
       |> QB.maybe_put_arg("here", optional_args[:here])
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
 
     %Dagger.Workspace{
       query_builder: query_builder,

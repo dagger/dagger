@@ -413,7 +413,7 @@ func (s *workspaceSchema) withInitModule(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceInitModuleArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	changes, err := s.initModuleChanges(
+	changes, scope, err := s.initModuleChanges(
 		workspaceInstallContextWithLockMode(ctx, workspace.LockModeDisabled),
 		parent,
 		args,
@@ -421,7 +421,14 @@ func (s *workspaceSchema) withInitModule(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceWithChangeset(ctx, parent, changes)
+	updated, err := s.workspaceWithChangeset(ctx, parent, changes)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if args.NoGenerate {
+		return updated, nil
+	}
+	return s.withScopedGeneration(ctx, updated, scope)
 }
 
 func (s *workspaceSchema) withInitClient(
@@ -429,7 +436,7 @@ func (s *workspaceSchema) withInitClient(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceInitClientArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	changes, err := s.initClientChanges(
+	changes, scope, err := s.initClientChanges(
 		workspaceInstallContextWithLockMode(ctx, workspace.LockModeDisabled),
 		parent,
 		args,
@@ -437,7 +444,180 @@ func (s *workspaceSchema) withInitClient(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.workspaceWithChangeset(ctx, parent, changes)
+	updated, err := s.workspaceWithChangeset(ctx, parent, changes)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if args.NoGenerate {
+		return updated, nil
+	}
+	return s.withScopedGeneration(ctx, updated, scope)
+}
+
+// initScope identifies what an init just created: the workspace-root-relative
+// path of the new module or client, and the module entry name of the SDK that
+// owns it.
+type initScope struct {
+	sdk  string
+	path string
+}
+
+// sdkGenerators collects the generators an installed SDK exposes, reading them
+// off the SDK's own module.
+//
+// Workspace.generators answers the same question for the workspace as a whole,
+// but sources its modules from the ones the client loaded, so asking it for a
+// single SDK means demanding workspace module loading. This loads the one SDK
+// named and nothing else — the same load init already performs to scaffold with.
+func (s *workspaceSchema) sdkGenerators(
+	ctx context.Context,
+	parentResult dagql.ObjectResult[*core.Workspace],
+	args struct {
+		SDK string
+	},
+) (*core.GeneratorGroup, error) {
+	parent := parentResult.Self()
+	staged, err := s.loadWorkspaceConfigForOverlay(ctx, parent, workspaceConfigMustExist, false)
+	if err != nil {
+		return nil, err
+	}
+	sdkName, _, sdkRef, err := installedSDKSource(staged.Config, args.SDK)
+	if err != nil {
+		return nil, err
+	}
+	loaded, err := s.loadWorkspaceSDK(ctx, parent, staged.ConfigDir, sdkRef)
+	if err != nil {
+		return nil, fmt.Errorf("load SDK %q: %w", sdkName, err)
+	}
+	mod, ok := loaded.AsModule()
+	if !ok {
+		// A builtin SDK is a packaged binary, not a module, so it has no
+		// generator functions to expose.
+		return &core.GeneratorGroup{}, nil
+	}
+	mod, err = moduleUnderWorkspaceName(ctx, mod, sdkName)
+	if err != nil {
+		return nil, fmt.Errorf("load SDK %q as %q: %w", sdkRef, sdkName, err)
+	}
+
+	gg, err := core.NewGeneratorGroup(ctx, mod, nil)
+	if err != nil {
+		return nil, fmt.Errorf("generators from SDK %q: %w", sdkName, err)
+	}
+	// Name the tree after the workspace entry, so generator paths read the same
+	// as they do under `dagger generate <sdk>`.
+	reparentWorkspaceTreeRoot(gg.Node, sdkName)
+	// Bind the receiver, exactly as Workspace.generators does, so the generators
+	// run against this workspace — overlay edits and cwd included — instead of
+	// the session's frozen current workspace.
+	gg.BoundWorkspace = parentResult
+	return gg, nil
+}
+
+// moduleUnderWorkspaceName reloads mod under the name its workspace entry gives
+// it, matching how workspace module loading installs it.
+//
+// The name is load-bearing, not cosmetic: currentModule.asSDK — which every SDK
+// generator calls to find the modules and clients it manages — matches the
+// running module's name against the dagger.toml entries. An SDK loaded from its
+// ref carries its own name ("go-sdk"), so without this it fails to match its
+// entry ("dagger-go-sdk") and reports that it is not installed as an SDK.
+func moduleUnderWorkspaceName(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	name string,
+) (dagql.ObjectResult[*core.Module], error) {
+	if mod.Self().Name() == name {
+		return mod, nil
+	}
+	src := mod.Self().Source
+	if !src.Valid {
+		return mod, fmt.Errorf("module has no source")
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return mod, err
+	}
+	var renamed dagql.ObjectResult[*core.Module]
+	if err := dag.Select(ctx, src.Value, &renamed,
+		dagql.Selector{
+			Field: "withName",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(name)}},
+		},
+		dagql.Selector{Field: "asModule"},
+	); err != nil {
+		return mod, err
+	}
+	return renamed, nil
+}
+
+// withScopedGeneration runs the owning SDK's generators against updated with
+// scope.path as the workspace cwd, and folds their output back into it — so an
+// init returns a single changeset carrying both the scaffold and the generated
+// code it needs to be loadable.
+//
+// Scoping is by cwd, not by generator selection: every SDK's @generate is
+// anchored at the workspace cwd (it generates the module it's in plus the ones
+// beneath, and only the clients under that path), so pointing it at what was
+// just created is what keeps the rest of the workspace untouched. This is the
+// same mechanism ModuleSource.generateLocalDependencies uses per dependency.
+//
+// The generators come from __sdkGenerators, which reads them off the SDK's own
+// module, rather than from Workspace.generators, which resolves them out of the
+// client's loaded workspace modules. Init already loads the SDK to scaffold
+// with, so the former needs nothing else; the latter would make init demand
+// workspace module loading for a set it only ever filters back down to this one
+// SDK.
+func (s *workspaceSchema) withScopedGeneration(
+	ctx context.Context,
+	updated dagql.ObjectResult[*core.Workspace],
+	scope initScope,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	// Nothing to stage: what was just created has no already-generated local
+	// dependency closure to carry in.
+	scoped, err := scopedStagedWorkspace(ctx, dag, updated, scope.path, dagql.ObjectResult[*core.Changeset]{})
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("scope workspace to %q: %w", scope.path, err)
+	}
+
+	// Resolved on the scoped workspace, because the group binds to its receiver:
+	// that is what carries both the post-init overlay — where the entry init just
+	// recorded in dagger.toml lives, without which the generator would not see the
+	// new module or client — and the cwd that scopes it.
+	var generators dagql.ObjectResult[*core.GeneratorGroup]
+	if err := dag.Select(ctx, scoped, &generators, dagql.Selector{
+		Field: "__sdkGenerators",
+		Args: []dagql.NamedInput{
+			{Name: "sdk", Value: dagql.String(scope.sdk)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if len(generators.Self().Generators) == 0 {
+		// An SDK that exposes no generator has nothing to contribute; the
+		// config and scaffold init planned still stand.
+		return updated, nil
+	}
+
+	var generated dagql.ObjectResult[*core.Changeset]
+	if err := dag.Select(ctx, generators, &generated,
+		dagql.Selector{Field: "run"},
+		dagql.Selector{Field: "changes"},
+	); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	// Generation ran with scope.path as cwd, so its changeset is rooted there.
+	// Re-root it to the workspace root so it overlays in the right place.
+	generated, err = rerootChangesetUnder(ctx, dag, generated, scope.path)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("reroot changeset under %q: %w", scope.path, err)
+	}
+	return s.workspaceWithChangeset(ctx, updated, generated)
 }
 
 func (s *workspaceSchema) withUpdatedLock(

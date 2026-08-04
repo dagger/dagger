@@ -91,6 +91,12 @@ func (sdk *dangSDK) AsRuntimeTarget() (core.RuntimeTarget, bool) {
 	return nil, false
 }
 
+// AsModule reports no module: the Dang SDK is packaged into the engine rather
+// than loaded as a Dagger module, so it exposes no generator functions.
+func (sdk *dangSDK) AsModule() (dagql.ObjectResult[*core.Module], bool) {
+	return dagql.ObjectResult[*core.Module]{}, false
+}
+
 func (sdk *dangSDK) AttachDependencyResults(
 	context.Context,
 	func(dagql.AnyResult) (dagql.AnyResult, error),
