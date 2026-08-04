@@ -28,6 +28,11 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
+	// Let core derive workspace-served schemas (WorkspaceServedSchema) through
+	// the overlay: re-resolving overlay-affected modules needs the overlay
+	// rootfs machinery that lives in this package.
+	core.SetWorkspaceOverlayModuleLoader(s.overlayModuleLoader)
+
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
@@ -3522,8 +3527,14 @@ func (s *workspaceSchema) terminals(
 		return nil, err
 	}
 
+	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+
 	allTerminals, err := collectWorkspaceModuleTargets(
 		ctx,
+		mods,
 		include,
 		"terminal targets",
 		"terminal target",
@@ -3556,8 +3567,14 @@ func (s *workspaceSchema) agents(
 		return nil, err
 	}
 
+	mods, err := s.workspaceTargetModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+
 	allAgents, err := collectWorkspaceModuleTargets(
 		ctx,
+		mods,
 		include,
 		"agents",
 		"agent",
@@ -3571,14 +3588,13 @@ func (s *workspaceSchema) agents(
 	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
 }
 
-func collectWorkspaceModuleTargets[T any](
+// workspaceTargetModules returns the workspace's primary modules as they
+// should be seen when composing targets (agents, terminals) from them.
+func (s *workspaceSchema) workspaceTargetModules(
 	ctx context.Context,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	include []string,
-	groupLabel string,
-	targetLabel string,
-	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
-	node func(T) *core.ModTreeNode,
-) ([]T, error) {
+) ([]dagql.ObjectResult[*core.Module], error) {
 	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
 		return nil, err
 	}
@@ -3587,6 +3603,26 @@ func collectWorkspaceModuleTargets[T any](
 		return nil, err
 	}
 
+	// The served modules above are the workspace as it was on disk when the
+	// session started. Re-resolve whatever the workspace's pending overlay
+	// touches, so an agent recomposing itself (install/reload) sees its own
+	// staged edits to module source and to dagger.toml.
+	overlayMods, err := s.workspaceOverlayModules(ctx, parentResult, include)
+	if err != nil {
+		return nil, err
+	}
+	return mergeOverlayModules(mods, overlayMods), nil
+}
+
+func collectWorkspaceModuleTargets[T any](
+	ctx context.Context,
+	mods []dagql.ObjectResult[*core.Module],
+	include []string,
+	groupLabel string,
+	targetLabel string,
+	collect func(context.Context, dagql.ObjectResult[*core.Module]) (*core.ModTreeNode, []T, error),
+	node func(T) *core.ModTreeNode,
+) ([]T, error) {
 	var all []T
 	for _, mod := range mods {
 		root, targets, err := collect(ctx, mod)
