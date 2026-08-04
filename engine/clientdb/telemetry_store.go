@@ -5,9 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
+
+	telemetry "github.com/dagger/otel-go"
+	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 type spanLookupKey struct {
@@ -23,30 +28,56 @@ type spanLookup struct {
 	// Duplicate snapshots are suppressed when firstRow is populated, leaving
 	// one copy of each child span ID in its parent's slice.
 	children map[string][]string
+	// causalChildren indexes cause-purpose span links: linked (target) span ID
+	// → linking span IDs. dagui treats such links as parent→child edges (the
+	// linking span joins the linked span's ChildSpans; see dagql/dagui/db.go),
+	// so the descendant walk follows them too — e.g. a service's long-lived
+	// exec span cause-links to the API spans that installed the Service value
+	// (Container.asService and friends), and the service's logs belong beneath
+	// them. Unlike children, this index is fed from EVERY snapshot row of a
+	// span, not just the first: links are added to live spans over time
+	// (RunningService.addOriginSpanContexts), so later snapshots carry edges
+	// the first row lacked.
+	causalChildren map[string][]string
 }
 
 func newSpanLookup() *spanLookup {
 	return &spanLookup{
-		firstRow: make(map[spanLookupKey]int64),
-		children: make(map[string][]string),
+		firstRow:       make(map[spanLookupKey]int64),
+		children:       make(map[string][]string),
+		causalChildren: make(map[string][]string),
 	}
 }
 
 func (l *spanLookup) add(row Span) {
+	targets := causalLinkTargets(row)
 	l.mu.Lock()
-	l.addLocked(row)
+	l.addLocked(row, targets)
 	l.mu.Unlock()
 }
 
 func (l *spanLookup) addAll(rows []Span) {
+	targets := make([][]string, len(rows))
+	for i, row := range rows {
+		targets[i] = causalLinkTargets(row)
+	}
 	l.mu.Lock()
-	for _, row := range rows {
-		l.addLocked(row)
+	for i, row := range rows {
+		l.addLocked(row, targets[i])
 	}
 	l.mu.Unlock()
 }
 
-func (l *spanLookup) addLocked(row Span) {
+func (l *spanLookup) addLocked(row Span, causalTargets []string) {
+	// Link edges are indexed before (and regardless of) the duplicate-snapshot
+	// suppression below: a later snapshot of an already-seen span may carry
+	// links its first row lacked.
+	for _, target := range causalTargets {
+		kids := l.causalChildren[target]
+		if !slices.Contains(kids, row.SpanID) {
+			l.causalChildren[target] = append(kids, row.SpanID)
+		}
+	}
 	key := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
 	if _, exists := l.firstRow[key]; exists {
 		return
@@ -66,6 +97,50 @@ func (l *spanLookup) addLocked(row Span) {
 	}
 }
 
+// causalLinkTargets decodes row's span links and returns the span IDs it
+// cause-links to. Purpose handling mirrors dagui's link ingestion
+// (dagql/dagui/db.go): links marked LinkPurposeCause — and links with no
+// purpose, which imply causality — are parent→child edges; other purposes
+// (error_origin, wait) are not.
+func causalLinkTargets(row Span) []string {
+	if len(row.Links) <= len("[]") {
+		// no links: nil, or an empty JSON array
+		return nil
+	}
+	var linksPB []*otlptracev1.Span_Link
+	if err := UnmarshalProtoJSONs(row.Links, &otlptracev1.Span_Link{}, &linksPB); err != nil {
+		slog.Warn("failed to unmarshal span links", "span", row.SpanID, "error", err)
+		return nil
+	}
+	var targets []string
+	for _, link := range telemetry.SpanLinksFromPB(linksPB) {
+		purpose := ""
+		for _, kv := range link.Attributes {
+			if string(kv.Key) == telemetry.LinkPurposeAttr {
+				purpose = kv.Value.AsString()
+				break
+			}
+		}
+		switch purpose {
+		case telemetry.LinkPurposeCause, "":
+		default:
+			continue
+		}
+		if !link.SpanContext.HasSpanID() {
+			continue
+		}
+		target := link.SpanContext.SpanID().String()
+		if target == row.SpanID {
+			// a self-link would add a pointless self-edge; skip it
+			continue
+		}
+		if !slices.Contains(targets, target) {
+			targets = append(targets, target)
+		}
+	}
+	return targets
+}
+
 func (l *spanLookup) first(traceID, spanID string) (int64, bool) {
 	l.mu.RLock()
 	id, found := l.firstRow[spanLookupKey{traceID: traceID, spanID: spanID}]
@@ -73,6 +148,10 @@ func (l *spanLookup) first(traceID, spanID string) (int64, bool) {
 	return id, found
 }
 
+// descendants returns every span reachable from root via child edges and
+// cause-purpose link edges — the same containment dagui renders, where a
+// cause-linking span (e.g. a service's exec span) appears as a child of the
+// span it links to (e.g. the Container.asService install span).
 func (l *spanLookup) descendants(root string) map[string]struct{} {
 	descendants := make(map[string]struct{})
 	seen := map[string]struct{}{root: {}}
@@ -83,6 +162,7 @@ func (l *spanLookup) descendants(root string) map[string]struct{} {
 
 		l.mu.RLock()
 		children := append([]string(nil), l.children[parent]...)
+		children = append(children, l.causalChildren[parent]...)
 		l.mu.RUnlock()
 
 		for _, child := range children {

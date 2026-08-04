@@ -303,6 +303,11 @@ type SpanSnapshot struct {
 	// skipped because it could not be loaded.
 	GenerateSkipped bool `json:",omitempty"`
 
+	// Service marks the long-lived exec span of a started service instance
+	// (running exactly while the service is up; cause-links to the API spans
+	// that installed the Service value).
+	Service bool `json:",omitempty"`
+
 	// Service name
 	ServiceName string `json:",omitempty"`
 
@@ -460,7 +465,10 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetryattrs.GenerateSkippedAttr:
 		snapshot.GenerateSkipped = val.(bool)
 
-	case "dagger.io/service.name":
+	case telemetryattrs.ServiceAttr:
+		snapshot.Service = val.(bool)
+
+	case telemetryattrs.ServiceNameAttr:
 		snapshot.ServiceName = val.(string)
 
 	case telemetry.LLMRoleAttr:

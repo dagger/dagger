@@ -4,7 +4,13 @@ import (
 	"database/sql"
 	"testing"
 
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 func TestStoreStreamsAndSpanQueries(t *testing.T) {
@@ -85,6 +91,103 @@ func TestStoreSelectorsHonorNonPositiveLimits(t *testing.T) {
 	spans, err := store.SelectSpansSince(t.Context(), SelectSpansSinceParams{Limit: 0})
 	require.NoError(t, err)
 	require.Empty(t, spans)
+}
+
+// TestSelectLogsBeneathSpanFollowsCausalLinks covers the cause-link edges in
+// the descendant walk, mirroring how dagui renders them as parent→child: a
+// service's long-lived exec span is parented under whatever call triggered the
+// start, but cause-links to the API spans that installed the Service value
+// (e.g. Container.asService) — and its logs must be readable beneath those.
+func TestSelectLogsBeneathSpanFollowsCausalLinks(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", 256)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	// Link targets round-trip through OTLP span IDs, so they must be valid
+	// 16-hex-char IDs; plain names suffice everywhere else.
+	const (
+		traceID      = "000102030405060708090a0b0c0d0e0f"
+		installSpan  = "00000000000000aa" // Container.asService: produced the Service
+		trigger      = "00000000000000bb" // the call that triggered the start
+		serviceSpan  = "00000000000000cc" // the long-lived exec span
+		serviceChild = "00000000000000dd" // e.g. the exec's process span
+		waiter       = "00000000000000ee" // wait-links to installSpan; NOT causal
+	)
+
+	spans := []Span{
+		{TraceID: traceID, SpanID: installSpan},
+		{TraceID: traceID, SpanID: trigger},
+		// The service span's first snapshot has no links yet; a later snapshot
+		// carries the cause link added while the span was live
+		// (RunningService.addOriginSpanContexts). The duplicate-suppressed
+		// children index must not swallow the late edge.
+		{TraceID: traceID, SpanID: serviceSpan, ParentSpanID: validString(trigger)},
+		{TraceID: traceID, SpanID: serviceSpan, ParentSpanID: validString(trigger), Links: linksJSON(t,
+			spanLink(t, traceID, installSpan, telemetry.LinkPurposeCause),
+			// self-links must not create self-edges
+			spanLink(t, traceID, serviceSpan, telemetry.LinkPurposeCause),
+		)},
+		{TraceID: traceID, SpanID: serviceChild, ParentSpanID: validString(serviceSpan)},
+		// Non-causal purposes (wait, error_origin) are not containment edges.
+		{TraceID: traceID, SpanID: waiter, Links: linksJSON(t,
+			spanLink(t, traceID, installSpan, telemetryattrs.LinkPurposeWait),
+		)},
+	}
+	_, err = store.AppendSpans(spans)
+	require.NoError(t, err)
+
+	logs := []Log{
+		{TraceID: validString(traceID), SpanID: validString(installSpan), Body: []byte("install's own logs excluded")},
+		{TraceID: validString(traceID), SpanID: validString(serviceSpan), Body: []byte("service stdout")},
+		{TraceID: validString(traceID), SpanID: validString(serviceChild), Body: []byte("service child stdout")},
+		{TraceID: validString(traceID), SpanID: validString(trigger), Body: []byte("trigger excluded")},
+		{TraceID: validString(traceID), SpanID: validString(waiter), Body: []byte("waiter excluded")},
+	}
+	_, err = store.AppendLogs(logs)
+	require.NoError(t, err)
+
+	// Beneath the install span: the cause-linked service span and its subtree.
+	page, err := store.SelectLogsBeneathSpan(t.Context(), SelectLogsBeneathSpanParams{
+		SpanID: validString(installSpan),
+		Limit:  10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{2, 3}, logIDs(page))
+
+	// The plain tree walk still works and reaches the same subtree.
+	page, err = store.SelectLogsBeneathSpan(t.Context(), SelectLogsBeneathSpanParams{
+		SpanID: validString(trigger),
+		Limit:  10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{2, 3}, logIDs(page))
+}
+
+func spanLink(t *testing.T, traceID, spanID, purpose string) sdktrace.Link {
+	t.Helper()
+	tid, err := trace.TraceIDFromHex(traceID)
+	require.NoError(t, err)
+	sid, err := trace.SpanIDFromHex(spanID)
+	require.NoError(t, err)
+	link := sdktrace.Link{
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: tid,
+			SpanID:  sid,
+		}),
+	}
+	if purpose != "" {
+		link.Attributes = []attribute.KeyValue{
+			attribute.String(telemetry.LinkPurposeAttr, purpose),
+		}
+	}
+	return link
+}
+
+func linksJSON(t *testing.T, links ...sdktrace.Link) []byte {
+	t.Helper()
+	data, err := MarshalProtoJSONs(telemetry.SpanLinksToPB(links))
+	require.NoError(t, err)
+	return data
 }
 
 func validString(value string) sql.NullString {
