@@ -108,18 +108,19 @@ type Server struct {
 	// worker/executor-specific config+state
 	//
 
-	runc             *runc.Runc
-	cgroupParent     string
-	networkProviders map[pb.NetMode]network.Provider
-	processMode      oci.ProcessMode
-	dns              *oci.DNSConfig
-	apparmorProfile  string
-	selinux          bool
-	entitlements     entitlements.Set
-	enabledPlatforms []ocispecs.Platform
-	defaultPlatform  ocispecs.Platform
-	registryHosts    docker.RegistryHosts
-	cleanMntNS       *os.File
+	runc                    *runc.Runc
+	cgroupParent            string
+	networkProviders        map[pb.NetMode]network.Provider
+	processMode             oci.ProcessMode
+	dns                     *oci.DNSConfig
+	apparmorProfile         string
+	selinux                 bool
+	entitlements            entitlements.Set
+	enabledPlatforms        []ocispecs.Platform
+	defaultPlatform         ocispecs.Platform
+	registryHosts           docker.RegistryHosts
+	cleanMntNS              *os.File
+	recursiveReadOnlyMounts bool
 
 	//
 	// telemetry config+state
@@ -369,6 +370,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
+	srv.initRecursiveReadOnlyMounts(ctx)
+
 	hostMntNS, err := os.OpenFile("/proc/self/ns/mnt", os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open host mount namespace: %w", err)
@@ -453,6 +456,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
+	var err error
+	srv.recursiveReadOnlyMounts, err = probeRecursiveReadOnlyMounts()
+	if err != nil {
+		// ENOSYS on old kernels and EPERM under namespace/seccomp restrictions
+		// are expected compatibility cases. Retain false and use rbind,ro.
+		slog.DebugContext(ctx, "recursive read-only mounts unavailable; engine volumes will use top-level read-only fallback", "error", err)
+	}
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {

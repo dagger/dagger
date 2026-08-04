@@ -179,6 +179,19 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+     */
+    public function engineVolume(string $name, ?string $subdir = null): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('engineVolume');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $subdir) {
+        $innerQueryBuilder->setArgument('subdir', $subdir);
+        }
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Initializes a new environment
      */
     public function env(?bool $privileged = false, ?bool $writable = false): Env

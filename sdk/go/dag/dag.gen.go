@@ -136,6 +136,12 @@ func Engine() *dagger.Engine {
 	return client.Engine()
 }
 
+// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+func EngineVolume(name string, opts ...dagger.EngineVolumeOpts) *dagger.Volume {
+	client := initClient()
+	return client.EngineVolume(name, opts...)
+}
+
 // Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized

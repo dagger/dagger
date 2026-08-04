@@ -15,6 +15,13 @@ var _ SchemaResolvers = &volumeSchema{}
 
 func (s *volumeSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
+		dagql.NodeFunc("engineVolume", s.engineVolume).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.").
+			Args(
+				dagql.Arg("name").Doc("Canonical slash-separated volume name beneath the engine volume namespace."),
+				dagql.Arg("subdir").Doc("Optional existing subdirectory within the volume payload to mount."),
+			),
 		dagql.NodeFunc("sshfsVolume", s.sshfsVolume).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerSessionInput).
@@ -31,6 +38,41 @@ func (s *volumeSchema) Install(srv *dagql.Server) {
 
 	srv.InstallObject(dagql.NewClass[*core.Volume](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.Volume]{}.Install(srv)
+}
+
+type engineVolumeArgs struct {
+	Name   string
+	Subdir dagql.Optional[dagql.String]
+}
+
+func (s *volumeSchema) engineVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args engineVolumeArgs) (dagql.ObjectResult[*core.Volume], error) {
+	if err := parent.Self().RequireMainClient(ctx); err != nil {
+		return dagql.ObjectResult[*core.Volume]{}, err
+	}
+	if err := core.ValidateEngineVolumeName(args.Name); err != nil {
+		return dagql.ObjectResult[*core.Volume]{}, err
+	}
+
+	subdir := ""
+	if args.Subdir.Valid {
+		subdir = string(args.Subdir.Value)
+		if err := core.ValidateEngineVolumeSubdir(subdir); err != nil {
+			return dagql.ObjectResult[*core.Volume]{}, err
+		}
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Volume]{}, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.Volume{
+		Backend: core.VolumeBackendKindEngine,
+		Engine: &core.EngineVolumeConfig{
+			Name:          args.Name,
+			Subdir:        subdir,
+			LayoutVersion: core.EngineVolumeLayoutVersion,
+		},
+	})
 }
 
 type sshfsVolumeArgs struct {

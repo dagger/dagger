@@ -2586,6 +2586,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::engineVolume",
+			"p": "Dagger/Client.html#method_engineVolume",
+			"d": "<p>Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::env",
 			"p": "Dagger/Client.html#method_env",
 			"d": "<p>Initializes a new environment</p>"

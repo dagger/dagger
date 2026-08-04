@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
+	ctrdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/moby/sys/userns"
@@ -22,7 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-func prepareExecVolumeMount(cfg *execVolumeMountConfig) (bkcache.Mountable, error) {
+func prepareExecVolumeMount(ctx context.Context, cfg *execVolumeMountConfig) (bkcache.Mountable, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("invalid volume mount options")
 	}
@@ -30,10 +32,156 @@ func prepareExecVolumeMount(cfg *execVolumeMountConfig) (bkcache.Mountable, erro
 		return nil, fmt.Errorf("volume mount missing volume")
 	}
 	vol := cfg.Volume.Self()
-	if vol.Backend != VolumeBackendKindSSHFS || vol.SSHFS == nil {
+	switch vol.Backend {
+	case VolumeBackendKindEngine:
+		if vol.Engine == nil {
+			return nil, fmt.Errorf("engine volume mount missing config")
+		}
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get current query for engine volume: %w", err)
+		}
+		state := query.EngineVolumeState()
+		if state.RootDir == "" {
+			return nil, fmt.Errorf("engine volume state root is not configured")
+		}
+		return &execEngineVolumeMount{cfg: *vol.Engine, state: state}, nil
+	case VolumeBackendKindSSHFS:
+		if vol.SSHFS == nil {
+			return nil, fmt.Errorf("SSHFS volume mount missing config")
+		}
+		return &execVolumeMount{volume: cfg.Volume}, nil
+	default:
 		return nil, fmt.Errorf("unsupported volume backend %q", vol.Backend)
 	}
-	return &execVolumeMount{volume: cfg.Volume}, nil
+}
+
+type execEngineVolumeMount struct {
+	cfg   EngineVolumeConfig
+	state EngineVolumeState
+}
+
+func (mnt *execEngineVolumeMount) Mount(_ context.Context, readonly bool) (bkcache.MountableRef, error) {
+	source, err := prepareEngineVolumeSource(mnt.state.RootDir, &mnt.cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	options := []string{"rbind"}
+	if readonly {
+		if mnt.state.RecursiveReadOnlySupported {
+			options = append(options, "rro")
+		} else {
+			options = append(options, "ro")
+		}
+	}
+	return &execVolumeMountInstance{mounts: []ctrdmount.Mount{{
+		Type:    "bind",
+		Source:  source,
+		Options: options,
+	}}, release: func() error { return nil }}, nil
+}
+
+var engineVolumeCreateMu sync.Mutex
+
+func prepareEngineVolumeSource(engineRoot string, cfg *EngineVolumeConfig) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("engine volume config is missing")
+	}
+	if err := validateEngineVolumeConfig(cfg); err != nil {
+		return "", fmt.Errorf("invalid engine volume %q: %w", cfg.Name, err)
+	}
+	if !filepath.IsAbs(engineRoot) {
+		return "", fmt.Errorf("engine volume state root %q is not absolute", engineRoot)
+	}
+
+	// Serialize Dagger's own first-use creation so every successful caller sees
+	// the exact requested mode without changing pre-existing operator objects.
+	engineVolumeCreateMu.Lock()
+	defer engineVolumeCreateMu.Unlock()
+
+	namespaceRoot, err := ctrdfs.RootPath(engineRoot, filepath.Join("volumes", "v1"))
+	if err != nil {
+		return "", fmt.Errorf("resolve engine volume namespace: %w", err)
+	}
+	if err := ensureEngineVolumeDirs(engineRoot, namespaceRoot); err != nil {
+		return "", fmt.Errorf("prepare engine volume namespace: %w", err)
+	}
+
+	volumeRoot, err := ctrdfs.RootPath(namespaceRoot, filepath.Join(filepath.FromSlash(cfg.Name), "fs"))
+	if err != nil {
+		return "", fmt.Errorf("resolve engine volume %q: %w", cfg.Name, err)
+	}
+	if err := ensureEngineVolumeDirs(namespaceRoot, volumeRoot); err != nil {
+		return "", fmt.Errorf("prepare engine volume %q: %w", cfg.Name, err)
+	}
+
+	selectedRoot := volumeRoot
+	if cfg.Subdir != "" {
+		selectedRoot, err = ctrdfs.RootPath(volumeRoot, filepath.FromSlash(cfg.Subdir))
+		if err != nil {
+			return "", fmt.Errorf("resolve engine volume %q subdir %q: %w", cfg.Name, cfg.Subdir, err)
+		}
+		info, statErr := os.Stat(selectedRoot)
+		switch {
+		case os.IsNotExist(statErr):
+			return "", fmt.Errorf("engine volume %q subdir %q does not exist", cfg.Name, cfg.Subdir)
+		case statErr != nil:
+			return "", fmt.Errorf("stat engine volume %q subdir %q: %w", cfg.Name, cfg.Subdir, statErr)
+		case !info.IsDir():
+			return "", fmt.Errorf("engine volume %q subdir %q is not a directory", cfg.Name, cfg.Subdir)
+		}
+	}
+	return selectedRoot, nil
+}
+
+func ensureEngineVolumeDirs(root, target string) error {
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return err
+	}
+	if rel == "." {
+		return requireEngineVolumeDir(root)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("path %q is outside root %q", target, root)
+	}
+
+	current := root
+	if err := requireEngineVolumeDir(current); err != nil {
+		return err
+	}
+	for _, component := range strings.Split(rel, string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		err := os.Mkdir(current, 0o755)
+		switch {
+		case err == nil:
+			// Mkdir honors the process umask. Only chmod objects this call
+			// created; an existing operator object is never modified.
+			if err := os.Chmod(current, 0o755); err != nil {
+				return fmt.Errorf("set mode on new directory %q: %w", current, err)
+			}
+		case os.IsExist(err):
+			// Preserve existing modes and ownership.
+		default:
+			return fmt.Errorf("create directory %q: %w", current, err)
+		}
+		if err := requireEngineVolumeDir(current); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requireEngineVolumeDir(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %q: %w", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%q is not a directory", path)
+	}
+	return nil
 }
 
 type execVolumeMount struct {

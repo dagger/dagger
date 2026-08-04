@@ -5,12 +5,150 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine/slog"
 )
+
+func TestPrepareEngineVolumeSourceCreatesAndPreservesDirectories(t *testing.T) {
+	t.Parallel()
+
+	engineRoot := t.TempDir()
+	existing := filepath.Join(engineRoot, "volumes", "v1", "group")
+	require.NoError(t, os.MkdirAll(existing, 0o750))
+	require.NoError(t, os.Chmod(existing, 0o750))
+
+	source, err := prepareEngineVolumeSource(engineRoot, &EngineVolumeConfig{
+		Name:          "group/data",
+		LayoutVersion: EngineVolumeLayoutVersion,
+	})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(existing, "data", "fs"), source)
+
+	info, err := os.Stat(source)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+	require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	existingInfo, err := os.Stat(existing)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o750), existingInfo.Mode().Perm())
+}
+
+func TestPrepareEngineVolumeSourceConcurrentCreation(t *testing.T) {
+	t.Parallel()
+
+	engineRoot := t.TempDir()
+	cfg := &EngineVolumeConfig{Name: "concurrent/data", LayoutVersion: EngineVolumeLayoutVersion}
+	const callers = 16
+	results := make(chan string, callers)
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			source, err := prepareEngineVolumeSource(engineRoot, cfg)
+			results <- source
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	want := filepath.Join(engineRoot, "volumes", "v1", "concurrent", "data", "fs")
+	for result := range results {
+		require.Equal(t, want, result)
+	}
+	info, err := os.Stat(want)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+}
+
+func TestPrepareEngineVolumeSourceSubdirAndSymlinkClamp(t *testing.T) {
+	t.Parallel()
+
+	engineRoot := t.TempDir()
+	cfg := &EngineVolumeConfig{Name: "safe/data", LayoutVersion: EngineVolumeLayoutVersion}
+	volumeRoot, err := prepareEngineVolumeSource(engineRoot, cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.Mkdir(filepath.Join(volumeRoot, "existing"), 0o755))
+
+	cfg.Subdir = "existing"
+	selected, err := prepareEngineVolumeSource(engineRoot, cfg)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(volumeRoot, "existing"), selected)
+
+	cfg.Subdir = "missing"
+	_, err = prepareEngineVolumeSource(engineRoot, cfg)
+	require.ErrorContains(t, err, "does not exist")
+	require.NoError(t, os.WriteFile(filepath.Join(volumeRoot, "file"), []byte("payload"), 0o644))
+	cfg.Subdir = "file"
+	_, err = prepareEngineVolumeSource(engineRoot, cfg)
+	require.ErrorContains(t, err, "is not a directory")
+
+	outside := t.TempDir()
+	require.NoError(t, os.Symlink(outside, filepath.Join(volumeRoot, "escape")))
+	cfg.Subdir = "escape"
+	selected, err = prepareEngineVolumeSource(engineRoot, cfg)
+	require.Error(t, err)
+	require.Empty(t, selected)
+	require.NotContains(t, err.Error(), outside)
+}
+
+func TestPrepareEngineVolumeSourceRejectsWrongType(t *testing.T) {
+	t.Parallel()
+
+	engineRoot := t.TempDir()
+	wrongType := filepath.Join(engineRoot, "volumes")
+	require.NoError(t, os.WriteFile(wrongType, []byte("operator file"), 0o640))
+	_, err := prepareEngineVolumeSource(engineRoot, &EngineVolumeConfig{
+		Name:          "data",
+		LayoutVersion: EngineVolumeLayoutVersion,
+	})
+	require.ErrorContains(t, err, "not a directory")
+	contents, readErr := os.ReadFile(wrongType)
+	require.NoError(t, readErr)
+	require.Equal(t, "operator file", string(contents))
+}
+
+func TestEngineVolumeMountOptionsFollowCapability(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		readonly  bool
+		supported bool
+		options   []string
+	}{
+		{name: "writable", options: []string{"rbind"}},
+		{name: "recursive readonly", readonly: true, supported: true, options: []string{"rbind", "rro"}},
+		{name: "readonly fallback", readonly: true, options: []string{"rbind", "ro"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			mountable := &execEngineVolumeMount{
+				cfg:   EngineVolumeConfig{Name: "data", LayoutVersion: EngineVolumeLayoutVersion},
+				state: EngineVolumeState{RootDir: root, RecursiveReadOnlySupported: tc.supported},
+			}
+			ref, err := mountable.Mount(context.Background(), tc.readonly)
+			require.NoError(t, err)
+			mounts, release, err := ref.Mount()
+			require.NoError(t, err)
+			require.NotNil(t, release)
+			require.NoError(t, release())
+			require.Len(t, mounts, 1)
+			require.Equal(t, tc.options, mounts[0].Options)
+		})
+	}
+}
 
 func TestSSHFSCommandArgsSecure(t *testing.T) {
 	t.Parallel()
