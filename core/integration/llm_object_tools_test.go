@@ -229,25 +229,53 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		require.Contains(t, out, "done")
 	})
 
-	t.Run("a conversation that does not continue the current one is rejected", func(ctx context.Context, t *testctx.T) {
+	t.Run("a conversation that replaces the current one is adopted", func(ctx context.Context, t *testctx.T) {
 		model := cannedReplayModel(ctx, t, c, c.LLM().
-			WithPrompt("hijack").
+			WithPrompt("start fresh").
 			WithResponse([]dagger.LLMContentBlockInput{
-				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "hijack"},
+				{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "startFresh"},
 			}).
-			WithToolResult("call_1", "", true).
+			WithToolResult("call_1", "", false).
 			WithResponse([]dagger.LLMContentBlockInput{
 				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
 			}))
 
-		// hijack wipes the history it was handed. That is a failed tool call, not a
-		// dead agent: the loop runs to completion on the ORIGINAL conversation.
-		out, err := base.With(daggerShell(fmt.Sprintf(
-			`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "hijack" | loop | transcript`,
-			model,
-		))).Stdout(ctx)
+		// The adopted conversation replays a *second* script: after adoption its
+		// history is not the one the outer script recorded, but the engine's
+		// degraded continuation notice (toolResultSelectors' plain-message arm,
+		// carrying summarizeContinuation's summary as the tool result). The
+		// fixture's startFresh points the fresh conversation at this model, read
+		// from the workspace file written below. If summarizeContinuation's
+		// wording — or the swapper's tool count — changes, this string has to
+		// change with it; the replay provider compares message text exactly.
+		continued := strings.Join([]string{
+			"[continued via tool startFresh]",
+			"Continuing from the returned conversation.",
+			"Toolset unchanged (12 tools).",
+			"Conversation history replaced: 2 messages -> 0 messages.",
+		}, "\n")
+		continuationModel := cannedReplayModel(ctx, t, c, c.LLM().
+			WithPrompt(continued).
+			WithResponse([]dagger.LLMContentBlockInput{
+				{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+			}))
+
+		// startFresh wipes the history it was handed. There is no lineage gate, so
+		// it is adopted like any other continuation (self-compaction and
+		// summarize-and-restart have exactly this shape) — and the model is TOLD,
+		// which is what makes the swap safe. The turn's tool result has no matching
+		// tool call in the adopted history, so it is carried as a plain message
+		// rather than a protocol-invalid tool result.
+		out, err := base.
+			WithNewFile("continuation-model.txt", continuationModel).
+			With(daggerShell(fmt.Sprintf(
+				`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "start fresh" | loop | transcript`,
+				model,
+			))).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "does not continue the current conversation")
+		require.Contains(t, out, "Continuing from the returned conversation.")
+		require.Contains(t, out, "Conversation history replaced:")
+		require.Contains(t, out, "[continued via tool startFresh]")
 		require.Contains(t, out, "done")
 	})
 

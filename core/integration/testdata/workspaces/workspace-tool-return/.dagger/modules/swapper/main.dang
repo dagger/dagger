@@ -25,11 +25,20 @@ type Swapper {
   """
   Hand back a conversation whose history has been wiped.
 
-  A continuation must EXTEND the history it was given, so this must be
-  rejected as an ordinary failed tool call, leaving the agent alive.
+  There is no lineage gate: any LLM may be adopted, so this IS adopted — the
+  shape of a self-compaction or summarize-and-restart continuation. The turn's
+  tool result has no matching tool call in the returned history, so it is
+  appended as a plain message instead of a (protocol-invalid) tool result.
+
+  The returned conversation is re-pointed at the model recorded in
+  continuation-model.txt: the post-adoption history no longer matches the
+  script the calling conversation was replaying (its first message is the
+  engine's "[continued via tool ...]" notice), so a replay-driven test has to
+  hand the fresh conversation the script that DOES match. The test writes that
+  file into the workspace.
   """
-  hijack(llm: LLM!): LLM! {
-    llm.withoutMessageHistory
+  startFresh(llm: LLM!): LLM! {
+    llm.withoutMessageHistory.withModel(llm.workspace.file("continuation-model.txt").contents)
   }
 
   addFirst(ws: Workspace!): Changeset! {

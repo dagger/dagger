@@ -45,13 +45,30 @@ can only build a fresh conversation — which is just `delegate` again. Instead:
 - `reload` is the same tool pointed at the current workspace state — the
   self-repair loop (edit module, reload, keep going) with no restart.
 
-### v1 guardrail: lineage
+### Guardrails: no lineage gate
 
-Require the returned LLM to be derived from the passed-in one (ancestry
-check on the ID chain). Keeps the tool a *transform* — the env owner's
-prompts and the history cannot be silently swapped out. Relax later for the
-spicier uses: self-compaction (`llm.compacted`), persona/phase switching,
-sub-agent hand-*back*.
+A lineage requirement (the returned LLM must derive from the passed-in one)
+was designed, built, and then REMOVED. It was the wrong shape:
+
+- It is inconsistent with the state-return convention it extends.
+  `rebindWorkspace` accepts ANY workspace; what makes that safe is not
+  prevention but VISIBILITY — the model reads a patch summary of what changed.
+- The tools are written by the env's author. Refusing a "suspicious" history
+  protects nobody from anybody.
+- It blocks the uses this mechanism exists for: self-compaction
+  (`llm.compacted`), summarize-and-restart, sub-agent hand-*back*.
+- Its very first real use tripped it as a false positive: `reload` strips and
+  re-adds every module's system prompts, which live in `Messages`.
+
+What guards a swap instead:
+
+1. **Eager validation** of the returned LLM's env/tools, so a broken env is a
+   failed tool call rather than a bricked loop.
+2. **One continuation per turn** — LLMs do not merge the way Changesets do.
+3. **Visibility** — the adoption summary tells the model which tools came and
+   went, and whether the conversation history was replaced. Any LLM may be
+   adopted; a swap is never silent.
+
 
 ## Semantics to nail down
 
@@ -80,7 +97,7 @@ sub-agent hand-*back*.
 
 Engine side:
 - `applyStateReturn` (`core/mcp.go`): add the `dagql.ObjectResult[*core.LLM]`
-  arm — lineage check, eager env validation, swap, persist.
+  arm — eager env validation, swap, summary, persist.
 - Hidden `LLM!` arg auto-fill in the tool schema (mirror the `Workspace!`
   auto-fill path in `core/llm_object_tools.go` / `core/schema/agents.go`).
 - Loop adoption in `core/llm.go`: continue from the returned LLM; refresh
@@ -95,33 +112,42 @@ QA:
   watch a mid-conversation tool appear live after `install`, and a module
   edit take effect after `reload`.
 - Unit tests around applyStateReturn arm: success swap, error containment,
-  lineage rejection, batch restriction.
+  summary content, batch restriction.
 
 ## As built
 
-Landed as designed, with three deviations worth knowing:
+Landed as designed, with these deviations worth knowing:
 
-1. **The lineage guardrail is history-based, not ID ancestry.** A dagql
-   `Result`'s `ID()` is an opaque runtime handle (`call.NewEngineResultID`);
-   `Receiver()`/`Args()` panic on it, so there is no ID chain to walk. Worse,
-   an LLM is usually transformed by being PASSED to something
-   (`agents.compose(base: llm)`) rather than received by it, so even in recipe
-   form the ancestor sits in an argument literal, not the receiver chain.
-   `continuesHistory` (core/mcp.go) instead requires the returned LLM's message
-   history to EXTEND the current one, compared by value. That is the property
-   the guardrail actually protects — env, tools and system prompts stay free to
-   change, which install/reload need. Relaxing the history rule is still what
-   self-compaction (`llm.compacted`) would take.
+1. **No lineage guardrail.** It was built first as a history-based check
+   (ID ancestry is not walkable: a dagql `Result`'s `ID()` is an opaque runtime
+   handle, and an LLM is usually transformed by being PASSED to something —
+   `agents.compose(base: llm)` — so the ancestor sits in an argument literal,
+   not the receiver chain). Then it was deleted outright, per the reasoning in
+   "Guardrails: no lineage gate" above: visibility, not prevention. What is left
+   is eager validation, one-per-turn, and the adoption summary — which now also
+   reports `Conversation history replaced: N messages -> M messages.` when the
+   current history is not a prefix of the adopted one (`historyPreserved` in
+   core/mcp.go is a summary input, not a gate).
 
-2. **Compose idempotence** (§5) is resolved on the module side:
+2. **Protocol coherence for the in-flight tool results.** The one real
+   mechanical issue the lineage check papered over: `step()` appends the turn's
+   tool results to the ADOPTED LLM, and providers require every tool_result to
+   follow the matching tool_use (keyed by call ID). An adopted conversation need
+   not contain this turn's call at all — self-compaction legitimately drops it.
+   `toolResultSelectors` (core/llm.go) therefore appends an orphaned result as a
+   plain user message (`[continued via tool <name>]\n<result>`) instead of a
+   protocol-invalid tool-result block; results whose call IS present (the
+   install/reload case, where history is preserved) append normally.
+
+3. **Compose idempotence** (§5) is resolved on the module side:
    `install`/`reload` call `withoutSystemPrompts` before recomposing, so
    repeated reloads don't stack duplicate prompts and `withTools`' one-binding-
    per-type rule handles the tools. The cost, documented on both tools: system
    prompts added OUTSIDE the agent composition are dropped.
 
-3. **Persistence** (§4) needs no new selector. The continuation is the receiver
-   of the turn's `withToolResult` selectors, so the transform is already part
-   of the resulting LLM's ID and replay lands on it.
+4. **Persistence** (§4) needs no new selector. The continuation is the receiver
+   of the turn's result selectors, so the transform is already part of the
+   resulting LLM's ID and replay lands on it.
 
 `step()` now materializes `withResponse` BEFORE dispatching tool calls (so the
 continuation is handed the conversation up to and including its own call) and
@@ -137,9 +163,13 @@ Still open:
   engine-lab CLI and reading `LLM.tools` — `install` and `reload` are generated,
   with the `llm` argument hidden from the model — and (b) the replay-driven
   integration tests below.
-- Tests: `TestContinuesHistory`/`TestMessagesEqual`/`TestSummarizeToolsetChange`
+- Tests: `TestHistoryPreserved`/`TestMessagesEqual`/`TestSummarizeToolsetChange`/
+  `TestSummarizeContinuation`/`TestToolResultSelectors`
   (core/llm_continuation_test.go) and `TestLLM/TestToolReturningLLMContinues`
   (core/integration/llm_object_tools_test.go, 5 subtests over the
   `workspace-tool-return` fixture) cover success swap, error containment,
-  lineage rejection and the one-per-batch restriction.
+  adoption of a history-replacing conversation (with the dangling tool result
+  carried as a plain message) and the one-per-batch restriction.
+- Unblocked by dropping the lineage gate, not yet built: self-compaction
+  (`llm.compacted`), summarize-and-restart, sub-agent hand-back.
 

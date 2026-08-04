@@ -536,21 +536,32 @@ func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.O
 // this turn's tool results to the RETURNED LLM instead of the one that made the
 // call, so the swap takes effect mid-turn without restarting the session.
 //
-// Three guardrails, all of which turn a bad swap into an ordinary failed tool
-// call (the agent survives, the old conversation stands):
+// ANY LLM may be adopted — there is no lineage gate. This mirrors
+// rebindWorkspace, the sibling ring of the same convention: a tool may return
+// any workspace at all, and what makes that safe is not prevention but
+// VISIBILITY (a patch summary the model reads). Continuations are written by
+// the env's author, so refusing a "suspicious" history protects nobody, while
+// a lineage rule would block the uses this exists for: self-compaction,
+// summarize-and-restart, handing a sub-agent's conversation back.
 //
-//   - lineage: the returned conversation must CONTINUE the current one — its
-//     message history must extend the current history, not replace or rewrite
-//     it. That keeps the tool a transform (`install`, `reload`) rather than a
-//     hand-off, which is what `delegate` is for. Note this deliberately
-//     constrains history only: env, tools and system prompts MUST be free to
-//     change, since changing them is the whole point. Relaxing the history rule
-//     is what self-compaction (llm.compacted) would need.
+// What remains:
+//
 //   - eager validation: the returned LLM's env/tools are loaded HERE rather
 //     than lazily on the next turn, so e.g. installing a module that fails to
-//     load fails the tool call instead of bricking the loop.
+//     load fails the tool call instead of bricking the loop. A failure here is
+//     an ordinary failed tool call: the agent survives, the old conversation
+//     stands.
 //   - one per turn: LLMs do not merge the way Changesets do, so at most one
 //     continuation may be adopted per batch of tool calls.
+//   - visibility: the string returned here is the model's notice of what
+//     changed — which tools came and went, and whether the conversation
+//     history itself was replaced. A swap is never silent.
+//
+// One mechanical detail the caller handles rather than this function: step()
+// appends the turn's tool results to the adopted LLM, and a tool-result block
+// is only valid where the matching tool call exists in the history. See
+// toolResultSelectors in llm.go, which degrades an orphaned result to a plain
+// user message.
 func (m *MCP) adoptLLM(ctx context.Context, next dagql.ObjectResult[*LLM]) (string, error) {
 	if next.Self() == nil {
 		return "", fmt.Errorf("cannot continue from a null LLM")
@@ -558,11 +569,6 @@ func (m *MCP) adoptLLM(ctx context.Context, next dagql.ObjectResult[*LLM]) (stri
 	current, ok := LLMFromContext(ctx)
 	if !ok {
 		return "", fmt.Errorf("cannot continue: no conversation is bound to this tool call")
-	}
-	if !continuesHistory(current.Self(), next.Self()) {
-		return "", fmt.Errorf("returned LLM does not continue the current conversation: " +
-			"a continuation must transform the LLM it was given (e.g. `llm.withWorkspace(...)`), " +
-			"preserving its message history; to start a fresh conversation, delegate to a sub-agent instead")
 	}
 
 	// Load the new toolset now, so a broken env fails the tool call rather than
@@ -584,19 +590,20 @@ func (m *MCP) adoptLLM(ctx context.Context, next dagql.ObjectResult[*LLM]) (stri
 		return "", fmt.Errorf("a conversation-replacing tool call already ran this turn; only one is allowed")
 	}
 	m.continuation = next
-	return summarizeToolsetChange(before, after), nil
+	return summarizeContinuation(current.Self(), next.Self(), before, after), nil
 }
 
-// continuesHistory reports whether next's message history extends current's:
-// same messages, in the same order, possibly with more appended.
+// historyPreserved reports whether next's message history still contains
+// current's, unchanged, as a prefix — i.e. the conversation was transformed
+// (install/reload) rather than replaced.
 //
-// This is the continuation lineage check. Comparing the histories by VALUE
-// rather than chasing the dagql ID chain is deliberate: a Result's ID is an
-// opaque runtime handle, and an LLM is usually transformed by being PASSED to
+// This is NOT a gate: it is an input to the adoption summary, so the model is
+// told when its history changed shape. Comparing histories by VALUE rather
+// than chasing the dagql ID chain is deliberate: a Result's ID is an opaque
+// runtime handle, and an LLM is usually transformed by being PASSED to
 // something (`agents.compose(base: llm)`) rather than received by it, so ID
-// ancestry is both awkward to compute and easy to get wrong. The history is the
-// thing the guardrail actually protects.
-func continuesHistory(current, next *LLM) bool {
+// ancestry is both awkward to compute and easy to get wrong.
+func historyPreserved(current, next *LLM) bool {
 	if current == nil || next == nil {
 		return false
 	}
@@ -640,6 +647,20 @@ func messagesEqual(a, b *LLMMessage) bool {
 		}
 	}
 	return true
+}
+
+// summarizeContinuation is the model's notice of what a continuation changed:
+// the toolset diff, plus a line about the conversation history when it was
+// replaced rather than extended. When the history is preserved — the common
+// install/reload case — it says nothing extra.
+func summarizeContinuation(current, next *LLM, before, after []LLMTool) string {
+	summary := summarizeToolsetChange(before, after)
+	if current == nil || next == nil || historyPreserved(current, next) {
+		return summary
+	}
+	return summary + "\n" + fmt.Sprintf(
+		"Conversation history replaced: %d messages -> %d messages.",
+		len(current.Messages), len(next.Messages))
 }
 
 // summarizeToolsetChange reports how a continuation changed the agent's
