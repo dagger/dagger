@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/trace"
 	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/dang/v2/pkg/hm"
 	"github.com/vito/dang/v2/pkg/introspection"
