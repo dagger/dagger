@@ -467,6 +467,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("The checked-out HEAD of this workspace."),
 		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
 			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
+		dagql.NodeFunc("unmanaged", s.workspaceGitUnmanaged).
+			Doc("Pending workspace edits git cannot see - gitignored, or inside a nested repository.",
+				"Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed."),
 		dagql.NodeFunc("stagedCommits", s.stagedCommits).
 			Doc("Commits staged in this workspace but not yet saved to the local checkout.",
 				"Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged."),
@@ -3292,6 +3295,123 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 		return inst, err
 	}
 	return inst, nil
+}
+
+func (s *workspaceSchema) workspaceGitUnmanaged(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.ObjectResult[*core.Changeset], error) {
+	ws := parent.Self().Workspace.Self()
+
+	// Only host-backed overlays have two different views to compare. For
+	// value, rootless and git-ref workspaces `uncommitted` *is* the overlay
+	// (see workspaceGitUncommitted), so the difference is empty by
+	// construction and reporting anything here would double-report.
+	if ws.HostPath() == "" || !ws.ClientLocalBase() {
+		return emptyChangesetResult(ctx)
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	var uncommitted dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, parent, &uncommitted, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+
+	overlay, remaining, err := s.workspaceUnmanagedRemainder(ctx, ws, uncommitted)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	if len(remaining) == 0 {
+		return emptyChangesetResult(ctx)
+	}
+	scoped, _, err := s.scopeChangesetToPaths(ctx, overlay, remaining)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	return scoped, nil
+}
+
+// workspaceUnmanagedRemainder computes the set difference between the paths the
+// overlay changeset touches (what Workspace.export writes to the checkout) and
+// the paths git's uncommitted view reports (what status/diff/commit operate on).
+//
+// The leftovers are the pending edits git cannot see at all: gitignored paths,
+// paths inside a nested repository, and anything else the cleaned-HEAD baseline
+// in LocalGitRepository.Cleaned leaves byte-identical on both sides of the diff.
+// It is deliberately cause-agnostic, so .git/info/exclude, core.excludesFile and
+// any future mechanism are covered without enumerating them.
+//
+// Returns the overlay changeset alongside the remaining paths, so callers can
+// project the paths back onto it with scopeChangesetToPaths.
+func (s *workspaceSchema) workspaceUnmanagedRemainder(
+	ctx context.Context,
+	ws *core.Workspace,
+	uncommitted dagql.ObjectResult[*core.Changeset],
+) (overlay dagql.ObjectResult[*core.Changeset], remaining []string, err error) {
+	overlay, ok, err := s.workspaceOverlayChanges(ctx, ws)
+	if err != nil || !ok || overlay.Self() == nil {
+		return overlay, nil, err
+	}
+	overlayPaths, err := changesetTouchedPaths(ctx, overlay.Self())
+	if err != nil {
+		return overlay, nil, fmt.Errorf("compute overlay paths: %w", err)
+	}
+	if len(overlayPaths) == 0 {
+		return overlay, nil, nil
+	}
+	if uncommitted.Self() == nil {
+		return overlay, overlayPaths, nil
+	}
+	trackedPaths, err := changesetTouchedPaths(ctx, uncommitted.Self())
+	if err != nil {
+		return overlay, nil, fmt.Errorf("compute uncommitted paths: %w", err)
+	}
+	tracked := make(map[string]struct{}, len(trackedPaths))
+	for _, p := range trackedPaths {
+		tracked[p] = struct{}{}
+	}
+	for _, p := range overlayPaths {
+		if _, ok := tracked[p]; !ok {
+			remaining = append(remaining, p)
+		}
+	}
+	return overlay, remaining, nil
+}
+
+// unmanagedPathsInScope returns the subset of the given resolved commit scope
+// that git cannot track: paths with pending overlay edits that never show up in
+// the workspace's uncommitted set.
+func (s *workspaceSchema) unmanagedPathsInScope(
+	ctx context.Context,
+	ws *core.Workspace,
+	uncommitted dagql.ObjectResult[*core.Changeset],
+	resolved []string,
+) ([]string, error) {
+	if ws.HostPath() == "" || !ws.ClientLocalBase() {
+		return nil, nil
+	}
+	_, remaining, err := s.workspaceUnmanagedRemainder(ctx, ws, uncommitted)
+	if err != nil {
+		return nil, err
+	}
+	return commitPathsInScope(remaining, resolved), nil
+}
+
+func emptyChangesetResult(ctx context.Context) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	empty, err := core.NewEmptyChangeset(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, empty)
 }
 
 func gitRefWorkspaceChanges(
