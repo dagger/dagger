@@ -2591,6 +2591,19 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		renderedRows = len(progressLines) > 0
 	}
 
+	// Services are auxiliary context, not the main event: list every surfaced
+	// service instance (running or exited, with its origin and span handle)
+	// after the main rows, never in place of them -- services are easy to lose
+	// in the raw tree (their exec spans are passthrough-hidden), and their
+	// logs are often the first thing a debugging session needs.
+	if svcLines := fe.servicesReport(ctx, r, zoomed); len(svcLines) > 0 {
+		if renderedRows {
+			ctx.Line("")
+		}
+		ctx.Lines(svcLines...)
+		renderedRows = true
+	}
+
 	if zoomed && pol.showOwnDescendantLogs {
 		// Surface the scoped span's own rolled-up failure logs, the same
 		// error-anchored window and 'dagger cloud logs' hint the summary uses.

@@ -299,11 +299,12 @@ func (fe *frontendPretty) consoleViewport(lines []string) []string {
 
 // consoleSpans lists the spans currently loaded in the DB (everything fetched so
 // far), optionally filtered by a name substring, so a caller can find a span hex
-// to zoom to.
+// to zoom to. Service-instance spans are tagged with their hostname so running
+// services (whose logs live beneath them) are cheap to find.
 func (fe *frontendPretty) consoleSpans(q string) string {
 	var b strings.Builder
 	for _, sp := range fe.db.Spans.Order {
-		if q != "" && !strings.Contains(sp.Name, q) {
+		if q != "" && !strings.Contains(sp.Name, q) && !strings.Contains(sp.ServiceName, q) {
 			continue
 		}
 		// A span often passes its own OTel status through while the failure rides
@@ -319,7 +320,15 @@ func (fe *frontendPretty) consoleSpans(q string) string {
 		case sp.IsRunning():
 			status = "run"
 		}
-		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, status, sp.Name)
+		name := sp.Name
+		if sp.Service {
+			tag := "service"
+			if sp.ServiceName != "" {
+				tag += " " + sp.ServiceName
+			}
+			name += "  [" + tag + "]"
+		}
+		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, status, name)
 	}
 	return b.String()
 }
