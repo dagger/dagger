@@ -371,26 +371,6 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-func displayArgs(args any) string {
-	switch args := args.(type) {
-	case nil:
-		return ""
-	case map[string]any:
-		var sb strings.Builder
-		sb.WriteString("(")
-		argList := make([]string, 0, len(args))
-		for key, value := range args {
-			argList = append(argList, fmt.Sprintf("%s: %v", key, value))
-		}
-		sort.Strings(argList)
-		sb.WriteString(strings.Join(argList, ", "))
-		sb.WriteString(")")
-		return sb.String()
-	default:
-		return fmt.Sprintf(" %v", args)
-	}
-}
-
 type changesetCaptureKey struct{}
 
 type changesetCapture struct {
