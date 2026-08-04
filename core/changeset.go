@@ -779,45 +779,11 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 					return nil
 				}
 
-				// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
-				// from the ---/+++ lines but not from rename from/to lines, so a
-				// rename entry makes the patch unapplyable ("inconsistent old
-				// filename"). Emitting renames as delete+add avoids the mismatch;
-				// with --binary the result is identical.
-				args := []string{"diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b"}
-				if len(pathSpecs) > 0 {
-					// -- so a path starting with - isn't parsed as a flag, and
-					// GIT_LITERAL_PATHSPECS below so one starting with : isn't
-					// parsed as pathspec magic. Either would otherwise fail the
-					// diff or silently drop the path from the patch.
-					args = append(args, "--")
-					args = append(args, pathSpecs...)
-				}
 				return enginetel.Task(ctx, "git diff", func(ctx context.Context) error {
 					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 					defer stdio.Close()
-					// The span is named for the command rather than the whole
-					// argv, which the pathspecs make unbounded; log those.
-					fmt.Fprintln(stdio.Stdout, "running git", strings.Join(args, " "))
-					cmd := exec.CommandContext(ctx, "git", args...)
-					cmd.Dir = root
-					cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
-					cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
-					cmd.Stderr = stdio.Stderr
-					if err := cmd.Run(); err != nil {
-						var exitErr *exec.ExitError
-						// Exit code 1 just means the trees differ, which is the
-						// whole point; returning it would end the span in error
-						// for every patch that isn't empty.
-						if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-							return nil
-						}
-						// NB: we could technically populate an ExecError here, but that
-						// feels like it leaks implementation details; "exit status 128" isn't
-						// exactly clear
-						return fmt.Errorf("failed to generate patch: %w", err)
-					}
-					return nil
+					return writeGitDiffPatch(ctx, root, pathSpecs,
+						io.MultiWriter(patchFile, stdio.Stdout), stdio.Stdout, stdio.Stderr)
 				})
 			})
 		}, mountRefAsReadOnly)
@@ -837,6 +803,147 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	file.File.setValue(ChangesetPatchFilename)
 	file.Snapshot.setValue(snap)
 	return file, nil
+}
+
+// writeGitDiffPatch runs `git diff` between the a/ and b/ mount dirs beneath
+// root and writes the resulting unified diff to out, normalizing the
+// `diff --git` header lines along the way (see diffGitHeaderRewriter).
+//
+// logOut/logErr receive the command's own diagnostics; logOut also gets the
+// argv, which the span name can't carry.
+func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out, logOut, logErr io.Writer) error {
+	// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
+	// from the ---/+++ lines but not from rename from/to lines, so a
+	// rename entry makes the patch unapplyable ("inconsistent old
+	// filename"). Emitting renames as delete+add avoids the mismatch;
+	// with --binary the result is identical.
+	args := []string{"diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b"}
+	if len(pathSpecs) > 0 {
+		// -- so a path starting with - isn't parsed as a flag, and
+		// GIT_LITERAL_PATHSPECS below so one starting with : isn't
+		// parsed as pathspec magic. Either would otherwise fail the
+		// diff or silently drop the path from the patch.
+		args = append(args, "--")
+		args = append(args, pathSpecs...)
+	}
+	// The span is named for the command rather than the whole argv, which the
+	// pathspecs make unbounded; log those.
+	fmt.Fprintln(logOut, "running git", strings.Join(args, " "))
+
+	rewriter := &diffGitHeaderRewriter{w: out}
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
+	cmd.Stdout = rewriter
+	cmd.Stderr = logErr
+	runErr := cmd.Run()
+	if flushErr := rewriter.Flush(); flushErr != nil && runErr == nil {
+		return flushErr
+	}
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		// Exit code 1 just means the trees differ, which is the
+		// whole point; returning it would end the span in error
+		// for every patch that isn't empty.
+		if errors.As(runErr, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil
+		}
+		// NB: we could technically populate an ExecError here, but that
+		// feels like it leaks implementation details; "exit status 128" isn't
+		// exactly clear
+		return fmt.Errorf("failed to generate patch: %w", runErr)
+	}
+	return nil
+}
+
+// diffGitHeaderRewriter is an io.Writer that passes a unified diff through
+// unchanged apart from its `diff --git` header lines, which it rewrites via
+// fixDiffGitHeader. Data is buffered until a newline, so callers must Flush
+// once the source is exhausted.
+type diffGitHeaderRewriter struct {
+	w   io.Writer
+	buf []byte
+}
+
+func (r *diffGitHeaderRewriter) Write(p []byte) (int, error) {
+	r.buf = append(r.buf, p...)
+	for {
+		i := bytes.IndexByte(r.buf, '\n')
+		if i < 0 {
+			return len(p), nil
+		}
+		line := string(r.buf[:i])
+		r.buf = r.buf[i+1:]
+		if _, err := io.WriteString(r.w, fixDiffGitHeader(line)+"\n"); err != nil {
+			return 0, err
+		}
+	}
+}
+
+// Flush writes any trailing data not terminated by a newline.
+func (r *diffGitHeaderRewriter) Flush() error {
+	if len(r.buf) == 0 {
+		return nil
+	}
+	line := string(r.buf)
+	r.buf = nil
+	_, err := io.WriteString(r.w, fixDiffGitHeader(line))
+	return err
+}
+
+// fixDiffGitHeader normalizes the path prefixes on a `diff --git` header line.
+//
+// AsPatch diffs two bind mounts literally named a/ and b/ with --no-prefix, so
+// the header line carries whichever mount dir the file exists in on both
+// sides: an added file yields "diff --git b/f b/f" and a deleted one
+// "diff --git a/f a/f". Real git always writes "diff --git a/<path> b/<path>"
+// regardless of the change kind (only the ---/+++ lines use /dev/null), and
+// `git apply` — plus anything else consuming these patches — expects that, so
+// rewrite the prefixes to a/ and b/.
+//
+// Lines that aren't headers, or that don't parse as a header, are returned
+// unchanged. Diff payload lines can never be mistaken for a header: text hunk
+// lines always start with ' ', '+', '-' or '\', and --binary payload lines are
+// base85, which has no space or '-'.
+func fixDiffGitHeader(line string) string {
+	const marker = "diff --git "
+	rest, ok := strings.CutPrefix(line, marker)
+	if !ok {
+		return line
+	}
+	// The two paths only differ in their leading mount dir (--no-renames means
+	// git never emits a rename header here), so they have equal length and the
+	// separating space sits exactly in the middle. Splitting there — rather
+	// than on the first space — keeps paths containing spaces intact.
+	var left, right string
+	if mid := len(rest) / 2; len(rest)%2 == 1 && rest[mid] == ' ' {
+		left, right = rest[:mid], rest[mid+1:]
+	} else if fields := strings.Split(rest, " "); len(fields) == 2 {
+		left, right = fields[0], fields[1]
+	} else {
+		return line
+	}
+	newLeft, leftOK := retagDiffPath(left, 'a')
+	newRight, rightOK := retagDiffPath(right, 'b')
+	if !leftOK || !rightOK {
+		return line
+	}
+	return marker + newLeft + " " + newRight
+}
+
+// retagDiffPath replaces the leading a/ or b/ prefix of a path as it appears on
+// a `diff --git` line with the given tag, accounting for git's C-style quoting
+// of paths with unusual characters. It reports false if the path doesn't have
+// such a prefix, in which case the caller leaves the line alone.
+func retagDiffPath(p string, tag byte) (string, bool) {
+	i := 0
+	if strings.HasPrefix(p, `"`) {
+		i = 1
+	}
+	if len(p) < i+2 || (p[i] != 'a' && p[i] != 'b') || p[i+1] != '/' {
+		return "", false
+	}
+	return p[:i] + string(tag) + p[i+1:], true
 }
 
 func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
