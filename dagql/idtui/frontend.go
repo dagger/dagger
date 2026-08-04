@@ -646,7 +646,9 @@ func (r *renderer) renderSpan(
 			if !renderToolArgsSummary(out, span.LLMTool, span) {
 				if len(span.LLMToolArgValues) > 0 {
 					// for now, only print the first arg, the rest are likely to be noisy.
-					fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+					// Show only its first line so a large multiline value (e.g. a
+					// commit message body) doesn't dominate the row.
+					fmt.Fprint(out, "(", sanitizeSummary(firstLine(span.LLMToolArgValues[0])), ")")
 				}
 			}
 			return nil
