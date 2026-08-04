@@ -191,6 +191,10 @@ type DB struct {
 	surfacedGeneratorsAt   uint64
 	surfacedGeneratorsInit bool
 
+	surfacedServices     []*ServiceNode
+	surfacedServicesAt   uint64
+	surfacedServicesInit bool
+
 	testIndex *TestIndex
 }
 
