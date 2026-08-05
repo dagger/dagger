@@ -1123,6 +1123,16 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 		string(ref.Digest()),
 		strconv.FormatBool(repo.DiscardGitDir),
 	}
+	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
+		// URL is empty for local repos, and a SHA alone doesn't identify the
+		// repository state it was resolved in: two checkouts at the same
+		// commit can differ in tags and remotes
+		dirDgst, err := localRepo.Directory.ContentPreferredDigest(ctx)
+		if err != nil {
+			return inst, err
+		}
+		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
+	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
 		if remoteRepo.SSHAuthSocket.Self() != nil {
 			dgstInputs = append(dgstInputs, "sshAuthSock", string(remoteRepo.SSHAuthSocket.Self().Handle))
@@ -1465,6 +1475,17 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 		repo.URL.Value.String(),
 		ref.SHA,
 		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if localRepo, ok := repo.Backend.(*core.LocalGitRepository); ok {
+		// URL is empty for local repos, and a SHA alone doesn't identify the
+		// repository state it was resolved in: two checkouts at the same
+		// commit can differ in tags and remotes, which releaseTag and
+		// ancestorReleaseTag depend on
+		dirDgst, err := localRepo.Directory.ContentPreferredDigest(ctx)
+		if err != nil {
+			return inst, err
+		}
+		dgstInputs = append(dgstInputs, "localRepo", dirDgst.String())
 	}
 	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
 		if remoteRepo.SSHAuthSocket.Self() != nil {
