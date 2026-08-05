@@ -1450,7 +1450,9 @@
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
                     <dd><p>The location of this interface declaration.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_sourceModuleName">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::sourceModuleName</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
-                    <dd><p>If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/LLM.html#method_step">
+                    <dd><p>If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/LLM.html#method_skills">
+<abbr title="Dagger\LLM">LLM</abbr>::skills</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p></dd><dt><a href="Dagger/LLM.html#method_step">
 <abbr title="Dagger\LLM">LLM</abbr>::step</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.</p></dd><dt><a href="Dagger/LLM.html#method_sync">
 <abbr title="Dagger\LLM">LLM</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -2021,9 +2023,13 @@
 <abbr title="Dagger\LLM">LLM</abbr>::withPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Queue a user prompt, to be sent to the model on the next step or loop.</p></dd><dt><a href="Dagger/LLM.html#method_withPromptFile">
 <abbr title="Dagger\LLM">LLM</abbr>::withPromptFile</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
+                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withResetWorkspace">
+<abbr title="Dagger\LLM">LLM</abbr>::withResetWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
 <abbr title="Dagger\LLM">LLM</abbr>::withResponse</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></dd><dt><a href="Dagger/LLM.html#method_withSystemPrompt">
+                    <dd><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></dd><dt><a href="Dagger/LLM.html#method_withSkills">
+<abbr title="Dagger\LLM">LLM</abbr>::withSkills</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.</p></dd><dt><a href="Dagger/LLM.html#method_withSystemPrompt">
 <abbr title="Dagger\LLM">LLM</abbr>::withSystemPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Add a system prompt, instructing the model across the whole conversation.</p></dd><dt><a href="Dagger/LLM.html#method_withToolResult">
 <abbr title="Dagger\LLM">LLM</abbr>::withToolResult</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>

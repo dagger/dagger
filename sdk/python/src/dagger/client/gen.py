@@ -9372,6 +9372,15 @@ class LLM(Type):
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "replay", _args)
 
+    async def skills(self) -> list["LLMSkill"]:
+        """The skills visible to the model, exactly as the ListSkills tool
+        serves them: engine-embedded skills, skills installed with withSkills,
+        and skills discovered in the workspace.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("skills", _args)
+        return await _ctx.execute_object_list(LLMSkill)
+
     def step(self, *, max_tokens: int | None = None) -> Self:
         """Advance the conversation by a single step: send the queued prompt or
         tool results to the model, evaluate any tool calls it makes, and queue
@@ -9528,6 +9537,18 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
+    def with_reset_workspace(self) -> Self:
+        """Return a new LLM with the workspace reset to its base, dropping any
+        accumulated changes. The conversation and configuration are re-emitted
+        as a flat recipe bound to the live workspace, so a persisted session
+        (globalID) no longer replays workspace edits when loaded. Use after
+        exporting changes (Workspace.export) so a resumed session continues
+        from the workspace's on-disk state.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withResetWorkspace", _args)
+        return LLM(_ctx)
+
     def with_response(
         self,
         content: list[LLMContentBlockInput],
@@ -9565,6 +9586,26 @@ class LLM(Type):
             Arg("totalTokens", total_tokens, 0),
         ]
         _ctx = self._select("withResponse", _args)
+        return LLM(_ctx)
+
+    def with_skills(self, directory: Directory) -> Self:
+        """Install skills from a directory, adding them to the skills the model
+        discovers with ListSkills and reads with ReadSkill. Each skill is a
+        directory containing a SKILL.md with name and description frontmatter,
+        discovered anywhere in the tree. Installed skills take precedence over
+        skills discovered in the workspace, but cannot shadow the engine's
+        built-in skills.
+
+        Parameters
+        ----------
+        directory:
+            A directory containing skills, each a subdirectory holding a
+            SKILL.md.
+        """
+        _args = [
+            Arg("directory", directory),
+        ]
+        _ctx = self._select("withSkills", _args)
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
@@ -9921,6 +9962,82 @@ class LLMMessage(Type):
         _args: list[Arg] = []
         _ctx = self._select("tokenUsage", _args)
         return LLMTokenUsage(_ctx)
+
+
+@typecheck
+class LLMSkill(Type):
+    """A skill available to a model: task-specific guidance discovered
+    with ListSkills and read with ReadSkill."""
+
+    async def description(self) -> str:
+        """The one-line description from the SKILL.md frontmatter.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMSkill.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The skill name, as passed to ReadSkill.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -15702,6 +15819,7 @@ __all__ = [
     "LLMContentBlockKind",
     "LLMMessage",
     "LLMMessageRole",
+    "LLMSkill",
     "LLMTokenUsage",
     "Label",
     "ListTypeDef",
