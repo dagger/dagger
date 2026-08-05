@@ -1351,6 +1351,72 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "refs/tags/v2.0.0", offlineStable)
 }
 
+func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx.T) {
+	// A commit is immutable, but its tags aren't, so a later session must not
+	// be answered from an earlier session's cached tag lookup.
+	const hostname = "git-release-tag-freshness"
+	repoURL := "git://" + hostname + "/repo.git"
+
+	// serves the same repo, at the same URL, with the given tags added
+	serve := func(ctx context.Context, t *testctx.T, c *dagger.Client, tags ...string) {
+		t.Helper()
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git", "git-daemon"}).
+			With(gitUserConfig).
+			// pin the dates so both sessions serve the same commit SHA, whether
+			// or not the exec below is a cache hit
+			WithEnvVariable("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z").
+			WithEnvVariable("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z").
+			WithWorkdir("/src").
+			WithExec([]string{"sh", "-c", `
+				git init && echo content > README.md && git add -A && git commit -m init
+			`}).
+			WithExec([]string{"git", "clone", "--bare", "/src", "/root/srv/repo.git"})
+		for _, tag := range tags {
+			ctr = ctr.WithExec([]string{"git", "-C", "/root/srv/repo.git", "tag", tag, "main"})
+		}
+
+		_, err := ctr.
+			WithExposedPort(9418).
+			WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/root/srv"}).
+			AsService().
+			WithHostname(hostname).
+			Start(ctx)
+		require.NoError(t, err)
+	}
+
+	lookup := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string, advertised []string, tag string) {
+		t.Helper()
+
+		repo := c.Git(repoURL)
+		advertised, err := repo.Tags(ctx)
+		require.NoError(t, err)
+		commit := repo.Head().TargetCommit()
+		sha, err = commit.Sha(ctx)
+		require.NoError(t, err)
+		tag, err = commit.ReleaseTag().Name(ctx)
+		require.NoError(t, err)
+		return sha, advertised, tag
+	}
+
+	c1 := connect(ctx, t)
+	serve(ctx, t, c1, "v1.0.0")
+	sha1, advertised1, tag1 := lookup(ctx, t, c1)
+	require.Equal(t, []string{"v1.0.0"}, advertised1)
+	require.Equal(t, "refs/tags/v1.0.0", tag1)
+	require.NoError(t, c1.Close())
+
+	// same URL, same commit, but the remote now advertises a newer tag
+	c2 := connect(ctx, t)
+	serve(ctx, t, c2, "v1.0.0", "v2.0.0")
+	sha2, advertised2, tag2 := lookup(ctx, t, c2)
+	require.Equal(t, sha1, sha2, "both sessions must resolve the same commit")
+	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, advertised2)
+	require.Equal(t, "refs/tags/v2.0.0", tag2)
+}
+
 func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

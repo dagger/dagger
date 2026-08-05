@@ -223,12 +223,21 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.GitCommit](srv).View(AfterVersion("v1.0.0-0")))
 
 	dagql.Fields[*core.GitCommit]{
+		// A commit is immutable, but its tags aren't: these two fields are the
+		// only ones that read tag state, so scope them per-session rather than
+		// mixing tags into the commit's identity, which would invalidate the
+		// commit's metadata and tree every time anything in the repo is tagged.
+		// Per-session matches the freshness of the remote snapshot they answer
+		// from, the same guarantee GitRepository.tags and latestVersion give.
+		// (selectGitReleaseTag re-resolves that snapshot for the same reason.)
 		dagql.NodeFunc("releaseTag", s.releaseTag).
+			WithInput(dagql.PerSessionInput).
 			Doc(`The latest semver release tag that points directly at this commit.`).
 			Args(
 				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
 			),
 		dagql.NodeFunc("ancestorReleaseTag", s.ancestorReleaseTag).
+			WithInput(dagql.PerSessionInput).
 			Doc(`The latest semver release tag reachable from this commit.`).
 			Args(
 				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
@@ -1713,8 +1722,16 @@ func selectGitReleaseTag(ctx context.Context, commit *core.GitCommit, includePre
 	}
 
 	var remoteTags map[string]string
-	if _, ok := commit.Repo.Self().Backend.(*core.RemoteGitRepository); ok {
-		remoteTags = remotePeeledTagRefs(commit.Repo.Self().Remote)
+	if remoteRepo, ok := commit.Repo.Self().Backend.(*core.RemoteGitRepository); ok {
+		// Commits are content-addressed by URL and SHA, so this commit may
+		// carry a repository resolved by an earlier session, whose tags have
+		// since moved. Re-resolve the remote rather than reading the snapshot
+		// it was created with; the lookup is cached per session.
+		remote, err := remoteRepo.Remote(ctx)
+		if err != nil {
+			return nil, err
+		}
+		remoteTags = remotePeeledTagRefs(remote)
 	}
 
 	depth := 1
