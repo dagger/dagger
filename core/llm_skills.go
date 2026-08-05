@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // Skills are task-specific guidance (a SKILL.md plus optional reference files)
@@ -391,7 +392,9 @@ func listSkills(ctx context.Context, sources []skillSource) ([]*LLMSkill, error)
 		if err != nil {
 			// A failing source (e.g. an unreadable workspace) shouldn't hide the
 			// skills the other sources can offer; only surface the error if nothing
-			// lists at all.
+			// lists at all. The embedded source essentially always lists, so log
+			// the skip — otherwise a broken source's skills just silently vanish.
+			slog.Warn("skill source failed to list; skipping", "source", fmt.Sprintf("%T", src), "error", err)
 			if firstErr == nil {
 				firstErr = err
 			}
