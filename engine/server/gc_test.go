@@ -40,7 +40,7 @@ func (v gcTestSizedInt) CacheUsageSize(context.Context, dagql.CacheUsageSizeProv
 	return v.sizeBytes, true, nil
 }
 
-func addGCTestPersistable(t *testing.T, cache *dagql.Cache, sessionID, name string, value dagql.Typed) (context.Context, dagql.AnyResult) {
+func addGCTestPersistable(t *testing.T, cache *dagql.Cache, sessionID, name string, value dagql.Typed) context.Context {
 	t.Helper()
 	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
 		ClientID:  sessionID,
@@ -51,14 +51,14 @@ func addGCTestPersistable(t *testing.T, cache *dagql.Cache, sessionID, name stri
 		Type:  dagql.NewResultCallType(value.Type()),
 		Field: name,
 	}
-	res, err := cache.GetOrInitCall(ctx, sessionID, gcTestTypeResolver{}, &dagql.CallRequest{
+	_, err := cache.GetOrInitCall(ctx, sessionID, gcTestTypeResolver{}, &dagql.CallRequest{
 		ResultCall:    frame,
 		IsPersistable: true,
 	}, func(context.Context) (dagql.AnyResult, error) {
 		return dagql.NewResultForCall(value, frame)
 	})
 	require.NoError(t, err)
-	return ctx, res
+	return ctx
 }
 
 func newGCTestCache(t *testing.T) *dagql.Cache {
@@ -210,30 +210,39 @@ func TestResolveDagqlCacheGCConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, enabled)
 
-	_, _, _, err = resolveDagqlCacheGCConfig(config.GCConfig{
+	enabled, maximum, target, err = resolveDagqlCacheGCConfig(config.GCConfig{
 		DagqlCache: config.DagqlCacheGCConfig{MaxEstimatedBytes: -1},
 	}, bkconfig.GCConfig{})
 	require.ErrorContains(t, err, "maxEstimatedBytes must be positive")
 	require.ErrorContains(t, err, "resolved maxEstimatedBytes=-1, targetEstimatedBytes=3221225472")
+	require.False(t, enabled)
+	require.Zero(t, maximum)
+	require.Zero(t, target)
 
-	_, _, _, err = resolveDagqlCacheGCConfig(config.GCConfig{
+	enabled, maximum, target, err = resolveDagqlCacheGCConfig(config.GCConfig{
 		DagqlCache: config.DagqlCacheGCConfig{MaxEstimatedBytes: 100, TargetEstimatedBytes: 100},
 	}, bkconfig.GCConfig{})
 	require.ErrorContains(t, err, "targetEstimatedBytes must be positive and lower")
 	require.ErrorContains(t, err, "resolved maxEstimatedBytes=100, targetEstimatedBytes=100")
+	require.False(t, enabled)
+	require.Zero(t, maximum)
+	require.Zero(t, target)
 
-	_, _, _, err = resolveDagqlCacheGCConfig(config.GCConfig{
+	enabled, maximum, target, err = resolveDagqlCacheGCConfig(config.GCConfig{
 		DagqlCache: config.DagqlCacheGCConfig{MaxEstimatedBytes: 2 << 30},
 	}, bkconfig.GCConfig{})
 	require.ErrorContains(t, err, "targetEstimatedBytes must be positive and lower")
 	require.ErrorContains(t, err, "resolved maxEstimatedBytes=2147483648, targetEstimatedBytes=3221225472")
+	require.False(t, enabled)
+	require.Zero(t, maximum)
+	require.Zero(t, target)
 }
 
 func TestGCLockedPrunesMetadataWithoutWorkerDiskPolicies(t *testing.T) {
 	t.Parallel()
 
 	cache := newGCTestCache(t)
-	ctx, _ := addGCTestPersistable(t, cache, "metadata-no-disk-policies", "metadataNoDiskPolicies", dagql.NewInt(1))
+	ctx := addGCTestPersistable(t, cache, "metadata-no-disk-policies", "metadataNoDiskPolicies", dagql.NewInt(1))
 	require.NoError(t, cache.ReleaseSession(ctx, "metadata-no-disk-policies"))
 	estimate := cache.MetadataEstimate()
 
@@ -255,7 +264,7 @@ func TestScheduledGCTrimsImportedMetadataWithoutPersistenceReset(t *testing.T) {
 	cacheBeforeRestart, err := dagql.NewCache(t.Context(), dbPath, nil, nil)
 	require.NoError(t, err)
 	for i := range 4 {
-		ctx, _ := addGCTestPersistable(
+		ctx := addGCTestPersistable(
 			t,
 			cacheBeforeRestart,
 			"metadata-restart",
@@ -296,7 +305,7 @@ func TestGCLockedDiskStatFailureDoesNotSuppressMetadataPrune(t *testing.T) {
 	t.Parallel()
 
 	cache := newGCTestCache(t)
-	ctx, _ := addGCTestPersistable(t, cache, "metadata-disk-stat-error", "metadataDiskStatError", dagql.NewInt(1))
+	ctx := addGCTestPersistable(t, cache, "metadata-disk-stat-error", "metadataDiskStatError", dagql.NewInt(1))
 	require.NoError(t, cache.ReleaseSession(ctx, "metadata-disk-stat-error"))
 	estimate := cache.MetadataEstimate()
 
@@ -317,7 +326,7 @@ func TestLocalCachePressureCheckUsesMetadataWhenDiskStatFails(t *testing.T) {
 	t.Parallel()
 
 	cache := newGCTestCache(t)
-	ctx, _ := addGCTestPersistable(t, cache, "metadata-pressure-check", "metadataPressureCheck", dagql.NewInt(1))
+	ctx := addGCTestPersistable(t, cache, "metadata-pressure-check", "metadataPressureCheck", dagql.NewInt(1))
 	t.Cleanup(func() { require.NoError(t, cache.ReleaseSession(ctx, "metadata-pressure-check")) })
 	estimate := cache.MetadataEstimate()
 	srv := &Server{
@@ -372,7 +381,7 @@ func TestMonitorMetadataPruneBlocksAfterProtectedNoProgress(t *testing.T) {
 	t.Parallel()
 
 	cache := newGCTestCache(t)
-	activeCtx, _ := addGCTestPersistable(t, cache, "metadata-protected", "metadataProtected", dagql.NewInt(1))
+	activeCtx := addGCTestPersistable(t, cache, "metadata-protected", "metadataProtected", dagql.NewInt(1))
 	estimate := cache.MetadataEstimate()
 	srv := &Server{
 		rootDir:                        t.TempDir(),
@@ -385,7 +394,7 @@ func TestMonitorMetadataPruneBlocksAfterProtectedNoProgress(t *testing.T) {
 	require.NoError(t, srv.gcLocked(t.Context(), localCacheGCMonitor))
 	require.True(t, srv.metadataPruneMonitorBlocked.Load())
 
-	coldCtx, _ := addGCTestPersistable(t, cache, "metadata-later-cold", "metadataLaterCold", dagql.NewInt(2))
+	coldCtx := addGCTestPersistable(t, cache, "metadata-later-cold", "metadataLaterCold", dagql.NewInt(2))
 	require.NoError(t, cache.ReleaseSession(coldCtx, "metadata-later-cold"))
 	require.Greater(t, cache.MetadataEstimate().EstimatedBytes, srv.dagqlCacheMaxEstimatedBytes)
 	require.NoError(t, srv.gcLocked(t.Context(), localCacheGCMonitor))
@@ -400,8 +409,8 @@ func TestMetadataPruneMonitorBlockSuppressesOnlyStructuralStage(t *testing.T) {
 	t.Parallel()
 
 	cache := newGCTestCache(t)
-	activeCtx, _ := addGCTestPersistable(t, cache, "metadata-active", "metadataActive", dagql.NewInt(1))
-	coldCtx, _ := addGCTestPersistable(t, cache, "metadata-disk-prunable", "metadataDiskPrunable", gcTestSizedInt{
+	activeCtx := addGCTestPersistable(t, cache, "metadata-active", "metadataActive", dagql.NewInt(1))
+	coldCtx := addGCTestPersistable(t, cache, "metadata-disk-prunable", "metadataDiskPrunable", gcTestSizedInt{
 		Int:       dagql.NewInt(2),
 		sizeBytes: 100,
 		identity:  "metadata-disk-prunable",
@@ -430,7 +439,7 @@ func TestMetadataPruneBlockBypassesLifecycleReasons(t *testing.T) {
 		reason := reason
 		t.Run(fmt.Sprintf("reason-%d", reason), func(t *testing.T) {
 			cache := newGCTestCache(t)
-			ctx, _ := addGCTestPersistable(t, cache, "metadata-lifecycle", "metadataLifecycle", dagql.NewInt(1))
+			ctx := addGCTestPersistable(t, cache, "metadata-lifecycle", "metadataLifecycle", dagql.NewInt(1))
 			require.NoError(t, cache.ReleaseSession(ctx, "metadata-lifecycle"))
 			estimate := cache.MetadataEstimate()
 			srv := &Server{
@@ -452,7 +461,7 @@ func TestGCSessionCompletionClearsMetadataPruneBlock(t *testing.T) {
 	t.Parallel()
 
 	cache := newGCTestCache(t)
-	ctx, _ := addGCTestPersistable(t, cache, "metadata-session-complete", "metadataSessionComplete", dagql.NewInt(1))
+	ctx := addGCTestPersistable(t, cache, "metadata-session-complete", "metadataSessionComplete", dagql.NewInt(1))
 	require.NoError(t, cache.ReleaseSession(ctx, "metadata-session-complete"))
 	estimate := cache.MetadataEstimate()
 	srv := &Server{
@@ -482,7 +491,7 @@ func TestCanceledMonitorMetadataPruneDoesNotSetBlock(t *testing.T) {
 	t.Parallel()
 
 	cache := newGCTestCache(t)
-	ctx, _ := addGCTestPersistable(t, cache, "metadata-canceled", "metadataCanceled", dagql.NewInt(1))
+	ctx := addGCTestPersistable(t, cache, "metadata-canceled", "metadataCanceled", dagql.NewInt(1))
 	t.Cleanup(func() { require.NoError(t, cache.ReleaseSession(ctx, "metadata-canceled")) })
 	estimate := cache.MetadataEstimate()
 	srv := &Server{
