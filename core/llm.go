@@ -2125,6 +2125,12 @@ func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
 			Value: dagql.Opt(dagql.NewString(llm.model)),
 		})
 	}
+	if llm.provider != "" {
+		root.Args = append(root.Args, dagql.NamedInput{
+			Name:  "provider",
+			Value: dagql.Opt(dagql.NewString(llm.provider)),
+		})
+	}
 	sels := []dagql.Selector{root}
 
 	if llm.disableDefaultSystemPrompt {

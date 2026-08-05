@@ -612,6 +612,42 @@ func (LLMSuite) TestPortableIDWithResponse(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "hello world", reply)
 }
 
+// TestPortableIDCarriesProvider verifies that an explicitly selected provider
+// survives the portableID round trip. The model name here matches no known
+// provider pattern — the exact case llm(provider:) exists for — so a resumed
+// session that re-inferred the provider from the name would route to the
+// generic OpenAI-compatible fallback instead of the provider the session was
+// created with.
+func (LLMSuite) TestPortableIDCarriesProvider(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM(dagger.LLMOpts{
+		Model:    "my-custom-finetune",
+		Provider: "openai",
+	}).
+		WithPrompt("hello").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+		})
+
+	origProvider, err := llm.Provider(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "openai", origProvider)
+
+	portableID, err := llm.PortableID(ctx)
+	require.NoError(t, err)
+
+	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
+	reloadedProvider, err := reloaded.Provider(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "openai", reloadedProvider,
+		"an explicit provider must survive a save/resume round trip")
+
+	reloadedModel, err := reloaded.Model(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "my-custom-finetune", reloadedModel)
+}
+
 // TestPortableIDDropsSupersededWorkspaceBindings verifies that portableID
 // re-emits the session as a flat, data-only recipe: the conversation survives
 // byte-for-byte, but the workspace overlays recorded during the session
