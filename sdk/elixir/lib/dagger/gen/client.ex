@@ -233,6 +233,23 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+  """
+  @spec engine_volume(t(), String.t(), [{:subdir, String.t() | nil}]) :: Dagger.Volume.t()
+  def engine_volume(%__MODULE__{} = client, name, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("engineVolume")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("subdir", optional_args[:subdir])
+
+    %Dagger.Volume{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Initialize an environment file
   """
   @spec env_file(t(), [{:expand, boolean() | nil}]) :: Dagger.EnvFile.t()
