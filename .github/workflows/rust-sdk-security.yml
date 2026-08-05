@@ -1,13 +1,7 @@
 name: Rust SDK Security
 
 on:
-  pull_request:
-    paths:
-      - ".github/dependabot.yml"
-      - ".github/workflows/rust-sdk-security.yml"
-      - "dagger.toml"
-      - "sdk/rust/**"
-      - "toolchains/rust-sdk-dev/**"
+  pull_request: {}
   push:
     branches:
       - main
