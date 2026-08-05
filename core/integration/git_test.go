@@ -1340,6 +1340,15 @@ func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 		Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.1.0-rc.1", directPreRelease)
+
+	// an unreachable fetch remote must not break the lookup; local tags
+	// still answer it
+	unreachable := ctr.
+		WithExec([]string{"git", "remote", "add", "origin", "https://invalid.invalid/repo.git"}).
+		Directory(".").AsGit()
+	offlineStable, err := unreachable.Head().TargetCommit().AncestorReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", offlineStable)
 }
 
 func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
