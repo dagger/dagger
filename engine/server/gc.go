@@ -46,10 +46,18 @@ func resolveDagqlCacheGCConfig(gcCfg config.GCConfig, bkCfg bkconfig.GCConfig) (
 		targetBytes = dagqlCacheDefaultTargetEstimatedBytes
 	}
 	if maximumBytes <= 0 {
-		return false, 0, 0, fmt.Errorf("gc.dagqlCache.maxEstimatedBytes must be positive")
+		return false, 0, 0, fmt.Errorf(
+			"gc.dagqlCache.maxEstimatedBytes must be positive (resolved maxEstimatedBytes=%d, targetEstimatedBytes=%d)",
+			maximumBytes,
+			targetBytes,
+		)
 	}
 	if targetBytes <= 0 || targetBytes >= maximumBytes {
-		return false, 0, 0, fmt.Errorf("gc.dagqlCache.targetEstimatedBytes must be positive and lower than maxEstimatedBytes")
+		return false, 0, 0, fmt.Errorf(
+			"gc.dagqlCache.targetEstimatedBytes must be positive and lower than maxEstimatedBytes (resolved maxEstimatedBytes=%d, targetEstimatedBytes=%d)",
+			maximumBytes,
+			targetBytes,
+		)
 	}
 	enabled = true
 	if gcCfg.Enabled != nil && !*gcCfg.Enabled {
