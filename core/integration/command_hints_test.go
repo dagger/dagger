@@ -46,8 +46,9 @@ func (CommandHintsSuite) TestEmptySetupHint(ctx context.Context, t *testctx.T) {
 
 // TestSDKInstallAndClientInitHints verifies that `dagger sdk install go` prints
 // a hint for each capability the go SDK has (it authors both modules and
-// clients), and that `dagger api client init` points the user at
-// `dagger generate` once the client is scaffolded.
+// clients), and that `dagger api client init` no longer points the user at
+// `dagger generate`: it runs the SDK's generators itself, so the bindings are
+// already there (dagger/dagger#13714).
 func (CommandHintsSuite) TestSDKInstallAndClientInitHints(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
@@ -65,7 +66,8 @@ func (CommandHintsSuite) TestSDKInstallAndClientInitHints(ctx context.Context, t
 
 	clientOut, err := hostDaggerExecRaw(ctx, t, workdir, "--auto-apply", "api", "client", "init", "go", "./myclient", ".dagger/modules/myapp")
 	require.NoError(t, err, "%s", string(clientOut))
-	require.Contains(t, string(clientOut), "dagger generate")
+	require.NotContains(t, string(clientOut), "dagger generate",
+		"client init generates the bindings, so it must not send the user to `dagger generate`")
 }
 
 // TestUninstalledSDKInitHint verifies that `dagger module init <sdk> <name>`

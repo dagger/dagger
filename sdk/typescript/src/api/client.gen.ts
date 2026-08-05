@@ -3193,6 +3193,11 @@ export type WorkspaceWithInitClientOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+
+  /**
+   * Skip running the SDK's generators for the new client.
+   */
+  noGenerate?: boolean
 }
 
 export type WorkspaceWithInitModuleOpts = {
@@ -3220,6 +3225,11 @@ export type WorkspaceWithInitModuleOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+
+  /**
+   * Skip running the SDK's generators for the new module.
+   */
+  noGenerate?: boolean
 }
 
 export type WorkspaceWithModuleOpts = {
@@ -14526,11 +14536,14 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a generated API client initialized.
+   *
+   * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
    * @param path Workspace-relative output directory for the generated client.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param module Workspace-relative path or canonical ref for the module the client binds to.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.noGenerate Skip running the SDK's generators for the new client.
    */
   withInitClient = (
     path: string,
@@ -14549,6 +14562,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a new module initialized.
+   *
+   * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
    * @param name Name of the new module.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param opts.path Workspace-relative path for the new module.
@@ -14556,6 +14571,7 @@ export class Workspace extends BaseClient {
    * @param opts.include Additional include patterns for the module.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.noGenerate Skip running the SDK's generators for the new module.
    */
   withInitModule = (
     name: string,

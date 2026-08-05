@@ -159,6 +159,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("module").Doc("Workspace-root-relative path of the module whose generated local dependencies these are."),
 				dagql.Arg("changes").Doc("The staged dependency codegen to apply."),
 			),
+		dagql.NodeFunc("__sdkGenerators", s.sdkGenerators).
+			Doc("(Internal-only) The generators exposed by an SDK installed in this workspace.",
+				"Built straight from the SDK's own module, so it demands no workspace module loading: an init flow can generate for what it just created without pulling in the rest of the workspace.").
+			Args(
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name whose generators to collect."),
+			),
 		dagql.NodeFunc("withWorkdir", s.withWorkdir).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with its working directory pointed at the given workspace-relative path.").
@@ -198,7 +204,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withInitModule", s.withInitModule).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a new module initialized.").
+			Doc("Return this workspace with a new module initialized.",
+				"The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.").
 			Args(
 				dagql.Arg("name").Doc("Name of the new module."),
 				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
@@ -207,16 +214,19 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
 				dagql.Arg("args").Doc("SDK-specific init arguments."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+				dagql.Arg("noGenerate").Doc("Skip running the SDK's generators for the new module."),
 			),
 		dagql.NodeFunc("withInitClient", s.withInitClient).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a generated API client initialized.").
+			Doc("Return this workspace with a generated API client initialized.",
+				"The SDK's generators run for the new client, so the returned workspace carries its generated bindings.").
 			Args(
 				dagql.Arg("path").Doc("Workspace-relative output directory for the generated client."),
 				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
 				dagql.Arg("module").Doc("Workspace-relative path or canonical ref for the module the client binds to."),
 				dagql.Arg("args").Doc("SDK-specific init arguments."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+				dagql.Arg("noGenerate").Doc("Skip running the SDK's generators for the new client."),
 			),
 		dagql.NodeFunc("withConfigValue", s.withConfigValue).
 			View(AfterVersion("v1.0.0-0")).

@@ -121,7 +121,10 @@ func sdkRegistryRepoBase(repo string) string {
 
 // --- dagger module init ---
 
-var moduleInitPath string
+var (
+	moduleInitPath       string
+	moduleInitNoGenerate bool
+)
 
 var moduleInitCmd = &cobra.Command{
 	Use:   "init <sdk> <name>",
@@ -143,6 +146,9 @@ What the engine does (atomically, in one Changeset):
      <path>.
   4. When --path is the default (.dagger/modules/<name>), also installs
      the new module as [modules.<name>] so it's callable here.
+  5. Runs the SDK's generators scoped to <path>, so the new module is
+     loadable without a separate 'dagger generate'. Pass --no-generate to
+     skip this.
 
 --path defaults to .dagger/modules/<name>. Custom paths skip the
 [modules.<name>] install (the user is managing workspace layout
@@ -156,6 +162,7 @@ explicitly).`,
 
 func init() {
 	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path relative to the workspace root (default: .dagger/modules/<name>)")
+	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoGenerate, "no-generate", false, "Skip running the SDK's generators for the new module")
 	moduleCmd.AddCommand(moduleInitCmd)
 }
 
@@ -170,7 +177,8 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 			return err
 		}
 		opts := dagger.WorkspaceWithInitModuleOpts{
-			Path: moduleInitPath,
+			Path:       moduleInitPath,
+			NoGenerate: moduleInitNoGenerate,
 		}
 		if sdkArgs != "" {
 			opts.Args = dagger.JSON(sdkArgs)

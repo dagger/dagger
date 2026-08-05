@@ -53,6 +53,10 @@ func (sdk *moduleSourceAttachTestSDK) AsClientInitializer() (ClientInitializer, 
 	return nil, false
 }
 
+func (sdk *moduleSourceAttachTestSDK) AsModule() (dagql.ObjectResult[*Module], bool) {
+	return dagql.ObjectResult[*Module]{}, false
+}
+
 func (sdk *moduleSourceAttachTestSDK) AsRuntimeTarget() (RuntimeTarget, bool) {
 	return nil, false
 }

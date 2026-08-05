@@ -14378,6 +14378,9 @@ pub struct WorkspaceWithInitClientOpts {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
+    /// Skip running the SDK's generators for the new client.
+    #[builder(setter(into, strip_option), default)]
+    pub no_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitModuleOpts<'a> {
@@ -14390,6 +14393,9 @@ pub struct WorkspaceWithInitModuleOpts<'a> {
     /// Additional include patterns for the module.
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// Skip running the SDK's generators for the new module.
+    #[builder(setter(into, strip_option), default)]
+    pub no_generate: Option<bool>,
     /// Workspace-relative path for the new module.
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
@@ -15032,6 +15038,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a generated API client initialized.
+    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
     ///
     /// # Arguments
     ///
@@ -15056,6 +15063,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a generated API client initialized.
+    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
     ///
     /// # Arguments
     ///
@@ -15080,6 +15088,9 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
+        if let Some(no_generate) = opts.no_generate {
+            query = query.arg("noGenerate", no_generate);
+        }
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -15087,6 +15098,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a new module initialized.
+    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
     ///
     /// # Arguments
     ///
@@ -15104,6 +15116,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a new module initialized.
+    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
     ///
     /// # Arguments
     ///
@@ -15133,6 +15146,9 @@ impl Workspace {
         }
         if let Some(here) = opts.here {
             query = query.arg("here", here);
+        }
+        if let Some(no_generate) = opts.no_generate {
+            query = query.arg("noGenerate", no_generate);
         }
         Workspace {
             proc: self.proc.clone(),

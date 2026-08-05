@@ -92,6 +92,12 @@ func (sdk *goSDK) AsRuntimeTarget() (core.RuntimeTarget, bool) {
 	return nil, false
 }
 
+// AsModule reports no module: the Go SDK is a packaged codegen binary, not a
+// Dagger module, so it exposes no generator functions of its own.
+func (sdk *goSDK) AsModule() (dagql.ObjectResult[*core.Module], bool) {
+	return dagql.ObjectResult[*core.Module]{}, false
+}
+
 // AlwaysEnablesSelfCalls reports that the Go SDK always enables self calls:
 // generated bindings unconditionally include the module's own types, so
 // engine-side checks gated on SelfCallsEnabled (tolerating module types that
