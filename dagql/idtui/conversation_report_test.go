@@ -140,6 +140,21 @@ func TestConversationReportNestsSubAgent(t *testing.T) {
 	db.SetPrimarySpan(rootID)
 
 	fe := NewWithDB(io.Discard, db)
+
+	// A message span's name is an implementation label; its logs are the content,
+	// and renderStep omits the row entirely until they arrive. Give each turn a
+	// distinctive line so the transcript has something to render (and to match on).
+	for id, content := range map[dagui.SpanID]string{
+		promptID:      "top-level prompt content",
+		subPromptID:   "sub-agent prompt content",
+		subResponseID: "sub-agent response content",
+	} {
+		v := NewVterm(termenv.Ascii)
+		v.SetWidth(120)
+		_, _ = v.Write([]byte(content + "\n"))
+		fe.logs.Logs[id] = v
+	}
+
 	fe.recalculateViewLocked()
 
 	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
@@ -153,19 +168,20 @@ func TestConversationReportNestsSubAgent(t *testing.T) {
 		t.Fatalf("top header = %q, want CONVERSATION heading\n%s", lines[0], joined)
 	}
 
-	// Tool-call names are humanized by renderSpan (spawn-agent -> SpawnAgent), so
-	// match case-insensitively.
+	// Messages are matched by their content; the tool call by its name, which
+	// renderSpan humanizes (spawn-agent -> SpawnAgent), so match that
+	// case-insensitively.
 	promptIdx, spawnIdx, subPromptIdx, subResponseIdx := -1, -1, -1, -1
 	for i, l := range lines {
 		ll := strings.ToLower(l)
 		switch {
-		case promptIdx == -1 && strings.Contains(ll, "llm prompt"):
+		case promptIdx == -1 && strings.Contains(ll, "top-level prompt content"):
 			promptIdx = i
 		case spawnIdx == -1 && strings.Contains(ll, "spawn"):
 			spawnIdx = i
-		case subPromptIdx == -1 && strings.Contains(ll, "sub-prompt"):
+		case subPromptIdx == -1 && strings.Contains(ll, "sub-agent prompt content"):
 			subPromptIdx = i
-		case subResponseIdx == -1 && strings.Contains(ll, "sub-response"):
+		case subResponseIdx == -1 && strings.Contains(ll, "sub-agent response content"):
 			subResponseIdx = i
 		}
 	}
