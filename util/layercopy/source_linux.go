@@ -26,6 +26,7 @@ type source struct {
 	baseInfo     os.FileInfo
 	baseMinLayer int
 	baseCached   bool
+	cache        *sourceCache
 }
 
 type sourceEntry struct {
@@ -284,6 +285,15 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 
 	minLayer := 0
 	for _, ancestor := range ancestors {
+		if s.cache != nil {
+			if cached, ok := s.cache.ancestorMinLayers[ancestor]; ok {
+				if cached > minLayer {
+					minLayer = cached
+				}
+				continue
+			}
+		}
+
 		for i := len(s.layers) - 1; i >= minLayer; i-- {
 			_, hidesLower, err := overlayEntryState(filepath.Join(s.layers[i], ancestor))
 			if err != nil {
@@ -296,6 +306,9 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 				minLayer = i
 				break
 			}
+		}
+		if s.cache != nil {
+			s.cache.ancestorMinLayers[ancestor] = minLayer
 		}
 	}
 	return minLayer, nil

@@ -25,11 +25,14 @@ func NewCopier(dest Mount) (*Copier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Copier{dest: d}, nil
+	return &Copier{
+		dest:         d,
+		sourceCaches: map[sourceCacheKey]*sourceCache{},
+	}, nil
 }
 
 func (c *Copier) Copy(ctx context.Context, src Mount, srcPath, destPath string, opts CopyOptions) error {
-	s, err := newSource(src)
+	s, err := c.sourceForCopy(src)
 	if err != nil {
 		return err
 	}
@@ -41,11 +44,30 @@ func (c *Copier) Copy(ctx context.Context, src Mount, srcPath, destPath string, 
 }
 
 func (c *Copier) CopyFile(ctx context.Context, src Mount, srcPath, destPath string, opts CopyOptions) error {
-	s, err := newSource(src)
+	s, err := c.sourceForCopy(src)
 	if err != nil {
 		return err
 	}
 	return c.copyFile(ctx, s, srcPath, destPath, opts)
+}
+
+func (c *Copier) sourceForCopy(m Mount) (*source, error) {
+	s, err := newSource(m)
+	if err != nil {
+		return nil, err
+	}
+	if !s.overlay {
+		return s, nil
+	}
+
+	key := sourceCacheKey{root: m.Root, mount: m.Mount}
+	cache := c.sourceCaches[key]
+	if cache == nil {
+		cache = &sourceCache{ancestorMinLayers: map[string]int{}}
+		c.sourceCaches[key] = cache
+	}
+	s.cache = cache
+	return s, nil
 }
 
 func (c *Copier) Mkdir(ctx context.Context, destPath string, opts CopyOptions) error {
