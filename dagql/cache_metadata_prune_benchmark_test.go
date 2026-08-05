@@ -208,24 +208,7 @@ func BenchmarkCacheMetadataChurn(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		for i := range unpruneableFloor {
-			call := cacheTestIntCall("metadata-churn-floor-" + strconv.Itoa(i))
-			res, err := c.GetOrInitCall(ctx, "metadata-churn-floor", noopTypeResolver{}, &CallRequest{
-				ResultCall:    call,
-				IsPersistable: true,
-			}, func(context.Context) (AnyResult, error) {
-				return cacheTestIntResult(call, i), nil
-			})
-			if err != nil {
-				b.Fatal(err)
-			}
-			if err := c.MakeResultUnpruneable(ctx, res); err != nil {
-				b.Fatal(err)
-			}
-		}
-		if err := c.ReleaseSession(ctx, "metadata-churn-floor"); err != nil {
-			b.Fatal(err)
-		}
+		benchmarkMetadataPopulateUnpruneableFloor(b, c, ctx, unpruneableFloor)
 
 		floorEstimate := c.MetadataEstimate()
 		floorStats := benchmarkMetadataMemStats()
@@ -233,17 +216,7 @@ func BenchmarkCacheMetadataChurn(b *testing.B) {
 		noopHeapNoise := absoluteDelta(floorControl.HeapAlloc, floorStats.HeapAlloc)
 
 		b.StartTimer()
-		for i := range churnCount {
-			call := cacheTestIntCall("metadata-churn-" + strconv.Itoa(i))
-			_, err := c.GetOrInitCall(ctx, "metadata-churn", noopTypeResolver{}, &CallRequest{
-				ResultCall: call,
-			}, func(context.Context) (AnyResult, error) {
-				return cacheTestIntResult(call, i), nil
-			})
-			if err != nil {
-				b.Fatal(err)
-			}
-		}
+		benchmarkMetadataPopulateTransient(b, c, ctx, churnCount)
 		b.StopTimer()
 		peakEstimate := c.MetadataEstimate()
 		peakStats := benchmarkMetadataMemStats()
@@ -297,6 +270,99 @@ func BenchmarkCacheMetadataChurn(b *testing.B) {
 			b.ReportMetric(float64(compactionEstimate)/float64(compactionHeap), "compaction-estimate/heap")
 		}
 		runtime.KeepAlive(c)
+	}
+}
+
+// BenchmarkCacheMetadataSparseForcedCompaction measures the write-lock hold
+// for forced compaction of a genuinely sparse one-million-slot graph. Run with
+// -benchtime=1x in a fresh process.
+func BenchmarkCacheMetadataSparseForcedCompaction(b *testing.B) {
+	const (
+		allocatedClassSlots = 1_000_000
+		unpruneableFloor    = 2_000
+	)
+	b.ReportAllocs()
+	var totalWriteLockHold time.Duration
+	for range b.N {
+		b.StopTimer()
+		ctx := benchmarkMetadataContext(b, io.Discard)
+		c, err := NewCache(ctx, "", nil, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkMetadataPopulateUnpruneableFloor(b, c, ctx, unpruneableFloor)
+		benchmarkMetadataPopulateTransient(b, c, ctx, allocatedClassSlots-unpruneableFloor)
+		if err := c.ReleaseSession(ctx, "metadata-churn"); err != nil {
+			b.Fatal(err)
+		}
+
+		before := c.MetadataEstimate()
+		if before.ClassSlotCount != allocatedClassSlots {
+			b.Fatalf("allocated class slots: got %d, want %d", before.ClassSlotCount, allocatedClassSlots)
+		}
+		if before.ResultCount != unpruneableFloor {
+			b.Fatalf("live results: got %d, want %d", before.ResultCount, unpruneableFloor)
+		}
+
+		b.StartTimer()
+		c.egraphMu.Lock()
+		writeLockStarted := time.Now()
+		compacted, oldClassSlots, newClassSlots := c.compactEqClassesLocked(true)
+		c.egraphMu.Unlock()
+		totalWriteLockHold += time.Since(writeLockStarted)
+		b.StopTimer()
+		if !compacted {
+			b.Fatal("forced compaction did not compact sparse class slots")
+		}
+		if oldClassSlots != allocatedClassSlots {
+			b.Fatalf("old class slots: got %d, want %d", oldClassSlots, allocatedClassSlots)
+		}
+		if newClassSlots != unpruneableFloor {
+			b.Fatalf("new class slots: got %d, want %d", newClassSlots, unpruneableFloor)
+		}
+		after := c.MetadataEstimate()
+		b.ReportMetric(float64(oldClassSlots), "old-class-slots")
+		b.ReportMetric(float64(newClassSlots), "new-class-slots")
+		b.ReportMetric(float64(after.EstimatedBytes), "after-estimated-B")
+		runtime.KeepAlive(c)
+	}
+	b.ReportMetric(float64(totalWriteLockHold.Nanoseconds())/float64(b.N), "write-lock-hold-ns")
+}
+
+func benchmarkMetadataPopulateUnpruneableFloor(b *testing.B, c *Cache, ctx context.Context, resultCount int) {
+	b.Helper()
+	for i := range resultCount {
+		call := cacheTestIntCall("metadata-churn-floor-" + strconv.Itoa(i))
+		res, err := c.GetOrInitCall(ctx, "metadata-churn-floor", noopTypeResolver{}, &CallRequest{
+			ResultCall:    call,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(call, i), nil
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := c.MakeResultUnpruneable(ctx, res); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := c.ReleaseSession(ctx, "metadata-churn-floor"); err != nil {
+		b.Fatal(err)
+	}
+}
+
+func benchmarkMetadataPopulateTransient(b *testing.B, c *Cache, ctx context.Context, resultCount int) {
+	b.Helper()
+	for i := range resultCount {
+		call := cacheTestIntCall("metadata-churn-" + strconv.Itoa(i))
+		_, err := c.GetOrInitCall(ctx, "metadata-churn", noopTypeResolver{}, &CallRequest{
+			ResultCall: call,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(call, i), nil
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
