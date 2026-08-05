@@ -28,7 +28,8 @@ var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
 	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
-		WithInput(dagql.PerCallInput).
+		WithInput(dagql.PerCallInput, dagql.PerSessionInput).
+		NotReplayable("Resolves the calling client's workspace; the result carries that client's ID, which only resolves inside its own session.").
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 		PassthroughTelemetry()
@@ -278,6 +279,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Writes pending workspace changes to the local Git workspace").
 			Doc("Write this workspace's pending changes to its local Git workspace."),
+		dagql.NodeFunc("reloaded", s.reloaded).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerCallInput).
+			Doc("Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session."),
 		dagql.Func("configRead", s.configRead).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
@@ -598,7 +603,7 @@ func (s *workspaceSchema) resolveRootfs(
 	}
 
 	if ws.HostPath() != "" {
-		ctx, err = s.withWorkspaceClientContext(ctx, ws)
+		ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 		if err != nil {
 			return inst, err
 		}
@@ -704,7 +709,7 @@ func (s *workspaceSchema) resolveHostOverlayRootfs(
 	filter core.CopyFilter,
 	gitignore bool,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	hostCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	hostCtx, err := s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
 		return inst, err
 	}
@@ -1515,7 +1520,59 @@ func (s *workspaceSchema) export(
 	if err := core.InvalidateCurrentWorkspace(exportCtx); err != nil {
 		slog.Warn("could not invalidate workspace after export", "error", err)
 	}
+	// The export just changed the workspace's on-disk content, so host reads
+	// (Workspace.file / .directory) cached earlier in this session are stale —
+	// they are cached per client for the client's whole lifetime
+	// (dagql.PerClientInput). Bump the client's read epoch so subsequent reads
+	// land in a fresh per-client cache namespace and re-read the live host.
+	// Best-effort, like the invalidation above: a bookkeeping failure must not
+	// fail an export that already succeeded.
+	if err := core.BumpWorkspaceReadEpoch(exportCtx); err != nil {
+		slog.Warn("could not bump workspace read epoch after export", "error", err)
+	}
 	return core.Void{}, nil
+}
+
+// reloaded returns the workspace unchanged, having invalidated the workspace
+// owner's cached host reads.
+//
+// Workspace.file / Workspace.directory resolve through host.directory, which is
+// cached per client for the client's whole lifetime (dagql.PerClientInput). In
+// a long-lived session — a `dagger agent` conversation — a file read early on
+// keeps returning that original snapshot even after the files change on disk
+// underneath it. Export bumps the read epoch itself, since it is the operation
+// that changed them; this field covers the other direction, where an agent
+// discards its pending overlay to re-sync with whatever the host now holds
+// (the CLI's ctrl+u), and any other caller that knows its cached reads are
+// stale.
+func (s *workspaceSchema) reloaded(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	// Bump under the workspace's owning client, the same context export bumps
+	// in and the one withWorkspaceHostReadContext reads the epoch from — a
+	// bump under the caller's own client would be a silent no-op whenever the
+	// caller is not the owner (e.g. a module handed the workspace). A value
+	// workspace has no owning client and no host reads to invalidate, so the
+	// bump is skipped rather than failed.
+	if parent.Self().ClientID != "" {
+		bumpCtx, err := withWorkspaceClientContext(ctx, parent.Self())
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		// Best-effort, like export's invalidation: failing to bump only falls
+		// back to the prior (stale) read behavior, which is not worth failing
+		// over.
+		if err := core.BumpWorkspaceReadEpoch(bumpCtx); err != nil {
+			slog.Warn("could not bump workspace read epoch", "error", err)
+		}
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().Clone())
 }
 
 func (s *workspaceSchema) overlayWorkspaceWithMutation(
@@ -1694,7 +1751,7 @@ func (s *workspaceSchema) sparseHostBase(
 		includes = append(includes, dagql.String(p), dagql.String(p+"/**"))
 	}
 
-	ctx, err = s.withWorkspaceClientContext(ctx, ws)
+	ctx, err = s.withWorkspaceHostReadContext(ctx, ws)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
@@ -2796,6 +2853,27 @@ func filterNodesByInclude[T any](
 // through the correct client session, even when called from a module context.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	return withWorkspaceClientContext(ctx, ws)
+}
+
+// withWorkspaceHostReadContext is withWorkspaceClientContext plus the client's
+// current workspace read epoch folded into the per-client cache namespace, so
+// cached host.directory reads are scoped per epoch. When the epoch is bumped
+// (Workspace.export, after the agent's changes are written to disk, or
+// Workspace.reloaded when its overlay is discarded instead), reads issued
+// afterwards land in a fresh namespace and
+// re-read the live host instead of returning a per-client snapshot cached
+// earlier in the same session. Use it for host reads that must reflect on-disk
+// content (Workspace.file / Workspace.directory and the diff base of edits).
+func (s *workspaceSchema) withWorkspaceHostReadContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	ctx, err := withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	epoch, err := core.WorkspaceReadEpoch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.WithNamedPerClientCacheScope(ctx, epoch), nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the

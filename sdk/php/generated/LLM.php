@@ -102,7 +102,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+     * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
      */
     public function portableID(): Id
     {
@@ -127,6 +127,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('replay');
         $this->queryLeaf($leafQueryBuilder, 'replay');
         return $this;
+    }
+
+    /**
+     * The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+     */
+    public function skills(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skills');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'skills');
     }
 
     /**
@@ -250,6 +259,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         if (null !== $totalTokens) {
         $innerQueryBuilder->setArgument('totalTokens', $totalTokens);
         }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+     */
+    public function withSkills(Directory $directory): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSkills');
+        $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -10054,7 +10054,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
    */
   portableID = async (): Promise<ID> => {
     if (this._portableID) {
@@ -10092,6 +10092,23 @@ export class LLM extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return new LLM(ctx.copy().selectNode(response, "LLM"))
+  }
+
+  /**
+   * The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+   */
+  skills = async (): Promise<LLMSkill[]> => {
+    type skills = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("skills").select("id")
+
+    const response: Awaited<skills[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new LLMSkill(ctx.copy().selectNode(r.id, "LLMSkill")),
+    )
   }
 
   /**
@@ -10204,6 +10221,15 @@ export class LLM extends BaseClient {
     opts?: LLMWithResponseOpts,
   ): LLM => {
     const ctx = this._ctx.select("withResponse", { content, ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+   * @param directory A directory containing skills, each a subdirectory holding a SKILL.md.
+   */
+  withSkills = (directory: Directory): LLM => {
+    const ctx = this._ctx.select("withSkills", { directory })
     return new LLM(ctx)
   }
 
@@ -10519,6 +10545,71 @@ export class LLMMessage extends BaseClient {
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
+  }
+}
+
+/**
+ * A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.
+ */
+export class LLMSkill extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this LLMSkill.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The one-line description from the SKILL.md frontmatter.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The skill name, as passed to ReadSkill.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -14427,6 +14518,14 @@ export class Workspace extends BaseClient {
       (r) =>
         new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
     )
+  }
+
+  /**
+   * Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+   */
+  reloaded = (): Workspace => {
+    const ctx = this._ctx.select("reloaded")
+    return new Workspace(ctx)
   }
 
   /**

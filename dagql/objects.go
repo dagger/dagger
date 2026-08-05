@@ -932,6 +932,17 @@ type FieldSpec struct {
 	// metadata while asking the UI to show its children in its place.
 	PassthroughTelemetry bool
 
+	// NotReplayable marks a field whose result is only meaningful to the
+	// session and client that produced it — a host read, or a value bound to a
+	// client ID. Such a result may still be cached and reused within its own
+	// session, but it must never be served to a *recorded* call being replayed
+	// from a saved ID: the recorded digest is a stable key for an unstable
+	// value, so replaying it would resurrect another session's snapshot or
+	// client binding. The recipe loader re-executes these calls instead, and
+	// taints every recorded call that depends on one. The string value is the
+	// reason.
+	NotReplayable string
+
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
 	extend bool
@@ -1444,6 +1455,16 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
+	return field
+}
+
+// NotReplayable marks the field's result as unsafe to serve to a replayed
+// recorded call. See FieldSpec.NotReplayable.
+func (field Field[T]) NotReplayable(reason string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.NotReplayable = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 

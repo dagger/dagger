@@ -322,6 +322,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+  """
+  @spec reloaded(t()) :: Dagger.Workspace.t()
+  def reloaded(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("reloaded")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   An installed SDK, by name.
   """
   @spec sdk(t(), String.t()) :: Dagger.WorkspaceSDK.t()

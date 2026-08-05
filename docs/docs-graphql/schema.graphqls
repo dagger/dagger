@@ -3548,7 +3548,11 @@ type LLM implements Node & Syncer {
   A portable, self-contained ID for the conversation that node() can resolve in
   any session. Unlike id, which may return an engine-local runtime handle valid
   only within the current session, this returns the recipe form suitable for
-  persisting and later restoring the conversation.
+  persisting and later restoring the conversation. The recipe is flattened:
+  bindings superseded during the session (workspace overlays recorded by each
+  mutating tool call, and re-bound toolsets) are dropped, while the current
+  workspace binding — including any pending, un-exported edits — is
+  preserved.
   """
   portableID: ID!
 
@@ -3561,6 +3565,13 @@ type LLM implements Node & Syncer {
   Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
   """
   replay: ID! @expectedType(name: "LLM")
+
+  """
+  The skills visible to the model, exactly as the ListSkills tool serves them:
+  engine-embedded skills, skills installed with withSkills, and skills
+  discovered in the workspace.
+  """
+  skills: [LLMSkill!]!
 
   """
   Advance the conversation by a single step: send the queued prompt or tool
@@ -3651,6 +3662,18 @@ type LLM implements Node & Syncer {
 
     """Total tokens consumed by this response"""
     totalTokens: Int = 0
+  ): LLM!
+
+  """
+  Install skills from a directory, adding them to the skills the model discovers
+  with ListSkills and reads with ReadSkill. Each skill is a directory containing
+  a SKILL.md with name and description frontmatter, discovered anywhere in the
+  tree. Installed skills take precedence over skills discovered in the
+  workspace, but cannot shadow the engine's built-in skills.
+  """
+  withSkills(
+    """A directory containing skills, each a subdirectory holding a SKILL.md."""
+    directory: ID! @expectedType(name: "Directory")
   ): LLM!
 
   """
@@ -3808,6 +3831,20 @@ enum LLMMessageRole {
 
   """A system prompt."""
   SYSTEM
+}
+
+"""
+A skill available to a model: task-specific guidance discovered with ListSkills and read with ReadSkill.
+"""
+type LLMSkill implements Node {
+  """The one-line description from the SKILL.md frontmatter."""
+  description: String!
+
+  """A unique identifier for this LLMSkill."""
+  id: ID!
+
+  """The skill name, as passed to ReadSkill."""
+  name: String!
 }
 
 """A count of tokens consumed by LLM API calls."""
@@ -5537,6 +5574,13 @@ type Workspace implements Node {
 
   """List modules defined in the workspace configuration."""
   modules: [WorkspaceModule!]!
+
+  """
+  Return this workspace with its cached host reads invalidated, so subsequent
+  file and directory reads re-read the live host instead of a snapshot cached
+  earlier in the session.
+  """
+  reloaded: Workspace!
 
   """An installed SDK, by name."""
   sdk(

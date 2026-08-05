@@ -94,6 +94,10 @@ type MCP struct {
 	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
+	// skillDirs are skill directories installed via LLM.withSkills, surfaced to
+	// the model through ListSkills/ReadSkill alongside the engine-embedded and
+	// workspace-discovered skills.
+	skillDirs []dagql.ObjectResult[*Directory]
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -141,6 +145,7 @@ func (m *MCP) DefaultSystemPrompt(ctx context.Context) (string, error) {
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.boundTools = slices.Clone(cp.boundTools)
+	cp.skillDirs = slices.Clone(cp.skillDirs)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
 	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
@@ -186,6 +191,14 @@ func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 	return m
 }
 
+// WithSkills installs a directory of skills, discovered via its SKILL.md files
+// and surfaced to the model through ListSkills/ReadSkill.
+func (m *MCP) WithSkills(dir dagql.ObjectResult[*Directory]) *MCP {
+	m = m.Clone()
+	m.skillDirs = append(m.skillDirs, dir)
+	return m
+}
+
 func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	srv, err := m.Server(ctx)
 	if err != nil {
@@ -198,13 +211,14 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	// LLM.withTools (hack/designs/workspace-agents.md): each eligible method becomes a tool,
 	// and a method that returns the bound object's own type rebinds it as the new
 	// state. These are loaded first so a bound method overrides a builtin of the
-	// same name. External MCP tools and the ReadLogs builtin also apply.
+	// same name. External MCP tools, skills, and the ReadLogs builtin also apply.
 	if err := m.loadObjectTools(ctx, srv, allTools); err != nil {
 		return nil, err
 	}
 	if err := m.loadMCPTools(ctx, allTools); err != nil {
 		return nil, err
 	}
+	m.loadSkillTools(srv, allTools)
 	m.loadBuiltins(srv, allTools)
 	return allTools.Order, nil
 }
@@ -452,7 +466,15 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if m.workspace.Self() == nil {
 		return fmt.Errorf("cannot apply changes: no workspace bound")
 	}
-	changesID, err := changes.ID()
+	normalized, err := normalizeChangesetToPatch(ctx, srv, changes)
+	if err != nil {
+		// Fall back to the raw changeset: normalization is a durability
+		// upgrade for saved sessions, not a correctness requirement for the
+		// live one.
+		slog.Warn("failed to normalize changeset to patch form", "error", err)
+		normalized = changes
+	}
+	changesID, err := normalized.ID()
 	if err != nil {
 		return fmt.Errorf("get changeset ID: %w", err)
 	}
@@ -468,6 +490,137 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	}
 	m.workspace = newWS
 	return nil
+}
+
+// normalizeChangesetToPatch rewrites a changeset into pure patch data:
+// after = before.withPatch(patch, onConflict: LEAVE_CONFLICT_MARKERS),
+// changes = after.changes(from: before).
+//
+// A tool-built changeset's After is an operation chain (e.g.
+// File.withReplaced) rooted at live workspace reads. Replaying those
+// operations when a saved session is loaded fails once the files have moved
+// on (the search text is gone), or silently re-applies them when it hasn't.
+// Capturing the patch now — while the content the operations ran against is
+// known — makes the recorded overlay pure data, and its replay a tolerant
+// application: hunks that fit apply, hunks that don't leave conflict markers
+// for the agent to resolve.
+func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+	var patchText string
+	if err := srv.Select(ctx, changes, &patchText, dagql.Selector{
+		View:  srv.View,
+		Field: "asPatch",
+	}, dagql.Selector{
+		View:  srv.View,
+		Field: "contents",
+	}); err != nil {
+		return changes, fmt.Errorf("render changeset as patch: %w", err)
+	}
+	if patchText == "" {
+		return changes, nil
+	}
+	before := changes.Self().Before
+	if before.Self() == nil {
+		return changes, fmt.Errorf("changeset has no before directory")
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return changes, err
+	}
+	var patched dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, before, &patched, dagql.Selector{
+		View:  srv.View,
+		Field: "withPatch",
+		Args: []dagql.NamedInput{
+			{Name: "patch", Value: dagql.NewString(patchText)},
+			{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+		},
+	}); err != nil {
+		return changes, fmt.Errorf("apply patch to before: %w", err)
+	}
+	patched, err = reconcileDirsAfterPatch(ctx, srv, changes, patched)
+	if err != nil {
+		return changes, fmt.Errorf("reconcile directories: %w", err)
+	}
+	var normalized dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, patched, &normalized, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
+		},
+	}); err != nil {
+		return changes, fmt.Errorf("rebuild changeset from patch: %w", err)
+	}
+	return normalized, nil
+}
+
+// reconcileDirsAfterPatch restores directory-only changes a git patch cannot
+// express. Git tracks files, not directories: an empty directory added by the
+// changeset is invisible to `git diff`, so applying the patch to Before
+// silently drops it — and since the normalized changeset replaces the original
+// on the live workspace binding, the loss would not be confined to the saved
+// form. The patch fully covers file content, so the residue between the
+// patched tree and the changeset's real After can only be directories; any
+// file-level residue means the patch did not reproduce the changeset, and
+// normalization is abandoned (the caller falls back to the raw changeset).
+func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], patched dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+	// Cheap gate: the changeset's own paths are already computed (memoized by
+	// asPatch). Directories carry a trailing slash; if none changed, the patch
+	// covered everything and there is no residue to look for.
+	origPaths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return patched, fmt.Errorf("compute changeset paths: %w", err)
+	}
+	dirChanged := slices.ContainsFunc(
+		slices.Concat(origPaths.Added, origPaths.AllRemoved),
+		func(p string) bool { return strings.HasSuffix(p, "/") },
+	)
+	if !dirChanged {
+		return patched, nil
+	}
+
+	residual, err := NewChangeset(ctx, patched, changes.Self().After)
+	if err != nil {
+		return patched, err
+	}
+	paths, err := residual.ComputePaths(ctx)
+	if err != nil {
+		return patched, fmt.Errorf("compute patch residue: %w", err)
+	}
+	if len(paths.Modified) > 0 || len(paths.Renamed) > 0 {
+		return patched, fmt.Errorf("patch did not reproduce changeset content: modified %v, renamed %v", paths.Modified, paths.Renamed)
+	}
+	for _, p := range slices.Concat(paths.Added, paths.AllRemoved) {
+		if !strings.HasSuffix(p, "/") {
+			return patched, fmt.Errorf("patch did not reproduce changeset file %q", p)
+		}
+	}
+	// Recorded as selectors on the overlay chain, so they are pure data like
+	// the patch itself, and replay tolerantly: withNewDirectory is mkdir -p,
+	// withoutDirectory ignores an already-missing path.
+	for _, dir := range paths.Added {
+		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+			View:  srv.View,
+			Field: "withNewDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
+			},
+		}); err != nil {
+			return patched, fmt.Errorf("restore directory %q: %w", dir, err)
+		}
+	}
+	for _, dir := range paths.Removed {
+		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+			View:  srv.View,
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
+			},
+		}); err != nil {
+			return patched, fmt.Errorf("drop directory %q: %w", dir, err)
+		}
+	}
+	return patched, nil
 }
 
 // workspaceDirectory returns the bound workspace's root directory, for

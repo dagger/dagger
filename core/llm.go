@@ -1042,6 +1042,30 @@ func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, error) {
 	return NewLLMRouter(ctx, mainSrv)
 }
 
+// DefaultLLMRoute resolves the configured default model and the provider it
+// routes to, so llm() can re-call itself with both pinned (the way
+// Container.from re-calls itself with the digested ref). provider, when
+// non-empty, is the caller's explicit choice and is returned unchanged. A
+// ("", "") result means no default is configured — nothing to pin.
+func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, string, error) {
+	router, err := loadLLMRouter(ctx, q)
+	if err != nil {
+		return "", "", err
+	}
+	model := router.DefaultModel()
+	if model == "" {
+		return "", "", nil
+	}
+	if provider == "" {
+		endpoint, err := router.Route(model, "")
+		if err != nil {
+			return "", "", err
+		}
+		provider = string(endpoint.Provider)
+	}
+	return model, provider, nil
+}
+
 func (*LLM) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "LLM",
@@ -1109,6 +1133,18 @@ func (llm *LLM) AttachDependencyResults(
 			return nil, fmt.Errorf("attach llm bound tool object: unexpected result %T", attached)
 		}
 		llm.mcp.boundTools[i].object = obj
+		deps = append(deps, attached)
+	}
+	for i, skillDir := range llm.mcp.skillDirs {
+		attached, err := attach(skillDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm skill directory: %w", err)
+		}
+		dir, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach llm skill directory: unexpected result %T", attached)
+		}
+		llm.mcp.skillDirs[i] = dir
 		deps = append(deps, attached)
 	}
 	return deps, nil
@@ -1337,6 +1373,22 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 		Service: svc,
 	})
 	return llm
+}
+
+// WithSkills installs a directory of skills — each a subdirectory holding a
+// SKILL.md — surfaced to the model through ListSkills/ReadSkill alongside
+// the engine-embedded and workspace-discovered skills.
+func (llm *LLM) WithSkills(dir dagql.ObjectResult[*Directory]) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithSkills(dir)
+	return llm
+}
+
+// Skills returns the discovery index of every skill visible to the model — the
+// same list the ListSkills tool serves, across all sources with the same
+// precedence.
+func (llm *LLM) Skills(ctx context.Context) ([]*LLMSkill, error) {
+	return listSkills(ctx, llm.mcp.skillSources())
 }
 
 // Return the last message sent by the agent
@@ -1616,6 +1668,13 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 // responseSelector builds the withResponse selector that records the model's
 // reply - its content blocks and token usage - as a new node in the LLM DAG.
 func responseSelector(res *LLMResponse) (dagql.Selector, error) {
+	return responseSelectorFromBlocks(res.Content, res.TokenUsage)
+}
+
+// responseSelectorFromBlocks builds a withResponse selector from raw content
+// blocks and token usage. Used for fresh responses (responseSelector) and for
+// re-emitting recorded assistant messages (recipeSelectors).
+func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
 	// Build content block input objects for the withResponse selector.
 	// An InputObject's fields are only populated by decoding a map through
 	// its Decoder; a bare struct literal leaves them nil and panics when the
@@ -1626,8 +1685,8 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 	// to nil and is omitted from the literal entirely, so the field must have
 	// a default tag or reloading the serialized ID fails with "missing
 	// required input field".
-	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
-	for i, block := range res.Content {
+	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(blocks))
+	for i, block := range blocks {
 		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
 			"kind":      string(block.Kind),
 			"text":      block.Text,
@@ -1652,34 +1711,34 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 			Value: contentInputs,
 		},
 	}
-	if res.TokenUsage.InputTokens != 0 {
+	if tokenUsage.InputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "inputTokens",
-			Value: dagql.NewInt(res.TokenUsage.InputTokens),
+			Value: dagql.NewInt(tokenUsage.InputTokens),
 		})
 	}
-	if res.TokenUsage.OutputTokens != 0 {
+	if tokenUsage.OutputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "outputTokens",
-			Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+			Value: dagql.NewInt(tokenUsage.OutputTokens),
 		})
 	}
-	if res.TokenUsage.CachedTokenReads != 0 {
+	if tokenUsage.CachedTokenReads != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenReads",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+			Value: dagql.NewInt(tokenUsage.CachedTokenReads),
 		})
 	}
-	if res.TokenUsage.CachedTokenWrites != 0 {
+	if tokenUsage.CachedTokenWrites != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenWrites",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+			Value: dagql.NewInt(tokenUsage.CachedTokenWrites),
 		})
 	}
-	if res.TokenUsage.TotalTokens != 0 {
+	if tokenUsage.TotalTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "totalTokens",
-			Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			Value: dagql.NewInt(tokenUsage.TotalTokens),
 		})
 	}
 	return dagql.Selector{
@@ -2054,6 +2113,190 @@ func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
 
 func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 	return llm.mcp.workspace
+}
+
+// recipeSelectors re-emits the conversation as a flat, data-only selector chain
+// rooted at Query.llm: the model, config, MCP servers, skills, tool bindings,
+// workspace binding, and full message history, in that order.
+//
+// It emits from the LLM's *final in-memory state*, never from its recorded ID
+// spine. That is what makes the result bounded and replay-safe. During a
+// session step() appends a withWorkspace selector on every workspace-mutating
+// tool call and a withTools selector on every object rebind, so the spine
+// accumulates each superseded binding; replaying those on a later load
+// re-applies edits that are already on disk (or fails outright, once the
+// content they were derived from has moved on). Emitting from final state
+// keeps only the tip-most binding per slot and drops the rest. Tool bindings
+// need no explicit dedupe: MCP.WithTools already keeps at most one binding per
+// object type, so BoundToolBindings is per-type final state by construction.
+//
+// The workspace binding is carried *verbatim*, including any overlay
+// derivations (withChanges and friends) sitting on top of its base. Pending,
+// un-exported edits are therefore preserved across a save/resume round trip;
+// once they are exported and the caller rebinds the live workspace, the
+// overlay-free binding is what gets emitted.
+//
+// The chain carries exactly the state that survives a save/load round trip
+// (selector-expressible state); transient state such as open MCP sessions or
+// the last tool result is not carried, same as save/load.
+func (llm *LLM) recipeSelectors(ctx context.Context) ([]dagql.Selector, error) {
+	// The llm(maxAPICalls:) legacy knob is deliberately not carried: it is only
+	// settable through pre-v1 views, and this field only exists in v1+.
+	root := dagql.Selector{Field: "llm"}
+	if llm.model != "" {
+		root.Args = append(root.Args, dagql.NamedInput{
+			Name:  "model",
+			Value: dagql.Opt(dagql.NewString(llm.model)),
+		})
+	}
+	if llm.provider != "" {
+		root.Args = append(root.Args, dagql.NamedInput{
+			Name:  "provider",
+			Value: dagql.Opt(dagql.NewString(llm.provider)),
+		})
+	}
+	sels := []dagql.Selector{root}
+
+	if llm.disableDefaultSystemPrompt {
+		sels = append(sels, dagql.Selector{Field: "withoutDefaultSystemPrompt"})
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(llm.mcp.mcpServers)) {
+		cfg := llm.mcp.mcpServers[name]
+		svcID, err := cfg.Service.ID()
+		if err != nil {
+			return nil, fmt.Errorf("mcp server %q service ID: %w", name, err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withMCPServer",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(name)},
+				{Name: "service", Value: dagql.NewID[*Service](svcID)},
+			},
+		})
+	}
+
+	for _, dir := range llm.mcp.skillDirs {
+		dirID, err := dir.ID()
+		if err != nil {
+			return nil, fmt.Errorf("skill directory ID: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withSkills",
+			Args: []dagql.NamedInput{
+				{Name: "directory", Value: dagql.NewID[*Directory](dirID)},
+			},
+		})
+	}
+
+	bindings, err := llm.mcp.BoundToolBindings()
+	if err != nil {
+		return nil, fmt.Errorf("bound tool bindings: %w", err)
+	}
+	for _, b := range bindings {
+		sels = append(sels, dagql.Selector{
+			Field: "withTools",
+			Args: []dagql.NamedInput{
+				{Name: "object", Value: dagql.NewAnyID(b.ID)},
+				{Name: "except", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(b.Except...))},
+			},
+		})
+	}
+
+	// Carry the current workspace binding verbatim. This is the tip-most
+	// binding — the one the last workspace-mutating tool call installed — so
+	// any overlay derivations riding on it (withChanges and friends) come
+	// along, and pending un-exported edits survive the round trip. Every
+	// superseded binding recorded on the spine is simply not emitted.
+	//
+	// A bare currentWorkspace binding is carried too, and is safe to carry:
+	// currentWorkspace is per-invocation (PerCallInput), so a loaded session
+	// re-detects the live workspace rather than pinning a stale detection.
+	// Emitting it unconditionally is what keeps a restored session bound —
+	// an unbound LLM fails LLM.workspace and silently degrades tool behavior
+	// (e.g. a workspace-returning tool reporting no diff).
+	if llm.mcp.workspace.Self() != nil {
+		wsID, err := llm.mcp.workspace.RecipeID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("workspace recipe ID: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "workspace", Value: dagql.NewID[*Workspace](wsID)},
+			},
+		})
+	}
+
+	// Replay the conversation in message order. Every message shape the engine
+	// can produce maps to a selector; anything else is an error rather than
+	// silent data loss.
+	for i, msg := range llm.Messages {
+		switch msg.Role {
+		case LLMMessageRoleSystem:
+			sels = append(sels, dagql.Selector{
+				Field: "withSystemPrompt",
+				Args: []dagql.NamedInput{
+					{Name: "prompt", Value: dagql.NewString(msg.TextContent())},
+				},
+			})
+		case LLMMessageRoleAssistant:
+			var usage LLMTokenUsage
+			if msg.TokenUsage != nil {
+				usage = *msg.TokenUsage
+			}
+			sel, err := responseSelectorFromBlocks(msg.Content, usage)
+			if err != nil {
+				return nil, fmt.Errorf("message %d: %w", i, err)
+			}
+			sels = append(sels, sel)
+		case LLMMessageRoleUser:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					sels = append(sels, dagql.Selector{
+						Field: "withToolResult",
+						Args: []dagql.NamedInput{
+							{Name: "callId", Value: dagql.NewString(block.CallID)},
+							{Name: "content", Value: dagql.NewString(block.Text)},
+							{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
+						},
+					})
+				case LLMContentText:
+					sels = append(sels, dagql.Selector{
+						Field: "withPrompt",
+						Args: []dagql.NamedInput{
+							{Name: "prompt", Value: dagql.NewString(block.Text)},
+						},
+					})
+				default:
+					return nil, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)
+				}
+			}
+		default:
+			return nil, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)
+		}
+	}
+
+	return sels, nil
+}
+
+// PortableRecipe materializes the conversation as a flat, self-contained
+// recipe (see recipeSelectors) rooted at Query.llm, suitable for persisting
+// and restoring in a later session. Backs LLM.portableID.
+func (llm *LLM) PortableRecipe(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	sels, err := llm.recipeSelectors(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("re-emit session recipe: %w", err)
+	}
+	return res, nil
 }
 
 // A variable in the LLM environment

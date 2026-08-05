@@ -137,7 +137,7 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+  A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
   """
   @spec portable_id(t()) :: {:ok, String.t()} | {:error, term()}
   def portable_id(%__MODULE__{} = llm) do
@@ -176,6 +176,29 @@ defmodule Dagger.LLM do
            |> QB.inline_fragment("LLM"),
          client: llm.client
        }}
+    end
+  end
+
+  @doc """
+  The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+  """
+  @spec skills(t()) :: {:ok, [Dagger.LLMSkill.t()]} | {:error, term()}
+  def skills(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("skills") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(llm.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.LLMSkill{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("LLMSkill"),
+           client: llm.client
+         }
+       end}
     end
   end
 
@@ -334,6 +357,22 @@ defmodule Dagger.LLM do
       |> QB.maybe_put_arg("cachedTokenReads", optional_args[:cached_token_reads])
       |> QB.maybe_put_arg("cachedTokenWrites", optional_args[:cached_token_writes])
       |> QB.maybe_put_arg("totalTokens", optional_args[:total_tokens])
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+  """
+  @spec with_skills(t(), Dagger.Directory.t()) :: Dagger.LLM.t()
+  def with_skills(%__MODULE__{} = llm, directory) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withSkills")
+      |> QB.put_arg("directory", Dagger.ID.id!(directory))
 
     %Dagger.LLM{
       query_builder: query_builder,

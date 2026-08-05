@@ -9625,7 +9625,7 @@ impl Llm {
         let query = self.selection.select("model");
         query.execute(self.graphql_client.clone()).await
     }
-    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation. The recipe is flattened: bindings superseded during the session (workspace overlays recorded by each mutating tool call, and re-bound toolsets) are dropped, while the current workspace binding — including any pending, un-exported edits — is preserved.
     pub async fn portable_id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("portableID");
         query.execute(self.graphql_client.clone()).await
@@ -9648,6 +9648,23 @@ impl Llm {
                 .inline_fragment("LLM"),
             graphql_client: self.graphql_client.clone(),
         })
+    }
+    /// The skills visible to the model, exactly as the ListSkills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+    pub async fn skills(&self) -> Result<Vec<LlmSkill>, DaggerError> {
+        let query = self.selection.select("skills");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmSkill {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMSkill"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
     ///
@@ -9843,6 +9860,26 @@ impl Llm {
         if let Some(total_tokens) = opts.total_tokens {
             query = query.arg("totalTokens", total_tokens);
         }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+    ///
+    /// # Arguments
+    ///
+    /// * `directory` - A directory containing skills, each a subdirectory holding a SKILL.md.
+    pub fn with_skills(&self, directory: impl IntoID<Id>) -> Llm {
+        let mut query = self.selection.select("withSkills");
+        query = query.arg_lazy(
+            "directory",
+            Box::new(move || {
+                let directory = directory.clone();
+                Box::pin(async move { directory.into_id().await.unwrap().quote() })
+            }),
+        );
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -10153,6 +10190,59 @@ impl LlmMessage {
     }
 }
 impl Node for LlmMessage {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct LlmSkill {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for LlmSkill {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmSkill {
+    fn graphql_type() -> &'static str {
+        "LLMSkill"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmSkill {
+    /// The one-line description from the SKILL.md frontmatter.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this LLMSkill.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The skill name, as passed to ReadSkill.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for LlmSkill {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -14787,6 +14877,15 @@ impl Workspace {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
+    }
+    /// Return this workspace with its cached host reads invalidated, so subsequent file and directory reads re-read the live host instead of a snapshot cached earlier in the session.
+    pub fn reloaded(&self) -> Workspace {
+        let query = self.selection.select("reloaded");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// An installed SDK, by name.
     ///
