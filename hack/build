@@ -3,7 +3,7 @@
 # hack/build builds the engine and cli from local code, and additionally starts
 # the engine in the host's docker runtime.
 #
-# The work lives in the `dev` toolchain (toolchains/dev). This wrapper only maps
+# The work lives in the `dev` toolchain (.dagger/modules/dev). This wrapper only maps
 # the historical _EXPERIMENTAL_* environment variables onto its flags, and runs
 # from the repo root so both the workspace and ./bin resolve there.
 #

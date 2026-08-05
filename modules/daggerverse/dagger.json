@@ -12,7 +12,7 @@
     },
     {
       "name": "go",
-      "source": "../../toolchains/go"
+      "source": "../../.dagger/modules/go"
     }
   ],
   "codegen": {

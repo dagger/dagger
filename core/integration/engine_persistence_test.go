@@ -1108,9 +1108,9 @@ printf 'layered\n' > /work/layered.txt
 				ctr = ctr.WithExec([]string{
 					"sh",
 					"-ec",
-					`test -f /app/toolchains/engine-dev/build/builder.go
-sed -i 's/var versionAnnotation = distconsts.OCIVersionAnnotation/var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"/' /app/toolchains/engine-dev/build/builder.go
-grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app/toolchains/engine-dev/build/builder.go`,
+					`test -f /app/.dagger/modules/engine-dev/build/builder.go
+sed -i 's/var versionAnnotation = distconsts.OCIVersionAnnotation/var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"/' /app/.dagger/modules/engine-dev/build/builder.go
+grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app/.dagger/modules/engine-dev/build/builder.go`,
 				})
 			}
 

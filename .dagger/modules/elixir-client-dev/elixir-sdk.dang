@@ -1,0 +1,214 @@
+pub description = "Develop the Dagger Elixir SDK (experimental)"
+
+type ElixirClientDev {
+  pub baseImage: String! = "elixir:1.19.5-otp-28-alpine@sha256:1747b3595b6742d2273d18608203457d5b925000cd38aca40c76e23c64d44def"
+
+  pub workspaceDir: Directory!
+    @defaultPath(path: "/")
+    @ignorePatterns(patterns: [
+      "*",
+      "!sdk/elixir",
+    ])
+
+  pub sourcePath: String! = "sdk/elixir"
+
+  """
+  Workspace
+  """
+  let ws: Workspace!
+
+  pub source: Directory! {
+    workspaceDir.directory(sourcePath)
+  }
+
+  pub devContainer: Container! {
+    daggerEngine(ws: self.ws)
+      .installClient(
+        withBase(source),
+      )
+  }
+
+  """
+  Lint the SDK
+  """
+  pub lint: Void @check {
+    devContainer
+      .withExec(["mix", "credo"])
+      .sync
+
+    null
+  }
+
+  """
+  Regenerate the Elixir SDK API
+  """
+  pub clientLibrary: Changeset! @generate {
+    # Make sure everything is relative to git root
+    let before = directory
+      .withDirectory(sourcePath, source)
+
+    let gen = withCodegen(devContainer)
+      .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
+      .withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"])
+      .withExec(["mix", "format", "gen/*.ex"])
+      .directory("gen")
+
+    let layer = directory
+      .withDirectory(sourcePath + "/lib/dagger/gen", gen)
+
+    let after = before.withDirectory("", layer)
+
+    after.changes(before)
+  }
+
+  """
+  Run the SDK tests
+  """
+  pub sdkTest: Void @check {
+    devContainer
+      .withoutFile("dagger.json")
+      .withExec(["mix", "test"])
+      .sync
+
+    null
+  }
+
+  """
+  Run dagger_codegen tests
+  """
+  pub codegenTest: Void @check {
+    withCodegen(devContainer)
+      .withEnvVariable("CI", "true")
+      .withExec(["mix", "test"])
+      .sync
+
+    null
+  }
+
+  """
+  Update codegen test snapshots (auto-accept Mneme changes)
+  """
+  pub updateCodegenTests: Changeset! {
+    let ctr = withCodegen(devContainer)
+    let before = ctr.directory("/").filter(include: ["sdk/elixir/**"])
+    ctr
+      .withEnvVariable("MNEME_ACCEPT", "1")
+      .withExec(["mix", "test"])
+      .withoutDirectory("_build")
+      .directory("/")
+      .filter(include: ["sdk/elixir/**"])
+      .changes(before)
+  }
+
+  """
+  Test the publishing process
+  """
+  pub releaseDryRun: Void @check {
+    publish(
+      tag: "HEAD",
+      dryRun: true,
+      hexApiKey: setSecret("hex-api-key", ""),
+    )
+  }
+
+  """
+  Publish the Elixir SDK
+  """
+  pub publish(
+    """
+    Source git tag to release
+    """
+    tag: String!,
+    """
+    Hex.pm API key for publishing
+    """
+    hexApiKey: Secret,
+    """
+    Hex.pm API URL to publish to
+    """
+    hexApiUrl: String! = "",
+    """
+    Execute a dry-run release, with no side effects
+    """
+    dryRun: Boolean! = false,
+  ): Void {
+    let version = versionFromTag(tag)
+    let ctr = devContainer
+
+    # Update version in mix.exs if this is a valid semver
+    if (isSemver(version)) {
+      let mixFile = "/sdk/elixir/mix.exs"
+      let mixExs = workspaceDir.file(sourcePath + "/mix.exs")
+      let newMixExs = mixExs.withReplaced(
+        "@version \"0.0.0\"",
+        "@version \"" + version.trimPrefix("v") + "\"",
+      )
+      ctr = ctr.withFile(mixFile, newMixExs)
+    }
+
+    # Publish or dry-run
+    let mix = ["mix", "hex.publish", "--yes"]
+    if (dryRun) {
+      mix += ["--dry-run"]
+      ctr = ctr.withEnvVariable("HEX_API_KEY", "")
+    } else if (hexApiKey != null) {
+      ctr = ctr.withSecretVariable("HEX_API_KEY", hexApiKey)
+    }
+    if (hexApiUrl != "") {
+      ctr = ctr.withEnvVariable("HEX_API_URL", hexApiUrl)
+    }
+    ctr.withExec(mix).sync
+    null
+  }
+
+  """
+  Sync Elixir image to keep both dev and runtime modules consistent
+  """
+  pub syncImage: File! {
+    let path = "runtime/main.go"
+    let runtimeMainGo = withBase(source)
+      .file(path)
+
+    # Replace the elixirImage line with the new base image
+    let newRuntimeMainGo = runtimeMainGo.withReplaced(
+      "elixirImage = ",
+      "elixirImage = \"" + baseImage + "\"\n",
+    ).contents
+
+    devContainer
+      .from("golang:1.23-alpine")
+      .withNewFile(path, newRuntimeMainGo)
+      .withExec(["go", "fmt", path])
+      .file(path)
+  }
+
+  let withCodegen(ctr: Container!): Container! {
+    ctr
+      .withWorkdir("dagger_codegen")
+      .withExec(["mix", "deps.get"])
+  }
+
+  let withBase(src: Directory!): Container! {
+    container
+      .from(baseImage)
+      .withWorkdir("/sdk/elixir")
+      .withDirectory(".", src)
+      .withExec(["mix", "local.hex", "--force"])
+      .withExec(["mix", "local.rebar", "--force"])
+      .withExec(["mix", "deps.get"])
+  }
+
+  let isSemver(version: String!): Boolean! {
+    let binary = go(ws: self.ws, source: currentModule.source.directory("is-semver")).binary("is-semver")
+    let exitCode = devContainer
+      .from("alpine:3")
+      .withFile("/bin/is-semver", binary)
+      .withExec(["is-semver", version], expect: ReturnType.ANY)
+      .exitCode
+    exitCode == 0
+  }
+
+  let versionFromTag(tag: String!): String! {
+    tag.trimPrefix(sourcePath.trimRight("/") + "/")
+  }
+}

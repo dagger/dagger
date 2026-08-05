@@ -21,8 +21,8 @@
 //go:test:include ../../modules/alpine
 //go:test:include ../../modules/wolfi
 //go:test:include ../../sdk/go
-//go:test:include ../../toolchains/cli-dev
-//go:test:include ../../toolchains/go
+//go:test:include ../../.dagger/modules/cli-dev
+//go:test:include ../../.dagger/modules/go
 //go:test:include ../../util
 package helm
 

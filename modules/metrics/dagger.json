@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "dagger-engine",
-      "source": "../../toolchains/engine-dev"
+      "source": "../../.dagger/modules/engine-dev"
     }
   ],
   "codegen": {
