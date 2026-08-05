@@ -355,6 +355,64 @@ profile = "alice-dev"
 	}
 }
 
+func TestUserConfigIncludeIfConditionsFollowGitSemantics(t *testing.T) {
+	t.Parallel()
+
+	userConfig := `
+[workspaces."github.com/acme/api".modules.aws.settings]
+profile = "alice-dev"
+`
+
+	t.Run("non-matching gitdir condition is not followed", func(t *testing.T) {
+		t.Parallel()
+		h := newUserConfigTestHost(`[includeIf "gitdir:/elsewhere/"]
+	path = origin.config
+`, userConfigTestDaggerTOML, userConfig)
+		h.files["/repo/.git/origin.config"] = userConfigTestGitConfig
+
+		client, err := loadUserConfigTestWorkspace(t, h, &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+			UserConfigPath:       testUserConfigPath,
+		})
+		require.NoError(t, err)
+		require.Empty(t, client.workspace.UserConfigKey())
+	})
+
+	t.Run("onbranch condition follows the checked-out branch", func(t *testing.T) {
+		t.Parallel()
+		h := newUserConfigTestHost(`[includeIf "onbranch:main"]
+	path = origin.config
+`, userConfigTestDaggerTOML, userConfig)
+		h.files["/repo/.git/origin.config"] = userConfigTestGitConfig
+		h.files["/repo/.git/HEAD"] = "ref: refs/heads/main\n"
+
+		client, err := loadUserConfigTestWorkspace(t, h, &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+			UserConfigPath:       testUserConfigPath,
+		})
+		require.NoError(t, err)
+		require.Equal(t, "github.com/acme/api", client.workspace.UserConfigKey())
+		aws := pendingModuleByName(t, client, "aws")
+		require.Equal(t, "alice-dev", aws.ConfigDefaults["profile"])
+	})
+
+	t.Run("onbranch condition on another branch is not followed", func(t *testing.T) {
+		t.Parallel()
+		h := newUserConfigTestHost(`[includeIf "onbranch:main"]
+	path = origin.config
+`, userConfigTestDaggerTOML, userConfig)
+		h.files["/repo/.git/origin.config"] = userConfigTestGitConfig
+		h.files["/repo/.git/HEAD"] = "ref: refs/heads/other\n"
+
+		client, err := loadUserConfigTestWorkspace(t, h, &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+			UserConfigPath:       testUserConfigPath,
+		})
+		require.NoError(t, err)
+		require.Empty(t, client.workspace.UserConfigKey())
+	})
+}
+
 func TestUserConfigRemoteWorkspaceKey(t *testing.T) {
 	t.Parallel()
 

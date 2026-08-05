@@ -6,6 +6,7 @@ import (
 
 	toml "github.com/pelletier/go-toml"
 
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -147,9 +148,13 @@ func NormalizeGitRemote(remote string) string {
 	if remote == "" {
 		return ""
 	}
-	// Filesystem remotes (path or file:// forms) are not usable as keys.
-	if strings.HasPrefix(remote, "/") || strings.HasPrefix(remote, ".") ||
-		strings.HasPrefix(remote, "file://") || strings.HasPrefix(remote, "~") {
+	// Filesystem remotes are not usable as keys: POSIX paths, file:// URLs,
+	// and Windows drive-letter or UNC paths (checked with separators
+	// normalized, so C:\Users, C:/Users, and \\server\share are all caught).
+	slashed := strings.ReplaceAll(remote, "\\", "/")
+	if strings.HasPrefix(slashed, "/") || strings.HasPrefix(slashed, ".") ||
+		strings.HasPrefix(slashed, "file://") || strings.HasPrefix(slashed, "~") ||
+		pathutil.GetDrive(slashed) != "" {
 		return ""
 	}
 
@@ -177,11 +182,14 @@ func NormalizeGitRemote(remote string) string {
 	return strings.ToLower(host) + "/" + path
 }
 
-// GitRemoteURL extracts the URL of the named remote from raw git config file
-// contents (.git/config format).
+// GitRemoteURL extracts the URL of the named remote from git config file
+// contents (.git/config format, with any includes already expanded — see
+// ResolveGitConfigIncludes). Like `git config --get`, the last value wins
+// when the key appears more than once.
 func GitRemoteURL(gitConfig []byte, remoteName string) (string, bool) {
 	section := fmt.Sprintf("[remote %q]", remoteName)
 	inRemote := false
+	url := ""
 	for _, line := range strings.Split(string(gitConfig), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
@@ -196,11 +204,12 @@ func GitRemoteURL(gitConfig []byte, remoteName string) (string, bool) {
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if ok && strings.TrimSpace(key) == "url" {
-			url := strings.TrimSpace(value)
-			return url, url != ""
+			if v := strings.TrimSpace(value); v != "" {
+				url = v
+			}
 		}
 	}
-	return "", false
+	return url, url != ""
 }
 
 // ParseGitDirFile parses a .git *file* (as written for worktrees and

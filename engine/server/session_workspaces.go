@@ -943,17 +943,28 @@ func attachUserWorkspaceOverlay(
 }
 
 // localWorkspaceUserConfigKey derives the user-config key for a local
-// workspace from its git origin remote. Best-effort: a workspace without a
-// usable origin has no key and matches no user-level overrides.
+// workspace from its git origin remote, resolved the way `git config --get`
+// would see it (include/includeIf directives followed). Best-effort: a
+// workspace without a usable origin has no key and matches no user-level
+// overrides.
 func localWorkspaceUserConfigKey(
 	ctx context.Context,
 	readFile func(context.Context, string) ([]byte, error),
 	root string,
 ) string {
-	data, err := readLocalGitConfig(ctx, readFile, root)
+	data, configPath, gitDir, err := readLocalGitConfig(ctx, readFile, root)
 	if err != nil {
 		return ""
 	}
+	branch := ""
+	if headData, herr := readFile(ctx, filepath.Join(gitDir, "HEAD")); herr == nil {
+		branch = workspace.GitBranchFromHEAD(headData)
+	}
+	data = workspace.ResolveGitConfigIncludes(ctx, readFile, workspace.GitConfigState{
+		ConfigPath: configPath,
+		GitDir:     gitDir,
+		Branch:     branch,
+	}, data)
 	origin, ok := workspace.GitRemoteURL(data, "origin")
 	if !ok {
 		return ""
@@ -963,32 +974,37 @@ func localWorkspaceUserConfigKey(
 
 // readLocalGitConfig reads <root>/.git/config, following a .git worktree or
 // submodule file to its gitdir (and the gitdir's commondir) when .git is not a
-// directory.
+// directory. It returns the config contents together with the config file's
+// path and the repository's per-worktree gitdir, which include resolution and
+// includeIf conditions need.
 func readLocalGitConfig(
 	ctx context.Context,
 	readFile func(context.Context, string) ([]byte, error),
 	root string,
-) ([]byte, error) {
-	data, err := readFile(ctx, filepath.Join(root, ".git", "config"))
+) (data []byte, configPath, gitDir string, rerr error) {
+	gitDir = filepath.Join(root, ".git")
+	configPath = filepath.Join(gitDir, "config")
+	data, err := readFile(ctx, configPath)
 	if err == nil {
-		return data, nil
+		return data, configPath, gitDir, nil
 	}
 
 	gitFileData, ferr := readFile(ctx, filepath.Join(root, ".git"))
 	if ferr != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 	gitDir, ok := workspace.ParseGitDirFile(gitFileData)
 	if !ok {
-		return nil, fmt.Errorf("invalid .git file in %s", root)
+		return nil, "", "", fmt.Errorf("invalid .git file in %s", root)
 	}
 	if !filepath.IsAbs(gitDir) {
 		gitDir = filepath.Join(root, gitDir)
 	}
 	gitDir = filepath.Clean(gitDir)
 
-	if data, cerr := readFile(ctx, filepath.Join(gitDir, "config")); cerr == nil {
-		return data, nil
+	configPath = filepath.Join(gitDir, "config")
+	if data, cerr := readFile(ctx, configPath); cerr == nil {
+		return data, configPath, gitDir, nil
 	}
 	// Linked worktrees keep the shared config in the common git dir.
 	if commonData, cerr := readFile(ctx, filepath.Join(gitDir, "commondir")); cerr == nil {
@@ -997,10 +1013,13 @@ func readLocalGitConfig(
 			if !filepath.IsAbs(commonDir) {
 				commonDir = filepath.Join(gitDir, commonDir)
 			}
-			return readFile(ctx, filepath.Join(filepath.Clean(commonDir), "config"))
+			configPath = filepath.Join(filepath.Clean(commonDir), "config")
+			if data, cerr := readFile(ctx, configPath); cerr == nil {
+				return data, configPath, gitDir, nil
+			}
 		}
 	}
-	return nil, err
+	return nil, "", "", err
 }
 
 func localWorkspaceAddress(root, workspaceCwd string) string {
