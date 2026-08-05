@@ -307,7 +307,11 @@ func envScopedConfigKey(cfg *workspace.Config, envName, key string, policy works
 
 	moduleName := parts[1]
 	if _, ok := cfg.Modules[moduleName]; !ok {
-		return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+		// The module may be one the env itself adds, which only exists in the
+		// overlay.
+		if _, ok := cfg.Env[envName].Modules[moduleName]; !ok {
+			return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+		}
 	}
 
 	return workspace.JoinConfigPath(append([]string{"env", envName}, parts...)...), nil

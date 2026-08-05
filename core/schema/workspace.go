@@ -190,7 +190,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a module installed in its config.").
+			// Env-sensitive writes: what this records depends on the client's env
+			// selection, which travels in client metadata rather than the
+			// workspace ID, so a recipe recorded under one env must not replay
+			// under another.
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with a module installed in its config.",
+				"When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.").
 			Args(
 				dagql.Arg("ref").Doc("Module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed module entry."),
@@ -198,13 +204,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withoutModule", s.withoutModule).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a module removed from its config.").
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with a module removed from its config.",
+				"When the session selects an env, only that env's overlay entry is removed.").
 			Args(
 				dagql.Arg("name").Doc("Name of the installed module entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withSDK", s.withSDK).
 			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
 			Doc("Return this workspace with an SDK installed in its config.").
 			Args(
 				dagql.Arg("ref").Doc("SDK module reference to install."),
@@ -214,6 +223,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withoutSDK", s.withoutSDK).
 			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
 			Doc("Return this workspace with an SDK removed from its config.").
 			Args(
 				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
@@ -247,7 +257,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withConfigValue", s.withConfigValue).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a configuration value written.").
+			WithInput(dagql.PerClientInput).
+			Doc("Return this workspace with a configuration value written.",
+				"When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.").
 			Args(
 				dagql.Arg("key").Doc("Dotted key path."),
 				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
@@ -256,14 +268,17 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withoutConfigValue", s.withoutConfigValue).
 			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
 			Doc("Return this workspace with a configuration value removed.",
-				"Errors when the key is not currently set.").
+				"Errors when the key is not currently set.",
+				"When the session selects an env, the key is scoped to that env's overlay.").
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.settings.greeting)."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withConfigEnv", s.withConfigEnv).
 			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
 			Doc("Return this workspace with a named config environment created.").
 			Args(
 				dagql.Arg("name").Doc("Environment name."),
@@ -271,6 +286,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("withoutConfigEnv", s.withoutConfigEnv).
 			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
 			Doc("Return this workspace with a named config environment removed.").
 			Args(
 				dagql.Arg("name").Doc("Environment name."),
@@ -315,10 +331,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("List named environments defined in the workspace configuration."),
 		dagql.NodeFunc("modules", s.modules).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("List modules defined in the workspace configuration."),
+			// The listing is the env-effective view, and the selected env comes
+			// from client metadata rather than the workspace ID.
+			DoNotCache("Reads live config from host").
+			Doc("List modules defined in the workspace configuration.",
+				"Reflects the selected env's effective view."),
 		dagql.NodeFunc("module", s.module).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return a module defined in the workspace configuration.").
+			DoNotCache("Reads live config from host").
+			Doc("Return a module defined in the workspace configuration.",
+				"Reflects the selected env's effective view.").
 			Args(
 				dagql.Arg("name").Doc("Module name to inspect."),
 			),

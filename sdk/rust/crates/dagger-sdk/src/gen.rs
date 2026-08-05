@@ -15346,6 +15346,7 @@ impl Workspace {
         }
     }
     /// Return a module defined in the workspace configuration.
+    /// Reflects the selected env's effective view.
     ///
     /// # Arguments
     ///
@@ -15376,6 +15377,7 @@ impl Workspace {
         }
     }
     /// List modules defined in the workspace configuration.
+    /// Reflects the selected env's effective view.
     pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
         let query = self.selection.select("modules");
         let query = query.select("id");
@@ -15606,6 +15608,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a configuration value written.
+    /// When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
     ///
     /// # Arguments
     ///
@@ -15623,6 +15626,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a configuration value written.
+    /// When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
     ///
     /// # Arguments
     ///
@@ -15770,6 +15774,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a module installed in its config.
+    /// When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
     ///
     /// # Arguments
     ///
@@ -15785,6 +15790,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a module installed in its config.
+    /// When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
     ///
     /// # Arguments
     ///
@@ -16032,6 +16038,7 @@ impl Workspace {
     }
     /// Return this workspace with a configuration value removed.
     /// Errors when the key is not currently set.
+    /// When the session selects an env, the key is scoped to that env's overlay.
     ///
     /// # Arguments
     ///
@@ -16048,6 +16055,7 @@ impl Workspace {
     }
     /// Return this workspace with a configuration value removed.
     /// Errors when the key is not currently set.
+    /// When the session selects an env, the key is scoped to that env's overlay.
     ///
     /// # Arguments
     ///
@@ -16098,6 +16106,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a module removed from its config.
+    /// When the session selects an env, only that env's overlay entry is removed.
     ///
     /// # Arguments
     ///
@@ -16113,6 +16122,7 @@ impl Workspace {
         }
     }
     /// Return this workspace with a module removed from its config.
+    /// When the session selects an env, only that env's overlay entry is removed.
     ///
     /// # Arguments
     ///

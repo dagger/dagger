@@ -167,6 +167,9 @@ func init() {
 }
 
 func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("module init does not support --env; it scaffolds modules into the base workspace config")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
