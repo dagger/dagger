@@ -20,4 +20,18 @@ type Swapper {
     let root = ws.directory("/")
     root.withNewFile("SECOND.txt", "second parallel change").changes(root)
   }
+
+  """
+  Scaffold a directory tree that mixes file content with an empty directory.
+
+  The empty directory is invisible to a git patch, so this exercises the
+  directory reconciliation in the engine's changeset normalization
+  (core.normalizeChangesetToPatch): the file edit makes the patch non-empty,
+  and the empty directory must survive alongside it.
+  """
+  addScaffold(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    let scaffolded = root.withNewFile("scaffold/README.md", "scaffolded")
+    scaffolded.withNewDirectory("scaffold/empty-dir").changes(root)
+  }
 }

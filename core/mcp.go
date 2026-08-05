@@ -537,6 +537,10 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 	}); err != nil {
 		return changes, fmt.Errorf("apply patch to before: %w", err)
 	}
+	patched, err = reconcileDirsAfterPatch(ctx, srv, changes, patched)
+	if err != nil {
+		return changes, fmt.Errorf("reconcile directories: %w", err)
+	}
 	var normalized dagql.ObjectResult[*Changeset]
 	if err := srv.Select(ctx, patched, &normalized, dagql.Selector{
 		View:  srv.View,
@@ -548,6 +552,75 @@ func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes d
 		return changes, fmt.Errorf("rebuild changeset from patch: %w", err)
 	}
 	return normalized, nil
+}
+
+// reconcileDirsAfterPatch restores directory-only changes a git patch cannot
+// express. Git tracks files, not directories: an empty directory added by the
+// changeset is invisible to `git diff`, so applying the patch to Before
+// silently drops it — and since the normalized changeset replaces the original
+// on the live workspace binding, the loss would not be confined to the saved
+// form. The patch fully covers file content, so the residue between the
+// patched tree and the changeset's real After can only be directories; any
+// file-level residue means the patch did not reproduce the changeset, and
+// normalization is abandoned (the caller falls back to the raw changeset).
+func reconcileDirsAfterPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset], patched dagql.ObjectResult[*Directory]) (dagql.ObjectResult[*Directory], error) {
+	// Cheap gate: the changeset's own paths are already computed (memoized by
+	// asPatch). Directories carry a trailing slash; if none changed, the patch
+	// covered everything and there is no residue to look for.
+	origPaths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return patched, fmt.Errorf("compute changeset paths: %w", err)
+	}
+	dirChanged := slices.ContainsFunc(
+		slices.Concat(origPaths.Added, origPaths.AllRemoved),
+		func(p string) bool { return strings.HasSuffix(p, "/") },
+	)
+	if !dirChanged {
+		return patched, nil
+	}
+
+	residual, err := NewChangeset(ctx, patched, changes.Self().After)
+	if err != nil {
+		return patched, err
+	}
+	paths, err := residual.ComputePaths(ctx)
+	if err != nil {
+		return patched, fmt.Errorf("compute patch residue: %w", err)
+	}
+	if len(paths.Modified) > 0 || len(paths.Renamed) > 0 {
+		return patched, fmt.Errorf("patch did not reproduce changeset content: modified %v, renamed %v", paths.Modified, paths.Renamed)
+	}
+	for _, p := range slices.Concat(paths.Added, paths.AllRemoved) {
+		if !strings.HasSuffix(p, "/") {
+			return patched, fmt.Errorf("patch did not reproduce changeset file %q", p)
+		}
+	}
+	// Recorded as selectors on the overlay chain, so they are pure data like
+	// the patch itself, and replay tolerantly: withNewDirectory is mkdir -p,
+	// withoutDirectory ignores an already-missing path.
+	for _, dir := range paths.Added {
+		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+			View:  srv.View,
+			Field: "withNewDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
+			},
+		}); err != nil {
+			return patched, fmt.Errorf("restore directory %q: %w", dir, err)
+		}
+	}
+	for _, dir := range paths.Removed {
+		if err := srv.Select(ctx, patched, &patched, dagql.Selector{
+			View:  srv.View,
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(strings.TrimSuffix(dir, "/"))},
+			},
+		}); err != nil {
+			return patched, fmt.Errorf("drop directory %q: %w", dir, err)
+		}
+	}
+	return patched, nil
 }
 
 // workspaceDirectory returns the bound workspace's root directory, for
