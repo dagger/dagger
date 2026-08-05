@@ -35,7 +35,7 @@ type sourceEntry struct {
 	Info     os.FileInfo
 	StatErr  error
 	// minLayer is the lowest overlay layer visible below this entry. An opaque
-	// directory or whiteout in a higher layer hides lower-layer descendants.
+	// directory or non-directory in a higher layer hides lower descendants.
 	minLayer int
 }
 
@@ -168,17 +168,20 @@ func (s *source) readOverlayDir(rel string, minLayer int) ([]sourceEntry, error)
 	visibleMinLayer := minLayer
 	for i := len(s.layers) - 1; i >= minLayer; i-- {
 		layerDir := filepath.Join(s.layers[i], layerRel)
-		hidesLower, err := hidesLowerLayers(layerDir)
-		if err != nil && !os.IsNotExist(err) && !isNotDir(err) {
+		isDir, hidesLower, err := overlayEntryState(layerDir)
+		if err != nil {
+			if os.IsNotExist(err) || isNotDir(err) {
+				continue
+			}
 			return nil, err
+		}
+		if !isDir {
+			visibleMinLayer = i
+			break
 		}
 
 		dirents, err := os.ReadDir(layerDir)
 		if os.IsNotExist(err) || isNotDir(err) {
-			if hidesLower {
-				visibleMinLayer = i
-				break
-			}
 			continue
 		}
 		if err != nil {
@@ -282,7 +285,7 @@ func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
 	minLayer := 0
 	for _, ancestor := range ancestors {
 		for i := len(s.layers) - 1; i >= minLayer; i-- {
-			hidesLower, err := hidesLowerLayers(filepath.Join(s.layers[i], ancestor))
+			_, hidesLower, err := overlayEntryState(filepath.Join(s.layers[i], ancestor))
 			if err != nil {
 				if os.IsNotExist(err) || isNotDir(err) {
 					continue
@@ -325,16 +328,17 @@ func isWhiteout(info os.FileInfo) bool {
 	return unix.Major(st.Rdev) == 0 && unix.Minor(st.Rdev) == 0
 }
 
-// hidesLowerLayers reports whether an overlay entry prevents lower layers from
-// contributing at and below this path. Non-directories cover everything lower
-// layers hold at the path, while opaque directories hide lower descendants.
-func hidesLowerLayers(path string) (bool, error) {
+// overlayEntryState reports whether an overlay entry is a directory and
+// whether it prevents lower layers from contributing below its path.
+// Non-directories cover everything lower layers hold at the path, while opaque
+// directories hide lower descendants.
+func overlayEntryState(path string) (isDir, hidesLower bool, err error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if !info.IsDir() {
-		return true, nil
+		return false, true, nil
 	}
 	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
 		val, err := sysx.LGetxattr(path, key)
@@ -342,13 +346,13 @@ func hidesLowerLayers(path string) (bool, error) {
 			continue
 		}
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 		if len(val) == 1 && val[0] == 'y' {
-			return true, nil
+			return true, true, nil
 		}
 	}
-	return false, nil
+	return true, false, nil
 }
 
 func isNotDir(err error) bool {
