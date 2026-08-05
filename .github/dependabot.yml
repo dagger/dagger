@@ -69,6 +69,22 @@ updates:
         patterns:
           - "*"
 
+  - package-ecosystem: "cargo"
+    directory: "/sdk/rust"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/rust"
+    groups:
+      sdk-rust-cargo:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
   - package-ecosystem: "npm"
     directory: "/docs"
     exclude-paths:

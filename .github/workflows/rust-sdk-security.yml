@@ -1,0 +1,71 @@
+name: Rust SDK Security
+
+on:
+  pull_request:
+    paths:
+      - ".github/dependabot.yml"
+      - ".github/workflows/rust-sdk-security.yml"
+      - "dagger.toml"
+      - "sdk/rust/**"
+      - "toolchains/rust-sdk-dev/**"
+      - "toolchains/security/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/dependabot.yml"
+      - ".github/workflows/rust-sdk-security.yml"
+      - "dagger.toml"
+      - "sdk/rust/**"
+      - "toolchains/rust-sdk-dev/**"
+      - "toolchains/security/**"
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-sdk-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-sdk:
+    name: rust-sdk/**
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up repository environment
+        run: mv .env.gha .env
+      - name: Run checks
+        uses: dagger/checks@64525befa1c36dd55577dae083df5c8968d9325a
+        with:
+          filter: "rust-sdk/**"
+          # Pinned from dagger/dagger#main for workspace-v1 check support.
+          commit: 0772a9cfc97916c3c8c971966163bfa22bb9585e
+
+  trivy-rust:
+    name: trivy-rust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Scan Rust dependencies
+        run: |
+          # Application fixtures have npm lockfiles but are not Rust SDK dependencies.
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/sdk/rust:/workspace:ro" \
+            aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c \
+            fs \
+            --scanners=vuln \
+            --pkg-types=library \
+            --exit-code=1 \
+            --severity=CRITICAL,HIGH \
+            --skip-dirs=examples \
+            --skip-dirs=crates/dagger-sdk/examples \
+            --skip-version-check \
+            /workspace
