@@ -648,6 +648,45 @@ func (LLMSuite) TestPortableIDCarriesProvider(ctx context.Context, t *testctx.T)
 	require.Equal(t, "my-custom-finetune", reloadedModel)
 }
 
+// TestDefaultModelPinnedInID verifies that llm() with no model re-calls
+// itself with the configured default model and its provider pinned as
+// explicit arguments — the Container.from digest-expansion pattern — so the
+// recorded ID names the model the conversation actually runs against. A
+// saved session then resumes on its own model instead of whatever default
+// the resuming environment happens to configure. Runs the CLI in a container
+// so the client environment (which the router reads its config from) is
+// controlled regardless of the test host's own provider configuration.
+func (LLMSuite) TestDefaultModelPinnedInID(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := workspaceBase(t, c).
+		WithEnvVariable("OPENAI_MODEL", "gpt-4o-test").
+		With(daggerShell(`llm | portable-id`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(strings.TrimSpace(out)))
+
+	var llmCall *call.ID
+	for cur := gid; cur != nil; cur = cur.Receiver() {
+		if cur.Field() == "llm" {
+			llmCall = cur
+		}
+	}
+	require.NotNil(t, llmCall, "the portable ID must be rooted at llm()")
+	pinned := map[string]string{}
+	for _, arg := range llmCall.Args() {
+		if lit, ok := arg.Value().(*call.LiteralString); ok {
+			pinned[arg.Name()] = lit.Value()
+		}
+	}
+	require.Equal(t, "gpt-4o-test", pinned["model"],
+		"llm() must pin the configured default model into the recorded call")
+	require.Equal(t, "openai", pinned["provider"],
+		"llm() must pin the default model's routed provider alongside it")
+}
+
 // TestPortableIDDropsSupersededWorkspaceBindings verifies that portableID
 // re-emits the session as a flat, data-only recipe: the conversation survives
 // byte-for-byte, but the workspace overlays recorded during the session

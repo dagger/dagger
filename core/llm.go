@@ -1042,6 +1042,30 @@ func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, error) {
 	return NewLLMRouter(ctx, mainSrv)
 }
 
+// DefaultLLMRoute resolves the configured default model and the provider it
+// routes to, so llm() can re-call itself with both pinned (the way
+// Container.from re-calls itself with the digested ref). provider, when
+// non-empty, is the caller's explicit choice and is returned unchanged. A
+// ("", "") result means no default is configured — nothing to pin.
+func (q *Query) DefaultLLMRoute(ctx context.Context, provider string) (string, string, error) {
+	router, err := loadLLMRouter(ctx, q)
+	if err != nil {
+		return "", "", err
+	}
+	model := router.DefaultModel()
+	if model == "" {
+		return "", "", nil
+	}
+	if provider == "" {
+		endpoint, err := router.Route(model, "")
+		if err != nil {
+			return "", "", err
+		}
+		provider = string(endpoint.Provider)
+	}
+	return model, provider, nil
+}
+
 func (*LLM) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "LLM",

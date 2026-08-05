@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type llmSchema struct {
@@ -15,7 +16,7 @@ var _ SchemaResolvers = &llmSchema{}
 
 func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.Func("llm", s.llm).
+		dagql.NodeFunc("llm", s.llm).
 			WithInput(dagql.PerSessionInput).
 			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a new LLM conversation.`).
@@ -466,21 +467,69 @@ func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 	return llm.Clone(), nil
 }
 
-func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
+func (s *llmSchema) llm(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
 	Model    dagql.Optional[dagql.String]
 	Provider dagql.Optional[dagql.String]
 	// Legacy cap on API calls, only exposed to pre-v1 module views; v1+
 	// callers pass maxSteps to loop() instead.
 	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
-}) (*core.LLM, error) {
-	llm, err := parent.NewLLM(ctx, args.Model.Value.String(), args.Provider.Value.String())
+}) (inst dagql.ObjectResult[*core.LLM], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
+	}
+	model := args.Model.Value.String()
+	provider := args.Provider.Value.String()
+	if model == "" {
+		// No model requested: resolve the configured default and re-call this
+		// field with it pinned, the way Container.from re-calls itself with
+		// the digested ref. The recorded ID then names the model the
+		// conversation actually runs against, so a saved session resumes on
+		// its own model rather than whatever default the resuming
+		// environment happens to configure.
+		defModel, defProvider, routeErr := parent.Self().DefaultLLMRoute(ctx, provider)
+		switch {
+		case routeErr != nil:
+			// Routing reads the client's environment; a failure there should
+			// surface at first use, as it did before pinning existed — not
+			// break constructing the object.
+			slog.Warn("could not resolve default LLM route; leaving llm() unpinned", "error", routeErr)
+		case defModel != "":
+			llmArgs := []dagql.NamedInput{
+				{Name: "model", Value: dagql.Opt(dagql.NewString(defModel))},
+			}
+			if defProvider != "" {
+				llmArgs = append(llmArgs, dagql.NamedInput{
+					Name:  "provider",
+					Value: dagql.Opt(dagql.NewString(defProvider)),
+				})
+			}
+			var pinned dagql.ObjectResult[*core.LLM]
+			if err := srv.Select(ctx, parent, &pinned, dagql.Selector{
+				Field: "llm",
+				Args:  llmArgs,
+			}); err != nil {
+				return inst, err
+			}
+			if args.MaxAPICalls.Valid && args.MaxAPICalls.Value.Int() > 0 {
+				// The legacy knob only exists in pre-v1 views while provider
+				// only exists in v1+, so no single view lets the inner call
+				// carry both. Apply it to this outer call's own result; it is
+				// deliberately not part of the durable recipe anyway.
+				llm := pinned.Self().WithMaxAPICalls(args.MaxAPICalls.Value.Int())
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, llm)
+			}
+			return pinned, nil
+		}
+	}
+	llm, err := parent.Self().NewLLM(ctx, model, provider)
+	if err != nil {
+		return inst, err
 	}
 	if args.MaxAPICalls.Valid && args.MaxAPICalls.Value.Int() > 0 {
 		llm = llm.WithMaxAPICalls(args.MaxAPICalls.Value.Int())
 	}
-	return llm, nil
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, llm)
 }
 
 func (s *llmSchema) messages(_ context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMMessage, error) {
