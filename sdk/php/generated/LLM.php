@@ -120,6 +120,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+     */
+    public function reasoningEffort(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reasoningEffort');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'reasoningEffort');
+    }
+
+    /**
      * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
      */
     public function replay(): LLM
@@ -228,6 +237,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptFile');
         $innerQueryBuilder->setArgument('file', $file);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+     */
+    public function withReasoningEffort(string $effort): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReasoningEffort');
+        $innerQueryBuilder->setArgument('effort', $effort);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

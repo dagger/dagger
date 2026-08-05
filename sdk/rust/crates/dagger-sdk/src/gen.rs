@@ -10095,6 +10095,11 @@ impl Llm {
         let query = self.selection.select("provider");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+    pub async fn reasoning_effort(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("reasoningEffort");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
     pub async fn replay(&self) -> Result<Llm, DaggerError> {
         let query = self.selection.select("replay");
@@ -10271,6 +10276,20 @@ impl Llm {
                 Box::pin(async move { file.into_id().await.unwrap().quote() })
             }),
         );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+    ///
+    /// # Arguments
+    ///
+    /// * `effort` - The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".
+    pub fn with_reasoning_effort(&self, effort: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("withReasoningEffort");
+        query = query.arg("effort", effort.into());
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -14934,9 +14953,6 @@ pub struct WorkspaceWithInitClientOpts {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
-    /// Skip running the SDK's generators for the new client.
-    #[builder(setter(into, strip_option), default)]
-    pub no_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitModuleOpts<'a> {
@@ -14949,9 +14965,6 @@ pub struct WorkspaceWithInitModuleOpts<'a> {
     /// Additional include patterns for the module.
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// Skip running the SDK's generators for the new module.
-    #[builder(setter(into, strip_option), default)]
-    pub no_generate: Option<bool>,
     /// Workspace-relative path for the new module.
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
@@ -15632,7 +15645,6 @@ impl Workspace {
         }
     }
     /// Return this workspace with a generated API client initialized.
-    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
     ///
     /// # Arguments
     ///
@@ -15657,7 +15669,6 @@ impl Workspace {
         }
     }
     /// Return this workspace with a generated API client initialized.
-    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
     ///
     /// # Arguments
     ///
@@ -15682,9 +15693,6 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
-        if let Some(no_generate) = opts.no_generate {
-            query = query.arg("noGenerate", no_generate);
-        }
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -15692,7 +15700,6 @@ impl Workspace {
         }
     }
     /// Return this workspace with a new module initialized.
-    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
     ///
     /// # Arguments
     ///
@@ -15710,7 +15717,6 @@ impl Workspace {
         }
     }
     /// Return this workspace with a new module initialized.
-    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
     ///
     /// # Arguments
     ///
@@ -15740,9 +15746,6 @@ impl Workspace {
         }
         if let Some(here) = opts.here {
             query = query.arg("here", here);
-        }
-        if let Some(no_generate) = opts.no_generate {
-            query = query.arg("noGenerate", no_generate);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -15852,6 +15855,60 @@ impl Workspace {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a directory mounted read-only under the reserved references prefix.
+    /// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Reference-relative mount path under the reserved references prefix.
+    /// * `source` - Directory to mount read-only.
+    pub fn with_reference_directory(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withReferenceDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a file mounted read-only under the reserved references prefix.
+    /// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Reference-relative mount path under the reserved references prefix.
+    /// * `source` - File to mount read-only.
+    pub fn with_reference_file(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withReferenceFile");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
         Workspace {
             proc: self.proc.clone(),
             selection: query,

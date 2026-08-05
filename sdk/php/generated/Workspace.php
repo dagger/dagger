@@ -513,6 +513,32 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with a directory mounted read-only under the reserved references prefix.
+     *
+     * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+     */
+    public function withReferenceDirectory(string $path, Directory $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReferenceDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a file mounted read-only under the reserved references prefix.
+     *
+     * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+     */
+    public function withReferenceFile(string $path, File $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReferenceFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with an SDK installed in its config.
      */
     public function withSDK(string $ref, ?string $name = '', ?bool $here = false, ?string $asSdkName = ''): Workspace

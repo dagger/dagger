@@ -5830,6 +5830,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::reasoningEffort",
+			"p": "Dagger/LLM.html#method_reasoningEffort",
+			"d": "<p>The reasoning effort in use, e.g. &quot;low&quot;, &quot;medium&quot;, or &quot;high&quot;. Empty or &quot;none&quot; when reasoning is disabled.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::replay",
 			"p": "Dagger/LLM.html#method_replay",
 			"d": "<p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p>"
@@ -5893,6 +5899,12 @@
 			"n": "Dagger\\LLM::withPromptFile",
 			"p": "Dagger/LLM.html#method_withPromptFile",
 			"d": "<p>Queue a file's contents as a user prompt, like withPrompt.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withReasoningEffort",
+			"p": "Dagger/LLM.html#method_withReasoningEffort",
+			"d": "<p>Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.</p>"
 		},
 		{
 			"t": "M",
@@ -7447,6 +7459,18 @@
 			"n": "Dagger\\Workspace::withNewFile",
 			"p": "Dagger/Workspace.html#method_withNewFile",
 			"d": "<p>Return this workspace with a new or replaced file, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withReferenceDirectory",
+			"p": "Dagger/Workspace.html#method_withReferenceDirectory",
+			"d": "<p>Return this workspace with a directory mounted read-only under the reserved references prefix.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withReferenceFile",
+			"p": "Dagger/Workspace.html#method_withReferenceFile",
+			"d": "<p>Return this workspace with a file mounted read-only under the reserved references prefix.</p>"
 		},
 		{
 			"t": "M",

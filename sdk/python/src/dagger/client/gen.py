@@ -9955,6 +9955,28 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
+    async def reasoning_effort(self) -> str:
+        """The reasoning effort in use, e.g. "low", "medium", or "high". Empty or
+        "none" when reasoning is disabled.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reasoningEffort", _args)
+        return await _ctx.execute(str)
+
     async def replay(self) -> Self:
         """Re-emit telemetry spans for the full message history, so a loaded
         conversation displays in the TUI.
@@ -10132,6 +10154,24 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
+        return LLM(_ctx)
+
+    def with_reasoning_effort(self, effort: str) -> Self:
+        """Change the reasoning effort for the rest of the conversation,
+        overriding any configured default. The message history is preserved;
+        the new effort takes effect on the next step.
+
+        Parameters
+        ----------
+        effort:
+            The reasoning effort, e.g. "low", "medium", or "high"; "none"
+            disables reasoning. Supported levels are model-specific — some
+            models also accept e.g. "minimal", "xhigh", or "max".
+        """
+        _args = [
+            Arg("effort", effort),
+        ]
+        _ctx = self._select("withReasoningEffort", _args)
         return LLM(_ctx)
 
     def with_response(
@@ -15523,12 +15563,8 @@ class Workspace(Type):
         *,
         args: JSON | None = None,
         here: bool | None = False,
-        no_generate: bool | None = False,
     ) -> Self:
         """Return this workspace with a generated API client initialized.
-
-        The SDK's generators run for the new client, so the returned workspace
-        carries its generated bindings.
 
         Parameters
         ----------
@@ -15543,8 +15579,6 @@ class Workspace(Type):
             SDK-specific init arguments.
         here:
             Write to the workspace config directory at the workspace cwd.
-        no_generate:
-            Skip running the SDK's generators for the new client.
         """
         _args = [
             Arg("path", path),
@@ -15552,7 +15586,6 @@ class Workspace(Type):
             Arg("module", module),
             Arg("args", args, None),
             Arg("here", here, False),
-            Arg("noGenerate", no_generate, False),
         ]
         _ctx = self._select("withInitClient", _args)
         return Workspace(_ctx)
@@ -15567,12 +15600,8 @@ class Workspace(Type):
         include: list[str] | None = None,
         args: JSON | None = None,
         here: bool | None = False,
-        no_generate: bool | None = False,
     ) -> Self:
         """Return this workspace with a new module initialized.
-
-        The SDK's generators run for the new module, so the returned workspace
-        carries the generated code it needs to be loadable.
 
         Parameters
         ----------
@@ -15590,8 +15619,6 @@ class Workspace(Type):
             SDK-specific init arguments.
         here:
             Write to the workspace config directory at the workspace cwd.
-        no_generate:
-            Skip running the SDK's generators for the new module.
         """
         _args = [
             Arg("name", name),
@@ -15601,7 +15628,6 @@ class Workspace(Type):
             Arg("include", [] if include is None else include, []),
             Arg("args", args, None),
             Arg("here", here, False),
-            Arg("noGenerate", no_generate, False),
         ]
         _ctx = self._select("withInitModule", _args)
         return Workspace(_ctx)
@@ -15677,6 +15703,52 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_reference_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory mounted read-only under the
+        reserved references prefix.
+
+        Referenced content is readable through the normal workspace file tools
+        but is excluded from the pending changeset: it never appears in
+        changes and is never exported.
+
+        Parameters
+        ----------
+        path:
+            Reference-relative mount path under the reserved references
+            prefix.
+        source:
+            Directory to mount read-only.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withReferenceDirectory", _args)
+        return Workspace(_ctx)
+
+    def with_reference_file(self, path: str, source: File) -> Self:
+        """Return this workspace with a file mounted read-only under the reserved
+        references prefix.
+
+        Referenced content is readable through the normal workspace file tools
+        but is excluded from the pending changeset: it never appears in
+        changes and is never exported.
+
+        Parameters
+        ----------
+        path:
+            Reference-relative mount path under the reserved references
+            prefix.
+        source:
+            File to mount read-only.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withReferenceFile", _args)
         return Workspace(_ctx)
 
     def with_sdk(

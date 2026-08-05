@@ -3248,11 +3248,6 @@ export type WorkspaceWithInitClientOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
-
-  /**
-   * Skip running the SDK's generators for the new client.
-   */
-  noGenerate?: boolean
 }
 
 export type WorkspaceWithInitModuleOpts = {
@@ -3280,11 +3275,6 @@ export type WorkspaceWithInitModuleOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
-
-  /**
-   * Skip running the SDK's generators for the new module.
-   */
-  noGenerate?: boolean
 }
 
 export type WorkspaceWithModuleOpts = {
@@ -10427,6 +10417,7 @@ export class LLM extends BaseClient {
   private readonly _model?: string = undefined
   private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
+  private readonly _reasoningEffort?: string = undefined
   private readonly _replay?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
@@ -10445,6 +10436,7 @@ export class LLM extends BaseClient {
     _model?: string,
     _portableID?: ID,
     _provider?: string,
+    _reasoningEffort?: string,
     _replay?: ID,
     _sync?: ID,
     _tools?: string,
@@ -10460,6 +10452,7 @@ export class LLM extends BaseClient {
     this._model = _model
     this._portableID = _portableID
     this._provider = _provider
+    this._reasoningEffort = _reasoningEffort
     this._replay = _replay
     this._sync = _sync
     this._tools = _tools
@@ -10623,6 +10616,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+   */
+  reasoningEffort = async (): Promise<string> => {
+    if (this._reasoningEffort) {
+      return this._reasoningEffort
+    }
+
+    const ctx = this._ctx.select("reasoningEffort")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
    */
   replay = async (): Promise<LLM> => {
@@ -10743,6 +10751,15 @@ export class LLM extends BaseClient {
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+   * @param effort The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".
+   */
+  withReasoningEffort = (effort: string): LLM => {
+    const ctx = this._ctx.select("withReasoningEffort", { effort })
     return new LLM(ctx)
   }
 
@@ -15183,14 +15200,11 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a generated API client initialized.
-   *
-   * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
    * @param path Workspace-relative output directory for the generated client.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param module Workspace-relative path or canonical ref for the module the client binds to.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.noGenerate Skip running the SDK's generators for the new client.
    */
   withInitClient = (
     path: string,
@@ -15209,8 +15223,6 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a new module initialized.
-   *
-   * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
    * @param name Name of the new module.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param opts.path Workspace-relative path for the new module.
@@ -15218,7 +15230,6 @@ export class Workspace extends BaseClient {
    * @param opts.include Additional include patterns for the module.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.noGenerate Skip running the SDK's generators for the new module.
    */
   withInitModule = (
     name: string,
@@ -15262,6 +15273,30 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source Directory to mount read-only.
+   */
+  withReferenceDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withReferenceDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file mounted read-only under the reserved references prefix.
+   *
+   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+   * @param path Reference-relative mount path under the reserved references prefix.
+   * @param source File to mount read-only.
+   */
+  withReferenceFile = (path: string, source: File): Workspace => {
+    const ctx = this._ctx.select("withReferenceFile", { path, source })
     return new Workspace(ctx)
   }
 
