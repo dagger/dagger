@@ -54,7 +54,7 @@ func (r *runtime) eval(
 			return nil, err
 		}
 
-		if flushErr := query.Server.FlushSessionTelemetry(ctx); flushErr != nil {
+		if flushErr := query.Server.FlushCallTelemetry(ctx); flushErr != nil {
 			slog.Debug("failed to flush telemetry after Dang eval", "error", flushErr)
 		}
 
