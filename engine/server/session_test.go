@@ -377,10 +377,10 @@ func newTeardownTestServer(t *testing.T) *Server {
 	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
 	require.NoError(t, err)
 	return &Server{
-		daggerSessions:  map[string]*daggerSession{},
-		engineCache:     cache,
-		wcprofSpanCount: newWcprofSpanCounter(),
-		throttledGC:     func() {},
+		daggerSessions:     map[string]*daggerSession{},
+		engineCache:        cache,
+		wcprofSpanCount:    newWcprofSpanCounter(),
+		throttledSessionGC: func() {},
 	}
 }
 

@@ -150,6 +150,17 @@ type CacheDebugSessionResults struct {
 	SharedResultIDs []uint64 `json:"shared_result_ids"`
 }
 
+type metadataPruneContextKey struct{}
+
+func withMetadataPruneContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, metadataPruneContextKey{}, struct{}{})
+}
+
+func isMetadataPruneContext(ctx context.Context) bool {
+	_, ok := ctx.Value(metadataPruneContextKey{}).(struct{})
+	return ok
+}
+
 func newTraceBootID() string {
 	if bootID := os.Getenv("_DAGGER_EGRAPH_BOOT_ID"); bootID != "" {
 		return bootID
@@ -264,10 +275,48 @@ func (c *Cache) trace(ctx context.Context, event string, args ...any) {
 }
 
 func (c *Cache) traceLazy(ctx context.Context, event string, build func() []any) {
-	if !c.traceEnabled() {
+	if !c.traceEnabled() || isMetadataPruneContext(ctx) {
 		return
 	}
 	c.trace(ctx, event, build()...)
+}
+
+func (c *Cache) traceMetadataPruneStarted(ctx context.Context, maximumBytes, targetBytes int64) {
+	if !c.traceEnabled() {
+		return
+	}
+	c.trace(ctx, "metadata_prune_started",
+		"phase", "metadata_prune",
+		"maximum_estimated_bytes", maximumBytes,
+		"target_estimated_bytes", targetBytes,
+	)
+}
+
+func (c *Cache) traceMetadataPruneFinished(ctx context.Context, report CacheMetadataPruneReport, err error) {
+	if !c.traceEnabled() {
+		return
+	}
+	args := []any{
+		"phase", "metadata_prune",
+		"triggered", report.Triggered,
+		"maximum_estimated_bytes", report.MaximumEstimatedBytes,
+		"target_estimated_bytes", report.TargetEstimatedBytes,
+		"before_estimated_bytes", report.BeforeCompaction.EstimatedBytes,
+		"after_initial_compaction_estimated_bytes", report.AfterInitialCompaction.EstimatedBytes,
+		"after_prune_estimated_bytes", report.AfterPrune.EstimatedBytes,
+		"candidate_count", report.CandidateCount,
+		"planned_root_count", report.PlannedRootCount,
+		"simulated_collected_result_count", report.SimulatedCollectedResultCount,
+		"simulated_structural_bytes", report.SimulatedStructuralBytes,
+		"removed_persisted_root_count", report.RemovedPersistedRootCount,
+		"snapshot_gc_attempted", report.SnapshotGCAttempted,
+		"snapshot_gc_succeeded", report.SnapshotGCSucceeded,
+		"duration", report.Duration,
+	}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	c.trace(ctx, "metadata_prune_finished", args...)
 }
 
 func (c *Cache) tracePersistStoreWipedSchemaMismatch(ctx context.Context, expected, actual string) {
