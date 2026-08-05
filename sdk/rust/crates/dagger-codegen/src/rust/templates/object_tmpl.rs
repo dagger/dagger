@@ -67,9 +67,10 @@ pub fn render_loadable_impl(
     t: &FullType,
     graphql_name_override: Option<&str>,
 ) -> Option<rust::Tokens> {
-    let has_id_field = t.fields.as_ref().map_or(false, |fields| {
-        fields.iter().any(|f| f.name.as_deref() == Some("id"))
-    });
+    let has_id_field = t
+        .fields
+        .as_ref()
+        .is_some_and(|fields| fields.iter().any(|f| f.name.as_deref() == Some("id")));
 
     if !has_id_field {
         return None;
@@ -106,9 +107,10 @@ pub fn render_loadable_impl(
 }
 
 fn render_into_id_impl(t: &FullType) -> Option<rust::Tokens> {
-    let has_id_field = t.fields.as_ref().map_or(false, |fields| {
-        fields.iter().any(|f| f.name.as_deref() == Some("id"))
-    });
+    let has_id_field = t
+        .fields
+        .as_ref()
+        .is_some_and(|fields| fields.iter().any(|f| f.name.as_deref() == Some("id")));
 
     if !has_id_field {
         return None;

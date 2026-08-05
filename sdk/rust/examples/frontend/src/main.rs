@@ -1,14 +1,17 @@
-use eyre::Result;
 use dagger_sdk::{Container, Directory, Query};
-
+use eyre::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = dagger_sdk::connect().await?;
-    let build_directory = build_frontend(&client).await;
-    let image = build_prod_image(&client, build_directory).await;
-    let image_reference = push_image(image).await?;
-    println!("Image published at: {}", image_reference);
+    dagger_sdk::connect(|client| async move {
+        let build_directory = build_frontend(&client).await;
+        let image = build_prod_image(&client, build_directory).await;
+        let image_reference = push_image(image).await?;
+        println!("Image published at: {image_reference}");
+        Ok(())
+    })
+    .await?;
+
     Ok(())
 }
 
@@ -16,7 +19,7 @@ async fn build_frontend(client: &Query) -> Directory {
     let backend_directory = client.host().directory("leptos-frontend");
     client
         .container()
-        .from("rust:1.77.2")
+        .from("rust:1.97.1")
         .with_exec(vec!["apt-get", "update"])
         .with_exec(vec!["apt-get", "install", "-y", "nodejs", "npm"])
         .with_exec(vec!["rustup", "target", "add", "wasm32-unknown-unknown"])

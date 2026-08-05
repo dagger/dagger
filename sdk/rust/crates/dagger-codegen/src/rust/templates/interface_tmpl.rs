@@ -150,7 +150,7 @@ fn render_trait_method_args(
 /// Generate `impl Foo for FooClient { ... }`.
 fn render_trait_impl_for_client(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
     let iface_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
-    let client_name = format!("{}Client", &iface_name);
+    let client_name = format!("{}Client", iface_name);
 
     let methods = t
         .fields

@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use dagger_sdk::core::introspection::{
-    DirectivesExt, FullType, FullTypeFields, InputValue, TypeRef, __TypeKind,
+    __TypeKind, DirectivesExt, FullType, FullTypeFields, InputValue, TypeRef,
 };
 use itertools::Itertools;
 
@@ -302,7 +302,7 @@ impl InputValuesExt for Vec<InputValue> {
 
 #[cfg(test)]
 mod test {
-    use dagger_sdk::core::introspection::{FullType, InputValue, TypeRef, __TypeKind};
+    use dagger_sdk::core::introspection::{__TypeKind, FullType, InputValue, TypeRef};
     use pretty_assertions::assert_eq;
 
     use crate::functions::{InputValuesExt, TypeRefExt};

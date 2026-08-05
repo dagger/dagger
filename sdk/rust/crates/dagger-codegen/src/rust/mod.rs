@@ -65,19 +65,18 @@ impl Generator for RustGenerator {
                         // interface this object declares.
                         if let Some(ifaces) = &t.interfaces {
                             for iface_ref in ifaces {
-                                if let Some(iface_name) = &iface_ref.type_ref.name {
-                                    if let Some(iface_type) = interface_types
+                                if let Some(iface_name) = &iface_ref.type_ref.name
+                                    && let Some(iface_type) = interface_types
                                         .iter()
                                         .find(|it| it.name.as_deref() == Some(iface_name))
-                                    {
-                                        let impl_tokens = render_interface_impl_for_object(
-                                            &common_funcs,
-                                            t,
-                                            iface_type,
-                                        );
-                                        render.append(impl_tokens);
-                                        render.push();
-                                    }
+                                {
+                                    let impl_tokens = render_interface_impl_for_object(
+                                        &common_funcs,
+                                        t,
+                                        iface_type,
+                                    );
+                                    render.append(impl_tokens);
+                                    render.push();
                                 }
                             }
                         }

@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{copy, Write},
+    io::{Write, copy},
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -155,7 +155,9 @@ impl Downloader {
         let actual_hash = self.extract_cli_archive(&mut bytes).await?;
 
         if expected_checksum != actual_hash {
-            eyre::bail!("downloaded CLI binary checksum: {actual_hash} doesn't match checksum from checksums.txt: {expected_checksum}")
+            eyre::bail!(
+                "downloaded CLI binary checksum: {actual_hash} doesn't match checksum from checksums.txt: {expected_checksum}"
+            )
         }
 
         let mut file = std::fs::File::create(&path)?;
@@ -272,7 +274,7 @@ mod tests {
     use crate::errors::DaggerError;
 
     use super::{
-        has_cli_release_unavailable_error, CliReleaseUnavailableError, Downloader, Platform,
+        CliReleaseUnavailableError, Downloader, Platform, has_cli_release_unavailable_error,
     };
 
     #[tokio::test]
@@ -342,7 +344,8 @@ mod tests {
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = [0; 1024];
-            stream.read(&mut request).await.unwrap();
+            let bytes_read = stream.read(&mut request).await.unwrap();
+            assert!(bytes_read > 0, "the client must send an HTTP request");
             let response = format!(
                 "HTTP/1.1 {} {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 status.as_u16(),

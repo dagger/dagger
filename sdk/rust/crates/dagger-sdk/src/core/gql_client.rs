@@ -329,10 +329,8 @@ impl GQLClient {
 
             let mut request = client.post(&endpoint).json(&body);
             if let Some(headers) = &self.config.headers {
-                if !headers.is_empty() {
-                    for (name, value) in headers {
-                        request = request.header(name, value);
-                    }
+                for (name, value) in headers {
+                    request = request.header(name, value);
                 }
             }
 

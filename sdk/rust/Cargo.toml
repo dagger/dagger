@@ -4,14 +4,16 @@ resolver = "2"
 
 [workspace.package]
 version = "1.0.0-beta.10"
-edition = "2021"
+edition = "2024"
+rust-version = "1.97.1"
 authors = ["kjuulh <contact@kasperhermansen.com>", "Dagger <hello@dagger.io>"]
 repository = "https://github.com/dagger/dagger"
+license = "MIT"
 
 [workspace.dependencies]
-dagger-codegen = { path = "crates/dagger-codegen" }
-dagger-bootstrap = { path = "crates/dagger-bootstrap" }
-dagger-sdk = { path = "crates/dagger-sdk", default-features = false }
+dagger-codegen = { version = "=1.0.0-beta.10", path = "crates/dagger-codegen" }
+dagger-bootstrap = { version = "=1.0.0-beta.10", path = "crates/dagger-bootstrap" }
+dagger-sdk = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk", default-features = false }
 
 eyre = "0.6.9"
 color-eyre = "0.6.2"
@@ -47,7 +49,6 @@ tar = "0.4.40"
 tempfile = "3.9.0"
 async-trait = "0.1.77"
 which = "6.0.3"
-home = "=0.5.9"
 genco = "0.17.8"
 convert_case = "0.6.0"
 itertools = "0.12.0"
@@ -56,3 +57,10 @@ pretty_assertions = "1.4.0"
 rand = "0.8.5"
 tracing-test = "0.2.4"
 clap = "4.4.14"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+undocumented_unsafe_blocks = "deny"

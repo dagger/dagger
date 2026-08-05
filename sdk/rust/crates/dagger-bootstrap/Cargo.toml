@@ -3,12 +3,16 @@ name = "dagger-bootstrap"
 description = "A bootstrapper for orchestrating codegen for the rust sdk"
 publish = true
 readme = "README.md"
-license-file = "LICENSE"
 
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 dagger-codegen = { workspace = true }

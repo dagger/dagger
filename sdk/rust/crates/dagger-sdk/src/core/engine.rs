@@ -1,10 +1,10 @@
+use crate::core::{DAGGER_ENGINE_VERSION, logger::DynLogger};
 use crate::core::{
     cli_session::CliSession,
     config::Config,
     connect_params::ConnectParams,
-    downloader::{has_cli_release_unavailable_error, Downloader},
+    downloader::{Downloader, has_cli_release_unavailable_error},
 };
-use crate::core::{logger::DynLogger, DAGGER_ENGINE_VERSION};
 use crate::errors::DaggerError;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -35,11 +35,25 @@ impl Engine {
         version: &str,
         cli: Result<PathBuf, DaggerError>,
     ) -> eyre::Result<(ConnectParams, DaggerSessionProc)> {
+        self.connect_provisioned_cli_with(cfg, version, cli, || which::which("dagger"))
+            .await
+    }
+
+    async fn connect_provisioned_cli_with<F>(
+        &self,
+        cfg: &Config,
+        version: &str,
+        cli: Result<PathBuf, DaggerError>,
+        find_cli: F,
+    ) -> eyre::Result<(ConnectParams, DaggerSessionProc)>
+    where
+        F: FnOnce() -> Result<PathBuf, which::Error>,
+    {
         let (cli, download_error) = match cli {
             Ok(cli) => (cli, None),
             Err(download_error) => {
                 let (cli, download_error) =
-                    fallback_to_local_cli(download_error, version, cfg.logger.as_ref())?;
+                    fallback_to_local_cli(download_error, version, cfg.logger.as_ref(), find_cli)?;
                 (cli, Some(download_error))
             }
         };
@@ -110,17 +124,21 @@ struct CliPathFallbackError {
     fallback_error: eyre::Error,
 }
 
-fn fallback_to_local_cli(
+fn fallback_to_local_cli<F>(
     download_error: DaggerError,
     version: &str,
     logger: Option<&DynLogger>,
-) -> eyre::Result<(PathBuf, eyre::Error)> {
+    find_cli: F,
+) -> eyre::Result<(PathBuf, eyre::Error)>
+where
+    F: FnOnce() -> Result<PathBuf, which::Error>,
+{
     if !has_cli_release_unavailable_error(&download_error) {
         return Err(download_error.into());
     }
 
     let download_error = eyre::Report::new(download_error);
-    let bin_path = match which::which("dagger") {
+    let bin_path = match find_cli() {
         Ok(bin_path) => bin_path,
         Err(fallback_error) => {
             return Err(CliPathFallbackError {
@@ -128,7 +146,7 @@ fn fallback_to_local_cli(
                 fallback_context: "dagger CLI not found in PATH".into(),
                 fallback_error: fallback_error.into(),
             }
-            .into())
+            .into());
         }
     };
 
@@ -150,11 +168,10 @@ fn fallback_to_local_cli(
 #[cfg(test)]
 mod tests {
     use std::{
-        ffi::OsString,
         fs::File,
         io::Write,
-        path::{Path, PathBuf},
-        sync::{Arc, Mutex, MutexGuard},
+        path::PathBuf,
+        sync::{Arc, Mutex},
     };
 
     #[cfg(unix)]
@@ -173,16 +190,12 @@ mod tests {
         errors::DaggerError,
     };
 
-    use super::{fallback_to_local_cli, CliPathFallbackError, Engine};
-
-    static PATH_LOCK: Mutex<()> = Mutex::new(());
+    use super::{CliPathFallbackError, Engine, fallback_to_local_cli};
 
     #[test]
-    fn fallback_to_local_cli_uses_dagger_in_path() {
+    fn fallback_to_local_cli_uses_resolved_dagger() {
         let temp_dir = TempDir::new().unwrap();
         let bin_path = create_dagger_executable(&temp_dir);
-        let _path_lock = path_lock();
-        let _path = PathGuard::set(temp_dir.path());
         let logger = Arc::new(TestLogger::default());
         let dyn_logger: DynLogger = logger.clone();
 
@@ -190,6 +203,7 @@ mod tests {
             unavailable_download_error(),
             "unreleased",
             Some(&dyn_logger),
+            || Ok(bin_path.clone()),
         )
         .unwrap();
 
@@ -207,7 +221,10 @@ mod tests {
     fn no_fallback_to_local_cli_for_other_errors() {
         let download_error = DaggerError::DownloadClient(eyre!("download failed"));
 
-        let error = fallback_to_local_cli(download_error, "unreleased", None).unwrap_err();
+        let error = fallback_to_local_cli(download_error, "unreleased", None, || {
+            panic!("non-release errors must not resolve a fallback CLI")
+        })
+        .unwrap_err();
 
         assert!(error.downcast_ref::<DaggerError>().is_some());
         assert!(format!("{error:#}").contains("download failed"));
@@ -215,22 +232,24 @@ mod tests {
 
     #[test]
     fn fallback_preserves_download_and_path_errors() {
-        let temp_dir = TempDir::new().unwrap();
-        let _path_lock = path_lock();
-        let _path = PathGuard::set(temp_dir.path());
-
-        let error =
-            fallback_to_local_cli(unavailable_download_error(), "unreleased", None).unwrap_err();
+        let error = fallback_to_local_cli(unavailable_download_error(), "unreleased", None, || {
+            Err(which::Error::CannotFindBinaryPath)
+        })
+        .unwrap_err();
 
         let fallback_error = error.downcast_ref::<CliPathFallbackError>().unwrap();
-        assert!(fallback_error
-            .download_error
-            .downcast_ref::<DaggerError>()
-            .is_some());
-        assert!(fallback_error
-            .fallback_error
-            .downcast_ref::<which::Error>()
-            .is_some());
+        assert!(
+            fallback_error
+                .download_error
+                .downcast_ref::<DaggerError>()
+                .is_some()
+        );
+        assert!(
+            fallback_error
+                .fallback_error
+                .downcast_ref::<which::Error>()
+                .is_some()
+        );
         let rendered = format!("{error}");
         assert!(rendered.contains("CLI release unavailable"));
         assert!(rendered.contains("https://example.test/checksums.txt"));
@@ -241,13 +260,16 @@ mod tests {
     async fn fallback_session_error_preserves_download_error() {
         let temp_dir = TempDir::new().unwrap();
         let bin_path = create_dagger_executable(&temp_dir);
-        let _path_lock = path_lock();
-        let _path = PathGuard::set(temp_dir.path());
         let logger: DynLogger = Arc::new(TestLogger::default());
         let cfg = Config::builder().logger(logger).build();
 
         let result = Engine::new()
-            .connect_provisioned_cli(&cfg, "unreleased", Err(unavailable_download_error()))
+            .connect_provisioned_cli_with(
+                &cfg,
+                "unreleased",
+                Err(unavailable_download_error()),
+                || Ok(bin_path.clone()),
+            )
             .await;
         let error = match result {
             Ok(_) => panic!("expected fallback session to fail"),
@@ -255,14 +277,18 @@ mod tests {
         };
 
         let fallback_error = error.downcast_ref::<CliPathFallbackError>().unwrap();
-        assert!(fallback_error
-            .download_error
-            .downcast_ref::<DaggerError>()
-            .is_some());
-        assert!(fallback_error
-            .fallback_error
-            .downcast_ref::<which::Error>()
-            .is_none());
+        assert!(
+            fallback_error
+                .download_error
+                .downcast_ref::<DaggerError>()
+                .is_some()
+        );
+        assert!(
+            fallback_error
+                .fallback_error
+                .downcast_ref::<which::Error>()
+                .is_none()
+        );
         let rendered = format!("{error}");
         assert!(rendered.contains("CLI release unavailable"));
         assert!(rendered.contains("https://example.test/checksums.txt"));
@@ -281,17 +307,16 @@ mod tests {
         file.set_permissions(permissions).unwrap();
         drop(file);
 
-        let _path_lock = path_lock();
-        let _path = PathGuard::set(temp_dir.path());
         let logger: DynLogger = Arc::new(TestLogger::default());
         let cfg = Config::builder().logger(logger).build();
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(30),
-            Engine::new().connect_provisioned_cli(
+            Engine::new().connect_provisioned_cli_with(
                 &cfg,
                 "unreleased",
                 Err(unavailable_download_error()),
+                || Ok(bin_path.clone()),
             ),
         )
         .await
@@ -332,31 +357,6 @@ mod tests {
         }
 
         bin_path
-    }
-
-    fn path_lock() -> MutexGuard<'static, ()> {
-        PATH_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    struct PathGuard(Option<OsString>);
-
-    impl PathGuard {
-        fn set(path: &Path) -> Self {
-            let previous = std::env::var_os("PATH");
-            std::env::set_var("PATH", path);
-            Self(previous)
-        }
-    }
-
-    impl Drop for PathGuard {
-        fn drop(&mut self) {
-            match &self.0 {
-                Some(path) => std::env::set_var("PATH", path),
-                None => std::env::remove_var("PATH"),
-            }
-        }
     }
 
     #[derive(Default)]

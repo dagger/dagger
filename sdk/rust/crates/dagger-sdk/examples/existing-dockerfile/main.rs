@@ -11,7 +11,7 @@ async fn main() -> eyre::Result<()> {
 
         let ref_ = context_dir
             .docker_build()
-            .publish(format!("ttl.sh/hello-dagger-sdk-{}:1h", rng.gen::<u64>()))
+            .publish(format!("ttl.sh/hello-dagger-sdk-{}:1h", rng.r#gen::<u64>()))
             .await?;
 
         println!("published image to: {}", ref_);

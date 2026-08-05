@@ -1,18 +1,22 @@
 mod configuration;
 
-use eyre::Result;
-use dagger_sdk::{Query, File, Container};
 use clap::Parser;
+use dagger_sdk::{Container, File, Query};
+use eyre::Result;
 
 use configuration::Configuration;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = dagger_sdk::connect().await?;
-    let build = build_backend(&client).await;
-    let image = build_prod_image(&client, build).await;
-    let image_reference = push_image(image).await?;
-    println!("Image published at: {}", image_reference);
+    dagger_sdk::connect(|client| async move {
+        let build = build_backend(&client).await;
+        let image = build_prod_image(&client, build).await;
+        let image_reference = push_image(image).await?;
+        println!("Image published at: {image_reference}");
+        Ok(())
+    })
+    .await?;
+
     Ok(())
 }
 
@@ -20,7 +24,7 @@ async fn build_backend(client: &Query) -> File {
     let backend_directory = client.host().directory("axum-backend");
     client
         .container()
-        .from("rust:1.77.2-alpine3.19")
+        .from("rust:1.97.1-alpine3.22")
         .with_exec(vec!["apk", "add", "build-base", "musl"])
         .with_directory("./backend", backend_directory)
         .with_workdir("/backend")

@@ -13,14 +13,15 @@ import (
 )
 
 const (
-	rustSdkImage       = "rust:1.77-bookworm"
-	rustSdkImageDigest = "sha256:83101f6985c93e1e6501b3375de188ee3d2cbb89968bcc91611591f9f447bd42"
+	rustSdkImage       = "rust:1.97.1-bookworm"
+	rustSdkImageDigest = "sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb"
 
 	rustGeneratedClientFilePath = "crates/dagger-sdk/src/gen.rs"
 
 	rustSdkCrate     = "dagger-sdk"
 	cargoEditVersion = "0.13.0"
 	cargoChefVersion = "0.1.62"
+	cargoDenyVersion = "0.19.9"
 
 	mockCargoRegistryName = "mock"
 )
@@ -45,7 +46,17 @@ func New(
 	clientDockerConfig *dagger.Secret,
 ) *RustSdkDev {
 	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
-		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
+		Exclude: []string{
+			"*",
+			"!sdk/rust/crates",
+			"!sdk/rust/examples",
+			"!sdk/rust/Cargo.lock",
+			"!sdk/rust/Cargo.toml",
+			"!sdk/rust/clippy.toml",
+			"!sdk/rust/deny.toml",
+			"!sdk/rust/rustfmt.toml",
+			"!sdk/rust/rust-toolchain.toml",
+		},
 	})
 
 	baseContainer := dag.Container().
@@ -103,7 +114,7 @@ func (t *RustSdkDev) DevContainer(
 		WithExec([]string{
 			"sh", "-c",
 			strings.Join([]string{
-				"rustup component add rustfmt",
+				"rustup component add clippy rustfmt",
 				"cargo install --locked cargo-chef@" + cargoChefVersion,
 				"cargo chef prepare --recipe-path /tmp/recipe.json",
 				"cargo chef cook --release --workspace --recipe-path /tmp/recipe.json",
@@ -124,7 +135,7 @@ func (t *RustSdkDev) Source() *dagger.Directory {
 // +check
 func (t *RustSdkDev) CargoFmt(ctx context.Context) error {
 	_, err := t.DevContainer(true).
-		WithExec([]string{"cargo", "fmt", "--check"}).
+		WithExec([]string{"cargo", "fmt", "--all", "--check"}).
 		Sync(ctx)
 
 	return err
@@ -134,10 +145,59 @@ func (t *RustSdkDev) CargoFmt(ctx context.Context) error {
 // +check
 func (t *RustSdkDev) CargoCheck(ctx context.Context) error {
 	_, err := t.DevContainer(true).
-		WithExec([]string{"cargo", "check", "--all", "--release"}).
+		WithExec([]string{"cargo", "check", "--workspace", "--all-features", "--release", "--locked"}).
 		Sync(ctx)
 
 	return err
+}
+
+// Run Clippy on all Rust SDK targets.
+// +check
+func (t *RustSdkDev) CargoClippy(ctx context.Context) error {
+	_, err := t.DevContainer(true).
+		WithExec([]string{"cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"}).
+		Sync(ctx)
+
+	return err
+}
+
+// Build the Rust SDK documentation with warnings denied.
+// +check
+func (t *RustSdkDev) CargoDoc(ctx context.Context) error {
+	_, err := t.DevContainer(true).
+		WithEnvVariable("RUSTDOCFLAGS", "-D warnings").
+		WithExec([]string{"cargo", "doc", "--workspace", "--all-features", "--no-deps", "--locked"}).
+		Sync(ctx)
+
+	return err
+}
+
+// Check the Rust SDK dependency advisories, licenses, bans, and sources.
+// +check
+func (t *RustSdkDev) CargoDeny(ctx context.Context) error {
+	_, err := t.DevContainer(false).
+		WithExec([]string{"cargo", "install", "--locked", "cargo-deny@" + cargoDenyVersion}).
+		WithExec([]string{"cargo", "deny", "check"}).
+		Sync(ctx)
+
+	return err
+}
+
+// Format and lint each standalone Rust SDK example.
+// +check
+func (t *RustSdkDev) Examples(ctx context.Context) error {
+	for _, example := range []string{"examples/backend", "examples/cli", "examples/frontend"} {
+		_, err := t.DevContainer(true).
+			WithWorkdir(example).
+			WithExec([]string{"cargo", "fmt", "--all", "--check"}).
+			WithExec([]string{"cargo", "clippy", "--all-targets", "--locked", "--", "-D", "warnings"}).
+			Sync(ctx)
+		if err != nil {
+			return fmt.Errorf("check %s: %w", example, err)
+		}
+	}
+
+	return nil
 }
 
 // Test the Rust SDK
@@ -145,7 +205,7 @@ func (t *RustSdkDev) CargoCheck(ctx context.Context) error {
 func (t *RustSdkDev) Test(ctx context.Context) error {
 	_, err := t.DevContainer(true).
 		WithExec([]string{"rustc", "--version"}).
-		WithExec([]string{"cargo", "test", "--release", "--all"}).
+		WithExec([]string{"cargo", "test", "--workspace", "--all-features", "--release", "--locked"}).
 		Sync(ctx)
 
 	return err

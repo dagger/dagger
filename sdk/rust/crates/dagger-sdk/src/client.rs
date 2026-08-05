@@ -5,7 +5,7 @@ use crate::core::engine::Engine as DaggerEngine;
 use crate::core::graphql_client::DefaultGraphQLClient;
 
 use crate::errors::{ConnectError, DaggerError};
-use crate::gen::{Id, Query};
+use crate::r#gen::{Id, Query};
 use crate::id::IntoID;
 use crate::loadable::Loadable;
 use crate::logging::StdLogger;

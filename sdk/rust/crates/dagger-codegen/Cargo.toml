@@ -3,12 +3,16 @@ name = "dagger-codegen"
 description = "dagger sdk codegen library"
 publish = true
 readme = "README.md"
-license-file = "LICENSE"
 
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 dagger-sdk = { workspace = true }

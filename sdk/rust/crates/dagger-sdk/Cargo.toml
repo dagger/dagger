@@ -3,12 +3,16 @@ name = "dagger-sdk"
 description = "A dagger sdk for rust, written in rust"
 publish = true
 readme = "README.md"
-license-file = "LICENSE"
 
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 eyre = { workspace = true }
@@ -35,8 +39,6 @@ tar.workspace = true
 tempfile.workspace = true
 async-trait.workspace = true
 which.workspace = true
-# Keep which's transitive dependency compatible with Rust 1.77.
-home.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

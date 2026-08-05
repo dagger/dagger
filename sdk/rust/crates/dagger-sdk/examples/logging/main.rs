@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use dagger_sdk::logging::TracingLogger;
 use dagger_sdk::HostDirectoryOpts;
+use dagger_sdk::logging::TracingLogger;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {

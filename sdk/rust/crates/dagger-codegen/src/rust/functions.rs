@@ -129,14 +129,13 @@ pub(crate) fn render_required_args(
                     let n = format_struct_name(&s.input_value.name);
                     let name = &s.input_value.name;
 
-                    if s.input_value.type_.is_scalar() {
-                        if let Scalar::String =
+                    if s.input_value.type_.is_scalar()
+                        && let Scalar::String =
                             Scalar::from(&*s.input_value.type_.of_type.as_ref().unwrap().clone())
-                        {
-                            return Some(quote! {
-                                query = query.arg($(quoted(name)), $(&n).into());
-                            });
-                        }
+                    {
+                        return Some(quote! {
+                            query = query.arg($(quoted(name)), $(&n).into());
+                        });
                     }
 
 
@@ -153,14 +152,13 @@ pub(crate) fn render_required_args(
                             .unwrap()
                             .clone();
 
-                        if inner.is_scalar() {
-                            if let Scalar::String =
+                        if inner.is_scalar()
+                            && let Scalar::String =
                                 Scalar::from(&*inner.of_type.as_ref().unwrap().clone())
-                            {
-                                return Some(quote! {
-                                    query = query.arg($(quoted(name)), $(&n).into_iter().map(|i| i.into()).collect::<Vec<String>>());
-                                });
-                            }
+                        {
+                            return Some(quote! {
+                                query = query.arg($(quoted(name)), $(&n).into_iter().map(|i| i.into()).collect::<Vec<String>>());
+                            });
                         }
                     }
 

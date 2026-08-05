@@ -12,13 +12,20 @@ mod client;
 
 #[cfg(feature = "gen")]
 #[allow(dead_code)]
-mod gen;
+// Schema descriptions are external input and can contain text that rustdoc
+// interprets as links, HTML, or bare URLs.
+#[allow(
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_html_tags
+)]
+mod r#gen;
 
 #[cfg(feature = "gen")]
 pub use client::*;
 
 #[cfg(feature = "gen")]
-pub use gen::*;
+pub use r#gen::*;
 
 pub mod id {
     use std::pin::Pin;

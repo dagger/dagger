@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::core::graphql_client::DynGraphQLClient;
-use futures::{future, Future};
+use futures::{Future, future};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{DaggerError, DaggerUnpackError};

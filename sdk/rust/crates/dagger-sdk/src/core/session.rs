@@ -1,7 +1,7 @@
 use graphql_client::GraphQLQuery;
 use reqwest::{
-    header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE},
     Client, RequestBuilder,
+    header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 
 use crate::core::{
@@ -15,6 +15,8 @@ use crate::core::{
     responsive_path = "Serialize",
     variable_derive = "Deserialize"
 )]
+// The derive generates the query module; the marker type itself is never instantiated.
+#[allow(dead_code)]
 struct IntrospectionQuery;
 
 #[derive(Default)]

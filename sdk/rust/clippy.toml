@@ -1,0 +1,7 @@
+# Keep Clippy suggestions within the compiler baseline declared by the workspace.
+msrv = "1.97.1"
+
+# Assertions through unwrap/expect remain idiomatic in tests. Production code should
+# propagate errors or document the invariant behind an expect.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
