@@ -9376,9 +9376,9 @@ class LLM(Type):
         return await self._ctx.execute_sync(self, "replay", _args)
 
     async def skills(self) -> list["LLMSkill"]:
-        """The skills visible to the model, exactly as the ListSkills tool
-        serves them: engine-embedded skills, skills installed with withSkills,
-        and skills discovered in the workspace.
+        """The skills visible to the model, exactly as the ListSkills tool serves
+        them: engine-embedded skills, skills installed with withSkills, and
+        skills discovered in the workspace.
         """
         _args: list[Arg] = []
         _ctx = self._select("skills", _args)
