@@ -83,7 +83,7 @@ type CachePruneReport struct {
 const (
 	cacheMetadataResultEstimatedBytes    int64 = 3072
 	cacheMetadataTermEstimatedBytes      int64 = 512
-	cacheMetadataClassSlotEstimatedBytes int64 = 1024
+	cacheMetadataClassSlotEstimatedBytes int64 = 768
 )
 
 // CacheMetadataEstimate is a coarse estimate of memory retained by the DAGQL
