@@ -174,10 +174,10 @@
     <li>Every top-level session has one engine-owned lifetime policy: <code>attached</code> or <code>detachable</code>. The default remains <code>attached</code>.</li>
     <li>The session has one terminal cancellation root. Main-client loss invokes it for an attached session. Main-client loss only clears the current attachment for a detachable session.</li>
     <li>A detachable session has one current main attachment at a time. Different main clients may attach sequentially. Concurrent main attachments are rejected.</li>
-    <li>The engine issues a stable session ID. A user may also assign an optional, engine-wide unique name. IDs are the authoritative identity.</li>
+    <li>The engine issues the stable ID for a detachable session. A user may also assign an optional, engine-wide unique name. IDs are authoritative. Ordinary sessions keep their current client-generated IDs and connection setup in P0.</li>
     <li>For <code>dagger call --detach</code>, the engine fully reads the final GraphQL request, assigns it a query ID, and confirms that it has stored the query before the CLI exits. The query then runs until it finishes or the session is terminated. The engine saves its status and exact GraphQL result for a later <code>dagger session attach</code>.</li>
     <li>Future role-based callbacks target the current main attachment. Objects that contain a concrete <code>SourceClientID</code> remain bound to that physical client. They are not silently redirected to a different machine.</li>
-    <li><code>dagger up</code> needs a session-owned controller that separates engine-native services from client-owned host port publishers. The engine services remain running while detached. Host ports exist only while a main client is attached.</li>
+    <li><code>dagger up</code> must keep engine-native services independently of client-owned host port publishers. First test whether existing session-lifetime service bindings plus uncached tunnel creation provide the required behavior. Add a session-owned controller only if that smaller change is insufficient.</li>
     <li>Explicit termination and engine shutdown are terminal. There is no default live-session TTL. Engine restart does not preserve a detachable session.</li>
     <li>The public <code>dagger session</code> command provides list, inspect, attach, and terminate operations. The current hidden SDK transport moves to <code>dagger session serve</code> in the same hard protocol cut.</li>
     <li>A long-lived detachable session cannot keep every DagQL result it has ever touched as an unprunable active-session root. The first vertical slice may retain the current ownership model for controlled evaluation, but broad availability is blocked on a separate cache-ownership design.</li>
@@ -205,7 +205,7 @@
   <ul>
     <li><strong>Default compatibility:</strong> a normal session still ends when its main client disconnects.</li>
     <li><strong>One authority:</strong> only the session terminal transition cancels session-owned work. Detach does not create or cancel a second lifetime tree.</li>
-    <li><strong>Operation isolation:</strong> a missing callback may fail the operation that requested it. That error does not terminate the session.</li>
+    <li><strong>Failure isolation:</strong> a missing callback may fail the query or service action that requested it. That error does not terminate the session.</li>
     <li><strong>Explicit cleanup:</strong> a successfully created detachable session remains until explicit termination or engine shutdown.</li>
     <li><strong>Identity stability:</strong> the engine never changes or reuses a live session ID. A name is an alias, not an ownership credential.</li>
     <li><strong>Source accuracy:</strong> a value backed by one client is never presented as if it came from a later client.</li>
@@ -216,7 +216,7 @@
   <p>This proposal does not add accounts, authentication protocols, authorization policy, ACLs, sharing tokens, multi-tenancy, engine high availability, distributed scheduling, checkpoint and restore, arbitrary stdin resumption, or a workflow database. It uses the same engine connection trust and client metadata that Dagger uses today.</p>
 
   <h3>Engine restart boundary</h3>
-  <p>A detachable session survives a main-client disconnect only while the same engine process remains alive. Graceful engine shutdown already removes every session before closing the DagQL cache in <a href="https://github.com/dagger/dagger/blob/93c944bbba50832925eb693cdca05591f15b8773/engine/server/server.go#L730"><code>Server.GracefulStop</code></a>. DagQL cache persistence stores cache results and snapshots; it does not persist live session ownership, client attachables, operation goroutines, service processes, or in-memory session metadata. On startup, the engine removes stale retained-operation spool directories. A post-restart list is empty and an old ID returns <code>404 session not found on this engine process</code>.</p>
+  <p>A detachable session survives a main-client disconnect only while the same engine process remains alive. Graceful engine shutdown already removes every session before closing the DagQL cache in <a href="https://github.com/dagger/dagger/blob/93c944bbba50832925eb693cdca05591f15b8773/engine/server/server.go#L730"><code>Server.GracefulStop</code></a>. DagQL cache persistence stores cache results and snapshots; it does not persist live session ownership, client attachables, query goroutines, service processes, or in-memory session metadata. On startup, the engine removes stale session-result directories. A post-restart list is empty and an old ID returns <code>404 session not found on this engine process</code>.</p>
 
   <h2 id="current">3. Current lifecycle</h2>
 
@@ -354,8 +354,8 @@ last main-client request closes
           <td>Session metadata and analytics</td>
           <td>Metadata is spread across creator <code>ClientMetadata</code>, session fields, analytics tracker, and telemetry attributes.</td>
           <td>Session teardown.</td>
-          <td>Retain stable ID/name/lifetime/timestamps, creator ID, current attachment, operation summary, and last transition reason.</td>
-          <td>Store a bounded immutable/mutable summary on <code>daggerSession</code>. Do not store a generic command history.</td>
+          <td>Retain stable ID/name/lifetime/timestamps, creator ID, current attachment, primary query summary, and last transition reason.</td>
+          <td>Store only the listed fields on <code>daggerSession</code>. Do not store a generic command history.</td>
         </tr>
         <tr>
           <td>Engine shutdown</td>
@@ -375,7 +375,7 @@ last main-client request closes
       <tbody>
         <tr><td>HTTP query connection ends</td><td>Cancels that GraphQL request through <code>r.Context()</code>.</td><td>Unchanged for ordinary queries.</td><td>A detached query continues only if the engine fully read and stored it before the connection ended. Other requests cancel normally.</td></tr>
         <tr><td>Last main-client connection ends</td><td>Schedules full session reap.</td><td>Full terminate, unchanged user-visible behavior.</td><td>Generation-checked detach only. Graceful detach deregisters the old attachables immediately. After abrupt loss, attach retries while the health monitor removes the dead registration, normally after two failed five-second checks.</td></tr>
-        <tr><td>Main <code>/shutdown</code></td><td>Flushes locks and telemetry, stops services, begins closing.</td><td>Replace with the unified client-close protocol; it terminates.</td><td>Replace with the unified client-close protocol; it detaches.</td></tr>
+        <tr><td>Main <code>/shutdown</code></td><td>Flushes locks and telemetry, stops services, begins closing.</td><td>Unchanged. Ordinary clients continue to use it and it terminates the session.</td><td>Detachable clients never call it. They close only their current attachment through the new attachment-close route.</td></tr>
         <tr><td>Nested client shutdown</td><td>Flushes that client and closes its shutdown channel.</td><td colspan="2">Close that client only. It never becomes session lifetime authority.</td></tr>
         <tr><td>Explicit session terminate</td><td>No separate public operation exists.</td><td>Allowed and equivalent to close.</td><td>The normal terminal operation.</td></tr>
         <tr><td>Engine graceful stop</td><td>Removes all sessions.</td><td colspan="2">Terminal. Use the same terminal routine and reason.</td></tr>
@@ -618,7 +618,7 @@ last main-client request closes
         <tr>
           <td><code>dagger api query</code> and hidden <code>query</code></td>
           <td>Reads the query document/file/stdin and variables, sends a single GraphQL request, and prints indented JSON.</td>
-          <td><span class="yes">Meaningful.</span> Input can be fully captured before acceptance and output has a deterministic representation.</td>
+          <td><span class="yes">Meaningful.</span> The CLI can read all input before sending the request, and the output has a deterministic representation.</td>
           <td>Support <code>--detach</code> after reading all input. Store one primary query in the engine and exit after the engine returns its query ID.</td>
           <td>Telemetry and final JSON response. No stdin remains after submission.</td>
         </tr>
@@ -653,9 +653,9 @@ last main-client request closes
         <tr>
           <td><code>dagger listen</code>, <code>dagger api listen</code></td>
           <td>Runs a local HTTP listener that proxies GraphQL to the engine.</td>
-          <td><span class="no">Nonsensical.</span> The local listener disappears with the client.</td>
+          <td><span class="no">Not supported.</span> The local listener is the user-visible purpose of this legacy command and disappears with its process. The engine session behind a listener could survive, but that does not make the listener itself detachable.</td>
           <td>Reject <code>--detach</code>.</td>
-          <td>None.</td>
+          <td>None. A later command could theoretically create a new listener for an existing session, but this project does not commit to that feature.</td>
         </tr>
         <tr>
           <td>Function/service/check/generator list modes; <code>installed</code>; <code>api client list</code></td>
@@ -812,11 +812,11 @@ func (srv *Server) terminateSession(ctx context.Context, sess *daggerSession, re
     <table class="medium">
       <thead><tr><th>Route</th><th>Purpose</th><th>Success</th><th>Important errors</th></tr></thead>
       <tbody>
-        <tr><td><code>POST /v1/sessions</code></td><td>Create an attached or detachable session and reserve its initial main attachment.</td><td><code>201</code> descriptor</td><td><code>409 name already in use</code>; <code>400 invalid name/lifetime</code></td></tr>
+        <tr><td><code>POST /v1/sessions</code></td><td>Create a detachable session and reserve its initial main attachment. Ordinary sessions do not use this route in P0.</td><td><code>201</code> descriptor</td><td><code>409 name already in use</code>; <code>400 invalid name</code></td></tr>
         <tr><td><code>GET /v1/sessions?lifetime=detachable</code></td><td>List live session summaries. CLI defaults to detachable only.</td><td><code>200</code> array</td><td>Transport errors only</td></tr>
         <tr><td><code>GET /v1/sessions/{ref}</code></td><td>Inspect metadata, current attachment, primary query, resource counts, and last error.</td><td><code>200</code></td><td><code>404</code></td></tr>
         <tr><td><code>POST /v1/sessions/{ref}/attachments</code></td><td>Reserve a new main attachment and increment generation.</td><td><code>201</code> attachment descriptor</td><td><code>409 already attached</code>; <code>409 terminating</code>; <code>404</code></td></tr>
-        <tr><td><code>POST /v1/sessions/{id}/attachments/{attachment_id}/close</code></td><td>Gracefully detach this generation. Attached lifetime maps close to termination.</td><td><code>204</code></td><td><code>409 stale attachment</code></td></tr>
+        <tr><td><code>POST /v1/sessions/{id}/attachments/{attachment_id}/close</code></td><td>Gracefully detach this generation of a detachable session.</td><td><code>204</code></td><td><code>409 stale attachment</code></td></tr>
         <tr><td><code>DELETE /v1/sessions/{ref}</code></td><td>Explicitly terminate and wait for bounded cleanup.</td><td><code>204</code></td><td><code>404</code> for an unknown name; cleanup error returns <code>500</code> after the terminal transition</td></tr>
         <tr><td><code>POST /v1/sessions/{id}/queries</code></td><td>Read and store the final GraphQL request, assign a query ID, and start it using the session termination context.</td><td><code>202</code> query ID and initial status</td><td><code>409 no matching attachment/terminating</code>; <code>413</code> request too large</td></tr>
         <tr><td><code>GET /v1/sessions/{id}/queries/{query}</code></td><td>Read whether the query is waiting, running, successful, failed, canceled, or finished without a saved result.</td><td><code>200</code></td><td><code>404</code></td></tr>
@@ -836,9 +836,8 @@ const (
 )
 
 type SessionCreateRequest struct {
-    RequestID string          `json:"request_id"` // UUID; idempotent within this engine process
-    Lifetime  SessionLifetime `json:"lifetime"`
-    Name      string          `json:"name,omitempty"`
+    RequestID string `json:"request_id"` // UUID; idempotent within this engine process
+    Name      string `json:"name,omitempty"`
 }
 
 type SessionDescriptor struct {
@@ -861,7 +860,7 @@ type AttachmentDescriptor struct {
     ExpiresAt time.Time `json:"registration_expires_at"`
 }
 
-type OperationSubmitRequest struct {
+type QuerySubmitRequest struct {
     GraphQL      json.RawMessage      `json:"graphql"`
     Primary      bool                 `json:"primary"`
     Command      string               `json:"command,omitempty"` // call, query, up
@@ -869,15 +868,15 @@ type OperationSubmitRequest struct {
 }
 </code></pre>
 
-  <p>The create/attach response is registered in engine memory before the response is written. The attachment reservation expires after 30 seconds if attachables never register. For a detachable session, expiry moves the session to <code>detached</code>. For an attached session, expiry terminates it. <code>RequestID</code> makes a retry return the same descriptor. If an unnamed creator crashes before reading the response and cannot retry, <code>dagger session list</code> shows the allocated/detached session by ID and creation time. A named session can be found by name.</p>
+  <p>The detachable session and its initial attachment reservation are registered in engine memory before the create response is written. If attachables do not register within 30 seconds, the reservation expires and the detachable session becomes detached. <code>RequestID</code> makes a retry return the same descriptor. If an unnamed creator crashes before reading the response and cannot retry, <code>dagger session list</code> shows the allocated or detached session by ID and creation time. A named session can be found by name.</p>
 
   <h3>Client metadata and endpoint cut</h3>
   <ul>
-    <li>Add <code>AttachmentID</code> and <code>AttachmentGeneration</code> to <a href="https://github.com/dagger/dagger/blob/93c944bbba50832925eb693cdca05591f15b8773/engine/opts.go#L47"><code>engine.ClientMetadata</code></a>. Session ID is supplied by the create/attach response rather than generated by a top-level client.</li>
+    <li>Add <code>AttachmentID</code> and <code>AttachmentGeneration</code> to <a href="https://github.com/dagger/dagger/blob/93c944bbba50832925eb693cdca05591f15b8773/engine/opts.go#L47"><code>engine.ClientMetadata</code></a>. A detachable session ID comes from its create/attach response. Ordinary sessions continue using the client-generated <code>SessionID</code> in P0.</li>
     <li>The existing <code>/sessionAttachables</code> registration validates the reservation and marks the attachment ready. Nested clients carry no attachment ID.</li>
-    <li>Replace top-level <code>/shutdown</code> lifecycle behavior with the attachment close route. Add one current-client close route for nested client telemetry/lock flushing. Remove the old constant and handler in the same protocol cut; do not keep it as an alias.</li>
+    <li>A detachable client closes its attachment through the new attachment close route and never calls <code>/shutdown</code>. Ordinary sessions keep the existing <code>/shutdown</code> behavior. Each session therefore has one close path selected by its lifetime policy; a detachable session cannot be terminated accidentally through the ordinary disconnect path.</li>
     <li>Keep direct <code>/query</code> for ordinary sessions and nested clients. Top-level detachable commands send their final GraphQL request through the session query endpoint so its status and result can be read after disconnect.</li>
-    <li>Bump <code>MinimumClientVersion</code>/<code>MinimumEngineVersion</code> for the release containing the cut. Old launchers fail version/command negotiation; there is no dual old/new authority.</li>
+    <li>Version-gate detachable creation and attachment. An older client continues to create an ordinary session through the existing path; it cannot opt into detachable lifetime. A detachable session has no compatibility alias or second disconnect authority.</li>
     <li>Add an engine process instance ID to list/inspect output. It makes the restart boundary visible without treating it as a security token.</li>
   </ul>
 
@@ -896,7 +895,8 @@ RequireCurrentMainAttachment(context.Context) error
   <h3>Creation flag</h3>
   <pre><code>--detach
     Run the supported command in a detachable session. The command exits after
-    the engine accepts the operation (or, for up, after services are healthy).
+    the engine stores the complete GraphQL request and returns its query ID
+    (or, for up, after the engine services are healthy).
     The session remains until `dagger session terminate`.
 
 --session-name string
@@ -936,6 +936,9 @@ dagger session attach &lt;id|name&gt; [--no-follow]
 
 dagger session terminate &lt;id|name&gt;
     Cancel work, stop services, release session resources, and remove the session.</code></pre>
+
+  <h3>Possible later CLI use of an existing session</h3>
+  <p>A future design may consider <code>dagger --session &lt;id&gt; call ...</code> for submitting new work to a session that already exists. This is not required by P0 or any later phase in this proposal. If added, it must fail when the session does not exist, must not create by name, and must not rerun the command that originally created the session.</p>
 
   <h3>List and inspect output</h3>
   <pre><code>$ dagger session list
@@ -1056,7 +1059,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li>Add session options and descriptor to <code>sdk/go/engineconn.Config</code> and <code>ConnectParams</code>.</li>
     <li>Change <code>cliSessionArgs</code> from <code>["session"]</code> to <code>["session", "serve"]</code>, adding exactly one of <code>--detach [--session-name]</code>, <code>--session-id</code>, or <code>--session-name</code>.</li>
     <li>Extend the subprocess JSON line to <code>{port, session_token, session}</code>. The local proxy remains for SDK GraphQL and attachables. Closing it invokes detach or terminate according to the engine descriptor.</li>
-    <li>Route top-level detachable GraphQL requests through the retained-operation transport inside <code>engineconn</code>. Generated SDK query code remains unchanged.</li>
+    <li>Route top-level detachable GraphQL requests through the session query endpoints inside <code>engineconn</code>. Generated SDK query code remains unchanged.</li>
     <li>Update all other in-tree SDK process launchers listed in the dependency catalogue to <code>session serve</code> and the extended descriptor in the same minimum-version cut. Only Go exposes the new public options in this proposal; other SDK public APIs require separate language-specific review.</li>
   </ul>
 
@@ -1090,7 +1093,7 @@ defer c2.Terminate(ctx)</code></pre>
 
   <h3>Cleanup order</h3>
   <ol>
-    <li>Under <code>lifecycleMu</code>, transition to <code>terminating</code>, remove name from attach resolution, and reject new attachments/operations.</li>
+    <li>Under <code>lifecycleMu</code>, transition to <code>terminating</code>, remove the name from attach resolution, and reject new attachments and queries.</li>
     <li>Attempt bounded workspace/telemetry flush for a live current attachment. Record but do not block on unavailable source clients.</li>
     <li>Cancel <code>lifetimeCtx</code>. This cancels detached queries, LLM session-scoped work, and attachment publishers.</li>
     <li>Release any session-lifetime <code>up</code> bindings, then call <code>StopSessionServices</code>. If implementation testing required an <code>upController</code>, stop it first.</li>
@@ -1099,7 +1102,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li>Stamp final profiling/telemetry completeness and release session containers.</li>
     <li>Flush/shut client telemetry providers, keepalive DB references, Cloud exporters, and analytics.</li>
     <li>Call <code>engineCache.ReleaseSession(sessionID)</code>.</li>
-    <li>Delete the validated operation spool directory, close shutdown channels, remove registry/name entries, and schedule normal cache GC.</li>
+    <li>Delete the validated session-result directory, close shutdown channels, remove registry/name entries, and schedule normal cache GC.</li>
   </ol>
 
   <h2 id="races">13. Failure and race behavior</h2>
@@ -1141,7 +1144,8 @@ defer c2.Terminate(ctx)</code></pre>
       <thead><tr><th>Area</th><th>P0 contract</th></tr></thead>
       <tbody>
         <tr><td>Lifetime</td><td>An ordinary session still terminates on last-main disconnect. An opted-in session becomes detached and retains one terminal session context until explicit termination or engine shutdown.</td></tr>
-        <tr><td>Control surface</td><td><code>dagger session list</code>, <code>inspect &lt;id&gt;</code>, <code>attach &lt;id&gt;</code>, and idempotent <code>terminate &lt;id&gt;</code> operate against engine-issued IDs. P0 defers user names.</td></tr>
+        <tr><td>Creation</td><td>Only detachable sessions use the new engine creation route and engine-issued IDs. Ordinary sessions keep their current client-generated IDs, connection setup, <code>/shutdown</code> behavior, and disconnect semantics.</td></tr>
+        <tr><td>Control surface</td><td><code>dagger session list</code>, <code>inspect &lt;id&gt;</code>, <code>attach &lt;id&gt;</code>, and idempotent <code>terminate &lt;id&gt;</code> operate against engine-issued detachable-session IDs. P0 defers user names.</td></tr>
         <tr><td>Submission</td><td><code>dagger call --detach</code> and <code>dagger api call --detach</code> finish schema discovery and argument conversion while attached, send one final GraphQL request, wait until the engine confirms that it has stored the request under a query ID, print the session and query IDs, and exit 0.</td></tr>
         <tr><td>Execution</td><td>The stored query runs using the session termination context instead of the submitting HTTP connection's context. Main-client loss cannot cancel it. Explicit session termination can.</td></tr>
         <tr><td>Result</td><td>The engine saves the primary query's status and exact GraphQL result in a session-owned file, subject to the documented file-size limit. <code>session attach</code> follows that query or prints its saved result and returns the saved command status. It never sends the original command or query again.</td></tr>
@@ -1159,8 +1163,8 @@ defer c2.Terminate(ctx)</code></pre>
 
   <h4>Ordered work</h4>
   <ol>
-    <li><strong>Land the lifetime and control foundation.</strong> Add the shared wire types in <code>engine/session.go</code>, the registry and control handlers in <code>engine/server/session_control.go</code>, and explicit attach/detach/terminate methods in <code>engine/client/client.go</code>. Split last-main loss from terminal teardown in <code>engine/server/session.go</code>. A graceful detach must deregister the old attachables immediately. An abrupt disconnect keeps the current health-check cleanup and the attaching CLI retries during that window. Preserve the ordinary default and existing cleanup routine.</li>
-    <li><strong>Run one GraphQL query after the CLI exits and save its result.</strong> Add <code>engine/server/session_operation.go</code>. Reuse the GraphQL execution code currently called by <code>serveQuery</code>. Ordinary queries still stop when their HTTP connection closes. A detached query runs until it finishes or the session is terminated. Store its query ID, status, and exact GraphQL result, rejecting or discarding data above the stated file-size limits. Add deterministic test barriers before the query is stored, after it is stored, when execution starts, when it finishes, and while attach or terminate races with it.</li>
+    <li><strong>Land the lifetime and control foundation.</strong> Add the detachable-session wire types in <code>engine/session.go</code>, the registry and control handlers in <code>engine/server/session_control.go</code>, and explicit attach/detach/terminate methods in <code>engine/client/client.go</code>. Split last-main loss from terminal teardown in <code>engine/server/session.go</code>. A graceful detach must deregister the old attachables immediately. An abrupt disconnect keeps the current health-check cleanup and the attaching CLI retries during that window. Do not change ordinary-session ID generation, connection setup, <code>/shutdown</code>, or disconnect behavior.</li>
+    <li><strong>Run one GraphQL query after the CLI exits and save its result.</strong> Add <code>engine/server/session_query.go</code>. Reuse the GraphQL execution code currently called by <code>serveQuery</code>. Ordinary queries still stop when their HTTP connection closes. A detached query runs until it finishes or the session is terminated. Store its query ID, status, and exact GraphQL result, rejecting or discarding data above the stated file-size limits. Add deterministic test barriers before the query is stored, after it is stored, when execution starts, when it finishes, and while attach or terminate races with it.</li>
     <li><strong>Land the CLI vertical path.</strong> Expose <code>dagger session list|inspect|attach|terminate</code>. Move the hidden SDK transport to <code>dagger session serve</code> and update all in-tree launchers in the same hard cut. Add <code>--detach</code> only to <code>call</code> and <code>api call</code>. If setup fails before the engine returns a query ID, terminate the newly allocated session when the CLI knows that the query was not stored. <code>session attach</code> follows the saved query; it never reruns argv or resubmits the query.</li>
     <li><strong>Prove the behavior end to end.</strong> Run an engine-only slow call, disconnect the creator after the engine returns the query ID, list and inspect it, attach before and after completion, verify the exact saved result, and terminate it. Repeat with transport loss before and after the query is stored, an absent-client callback, ordinary-session disconnect, terminate races, and engine restart.</li>
   </ol>
@@ -1174,22 +1178,22 @@ defer c2.Terminate(ctx)</code></pre>
   <h4>Phase 1: protocol, registry, and lifetime split</h4>
   <ul>
     <li><code>engine/session.go</code> (new): wire types, lifetime/state enums, descriptors, control endpoint constants, and protocol errors.</li>
-    <li><code>engine/opts.go</code>: add attachment ID/generation and remove top-level client-chosen session authority.</li>
+    <li><code>engine/opts.go</code>: add attachment ID/generation for detachable sessions. Leave ordinary client-generated session IDs unchanged.</li>
     <li><code>engine/server/session_control.go</code> (new): create/list/inspect/attach/detach/terminate handlers, name and request-ID indexes, attachment reservation, and JSON errors.</li>
     <li><code>engine/server/server.go</code>: control routing before session initialization, process instance ID, aggregate metrics, and graceful stop through <code>terminateSession</code>.</li>
     <li><code>engine/server/session.go</code>: add lifetime/metadata/attachment fields; rename creator/current-main concepts; split <code>detachAttachment</code> from <code>terminateSession</code>; keep one lifetime context; make reap policy-dependent.</li>
     <li><code>engine/server/session_attachables.go</code>: validate attachment reservations, publish ready state, expose health by generation, add explicit graceful deregistration, and produce explicit unavailable errors. Keep the existing health monitor for abrupt loss.</li>
-    <li><code>engine/client/client.go</code>: create/attach handshake, descriptor, lifetime-aware <code>Close</code>, explicit detach/terminate, and control-only connection for CLI management commands.</li>
-    <li>Remove the old top-level shutdown lifecycle path and bump minimum versions in the engine version constants. Do not add an alias.</li>
+    <li><code>engine/client/client.go</code>: use the existing connection path for ordinary sessions; use the create/attach descriptor and attachment close route only for detachable sessions; add explicit detach/terminate and a control-only connection for CLI management commands.</li>
+    <li>Version-gate the detachable routes and metadata. Do not add a compatibility alias for detachable create, attach, detach, or terminate.</li>
   </ul>
 
   <h4>Phase 2: detached query execution and saved results</h4>
   <ul>
-    <li><code>engine/server/session_operation.go</code> (new): store query IDs and states, enforce request/result file-size limits, save the exact GraphQL result, wait for completion, return the result, and delete it during session cleanup.</li>
+    <li><code>engine/server/session_query.go</code> (new): store query IDs and states, enforce request/result file-size limits, save the exact GraphQL result, wait for completion, return the result, and delete it during session cleanup.</li>
     <li><code>engine/server/session.go</code>: extract the GraphQL execution code used by <code>serveQuery</code> so ordinary and detached queries share schema, workspace, and DagQL accounting. Ordinary queries use the HTTP request context; detached queries use the session termination context.</li>
-    <li><code>engine/client/operation.go</code> (new): submit the final GraphQL request, receive its query ID, read status, wait for completion, and fetch the saved result.</li>
+    <li><code>engine/client/session_query.go</code> (new): submit the final GraphQL request, receive its query ID, read status, wait for completion, and fetch the saved result.</li>
     <li>Reuse the creator client's existing telemetry DB and cursorless SSE replay for P0. Add query and session attributes to the existing records; do not add another store or index.</li>
-    <li><code>engine/server/server.go</code> startup/shutdown: create the process-specific spool root and delete stale roots.</li>
+    <li><code>engine/server/server.go</code> startup/shutdown: create the process-specific session-result directory and delete directories left by prior engine processes.</li>
   </ul>
 
   <h4>Phase 3: role and source-client audit</h4>
@@ -1206,8 +1210,8 @@ defer c2.Terminate(ctx)</code></pre>
     <li><code>internal/cmd/dagger/main.go</code>: persistent <code>--detach</code>/<code>--session-name</code>, supported-command validation, and session command registration.</li>
     <li><code>internal/cmd/dagger/session.go</code>: visible parent, <code>list</code>, <code>inspect</code>, <code>attach</code>, <code>terminate</code>, hidden <code>serve</code>, JSON/table output, and exit mapping.</li>
     <li><code>internal/cmd/dagger/engine.go</code>: use the create/attach descriptor, wait for the engine to return a query ID before exiting, and clean up a new session when failure occurred before the query was stored.</li>
-    <li><code>internal/cmd/dagger/functions.go</code>/<code>call.go</code>: mark the final call operation primary, record presentation metadata, and reject known host-output/interactive forms.</li>
-    <li><code>internal/cmd/dagger/query.go</code>: read all input before create/submit and mark one primary JSON operation.</li>
+    <li><code>internal/cmd/dagger/functions.go</code>/<code>call.go</code>: mark the final GraphQL request as the primary query, record presentation metadata, and reject known host-output/interactive forms.</li>
+    <li><code>internal/cmd/dagger/query.go</code>: read all input before creating the session and submitting the request, then mark that request as the primary query.</li>
     <li><code>internal/cmd/dagger/checks.go</code>, <code>generators.go</code>, <code>run.go</code>, <code>shell.go</code>, <code>listen.go</code>, <code>mcp.go</code>, and host-mutating command entry points: deterministic usage rejection.</li>
   </ul>
 
@@ -1283,7 +1287,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li>The completed primary result and telemetry are available until explicit termination within the documented file-size limits.</li>
     <li>Engine restart is documented and tested as terminal. No cache artifact is presented as a reattached session.</li>
     <li>CLI help, output, errors, and exit statuses match this document. Go SDK API signatures and close semantics match this document.</li>
-    <li>No old/new lifecycle RPC coexistence, compatibility alias, or second cancellation authority is introduced.</li>
+    <li>Ordinary sessions retain their existing creation and <code>/shutdown</code> path. Detachable sessions use only the new create, attachment-close, and terminate routes. No detachable compatibility alias or second cancellation authority is introduced.</li>
   </ol>
 
   <h2 id="risks">16. Risks, validation gaps, and review decisions</h2>
@@ -1314,7 +1318,7 @@ defer c2.Terminate(ctx)</code></pre>
         <tr><td>D3</td><td>How should <code>up</code> ports behave across hosts?</td><td>No publisher while detached; recreate on each attach; fixed ports must be reacquired and may fail; random ports may change.</td><td>Accurate host ownership without port reservation or cross-host assumptions.</td></tr>
         <tr><td>D4</td><td>May main clients attach concurrently or forcibly take over?</td><td>One current main, sequential attachments, no force takeover in the first release.</td><td>Deterministic callback target and simpler races; users must close the old attachment or terminate.</td></tr>
         <tr><td>D5</td><td>File-size limits and orphan policy</td><td>Start with 16 MiB per submitted GraphQL request, 64 MiB per saved result, and 256 MiB of saved results per session. Treat the numbers as subject to implementation testing. Do not add a live-session TTL; explicit termination and engine shutdown are the only ends.</td><td>A single result cannot consume unlimited disk. Long-running services are not silently stopped. Leaked sessions remain visible and operator-controlled.</td></tr>
-        <tr><td>D6</td><td>Protocol migration</td><td>One hard cut: engine-issued IDs, control routes, hidden <code>session serve</code>, old shutdown lifecycle removed, minimum versions bumped, all in-tree launchers updated.</td><td>No dual authority or compatibility artifact. Older SDK/CLI pairs fail clearly and must upgrade together.</td></tr>
+        <tr><td>D6</td><td>Protocol migration</td><td>Detachable sessions use engine-issued IDs and the new control routes. Ordinary sessions retain client-generated IDs and <code>/shutdown</code>. Move the hidden SDK transport to <code>session serve</code> and update all in-tree launchers in one cut.</td><td>The ordinary default has minimal protocol risk. A detachable session has one creation path, one attachment-close path, and one terminal cleanup authority; no detachable compatibility alias is added.</td></tr>
         <tr><td>D7</td><td>Attach interrupt and saved failure exit status</td><td>Ctrl+C detaches and returns 130. When attach reaches query completion, it returns the saved command status.</td><td>Interrupt is distinguishable from successful command completion; termination remains explicit.</td></tr>
       </tbody>
     </table>
