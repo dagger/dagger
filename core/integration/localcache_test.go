@@ -677,7 +677,7 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
   --data-binary @/tmp/query.json \
   "http://127.0.0.1:$DAGGER_SESSION_PORT/query" >/tmp/response.json
 jq -e '.data != null and (.errors | not)' /tmp/response.json >/dev/null
-sleep 15`,
+sleep 30`,
 		})
 	workloadDone := make(chan error, 1)
 	go func() {
