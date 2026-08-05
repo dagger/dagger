@@ -1,0 +1,9 @@
+kind: Breaking
+body: |
+    Require Rust 1.97.1 and adopt edition 2024 for the Rust SDK crates.
+
+    The pinned development toolchain, declared MSRV, CI checks, and standalone examples now share this baseline. Users building the SDK from source must use Rust 1.97.1 or newer.
+time: 2026-08-05T15:40:53Z
+custom:
+    Author: iw
+    PR: "1"
