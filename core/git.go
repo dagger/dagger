@@ -705,11 +705,14 @@ func parseGitCommitSignature(raw string) (gitCommitSignature, error) {
 	if err != nil {
 		return gitCommitSignature{}, fmt.Errorf("parse timestamp: %w", err)
 	}
-	offset, err := parseGitTimezoneOffset(dateParts[1])
-	if err != nil {
-		return gitCommitSignature{}, err
+	// git tolerates malformed and oversized timezone offsets in commit
+	// objects, and imported history commonly has them; the timestamp itself
+	// is still exact, so degrade to UTC rather than failing the commit (and
+	// with it any log containing the commit)
+	loc := time.UTC
+	if offset, ok := parseGitTimezoneOffset(dateParts[1]); ok {
+		loc = time.FixedZone(dateParts[1], offset)
 	}
-	loc := time.FixedZone(dateParts[1], offset)
 	return gitCommitSignature{
 		Name:  name,
 		Email: email,
@@ -717,23 +720,27 @@ func parseGitCommitSignature(raw string) (gitCommitSignature, error) {
 	}, nil
 }
 
-func parseGitTimezoneOffset(raw string) (int, error) {
-	if len(raw) != 5 || (raw[0] != '+' && raw[0] != '-') {
-		return 0, fmt.Errorf("invalid timezone offset %q", raw)
+// parseGitTimezoneOffset parses a timezone offset the way git does: a sign
+// followed by decimal digits interpreted as hours*100+minutes, so oversized
+// forms like +051800 (git renders it as +518:00) are accepted. Offsets that
+// RFC3339 cannot represent (beyond +/-23:59) report !ok so the caller can
+// fall back to UTC.
+func parseGitTimezoneOffset(raw string) (int, bool) {
+	if len(raw) < 2 || (raw[0] != '+' && raw[0] != '-') {
+		return 0, false
 	}
-	hours, err := strconv.Atoi(raw[1:3])
-	if err != nil {
-		return 0, fmt.Errorf("parse timezone hours: %w", err)
+	n, err := strconv.Atoi(raw[1:])
+	if err != nil || n < 0 {
+		return 0, false
 	}
-	minutes, err := strconv.Atoi(raw[3:5])
-	if err != nil {
-		return 0, fmt.Errorf("parse timezone minutes: %w", err)
-	}
-	offset := (hours*60 + minutes) * 60
+	offset := ((n/100)*60 + n%100) * 60
 	if raw[0] == '-' {
 		offset = -offset
 	}
-	return offset, nil
+	if offset <= -24*60*60 || offset >= 24*60*60 {
+		return 0, false
+	}
+	return offset, true
 }
 
 // doGitCheckout performs a git checkout using the given git helper.
