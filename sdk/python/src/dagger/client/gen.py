@@ -700,6 +700,159 @@ class Address(Type):
 
 
 @typecheck
+class Agent(Type):
+    async def description(self) -> str:
+        """The description of the agent
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this Agent.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Return the fully qualified name of the agent
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def original_module(self) -> "Module":
+        """The original module in which the agent has been defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the agent within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
+class AgentGroup(Type):
+    def compose(self, *, base: "LLM | None" = None) -> "LLM":
+        """Compose all selected agent middlewares onto a base LLM, in
+        alphabetical module:fn order, and return the composed LLM.
+
+        Parameters
+        ----------
+        base:
+            The base LLM to compose onto. Defaults to a fresh workspace-bound
+            LLM.
+        """
+        _args = [
+            Arg("base", base, None),
+        ]
+        _ctx = self._select("compose", _args)
+        return LLM(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this AgentGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def list_(self) -> list[Agent]:
+        """Return a list of individual agents and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(Agent)
+
+
+@typecheck
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
@@ -6958,6 +7111,12 @@ class Function(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
+
+    def with_agent(self) -> Self:
+        """Returns the function with a flag indicating it is an agent middleware."""
+        _args: list[Arg] = []
+        _ctx = self._select("withAgent", _args)
+        return Function(_ctx)
 
     def with_arg(
         self,
@@ -14762,6 +14921,24 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
+    def agents(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> AgentGroup:
+        """Return all agent middlewares from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include agents matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("agents", _args)
+        return AgentGroup(_ctx)
+
     def changes(self) -> Changeset:
         """Return this workspace's pending overlay changes."""
         _args: list[Arg] = []
@@ -16197,6 +16374,8 @@ __all__ = [
     "JSON",
     "LLM",
     "Address",
+    "Agent",
+    "AgentGroup",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",

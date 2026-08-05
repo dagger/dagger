@@ -23,6 +23,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return all agent middlewares from modules loaded in the workspace.
+     */
+    public function agents(?array $include = null): AgentGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('agents');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\AgentGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace's pending overlay changes.
      */
     public function changes(): Changeset

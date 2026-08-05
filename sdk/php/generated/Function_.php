@@ -88,6 +88,15 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Returns the function with a flag indicating it is an agent middleware.
+     */
+    public function withAgent(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAgent');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the function with the provided argument
      */
     public function withArg(
