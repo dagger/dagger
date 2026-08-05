@@ -60,6 +60,31 @@ of silently choosing one.
 - Do not interrupt Rust compilation merely because it is quiet. Allow at least five
   minutes before treating a build or test as stalled.
 
+## Code documentation
+
+The Rust SDK mirrors contracts owned by the engine schema, the scoped official SDK
+conformance harness, and the definitive Go implementation. The reasoning behind a
+non-obvious mapping or invariant must survive in the source; requiring the next human
+or agent to reconstruct it from those authorities is an avoidable correctness risk.
+
+- Give every module a `//!` introduction that explains what it owns, its architectural
+  boundary, and the invariants a future editor must preserve.
+- Document public items with `///` when callers need guarantees, validation rules,
+  failure behaviour, evidence scope, or lifecycle assumptions that the type signature
+  cannot express.
+- Add inline comments for correctness-critical decisions: canonical ordering and
+  hashing domains, target/evidence containment, precedence, ownership, retry or
+  idempotency assumptions, concurrency boundaries, and deliberate trade-offs. Explain
+  why the decision is necessary, not what the following line does.
+- Cite the pinned schema, harness check, Go symbol/test, or approved specification when
+  behaviour is ground-truthed and the anchor prevents accidental reinterpretation.
+- Keep obvious control flow, signature paraphrases, and ceremonial section comments out
+  of the source. Property tests carry one invariant sentence and the required
+  `// Feature: <name>, Property N: <text>` tag.
+
+Missing module context or missing explanation for non-obvious correctness logic is a
+defect, even when formatting, compilation, and tests pass.
+
 ## Security and dependency posture
 
 - Unsafe Rust is denied at workspace level. A future exception requires the narrowest

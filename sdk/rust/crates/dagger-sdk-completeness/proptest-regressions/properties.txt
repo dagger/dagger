@@ -1,0 +1,2 @@
+# Seeds for failure cases proptest has generated in the past. This file is read before
+# novel cases are generated. Keep minimized counterexamples here under version control.

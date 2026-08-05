@@ -1,14 +1,14 @@
 # Implementation Plan
 
-- [ ] 1. Bootstrap the internal completeness crate and its durable model
-  - [ ] 1.1 Register the internal crate and locked dependencies
+- [x] 1. Bootstrap the internal completeness crate and its durable model
+  - [x] 1.1 Register the internal crate and locked dependencies
     - Add `crates/dagger-sdk-completeness` to the Rust workspace with a library and thin
       binary, `publish = false`, inherited workspace lints, and no dependency on
       `dagger-sdk`, `dagger-codegen`, or `dagger-bootstrap`.
     - Add `semver` to the crate and `proptest` to the workspace development dependencies;
       preserve the locked dependency graph and `unsafe_code = "deny"` policy.
     - _Requirements: 3.1, 8.10, 11.1, 11.4_
-  - [ ] 1.2 Implement validated scalar and identity types
+  - [x] 1.2 Implement validated scalar and identity types
     - Add strict newtypes for commit SHAs, digests, repository identities, relative paths,
       source locators, versions, target digests, capability/check/evidence/rule IDs,
       platforms, and Feature 2–9 ownership.
@@ -16,53 +16,53 @@
       unsupported feature owners, and invalid Dagger/Rust version spellings without
       panicking.
     - _Requirements: 1.2, 5.1, 7.2, 7.3, 10.4–10.11, 11.7_
-  - [ ] 1.3 Implement the complete durable model surface
+  - [x] 1.3 Implement the complete durable model surface
     - Add `TargetDescriptor`, authority, source-item, schema, capability, classification,
       harness, evidence, transition, compatibility, report, and extension-scenario types.
     - Apply `serde(deny_unknown_fields)`, exact policy enum spellings, absent optional
       fields instead of `null`, and validated constructors before values enter the core.
     - _Requirements: 1.1, 2.2, 3.2–3.10, 4.1–4.9, 5.4, 6.1, 7.1, 9.1, 12.3_
-  - [ ] 1.4 Implement stable diagnostics and accumulating validation
+  - [x] 1.4 Implement stable diagnostics and accumulating validation
     - Add every external diagnostic code from the requirements as a closed Rust enum,
       `ContractDiagnostic`, deterministic ordering, independent-error accumulation, and
       redacted `ToolError` handling with exit status `2`.
     - Add fixed tests for every diagnostic and durable enum serialization spelling.
     - _Requirements: 1.2–1.5, 1.11, 2.5, 2.6, 2.9, 2.11, 3.12, 4.10, 5.6–5.9, 6.9, 6.10, 6.14, 7.2–7.4, 7.7, 8.3–8.5, 8.13, 9.3–9.5, 11.7, 12.8, 12.9, 12.14, 12.16_
-  - [ ] 1.5 Add shared property-test generators and regression persistence
+  - [x] 1.5 Add shared property-test generators and regression persistence
     - Build valid-first `proptest` strategies for all durable models plus targeted single-
       and multi-condition mutations, and configure at least 256 cases with a checked-in
       deterministic regression corpus.
     - _Requirements: 3.13, 8.10_
 
-- [ ] 2. Implement canonical artifacts and immutable target validation
-  - [ ] 2.1 Implement canonical JSON and domain-separated digests
+- [x] 2. Implement canonical artifacts and immutable target validation
+  - [x] 2.1 Implement canonical JSON and domain-separated digests
     - Produce UTF-8, LF, two-space-indented JSON with recursively ordered keys, sorted
       set-like arrays, one trailing newline, canonical relative paths, and distinct SHA-256
       domains for target, source, capability, artifact, rule, and compatibility digests.
     - Provide deserialize/validate/serialize round-trips and byte comparison helpers for
       checked-in artifacts.
     - _Requirements: 1.7, 3.13, 5.3, 5.5, 8.10, 11.8_
-  - [ ] 2.2 Implement target identity validation
+  - [x] 2.2 Implement target identity validation
     - Validate all Target Descriptor fields, exact Dagger/schema/Go/harness/Rust identities,
       workspace metadata, schema and source digests, the engine-selected Go literal, and
       optional immutable Go-label resolution evidence.
     - Keep the misleading `v0.21.7` comment outside source identity and require the harness
       CLI/engine identity to match the selected target.
     - _Requirements: 1.1–1.11, 11.7, 12.1, 12.5, 12.14_
-  - [ ] 2.3 Property test: Property 1 — canonical artifact determinism
+  - [x] 2.3 Property test: Property 1 — canonical artifact determinism
     - Implement a `proptest` with at least 256 cases over valid durable values and
       permutations of unordered inputs; compare bytes, domain-separated digests, and
       round-tripped values.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 1: canonical artifact determinism`
     - _Requirements: 3.13, 8.10_
-  - [ ] 2.4 Property test: Property 2 — immutable target identity
+  - [x] 2.4 Property test: Property 2 — immutable target identity
     - Implement a valid-reference-model `proptest` with at least 256 cases, then mutate
       required fields, revisions, source/schema digests, labels, workspace metadata, and
       harness target identity independently and in combination.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 2: immutable target identity`
     - _Requirements: 1.1–1.11, 11.7, 12.1, 12.5, 12.14_
 
-- [ ] 3. Checkpoint: foundations compile and pure tests are green
+- [x] 3. Checkpoint: foundations compile and pure tests are green
   - Run formatting, locked workspace checking, the completeness crate unit tests, and
     clippy for the implemented targets; require no warnings, panics, uncommitted generated
     output, or dependency from the contract crate to a public Rust SDK crate.
