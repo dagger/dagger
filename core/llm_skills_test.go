@@ -40,6 +40,25 @@ func TestParseSkillFrontmatter(t *testing.T) {
 		_, err := parseSkillFrontmatter([]byte("---\ndescription: x\n"))
 		require.Error(t, err)
 	})
+
+	t.Run("terminator must be exactly ---", func(t *testing.T) {
+		// A ---- rule (or any line merely starting with ---) does not close
+		// the block, so this frontmatter is unterminated.
+		_, err := parseSkillFrontmatter([]byte("---\ndescription: x\n----\nbody"))
+		require.Error(t, err)
+	})
+
+	t.Run("terminator as the final line without a newline", func(t *testing.T) {
+		fm, err := parseSkillFrontmatter([]byte("---\ndescription: x\n---"))
+		require.NoError(t, err)
+		require.Equal(t, "x", fm.Description)
+	})
+
+	t.Run("CRLF line endings", func(t *testing.T) {
+		fm, err := parseSkillFrontmatter([]byte("---\r\ndescription: x\r\n---\r\nbody"))
+		require.NoError(t, err)
+		require.Equal(t, "x", fm.Description)
+	})
 }
 
 func TestSkillDescription(t *testing.T) {

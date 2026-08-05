@@ -362,7 +362,10 @@ func skillDescription(content []byte) (string, error) {
 	return fm.Description, nil
 }
 
-// parseSkillFrontmatter reads the leading `---` ... `---` YAML block of a SKILL.md.
+// parseSkillFrontmatter reads the leading `---` ... `---` YAML block of a
+// SKILL.md. The terminator must be a line that is exactly `---` (modulo a
+// trailing CR), matching the opening fence: a `----` rule or a line merely
+// starting with `---` does not close the block.
 func parseSkillFrontmatter(content []byte) (skillFrontmatter, error) {
 	var fm skillFrontmatter
 	s := strings.TrimPrefix(string(content), "\ufeff")
@@ -371,7 +374,19 @@ func parseSkillFrontmatter(content []byte) (skillFrontmatter, error) {
 		return fm, fmt.Errorf("missing frontmatter")
 	}
 	body := s[nl+1:]
-	end := strings.Index(body, "\n---")
+	end := -1
+	for rest, consumed := body, 0; ; {
+		line, tail, more := strings.Cut(rest, "\n")
+		if strings.TrimRight(line, "\r") == "---" {
+			end = consumed
+			break
+		}
+		if !more {
+			break
+		}
+		consumed += len(line) + 1
+		rest = tail
+	}
 	if end < 0 {
 		return fm, fmt.Errorf("unterminated frontmatter")
 	}
