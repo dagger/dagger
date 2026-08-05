@@ -1628,6 +1628,29 @@ func TestEnsureWorkspaceLoadedDoesNotInheritBetweenFunctionCallRuntimes(t *testi
 	require.Nil(t, child.workspace)
 }
 
+func TestWorkspaceForLockInheritsAcrossFunctionCallRuntimes(t *testing.T) {
+	t.Parallel()
+
+	rootWorkspace := &core.Workspace{ClientID: "root-client"}
+	parentWorkspace := &core.Workspace{ClientID: "parent-client"}
+	root := &daggerClient{workspace: rootWorkspace}
+	moduleParent := &daggerClient{
+		workspace: parentWorkspace,
+		parents:   []*daggerClient{root},
+		fnCall:    &core.FunctionCall{Name: "parent"},
+	}
+	child := &daggerClient{
+		parents: []*daggerClient{root, moduleParent},
+		fnCall:  &core.FunctionCall{Name: "child"},
+	}
+
+	require.Same(t, parentWorkspace, workspaceForLock(child))
+
+	childWorkspace := &core.Workspace{ClientID: "child-client"}
+	child.workspace = childWorkspace
+	require.Same(t, childWorkspace, workspaceForLock(child))
+}
+
 // TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent keeps the
 // new boundary narrow: regular nested clients still inherit a parent workspace.
 func TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent(t *testing.T) {

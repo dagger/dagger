@@ -12,10 +12,13 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -1137,5 +1140,102 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: B-OVERLAY")
+	})
+}
+
+// TestWorkspaceGeneratorUsesWorkspaceLock covers a workspace generator
+// implemented by a remote SDK module. The generator's nested Dagger client must
+// read and write the invoking workspace's lock without inheriting that workspace
+// as its currentWorkspace.
+func (GeneratorsSuite) TestWorkspaceGeneratorUsesWorkspaceLock(ctx context.Context, t *testctx.T) {
+	const goSDKRef = "github.com/dagger/go-sdk@407c08e2b527fdc3e95ceb69345fec440cc03197"
+	const goImage = "golang:1.26-alpine"
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, ".dagger", "modules", "app"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(`[modules.app]
+source = ".dagger/modules/app"
+
+[modules.dagger-go-sdk]
+source = "`+goSDKRef+`"
+
+[modules.dagger-go-sdk.as-sdk]
+name = "go"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/app"
+`), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, ".dagger", "modules", "app", "dagger-module.toml"),
+		[]byte(`name = "app"
+engineVersion = "v1.0.0-beta.9"
+
+[runtime]
+  source = "go"
+`),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, ".dagger", "modules", "app", "go.mod"),
+		[]byte("module dagger/app\n\ngo 1.26\n"),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, ".dagger", "modules", "app", "main.go"),
+		[]byte(`package main
+
+type App struct{}
+
+func (m *App) Hello() string {
+	return "hello"
+}
+`),
+		0o600,
+	))
+
+	// First produce the committed generated state without consulting a lock.
+	// This keeps the regression focused on frozen generator execution, not
+	// initial module migration or missing generated files. A separate host CLI
+	// session prevents the frozen runs from reusing the generator function call.
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=disabled", "generate", "-y")
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(workdir, ".dagger", "modules", "app", "dagger.gen.go"))
+	require.NoError(t, err)
+
+	// The same inherited binding must support writes. Without it, live mode
+	// silently falls back to disabled mode inside the nested SDK runtime and
+	// leaves the subsequent frozen runs without a usable lock.
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "generate", "-y")
+	require.NoError(t, err)
+	lockBytes, err := os.ReadFile(filepath.Join(workdir, workspace.LockFileName))
+	require.NoError(t, err, "live mode did not create the workspace lock")
+	lock, err := workspace.ParseLock(lockBytes)
+	require.NoError(t, err)
+	lockedImage, found, err := lock.GetLookup("", "container.from", []any{
+		"docker.io/library/" + goImage,
+		lockTestPlatform(ctx, t),
+	})
+	require.NoError(t, err)
+	require.True(t, found, "live mode did not record the nested SDK runtime lookup")
+	require.Equal(t, workspace.PolicyPin, lockedImage.Policy)
+	require.True(t, strings.HasPrefix(lockedImage.Value, "sha256:"))
+
+	t.Run("generate no-apply", func(ctx context.Context, t *testctx.T) {
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "generate", "--no-apply")
+		require.NoError(t, err)
+
+		lockAfter, err := os.ReadFile(filepath.Join(workdir, "dagger.lock"))
+		require.NoError(t, err)
+		require.Equal(t, lockBytes, lockAfter)
+	})
+
+	t.Run("check generate", func(ctx context.Context, t *testctx.T) {
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "check", "--generate")
+		require.NoError(t, err)
+
+		lockAfter, err := os.ReadFile(filepath.Join(workdir, "dagger.lock"))
+		require.NoError(t, err)
+		require.Equal(t, lockBytes, lockAfter)
 	})
 }

@@ -20,6 +20,25 @@ Final rule: gate on the **active function call only** (`CurrentFunctionCall` /
 which is the real A -> B boundary. The `CurrentModule` / `client.mod` checks are
 dropped. The required semantics below are unchanged; only the predicate narrows.
 
+## Amendment (2026-08-05): Workspace Locks Remain Invocation-Scoped
+
+Nested client metadata deliberately inherits the caller's `LockMode` while
+resetting `Workspace`, `WorkspaceEnv`, and `WorkspaceModuleScope`. A dependency
+module therefore must use the invoking workspace's lock state for its own
+engine-mediated lookups even though it must not receive that workspace as its
+`currentWorkspace`.
+
+Session lock lookup may select the nearest ancestor workspace when the current
+module runtime has no workspace binding. This is a lock-only exception: it does
+not assign `client.workspace`, inject a `Workspace` argument, or expose workspace
+files and module configuration. Local live and pinned invocations can record
+truthful lookup results through the workspace owner; immutable remote workspaces
+remain read-only and available only to frozen mode.
+
+Dropping `LockMode` at the module-runtime boundary is not an alternative. It
+would make frozen invocations silently resolve dependency lookups without pins,
+defeating the invocation-wide reproducibility policy.
+
 ## Purpose
 
 Workspace context must not leak from a user invocation into modules that are

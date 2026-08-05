@@ -2185,7 +2185,7 @@ func (srv *Server) CurrentWorkspaceLock(ctx context.Context, requireWritable boo
 		return nil, false, err
 	}
 	if !requireWritable {
-		lock, ok, err := readImmutableRemoteWorkspaceLock(ctx, client.workspace)
+		lock, ok, err := readImmutableRemoteWorkspaceLock(ctx, workspaceForLock(client))
 		if err != nil || ok {
 			return lock, ok, err
 		}
@@ -2258,8 +2258,34 @@ func (srv *Server) SetCurrentWorkspaceLookup(
 	return nil
 }
 
+// workspaceForLock returns the nearest workspace that owns lock state for the
+// current call. Lock context follows nested clients across module-runtime
+// boundaries even though workspace context deliberately does not: dependency
+// modules need the invoking workspace's pins without gaining access to its
+// files or module configuration.
+func workspaceForLock(client *daggerClient) *core.Workspace {
+	if client == nil {
+		return nil
+	}
+	// Do not lock the current client here. Loading a declared remote workspace
+	// can re-enter lock lookup while already holding this mutex.
+	if client.workspace != nil {
+		return client.workspace
+	}
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		parent.workspaceMu.Lock()
+		ws := parent.workspace
+		parent.workspaceMu.Unlock()
+		if ws != nil {
+			return ws
+		}
+	}
+	return nil
+}
+
 func (srv *Server) currentWorkspaceLockBinding(client *daggerClient) (*core.Workspace, workspaceLockKey, string, bool, error) {
-	ws := client.workspace
+	ws := workspaceForLock(client)
 	if ws == nil || ws.HostPath() == "" || ws.LockFile == "" {
 		return nil, workspaceLockKey{}, "", false, nil
 	}
