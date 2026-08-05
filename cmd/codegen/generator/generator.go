@@ -41,6 +41,11 @@ type GeneratedState struct {
 	// over the output directory.
 	Overlay fs.FS
 
+	// RemovePaths are paths, relative to the output directory, that should be
+	// removed before applying Overlay. Generators use this to reconcile files
+	// they emitted previously but no longer emit.
+	RemovePaths []string
+
 	// PostCommands are commands that need to be run after the codegen has
 	// finished. This is used for example to run `go mod tidy` after generating
 	// Go code.
