@@ -152,14 +152,13 @@
     <li><a href="#dependency-catalogue">Main-client dependency catalogue</a></li>
     <li><a href="#commands">CLI command catalogue</a></li>
     <li><a href="#model">Proposed model</a></li>
-    <li><a href="#p0">Recommended first implementation slice (P0)</a></li>
     <li><a href="#retention">Retained state and result handling</a></li>
     <li><a href="#api">Engine protocol and API</a></li>
     <li><a href="#cli">CLI UX</a></li>
     <li><a href="#go-sdk">Go SDK API</a></li>
     <li><a href="#subsystems">Subsystem behavior</a></li>
     <li><a href="#races">Failure and race behavior</a></li>
-    <li><a href="#implementation">Implementation phases</a></li>
+    <li><a href="#implementation">Implementation plan, beginning with P0</a></li>
     <li><a href="#tests">Tests and acceptance criteria</a></li>
     <li><a href="#risks">Risks, validation gaps, and review decisions</a></li>
   </ol>
@@ -767,43 +766,6 @@ func (srv *Server) terminateSession(ctx context.Context, sess *daggerSession, re
     </table>
   </div>
 
-  <h2 id="p0">Recommended first implementation slice (P0)</h2>
-
-  <p>P0 is one production-shaped vertical path. It proves that the engine, protocol, CLI, and retained GraphQL execution share one coherent detachable lifetime. It does not attempt to make every Dagger feature usable without a client.</p>
-
-  <h3>Required P0 behavior</h3>
-  <div class="table-wrap">
-    <table class="medium">
-      <thead><tr><th>Area</th><th>P0 contract</th></tr></thead>
-      <tbody>
-        <tr><td>Lifetime</td><td>An ordinary session still terminates on last-main disconnect. An opted-in session becomes detached and retains one terminal session context until explicit termination or engine shutdown.</td></tr>
-        <tr><td>Control surface</td><td><code>dagger session list</code>, <code>inspect &lt;id&gt;</code>, <code>attach &lt;id&gt;</code>, and idempotent <code>terminate &lt;id&gt;</code> operate against engine-issued IDs. P0 defers user names.</td></tr>
-        <tr><td>Submission</td><td><code>dagger call --detach</code> and <code>dagger api call --detach</code> finish schema discovery and argument conversion while attached, submit one final GraphQL operation, wait for the engine acceptance response, print the session and operation IDs, and exit 0.</td></tr>
-        <tr><td>Execution</td><td>The accepted operation runs from the session terminal context instead of the request context. Main-client loss cannot cancel it. Explicit termination can.</td></tr>
-        <tr><td>Result</td><td>The session retains one bounded primary operation status and response. <code>session attach</code> follows a running operation or renders its completed result and returns the stored command status.</td></tr>
-        <tr><td>Absent client</td><td>A callback to an absent physical or main client returns a specific operation error. The session remains inspectable and terminable. P0 does not rebind old client-backed objects.</td></tr>
-        <tr><td>Concurrency</td><td>Only one main attachment is allowed. Sequential attach works. A stale disconnect is generation-checked and cannot clear a newer attachment.</td></tr>
-        <tr><td>Cleanup</td><td>Terminate cancels the primary operation, stops existing session services, runs the current container/provider/telemetry cleanup, calls <code>Cache.ReleaseSession</code>, removes retained response data, and removes the registry record exactly once.</td></tr>
-        <tr><td>Restart</td><td>Engine restart is terminal. P0 does not persist or reconstruct sessions.</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>Deliberately deferred after P0</h3>
-  <p>P0 does not include <code>dagger up</code>, <code>api query</code>, <code>check</code>, shell/exec/run, interactive input, host output export, session names, public SDK create/attach options, concurrent or forced attachment, broad callback rebinding, multi-operation history, a TTL, engine-restart survival, Cloud scale-out, or the long-term DagQL cache-ownership redesign. These are additive follow-up tracks informed by use of the P0 path.</p>
-
-  <h3>Ordered P0 work</h3>
-  <ol>
-    <li><strong>Land the lifetime and control foundation.</strong> Add the shared wire types in <code>engine/session.go</code>, the registry and control handlers in <code>engine/server/session_control.go</code>, and explicit attach/detach/terminate operations in <code>engine/client/client.go</code>. Split last-main loss from terminal teardown in <code>engine/server/session.go</code>. Preserve the ordinary default and existing cleanup routine.</li>
-    <li><strong>Land one retained GraphQL operation.</strong> Add <code>engine/server/session_operation.go</code>. Extract query execution from <code>serveQuery</code> so direct requests retain request cancellation while an accepted detachable operation uses <code>SessionScopedContext</code>. Store one bounded response and status. Add deterministic barriers around acceptance, disconnect, completion, attach, and terminate.</li>
-    <li><strong>Land the CLI vertical path.</strong> Expose <code>dagger session list|inspect|attach|terminate</code>. Move the hidden SDK transport to <code>dagger session serve</code> and update all in-tree launchers in the same hard cut. Add <code>--detach</code> only to <code>call</code> and <code>api call</code>. If setup fails before operation acceptance, terminate the newly allocated session.</li>
-    <li><strong>Prove the boundary end to end.</strong> Run an engine-only slow call, disconnect the creator after acceptance, list and inspect it, attach before and after completion, verify the exact result, and terminate it. Repeat with transport loss, an absent-client callback, ordinary-session disconnect, terminate races, and engine restart.</li>
-  </ol>
-
-  <div class="finding">
-    P0 is complete only when all four layers work together. A session registry without retained execution, or retained execution without the CLI create/attach/terminate path, is not the requested first deliverable. P0 may use current session-wide DagQL ownership for evaluation, but its tests must measure retained metadata growth and broad release remains blocked on the cache concern above.
-  </div>
-
   <h2 id="retention">8. Retained state and result handling</h2>
 
   <h3>Accepted operation boundary</h3>
@@ -1165,9 +1127,48 @@ defer c2.Terminate(ctx)</code></pre>
 
   <h2 id="implementation">14. Ordered implementation plan</h2>
 
-  <p>The phases below describe the complete target. Implementation should begin with the P0 vertical slice above, not by completing each broad phase across every subsystem. After P0 is usable, these phases provide the exact follow-up map.</p>
+  <p>Implementation begins with the narrow P0 vertical slice below. The later phases describe the complete target and should follow only after P0 is usable enough to inform them.</p>
 
-  <h3>Phase 1: protocol, registry, and lifetime split</h3>
+  <h3 id="p0">P0: first end-to-end implementation slice</h3>
+
+  <p>P0 is one production-shaped vertical path. It proves that the engine, protocol, CLI, and retained GraphQL execution share one coherent detachable lifetime. It does not attempt to make every Dagger feature usable without a client.</p>
+
+  <h4>Required behavior</h4>
+  <div class="table-wrap">
+    <table class="medium">
+      <thead><tr><th>Area</th><th>P0 contract</th></tr></thead>
+      <tbody>
+        <tr><td>Lifetime</td><td>An ordinary session still terminates on last-main disconnect. An opted-in session becomes detached and retains one terminal session context until explicit termination or engine shutdown.</td></tr>
+        <tr><td>Control surface</td><td><code>dagger session list</code>, <code>inspect &lt;id&gt;</code>, <code>attach &lt;id&gt;</code>, and idempotent <code>terminate &lt;id&gt;</code> operate against engine-issued IDs. P0 defers user names.</td></tr>
+        <tr><td>Submission</td><td><code>dagger call --detach</code> and <code>dagger api call --detach</code> finish schema discovery and argument conversion while attached, submit one final GraphQL operation, wait for the engine acceptance response, print the session and operation IDs, and exit 0.</td></tr>
+        <tr><td>Execution</td><td>The accepted operation runs from the session terminal context instead of the request context. Main-client loss cannot cancel it. Explicit termination can.</td></tr>
+        <tr><td>Result</td><td>The session retains one bounded primary operation status and response. <code>session attach</code> follows a running operation or renders its completed result and returns the stored command status.</td></tr>
+        <tr><td>Absent client</td><td>A callback to an absent physical or main client returns a specific operation error. The session remains inspectable and terminable. P0 does not rebind old client-backed objects.</td></tr>
+        <tr><td>Concurrency</td><td>Only one main attachment is allowed. Sequential attach works. A stale disconnect is generation-checked and cannot clear a newer attachment.</td></tr>
+        <tr><td>Cleanup</td><td>Terminate cancels the primary operation, stops existing session services, runs the current container/provider/telemetry cleanup, calls <code>Cache.ReleaseSession</code>, removes retained response data, and removes the registry record exactly once.</td></tr>
+        <tr><td>Restart</td><td>Engine restart is terminal. P0 does not persist or reconstruct sessions.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Deliberately deferred</h4>
+  <p>P0 does not include <code>dagger up</code>, <code>api query</code>, <code>check</code>, shell/exec/run, interactive input, host output export, session names, public SDK create/attach options, concurrent or forced attachment, broad callback rebinding, multi-operation history, a TTL, engine-restart survival, Cloud scale-out, or the long-term DagQL cache-ownership redesign. These are additive follow-up tracks informed by use of the P0 path.</p>
+
+  <h4>Ordered work</h4>
+  <ol>
+    <li><strong>Land the lifetime and control foundation.</strong> Add the shared wire types in <code>engine/session.go</code>, the registry and control handlers in <code>engine/server/session_control.go</code>, and explicit attach/detach/terminate operations in <code>engine/client/client.go</code>. Split last-main loss from terminal teardown in <code>engine/server/session.go</code>. Preserve the ordinary default and existing cleanup routine.</li>
+    <li><strong>Land one retained GraphQL operation.</strong> Add <code>engine/server/session_operation.go</code>. Extract query execution from <code>serveQuery</code> so direct requests retain request cancellation while an accepted detachable operation uses <code>SessionScopedContext</code>. Store one bounded response and status. Add deterministic barriers around acceptance, disconnect, completion, attach, and terminate.</li>
+    <li><strong>Land the CLI vertical path.</strong> Expose <code>dagger session list|inspect|attach|terminate</code>. Move the hidden SDK transport to <code>dagger session serve</code> and update all in-tree launchers in the same hard cut. Add <code>--detach</code> only to <code>call</code> and <code>api call</code>. If setup fails before operation acceptance, terminate the newly allocated session.</li>
+    <li><strong>Prove the boundary end to end.</strong> Run an engine-only slow call, disconnect the creator after acceptance, list and inspect it, attach before and after completion, verify the exact result, and terminate it. Repeat with transport loss, an absent-client callback, ordinary-session disconnect, terminate races, and engine restart.</li>
+  </ol>
+
+  <div class="finding">
+    P0 is complete only when all four layers work together. A session registry without retained execution, or retained execution without the CLI create/attach/terminate path, is not the requested first deliverable. P0 may use current session-wide DagQL ownership for evaluation, but its tests must measure retained metadata growth and broad release remains blocked on the cache concern above.
+  </div>
+
+  <h3>Full target after P0</h3>
+
+  <h4>Phase 1: protocol, registry, and lifetime split</h4>
   <ul>
     <li><code>engine/session.go</code> (new): wire types, lifetime/state enums, descriptors, control endpoint constants, and protocol errors.</li>
     <li><code>engine/opts.go</code>: add attachment ID/generation and remove top-level client-chosen session authority.</li>
@@ -1179,7 +1180,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li>Remove the old top-level shutdown lifecycle path and bump minimum versions in the engine version constants. Do not add an alias.</li>
   </ul>
 
-  <h3>Phase 2: retained operation transport</h3>
+  <h4>Phase 2: retained operation transport</h4>
   <ul>
     <li><code>engine/server/session_operation.go</code> (new): operation registry, state machine, bounded response writer, spool ownership, wait/result delivery, and cleanup.</li>
     <li><code>engine/server/session.go</code>: extract the body of <code>serveQuery</code> so direct and retained operations share schema/workspace/DagQL accounting while choosing different cancellation roots.</li>
@@ -1188,7 +1189,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li><code>engine/server/server.go</code> startup/shutdown: create the process-specific spool root and delete stale roots.</li>
   </ul>
 
-  <h3>Phase 3: role and source-client audit</h3>
+  <h4>Phase 3: role and source-client audit</h4>
   <ul>
     <li><code>core/query.go</code> and server interfaces: replace ambiguous main-client APIs with creator/current-main/specific-source APIs.</li>
     <li><code>engine/engineutil/client.go</code>: current-main callbacks for prompt/terminal/pipe/registry role; concrete source selection for host/Git/image operations; stable absent-client errors.</li>
@@ -1197,7 +1198,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li><code>engine/server/session.go</code> Cloud refresh: preserve creator/source binding and prevent exporter failure from affecting session lifetime.</li>
   </ul>
 
-  <h3>Phase 4: CLI control family and supported commands</h3>
+  <h4>Phase 4: CLI control family and supported commands</h4>
   <ul>
     <li><code>internal/cmd/dagger/main.go</code>: persistent <code>--detach</code>/<code>--session-name</code>, supported-command validation, and session command registration.</li>
     <li><code>internal/cmd/dagger/session.go</code>: visible parent, <code>list</code>, <code>inspect</code>, <code>attach</code>, <code>terminate</code>, hidden <code>serve</code>, JSON/table output, and exit mapping.</li>
@@ -1207,7 +1208,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li><code>internal/cmd/dagger/checks.go</code>, <code>generators.go</code>, <code>run.go</code>, <code>shell.go</code>, <code>listen.go</code>, <code>mcp.go</code>, and host-mutating command entry points: deterministic usage rejection.</li>
   </ul>
 
-  <h3>Phase 5: <code>up</code> ownership split</h3>
+  <h4>Phase 5: <code>up</code> ownership split</h4>
   <ul>
     <li><code>core/modtree.go</code>: split service evaluation/start from <code>host.tunnel</code> publishing and return the engine service result/binding.</li>
     <li><code>core/up.go</code>: add controller start/status/publish/detach/stop operations instead of blocking only on <code>ctx.Done()</code>.</li>
@@ -1216,7 +1217,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li><code>engine/server/session.go</code>: own the controller in the session and stop it before general service teardown.</li>
   </ul>
 
-  <h3>Phase 6: Go SDK and coordinated launcher cut</h3>
+  <h4>Phase 6: Go SDK and coordinated launcher cut</h4>
   <ul>
     <li><code>sdk/go/client.go</code>: public types/options/methods exactly as specified above.</li>
     <li><code>sdk/go/engineconn/engineconn.go</code>, <code>session.go</code>, and <code>env.go</code>: descriptor negotiation, <code>session serve</code>, detachable close, and conflicts with nested environment connections.</li>
@@ -1224,7 +1225,7 @@ defer c2.Terminate(ctx)</code></pre>
     <li>Document that public detachable create/attach APIs outside Go are not shipped until each SDK defines matching language-native options.</li>
   </ul>
 
-  <h3>Phase 7: documentation and observability</h3>
+  <h4>Phase 7: documentation and observability</h4>
   <ul>
     <li>CLI and Go SDK reference pages, lifecycle/restart/callback limitations, examples, and cleanup guidance.</li>
     <li>Engine structured logs/aggregate metrics and operator guidance for finding old detached sessions.</li>
