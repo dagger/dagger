@@ -1533,8 +1533,8 @@ func (s *workspaceSchema) export(
 	return core.Void{}, nil
 }
 
-// reloaded returns the workspace unchanged, having invalidated the calling
-// client's cached host reads.
+// reloaded returns the workspace unchanged, having invalidated the workspace
+// owner's cached host reads.
 //
 // Workspace.file / Workspace.directory resolve through host.directory, which is
 // cached per client for the client's whole lifetime (dagql.PerClientInput). In
@@ -1554,10 +1554,23 @@ func (s *workspaceSchema) reloaded(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	// Best-effort, like export's invalidation: failing to bump only falls back
-	// to the prior (stale) read behavior, which is not worth failing over.
-	if err := core.BumpWorkspaceReadEpoch(ctx); err != nil {
-		slog.Warn("could not bump workspace read epoch", "error", err)
+	// Bump under the workspace's owning client, the same context export bumps
+	// in and the one withWorkspaceHostReadContext reads the epoch from — a
+	// bump under the caller's own client would be a silent no-op whenever the
+	// caller is not the owner (e.g. a module handed the workspace). A value
+	// workspace has no owning client and no host reads to invalidate, so the
+	// bump is skipped rather than failed.
+	if parent.Self().ClientID != "" {
+		bumpCtx, err := withWorkspaceClientContext(ctx, parent.Self())
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		// Best-effort, like export's invalidation: failing to bump only falls
+		// back to the prior (stale) read behavior, which is not worth failing
+		// over.
+		if err := core.BumpWorkspaceReadEpoch(bumpCtx); err != nil {
+			slog.Warn("could not bump workspace read epoch", "error", err)
+		}
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().Clone())
 }
