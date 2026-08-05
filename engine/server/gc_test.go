@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -213,11 +214,19 @@ func TestResolveDagqlCacheGCConfig(t *testing.T) {
 		DagqlCache: config.DagqlCacheGCConfig{MaxEstimatedBytes: -1},
 	}, bkconfig.GCConfig{})
 	require.ErrorContains(t, err, "maxEstimatedBytes must be positive")
+	require.ErrorContains(t, err, "resolved maxEstimatedBytes=-1, targetEstimatedBytes=3221225472")
 
 	_, _, _, err = resolveDagqlCacheGCConfig(config.GCConfig{
 		DagqlCache: config.DagqlCacheGCConfig{MaxEstimatedBytes: 100, TargetEstimatedBytes: 100},
 	}, bkconfig.GCConfig{})
 	require.ErrorContains(t, err, "targetEstimatedBytes must be positive and lower")
+	require.ErrorContains(t, err, "resolved maxEstimatedBytes=100, targetEstimatedBytes=100")
+
+	_, _, _, err = resolveDagqlCacheGCConfig(config.GCConfig{
+		DagqlCache: config.DagqlCacheGCConfig{MaxEstimatedBytes: 2 << 30},
+	}, bkconfig.GCConfig{})
+	require.ErrorContains(t, err, "targetEstimatedBytes must be positive and lower")
+	require.ErrorContains(t, err, "resolved maxEstimatedBytes=2147483648, targetEstimatedBytes=3221225472")
 }
 
 func TestGCLockedPrunesMetadataWithoutWorkerDiskPolicies(t *testing.T) {
@@ -237,6 +246,50 @@ func TestGCLockedPrunesMetadataWithoutWorkerDiskPolicies(t *testing.T) {
 	}
 	require.NoError(t, srv.gcLocked(t.Context(), localCacheGCScheduled))
 	require.Zero(t, cache.EntryStats().RetainedCalls)
+}
+
+func TestScheduledGCTrimsImportedMetadataWithoutPersistenceReset(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "dagql-cache.db")
+	cacheBeforeRestart, err := dagql.NewCache(t.Context(), dbPath, nil, nil)
+	require.NoError(t, err)
+	for i := range 4 {
+		ctx, _ := addGCTestPersistable(
+			t,
+			cacheBeforeRestart,
+			"metadata-restart",
+			fmt.Sprintf("metadataRestart%d", i),
+			dagql.NewInt(i),
+		)
+		if i == 3 {
+			require.NoError(t, cacheBeforeRestart.ReleaseSession(ctx, "metadata-restart"))
+		}
+	}
+	beforeRestart := cacheBeforeRestart.MetadataEstimate()
+	require.Equal(t, 4, cacheBeforeRestart.EntryStats().RetainedCalls)
+	require.NoError(t, cacheBeforeRestart.Close(t.Context()))
+
+	cacheAfterRestart, err := dagql.NewCache(t.Context(), dbPath, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cacheAfterRestart.Close(context.Background())) })
+	require.Equal(t, dagql.CachePersistenceResetNone, cacheAfterRestart.PersistenceResetReason())
+	require.Equal(t, beforeRestart, cacheAfterRestart.MetadataEstimate())
+	require.Equal(t, 4, cacheAfterRestart.EntryStats().RetainedCalls)
+
+	// NewServer schedules this exact callback one second after startup. Calling
+	// it directly keeps this composition test deterministic while covering the
+	// imported current-schema graph and scheduled structural pass together.
+	srv := &Server{
+		rootDir:                        t.TempDir(),
+		engineCache:                    cacheAfterRestart,
+		localCacheGCEnabled:            true,
+		dagqlCacheMaxEstimatedBytes:    beforeRestart.EstimatedBytes - 1,
+		dagqlCacheTargetEstimatedBytes: 1,
+	}
+	srv.gc()
+	require.Zero(t, cacheAfterRestart.EntryStats().RetainedCalls)
+	require.Less(t, cacheAfterRestart.MetadataEstimate().EstimatedBytes, beforeRestart.EstimatedBytes)
 }
 
 func TestGCLockedDiskStatFailureDoesNotSuppressMetadataPrune(t *testing.T) {
@@ -334,8 +387,9 @@ func TestMonitorMetadataPruneBlocksAfterProtectedNoProgress(t *testing.T) {
 
 	coldCtx, _ := addGCTestPersistable(t, cache, "metadata-later-cold", "metadataLaterCold", dagql.NewInt(2))
 	require.NoError(t, cache.ReleaseSession(coldCtx, "metadata-later-cold"))
+	require.Greater(t, cache.MetadataEstimate().EstimatedBytes, srv.dagqlCacheMaxEstimatedBytes)
 	require.NoError(t, srv.gcLocked(t.Context(), localCacheGCMonitor))
-	require.Equal(t, 2, cache.EntryStats().RetainedCalls, "blocked monitor stage must not prune the later cold root")
+	require.Equal(t, 2, cache.EntryStats().RetainedCalls, "blocked monitor stage must be skipped despite an over-maximum cold root")
 
 	require.NoError(t, cache.ReleaseSession(activeCtx, "metadata-protected"))
 	require.NoError(t, srv.gcLocked(t.Context(), localCacheGCScheduled))

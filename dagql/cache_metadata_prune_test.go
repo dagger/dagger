@@ -311,7 +311,11 @@ func TestCachePruneMetadataEstimateCompactionCanRestoreMaximumWithoutEviction(t 
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
-	c, err := NewCache(ctx, "", nil, nil)
+	var snapshotGCCalls atomic.Int64
+	c, err := NewCache(ctx, "", nil, func(context.Context) error {
+		snapshotGCCalls.Add(1)
+		return nil
+	})
 	assert.NilError(t, err)
 	call := cacheTestIntCall("metadata-prune-compact-only")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: call, IsPersistable: true}, func(context.Context) (AnyResult, error) {
@@ -335,6 +339,7 @@ func TestCachePruneMetadataEstimateCompactionCanRestoreMaximumWithoutEviction(t 
 	assert.Equal(t, 0, report.CandidateCount)
 	assert.Equal(t, 0, report.PlannedRootCount)
 	assert.Equal(t, 0, report.RemovedPersistedRootCount)
+	assert.Equal(t, int64(0), snapshotGCCalls.Load())
 	assert.Assert(t, report.InitialCompactionOldClassSlots > report.InitialCompactionNewClassSlots)
 
 	c.egraphMu.RLock()
