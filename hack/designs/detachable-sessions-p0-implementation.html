@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detachable Dagger sessions: P0 implementation plan</title>
+  <style>
+    :root { --ink:#17212b; --muted:#52606d; --line:#d8dee6; --soft:#f5f7fa; --accent:#5b3fd6; --accent-soft:#f0edff; --good:#176b3a; --warn:#8a5200; --bad:#a12c2c; --code:#f0f2f5; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#fff; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1420px; margin:0 auto; padding:36px 42px 80px; }
+    h1,h2,h3,h4 { line-height:1.2; scroll-margin-top:20px; }
+    h1 { margin:0 0 8px; font-size:34px; }
+    h2 { margin:42px 0 14px; padding-top:8px; border-top:2px solid var(--ink); font-size:25px; }
+    h3 { margin:28px 0 10px; font-size:19px; }
+    h4 { margin:20px 0 8px; font-size:16px; }
+    p { max-width:1050px; margin:8px 0 12px; }
+    a { color:#3d2aaf; text-decoration-thickness:1px; text-underline-offset:2px; }
+    code,pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    code { background:var(--code); padding:1px 4px; border-radius:3px; font-size:.92em; }
+    pre { margin:12px 0 18px; padding:15px 17px; overflow:auto; background:#17212b; color:#f8fafc; border-radius:6px; line-height:1.45; font-size:13px; }
+    pre code { padding:0; color:inherit; background:transparent; }
+    ul,ol { max-width:1100px; margin:8px 0 14px; padding-left:26px; }
+    li { margin:4px 0; }
+    .meta,.callout,.decision,.finding { max-width:1120px; margin:14px 0; padding:13px 16px; border:1px solid var(--line); border-left:5px solid var(--accent); background:var(--accent-soft); border-radius:4px; }
+    .meta { color:var(--muted); background:var(--soft); border-left-color:#7b8794; }
+    .finding { background:#eef8f2; border-left-color:var(--good); }
+    .decision { background:#fff7e8; border-left-color:var(--warn); }
+    .warning { background:#fff1f1; border-left-color:var(--bad); }
+    .muted { color:var(--muted); }
+    .small { font-size:13px; }
+    .toc { max-width:820px; columns:2; column-gap:38px; padding:14px 20px 14px 38px; background:var(--soft); border:1px solid var(--line); border-radius:5px; }
+    .toc li { break-inside:avoid; }
+    .table-wrap { width:100%; overflow-x:auto; margin:12px 0 22px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; line-height:1.42; }
+    th,td { padding:9px 10px; text-align:left; vertical-align:top; border:1px solid var(--line); }
+    th { background:#e9edf2; font-weight:650; }
+    tbody tr:nth-child(even) { background:#fafbfc; }
+    .wide { min-width:1240px; }
+    .medium { min-width:940px; }
+    .yes { color:var(--good); font-weight:650; }
+    .no { color:var(--bad); font-weight:650; }
+    .conditional { color:var(--warn); font-weight:650; }
+    @media(max-width:850px){ main{padding:24px 18px 60px}.toc{columns:1} }
+    @media print { main{max-width:none;padding:0}.table-wrap{overflow:visible}table{font-size:10px}pre{white-space:pre-wrap} }
+  </style>
+</head>
+<body><main>
+  <h1>Detachable Dagger sessions: P0 implementation plan</h1>
+  <p class="muted">A companion to the full <a href="detachable-sessions.html">investigation and design proposal</a></p>
+
+  <div class="meta">
+    <strong>Code base:</strong> freshly fetched <code>upstream/main</code> at
+    <a href="https://github.com/dagger/dagger/tree/3755efceba33d4c59bd0e41beb640748dec4f0c7"><code>3755efceba33d4c59bd0e41beb640748dec4f0c7</code></a>.
+    This document contains an implementation plan only. It does not contain production code.
+  </div>
+
+  <h3>Contents</h3>
+  <ol class="toc">
+    <li><a href="#purpose">Purpose and completion rule</a></li>
+    <li><a href="#contract">Exact P0 contract</a></li>
+    <li><a href="#current">Current code that P0 changes</a></li>
+    <li><a href="#model">Engine state model</a></li>
+    <li><a href="#protocol">HTTP protocol</a></li>
+    <li><a href="#query">Detached query execution</a></li>
+    <li><a href="#telemetry">Telemetry and result replay</a></li>
+    <li><a href="#client">Engine client changes</a></li>
+    <li><a href="#cli">CLI implementation</a></li>
+    <li><a href="#files">File-by-file change list</a></li>
+    <li><a href="#sequence">Ordered implementation sequence</a></li>
+    <li><a href="#tests">Test plan</a></li>
+    <li><a href="#acceptance">Acceptance criteria</a></li>
+    <li><a href="#risks">Known limits and validation points</a></li>
+  </ol>
+
+  <h2 id="purpose">1. Purpose and completion rule</h2>
+  <p>P0 must produce one real end-to-end path. A user starts <code>dagger call --detach</code> or <code>dagger api call --detach</code>. The CLI completes local schema discovery and argument conversion, gives the engine one final GraphQL request, receives an engine-issued session ID and query ID, and exits. The query continues without that CLI process. Another CLI can list the session, inspect it, follow the query, print its final result, and terminate the session.</p>
+  <div class="finding"><strong>P0 is not complete if only the session registry works.</strong> It is also not complete if a test-only query survives but the normal CLI cannot create, inspect, attach to, and terminate it. The engine, client transport, CLI, telemetry replay, saved result, and cleanup must work together.</div>
+
+  <h3>P0 does not include</h3>
+  <p>P0 does not include <code>dagger up</code>, <code>dagger api query</code>, <code>dagger check</code>, shell, listen, run, develop, interactive stdin, terminal sessions, host output export, user-provided session names, public SDK options, callback rebinding, multiple detached queries in one session, concurrent attachments, force attach, a TTL, engine restart survival, Cloud scale-out, or the long-term DagQL cache ownership change.</p>
+  <p>Shell and listen are old interfaces and receive no detachable-session support. P0 adds <code>--detach</code> only to the two call commands. Other commands do not receive a global flag that they must reject.</p>
+
+  <h2 id="contract">2. Exact P0 contract</h2>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>Area</th><th>P0 behavior</th></tr></thead><tbody>
+    <tr><td>Default sessions</td><td>Unchanged. The client chooses the session ID. <code>Client.Close</code> calls <code>/shutdown</code>. Last-main disconnect tears down the session.</td></tr>
+    <tr><td>Detached session creation</td><td>The CLI opts in through <code>client.Params.Detachable</code>. The engine creates the session ID and returns it before the client starts ordinary session traffic.</td></tr>
+    <tr><td>Lifetime</td><td>The engine has one session cancellation root. Disconnect clears the detachable session's current attachment but does not cancel that root. Explicit termination and engine shutdown cancel it.</td></tr>
+    <tr><td>Work</td><td>One final GraphQL HTTP request is stored and run independently of the request connection. Earlier schema and argument requests remain ordinary attached requests.</td></tr>
+    <tr><td>Result</td><td>The engine saves the exact GraphQL response status, selected headers, and body. Attach does not rerun the query or reconstruct command arguments.</td></tr>
+    <tr><td>Attachment</td><td>One current attachment. A later attachment is allowed after the old one closes or its attachable connection is found dead. A stale close cannot clear a newer attachment.</td></tr>
+    <tr><td>Callbacks</td><td>P0 does not redirect callbacks to the new client. An operation that needs the absent creator or a concrete source client fails. The session remains live and terminable.</td></tr>
+    <tr><td>Telemetry</td><td>The detached query continues to write to the creator client's existing telemetry database. Attach replays that database through session control routes and then follows new records.</td></tr>
+    <tr><td>Cleanup</td><td>Terminate runs the existing full teardown once, removes the saved request/result files, and removes the session from list and inspect.</td></tr>
+    <tr><td>Restart</td><td>Engine shutdown terminates all sessions. Startup discards result directories from older engine processes. No session is reconstructed.</td></tr>
+  </tbody></table></div>
+
+  <h3>Command output</h3>
+  <pre><code>$ dagger call slow --detach
+Session: sess_01J...
+Query:   qry_01J...
+
+$ dagger session inspect sess_01J...
+ID        sess_01J...
+State     detached
+Query     qry_01J...
+Status    running
+Created   2026-08-05T14:03:12Z
+Attached  -
+
+$ dagger session attach sess_01J...
+...normal Dagger progress rendering...
+finished value
+
+$ dagger session terminate sess_01J...
+Terminated sess_01J...</code></pre>
+  <p><code>--json</code> on creation prints one JSON object containing <code>session_id</code>, <code>query_id</code>, and <code>status</code>. List and inspect support the repository's normal table and JSON conventions. Terminate returns zero when the session was terminated by this request or had already finished cleanup. An unknown ID returns exit 1. A second live attachment returns exit 1 and a direct error.</p>
+
+  <h2 id="current">3. Current code that P0 changes</h2>
+  <ul>
+    <li><a href="https://github.com/dagger/dagger/blob/3755efceba33d4c59bd0e41beb640748dec4f0c7/engine/client/client.go"><code>engine/client/client.go</code></a> creates both IDs, starts attachables, subscribes to telemetry, connects the generated Go client, and always calls <code>/shutdown</code> from <code>Client.Close</code>.</li>
+    <li><a href="https://github.com/dagger/dagger/blob/3755efceba33d4c59bd0e41beb640748dec4f0c7/engine/server/session.go"><code>engine/server/session.go</code></a> creates <code>daggerSession</code> inside <code>getOrInitClient</code>. <code>releaseClientConnection</code> schedules <code>reapDaggerSession</code> when the immutable <code>mainClientCallerID</code> reaches zero active requests.</li>
+    <li><code>serveHTTPToClient</code> calls <code>getOrInitClient</code> before routing normal endpoints. Session management routes must be dispatched before that call. Otherwise <code>session list</code> would create a session merely to list sessions.</li>
+    <li><code>serveQuery</code> derives work from <code>r.Context()</code>. A closed HTTP connection cancels the query. The reusable part begins after client lookup and includes workspace loading, schema construction, DagQL accounting, telemetry providers, and <code>dagql.NewDefaultHandler(schema)</code>.</li>
+    <li><code>removeDaggerSession</code> already contains the full terminal cleanup: stop services, close the resolver, cancel and drain DagQL work, release containers, shut down telemetry, release the engine cache session, and close <code>shutdownCh</code>.</li>
+    <li><a href="https://github.com/dagger/dagger/blob/3755efceba33d4c59bd0e41beb640748dec4f0c7/internal/cmd/dagger/functions.go"><code>internal/cmd/dagger/functions.go</code></a> builds the final call through <code>querybuilder.Selection</code>. <code>Selection.Build</code> produces the GraphQL selection after argument values have been marshalled. <code>Selection.Execute</code> adds <code>query Query</code>, sends it, and unpacks the nested response.</li>
+    <li><a href="https://github.com/dagger/dagger/blob/3755efceba33d4c59bd0e41beb640748dec4f0c7/internal/cmd/dagger/session.go"><code>internal/cmd/dagger/session.go</code></a> currently owns a hidden bare <code>dagger session</code> command used by SDK launchers.</li>
+  </ul>
+
+  <h2 id="model">4. Engine state model</h2>
+  <p>Keep the existing initialized/removed state for safe initialization and teardown. Add detachable lifetime and attachment state instead of replacing that state machine.</p>
+  <pre><code>type sessionLifetime uint8
+const (
+    sessionLifetimeAttached sessionLifetime = iota
+    sessionLifetimeDetachable
+)
+
+type sessionAttachment struct {
+    ID         string
+    Generation uint64
+    ClientID   string
+    Ready      bool
+    CreatedAt  time.Time
+}
+
+type daggerSession struct {
+    sessionID string
+    lifetime  sessionLifetime
+
+    // Kept in P0 for existing callback behavior. It identifies the creator.
+    mainClientCallerID string
+    creatorClientID    string
+
+    attachmentMu         sync.Mutex
+    currentAttachment    *sessionAttachment
+    nextGeneration       uint64
+    createdAt            time.Time
+    detachedAt           time.Time
+    primaryQuery         *detachedQuery
+
+    // Existing lifecycleMu, closingCtx, clients, services, DagQL counters,
+    // telemetry, containers, and cleanup fields remain.
+}</code></pre>
+  <p>The P0 attachment is lifecycle control state. It does not redefine every callback call site. <code>mainClientCallerID</code> remains the creator ID until the later role/source-client audit. This makes the limitation explicit: attach can observe and terminate the primary query, but it does not make old client-backed operations portable.</p>
+
+  <h3>State transitions</h3>
+  <pre><code>POST /v1/sessions
+    create + initialize session
+    reserve attachment generation 1
+                 │
+                 ▼
+              attached ──graceful close / dead attachables──► detached
+                 ▲                                                │
+                 └──────────── POST /attachments ─────────────────┘
+
+attached or detached ──DELETE /v1/sessions/{id}──► terminating ──► removed
+engine shutdown ──────────────────────────────────► terminating ──► removed</code></pre>
+  <p><code>releaseClientConnection</code> keeps its ordinary branch. For a detachable session it schedules <code>detachAttachment</code>, not <code>removeDaggerSession</code>. <code>detachAttachment</code> compares attachment ID and generation, records <code>detachedAt</code>, and deregisters that client's attachables when the departure is graceful. It never calls <code>cancelClosing</code>, <code>StopSessionServices</code>, or <code>Cache.ReleaseSession</code>.</p>
+
+  <h3>Creation and lost responses</h3>
+  <p>The create request contains a random client-generated <code>request_id</code>. The engine stores <code>request_id → session ID</code> in memory before writing the response. Retrying the same request ID returns the same session descriptor. The index disappears at termination. This handles a connection loss after creation but before the CLI receives the ID without adding persistence.</p>
+  <p>The create handler generates the session ID, copies it into the parsed <code>ClientMetadata</code>, and explicitly calls the existing initialization path. The route's cleanup sees <code>sessionLifetimeDetachable</code> and leaves the initialized session detached if attachable registration never arrives. P0 does not add a reservation timeout. Such a session remains visible and can be terminated. This is simpler and matches the explicit-cleanup rule.</p>
+
+  <h2 id="protocol">5. P0 HTTP protocol</h2>
+  <p>Add wire types and endpoint constants in a new <code>engine/session.go</code>. These routes use the existing engine transport and version check. They are routed before <code>getOrInitClient</code>. No old and new detachable protocol coexistence is required.</p>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Route</th><th>Body</th><th>Success</th><th>Errors</th></tr></thead><tbody>
+    <tr><td><code>POST /v1/sessions</code></td><td><code>{"request_id":"...","lifetime":"detachable"}</code>; normal client metadata header carries client configuration.</td><td><code>201</code> with session and initial attachment descriptor.</td><td><code>400</code> malformed; <code>409</code> request ID used with different input; <code>503</code> shutting down.</td></tr>
+    <tr><td><code>GET /v1/sessions</code></td><td>None.</td><td><code>200</code> summaries for detachable sessions.</td><td><code>503</code> shutting down.</td></tr>
+    <tr><td><code>GET /v1/sessions/{id}</code></td><td>None.</td><td><code>200</code> full descriptor.</td><td><code>404</code> unknown or cleaned up.</td></tr>
+    <tr><td><code>POST /v1/sessions/{id}/attachments</code></td><td>New client ID plus metadata supplied by the engine client.</td><td><code>201</code> attachment ID and generation.</td><td><code>404</code>; <code>409</code> already attached or terminating.</td></tr>
+    <tr><td><code>DELETE /v1/sessions/{id}/attachments/{attachment_id}?generation=N</code></td><td>None.</td><td><code>204</code>, including a stale close that no longer owns the attachment.</td><td><code>404</code> unknown session.</td></tr>
+    <tr><td><code>DELETE /v1/sessions/{id}</code></td><td>None.</td><td><code>204</code> after cleanup completes. Concurrent callers wait for the same cleanup.</td><td><code>404</code> only when no record or terminal tombstone is present.</td></tr>
+    <tr><td><code>POST /v1/sessions/{id}/queries</code></td><td>The same GraphQL JSON body accepted by <code>/query</code>, capped at 16 MiB.</td><td><code>202</code> after body and query record are stored.</td><td><code>400</code> invalid JSON envelope; <code>409</code> primary query exists; <code>413</code> too large; <code>410</code> terminating.</td></tr>
+    <tr><td><code>GET /v1/sessions/{id}/query</code></td><td>None.</td><td><code>200</code> status, timestamps, query ID, result availability, and command presentation data.</td><td><code>404</code> session or query absent.</td></tr>
+    <tr><td><code>GET /v1/sessions/{id}/query/result</code></td><td>None.</td><td>Saved GraphQL HTTP status, selected headers, and body after completion.</td><td><code>409</code> still running; <code>410</code> result exceeded limit; <code>404</code>.</td></tr>
+    <tr><td><code>GET /v1/sessions/{id}/telemetry/{traces|logs|metrics}</code></td><td>Optional <code>X-Last-Event-ID</code>.</td><td>Existing SSE format from the creator client's telemetry DB.</td><td><code>404</code>; <code>410</code> creator telemetry unavailable.</td></tr>
+  </tbody></table></div>
+  <p>Control errors use one JSON shape: <code>{"error":{"code":"already_attached","message":"session sess_... already has an attachment"}}</code>. CLI code switches on <code>code</code>, not English text.</p>
+
+  <h2 id="query">6. Detached query execution and saved output</h2>
+  <h3>Submission boundary</h3>
+  <p>The engine can validate the HTTP envelope and size before acceptance. It cannot promise GraphQL schema validation without beginning GraphQL execution. Therefore <code>202 Accepted</code> means the complete request bytes and query record are stored and execution has been scheduled. A GraphQL parse, validation, or resolver error becomes the saved GraphQL result. The response does not claim that the GraphQL operation is valid.</p>
+
+  <h3>Shared execution function</h3>
+  <p>Extract the body of <code>serveQuery</code> after client lookup into a function used by both ordinary and detached paths:</p>
+  <pre><code>func (srv *Server) executeGraphQL(
+    ctx context.Context,
+    client *daggerClient,
+    w http.ResponseWriter,
+    r *http.Request,
+) error {
+    // Existing DagQL in-flight accounting, workspace/module loading,
+    // schema creation, telemetry setup, lease provider, and gqlgen handler.
+}
+
+func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
+    return srv.executeGraphQL(sess.withClosingCancel(r.Context()), client, w, r)
+}
+
+func (srv *Server) runDetachedQuery(sess *daggerSession, q *detachedQuery) {
+    ctx := sessionContextWithStoredTrace(sess.closingCtx, q.traceContext)
+    req := q.newHTTPRequest(ctx)
+    writer := newResultFileWriter(q)
+    err := srv.executeGraphQL(ctx, q.creatorClient, writer, req)
+    q.finish(writer.commit(), err)
+}</code></pre>
+  <p>The detached context preserves the submitting trace context and engine metadata but does not preserve request cancellation. It is canceled only by the existing session closing context. The detached path enters the same <code>dagqlInFlight</code> accounting, so existing teardown waits for it.</p>
+
+  <h3>Files</h3>
+  <p>Use <code>&lt;worker root&gt;/session-results/&lt;engine process ID&gt;/&lt;session ID&gt;/</code>. The directory is mode <code>0700</code>; files are <code>0600</code>. IDs are engine-generated and validated before joining paths.</p>
+  <pre><code>request.json.tmp  → request.json     complete request, max 16 MiB
+result.body.tmp   → result.body     exact response body, max 64 MiB
+result.json                         status, headers, timestamps, error state</code></pre>
+  <p>Write temporary files and rename them only after a complete write. Attach never reads a temporary file. Preserve <code>Content-Type</code> and the GraphQL HTTP status. Do not preserve hop-by-hop headers. If the response exceeds 64 MiB, continue draining the handler output, delete the body, and set <code>result_discarded</code>. The exact behavior of gqlgen after a <code>ResponseWriter.Write</code> error must be verified before implementation; the writer should absorb excess bytes and report the limit through its own state instead of relying on gqlgen to return the write error.</p>
+  <p>P0 has one primary result, so a separate 256 MiB per-session aggregate limit has no effect and should not be implemented yet. Add that limit only when more than one saved result exists.</p>
+
+  <h3>CLI presentation data</h3>
+  <p>The saved GraphQL body is command-independent. <code>dagger call</code> also needs enough data to print the nested leaf exactly once. The submit request carries a small presentation record:</p>
+  <pre><code>type QueryPresentation struct {
+    Kind       string   `json:"kind"`        // "call" in P0
+    ResponsePath []string `json:"response_path"`
+    JSON       bool     `json:"json"`
+    Void       bool     `json:"void"`
+}</code></pre>
+  <p>Add a read-only <code>ResponsePath()</code> method to the in-repository use of querybuilder only if the dependency can expose it cleanly. The preferred smaller change is to record the aliases while <code>FuncCommand</code> constructs the selection. Attach parses <code>{"data":...}</code>, walks that path, and calls a pure formatting function. P0 supports void, scalar, enum, list, and object-ID output that needs no follow-up query. It rejects Changeset, LLM, terminal, pipe, <code>--output</code>, and any return handler that issues another GraphQL request or writes to the host.</p>
+
+  <h2 id="telemetry">7. Telemetry and result replay</h2>
+  <p>The detached query uses the creator <code>daggerClient</code> and therefore its tracer, logger, meter providers, and client telemetry DB. Detach must not call <code>ShutdownTelemetry</code>. It may force-flush while the client connection is still healthy, but the providers remain session-owned until termination.</p>
+  <p>The current telemetry routes look up the client named by request metadata. A new attachment has a different client ID, so those routes cannot replay the creator's query history directly. Add session control telemetry routes that resolve the session, select <code>creatorClientID</code>, and call the existing <code>TracesSubscribeHandler</code>, <code>LogsSubscribeHandler</code>, and <code>MetricsSubscribeHandler</code> with that <code>daggerClient</code>. Do not copy telemetry into another database.</p>
+  <p><code>dagger session attach</code> starts the normal frontend telemetry consumers against those three routes with no cursor. Existing SSE code replays all rows and follows live rows. When the query is complete, force-flush its providers, close the query-completion channel, let each SSE stream drain, then render the saved result. Ctrl+C closes only the new attachment and exits 130. It does not terminate the session.</p>
+
+  <h2 id="client">8. Engine client changes</h2>
+  <h3>Connection modes</h3>
+  <pre><code>type Params struct {
+    // existing fields
+    Detachable bool
+    AttachSessionID string
+}
+
+type SessionDescriptor struct {
+    ID         string
+    State      SessionState
+    Attachment *SessionAttachment
+    Query      *SessionQuery
+}</code></pre>
+  <p><code>Detachable</code> and <code>AttachSessionID</code> are internal engine-client fields in P0. They are not yet public Go SDK options. Reject both together. Reject either for nested <code>DAGGER_SESSION_PORT</code> and engine-to-engine connections.</p>
+  <p>Refactor <code>Connect</code> into transport setup followed by session setup. Ordinary mode remains byte-for-byte equivalent in behavior. Detachable create calls <code>POST /v1/sessions</code> after <code>startEngine</code>, applies the returned session and attachment IDs, then runs <code>startSession</code>, telemetry setup, and <code>daggerConnect</code>. Attach calls the attachment route first and then starts its own attachables.</p>
+
+  <h3>Close behavior</h3>
+  <pre><code>func (c *Client) Close() error {
+    if c.detachableAttachment != nil {
+        // Best effort while transport is still open.
+        closeAttachment(c.detachableAttachment)
+    } else {
+        shutdownServer()
+    }
+    return c.closeLocalResources()
+}
+</code></pre>
+  <p>Extract the common local cleanup from current <code>Close</code>. A detachable close never calls <code>/shutdown</code>. <code>Terminate(ctx)</code> calls the session delete route and then performs local cleanup. Control commands need a <code>ControlClient</code> that starts the engine transport but does not create a normal session, attachables, generated Dagger client, or telemetry subscription.</p>
+
+  <h2 id="cli">9. CLI implementation</h2>
+  <h3><code>call</code> and <code>api call</code></h3>
+  <p>Add a persistent <code>--detach</code> flag to each <code>FuncCommand</code>, not to the root command. Set <code>client.Params.Detachable</code> before <code>withEngine</code>. Schema discovery and argument conversion continue through normal requests.</p>
+  <p>At the leaf, detached mode replaces <code>makeRequest</code> with <code>submitDetachedRequest</code>. Build <code>query Query { ... }</code>, construct the GraphQL JSON body, include presentation data, submit it, print IDs, and return without calling <code>handleResponse</code>. If the CLI created the session but fails before the engine returns a query ID, it sends terminate as cleanup. Once the query ID is returned, normal CLI cleanup closes only the attachment.</p>
+  <p>Validate unsupported output before submission. Return Cobra usage exit 2 with direct messages such as <code>--detach cannot be used with --output</code> and <code>--detach does not support LLM results in P0</code>.</p>
+
+  <h3><code>session</code> command family</h3>
+  <p>Replace the hidden bare command with a visible parent. Move the SDK transport implementation to hidden <code>dagger session serve</code>. This is a hard launcher cut. Update every in-tree launcher and its tests in the same change.</p>
+  <pre><code>dagger session list [--json]
+dagger session inspect SESSION [--json]
+dagger session attach SESSION
+dagger session terminate SESSION [--json]
+dagger session serve [existing hidden SDK flags]</code></pre>
+  <p><code>list</code> and <code>inspect</code> use <code>ControlClient</code>. <code>attach</code> opens a detachable engine client, points frontend exporters at session telemetry routes, waits for the primary query, renders the saved result, and closes its attachment. <code>terminate</code> is usable while detached or attached. It does not require becoming the current attachment.</p>
+
+  <h3>Launcher cut</h3>
+  <p>Change the spawned argv from <code>session</code> to <code>session serve</code> in:</p>
+  <ul>
+    <li><code>sdk/go/engineconn/session.go</code></li>
+    <li><code>sdk/python/src/dagger/provisioning/_session.py</code> and provisioning tests</li>
+    <li><code>sdk/typescript/src/provisioning/bin.ts</code> and provisioning tests</li>
+    <li><code>sdk/rust/crates/dagger-sdk/src/core/cli_session.rs</code> and tests</li>
+    <li><code>sdk/elixir/lib/dagger/core/session.ex</code> and tests</li>
+    <li><code>sdk/java/dagger-java-sdk/src/main/java/io/dagger/client/engineconn/CLIRunner.java</code> and tests</li>
+  </ul>
+  <p>Do not retain a hidden bare <code>dagger session</code> alias. The CLI and SDK versions in one source tree change together.</p>
+
+  <h2 id="files">10. File-by-file change list</h2>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>File</th><th>Action</th><th>Concrete change</th></tr></thead><tbody>
+    <tr><td><code>engine/session.go</code></td><td class="yes">New</td><td>Control endpoint constants; JSON request/response types; lifetime, visible state, attachment, query, presentation, and protocol error types.</td></tr>
+    <tr><td><code>engine/opts.go</code></td><td>Modify</td><td>Add attachment ID and generation to <code>ClientMetadata</code>. Keep existing session/client/token fields. Encode them only for detachable clients.</td></tr>
+    <tr><td><code>engine/server/server.go</code></td><td>Modify</td><td>Add request-ID index, process ID, result root, startup stale-directory removal, and control route dispatch before session initialization. Graceful stop uses the same terminal routine.</td></tr>
+    <tr><td><code>engine/server/session.go</code></td><td>Modify</td><td>Add lifetime/attachment/query metadata; policy branch in release/reap; <code>detachAttachment</code>; idempotent <code>terminateSession</code>; extract <code>executeGraphQL</code>; preserve ordinary behavior.</td></tr>
+    <tr><td><code>engine/server/session_control.go</code></td><td class="yes">New</td><td>Create/list/inspect/attach/close/terminate handlers, descriptor snapshots, request-ID replay, JSON errors, path parsing, control telemetry routing.</td></tr>
+    <tr><td><code>engine/server/session_query.go</code></td><td class="yes">New</td><td>Primary-query state, request limit/storage, session-context execution, result writer, atomic commit, status/result handlers, completion wait, file cleanup.</td></tr>
+    <tr><td><code>engine/server/session_attachables.go</code></td><td>Modify</td><td>Validate attachment ID/generation at registration, mark attachment ready, add explicit generation-checked deregistration, notify session after health monitor removes a dead caller.</td></tr>
+    <tr><td><code>engine/server/telemetry.go</code></td><td>Small modify</td><td>Expose or reuse a helper that serves SSE for an explicitly selected <code>daggerClient</code>. No schema or database change.</td></tr>
+    <tr><td><code>engine/client/client.go</code></td><td>Modify</td><td>Internal detachable params, transport/session setup split, create/attach negotiation, lifetime-aware close, explicit terminate, metadata fields, telemetry endpoint selection.</td></tr>
+    <tr><td><code>engine/client/session_control.go</code></td><td class="yes">New</td><td><code>ControlClient</code>, JSON request helper, list/inspect/terminate, create/attach/close methods, typed protocol errors.</td></tr>
+    <tr><td><code>engine/client/session_query.go</code></td><td class="yes">New</td><td>Submit final GraphQL body, query status, wait/poll or completion stream, result fetch, session telemetry URL helpers.</td></tr>
+    <tr><td><code>internal/cmd/dagger/engine.go</code></td><td>Modify</td><td>Pass detachable params, keep created sessions only after query acknowledgment, install cleanup that terminates pre-submission failures, support control-only frontend setup.</td></tr>
+    <tr><td><code>internal/cmd/dagger/functions.go</code></td><td>Modify</td><td>Call-local flag, support validation, final GraphQL body construction, presentation path recording, detached submission, split result extraction/formatting into pure helpers.</td></tr>
+    <tr><td><code>internal/cmd/dagger/call.go</code></td><td>Modify</td><td>Help examples and command annotation for detachable call. No change to non-call commands.</td></tr>
+    <tr><td><code>internal/cmd/dagger/session.go</code></td><td>Refactor</td><td>Visible parent and hidden <code>serve</code> child. Keep <code>EngineSession</code> implementation under the child.</td></tr>
+    <tr><td><code>internal/cmd/dagger/session_control.go</code></td><td class="yes">New</td><td>List, inspect, attach, terminate commands; table/JSON printers; frontend replay; saved-result rendering; exit mapping.</td></tr>
+    <tr><td>SDK launcher files listed above</td><td>Modify</td><td>Spawn <code>dagger session serve</code>. Update exact-argv tests. No public detachable API.</td></tr>
+    <tr><td><code>engine/server/session_control_test.go</code></td><td class="yes">New</td><td>Registry, attachment, termination, request replay, ordinary/detachable separation, race barriers.</td></tr>
+    <tr><td><code>engine/server/session_query_test.go</code></td><td class="yes">New</td><td>Storage, execution context, result writer, limits, cancellation, replay, deletion.</td></tr>
+    <tr><td><code>engine/client/session_control_test.go</code></td><td class="yes">New</td><td>Wire requests, typed errors, close policy, control-only connection.</td></tr>
+    <tr><td><code>internal/cmd/dagger/session_test.go</code></td><td>Expand</td><td>Command tree, help, output, exit behavior, hidden serve flags.</td></tr>
+    <tr><td><code>internal/cmd/dagger/functions_test.go</code></td><td>Expand</td><td>Final request body, response path, supported results, rejection, no resubmission.</td></tr>
+    <tr><td><code>core/integration/detachable_session_test.go</code></td><td class="yes">New</td><td>Focused CLI end-to-end cases through engine-dev.</td></tr>
+  </tbody></table></div>
+  <p>No production file is removed. The old behavior of bare <code>dagger session</code> is removed when it becomes the public parent; its implementation moves to the child command.</p>
+
+  <h2 id="sequence">11. Ordered implementation sequence</h2>
+  <ol>
+    <li><strong>Wire types and control routing.</strong> Add types, route management requests before <code>getOrInitClient</code>, implement list/inspect snapshots, and test that control commands do not allocate ordinary sessions.</li>
+    <li><strong>Lifetime split.</strong> Add detachable state, create negotiation, generation-checked attach/close, and policy-dependent last-connection handling. Keep <code>removeDaggerSession</code> as the only full cleanup body. Prove ordinary disconnect remains unchanged.</li>
+    <li><strong>Client connection split.</strong> Refactor transport setup, add detachable create/attach, local close versus terminate, and control-only connections. Do this before CLI work so tests use the real client path.</li>
+    <li><strong>Stored query execution.</strong> Extract shared GraphQL execution, store the complete request, start it on session context, save the exact response, expose status/result, and integrate terminal cancellation.</li>
+    <li><strong>Telemetry replay.</strong> Route the creator DB through session endpoints and prove replay before completion and after completion.</li>
+    <li><strong>Call integration.</strong> Add flags, result support checks, final request construction, presentation metadata, ID output, and pre-acknowledgment failure cleanup.</li>
+    <li><strong>Session CLI and launcher cut.</strong> Add list/inspect/attach/terminate, move SDK transport to <code>serve</code>, update all launchers and exact-argv tests.</li>
+    <li><strong>End-to-end races and cleanup.</strong> Run focused engine-dev integration tests. Measure retained DagQL cache metadata while repeating calls in a live detachable session model. Document the measured growth; do not call P0 broadly releasable.</li>
+  </ol>
+
+  <h2 id="tests">12. Test plan</h2>
+  <p>Follow <code>skills/engine-debugging/SKILL.md</code>. Run focused tests with <code>dagger api call engine-dev test --pkg ... --run=...</code>, save full output under <code>/tmp</code>, and do not use broad repository suites while iterating.</p>
+  <h3>Engine server package tests</h3>
+  <ul>
+    <li>Ordinary session last-main disconnect calls full teardown. Detachable disconnect does not cancel <code>closingCtx</code>, stop services, release cache ownership, or delete the registry record.</li>
+    <li>Graceful close removes attachables immediately. Abrupt transport loss is detected by the existing health monitor; attach retries until the stale registration is removed.</li>
+    <li>Old attachment close after a new attach is a no-op because ID and generation do not match.</li>
+    <li>Two concurrent attach requests have one winner. Attach racing with terminate either completes before the terminal transition or gets a terminal error.</li>
+    <li>Two terminate requests share one teardown. Service stop, container release, telemetry shutdown, cache release, result deletion, and registry deletion each occur once.</li>
+    <li>Create response loss followed by the same request ID returns the same session. Different input with the same request ID returns conflict.</li>
+    <li>Query body is fully stored before <code>202</code>. Disconnect before storage gives no execution guarantee. Disconnect after <code>202</code> does not cancel execution.</li>
+    <li>GraphQL syntax and schema errors are saved results. Running, succeeded, failed, canceled, and result-discarded states are observable.</li>
+    <li>16 MiB request and 64 MiB result boundaries, atomic rename, partial file invisibility, result deletion, and stale process-directory cleanup.</li>
+    <li>Terminate during schema load, resolver work, response write, and result commit. The query completes or is canceled once; attach never sees a partial result.</li>
+    <li>Creator telemetry SSE replays from row zero, follows live rows, drains after query completion, and remains readable by a different attachment.</li>
+  </ul>
+
+  <h3>Engine client and CLI tests</h3>
+  <ul>
+    <li>Ordinary <code>Client.Close</code> still calls shutdown. Detachable close calls attachment close and never shutdown. Terminate calls session delete.</li>
+    <li>Control-only connections do not start attachables, a generated Dagger client, or a new session.</li>
+    <li><code>call --detach</code> and <code>api call --detach</code> help, human output, JSON output, and direct validation errors.</li>
+    <li>Final query construction matches the querybuilder ordinary request. Presentation paths extract scalar, list, enum, void, and object ID values.</li>
+    <li>Changeset, LLM, terminal, pipe, and <code>--output</code> are rejected before query submission.</li>
+    <li>A failure before query acknowledgment terminates the newly created session. A process exit after acknowledgment leaves it listed.</li>
+    <li>Attach running and completed queries. Verify attach fetches the saved result and never calls query submission.</li>
+    <li>Attach Ctrl+C exits 130 and leaves the session listed. Query failure returns exit 1 after printing the saved GraphQL error. A successful result returns zero.</li>
+    <li>List/inspect table and JSON fields are stable. Unknown session, already attached, terminating, and discarded-result errors map to documented exits.</li>
+    <li>Every SDK launcher invokes exactly <code>session serve</code> and still parses the existing port/token JSON.</li>
+  </ul>
+
+  <h3>Focused end-to-end tests</h3>
+  <ol>
+    <li>Run a slow engine-only call with a side effect counter. Wait for IDs, let the first CLI exit, attach while running, observe progress, receive the result, and verify the counter is one.</li>
+    <li>Run the same call and attach only after completion. Verify exact output and no second execution spans.</li>
+    <li>Kill the creator transport immediately after the server storage barrier. Verify completion. Kill it immediately before that barrier and verify inspect reports no primary query or a stored query according to which side won.</li>
+    <li>Run an operation that asks for a host file or registry callback after detach. Verify the query receives a clear client-unavailable error and the session remains listable and terminable.</li>
+    <li>Use two client implementations with different bytes for the same host path. Verify the second attachment cannot satisfy the first client's source object. This does not require two physical machines.</li>
+    <li>Terminate a running query. Verify cancellation, result state, service/container/provider cleanup, cache release, result-directory removal, and disappearance from list.</li>
+    <li>Verify an ordinary slow call still ends when its client disconnects.</li>
+    <li>Restart the engine process. Verify the old ID is absent and stale result files are removed.</li>
+    <li>Record <code>/debug/dagql/cache</code> metadata before and after repeated detached operations and after termination. This test measures the known cache retention problem; it does not define its solution.</li>
+  </ol>
+
+  <h3>Deterministic fault injection</h3>
+  <p>Add package-private test hooks backed by channels at these points: session published, create response write, attachment published, attachment cleared, query body committed, query goroutine started, GraphQL handler entered, result body committed, query status completed, terminal transition entered, each resource cleanup, and registry deletion. Use fake clocks only for timestamps. Do not use sleeps to decide race outcomes.</p>
+
+  <h2 id="acceptance">13. P0 acceptance criteria</h2>
+  <ol>
+    <li><code>dagger call --detach</code> and <code>dagger api call --detach</code> return a session ID and query ID only after the engine stores the complete final request.</li>
+    <li>The initiating CLI can exit gracefully or lose its network connection after acknowledgment without canceling the query or session.</li>
+    <li><code>session list</code> and <code>inspect</code> show attached/detached state and primary-query state without creating another session.</li>
+    <li><code>session attach</code> works before and after query completion, replays progress, prints the saved result, returns the query outcome, and never reruns the query.</li>
+    <li>Only one attachment is current. Delayed close from an old attachment cannot clear a new one.</li>
+    <li>A missing client callback fails the requesting operation and does not terminate the session.</li>
+    <li><code>session terminate</code> is race-safe and idempotent while the terminal record exists. It releases all resources through the existing cleanup path and removes saved files.</li>
+    <li>Ordinary sessions retain their current IDs, startup, <code>/shutdown</code>, disconnect, and cleanup behavior.</li>
+    <li>Engine restart ends all detachable sessions. No result file is treated as a restorable session.</li>
+    <li>The hidden SDK transport is available only as <code>dagger session serve</code>, and every in-tree launcher uses it.</li>
+    <li>Focused package and end-to-end tests pass through the required engine-dev test path.</li>
+  </ol>
+
+  <h2 id="risks">14. Known limits and implementation validation points</h2>
+  <div class="decision"><strong>Cache ownership remains unresolved.</strong> P0 keeps the current session-wide DagQL ownership model. An indefinitely live session can keep a large result graph from pruning. P0 must measure this growth and is suitable for controlled evaluation only. Broad release requires a separate design that defines which results, services, and object IDs remain owned.</div>
+  <ul>
+    <li><strong>Result formatting:</strong> confirm every P0-supported <code>FuncCommand</code> result can be rendered from the saved GraphQL body without a follow-up query. Reject any type that cannot.</li>
+    <li><strong>Response writer:</strong> verify gqlgen behavior when the result limit is crossed. Use a writer that drains and records overflow rather than depending on error propagation.</li>
+    <li><strong>Telemetry completion:</strong> prove provider flush and SSE drain ordering under terminate and normal completion. Do not shut down creator providers on detach.</li>
+    <li><strong>Attachable health delay:</strong> the existing monitor normally requires two failed checks and uses bounded RPC checks. Attach must retry with a visible status; it must not steal an attachment.</li>
+    <li><strong>Callback semantics:</strong> P0 intentionally leaves role callbacks bound to current code behavior. The later audit must separate creator, current main, and concrete source client. Do not describe P0 attach as making old client-backed values portable.</li>
+    <li><strong>Request acknowledgment:</strong> <code>202</code> proves storage and scheduling, not GraphQL validity or eventual success.</li>
+    <li><strong>Session creation leak:</strong> a client that disappears after creation but before query submission leaves a discoverable session. The CLI terminates it when it can prove no query was acknowledged. Network loss can still leave one; explicit list and terminate are the recovery path.</li>
+    <li><strong>Protocol version:</strong> detachable clients require an engine containing these routes and metadata fields. Return a direct incompatible-engine error. Do not add fallback behavior that converts a detachable request into an ordinary session.</li>
+  </ul>
+
+  <div class="finding"><strong>Recommended implementation boundary:</strong> land P0 behind an experimental CLI flag if release policy requires it, but implement the production lifecycle and cleanup paths directly. Do not build a second prototype registry or a test-only execution path that must later be replaced.</div>
+</main></body></html>
