@@ -29,6 +29,7 @@ legacy-default-path = true
 source = "toolchains/dev"
 
 [modules.dev.settings]
+
 # Linux default. Override per-invocation with --docker=$DOCKER_HOST when the
 # active Docker context points somewhere else.
 docker = "unix:///var/run/docker.sock"
@@ -70,13 +71,17 @@ legacy-default-path = true
 # settings.sourcePath = ""
 
 [modules.golang]
-source = "github.com/dagger/go@5683fb4f7e2e909a453eba727fb982077d5d11b5"
+source = "github.com/dagger/go@28c691078b79071e27d1df4135adbba3b84a2fb7"
 legacy-default-path = true
 
 [modules.golang.settings]
 generate = "docs/current_docs/reference"
-lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
-test = "e2e/**"
+# sdk/go/e2e/internal holds a generated API client, which is its own Go module.
+# It carries no go.sum and pins an unpublished dagger.io/dagger, so it only
+# builds through its parent module's replace directives — not on its own, the
+# way lint and test drive a module root. Drop this once dagger/go-sdk#20 lands.
+lint = ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!sdk/go/e2e/internal,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
+test = "e2e/**,sdk/go/**,!sdk/go/e2e/internal"
 
 # Go version used for the default Go base image.
 # version = ""
@@ -165,16 +170,9 @@ source = "toolchains/security"
 legacy-default-path = true
 
 [modules.security.settings]
+
 # Paths to exclude from the source tree before scanning.
-ignore = [
-  "bin",
-  ".git",
-  "docs",
-  "sdk/rust/examples",
-  "sdk/rust/crates/dagger-sdk/examples",
-  "core/integration/testdata",
-  "dagql/idtui/viztest",
-]
+ignore = ["bin", ".git", "docs", "sdk/rust/examples", "sdk/rust/crates/dagger-sdk/examples", "core/integration/testdata", "dagql/idtui/viztest"]
 
 [modules.shellcheck]
 source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
@@ -289,3 +287,7 @@ path = "toolchains/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = "toolchains/rust-sdk-dev"
+
+[[modules.dagger-go-sdk.as-sdk.clients]]
+path = "sdk/go/e2e/internal/dagger/engine-dev"
+module = "toolchains/engine-dev"
