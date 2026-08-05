@@ -72,7 +72,7 @@ func TestReconcileGitTagRefs(t *testing.T) {
 	shaB := strings.Repeat("b", 40)
 	shaC := strings.Repeat("c", 40)
 
-	tags, err := reconcileGitTagRefs(
+	tags := reconcileGitTagRefs(
 		map[string]string{
 			"refs/tags/local-only": shaA,
 			"refs/tags/matching":   shaB,
@@ -82,18 +82,21 @@ func TestReconcileGitTagRefs(t *testing.T) {
 			"refs/tags/remote-only": shaC,
 		},
 	)
-	require.NoError(t, err)
 	require.Equal(t, map[string]string{
 		"refs/tags/local-only":  shaA,
 		"refs/tags/matching":    shaB,
 		"refs/tags/remote-only": shaC,
 	}, gitReleaseTagsByName(tags))
 
-	_, err = reconcileGitTagRefs(
+	// a diverging tag adopts the remote SHA: a stale local checkout from
+	// before a force-push shouldn't produce an error
+	diverged := reconcileGitTagRefs(
 		map[string]string{"refs/tags/v1.0.0": shaA},
 		map[string]string{"refs/tags/v1.0.0": shaB},
 	)
-	require.ErrorContains(t, err, `git tag "v1.0.0" resolves to different commits`)
+	require.Equal(t, map[string]string{
+		"refs/tags/v1.0.0": shaB,
+	}, gitReleaseTagsByName(diverged))
 }
 
 func TestSemverReleaseTags(t *testing.T) {

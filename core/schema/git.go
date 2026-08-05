@@ -1724,10 +1724,7 @@ func selectGitReleaseTag(ctx context.Context, commit *core.GitCommit, includePre
 			}
 		}
 
-		tags, err := reconcileGitTagRefs(localTags, remoteTags)
-		if err != nil {
-			return err
-		}
+		tags := reconcileGitTagRefs(localTags, remoteTags)
 		tags = semverReleaseTags(tags, includePreRelease)
 		sortGitReleaseTags(tags)
 
@@ -1833,15 +1830,15 @@ func defaultGitFetchRemote(ctx context.Context, git *gitutil.GitCLI) (string, er
 	return "origin", nil
 }
 
-func reconcileGitTagRefs(localTags, remoteTags map[string]string) ([]gitReleaseTag, error) {
+func reconcileGitTagRefs(localTags, remoteTags map[string]string) []gitReleaseTag {
 	byName := make(map[string]gitReleaseTag, len(localTags)+len(remoteTags))
 	for name, sha := range localTags {
 		byName[name] = gitReleaseTag{RefName: name, SHA: sha}
 	}
+	// the remote wins when a tag resolves differently: a local checkout may
+	// simply predate a force-pushed tag, and that staleness shouldn't turn
+	// into an error the remote itself would never produce
 	for name, remoteSHA := range remoteTags {
-		if local, ok := byName[name]; ok && local.SHA != remoteSHA {
-			return nil, fmt.Errorf("git tag %q resolves to different commits locally (%s) and remotely (%s)", strings.TrimPrefix(name, "refs/tags/"), local.SHA, remoteSHA)
-		}
 		byName[name] = gitReleaseTag{RefName: name, SHA: remoteSHA}
 	}
 
@@ -1849,7 +1846,7 @@ func reconcileGitTagRefs(localTags, remoteTags map[string]string) ([]gitReleaseT
 	for _, tag := range byName {
 		tags = append(tags, tag)
 	}
-	return tags, nil
+	return tags
 }
 
 func semverReleaseTags(tags []gitReleaseTag, includePreRelease bool) []gitReleaseTag {
