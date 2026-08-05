@@ -432,7 +432,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Errors if the current module is not installed as an SDK in this workspace.`).
 			Args(
 				dagql.Arg("workspace").Doc(
-					`The workspace to resolve SDK-role data against. Defaults to the current workspace.`),
+					`The workspace to resolve SDK-role data against.`),
 			),
 	}.Install(dag)
 
