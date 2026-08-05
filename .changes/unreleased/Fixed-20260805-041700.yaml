@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Nested module runtimes now use the invoking workspace lock for their lookups,
+  so dependency generators record live pins and frozen generation can consume
+  them without inheriting the caller's `currentWorkspace`.
+time: 2026-08-05T04:17:00Z
+custom:
+  Author: sipsma
+  PR: 13843
