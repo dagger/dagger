@@ -356,7 +356,16 @@ map capacity, dependency fan-out, call-string length, payload size, imported
 envelope size, and allocator fragmentation. It bounds the reproduced
 population-growth problem; it is not a process RSS measurement.
 
-The built-in maximum is 4 GiB and the target is 3 GiB. Configuration is under
+The class-slot coefficient is 768 rather than the initial 1,024 hypothesis
+because 1,024 produced a 2.199 churn-compaction estimate-to-heap ratio, outside
+the calibration gate's `[0.5, 2]` upper bound. Recalibration at 768 produced a
+1.649 ratio while the common one-million-result shape still estimates
+4,352,000,000 bytes and crosses the 4 GiB trigger.
+
+The built-in maximum of 4 GiB and target of 3 GiB are Erik-approved provisional
+implementation defaults. They remain subject to final tuning and canary
+evidence before shipping; that tuning does not block the implementation.
+Configuration is under
 `gc.dagqlCache.maxEstimatedBytes` and
 `gc.dagqlCache.targetEstimatedBytes`. Both are absolute `int64` byte values;
 zero resolves to the built-in default, and the resolved target must be positive
@@ -484,7 +493,8 @@ Candidates are sorted roughly by:
 This is not sophisticated. It is a basic heuristic.
 
 All structural candidates have equal coarse direct credit, so step 4 does not
-reorder them in structural mode.
+reorder them in structural mode. When the time fields also tie, the stable
+result ID is the final deterministic refinement.
 
 There is a lot of room to improve this later.
 
@@ -751,6 +761,12 @@ were 1.463, 1.561, and 1.649. The transitions were well above the 0-byte no-op
 control delta. Session release took 1.395 s. Forced compaction took 11.335 ms,
 reduced class slots from 202,000 to 2,000, and reduced post-GC `HeapAlloc` from
 143,694,784 B to 50,541,296 B. The final floor estimate was 8,704,000 B.
+
+A separate sparse forced-compaction measurement allocated exactly 1,000,000
+class slots, released all but the same 2,000-result unpruneable floor, and then
+timed the `egraphMu` write-lock hold. Compaction reduced the slots from
+1,000,000 to 2,000 in 31.709 ms; the fresh benchmark process reached 4,341,664
+KiB maximum RSS.
 
 At one million results, each fixture had `R=T=C=1,000,000` before pruning and a
 4,352,000,000-byte estimate. Every fixture ended with zero results, terms, and
