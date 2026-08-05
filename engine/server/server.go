@@ -185,6 +185,7 @@ type NewServerOpts struct {
 	BuildkitConfig *bkconfig.Config
 }
 
+//nolint:gocyclo // NewServer performs the engine's existing linear initialization sequence.
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	cfg := opts.Config
 	bkcfg := opts.BuildkitConfig
@@ -212,13 +213,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
-	localCacheGCEnabled, dagqlCacheMaxEstimatedBytes, dagqlCacheTargetEstimatedBytes, err := resolveDagqlCacheGCConfig(cfg.GC, ociCfg.GCConfig)
-	if err != nil {
+	var err error
+	if err := srv.configureLocalCacheGC(cfg.GC, ociCfg.GCConfig); err != nil {
 		return nil, err
 	}
-	srv.localCacheGCEnabled = localCacheGCEnabled
-	srv.dagqlCacheMaxEstimatedBytes = dagqlCacheMaxEstimatedBytes
-	srv.dagqlCacheTargetEstimatedBytes = dagqlCacheTargetEstimatedBytes
 
 	// Let core (e.g. changeset export) drop this server's per-client workspace
 	// cache after workspace config is written to the host. One engine = one
@@ -466,6 +464,17 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+func (srv *Server) configureLocalCacheGC(gcConfig config.GCConfig, workerGCConfig bkconfig.GCConfig) error {
+	enabled, maximum, target, err := resolveDagqlCacheGCConfig(gcConfig, workerGCConfig)
+	if err != nil {
+		return err
+	}
+	srv.localCacheGCEnabled = enabled
+	srv.dagqlCacheMaxEstimatedBytes = maximum
+	srv.dagqlCacheTargetEstimatedBytes = target
+	return nil
 }
 
 func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
