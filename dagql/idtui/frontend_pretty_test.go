@@ -1405,6 +1405,7 @@ func TestFlowingModeNavNoCropWhenFocusOnscreen(t *testing.T) {
 		t.Fatalf("unexpected crop hint when the focus was already onscreen:\n%s", visible)
 	}
 }
+
 // TestFlowingModeScopedToLiveUnzoomedShell verifies flowingMode is only active
 // for live, un-zoomed shell rendering -- the final report and an explicitly
 // zoomed span keep the viewport-clipped behaviour that's correct for those
@@ -1790,4 +1791,3 @@ func containsStyledLine(frame, text, styleSeq string) bool {
 func visibleEscapes(frame string) string {
 	return strings.ReplaceAll(frame, "\x1b", "\\x1b")
 }
-

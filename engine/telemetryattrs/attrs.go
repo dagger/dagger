@@ -29,7 +29,7 @@ const (
 	// the biggest driver of context growth, so an inordinate one is easy to
 	// spot in a conversation. The count is an estimate (chars/4), not a
 	// provider-reported figure. (int64)
-	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens"
+	LLMToolResultTokensAttr = "dagger.io/llm.tool.result_tokens" //nolint:gosec // attribute name, not a credential
 
 	// Streaming progress over OTel logs.
 	//

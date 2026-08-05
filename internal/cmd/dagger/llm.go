@@ -127,9 +127,7 @@ func NewLLMSession(
 	if sink, ok := frontend.(interface {
 		SetLLMCostFunc(idtui.LLMCostFunc)
 	}); ok {
-		sink.SetLLMCostFunc(func(provider, model string, input, output, cacheReads, cacheWrites int64) float64 {
-			return modelcatalog.Cost(provider, model, input, output, cacheReads, cacheWrites)
-		})
+		sink.SetLLMCostFunc(modelcatalog.Cost)
 	}
 
 	s.reset()

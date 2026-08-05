@@ -47,7 +47,7 @@ func TestPromptFrameRendersFramedInput(t *testing.T) {
 		t.Fatalf("prompt input line not found:\n%s", visibleEscapes(joined))
 	}
 	// The input must sit between the two rules.
-	if !(barIdxs[0] < inputIdx && inputIdx < barIdxs[len(barIdxs)-1]) {
+	if barIdxs[0] >= inputIdx || inputIdx >= barIdxs[len(barIdxs)-1] {
 		t.Fatalf("input line (%d) is not framed by rules (%v):\n%s", inputIdx, barIdxs, visibleEscapes(joined))
 	}
 
