@@ -10,8 +10,9 @@
 #
 # Shape of the loop (see `start` for the wiring):
 #   - build the `dagger` CLI from source (cliDev)
-#   - drop it into an engine-dev Playground container (a client with a bound
-#     from-source engine, so `dagger call/check/...` actually run) at a
+#   - drop it into a small client container run with privileged nesting (so it
+#     talks to this session's engine, and `dagger call/check/agent` actually
+#     run with the session's LLM auth) at a
 #     configurable workdir, with DAGGER_TUI_CONSOLE=:PORT + DAGGER_PROGRESS=tty
 #   - run the command under test as a Service and .start() it (so it persists
 #     across tool calls within this dagger session)
@@ -68,6 +69,15 @@ type TuiQa {
     Port the HTTP TUI console listens on inside the container.
     """
     port: Int! = defaultPort,
+    """
+    Address of an already-running engine to attach to instead of building and
+    binding a fresh one — e.g. the tcp://<host>:1234 endpoint the engine-lab
+    start tool prints. The TUI session then runs against THAT engine, so its
+    debug endpoints and logs observe exactly what the TUI is driving. Note:
+    the attached runner has no LLM auth inherited via nesting, so prefer the
+    default for `args: ["agent"]` sessions.
+    """
+    engine: String! = "",
   ): TuiQa! @cache(policy: FunctionCachePolicy.Never) {
     # @cache(Never): starting a service is a side effect that must actually run
     # every invocation, not be served stale from the dagql session cache.
@@ -77,32 +87,94 @@ type TuiQa {
     # build the dagger CLI from source
     let cli = cliDev(ws: source, source: srcDir).binary
 
-    # a client container with a from-source engine already bound + the released
-    # dagger CLI installed; we overwrite the CLI with our from-source build.
-    let runner = engineDev(source)
-      .playground
+    # The client container the command under test runs in. Default: a lean
+    # client run with experimentalPrivilegedNesting, so it talks to the
+    # session's own engine and inherits its LLM auth (required for `agent`).
+    # With `engine`: the same lean client, pointed at the existing engine by
+    # address instead — that engine is reachable with no service binding
+    # because engine-lab starts its service under the session DNS domain, but
+    # nothing forwards LLM credentials to it.
+    let lean = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl", "git"])
+
+    let nesting = engine == ""
+
+    let base = if (nesting) {
+      lean
+    } else {
+      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
+    }
+
+    # we overwrite (or install) the CLI with our from-source build.
+    let runner = base
       .withFile("/usr/local/bin/dagger", cli)
-      .withMountedDirectory(workdir, srcDir)
+      .withDirectory(workdir, srcDir)
       .withWorkdir(workdir)
+      # The workspace snapshot carries no usable .git — at best a worktree
+      # pointer file whose target only exists on the real host — but agent
+      # workspace tools (commit, git.uncommitted, ctrl+s) need an actual
+      # repository. Re-initialize one from the snapshot so `dagger agent`
+      # sessions can stage commits.
+      .withExec([
+        "sh", "-c",
+        "rm -rf .git && git init -q -b main && git add -A && git " + "-c user.email=tui-qa@localhost -c user.name=tui-qa " + "commit -qm 'workspace snapshot'",
+      ])
       .withEnvVariable("DAGGER_TUI_CONSOLE", ":" + toString(port))
       .withEnvVariable("DAGGER_PROGRESS", "tty")
       .withExposedPort(port)
 
-    # run the command under test as a persistent service serving the console
-    let svc = runner
-      .asService(args: ["dagger"] + args)
-      .start
+    # run the command under test as a persistent service serving the console.
+    # Short-lived commands (e.g. ["version"]) exit before the console port's
+    # healthcheck ever passes, so `.start` fails with an opaque "service
+    # exited before healthcheck" error — rescue that by rerunning the command
+    # synchronously and reporting its output instead.
+    let svc = {
+      runner
+        .asService(
+          args: ["dagger"] + args,
+          experimentalPrivilegedNesting: nesting,
+        )
+        .start
+    } rescue {
+      e: Error => {
+        let ran = runner
+          .withExec(
+            ["dagger"] + args,
+            expect: ReturnType.ANY,
+            experimentalPrivilegedNesting: nesting,
+          ).{{exitCode, combinedOutput}}
+        print(`Command exited immediately (exit code ${ran.exitCode}).`)
+        print("")
+        print(```
+          The TUI console never came up; for one-shot commands use the engine-lab dagger tool.
 
-    # a tiny client we curl the console from, on every interaction tool
-    let curlCtr = container
-      .from("alpine:3.20")
-      .withExec(["apk", "add", "--no-cache", "curl"])
-      .withServiceBinding("tui-qa", svc)
+          == OUTPUT ==
+        ```)
+        print(ran.combinedOutput)
+        null
+      }
+    }
 
-    self.client = curlCtr
-    self.service = svc
-    self.url = "http://tui-qa:" + toString(port)
-    self
+    if (svc == null) {
+      # failure path: leave client/service/url unset so later tools still
+      # report "No active TUI session. Call the tui-qa start tool first."
+      self
+    } else {
+      # a tiny client we curl the console from, on every interaction tool
+      let curlCtr = container
+        .from("alpine:3.20")
+        .withExec(["apk", "add", "--no-cache", "curl"])
+        .withServiceBinding("tui-qa", svc)
+
+      if (engine != "") {
+        print("Attached to existing engine at " + engine)
+      }
+      self.client = curlCtr
+      self.service = svc
+      self.url = "http://tui-qa:" + toString(port)
+      self
+    }
   }
 
   # NOTE: every tool that reads or drives the live console MUST be
@@ -172,30 +244,22 @@ type TuiQa {
   }
 
   """
+  Show one span in depth: name, status, timing, the dagui flags that shape how
+  the UI treats it (internal, passthrough, encapsulation, log/span roll-up,
+  service, …), and the parent chain up to the root with each ancestor's flags.
+  Get ids from `spans`; use this to answer "why is this span hidden / why
+  didn't its logs roll up".
+  """
+  span(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/span?id=" + spanHex)
+  }
+
+  """
   Show the console's own endpoint + keymap help.
   """
   help: String! {
     get("/help")
   }
-
-  # """
-  # Stop the TUI session and release the underlying service.
-  # """
-  # stop: TuiQa! @cache(policy: FunctionCachePolicy.Never) {
-  #   if (service != null) {
-  #     # FIXME(dang bug): this _says_ it returns an object but at runtime it's
-  #     # actually the string ID
-  #     service.stop
-  #     print("Stopped TUI session")
-  #   }
-  #   # FIXME(dang bug): ideally we would reset back to the initial state by
-  #   # doing a self-call, but they don't work in Dang yet
-  #   # tuiQa
-  #   self.service = null
-  #   self.url = ""
-  #   self.client = container
-  #   self
-  # }
 
   # A self-call (`tuiQa`) yields the module's own type as it lives in the
   # runtime schema — a Dagger.TuiQa, which carries a GraphQL id and implements
@@ -216,7 +280,7 @@ type TuiQa {
 
   let get(path: String!): String! {
     if (url == "") {
-      return "No active TUI session. Call `start` first."
+      return "No active TUI session. Call the tui-qa start tool first."
     }
     client
       # bust Dagger's exec cache so each read hits the live console, not a
@@ -233,7 +297,7 @@ type TuiQa {
 
   let post(path: String!, body: String!): String! {
     if (url == "") {
-      return "No active TUI session. Call `start` first."
+      return "No active TUI session. Call the tui-qa start tool first."
     }
     client
       .withEnvVariable("TUI_QA_NONCE", Random.string)
@@ -253,20 +317,32 @@ type TuiQa {
     affordance — see the `tui-console` skill).
 
     Workflow:
-    - `start(args: ["call", "test"])` builds the CLI from the workspace source,
-      runs the command against a from-source engine, and starts serving the TUI.
+    - the tui-qa start tool (e.g. args: ["call", "test"]) builds the CLI from
+      the workspace source, runs the command against a from-source engine, and
+      starts serving the TUI.
     - `screen` reads the current rendered terminal. Poll it to watch progress;
       startup takes a little while (build + engine connect), and the tools retry
       the connection for you.
     - `key`, `typeText`, `resize`, `zoom`, `spans` drive and inspect the TUI,
       exactly like the endpoints in the `tui-console` skill.
+    - `span(spanHex)` inspects one span in depth (status, timing, dagui flags
+      like internal/passthrough/roll-up, and the parent chain with each
+      ancestor's flags) — use it to answer "why is this span hidden / why
+      didn't its logs roll up". Get ids from `spans`.
     - Check for crashes explicitly: grep the screen for "panic:", "fatal error".
-    - `stop` when done.
+    - the tui-qa stop tool when done.
 
-    Interactive prompt mode works too: `start(args: ["agent"])` brings up the
+    Interactive prompt mode works too: starting with args: ["agent"] brings up the
     live `dagger agent` prompt. Drive it by `typeText`-ing a line into the
     editline and `key enter` to submit; `key esc` toggles nav/input mode.
     The runner uses experimentalPrivilegedNesting so it inherits the outer
     session's LLM auth (no credential setup needed).
+
+    If engine-lab tools are available, their start tool prints a
+    tcp://<host>:1234 endpoint — pass it as `start(engine: ...)` to run the
+    TUI against THAT engine instead of a fresh one, so its debug endpoints
+    and logs observe exactly what the TUI is driving. Caveats: no LLM auth
+    in that mode (avoid for `args: ["agent"]`), and restarting/stopping the
+    lab engine breaks the attached TUI session — start a new one after.
   """
 }

@@ -1,0 +1,379 @@
+# engine-lab: give a Dagger coding agent a from-source engine to debug against.
+#
+# A bash-less agent investigating engine bugs needs the loop a human gets from
+# `./hack/dev` + `./hack/with-dev` (see the `engine-debugging` skill): build
+# the engine and CLI from the workspace source, run commands against the live
+# engine, poke its debug endpoints, and re-run after edits. This module
+# reimplements that loop as @agent tools, following the same session-state
+# pattern as `modules/tui-qa/main.dang`:
+#
+#   - `start`/`restart`: build engine + CLI from the workspace and run the
+#     engine as a Service held as session state, with the `:6060/debug/...`
+#     endpoints enabled — the equivalent of `./hack/dev`.
+#   - `exec`: run a command in a client container bound to that engine, with
+#     the from-source `dagger` CLI on PATH — the equivalent of
+#     `./hack/with-dev ...`. It takes the (auto-injected) `Workspace!` itself,
+#     so the *current* tree — including edits made since `start` — is mounted
+#     fresh on every call. Freshness is structural, not procedural: the engine
+#     *binary* still only changes on `restart` (rebuilding is expensive and
+#     deliberate), but the files a command sees always match the workspace.
+#   - `query`: send raw GraphQL straight to the engine.
+#   - `debugGet`/`debugJq`: curl the engine's debug HTTP server (routes are
+#     defined in cmd/engine/debug.go).
+#   - `engineTest`: run engine tests via the engine-dev toolchain (spins its
+#     own ephemeral engine; independent of `start`).
+#
+# Engine log access deliberately has no tool here: the engine service's spans
+# are discoverable via ListServices, and ReadLogs(span: ..., grep: ...) reads
+# them — the sandbox equivalent of `docker logs dagger-engine.dev | grep`.
+
+let defaultWorkdir = "/src"
+let debugPort = 6060
+# Tail-truncate command output to keep tool results context-friendly.
+let tailLines = 200
+
+# Last `lines` lines of s, with a truncation marker when shortened.
+let tail(s: String!, lines: Int! = tailLines): String! {
+  let all = s.split("\n")
+  if (all.length <= lines) {
+    s
+  } else {
+    let marker = "… (" + toString(all.length - lines) + " earlier lines truncated) …"
+    marker + "\n" + all.takeLast(lines).join("\n")
+  }
+}
+
+type EngineLab {
+  # ---- session state (private so it isn't exposed as tools; persists across
+  # tool calls the same way tui-qa's `client`/`service` do) ------------------
+
+  # client container bound to the running engine service: from-source `dagger`
+  # CLI on PATH, curl + jq + git installed. Deliberately does NOT carry a
+  # workspace mount: the tree is mounted per-call from the caller's current
+  # Workspace, so no tool can ever run against a stale snapshot.
+  let client: Container! = container
+  # the started from-source engine service (null until `start`)
+  let engine: Service = null
+  # tcp://<host>:1234 address of the running engine, resolvable session-wide
+  # (digest hostname + session DNS domain) — the handoff other tools (e.g.
+  # tui-qa's `start`) use to attach to THIS engine ("" until `start`)
+  let engineEndpoint: String! = ""
+
+  """
+  Compose the engine-lab tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Build the dagger engine + CLI from the workspace source and run the engine
+  as a persistent service — the sandbox equivalent of `./hack/dev`.
+
+  The engine runs with its debug endpoints enabled (see `debugGet`/`debugJq`),
+  and a client container is prepared for `exec`/`query`: the from-source
+  `dagger` CLI on PATH, connected to the engine, with the workspace source
+  mounted at /src. After editing engine code, call `restart` to rebuild.
+  The engine's own logs are readable via ListServices + ReadLogs.
+  """
+  start(
+    source: Workspace!,
+  ): EngineLab! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): starting a service is a side effect that must actually run
+    # every invocation, not be served stale from the dagql session cache.
+    if (engine != null) {
+      engine.stop
+      print("Stopped previous engine service")
+    }
+
+    let srcDir = source.directory("/")
+    let dev = engineDev(ws: source)
+
+    # The from-source engine service. This replicates engine-dev's Service()
+    # (fresh state volume, engine entrypoint, incremented subnet for nesting)
+    # and adds --debugaddr, which the stock Playground service doesn't enable.
+    let svcDev = dev.incrementSubnet
+    let engineCtr = svcDev
+      .container
+      .withExposedPort(1234)
+      .withMountedCache(
+        "/var/lib/dagger",
+        cacheVolume("engine-lab-state-" + Random.string),
+      )
+    let engineArgs = [
+      "--addr", "tcp://0.0.0.0:1234",
+      "--network-name", "dagger-lab",
+      "--network-cidr", svcDev.networkCidr,
+      "--debugaddr", "0.0.0.0:" + toString(debugPort),
+    ]
+    # Dang bug workaround: a let-bound `.start` result materializes as the
+    # service's string ID, so no methods can be called on it. Derive the
+    # service twice from the same let-bound container (identical args ->
+    # identical service ID): one unbroken chain for the hostname, one to
+    # start. The digest hostname resolves session-wide (session DNS domain),
+    # so OTHER modules' containers can dial it with no binding — that's the
+    # tui-qa handoff.
+    let host = engineCtr
+      .asService(args: engineArgs, useEntrypoint: true, insecureRootCapabilities: true)
+      .hostname
+    let svc = engineCtr
+      .asService(args: engineArgs, useEntrypoint: true, insecureRootCapabilities: true)
+      .start
+
+    # The client container: installClient binds the engine service under the
+    # `dagger-engine` hostname and points _EXPERIMENTAL_DAGGER_RUNNER_HOST at
+    # it; we overwrite the CLI with our from-source build (same
+    # belt-and-suspenders as tui-qa). The workspace is NOT mounted here — the
+    # CLI and the engine binding are what's expensive and deliberate to pin,
+    # while the tree is re-mounted per call (see `withSource`).
+    let base = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl", "jq", "git"])
+    let cli = cliDev(ws: source, source: srcDir).binary
+
+    self.client = dev
+      .installClient(client: base, service: svc)
+      .withFile("/usr/local/bin/dagger", cli)
+    self.engine = svc
+    self.engineEndpoint = "tcp://" + host + ":1234"
+    print(
+      "Engine listening at " + self.engineEndpoint
+        + " — pass this to the tui-qa start tool's `engine` arg to QA the TUI"
+        + " against THIS engine (debugGet/debugJq/ReadLogs then introspect the"
+        + " same engine the TUI is driving)."
+    )
+    self
+  }
+
+  """
+  Rebuild the engine + CLI from the current workspace source and replace the
+  running engine service. Call after editing engine code, then re-run your
+  repro with `exec`. Breaks any TUI session attached to the old engine —
+  restart those after (the tui-qa start tool with the freshly printed
+  endpoint).
+  """
+  restart(
+    source: Workspace!,
+  ): EngineLab! @cache(policy: FunctionCachePolicy.Never) {
+    start(source: source)
+  }
+
+  """
+  The tcp://<host>:1234 address of the running engine, resolvable from any
+  container in this session. Pass it to the tui-qa start tool's `engine` arg
+  to point a TUI session at this engine. Empty until the engine-lab start
+  tool runs.
+  """
+  endpoint: String! {
+    if (engineEndpoint == "") {
+      "No engine session. Call the engine-lab start tool first."
+    } else {
+      engineEndpoint
+    }
+  }
+
+  # NOTE: every tool that talks to the live engine MUST be
+  # @cache(policy: FunctionCachePolicy.Never). Without it, dagql memoizes the
+  # function result by (object id + field + args) across tool-call queries in
+  # the session, so a repeated call would replay the first call's output
+  # instead of re-running. The nonce env var busts the exec cache underneath
+  # for the same reason (same trick as tui-qa).
+  """
+  Run a `dagger` command against the live from-source engine - the equivalent
+  of `./hack/with-dev ./bin/dagger ...`.
+  """
+  dagger(
+    source: Workspace!,
+    args: [String!]!,
+  ): Void @cache(policy: FunctionCachePolicy.Never) {
+    if (engine == null) {
+      print("No engine session. Call the engine-lab start tool first.")
+      return null
+    }
+    withSource(source)
+      .withExec(["dagger"] + args)
+      .sync
+    null
+  }
+
+  """
+  Send a raw GraphQL query to the live from-source engine, via `dagger api
+  query` with no module loaded. Use for core API repros without CLI plumbing,
+  e.g. querying `version` or driving `container { ... }` chains directly.
+  """
+  query(
+    source: Workspace!,
+    graphql: String!,
+  ): Void @cache(policy: FunctionCachePolicy.Never) {
+    if (engine == null) {
+      print("No engine session. Call the engine-lab start tool first.")
+      return null
+    }
+    withSource(source)
+      .withExec(
+        ["dagger", "api", "query", "--no-load-module"],
+        stdin: graphql,
+        expect: ReturnType.ANY,
+      )
+      .sync
+    null
+  }
+
+  """
+  GET a path from the live engine's debug HTTP server (routes are defined in
+  cmd/engine/debug.go), e.g. /debug/pprof/goroutine?debug=2 for hang triage or
+  /debug/dagql/cache for a cache snapshot. Returns the raw (tail-truncated)
+  response; prefer `debugJq` for large JSON.
+  """
+  debugGet(
+    path: String! = "/debug/pprof/",
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    if (engine == null) {
+      return "No engine session. Call the engine-lab start tool first."
+    }
+    client
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "5", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", "120",
+        debugURL(path),
+      ])
+      .stdout
+  }
+
+  """
+  GET a JSON endpoint from the live engine's debug HTTP server and filter it
+  through jq, e.g. path /debug/dagql/cache with a filter selecting just the
+  fields under investigation. Keeps huge debug payloads out of context.
+  """
+  debugJq(
+    path: String!,
+    """
+    jq filter expression to apply to the response
+    """
+    filter: String! = ".",
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    if (engine == null) {
+      return "No engine session. Call the engine-lab start tool first."
+    }
+    # The URL and filter travel as env vars so no shell-quoting of user input
+    # is needed inside the sh -c script.
+    client
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withEnvVariable("ENGINE_LAB_DEBUG_URL", debugURL(path))
+      .withEnvVariable("ENGINE_LAB_JQ_FILTER", filter)
+      .withExec([
+        "sh", "-c",
+        "curl -s --retry 5 --retry-delay 2 --retry-connrefused --max-time 120 \"$ENGINE_LAB_DEBUG_URL\" | jq \"$ENGINE_LAB_JQ_FILTER\"",
+      ])
+      .stdout
+  }
+
+  """
+  Run engine tests via the engine-dev toolchain — the equivalent of `dagger
+  api call engine-dev test`. Rebuilds an ephemeral dev engine from the
+  workspace source and runs the tests against it (independent of `start`).
+  Keep runs tight: pkg ./core/integration with run TestSuite/TestSub. On
+  failure the error tail is returned; full test output lives in telemetry,
+  readable with ReadLogs on the failing span.
+  """
+  engineTest(
+    source: Workspace!,
+    """
+    Go package to test, e.g. ./core/integration
+    """
+    pkg: String! = "./...",
+    """
+    Regex selecting tests to run, e.g. TestSuite/TestSub
+    """
+    run: String! = "",
+    """
+    Enable verbose test output
+    """
+    testVerbose: Boolean! = false,
+  ): Void @cache(policy: FunctionCachePolicy.Never) {
+    # NOTE: engine-dev's test() is +cache="session" on its side, so an
+    # identical re-run in one session may be served from the session cache;
+    # any workspace edit changes the engine source and forces a real re-run.
+    engineDev(ws: source).test(pkg: pkg, run: run, testVerbose: testVerbose)
+  }
+
+  # A self-call (`engineLab`) yields the module's own type as it lives in the
+  # runtime schema — a Dagger.EngineLab, which carries a GraphQL id and
+  # implements Node. Declaring the return as Dagger.EngineLab! (rather than
+  # the bare local EngineLab!) makes the annotation match what the self-call
+  # actually produces.
+  """
+  Stop the engine session and release the underlying service.
+  """
+  stop: Dagger.EngineLab! @cache(policy: FunctionCachePolicy.Never) {
+    if (engine != null) {
+      engine.stop
+      print("Stopped engine service")
+    }
+    engineLab
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  # The pinned client with the CALLER'S CURRENT workspace mounted at /src.
+  #
+  # This is the fix for a nasty class of bug: when the client container was
+  # built once (at `start`) with the workspace snapshot of that moment, every
+  # later `exec` silently ran a stale tree — three successive edits to a
+  # fixture "failing" with the byte-identical error, and even `cp -r /src/...`
+  # inside the container propagating the staleness. Taking `source:
+  # Workspace!` on each tool means the current tree (including edits made
+  # since `start`) is re-injected on every call, structurally.
+  let withSource(source: Workspace!): Container! {
+    client
+      # bust Dagger's exec cache so each call actually re-runs
+      .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
+      .withMountedDirectory(defaultWorkdir, source.directory("/"))
+      .withWorkdir(defaultWorkdir)
+  }
+
+  let debugURL(path: String!): String! {
+    "http://dagger-engine:" + toString(debugPort) + path
+  }
+
+  let systemPrompt: String! = """
+    You can build and debug the Dagger engine from the workspace source with
+    the EngineLab tools — the sandbox equivalent of the `./hack/dev` +
+    `./hack/with-dev` loop from the `engine-debugging` skill.
+
+    Workflow:
+    - the engine-lab start tool builds the engine + CLI from the workspace
+      source and runs the engine as a persistent service with its debug
+      endpoints enabled. The first build takes a while; later tools reuse the
+      running engine.
+    - `exec(args: ["dagger", ...])` runs a command against the live engine:
+      the from-source CLI is on PATH, the workspace is mounted at /src, and
+      curl/jq/git are available (["sh", "-c", ...] works too). The workspace
+      is re-mounted from your CURRENT tree on every call, so your edits are
+      always visible — only the engine *binary* is pinned until `restart`.
+    - `query` sends raw GraphQL straight to the engine (no module loaded).
+    - `debugGet`/`debugJq` hit the engine's :6060 debug endpoints (routes in
+      cmd/engine/debug.go), e.g. /debug/pprof/goroutine?debug=2 for hangs;
+      use debugJq to filter big JSON like /debug/dagql/cache.
+    - After editing engine code, `restart` rebuilds and replaces the running
+      engine; then re-run your repro with `exec`.
+    - `engineTest(pkg, run)` runs engine tests with their own ephemeral
+      engine (no `start` needed), e.g. pkg "./core/integration" with
+      run "TestSuite/TestSub".
+    - Engine logs: ListServices shows the engine service's span ids;
+      ReadLogs(span, grep, limit) reads them — the equivalent of
+      `docker logs dagger-engine.dev | grep`.
+    - the engine-lab start tool prints the engine's tcp://<host>:1234 endpoint
+      (`endpoint` re-prints it). If tui-qa tools are available, pass it to
+      their start tool's `engine` arg to run a TUI session against THIS
+      engine — then `debugGet`/`debugJq`/ReadLogs introspect the very engine
+      the TUI is driving (e.g. reproduce a hang in the TUI, then pprof it
+      live). `restart` and the engine-lab stop tool break attached TUI
+      sessions; restart them after.
+    - the engine-lab stop tool when done.
+  """
+}
