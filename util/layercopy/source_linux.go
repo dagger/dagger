@@ -16,15 +16,16 @@ import (
 )
 
 type source struct {
-	root       string
-	realRoot   string
-	layers     []string
-	overlay    bool
-	baseRel    string
-	baseView   string
-	baseReal   string
-	baseInfo   os.FileInfo
-	baseCached bool
+	root         string
+	realRoot     string
+	layers       []string
+	overlay      bool
+	baseRel      string
+	baseView     string
+	baseReal     string
+	baseInfo     os.FileInfo
+	baseMinLayer int
+	baseCached   bool
 }
 
 type sourceEntry struct {
@@ -33,6 +34,9 @@ type sourceEntry struct {
 	RealPath string
 	Info     os.FileInfo
 	StatErr  error
+	// minLayer is the lowest overlay layer visible below this entry. An opaque
+	// directory or whiteout in a higher layer hides lower-layer descendants.
+	minLayer int
 }
 
 func newSource(m Mount) (*source, error) {
@@ -86,11 +90,16 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	if err != nil {
 		return err
 	}
+	baseMinLayer, err := s.overlayAncestorMinLayer(baseRel)
+	if err != nil {
+		return err
+	}
 
 	s.baseView = baseView
 	s.baseRel = baseRel
 	s.baseInfo = info
-	realPath, realInfo, err := s.realPath("")
+	s.baseMinLayer = baseMinLayer
+	realPath, realInfo, err := s.realPath("", baseMinLayer)
 	if err != nil {
 		return err
 	}
@@ -100,7 +109,7 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	return nil
 }
 
-func (s *source) readDir(rel string) ([]sourceEntry, error) {
+func (s *source) readDir(rel string, minLayer int) ([]sourceEntry, error) {
 	if err := s.selectBase(".", false); err != nil {
 		return nil, err
 	}
@@ -108,7 +117,7 @@ func (s *source) readDir(rel string) ([]sourceEntry, error) {
 	if !s.overlay {
 		return s.readBindDir(rel)
 	}
-	return s.readOverlayDir(rel)
+	return s.readOverlayDir(rel, minLayer)
 }
 
 func (s *source) readBindDir(rel string) ([]sourceEntry, error) {
@@ -146,7 +155,7 @@ func (s *source) readBindDir(rel string) ([]sourceEntry, error) {
 	return entries, nil
 }
 
-func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
+func (s *source) readOverlayDir(rel string, minLayer int) ([]sourceEntry, error) {
 	type visibleEntry struct {
 		realPath string
 		info     os.FileInfo
@@ -156,16 +165,18 @@ func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
 	visible := map[string]visibleEntry{}
 	hidden := map[string]struct{}{}
 
-	for i := len(s.layers) - 1; i >= 0; i-- {
+	visibleMinLayer := minLayer
+	for i := len(s.layers) - 1; i >= minLayer; i-- {
 		layerDir := filepath.Join(s.layers[i], layerRel)
-		opaque, err := isOpaqueDir(layerDir)
+		hidesLower, err := hidesLowerLayers(layerDir)
 		if err != nil && !os.IsNotExist(err) && !isNotDir(err) {
 			return nil, err
 		}
 
 		dirents, err := os.ReadDir(layerDir)
 		if os.IsNotExist(err) || isNotDir(err) {
-			if opaque {
+			if hidesLower {
+				visibleMinLayer = i
 				break
 			}
 			continue
@@ -198,7 +209,8 @@ func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
 				info:     info,
 			}
 		}
-		if opaque {
+		if hidesLower {
+			visibleMinLayer = i
 			break
 		}
 	}
@@ -218,12 +230,13 @@ func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
 			ViewPath: filepath.Join(viewDir, name),
 			RealPath: ent.realPath,
 			Info:     ent.info,
+			minLayer: visibleMinLayer,
 		})
 	}
 	return entries, nil
 }
 
-func (s *source) realPath(rel string) (string, os.FileInfo, error) {
+func (s *source) realPath(rel string, minLayer int) (string, os.FileInfo, error) {
 	rel = cleanRel(filepath.Join(s.baseRel, rel))
 	if !s.overlay {
 		realPath := filepath.Join(s.realRoot, rel)
@@ -234,7 +247,7 @@ func (s *source) realPath(rel string) (string, os.FileInfo, error) {
 		return realPath, realInfo, nil
 	}
 
-	for i := len(s.layers) - 1; i >= 0; i-- {
+	for i := len(s.layers) - 1; i >= minLayer; i-- {
 		realPath := filepath.Join(s.layers[i], rel)
 		realInfo, err := os.Lstat(realPath)
 		if err == nil {
@@ -249,6 +262,40 @@ func (s *source) realPath(rel string) (string, os.FileInfo, error) {
 		return "", nil, err
 	}
 	return "", nil, fmt.Errorf("failed to resolve source path %q in overlay layers", rel)
+}
+
+func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
+	if !s.overlay {
+		return 0, nil
+	}
+
+	ancestors := []string{""}
+	parent := cleanRel(filepath.Dir(rel))
+	if parent != "" {
+		var ancestor string
+		for _, part := range strings.Split(parent, string(filepath.Separator)) {
+			ancestor = filepath.Join(ancestor, part)
+			ancestors = append(ancestors, ancestor)
+		}
+	}
+
+	minLayer := 0
+	for _, ancestor := range ancestors {
+		for i := len(s.layers) - 1; i >= minLayer; i-- {
+			hidesLower, err := hidesLowerLayers(filepath.Join(s.layers[i], ancestor))
+			if err != nil {
+				if os.IsNotExist(err) || isNotDir(err) {
+					continue
+				}
+				return 0, err
+			}
+			if hidesLower {
+				minLayer = i
+				break
+			}
+		}
+	}
+	return minLayer, nil
 }
 
 func rootPath(root, p string, followFinalSymlink bool) (string, error) {
@@ -278,13 +325,16 @@ func isWhiteout(info os.FileInfo) bool {
 	return unix.Major(st.Rdev) == 0 && unix.Minor(st.Rdev) == 0
 }
 
-func isOpaqueDir(path string) (bool, error) {
+// hidesLowerLayers reports whether an overlay entry prevents lower layers from
+// contributing at and below this path. Non-directories cover everything lower
+// layers hold at the path, while opaque directories hide lower descendants.
+func hidesLowerLayers(path string) (bool, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return false, err
 	}
 	if !info.IsDir() {
-		return false, nil
+		return true, nil
 	}
 	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
 		val, err := sysx.LGetxattr(path, key)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -117,6 +118,58 @@ func TestCopyDirectoryDisableSourceHardlinksPreservesInternalHardlinks(t *testin
 	got, err := os.ReadFile(filepath.Join(dstRoot, "file.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "hello", string(got))
+}
+
+func TestCopyOverlaySourceStopsAtNonDirectoryLayer(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	lowerRoot := filepath.Join(root, "lower")
+	middleRoot := filepath.Join(root, "middle")
+	upperRoot := filepath.Join(root, "upper")
+	viewRoot := filepath.Join(root, "view")
+	dstRoot := filepath.Join(root, "dst")
+
+	for _, dir := range []string{
+		filepath.Join(lowerRoot, "d", "sub"),
+		middleRoot,
+		filepath.Join(upperRoot, "d"),
+		filepath.Join(viewRoot, "d"),
+		dstRoot,
+	} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "old.txt"), []byte("old"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "sub", "deep.txt"), []byte("old"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(middleRoot, "d"), []byte("cover"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(upperRoot, "d", "new.txt"), []byte("new"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "d", "new.txt"), []byte("new"), 0o644))
+
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Copy(context.Background(), Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type: "overlay",
+			Options: []string{
+				"lowerdir=" + strings.Join([]string{upperRoot, middleRoot, lowerRoot}, ":"),
+			},
+		},
+	}, "/", "/", CopyOptions{
+		CopyDirContents: true,
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	contents, err := os.ReadFile(filepath.Join(dstRoot, "d", "new.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "new", string(contents))
+	require.NoFileExists(t, filepath.Join(dstRoot, "d", "old.txt"))
+	require.NoDirExists(t, filepath.Join(dstRoot, "d", "sub"))
 }
 
 func TestCopyFileDestPathHintIsDir(t *testing.T) {
