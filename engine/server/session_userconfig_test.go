@@ -322,6 +322,39 @@ profile = "alice-dev"
 	require.Equal(t, "alice-dev", aws.ConfigDefaults["profile"])
 }
 
+func TestUserConfigOriginFromIncludedGitConfig(t *testing.T) {
+	t.Parallel()
+
+	for name, gitConfig := range map[string]string{
+		"include": `[include]
+	path = origin.config
+`,
+		"conditional include": `[includeIf "gitdir:/repo/"]
+	path = origin.config
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newUserConfigTestHost(gitConfig, userConfigTestDaggerTOML, `
+[workspaces."github.com/acme/api".modules.aws.settings]
+profile = "alice-dev"
+`)
+			h.files["/repo/.git/origin.config"] = userConfigTestGitConfig
+
+			client, err := loadUserConfigTestWorkspace(t, h, &engine.ClientMetadata{
+				LoadWorkspaceModules: true,
+				UserConfigPath:       testUserConfigPath,
+			})
+			require.NoError(t, err)
+
+			require.Equal(t, "github.com/acme/api", client.workspace.UserConfigKey())
+			aws := pendingModuleByName(t, client, "aws")
+			require.Equal(t, "alice-dev", aws.ConfigDefaults["profile"])
+		})
+	}
+}
+
 func TestUserConfigRemoteWorkspaceKey(t *testing.T) {
 	t.Parallel()
 

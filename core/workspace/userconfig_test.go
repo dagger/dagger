@@ -103,6 +103,21 @@ func TestNormalizeGitRemote(t *testing.T) {
 	}
 }
 
+func TestNormalizeGitRemoteRejectsWindowsFilesystemRemotes(t *testing.T) {
+	t.Parallel()
+
+	for _, remote := range []string{
+		`C:\Users\alice\api`,
+		`C:/Users/alice/api`,
+		`\\server\share\api`,
+	} {
+		t.Run(remote, func(t *testing.T) {
+			t.Parallel()
+			require.Empty(t, NormalizeGitRemote(remote))
+		})
+	}
+}
+
 func TestMatchWorkspaceOverlay(t *testing.T) {
 	t.Parallel()
 
