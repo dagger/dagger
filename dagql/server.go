@@ -1428,6 +1428,14 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 // wholesale and the marked call underneath it would never be reached.
 //
 // Structural only — nothing is evaluated, and results are memoized per load.
+//
+// Concurrency: the provisional-false entry planted below is only observable
+// while the DFS that planted it is still running. That is safe because the
+// root vertex computes its full transitive closure here — synchronously,
+// before loadRecipeVertex fans out any concurrent input loads — so by the
+// time another goroutine consults the memo, every entry it can reach is
+// finalized. A vertex that starts a fresh traversal only does so for IDs
+// already finalized by the root's pass.
 func (state *recipeLoadState) notReplayable(id *call.ID) bool {
 	if id == nil || id.IsHandle() {
 		return false
