@@ -1183,6 +1183,9 @@ func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.
 }
 
 func (s *gitSchema) commitRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitRef], _ error) {
+	if supportsStrictRefs(ctx) && !gitutil.IsCommitSHA(args.ID) {
+		return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
+	}
 	return s.ref(ctx, parent, refArgs{Name: args.ID})
 }
 
