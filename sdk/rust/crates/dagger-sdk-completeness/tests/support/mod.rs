@@ -4,6 +4,7 @@
 //! those foundations so a counterexample shrinks toward the behaviour under test rather than into
 //! malformed, unrelated scaffolding.
 
+mod authority_case;
 mod contract_case;
 mod models;
 mod mutations;
@@ -26,11 +27,17 @@ pub const PROPTEST_CASES: u32 = 256;
 pub fn proptest_config() -> Config {
     Config {
         cases: PROPTEST_CASES,
-        // SourceParallel gives each property module a stable, reviewable corpus beside the crate
-        // while still replaying minimized failures before novel random cases.
-        failure_persistence: Some(Box::new(FileFailurePersistence::SourceParallel(
-            "proptest-regressions",
-        ))),
+        // Keep minimized failures beside the crate and replay them before novel random cases.
+        // An explicit path also works for integration tests, where SourceParallel cannot discover
+        // a sibling lib.rs from the test binary's source location.
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/properties.txt"
+        )))),
         ..Config::default()
     }
 }
+pub use authority_case::{
+    AuthorityCase, AuthorityMutation, apply_authority_mutations, authority_case_strategy,
+    authority_id, authority_mutation_set_strategy,
+};

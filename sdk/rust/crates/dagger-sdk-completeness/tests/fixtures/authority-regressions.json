@@ -1,0 +1,80 @@
+[
+  {
+    "name": "missing-authority-class",
+    "mutations": [
+      "remove-authority-class"
+    ]
+  },
+  {
+    "name": "duplicate-authority-class",
+    "mutations": [
+      "duplicate-authority-class"
+    ]
+  },
+  {
+    "name": "authority-id-map-mismatch",
+    "mutations": [
+      "authority-id-mismatch"
+    ]
+  },
+  {
+    "name": "target-repository-mismatch",
+    "mutations": [
+      "repository-mismatch"
+    ]
+  },
+  {
+    "name": "target-revision-mismatch",
+    "mutations": [
+      "revision-mismatch"
+    ]
+  },
+  {
+    "name": "harness-revision-mismatch",
+    "mutations": [
+      "harness-revision-mismatch"
+    ]
+  },
+  {
+    "name": "empty-include",
+    "mutations": [
+      "empty-include"
+    ]
+  },
+  {
+    "name": "uncontained-exclusion",
+    "mutations": [
+      "exclusion-outside-include"
+    ]
+  },
+  {
+    "name": "missing-source-bundle",
+    "mutations": [
+      "missing-bundle"
+    ]
+  },
+  {
+    "name": "missing-included-file",
+    "mutations": [
+      "missing-included-file"
+    ]
+  },
+  {
+    "name": "stale-exclusion",
+    "mutations": [
+      "stale-exclusion-path"
+    ]
+  },
+  {
+    "name": "authority-drift",
+    "mutations": [
+      "source-digest-mismatch"
+    ]
+  },
+  {
+    "name": "unregistered-extra-bundle",
+    "mutations": [
+      "extra-bundle"
+    ]
+  }
+]

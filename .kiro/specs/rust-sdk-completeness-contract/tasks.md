@@ -67,46 +67,46 @@
     clippy for the implemented targets; require no warnings, panics, uncommitted generated
     output, or dependency from the contract crate to a public Rust SDK crate.
 
-- [ ] 4. Implement authority loading, containment, and source coverage primitives
-  - [ ] 4.1 Implement the in-memory `SourceBundle` and authority validator
+- [x] 4. Implement authority loading, containment, and source coverage primitives
+  - [x] 4.1 Implement the in-memory `SourceBundle` and authority validator
     - Resolve every authority class exactly once, enforce unique IDs and target-matching
       revisions, expand non-empty includes, validate exact exclusions and rationales, and
       recompute normalized source digests independent of enumeration order.
     - _Requirements: 2.1–2.6, 2.10, 2.11_
-  - [ ] 4.2 Implement secure repository source loading
+  - [x] 4.2 Implement secure repository source loading
     - Validate the target and registry before opening selected paths, canonicalize every
       path beneath its registered repository root, reject traversal and symlink escape,
       and pass exact bytes to extractors without allowing extractor filesystem access.
     - Keep the normal-verification loader network-free and separate immutable-transition
       retrieval behind an explicit adapter.
     - _Requirements: 1.8, 2.4–2.6, 7.2–7.4, 8.1_
-  - [ ] 4.3 Implement the common source-item and coverage model
+  - [x] 4.3 Implement the common source-item and coverage model
     - Represent active, deprecated, skipped, removed, and harness-self items uniformly;
       require each selected item to be a primary capability source, reference anchor, or
       exact reviewed exclusion, and reject uncovered items and stale exclusions.
     - _Requirements: 2.3, 2.7–2.10, 4.4–4.9, 4.11, 4.12_
-  - [ ] 4.4 Property test: Property 3 — authority registry totality and containment
+  - [x] 4.4 Property test: Property 3 — authority registry totality and containment
     - Implement a reference-model `proptest` with at least 256 generated registries,
       bundles, path trees, include/exclude sets, and target identities, including traversal
       and symlink-containment fixture mutations.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 3: authority registry totality and containment`
     - _Requirements: 2.1–2.6, 2.10, 2.11_
 
-- [ ] 5. Implement independent authority extractors
-  - [ ] 5.1 Implement strict engine-schema extraction
+- [x] 5. Implement independent authority extractors
+  - [x] 5.1 Implement strict engine-schema extraction
     - Add independent introspection response types matching the canonical query, including
       schema version, deprecated elements, full nested TypeRefs, relationships, defaults,
       descriptions, directives, interfaces, possible types, and enum values.
     - Emit atomic, deterministically ordered schema SourceItems; apply public/meta-type
       exclusions only through registered policy and reject dangling relationships.
     - _Requirements: 1.6, 1.7, 3.1–3.13_
-  - [ ] 5.2 Property test: Property 4 — complete schema extraction
+  - [x] 5.2 Property test: Property 4 — complete schema extraction
     - Implement a reference-model `proptest` with at least 256 generated valid
       introspection graphs, ordering permutations, deprecated items, nested list/nullability
       shapes, and targeted dangling or unknown relationship mutations.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 4: complete schema extraction`
     - _Requirements: 3.1–3.12_
-  - [ ] 5.3 Implement the standard-library Go source-item helper
+  - [x] 5.3 Implement the standard-library Go source-item helper
     - Under `completeness/extractors/go`, use `go/ast`, `go/parser`, `go/token`, and
       `go/format` to emit exported declarations and signatures, methods, type parameters,
       constants, deprecation state, test/subtest identities, skipped state, normalized AST
@@ -114,64 +114,64 @@
     - Preserve dynamic test tables under stable parent identities and add no Go module
       dependency.
     - _Requirements: 1.3–1.5, 2.7–2.9, 4.1–4.8_
-  - [ ] 5.4 Implement and test the Rust Go-helper adapter
+  - [x] 5.4 Implement and test the Rust Go-helper adapter
     - Strictly validate the helper format, reject unknown or malformed output, and
       canonicalize helper SourceItems before coverage resolution.
     - Add fixed fixtures proving extraction uses the Go commit literal rather than its
       adjacent version comment and preserves active, skipped, and removed-test state.
     - _Requirements: 1.3–1.5, 2.7–2.9, 4.1–4.8_
-  - [ ] 5.5 Implement pinned `sdk-sdk` source extraction
+  - [x] 5.5 Implement pinned `sdk-sdk` source extraction
     - Add a string/comment-aware Dang scanner for public `@check` functions with balanced
       signature/body fingerprinting and explicit failure on unsupported syntax.
     - Cross-check scanner identities against pinned `dagger check --list` refresh data and
       preserve the public `check`, `SdkTarget`, and `mod-test` integration boundaries.
     - _Requirements: 2.10, 2.11, 8.13, 12.1–12.3, 12.10, 12.12, 12.15_
-  - [ ] 5.6 Implement engine SDK, codegen, test-handoff, and Rust-policy extraction
+  - [x] 5.6 Implement engine SDK, codegen, test-handoff, and Rust-policy extraction
     - Extract stable source items for selected engine SDK/generator contracts, active Go
       tests, every `future/sdk-tests.md` handoff row and recovery commit, and every approved
       Rust policy clause without treating removed/skipped tests as passing evidence.
     - _Requirements: 2.7–2.9, 4.2–4.9, 10.4–10.11_
 
-- [ ] 6. Build the canonical inventory and resolve authority precedence
-  - [ ] 6.1 Implement stable capability identity and fingerprinting
+- [x] 6. Build the canonical inventory and resolve authority precedence
+  - [x] 6.1 Implement stable capability identity and fingerprinting
     - Derive schema IDs from canonical coordinates and reviewed behavioural/policy IDs from
       authority plus semantic coordinate, with reversible percent-encoding and no source
       line, version label, or implementation path in identity.
     - Hash normalized semantic signatures, preserve identity across incidental movement,
       and reject one ID with competing signatures.
     - _Requirements: 4.10, 5.1–5.3_
-  - [ ] 6.2 Implement exhaustive inventory construction
+  - [x] 6.2 Implement exhaustive inventory construction
     - Combine schema extraction with reviewed behavioural and policy definitions; map every
       selected SourceItem to atomic capabilities or registered exclusions and preserve all
       non-redundant reference anchors.
     - Exclude generated bindings only through schema-backed policy and retain behaviours
       omitted by the common harness when another authority declares them.
     - _Requirements: 2.3, 2.7–2.9, 3.2–3.12, 4.1–4.9, 4.11, 4.12_
-  - [ ] 6.3 Implement peer-authority overlap resolution
+  - [x] 6.3 Implement peer-authority overlap resolution
     - For a common lifecycle capability, make a target-compatible harness assertion the
       primary semantic definition and retain Go as reference evidence; reject target
       incompatibility and competing primary definitions instead of choosing silently.
     - _Requirements: 4.10, 12.13, 12.14_
-  - [ ] 6.4 Property test: Property 5 — exhaustive source-item coverage
+  - [x] 6.4 Property test: Property 5 — exhaustive source-item coverage
     - Implement a reference-model `proptest` with at least 256 generated source inventories,
       definition/anchor mappings, exact exclusions, tests, harness assertions, policy items,
       and schema-backed generated-binding exclusions.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 5: exhaustive source-item coverage`
     - _Requirements: 2.7–2.9, 4.1–4.9, 4.11, 4.12_
-  - [ ] 6.5 Property test: Property 6 — stable capability identity and semantic fingerprinting
+  - [x] 6.5 Property test: Property 6 — stable capability identity and semantic fingerprinting
     - Implement a `proptest` with at least 256 cases that independently varies incidental
       locations/order and semantic shape, and generates colliding identities with equal and
       unequal signatures.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 6: stable capability identity and semantic fingerprinting`
     - _Requirements: 4.10, 5.1–5.3_
-  - [ ] 6.6 Property test: Property 12 — authority precedence without silent conflict
+  - [x] 6.6 Property test: Property 12 — authority precedence without silent conflict
     - Implement a reference-model `proptest` with at least 256 overlapping Go/harness
       authority pairs, including target-compatible, incompatible, reference-only, and
       competing-signature cases.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 12: authority precedence without silent conflict`
     - _Requirements: 12.13, 12.14_
 
-- [ ] 7. Checkpoint: all authority extraction and inventory tests are green
+- [x] 7. Checkpoint: all authority extraction and inventory tests are green
   - Run the Go helper tests and formatting, completeness crate unit/property tests, locked
     workspace checks, and clippy; require deterministic output from repeated fixture
     extraction and zero uncovered fixture SourceItems.
