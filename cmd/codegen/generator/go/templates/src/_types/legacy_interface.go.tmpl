@@ -17,6 +17,14 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
+// GraphQLQuery returns the underlying query selection of this object.
+//
+// It is intended for generated bindings and low-level integrations that
+// build on the query directly; prefer the typed API otherwise.
+func (r *{{ .Name | FormatName }}) GraphQLQuery() *querybuilder.Selection {
+	return r.query
+}
+
 {{ range $field := .Fields }}
 {{- if HasOptionals $field.Args }}
 // {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
