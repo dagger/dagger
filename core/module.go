@@ -1270,86 +1270,105 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 	obj := typeDef.Self().AsObject.Value.Self()
 
 	for _, fieldRes := range obj.Fields {
-		field := fieldRes.Self()
-		if gqlFieldName(field.Name) == "id" {
-			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
-		}
-		// Workspace cannot be stored as a field on a module object
-		if field.TypeDef.Self().Kind == TypeDefKindObject && field.TypeDef.Self().AsObject.Value.Self().Name == "Workspace" {
-			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
-				obj.OriginalName,
-				field.OriginalName,
-			)
-		}
-		fieldType, ok, err := mod.lookupValidationModType(ctx, field.TypeDef, state)
-		if err != nil {
-			return fmt.Errorf("failed to get mod type for type def: %w", err)
-		}
-		if ok {
-			sourceMod := fieldType.SourceMod()
-			// fields can reference core types and local types, but not types from other modules
-			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-					obj.OriginalName,
-					field.OriginalName,
-					sourceMod.Name(),
-				)
-			}
-		}
-		if err := mod.validateTypeDef(ctx, field.TypeDef, state); err != nil {
+		if err := mod.validateObjectField(ctx, obj, fieldRes.Self(), state); err != nil {
 			return err
 		}
 	}
 
 	for fn := range obj.functions() {
-		if gqlFieldName(fn.Name) == "id" {
-			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
-		}
-		if fn.IsAgent {
-			if err := validateAgentFunction(obj, fn); err != nil {
-				return err
-			}
-		}
-		// Check if this is a type from another (non-core) module
-		retType, ok, err := mod.lookupValidationModType(ctx, fn.ReturnType, state)
-		if err != nil {
-			return fmt.Errorf("failed to get mod type for type def: %w", err)
-		}
-		if ok {
-			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-				return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-					obj.OriginalName,
-					fn.OriginalName,
-					sourceMod.Name(),
-				)
-			}
-		}
-		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
+		if err := mod.validateObjectFunction(ctx, obj, fn, state); err != nil {
 			return err
-		}
-
-		for _, argRes := range fn.Args {
-			arg := argRes.Self()
-			argType, ok, err := mod.lookupValidationModType(ctx, arg.TypeDef, state)
-			if err != nil {
-				return fmt.Errorf("failed to get mod type for type def: %w", err)
-			}
-			if ok {
-				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-					return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-						obj.OriginalName,
-						fn.OriginalName,
-						arg.OriginalName,
-						sourceMod.Name(),
-					)
-				}
-			}
-			if err := mod.validateTypeDef(ctx, arg.TypeDef, state); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
+}
+
+func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, field *FieldTypeDef, state *moduleValidationState) error {
+	if gqlFieldName(field.Name) == "id" {
+		return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
+	}
+	// Workspace cannot be stored as a field on a module object
+	if field.TypeDef.Self().Kind == TypeDefKindObject && field.TypeDef.Self().AsObject.Value.Self().Name == "Workspace" {
+		return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
+			obj.OriginalName,
+			field.OriginalName,
+		)
+	}
+	// fields can reference core types and local types, but not types from other modules
+	depName, err := mod.externalTypeDep(ctx, field.TypeDef, state)
+	if err != nil {
+		return err
+	}
+	if depName != "" {
+		return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+			obj.OriginalName,
+			field.OriginalName,
+			depName,
+		)
+	}
+	return mod.validateTypeDef(ctx, field.TypeDef, state)
+}
+
+func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
+	if gqlFieldName(fn.Name) == "id" {
+		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+	}
+	if fn.IsAgent {
+		if err := validateAgentFunction(obj, fn); err != nil {
+			return err
+		}
+	}
+	depName, err := mod.externalTypeDep(ctx, fn.ReturnType, state)
+	if err != nil {
+		return err
+	}
+	if depName != "" {
+		return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+			obj.OriginalName,
+			fn.OriginalName,
+			depName,
+		)
+	}
+	if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
+		return err
+	}
+
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		depName, err := mod.externalTypeDep(ctx, arg.TypeDef, state)
+		if err != nil {
+			return err
+		}
+		if depName != "" {
+			return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+				obj.OriginalName,
+				fn.OriginalName,
+				arg.OriginalName,
+				depName,
+			)
+		}
+		if err := mod.validateTypeDef(ctx, arg.TypeDef, state); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// externalTypeDep returns the name of the dependency module that owns the given
+// type def, or "" if it's a core type, a local type, or not resolvable yet.
+func (mod *Module) externalTypeDep(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) (string, error) {
+	modType, ok, err := mod.lookupValidationModType(ctx, typeDef, state)
+	if err != nil {
+		return "", fmt.Errorf("failed to get mod type for type def: %w", err)
+	}
+	if !ok {
+		return "", nil
+	}
+	sourceMod := modType.SourceMod()
+	if sourceMod == nil || sourceMod.Name() == ModuleName || sourceMod.Name() == mod.Name() {
+		return "", nil
+	}
+	return sourceMod.Name(), nil
 }
 
 func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
