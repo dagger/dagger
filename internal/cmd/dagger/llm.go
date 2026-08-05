@@ -5,9 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,7 +15,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/google/uuid"
 	"github.com/muesli/termenv"
-	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/syntax"
 
@@ -28,7 +24,6 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -68,14 +63,12 @@ func (m interpreterMode) ContentType() string {
 type LLMSession struct {
 	frontend idtui.Frontend
 
-	// undo       *LLMSession
-	dag        *dagger.Client
-	llm        *dagger.LLM
-	models     openrouter.Models
-	model      string
-	skipEnv    map[string]bool
-	syncedVars map[string]digest.Digest
-	shell      *shellCallHandler
+	// undo   *LLMSession
+	dag    *dagger.Client
+	llm    *dagger.LLM
+	models openrouter.Models
+	model  string
+	shell  *shellCallHandler
 
 	// onStep, if set, is invoked after every step of a prompt turn. It is used
 	// to auto-save the session so it is preserved even if the process is
@@ -105,19 +98,8 @@ func NewLLMSession(
 	frontend idtui.Frontend,
 ) (*LLMSession, error) {
 	s := &LLMSession{
-		dag:        dag,
-		model:      llmModel,
-		syncedVars: map[string]digest.Digest{},
-		skipEnv: map[string]bool{
-			// these vars are set by the sh package
-			"GID":    true,
-			"UID":    true,
-			"EUID":   true,
-			"OPTIND": true,
-			"IFS":    true,
-			// the rest should be filtered out already by skipping the first batch
-			// (sourced from os.Environ)
-		},
+		dag:          dag,
+		model:        llmModel,
 		shell:        shellHandler,
 		frontend:     frontend,
 		autoCompact:  true,
@@ -138,11 +120,6 @@ func NewLLMSession(
 		return nil, err
 	}
 	s.models = models
-
-	// don't sync the initial env vars
-	for k := range shellHandler.runner.Env.Each {
-		s.skipEnv[k] = true
-	}
 
 	// if $agent is set, respect it
 	if value, ok := s.shell.runner.Vars[agentVar]; ok {
@@ -201,8 +178,23 @@ func (s *LLMSession) Fork() *LLMSession {
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
-	if err := s.syncVarsToLLM(); err != nil {
-		return s, err
+	// If the shell reassigned $agent, respect it as the LLM to prompt.
+	if value, ok := s.shell.runner.Vars[agentVar]; ok {
+		if key := GetStateKey(value.String()); key != "" {
+			st, err := s.shell.state.Load(key)
+			if err != nil {
+				return s, err
+			}
+			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
+			// from the agent var
+			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
+		}
+	}
+
+	// Baseline for the "Changes" preview: the workspace as of the first prompt.
+	if s.beforeFS == nil {
+		s.beforeFS = s.llm.Workspace().Directory(".")
+		s.beforeFSTime = time.Now()
 	}
 
 	resolvedModel, err := s.llm.Model(s.plumbingCtx)
@@ -269,28 +261,10 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		}
 	}
 
-	if err := s.syncVarsFromLLM(); err != nil {
-		return s, err
-	}
-
 	return s, nil
 }
 
-var dbg *log.Logger
-
-func init() {
-	if fn := os.Getenv("DAGUI_DEBUG"); fn != "" {
-		debugFile, _ := os.Create(fn)
-		dbg = log.New(debugFile, "", 0)
-	} else {
-		dbg = log.New(io.Discard, "", 0)
-	}
-}
-
-const (
-	agentVar     = "agent"
-	lastValueVar = "_"
-)
+const agentVar = "agent"
 
 func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	s.llm = llm
@@ -501,111 +475,6 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr 
 	}
 
 	return s.llm, nil
-}
-
-func (s *LLMSession) syncVarsToLLM() error {
-	ctx := s.plumbingCtx
-
-	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
-	oldVars := s.syncedVars
-	s.syncedVars = make(map[string]digest.Digest)
-	maps.Copy(s.syncedVars, oldVars)
-
-	if value, ok := s.shell.runner.Vars[agentVar]; ok {
-		if key := GetStateKey(value.String()); key != "" {
-			st, err := s.shell.state.Load(key)
-			if err != nil {
-				return err
-			}
-			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
-			// from the agent var
-			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
-		}
-	}
-
-	if s.beforeFS == nil {
-		s.beforeFS = s.llm.Workspace().Directory(".")
-		s.beforeFSTime = time.Now()
-	}
-
-	// Object-typed shell vars are threaded to the LLM one-way via withObject
-	// (which takes object IDs). String/scalar vars are no longer injected.
-	syncedLLMQ := s.dag.QueryBuilder().
-		Select("node").
-		Arg("id", s.llm).
-		InlineFragment("LLM")
-
-	var changed bool
-	for name, value := range s.shell.runner.Vars {
-		if name == agentVar {
-			// handled separately
-			continue
-		}
-		if name == lastValueVar {
-			// don't sync the auto-last-value var back to the LLM
-			continue
-		}
-		if s.skipEnv[name] {
-			continue
-		}
-
-		if s.syncedVars[name] == hashutil.HashStrings(value.String()) {
-			continue
-		}
-
-		key := GetStateKey(value.String())
-		if key == "" {
-			// not an object-typed var; nothing to track
-			continue
-		}
-
-		st, err := s.shell.state.Load(key)
-		if err != nil {
-			return err
-		}
-		q := st.QueryBuilder(s.dag)
-		modDef := s.shell.GetDef(st)
-		typeDef, err := st.GetTypeDef(modDef)
-		if err != nil {
-			return err
-		}
-		if typeDef.AsFunctionProvider() == nil {
-			continue
-		}
-
-		var id string
-		if err := q.Select("id").Bind(&id).Execute(ctx); err != nil {
-			return err
-		}
-		dgst, err := idDigest(id)
-		if err != nil {
-			return err
-		}
-
-		dbg.Printf("syncing var %q => llm object\n", name)
-
-		changed = true
-		syncedLLMQ = syncedLLMQ.
-			Select("withObject").
-			Arg("tag", name).
-			Arg("object", id).
-			Arg("description", name)
-		s.syncedVars[name] = dgst
-	}
-	if !changed {
-		return nil
-	}
-	var llmID dagger.ID
-	if err := syncedLLMQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
-		return err
-	}
-	return s.updateLLMAndAgentVar(dagger.Ref[*dagger.LLM](s.dag, llmID))
-}
-
-func (s *LLMSession) syncVarsFromLLM() error {
-	// Output/last-value readback was removed along with the prompt-I/O bag;
-	// objects now flow to the LLM one-way via withObject.
-	return nil
 }
 
 type dagqlObject interface {
