@@ -1711,16 +1711,25 @@ func selectGitReleaseTag(ctx context.Context, commit *core.GitCommit, includePre
 				return err
 			}
 
+			// consulting the remote is best-effort: the mounted local repo has
+			// none of the auth wiring a RemoteGitRepository carries, so a
+			// private origin, an SSH remote, or an offline machine would all
+			// fail here - answer from local tags instead
 			remoteName, err := defaultGitFetchRemote(ctx, git)
 			if err != nil {
 				return err
 			}
 			if remoteName != "" {
 				remote, err := git.LsRemote(ctx, remoteName)
-				if err != nil {
-					return fmt.Errorf("list tags from git remote %q: %w", remoteName, err)
+				switch {
+				case err == nil:
+					remoteTags = remotePeeledTagRefs(remote)
+				case ctx.Err() != nil:
+					return context.Cause(ctx)
+				default:
+					slog.Warn("failed to list tags from git remote; using local tags only",
+						"remote", remoteName, "error", err)
 				}
-				remoteTags = remotePeeledTagRefs(remote)
 			}
 		}
 
