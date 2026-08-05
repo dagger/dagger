@@ -284,6 +284,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return a module defined in the workspace configuration.
+
+  Reflects the selected env's effective view.
   """
   @spec module(t(), String.t()) :: Dagger.WorkspaceModule.t()
   def module(%__MODULE__{} = workspace, name) do
@@ -316,6 +318,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   List modules defined in the workspace configuration.
+
+  Reflects the selected env's effective view.
   """
   @spec modules(t()) :: {:ok, [Dagger.WorkspaceModule.t()]} | {:error, term()}
   def modules(%__MODULE__{} = workspace) do
@@ -490,6 +494,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a configuration value written.
+
+  When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
   """
   @spec with_config_value(t(), String.t(), String.t(), [
           {:values, [String.t()]},
@@ -571,6 +577,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a module installed in its config.
+
+  When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
   """
   @spec with_module(t(), String.t(), [{:name, String.t() | nil}, {:here, boolean() | nil}]) ::
           Dagger.Workspace.t()
@@ -734,6 +742,8 @@ defmodule Dagger.Workspace do
   Return this workspace with a configuration value removed.
 
   Errors when the key is not currently set.
+
+  When the session selects an env, the key is scoped to that env's overlay.
   """
   @spec without_config_value(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
   def without_config_value(%__MODULE__{} = workspace, key, optional_args \\ []) do
@@ -779,6 +789,8 @@ defmodule Dagger.Workspace do
 
   @doc """
   Return this workspace with a module removed from its config.
+
+  When the session selects an env, only that env's overlay entry is removed.
   """
   @spec without_module(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
   def without_module(%__MODULE__{} = workspace, name, optional_args \\ []) do

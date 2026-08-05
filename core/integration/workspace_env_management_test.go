@@ -154,6 +154,15 @@ source = "github.com/dagger/aws"
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" requires dagger.toml`)
 	})
+
+	t.Run("listing modules under an env without a dagger.toml fails too", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "installed")
+		require.Error(t, err)
+		requireErrOut(t, err, `workspace env "ci" requires dagger.toml`)
+	})
 }
 
 // TestWorkspaceEnvConfigWriteSemantics defines where writes land when an env is
@@ -419,5 +428,210 @@ region = "base-region"
 		out, err = hostDaggerEnvExec(ctx, t, workdir, "call", "region")
 		require.NoError(t, err)
 		require.Equal(t, "base-region", strings.TrimSpace(string(out)))
+	})
+}
+
+// TestWorkspaceEnvModuleInstall covers env-scoped installs: with --env, `dagger
+// install` records the module under env.<name>.modules.* so it only exists when
+// that env is selected, creating the env on first write like other env-scoped
+// writes. Uninstall under --env removes only the env's overlay entry.
+func (WorkspaceSuite) TestWorkspaceEnvModuleInstall(ctx context.Context, t *testctx.T) {
+	newEnvInstallWorkdir := func(ctx context.Context, t *testctx.T, configTOML string) string {
+		t.Helper()
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		depDir := filepath.Join(workdir, "dep")
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
+		if configTOML != "" {
+			require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(configTOML), 0o644))
+		}
+		return workdir
+	}
+
+	t.Run("env-scoped install creates the env and records the module in its overlay", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
+`)
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "./dep")
+		require.NoError(t, err)
+		outStr := string(out)
+		require.Contains(t, outStr, `Created env "dev"`)
+		require.Contains(t, outStr, `Installed module "dep" into env "dev"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules, "dep")
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+
+		// Reinstalling into the now-existing env is a no-op without the notice.
+		out, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "./dep")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "Created env")
+		require.Contains(t, string(out), `Module "dep" is already installed in env "dev"`)
+	})
+
+	t.Run("env install with no dagger.toml creates config and env", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, "")
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "./dep")
+		require.NoError(t, err)
+		outStr := string(out)
+		require.Contains(t, outStr, "Created workspace config in")
+		require.Contains(t, outStr, `Created env "dev"`)
+		require.Contains(t, outStr, `Installed module "dep" into env "dev"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules, "dep")
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+	})
+
+	t.Run("--here install writes the env module into the subdirectory config", func(ctx context.Context, t *testctx.T) {
+		// The workspace root defines env.dev, but the subdirectory config the
+		// --here install targets does not: both the Created-env notice and the
+		// overlay entry belong to the here-target, not the selected config.
+		workdir := newEnvInstallWorkdir(ctx, t, `[env.dev]
+`)
+		subdir := filepath.Join(workdir, "sub")
+		require.NoError(t, os.MkdirAll(subdir, 0o755))
+
+		out, err := hostDaggerExecRaw(ctx, t, subdir, "--silent", "--env=dev", "install", "../dep", "--here")
+		require.NoError(t, err)
+		outStr := string(out)
+		require.Contains(t, outStr, `Created env "dev"`)
+		require.Contains(t, outStr, `Installed module "dep" into env "dev"`)
+
+		cfg := readInstalledWorkspaceConfig(t, subdir)
+		require.NotContains(t, cfg.Modules, "dep")
+		require.Contains(t, cfg.Env["dev"].Modules["dep"].Source, "dep")
+
+		rootCfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, rootCfg.Env["dev"].Modules, "dep")
+	})
+
+	t.Run("settings on an env-added module can be written and unset", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
+`)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "./dep")
+		require.NoError(t, err)
+
+		// minimal-dep has no constructor args, so exercise the raw config path:
+		// the point is that the env-scoped unset accepts a module the env itself
+		// added, which only exists in the overlay.
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "config", "env.dev.modules.dep.settings.foo", "bar")
+		require.NoError(t, err)
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "bar", cfg.Env["dev"].Modules["dep"].Settings["foo"])
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "workspace", "config", "--unset", "modules.dep.settings.foo")
+		require.NoError(t, err)
+		cfg = readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Env["dev"].Modules["dep"].Settings, "foo")
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+	})
+
+	t.Run("env-scoped modules are listed only under their env", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
+`)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "./dep")
+		require.NoError(t, err)
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "installed")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "dep")
+
+		out, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "installed")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "dep")
+
+		// The env-scoped module actually loads and runs under its env.
+		out, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "call", "dep", "hello")
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(string(out)))
+	})
+
+	t.Run("env-scoped uninstall removes the overlay entry and leaves base alone", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
+source = "dep"
+
+[env.dev.modules.other]
+source = "dep"
+`)
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "uninstall", "other")
+		require.NoError(t, err)
+		require.Contains(t, string(out), `Uninstalled module "other" from env "dev"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "dep", cfg.Modules["dep"].Source)
+		require.NotContains(t, cfg.Env["dev"].Modules, "other")
+
+		// A module only in base is not removable through an env selection.
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "uninstall", "dep")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "dep" is not installed in env "dev"`)
+
+		// And a missing env stays a strict error for uninstall.
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=missing", "uninstall", "dep")
+		require.Error(t, err)
+		requireErrOut(t, err, `workspace env "missing" is not defined`)
+	})
+
+	t.Run("env uninstall drops the install but keeps settings overrides", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
+source = "dep"
+`)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "./dep")
+		require.NoError(t, err)
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "workspace", "config", "modules.dep.settings.foo", "bar")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "uninstall", "dep")
+		require.NoError(t, err)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "dep", cfg.Modules["dep"].Source)
+		// The install aspect is gone, the override the env still owns is not.
+		require.Empty(t, cfg.Env["dev"].Modules["dep"].Source)
+		require.Equal(t, "bar", cfg.Env["dev"].Modules["dep"].Settings["foo"])
+
+		// The settings-only leftover is not an install, so uninstall refuses it.
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "uninstall", "dep")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "dep" is not installed in env "dev"`)
+	})
+
+	t.Run("SDK installs reject an env selection", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
+`)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "sdk", "install", "./dep")
+		require.Error(t, err)
+		requireErrOut(t, err, `SDKs cannot be installed in env "dev"`)
+	})
+
+	t.Run("SDK uninstall rejects an env selection", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
+source = "dep"
+
+[modules.dep.as-sdk]
+
+[env.dev]
+`)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "sdk", "uninstall", "dep")
+		require.Error(t, err)
+		requireErrOut(t, err, "SDKs are not env-scoped")
+	})
+
+	t.Run("setup rejects an env selection", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[env.dev]
+`)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "setup")
+		require.Error(t, err)
+		requireErrOut(t, err, "setup does not support --env")
 	})
 }

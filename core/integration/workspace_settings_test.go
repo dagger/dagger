@@ -339,6 +339,34 @@ region = "us-west-2"
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 	})
 
+	t.Run("typed settings work on a module the env itself installed", func(ctx context.Context, t *testctx.T) {
+		// The module exists only in the env overlay, so discovery has to run
+		// with the env applied to see it at all.
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules]
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=dev", "install", "./modules/aws")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=dev", "settings", "aws", "region", "us-east-1")
+		require.NoError(t, err)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules, "aws")
+		require.Equal(t, "us-east-1", cfg.Env["dev"].Modules["aws"].Settings["region"])
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=dev", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "--env=dev", "settings", "--unset", "aws", "region")
+		require.NoError(t, err)
+
+		cfg = readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Env["dev"].Modules["aws"].Settings, "region")
+		require.Equal(t, "modules/aws", cfg.Env["dev"].Modules["aws"].Source)
+	})
+
 	t.Run("env-scoped writes create a missing env with a notice", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"

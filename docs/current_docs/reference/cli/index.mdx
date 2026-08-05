@@ -1482,6 +1482,9 @@ Install a module into the current workspace.
 If no workspace config is selected, this creates one at the workspace root first.
 Use --here to create the workspace config at the workspace cwd instead.
 
+With --env the module is recorded in that env's overlay (env.&lt;name&gt;.modules.*)
+and the env is created if missing.
+
 ```
 dagger install [options] <module>
 ```
@@ -2705,6 +2708,8 @@ Uninstall a module from your workspace
 ### Synopsis
 
 Uninstall a module from the current workspace, removing it from dagger.toml.
+
+With --env only the env's overlay entry is removed, never the base module.
 
 ```
 dagger uninstall [options] <module>

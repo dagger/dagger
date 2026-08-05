@@ -379,11 +379,22 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	if err != nil {
 		return err
 	}
-	updated, err := materializeWorkspace(ctx, dag, current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: name, Here: here}))
+	target := current
+	createsEnv := false
+	if workspaceEnv != "" {
+		// An env-scoped install is a write, so a missing env is created by it.
+		// Chaining the write on the env-staged workspace also keeps the
+		// before/after module diff below usable when the env didn't exist yet.
+		createsEnv, target, err = workspaceEnvWriteCreates(ctx, current, workspaceEnv, here)
+		if err != nil {
+			return err
+		}
+	}
+	updated, err := materializeWorkspace(ctx, dag, target.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: name, Here: here}))
 	if err != nil {
 		return err
 	}
-	resolvedName, err := workspaceInstalledModuleName(ctx, current, updated, ref, name)
+	resolvedName, err := workspaceInstalledModuleName(ctx, target, updated, ref, name)
 	if err != nil {
 		return err
 	}
@@ -403,6 +414,10 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 		return err
 	}
 	if isEmpty {
+		if workspaceEnv != "" {
+			_, err = fmt.Fprintf(out, "Module %q is already installed in env %q\n", resolvedName, workspaceEnv)
+			return err
+		}
 		_, err = fmt.Fprintf(out, "Module %q is already installed\n", resolvedName)
 		return err
 	}
@@ -410,6 +425,15 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 		if _, err := fmt.Fprintf(out, "Created workspace config in %s\n", filepath.Dir(configPath)); err != nil {
 			return err
 		}
+	}
+	if createsEnv {
+		if _, err := fmt.Fprintf(out, "Created env %q\n", workspaceEnv); err != nil {
+			return err
+		}
+	}
+	if workspaceEnv != "" {
+		_, err = fmt.Fprintf(out, "Installed module %q into env %q in %s\n", resolvedName, workspaceEnv, configPath)
+		return err
 	}
 	_, err = fmt.Fprintf(out, "Installed module %q in %s\n", resolvedName, configPath)
 	return err
@@ -483,6 +507,10 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		return err
 	}
 	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	if workspaceEnv != "" {
+		_, err = fmt.Fprintf(out, "Uninstalled module %q from env %q in %s\n", name, workspaceEnv, configPath)
 		return err
 	}
 	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)

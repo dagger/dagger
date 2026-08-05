@@ -16164,6 +16164,8 @@ func (r *Workspace) Migrate() *WorkspaceMigration {
 }
 
 // Return a module defined in the workspace configuration.
+//
+// Reflects the selected env's effective view.
 func (r *Workspace) Module(name string) *WorkspaceModule {
 	q := r.query.Select("module")
 	q = q.Arg("name", name)
@@ -16188,6 +16190,8 @@ func (r *Workspace) ModuleSource(path string) *ModuleSource {
 }
 
 // List modules defined in the workspace configuration.
+//
+// Reflects the selected env's effective view.
 func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	q := r.query.Select("modules")
 
@@ -16439,6 +16443,8 @@ type WorkspaceWithConfigValueOpts struct {
 }
 
 // Return this workspace with a configuration value written.
+//
+// When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
 func (r *Workspace) WithConfigValue(key string, value string, opts ...WorkspaceWithConfigValueOpts) *Workspace {
 	q := r.query.Select("withConfigValue")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16561,6 +16567,8 @@ type WorkspaceWithModuleOpts struct {
 }
 
 // Return this workspace with a module installed in its config.
+//
+// When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
 func (r *Workspace) WithModule(ref string, opts ...WorkspaceWithModuleOpts) *Workspace {
 	q := r.query.Select("withModule")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16729,6 +16737,8 @@ type WorkspaceWithoutConfigValueOpts struct {
 // Return this workspace with a configuration value removed.
 //
 // Errors when the key is not currently set.
+//
+// When the session selects an env, the key is scoped to that env's overlay.
 func (r *Workspace) WithoutConfigValue(key string, opts ...WorkspaceWithoutConfigValueOpts) *Workspace {
 	q := r.query.Select("withoutConfigValue")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16771,6 +16781,8 @@ type WorkspaceWithoutModuleOpts struct {
 }
 
 // Return this workspace with a module removed from its config.
+//
+// When the session selects an env, only that env's overlay entry is removed.
 func (r *Workspace) WithoutModule(name string, opts ...WorkspaceWithoutModuleOpts) *Workspace {
 	q := r.query.Select("withoutModule")
 	for i := len(opts) - 1; i >= 0; i-- {
