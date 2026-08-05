@@ -70,7 +70,11 @@ updates:
           - "*"
 
   - package-ecosystem: "cargo"
-    directory: "/sdk/rust"
+    directories:
+      - "/sdk/rust"
+      - "/sdk/rust/examples/backend"
+      - "/sdk/rust/examples/cli"
+      - "/sdk/rust/examples/frontend"
     schedule:
       interval: "weekly"
       day: "monday"
