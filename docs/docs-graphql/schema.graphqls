@@ -3102,6 +3102,72 @@ type GeneratorGroup implements Node {
   run: GeneratorGroup!
 }
 
+"""An immutable git commit."""
+type GitCommit implements Node {
+  """The latest semver release tag reachable from this commit."""
+  ancestorReleaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """Git author email."""
+  authorEmail: String!
+
+  """Git author name."""
+  authorName: String!
+
+  """Git author date, in RFC3339 format."""
+  authoredDate: String!
+
+  """Git committer date, in RFC3339 format."""
+  committedDate: String!
+
+  """Git committer email."""
+  committerEmail: String!
+
+  """Git committer name."""
+  committerName: String!
+
+  """A unique identifier for this GitCommit."""
+  id: ID!
+
+  """Full commit message."""
+  message: String!
+
+  """Commit message body, excluding the headline."""
+  messageBody: String!
+
+  """First line of the commit message."""
+  messageHeadline: String!
+
+  """Parent commit SHAs."""
+  parentShas: [String!]!
+
+  """The latest semver release tag that points directly at this commit."""
+  releaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """The full commit SHA."""
+  sha: String!
+
+  """The abbreviated commit SHA."""
+  shortSha: String!
+
+  """The filesystem tree at this commit."""
+  tree(
+    """Set to true to discard .git directory."""
+    discardGitDir: Boolean = false
+
+    """The depth of the tree to fetch."""
+    depth: Int = 1
+
+    """Set to true to populate tag refs in the local checkout .git."""
+    includeTags: Boolean = false
+  ): Directory!
+}
+
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
   """Creates a synthetic workspace from this git ref."""
@@ -3113,7 +3179,10 @@ type GitRef implements Node {
   ): Workspace!
 
   """The resolved commit id at this ref."""
-  commit: String!
+  commit: String! @deprecated(reason: "Use \"commitSHA\" instead.")
+
+  """The resolved commit SHA at this ref."""
+  commitSHA: String!
 
   """Find the best common ancestor between this ref and another ref."""
   commonAncestor(
@@ -3124,8 +3193,32 @@ type GitRef implements Node {
   """A unique identifier for this GitRef."""
   id: ID!
 
+  """
+  Commits reachable from this ref, newest first, starting with the commit this ref resolves to.
+  """
+  log(
+    """Maximum number of commits to return."""
+    limit: Int = 10
+
+    """
+    Only include commits touching these paths, relative to the root of the repository.
+    """
+    paths: [String!]
+
+    """
+    Exclude commits reachable from this ref, i.e. only list commits added on top of it.
+    """
+    base: ID @expectedType(name: "GitRef")
+  ): [GitCommit!]!
+
+  """The resolved name of this ref."""
+  name: String!
+
   """The resolved ref name at this ref."""
-  ref: String!
+  ref: String! @deprecated(reason: "Use \"name\" instead.")
+
+  """The commit this ref resolves to."""
+  targetCommit: GitCommit!
 
   """The filesystem tree at this ref."""
   tree(
@@ -3168,7 +3261,7 @@ type GitRepository implements Node {
     Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     """
     id: String!
-  ): GitRef!
+  ): GitCommit!
 
   """Returns details for HEAD."""
   head: GitRef!

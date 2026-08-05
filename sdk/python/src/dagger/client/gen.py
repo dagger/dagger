@@ -7923,6 +7923,353 @@ class GeneratorGroup(Type):
 
 
 @typecheck
+class GitCommit(Type):
+    """An immutable git commit."""
+
+    def ancestor_release_tag(
+        self,
+        *,
+        include_pre_release: bool | None = False,
+    ) -> "GitRef":
+        """The latest semver release tag reachable from this commit.
+
+        Parameters
+        ----------
+        include_pre_release:
+            Include pre-release tags when choosing the latest tag.
+        """
+        _args = [
+            Arg("includePreRelease", include_pre_release, False),
+        ]
+        _ctx = self._select("ancestorReleaseTag", _args)
+        return GitRef(_ctx)
+
+    async def author_email(self) -> str:
+        """Git author email.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("authorEmail", _args)
+        return await _ctx.execute(str)
+
+    async def author_name(self) -> str:
+        """Git author name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("authorName", _args)
+        return await _ctx.execute(str)
+
+    async def authored_date(self) -> str:
+        """Git author date, in RFC3339 format.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("authoredDate", _args)
+        return await _ctx.execute(str)
+
+    async def committed_date(self) -> str:
+        """Git committer date, in RFC3339 format.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("committedDate", _args)
+        return await _ctx.execute(str)
+
+    async def committer_email(self) -> str:
+        """Git committer email.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("committerEmail", _args)
+        return await _ctx.execute(str)
+
+    async def committer_name(self) -> str:
+        """Git committer name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("committerName", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this GitCommit.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def message(self) -> str:
+        """Full commit message.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("message", _args)
+        return await _ctx.execute(str)
+
+    async def message_body(self) -> str:
+        """Commit message body, excluding the headline.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("messageBody", _args)
+        return await _ctx.execute(str)
+
+    async def message_headline(self) -> str:
+        """First line of the commit message.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("messageHeadline", _args)
+        return await _ctx.execute(str)
+
+    async def parent_shas(self) -> list[str]:
+        """Parent commit SHAs.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("parentShas", _args)
+        return await _ctx.execute(list[str])
+
+    def release_tag(
+        self,
+        *,
+        include_pre_release: bool | None = False,
+    ) -> "GitRef":
+        """The latest semver release tag that points directly at this commit.
+
+        Parameters
+        ----------
+        include_pre_release:
+            Include pre-release tags when choosing the latest tag.
+        """
+        _args = [
+            Arg("includePreRelease", include_pre_release, False),
+        ]
+        _ctx = self._select("releaseTag", _args)
+        return GitRef(_ctx)
+
+    async def sha(self) -> str:
+        """The full commit SHA.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sha", _args)
+        return await _ctx.execute(str)
+
+    async def short_sha(self) -> str:
+        """The abbreviated commit SHA.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("shortSha", _args)
+        return await _ctx.execute(str)
+
+    def tree(
+        self,
+        *,
+        discard_git_dir: bool | None = False,
+        depth: int | None = 1,
+        include_tags: bool | None = False,
+    ) -> Directory:
+        """The filesystem tree at this commit.
+
+        Parameters
+        ----------
+        discard_git_dir:
+            Set to true to discard .git directory.
+        depth:
+            The depth of the tree to fetch.
+        include_tags:
+            Set to true to populate tag refs in the local checkout .git.
+        """
+        _args = [
+            Arg("discardGitDir", discard_git_dir, False),
+            Arg("depth", depth, 1),
+            Arg("includeTags", include_tags, False),
+        ]
+        _ctx = self._select("tree", _args)
+        return Directory(_ctx)
+
+
+@typecheck
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
@@ -7944,6 +8291,35 @@ class GitRef(Type):
     async def commit(self) -> str:
         """The resolved commit id at this ref.
 
+        .. deprecated::
+            Use "commitSHA" instead.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        warnings.warn(
+            'Method "commit" is deprecated: Use "commitSHA" instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args: list[Arg] = []
+        _ctx = self._select("commit", _args)
+        return await _ctx.execute(str)
+
+    async def commit_sha(self) -> str:
+        """The resolved commit SHA at this ref.
+
         Returns
         -------
         str
@@ -7959,7 +8335,7 @@ class GitRef(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("commit", _args)
+        _ctx = self._select("commitSHA", _args)
         return await _ctx.execute(str)
 
     def common_ancestor(self, other: Self) -> Self:
@@ -8004,8 +8380,37 @@ class GitRef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def ref(self) -> str:
-        """The resolved ref name at this ref.
+    async def log(
+        self,
+        *,
+        limit: int | None = 10,
+        paths: list[str] | None = None,
+        base: "GitRef | None" = None,
+    ) -> list[GitCommit]:
+        """Commits reachable from this ref, newest first, starting with the
+        commit this ref resolves to.
+
+        Parameters
+        ----------
+        limit:
+            Maximum number of commits to return.
+        paths:
+            Only include commits touching these paths, relative to the root of
+            the repository.
+        base:
+            Exclude commits reachable from this ref, i.e. only list commits
+            added on top of it.
+        """
+        _args = [
+            Arg("limit", limit, 10),
+            Arg("paths", paths, None),
+            Arg("base", base, None),
+        ]
+        _ctx = self._select("log", _args)
+        return await _ctx.execute_object_list(GitCommit)
+
+    async def name(self) -> str:
+        """The resolved name of this ref.
 
         Returns
         -------
@@ -8022,8 +8427,43 @@ class GitRef(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def ref(self) -> str:
+        """The resolved ref name at this ref.
+
+        .. deprecated::
+            Use "name" instead.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        warnings.warn(
+            'Method "ref" is deprecated: Use "name" instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args: list[Arg] = []
         _ctx = self._select("ref", _args)
         return await _ctx.execute(str)
+
+    def target_commit(self) -> GitCommit:
+        """The commit this ref resolves to."""
+        _args: list[Arg] = []
+        _ctx = self._select("targetCommit", _args)
+        return GitCommit(_ctx)
 
     def tree(
         self,
@@ -8124,7 +8564,7 @@ class GitRepository(Type):
         _ctx = self._select("branches", _args)
         return await _ctx.execute(list[str])
 
-    def commit(self, id: str) -> GitRef:
+    def commit(self, id: str) -> GitCommit:
         """Returns details of a commit.
 
         Parameters
@@ -8137,7 +8577,7 @@ class GitRepository(Type):
             Arg("id", id),
         ]
         _ctx = self._select("commit", _args)
-        return GitRef(_ctx)
+        return GitCommit(_ctx)
 
     def head(self) -> GitRef:
         """Returns details for HEAD."""
@@ -15804,6 +16244,7 @@ __all__ = [
     "GeneratedCode",
     "Generator",
     "GeneratorGroup",
+    "GitCommit",
     "GitRef",
     "GitRepository",
     "HTTPState",
