@@ -1125,7 +1125,7 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 
 	t.Run("baseline reads input.txt from the workspace", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerQuery(`{currentWorkspace{generators(include:["repro:gen"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}`)).
+			With(daggerQuery(`{currentWorkspace{generators(include:["repro"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: A")
@@ -1133,7 +1133,7 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsSeeOverlayEdits(ctx context.Contex
 
 	t.Run("generator sees an overlay edit applied to the workspace", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
-			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){generators(include:["repro:gen"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}}`)).
+			With(daggerQuery(`{currentWorkspace{withNewFile(path:"input.txt",contents:"B-OVERLAY"){generators(include:["repro"]){run{changes{layer{file(path:"output.txt"){contents}}}}}}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "generated from: B-OVERLAY")

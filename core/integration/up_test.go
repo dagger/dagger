@@ -106,11 +106,11 @@ func (UpSuite) TestUpEnvServices(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-services")
 
-	// Call the module's CurrentEnvServices function which queries
-	// dag.CurrentEnv().Services().List() to verify services are visible
-	// from within the module execution context.
+	// Call the module's WorkspaceServices function, which lists
+	// Workspace.services via an auto-injected Workspace arg, to verify
+	// services are visible from within the module execution context.
 	out, err := modGen.
-		With(daggerExec("call", "current-env-services")).
+		With(daggerExec("call", "workspace-services")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "web")

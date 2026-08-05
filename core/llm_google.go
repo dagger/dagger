@@ -475,12 +475,12 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 
 	// records token usage metrics and updates the final summary struct based on metadata from the stream.
 	tokenHandler := func(usageMeta *genai.GenerateContentResponseUsageMetadata) (usageSummary LLMTokenUsage) {
-		candidatesTokens := int64(usageMeta.CandidatesTokenCount)
-		promptTokens := int64(usageMeta.PromptTokenCount)
 		cachedTokens := int64(usageMeta.CachedContentTokenCount)
+		promptTokens := uncachedInputTokens(int64(usageMeta.PromptTokenCount), cachedTokens)
+		outputTokensTotal := int64(usageMeta.CandidatesTokenCount + usageMeta.ThoughtsTokenCount)
 
-		if candidatesTokens > 0 {
-			outputTokens.Record(ctx, candidatesTokens, metric.WithAttributes(attrs...))
+		if outputTokensTotal > 0 {
+			outputTokens.Record(ctx, outputTokensTotal, metric.WithAttributes(attrs...))
 		}
 		if promptTokens > 0 {
 			inputTokens.Record(ctx, promptTokens, metric.WithAttributes(attrs...))
@@ -489,10 +489,13 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 			inputTokensCacheReads.Record(ctx, cachedTokens, metric.WithAttributes(attrs...))
 		}
 
-		usageSummary.OutputTokens += candidatesTokens
-		usageSummary.InputTokens += promptTokens
-		usageSummary.CachedTokenReads += cachedTokens
-		usageSummary.TotalTokens += candidatesTokens + promptTokens
+		usageSummary.OutputTokens = outputTokensTotal
+		usageSummary.InputTokens = promptTokens
+		usageSummary.CachedTokenReads = cachedTokens
+		usageSummary.TotalTokens = promptTokens + outputTokensTotal + cachedTokens
+		if totalTokens := int64(usageMeta.TotalTokenCount); totalTokens > usageSummary.TotalTokens {
+			usageSummary.TotalTokens = totalTokens
+		}
 
 		return usageSummary
 	}

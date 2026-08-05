@@ -1,0 +1,23 @@
+"""Tools that return a Workspace, for @agent integration tests."""
+type Swapper {
+  """
+  Return the current workspace with a marker file added.
+
+  The auto-injected Workspace! is the agent's current workspace; returning a
+  derived one exercises the tool -> workspace rebinding (a tool that returns a
+  Workspace replaces the LLM's current workspace, mirroring Changeset overlay).
+  """
+  swap(ws: Workspace!): Workspace! {
+    ws.withNewFile("SWAPPED.txt", "swapped by tool")
+  }
+
+  addFirst(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("FIRST.txt", "first parallel change").changes(root)
+  }
+
+  addSecond(ws: Workspace!): Changeset! {
+    let root = ws.directory("/")
+    root.withNewFile("SECOND.txt", "second parallel change").changes(root)
+  }
+}

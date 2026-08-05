@@ -36,6 +36,14 @@ class InterfaceVisitor extends AbstractVisitor {
             .addJavadoc(Helpers.escapeJavadoc(type.getDescription()))
             .addModifiers(Modifier.PUBLIC);
 
+    // With unified IDs, an interface exposing an id field is IDAble like any
+    // object, so interface-typed values (e.g. Node args) marshal by ID through
+    // the existing Arguments.Builder overloads.
+    if (type.providesId()) {
+      interfaceBuilder.addSuperinterface(
+          ParameterizedTypeName.get(ClassName.bestGuess("IDAble"), ClassName.bestGuess("ID")));
+    }
+
     if (type.getFields() != null) {
       for (Field field : type.getFields()) {
         MethodSpec.Builder methodBuilder =

@@ -882,12 +882,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
-
-	var envContext dagql.ObjectResult[*Env]
-	if env, ok, err := EnvFromContext(ctx); err != nil {
-		return nil, fmt.Errorf("resolve function env context: %w", err)
-	} else if ok {
-		envContext = env
+	// Carry the receiver object (with its dagql ID) engine-side so the module can
+	// reach it via Query.currentNode. It rides the fnCall by reference into the
+	// nested client session (ServeHTTPToNestedClient) for both in-process and
+	// containerized runtimes. Nil for top-level / constructor calls.
+	if obj, ok := opts.ParentTyped.(dagql.AnyObjectResult); ok {
+		fnCall.parentTyped = obj
 	}
 
 	// hide all this internal plumbing making up the call
@@ -899,7 +899,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	err = runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
+	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr
@@ -1242,10 +1242,10 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
-	// Prefer a Workspace explicitly bound into the context (a generator/check
-	// group threading the workspace it was rolled up from) over the ambient
-	// currentWorkspace, so every leaf in the group resolves the same workspace
-	// under the same ID.
+	// Prefer a Workspace explicitly bound into the context (an LLM bound via
+	// withWorkspace, or a generator/check group threading the workspace it was
+	// rolled up from) over the ambient currentWorkspace, so every leaf in the
+	// group resolves the same workspace under the same ID.
 	//
 	// This bound-workspace preference MUST be checked before the
 	// callerInModuleFunction guard below: a generator/check leaf's

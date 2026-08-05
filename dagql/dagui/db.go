@@ -154,6 +154,10 @@ type DB struct {
 	surfacedChecksAt   uint64
 	surfacedChecksInit bool
 
+	surfacedGenerators     []*GeneratorNode
+	surfacedGeneratorsAt   uint64
+	surfacedGeneratorsInit bool
+
 	testIndex *TestIndex
 }
 
