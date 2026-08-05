@@ -1,12 +1,24 @@
 kind: Added
 body: |
-  Add `GitRef.log` to list the commits reachable from a ref as `GitCommit` values, newest first, starting with the commit the ref resolves to.
+  Add a `GitCommit` object to the Git API, exposing commit metadata: `sha`,
+  `shortSha`, author/committer names, emails, and dates, the commit `message`
+  (plus `messageHeadline` and `messageBody`), `parentShas`, and the filesystem
+  `tree` at that commit. Use `GitRef.targetCommit` to get commit details from a
+  branch, tag, or ref, or `GitRepository.commit(id:)` to look up a commit
+  directly.
 
-  It takes a `limit` (default 10), an optional list of `paths` to restrict the
-  log to commits touching them, and an optional `base` ref whose reachable
-  commits are excluded, i.e. `base..ref`. The base ref may live in a different
-  repository. Reading a log fetches the full history of the refs involved, the
-  same tradeoff `commonAncestor` makes.
+  - `GitRef.log` lists the commits reachable from a ref as `GitCommit` values,
+    newest first, starting with the commit the ref resolves to. It takes a
+    `limit` (default 10), an optional list of `paths` to restrict the log to
+    commits touching them, and an optional `base` ref whose reachable commits
+    are excluded, i.e. `base..ref`. The base ref may live in a different
+    repository. Reading a log fetches the full history of the refs involved,
+    the same tradeoff `commonAncestor` makes.
+  - `GitCommit.releaseTag` and `GitCommit.ancestorReleaseTag` return the latest
+    semver tag pointing at (or reachable from) the commit, without running
+    `git fetch --tags`.
+  - `GitRef.commitSHA` and `GitRef.name` are clearer names for the now-deprecated
+    `commit` and `ref` fields.
 time: 2026-07-26T18:30:00Z
 custom:
   Author: vito
