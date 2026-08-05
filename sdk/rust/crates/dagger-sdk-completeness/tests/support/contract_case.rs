@@ -194,6 +194,15 @@ impl ContractCase {
             || self.harness_result.check_kind != self.harness_mapping.check_kind
             || self.harness_result.harness_revision != self.harness_mapping.harness_revision
             || self.harness_result.target != self.harness_mapping.execution_target
+            || self.harness_result.cli_artifact_digest != self.harness_mapping.cli_artifact_digest
+            || self.harness_result.verified_artifact_digest
+                != self.harness_mapping.verified_artifact_digest
+            || !self
+                .harness_mapping
+                .platform_scope
+                .contains(&self.harness_result.platform)
+            || self.harness_result.assertion != self.harness_mapping.expected_outcome.assertion
+            || self.harness_result.capability_ids != self.harness_mapping.capability_ids
             || self.harness_mapping.execution_target != target_digest
         {
             errors.push("harness result is not contained by its mapping and target");
@@ -673,8 +682,11 @@ fn build_contract_case(seed: &ContractSeed, reverse: bool) -> ContractCase {
         check_kind: HarnessCheckKind::SubjectConformance,
         harness_revision: seed.harness_revision.clone(),
         source_locator: locator(format!("check_client_connect:{suffix}")),
+        source_fingerprint: Digest::sha256(format!("check-source-{suffix}")),
         capability_ids: canonical_set(vec![capability_id.clone()], reverse),
         execution_target: target_digest.clone(),
+        cli_artifact_digest: Digest::sha256(format!("cli-{suffix}")),
+        verified_artifact_digest: Digest::sha256(format!("rust-workspace-{suffix}")),
         platform_scope: canonical_set(vec![platform.clone(), alternate_platform], reverse),
         invocation: command.clone(),
         expected_outcome: expected_outcome.clone(),
@@ -689,9 +701,12 @@ fn build_contract_case(seed: &ContractSeed, reverse: bool) -> ContractCase {
         check_kind: HarnessCheckKind::SubjectConformance,
         harness_revision: seed.harness_revision.clone(),
         target: target_digest.clone(),
-        cli_artifact_digest: Digest::sha256(format!("cli-{suffix}")),
+        cli_artifact_digest: harness_mapping.cli_artifact_digest.clone(),
+        verified_artifact_digest: harness_mapping.verified_artifact_digest.clone(),
         platform: platform.clone(),
         outcome: CheckOutcome::Passed,
+        assertion: expected_outcome.assertion.clone(),
+        capability_ids: harness_mapping.capability_ids.clone(),
         stdout_digest: Digest::sha256(format!("stdout-{suffix}")),
         stderr_digest: Digest::sha256(format!("stderr-{suffix}")),
     };

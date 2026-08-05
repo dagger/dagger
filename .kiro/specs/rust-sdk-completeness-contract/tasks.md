@@ -176,20 +176,20 @@
     workspace checks, and clippy; require deterministic output from repeated fixture
     extraction and zero uncovered fixture SourceItems.
 
-- [ ] 8. Implement classification, evidence, ownership, and child-spec traceability
-  - [ ] 8.1 Implement exact classification-rule expansion
+- [x] 8. Implement classification, evidence, ownership, and child-spec traceability
+  - [x] 8.1 Implement exact classification-rule expansion
     - Add the restricted conjunction-only selector language, expected ordered ID set or
       digest, exact-ID overrides, overlap/staleness detection, and one resolved row per
       Active_Capability.
     - Reject regex/scripts, negative or output-dependent predicates, new/lost matches,
       stale overrides, duplicates, and unclassified capabilities.
     - _Requirements: 5.4–5.9_
-  - [ ] 8.2 Implement the five-state status-entry validator
+  - [x] 8.2 Implement the five-state status-entry validator
     - Enforce the exact gap, owner, implementation, verification, and reviewed-decision
       evidence shapes for `Missing`, `Partial`, `Implemented`, `Idiomatic_Equivalent`, and
       `Inapplicable`; reject planning statuses and completion by source/docs alone.
     - _Requirements: 6.1–6.10, 10.1–10.3_
-  - [ ] 8.3 Implement evidence provenance and locator auditing
+  - [x] 8.3 Implement evidence provenance and locator auditing
     - Validate kind-specific fields, registered repositories, immutable revisions,
       contained paths, exact source locators, claims, argv-only commands, repository-relative
       working directories, environment allowlists, outcomes, targets, platforms, and exact
@@ -197,56 +197,56 @@
     - Expand shared evidence back to each ledger row and keep skipped, removed, failed,
       documentation, issue, PR, and harness-self records ineligible as passing verification.
     - _Requirements: 2.9, 6.10–6.12, 7.1–7.10_
-  - [ ] 8.4 Implement deterministic blocking-work ownership
+  - [x] 8.4 Implement deterministic blocking-work ownership
     - Route every `Missing` and `Partial` capability to exactly one Feature 2–9 domain,
       preserving `initClient` and standalone/dependency client-generation gaps under
       Feature 7 and unverified platform obligations under Feature 8.
     - _Requirements: 10.4–10.11, 10.15, 10.16_
-  - [ ] 8.5 Implement downstream traceability validation
+  - [x] 8.5 Implement downstream traceability validation
     - Validate child-spec Capability_ID declarations and candidate status changes against
       the current inventory; require status-appropriate implementation and verification
       evidence in the same candidate contract.
     - _Requirements: 10.12, 10.13_
-  - [ ] 8.6 Property test: Property 7 — exact classification-rule expansion
+  - [x] 8.6 Property test: Property 7 — exact classification-rule expansion
     - Implement a simple-reference-resolver `proptest` with at least 256 generated
       inventories, rules, expected sets/digests, selectors, and overrides, including every
       drift and overlap condition.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 7: exact classification-rule expansion`
     - _Requirements: 5.4–5.9_
-  - [ ] 8.7 Property test: Property 8 — status-entry state machine
+  - [x] 8.7 Property test: Property 8 — status-entry state machine
     - Implement a table-backed reference-model `proptest` with at least 256 capability and
       evidence combinations across all five statuses and invalid planning/documentation-only
       variants.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 8: status-entry state machine`
     - _Requirements: 6.1–6.10, 10.1–10.3_
-  - [ ] 8.8 Property test: Property 9 — evidence provenance and scope
+  - [x] 8.8 Property test: Property 9 — evidence provenance and scope
     - Implement a valid-first `proptest` with at least 256 evidence/source registry cases,
       mutating each provenance, locator, command/outcome, target, platform, and reverse-row
       relationship independently and in combination.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 9: evidence provenance and scope`
     - _Requirements: 6.11, 6.12, 7.1–7.8_
-  - [ ] 8.9 Property test: Property 17 — blocking-work ownership
+  - [x] 8.9 Property test: Property 17 — blocking-work ownership
     - Implement a reference-routing `proptest` with at least 256 generated blocking
       capabilities from every umbrella domain, including `initClient`, dependency client
       generation, and platform-only gaps.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 17: blocking-work ownership`
     - _Requirements: 10.4–10.11, 10.15, 10.16_
-  - [ ] 8.10 Property test: Property 18 — downstream traceability preservation
+  - [x] 8.10 Property test: Property 18 — downstream traceability preservation
     - Implement a `proptest` with at least 256 generated child declarations and candidate
       ledger changes, covering unknown IDs, unchanged rows, and every valid/invalid
       status-evidence transition.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 18: downstream traceability preservation`
     - _Requirements: 10.12, 10.13_
 
-- [ ] 9. Implement bounded official-harness integration
-  - [ ] 9.1 Implement exhaustive harness mapping validation
+- [x] 9. Implement bounded official-harness integration
+  - [x] 9.1 Implement exhaustive harness mapping validation
     - Require exactly one complete mapping for every pinned public check and no extras;
       bind source fingerprint, revision, target, platform, invocation, expected outcome,
       limitations, and optional evidence.
     - Enforce non-empty exact Capability_ID sets for `subject-conformance` and an empty set
       for `harness-self`; detect added, removed, and semantically changed checks.
     - _Requirements: 8.13, 12.2, 12.3, 12.12, 12.15_
-  - [ ] 9.2 Implement harness-result normalization and evidence admission
+  - [x] 9.2 Implement harness-result normalization and evidence admission
     - Admit only a passing subject result whose check kind, revision, target, explicitly
       selected CLI/engine and verified artifact, platform, expected outcome, and capability
       scope exactly match its mapping.
@@ -254,39 +254,39 @@
       completeness; model expected subject failures as blocker evidence without making
       Integrity fail by themselves.
     - _Requirements: 1.10, 1.11, 6.13, 6.14, 7.9, 7.10, 12.4–12.9, 12.16_
-  - [ ] 9.3 Implement the argv-only per-check harness runner
+  - [x] 9.3 Implement the argv-only per-check harness runner
     - Execute the pinned public `dagger check <check-id> --no-generate` interface against
       the Rust workspace with the Target Descriptor's exact CLI/engine, immutable module
       revision, controlled environment, and explicit platform.
     - Record only normalized command/result identities and output digests; keep raw logs
       ephemeral and redact process failures and secrets.
     - _Requirements: 7.5–7.10, 12.4–12.9_
-  - [ ] 9.4 Implement the portable Feature 8 extension boundary
+  - [x] 9.4 Implement the portable Feature 8 extension boundary
     - Validate `ConformanceScenario` values using exactly one public `SdkTarget` or
       `mod-test` adapter, an exact non-empty Capability_ID set, source anchors, normalized
       observable behaviour, and Rust-valid invocation independent of obsolete or
       Go-specific CLI syntax.
     - _Requirements: 12.10, 12.11_
-  - [ ] 9.5 Property test: Property 10 — harness inventory partition
+  - [x] 9.5 Property test: Property 10 — harness inventory partition
     - Implement a reference-partition `proptest` with at least 256 generated check
       inventories and mappings, including missing/extra/changed checks and every valid or
       invalid subject/self capability partition.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 10: harness inventory partition`
     - _Requirements: 8.13, 12.2, 12.3, 12.12, 12.15_
-  - [ ] 9.6 Property test: Property 11 — harness evidence containment
+  - [x] 9.6 Property test: Property 11 — harness evidence containment
     - Implement a valid-first `proptest` with at least 256 mapping/result pairs, mutating
       each target, artifact, platform, assertion, outcome, kind, revision, and capability
       boundary and modelling expected subject-check failure separately from Integrity.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 11: harness evidence containment`
     - _Requirements: 1.10, 1.11, 6.13, 6.14, 7.9, 7.10, 12.4–12.9, 12.16_
-  - [ ] 9.7 Property test: Property 21 — portable conformance extensions
+  - [x] 9.7 Property test: Property 21 — portable conformance extensions
     - Implement a `proptest` with at least 256 generated Rust extension scenarios covering
       both adapters, exact/empty/stale capability sets, preserved observable behaviour, and
       command-shaped ports that lack a semantic mapping.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 21: portable conformance extensions`
     - _Requirements: 12.10, 12.11_
 
-- [ ] 10. Checkpoint: ledger and harness containment tests are green
+- [x] 10. Checkpoint: ledger and harness containment tests are green
   - Run locked unit/property/integration-fixture tests and clippy; require every generated
     harness outcome to remain inside its mapped target/platform/assertion boundary and every
     expected subject failure to leave Integrity unaffected.

@@ -15,9 +15,9 @@ use dagger_sdk_completeness::extract::schema::{
     decode_introspection, extract_schema,
 };
 use dagger_sdk_completeness::{
-    AuthorityId, CommitSha, SourceItemState, behavior_capability_id, canonical_bytes,
-    decode_identity_segment, derive_schema_candidates, encode_identity_segment,
-    semantic_fingerprint,
+    AuthorityId, CommitSha, HarnessCheckKind, SourceItemState, behavior_capability_id,
+    build_harness_check_inventory, canonical_bytes, decode_identity_segment,
+    derive_schema_candidates, encode_identity_segment, semantic_fingerprint,
 };
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence};
@@ -320,6 +320,28 @@ fn harness_scanner_preserves_the_pinned_eighteen_check_partition() {
             .items
             .values()
             .filter(|item| item.state == SourceItemState::HarnessSelf)
+            .count(),
+        1
+    );
+    let check_inventory = build_harness_check_inventory(
+        &inventory,
+        &CommitSha::new("8c164424b7a8a37b33a77367ef7547490d5b87b5").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(check_inventory.checks.len(), 18);
+    assert_eq!(
+        check_inventory
+            .checks
+            .values()
+            .filter(|check| check.check_kind == HarnessCheckKind::SubjectConformance)
+            .count(),
+        17
+    );
+    assert_eq!(
+        check_inventory
+            .checks
+            .values()
+            .filter(|check| check.check_kind == HarnessCheckKind::HarnessSelf)
             .count(),
         1
     );

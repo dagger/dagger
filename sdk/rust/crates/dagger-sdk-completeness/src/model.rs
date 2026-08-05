@@ -1037,8 +1037,14 @@ pub struct HarnessCheckMapping {
     pub check_kind: HarnessCheckKind,
     pub harness_revision: CommitSha,
     pub source_locator: SourceLocator,
+    /// Fingerprint of the complete public check declaration at `harness_revision`.
+    pub source_fingerprint: Digest,
     pub capability_ids: CanonicalSet<CapabilityId>,
     pub execution_target: TargetDigest,
+    /// Exact CLI bytes selected to execute this mapping.
+    pub cli_artifact_digest: Digest,
+    /// Exact Rust workspace or module artifact assessed by the check.
+    pub verified_artifact_digest: Digest,
     pub platform_scope: CanonicalSet<Platform>,
     pub invocation: CommandSpec,
     pub expected_outcome: ExpectedOutcome,
@@ -1063,8 +1069,13 @@ pub struct HarnessCheckResult {
     pub harness_revision: CommitSha,
     pub target: TargetDigest,
     pub cli_artifact_digest: Digest,
+    pub verified_artifact_digest: Digest,
     pub platform: Platform,
     pub outcome: CheckOutcome,
+    /// Assertion identity copied from the mapping, not inferred from process output.
+    pub assertion: NonEmptyText,
+    /// Exact subject scope claimed by this result.
+    pub capability_ids: CanonicalSet<CapabilityId>,
     pub stdout_digest: Digest,
     pub stderr_digest: Digest,
 }
