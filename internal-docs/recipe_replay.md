@@ -133,8 +133,14 @@ anything here.
 
 So a marked call is only tainted when the `cachePerSession` stamp recorded on it
 differs from the loading session. Fields that are marked must therefore also
-declare `PerSessionInput`, so the stamp exists to compare; a marked call with no
-stamp is treated as tainted, which is safe but silently costs cache hits.
+declare `PerSessionInput`, and the pairing is load-bearing, not hygiene. A
+marked call with no stamp is treated as tainted, but taint only skips the
+*recipe loader's* lookups — the re-issued call still computes its ordinary
+digest, and for a field with no session-scoped input that digest is identical
+in every session, so the regular call path serves the recorded value from
+cache and the resolver never re-runs. `PerSessionInput` is what gives a new
+session's re-issued call a fresh digest to actually execute under
+(`TestNotReplayableWithoutSessionStamp` pins this down).
 
 Session — not client — is the right granularity, matching
 `clientFromIDs(sessionID, clientID)`. A module client's recorded host read
@@ -184,8 +190,9 @@ read APIs — mark the impure thing it delegates to instead.
 When marking one:
 
 1. Add `NotReplayable("<reason>")` with a reason a reader can act on.
-2. Ensure the field also declares `dagql.PerSessionInput`, or every replay of it
-   is tainted regardless of session.
+2. Declare `dagql.PerSessionInput` alongside it — without the stamp the mark
+   does not actually force re-execution, it only routes the replay through the
+   regular cache (see the scoping section above).
 3. Remember the cost is not local. The taint propagates to every recorded call
    that depends on it, so a field near the root of common recipes is expensive.
 
