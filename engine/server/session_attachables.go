@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -20,25 +21,62 @@ import (
 )
 
 type sessionAttachableManager struct {
-	mu      sync.Mutex
-	callers map[string]*sessionAttachableCaller
-	waiters map[string][]chan struct{}
+	mu           sync.Mutex
+	callers      map[string]*sessionAttachableCaller
+	reservations map[string]struct{}
+	waiters      map[string][]chan struct{}
 }
 
 type sessionAttachableCaller struct {
 	ctx       context.Context
 	conn      *grpc.ClientConn
 	supported map[string]struct{}
+	cancel    context.CancelCauseFunc
+	done      chan struct{}
 }
+
+type sessionAttachableCallbacks struct {
+	Published func()
+	Removed   func(error)
+}
+
+var (
+	errAttachableConnectionExists = errors.New("session attachables connection already exists")
+	errAttachableExplicitClose    = errors.New("session attachment explicitly closed")
+)
 
 func newSessionAttachableManager() *sessionAttachableManager {
 	return &sessionAttachableManager{
-		callers: map[string]*sessionAttachableCaller{},
-		waiters: map[string][]chan struct{}{},
+		callers:      map[string]*sessionAttachableCaller{},
+		reservations: map[string]struct{}{},
+		waiters:      map[string][]chan struct{}{},
 	}
 }
 
-func (m *sessionAttachableManager) Register(ctx context.Context, clientID string, conn net.Conn, methodURLs []string) error {
+// Reserve atomically claims the pre-hijack registration slot for clientID. It
+// is deliberately separate from Register so a duplicate can receive a normal
+// machine-readable HTTP 409 before either connection is upgraded.
+func (m *sessionAttachableManager) Reserve(clientID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.reservations[clientID]; ok {
+		return errAttachableConnectionExists
+	}
+	if existing, ok := m.callers[clientID]; ok && existing.active() {
+		return errAttachableConnectionExists
+	}
+	m.reservations[clientID] = struct{}{}
+	return nil
+}
+
+func (m *sessionAttachableManager) ReleaseReservation(clientID string) {
+	m.mu.Lock()
+	delete(m.reservations, clientID)
+	m.wakeWaitersLocked(clientID)
+	m.mu.Unlock()
+}
+
+func (m *sessionAttachableManager) Register(ctx context.Context, clientID string, conn net.Conn, methodURLs []string, callbacks sessionAttachableCallbacks) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(context.Canceled)
 
@@ -51,19 +89,30 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 		ctx:       ctx,
 		conn:      cc,
 		supported: map[string]struct{}{},
+		cancel:    cancel,
+		done:      make(chan struct{}),
 	}
 	for _, methodURL := range methodURLs {
 		caller.supported[strings.ToLower(methodURL)] = struct{}{}
 	}
 
 	m.mu.Lock()
-	if existing, ok := m.callers[clientID]; ok && existing.active() {
+	if _, reserved := m.reservations[clientID]; !reserved {
 		m.mu.Unlock()
-		return fmt.Errorf("session attachables for client %q already exist", clientID)
+		return errAttachableExplicitClose
 	}
+	if existing, ok := m.callers[clientID]; ok && existing.active() {
+		delete(m.reservations, clientID)
+		m.mu.Unlock()
+		return errAttachableConnectionExists
+	}
+	delete(m.reservations, clientID)
 	m.callers[clientID] = caller
 	m.wakeWaitersLocked(clientID)
 	m.mu.Unlock()
+	if callbacks.Published != nil {
+		callbacks.Published()
+	}
 
 	defer func() {
 		m.mu.Lock()
@@ -72,11 +121,38 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 			m.wakeWaitersLocked(clientID)
 		}
 		m.mu.Unlock()
+		cause := context.Cause(caller.ctx)
+		if callbacks.Removed != nil {
+			callbacks.Removed(cause)
+		}
+		close(caller.done)
 	}()
 
 	<-caller.ctx.Done()
 	conn.Close()
 	return nil
+}
+
+// Deregister cancels and waits for the exact published caller to leave the
+// manager. Returning only after removal lets the explicit-close path satisfy
+// the protocol ordering: deregister attachables first, then clear attachment
+// ownership.
+func (m *sessionAttachableManager) Deregister(clientID string) bool {
+	m.mu.Lock()
+	if _, ok := m.reservations[clientID]; ok {
+		delete(m.reservations, clientID)
+		m.wakeWaitersLocked(clientID)
+		m.mu.Unlock()
+		return true
+	}
+	caller, ok := m.callers[clientID]
+	m.mu.Unlock()
+	if !ok {
+		return false
+	}
+	caller.cancel(errAttachableExplicitClose)
+	<-caller.done
+	return true
 }
 
 func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCaller, bool) {

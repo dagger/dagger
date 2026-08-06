@@ -239,7 +239,11 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, appendStart 
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.tracesSubscribeHandler(w, r, client, sessionSSEOptions{terminating: client.shutdownCh})
+}
+
+func (ps *PubSub) tracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, opts sessionSSEOptions) error {
+	return ps.sseHandler(w, r, client, opts, func(ctx context.Context, db *clientdb.DB, lastID string, maxID sessionSSEMaxID) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -247,12 +251,20 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
+		if maximum, bounded := maxID.value(); bounded && since >= maximum {
+			return nil, false, nil
+		}
 		spans, err := db.Read().SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
 		if err != nil {
 			return nil, false, fmt.Errorf("select spans: %w", err)
+		}
+		if maximum, bounded := maxID.value(); bounded {
+			for len(spans) > 0 && spans[len(spans)-1].ID > maximum {
+				spans = spans[:len(spans)-1]
+			}
 		}
 		if len(spans) == 0 {
 			return nil, false, nil
@@ -279,7 +291,11 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 
 //nolint:dupl
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.logsSubscribeHandler(w, r, client, sessionSSEOptions{terminating: client.shutdownCh})
+}
+
+func (ps *PubSub) logsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, opts sessionSSEOptions) error {
+	return ps.sseHandler(w, r, client, opts, func(ctx context.Context, db *clientdb.DB, lastID string, maxID sessionSSEMaxID) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -287,12 +303,20 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
+		if maximum, bounded := maxID.value(); bounded && since >= maximum {
+			return nil, false, nil
+		}
 		logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
 		if err != nil {
 			return nil, false, fmt.Errorf("select logs: %w", err)
+		}
+		if maximum, bounded := maxID.value(); bounded {
+			for len(logs) > 0 && logs[len(logs)-1].ID > maximum {
+				logs = logs[:len(logs)-1]
+			}
 		}
 		if len(logs) == 0 {
 			return nil, false, nil
@@ -315,7 +339,11 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 
 //nolint:dupl
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	return ps.sseHandler(w, r, client, func(ctx context.Context, db *clientdb.DB, lastID string) (*sse.Event, bool, error) {
+	return ps.metricsSubscribeHandler(w, r, client, sessionSSEOptions{terminating: client.shutdownCh})
+}
+
+func (ps *PubSub) metricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, opts sessionSSEOptions) error {
+	return ps.sseHandler(w, r, client, opts, func(ctx context.Context, db *clientdb.DB, lastID string, maxID sessionSSEMaxID) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -323,12 +351,20 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
+		if maximum, bounded := maxID.value(); bounded && since >= maximum {
+			return nil, false, nil
+		}
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
 		})
 		if err != nil {
 			return nil, false, fmt.Errorf("select metrics: %w", err)
+		}
+		if maximum, bounded := maxID.value(); bounded {
+			for len(metrics) > 0 && metrics[len(metrics)-1].ID > maximum {
+				metrics = metrics[:len(metrics)-1]
+			}
 		}
 
 		if len(metrics) == 0 {
@@ -622,9 +658,24 @@ func (ps clientMetrics) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregat
 func (ps clientMetrics) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientMetrics) Shutdown(context.Context) error       { return nil }
 
-type Fetcher func(ctx context.Context, db *clientdb.DB, since string) (*sse.Event, bool, error)
+type sessionSSEMaxID func() (int64, bool)
 
-func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
+func (maxID sessionSSEMaxID) value() (int64, bool) {
+	if maxID == nil {
+		return 0, false
+	}
+	return maxID()
+}
+
+type sessionSSEOptions struct {
+	terminating <-chan struct{}
+	maxID       sessionSSEMaxID
+	finalRow    func()
+}
+
+type Fetcher func(ctx context.Context, db *clientdb.DB, since string, maxID sessionSSEMaxID) (*sse.Event, bool, error)
+
+func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, opts sessionSSEOptions, fetcher Fetcher) error {
 	slog := slog.With("client", client.clientID, "path", r.URL.Path)
 
 	flush := func() {
@@ -659,7 +710,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 	var terminating bool
 	for {
 		fetchStart := time.Now()
-		event, hasData, err := fetcher(r.Context(), db, since)
+		event, hasData, err := fetcher(r.Context(), db, since, opts.maxID)
 		if elapsed := time.Since(fetchStart); elapsed > slowTelemetryOp {
 			// A slow historical file scan does not hold the stream mutex, but it
 			// can still threaten the terminating subscriber's drain budget.
@@ -681,7 +732,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 				// Synchronizing with writes isn't worth the accompanying risk of hangs.
 				//
 				// NB: logging here is a bit too crazy
-			case <-client.shutdownCh:
+			case <-opts.terminating:
 				// Client is shutting down; next time we receive no data, we'll exit.
 				slog.ExtraDebug("shutting down")
 				terminating = true
@@ -700,5 +751,8 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 		}
 
 		flush()
+		if maximum, bounded := opts.maxID.value(); bounded && event.ID == fmt.Sprintf("%d", maximum) && opts.finalRow != nil {
+			opts.finalRow()
+		}
 	}
 }
