@@ -1524,29 +1524,7 @@ func (s *workspaceSchema) withReferenceDirectory(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceWithReferenceDirectoryArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	relPath, err := referenceInternalPath(args.Path)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	sourceID, err := args.Source.ID()
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	return s.addReference(ctx, srv, parent, func(refs dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
-		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, refs, &updated, dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(relPath)},
-				{Name: "source", Value: dagql.NewID[*core.Directory](sourceID)},
-			},
-		})
-		return updated, err
-	})
+	return withReferenceSource(ctx, s, parent, args.Path, args.Source, "withDirectory")
 }
 
 type workspaceWithReferenceFileArgs struct {
@@ -1559,7 +1537,22 @@ func (s *workspaceSchema) withReferenceFile(
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceWithReferenceFileArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	relPath, err := referenceInternalPath(args.Path)
+	return withReferenceSource(ctx, s, parent, args.Path, args.Source, "withFile")
+}
+
+// withReferenceSource is the shared implementation of withReferenceDirectory
+// and withReferenceFile: it attaches the given source (a Directory or File) at
+// the reference-internal path via the named Directory field ("withDirectory"
+// or "withFile").
+func withReferenceSource[T dagql.Typed](
+	ctx context.Context,
+	s *workspaceSchema,
+	parent dagql.ObjectResult[*core.Workspace],
+	path string,
+	source dagql.ID[T],
+	field string,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	relPath, err := referenceInternalPath(path)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -1567,17 +1560,17 @@ func (s *workspaceSchema) withReferenceFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	sourceID, err := args.Source.ID()
+	sourceID, err := source.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	return s.addReference(ctx, srv, parent, func(refs dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, refs, &updated, dagql.Selector{
-			Field: "withFile",
+			Field: field,
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(relPath)},
-				{Name: "source", Value: dagql.NewID[*core.File](sourceID)},
+				{Name: "source", Value: dagql.NewID[T](sourceID)},
 			},
 		})
 		return updated, err

@@ -35,11 +35,9 @@ type referenceInfo struct {
 // home directory for listing, but the inserted text preserves the user's typed
 // prefix (e.g. "~/") so the token round-trips.
 func completeReferencePath(frag string) []tuist.Completion {
-	dirPart, base := frag, ""
+	dirPart, base := "", frag
 	if idx := strings.LastIndex(frag, "/"); idx >= 0 {
 		dirPart, base = frag[:idx+1], frag[idx+1:]
-	} else {
-		dirPart, base = "", frag
 	}
 
 	listDir := expandTilde(dirPart)

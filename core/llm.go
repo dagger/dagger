@@ -988,7 +988,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 // variables. Only values the client actually provides overwrite fields already
 // set on the router, so configuration can be layered — e.g. the session's main
 // client as the base with the calling client's own values on top.
-func (router *LLMRouter) LoadClientConfig(ctx context.Context, srv *dagql.Server) error {
+func (r *LLMRouter) LoadClientConfig(ctx context.Context, srv *dagql.Server) error {
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
 		if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err == nil {
@@ -1017,7 +1017,7 @@ func (router *LLMRouter) LoadClientConfig(ctx context.Context, srv *dagql.Server
 			env = e
 		}
 	}
-	return router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
+	return r.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
 			return loadSecret(ctx, v)
