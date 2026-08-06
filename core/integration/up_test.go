@@ -145,7 +145,7 @@ func (UpSuite) TestUpValidationRejectsBadSignature(ctx context.Context, t *testc
 			With(daggerExecFail("up", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "@up functions must return Service!")
+		require.Contains(t, out, "@up functions must return the core Service! type")
 	})
 
 	t.Run("required arg", func(ctx context.Context, t *testctx.T) {

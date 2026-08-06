@@ -196,7 +196,7 @@ func returnsCoreObject(fn *Function, name string) bool {
 // since `dagger up` starts services without any.
 func validateUpFunction(obj *ObjectTypeDef, fn *Function) error {
 	if !returnsCoreObject(fn, "Service") {
-		return fmt.Errorf("object %q function %q is marked @up but returns %s; @up functions must return Service!",
+		return fmt.Errorf("object %q function %q is marked @up but returns %s; @up functions must return the core Service! type",
 			obj.OriginalName, fn.OriginalName, fn.ReturnType.Self().ToType().String())
 	}
 	for _, argRes := range fn.Args {
@@ -214,7 +214,7 @@ func validateUpFunction(obj *ObjectTypeDef, fn *Function) error {
 // arguments, since `dagger generate` runs generators without any.
 func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
 	if !returnsCoreObject(fn, "Changeset") {
-		return fmt.Errorf("object %q function %q is marked @generate but returns %s; @generate functions must return Changeset!",
+		return fmt.Errorf("object %q function %q is marked @generate but returns %s; @generate functions must return the core Changeset! type",
 			obj.OriginalName, fn.OriginalName, fn.ReturnType.Self().ToType().String())
 	}
 	for _, argRes := range fn.Args {

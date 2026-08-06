@@ -139,7 +139,7 @@ func (GeneratorsSuite) TestGenerateValidationRejectsBadSignature(ctx context.Con
 			With(daggerExecFail("functions")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "@generate functions must return Changeset!")
+		require.Contains(t, out, "@generate functions must return the core Changeset! type")
 
 		// generate tolerates load failures by default (best-effort), but
 		// --require-load turns the skipped module fatal.
