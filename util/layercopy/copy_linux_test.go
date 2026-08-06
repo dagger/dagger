@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -117,6 +118,158 @@ func TestCopyDirectoryDisableSourceHardlinksPreservesInternalHardlinks(t *testin
 	got, err := os.ReadFile(filepath.Join(dstRoot, "file.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "hello", string(got))
+}
+
+func TestCopyOverlaySourceStopsAtNonDirectoryLayer(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	lowerRoot := filepath.Join(root, "lower")
+	middleRoot := filepath.Join(root, "middle")
+	upperRoot := filepath.Join(root, "upper")
+	viewRoot := filepath.Join(root, "view")
+	dstRoot := filepath.Join(root, "dst")
+
+	for _, dir := range []string{
+		filepath.Join(lowerRoot, "d", "sub"),
+		middleRoot,
+		filepath.Join(upperRoot, "d"),
+		filepath.Join(viewRoot, "d"),
+		dstRoot,
+	} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "old.txt"), []byte("old"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "d", "sub", "deep.txt"), []byte("old"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(middleRoot, "d"), []byte("cover"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(upperRoot, "d", "new.txt"), []byte("new"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "d", "new.txt"), []byte("new"), 0o644))
+
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Copy(context.Background(), Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type: "overlay",
+			Options: []string{
+				"lowerdir=" + strings.Join([]string{upperRoot, middleRoot, lowerRoot}, ":"),
+			},
+		},
+	}, "/", "/", CopyOptions{
+		CopyDirContents: true,
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	contents, err := os.ReadFile(filepath.Join(dstRoot, "d", "new.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "new", string(contents))
+	require.NoFileExists(t, filepath.Join(dstRoot, "d", "old.txt"))
+	require.NoDirExists(t, filepath.Join(dstRoot, "d", "sub"))
+}
+
+func TestCopyOverlaySourceDoesNotFollowSymlinkLayer(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	lowerRoot := filepath.Join(root, "lower")
+	upperRoot := filepath.Join(root, "upper")
+	viewRoot := filepath.Join(root, "view")
+	dstRoot := filepath.Join(root, "dst")
+
+	for _, dir := range []string{
+		filepath.Join(lowerRoot, "target"),
+		filepath.Join(upperRoot, "d"),
+		filepath.Join(viewRoot, "d"),
+		dstRoot,
+	} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(lowerRoot, "target", "hidden.txt"), []byte("hidden"), 0o644))
+	require.NoError(t, os.Symlink("target", filepath.Join(lowerRoot, "d")))
+	require.NoError(t, os.WriteFile(filepath.Join(upperRoot, "d", "visible.txt"), []byte("visible"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "d", "visible.txt"), []byte("visible"), 0o644))
+
+	copier, err := NewCopier(Mount{Root: dstRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Copy(context.Background(), Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type: "overlay",
+			Options: []string{
+				"lowerdir=" + strings.Join([]string{upperRoot, lowerRoot}, ":"),
+			},
+		},
+	}, "/", "/", CopyOptions{
+		CopyDirContents: true,
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	contents, err := os.ReadFile(filepath.Join(dstRoot, "d", "visible.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "visible", string(contents))
+	require.NoFileExists(t, filepath.Join(dstRoot, "d", "hidden.txt"))
+}
+
+func TestCopierScopesOverlaySourceCacheByMount(t *testing.T) {
+	t.Parallel()
+
+	copier := &Copier{sourceCaches: map[sourceCacheKey]*sourceCache{}}
+	firstMount := &mount.Mount{Type: "overlay", Options: []string{"lowerdir=/first"}}
+	secondMount := &mount.Mount{Type: "overlay", Options: []string{"lowerdir=/first"}}
+
+	first, err := copier.sourceForCopy(Mount{Root: "/view", Mount: firstMount})
+	require.NoError(t, err)
+	repeated, err := copier.sourceForCopy(Mount{Root: "/view", Mount: firstMount})
+	require.NoError(t, err)
+	differentRoot, err := copier.sourceForCopy(Mount{Root: "/other", Mount: firstMount})
+	require.NoError(t, err)
+	differentMount, err := copier.sourceForCopy(Mount{Root: "/view", Mount: secondMount})
+	require.NoError(t, err)
+
+	require.Same(t, first.cache, repeated.cache)
+	require.NotSame(t, first.cache, differentRoot.cache)
+	require.NotSame(t, first.cache, differentMount.cache)
+	require.Len(t, copier.sourceCaches, 3)
+}
+
+func TestOverlayAncestorMinLayerCachesCumulativeBounds(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	layers := []string{
+		filepath.Join(root, "lower"),
+		filepath.Join(root, "middle"),
+		filepath.Join(root, "upper"),
+	}
+	require.NoError(t, os.MkdirAll(filepath.Join(layers[0], "a", "b"), 0o755))
+	require.NoError(t, os.MkdirAll(layers[1], 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(layers[1], "a"), []byte("cover"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(layers[2], "a", "b"), 0o755))
+
+	cache := &sourceCache{ancestorMinLayers: map[string]int{}}
+	src := &source{overlay: true, layers: layers, cache: cache}
+	minLayer, err := src.overlayAncestorMinLayer("a/b/file.txt")
+	require.NoError(t, err)
+	require.Equal(t, 1, minLayer)
+	require.Equal(t, map[string]int{
+		"":    0,
+		"a":   1,
+		"a/b": 1,
+	}, cache.ancestorMinLayers)
+
+	minLayer, err = src.overlayAncestorMinLayer("a/b/other.txt")
+	require.NoError(t, err)
+	require.Equal(t, 1, minLayer)
 }
 
 func TestCopyFileDestPathHintIsDir(t *testing.T) {

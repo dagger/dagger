@@ -355,6 +355,93 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestWithDirectoryOpaqueSourceAncestor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := c.Container().
+		From(alpineImage).
+		WithDirectory("/data", c.Directory().
+			WithNewFile("a/x.txt", "old").
+			WithNewFile("a/b/y.txt", "old")).
+		WithExec([]string{"sh", "-c", "rm -rf /data/a && mkdir -p /data/a/b && echo new > /data/a/b/new.txt"}).
+		Directory("/data")
+
+	mountedFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/view", source).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\n", mountedFiles)
+
+	exportPath := filepath.Join(t.TempDir(), "export")
+	_, err = source.Export(ctx, exportPath)
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(exportPath, "a", "b", "new.txt"))
+	require.NoFileExists(t, filepath.Join(exportPath, "a", "x.txt"))
+	require.NoFileExists(t, filepath.Join(exportPath, "a", "b", "y.txt"))
+
+	copiedFiles, err := c.Container().
+		From(alpineImage).
+		WithDirectory("/view", source).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\n", copiedFiles)
+
+	copiedSubdirFiles, err := c.Container().
+		From(alpineImage).
+		WithDirectory("/view", source.Directory("a/b")).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new.txt\n", copiedSubdirFiles)
+}
+
+func (DirectorySuite) TestWithDirectoryWhiteoutSourceAncestor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := c.Container().
+		From(alpineImage).
+		WithDirectory("/data", c.Directory().
+			WithNewFile("a/x.txt", "old").
+			WithNewFile("a/b/y.txt", "old").
+			WithNewFile("a/b/keep.txt", "old")).
+		WithExec([]string{"sh", "-c", "rm -rf /data/a/b"}).
+		WithExec([]string{"sh", "-c", "mkdir -p /data/a/b && echo new > /data/a/b/new.txt"}).
+		Directory("/data")
+
+	mountedFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/view", source).
+		WithExec([]string{"sh", "-c", "find /view -type f | sed 's#^/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\na/x.txt\n", mountedFiles)
+
+	copied := c.Directory().WithDirectory("view", source)
+	copiedFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/result", copied).
+		WithExec([]string{"sh", "-c", "find /result/view -type f | sed 's#^/result/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "a/b/new.txt\na/x.txt\n", copiedFiles)
+
+	contents, err := copied.File("view/a/b/new.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new\n", contents)
+
+	copiedSubdir := c.Directory().WithDirectory("view", source.Directory("a/b"))
+	copiedSubdirFiles, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/result", copiedSubdir).
+		WithExec([]string{"sh", "-c", "find /result/view -type f | sed 's#^/result/view/##' | sort"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new.txt\n", copiedSubdirFiles)
+}
+
 func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

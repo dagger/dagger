@@ -16,15 +16,17 @@ import (
 )
 
 type source struct {
-	root       string
-	realRoot   string
-	layers     []string
-	overlay    bool
-	baseRel    string
-	baseView   string
-	baseReal   string
-	baseInfo   os.FileInfo
-	baseCached bool
+	root         string
+	realRoot     string
+	layers       []string
+	overlay      bool
+	baseRel      string
+	baseView     string
+	baseReal     string
+	baseInfo     os.FileInfo
+	baseMinLayer int
+	baseCached   bool
+	cache        *sourceCache
 }
 
 type sourceEntry struct {
@@ -33,6 +35,9 @@ type sourceEntry struct {
 	RealPath string
 	Info     os.FileInfo
 	StatErr  error
+	// minLayer is the lowest overlay layer visible below this entry. An opaque
+	// directory or non-directory in a higher layer hides lower descendants.
+	minLayer int
 }
 
 func newSource(m Mount) (*source, error) {
@@ -86,11 +91,16 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	if err != nil {
 		return err
 	}
+	baseMinLayer, err := s.overlayAncestorMinLayer(baseRel)
+	if err != nil {
+		return err
+	}
 
 	s.baseView = baseView
 	s.baseRel = baseRel
 	s.baseInfo = info
-	realPath, realInfo, err := s.realPath("")
+	s.baseMinLayer = baseMinLayer
+	realPath, realInfo, err := s.realPath("", baseMinLayer)
 	if err != nil {
 		return err
 	}
@@ -100,7 +110,7 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	return nil
 }
 
-func (s *source) readDir(rel string) ([]sourceEntry, error) {
+func (s *source) readDir(rel string, minLayer int) ([]sourceEntry, error) {
 	if err := s.selectBase(".", false); err != nil {
 		return nil, err
 	}
@@ -108,7 +118,7 @@ func (s *source) readDir(rel string) ([]sourceEntry, error) {
 	if !s.overlay {
 		return s.readBindDir(rel)
 	}
-	return s.readOverlayDir(rel)
+	return s.readOverlayDir(rel, minLayer)
 }
 
 func (s *source) readBindDir(rel string) ([]sourceEntry, error) {
@@ -146,7 +156,7 @@ func (s *source) readBindDir(rel string) ([]sourceEntry, error) {
 	return entries, nil
 }
 
-func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
+func (s *source) readOverlayDir(rel string, minLayer int) ([]sourceEntry, error) {
 	type visibleEntry struct {
 		realPath string
 		info     os.FileInfo
@@ -156,18 +166,23 @@ func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
 	visible := map[string]visibleEntry{}
 	hidden := map[string]struct{}{}
 
-	for i := len(s.layers) - 1; i >= 0; i-- {
+	visibleMinLayer := minLayer
+	for i := len(s.layers) - 1; i >= minLayer; i-- {
 		layerDir := filepath.Join(s.layers[i], layerRel)
-		opaque, err := isOpaqueDir(layerDir)
-		if err != nil && !os.IsNotExist(err) && !isNotDir(err) {
+		isDir, hidesLower, err := overlayEntryState(layerDir)
+		if err != nil {
+			if os.IsNotExist(err) || isNotDir(err) {
+				continue
+			}
 			return nil, err
+		}
+		if !isDir {
+			visibleMinLayer = i
+			break
 		}
 
 		dirents, err := os.ReadDir(layerDir)
 		if os.IsNotExist(err) || isNotDir(err) {
-			if opaque {
-				break
-			}
 			continue
 		}
 		if err != nil {
@@ -198,7 +213,8 @@ func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
 				info:     info,
 			}
 		}
-		if opaque {
+		if hidesLower {
+			visibleMinLayer = i
 			break
 		}
 	}
@@ -218,12 +234,13 @@ func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
 			ViewPath: filepath.Join(viewDir, name),
 			RealPath: ent.realPath,
 			Info:     ent.info,
+			minLayer: visibleMinLayer,
 		})
 	}
 	return entries, nil
 }
 
-func (s *source) realPath(rel string) (string, os.FileInfo, error) {
+func (s *source) realPath(rel string, minLayer int) (string, os.FileInfo, error) {
 	rel = cleanRel(filepath.Join(s.baseRel, rel))
 	if !s.overlay {
 		realPath := filepath.Join(s.realRoot, rel)
@@ -234,7 +251,7 @@ func (s *source) realPath(rel string) (string, os.FileInfo, error) {
 		return realPath, realInfo, nil
 	}
 
-	for i := len(s.layers) - 1; i >= 0; i-- {
+	for i := len(s.layers) - 1; i >= minLayer; i-- {
 		realPath := filepath.Join(s.layers[i], rel)
 		realInfo, err := os.Lstat(realPath)
 		if err == nil {
@@ -249,6 +266,52 @@ func (s *source) realPath(rel string) (string, os.FileInfo, error) {
 		return "", nil, err
 	}
 	return "", nil, fmt.Errorf("failed to resolve source path %q in overlay layers", rel)
+}
+
+func (s *source) overlayAncestorMinLayer(rel string) (int, error) {
+	if !s.overlay {
+		return 0, nil
+	}
+
+	ancestors := []string{""}
+	parent := cleanRel(filepath.Dir(rel))
+	if parent != "" {
+		var ancestor string
+		for _, part := range strings.Split(parent, string(filepath.Separator)) {
+			ancestor = filepath.Join(ancestor, part)
+			ancestors = append(ancestors, ancestor)
+		}
+	}
+
+	minLayer := 0
+	for _, ancestor := range ancestors {
+		if s.cache != nil {
+			if cached, ok := s.cache.ancestorMinLayers[ancestor]; ok {
+				if cached > minLayer {
+					minLayer = cached
+				}
+				continue
+			}
+		}
+
+		for i := len(s.layers) - 1; i >= minLayer; i-- {
+			_, hidesLower, err := overlayEntryState(filepath.Join(s.layers[i], ancestor))
+			if err != nil {
+				if os.IsNotExist(err) || isNotDir(err) {
+					continue
+				}
+				return 0, err
+			}
+			if hidesLower {
+				minLayer = i
+				break
+			}
+		}
+		if s.cache != nil {
+			s.cache.ancestorMinLayers[ancestor] = minLayer
+		}
+	}
+	return minLayer, nil
 }
 
 func rootPath(root, p string, followFinalSymlink bool) (string, error) {
@@ -278,13 +341,17 @@ func isWhiteout(info os.FileInfo) bool {
 	return unix.Major(st.Rdev) == 0 && unix.Minor(st.Rdev) == 0
 }
 
-func isOpaqueDir(path string) (bool, error) {
+// overlayEntryState reports whether an overlay entry is a directory and
+// whether it prevents lower layers from contributing below its path.
+// Non-directories cover everything lower layers hold at the path, while opaque
+// directories hide lower descendants.
+func overlayEntryState(path string) (isDir, hidesLower bool, err error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if !info.IsDir() {
-		return false, nil
+		return false, true, nil
 	}
 	for _, key := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
 		val, err := sysx.LGetxattr(path, key)
@@ -292,13 +359,13 @@ func isOpaqueDir(path string) (bool, error) {
 			continue
 		}
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 		if len(val) == 1 && val[0] == 'y' {
-			return true, nil
+			return true, true, nil
 		}
 	}
-	return false, nil
+	return true, false, nil
 }
 
 func isNotDir(err error) bool {
