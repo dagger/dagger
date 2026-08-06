@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"dagger.io/dagger"
+	"github.com/dagger/dagger/cmd/codegen/internal/bootstrap"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/spf13/cobra"
 )
@@ -19,16 +19,16 @@ var introspectCmd = &cobra.Command{
 
 func Introspect(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	dag, err := dagger.Connect(ctx)
+	dag, err := bootstrap.Connect(ctx)
 	if err != nil {
 		return err
 	}
 	defer dag.Close()
 
 	var data introspection.Response
-	err = dag.Do(ctx, &dagger.Request{
+	err = dag.Do(ctx, &bootstrap.Request{
 		Query: introspection.Query,
-	}, &dagger.Response{
+	}, &bootstrap.Response{
 		Data: &data,
 	})
 	if err != nil {

@@ -60,9 +60,13 @@ type {{ $field | FieldOptionsStructName }} struct {
 
 {{- end }}
 
+{{- if $field.Description }}
 {{ $field.Description | Comment }}
 {{- if $field.IsDeprecated }}
 //
+{{- end }}
+{{- end }}
+{{- if $field.IsDeprecated }}
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
 {{- if $field.Directives.IsExperimental }}

@@ -2,6 +2,8 @@ package dagger
 
 import (
 	"embed"
+
+	"dagger.io/dagger/sdkfs"
 )
 
 // These are exported so that they can be used by codegen.
@@ -9,11 +11,9 @@ import (
 //go:embed engineconn/*.go
 var EngineConn embed.FS
 
-//go:embed go.mod
-var GoMod []byte
+var GoMod = sdkfs.GoMod
 
-//go:embed go.sum
-var GoSum []byte
+var GoSum = sdkfs.GoSum
 
 //go:embed engineconn/*.go go.mod go.sum client.go dagger.gen.go
 var GoSDK embed.FS
