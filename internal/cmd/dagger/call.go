@@ -39,9 +39,11 @@ var callCoreCmd = &FuncCommand{
 }
 
 var callModCmd = &FuncCommand{
-	Name:   "call [options] [function]...",
-	Short:  "Call one or more functions, interconnected into a pipeline",
-	Hidden: true,
+	Name:         "call [options] [function]...",
+	Short:        "Call one or more functions, interconnected into a pipeline",
+	Example:      "  dagger call --detach build",
+	Hidden:       true,
+	EnableDetach: true,
 	Annotations: map[string]string{
 		printTraceLinkKey:    "true",
 		showFinalProgressKey: "true",
@@ -49,8 +51,10 @@ var callModCmd = &FuncCommand{
 }
 
 var apiCallCmd = &FuncCommand{
-	Name:  "call [options] [function]...",
-	Short: "Call one or more functions, interconnected into a pipeline",
+	Name:         "call [options] [function]...",
+	Short:        "Call one or more functions, interconnected into a pipeline",
+	Example:      "  dagger api call --detach build",
+	EnableDetach: true,
 	Annotations: map[string]string{
 		printTraceLinkKey:    "true",
 		showFinalProgressKey: "true",
