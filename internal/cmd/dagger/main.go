@@ -666,10 +666,14 @@ func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
 }
 
 func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
-	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
+	// Writes to the repository's workspace config need a local workspace.
+	// --global writes target the user-level config file instead, which is
+	// always local to the caller, so a remote workspace stays selectable as
+	// the key/introspection target.
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 && !workspaceConfigGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
-	if isWorkspaceSettingsWriteCommand(cmd, args) {
+	if isWorkspaceSettingsWriteCommand(cmd, args) && !workspaceSettingsGlobal {
 		return workspaceFlagPolicyLocalOnly
 	}
 

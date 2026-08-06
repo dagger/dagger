@@ -1323,6 +1323,9 @@ func (srv *Server) getOrInitClient(
 				client.clientMetadata.WorkspaceEnv = &env
 			}
 		}
+		if client.clientMetadata.UserConfigPath == "" && !client.workspaceLoaded {
+			client.clientMetadata.UserConfigPath = opts.ClientMetadata.UserConfigPath
+		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.extraModulesLoaded {

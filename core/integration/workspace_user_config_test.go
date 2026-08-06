@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -326,5 +327,65 @@ region = "us-east-1"
 		_, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "settings", "-g", "aws", "region")
 		require.Error(t, err)
 		requireErrOut(t, err, "--global stores a setting in user-level config")
+	})
+}
+
+// TestWorkspaceUserConfigRemoteWorkspace covers user-level writes and reads
+// against a remote workspace selected with -W: the key derives from the
+// declared clone address (version dropped), the write lands in the caller's
+// user config file, and effective reads apply the overlay.
+func (WorkspaceSuite) TestWorkspaceUserConfigRemoteWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	hostDir := t.TempDir()
+	writeWorkspaceSettingsModule(t, hostDir, workspaceSettingsAWSModule("modules/aws", "aws"))
+	writeWorkspaceConfigFile(t, hostDir, `[modules.aws]
+source = "modules/aws"
+entrypoint = true
+
+[modules.aws.settings]
+region = "us-east-1"
+`)
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Host().Directory(hostDir))
+
+	userConfigDaggerExec := func(ctr *dagger.Container, args ...string) *dagger.Container {
+		return ctr.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+
+	ctr := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithDirectory("/cfg", c.Directory()).
+		WithEnvVariable("DAGGER_CONFIG", "/cfg/config.toml").
+		WithWorkdir("/empty")
+
+	t.Run("workspace config --global writes for a remote workspace", func(ctx context.Context, t *testctx.T) {
+		written := userConfigDaggerExec(ctr, "-W", remoteRef, "workspace", "config", "-g", "modules.aws.settings.region", "us-west-2")
+
+		userConfig, err := written.File("/cfg/config.toml").Contents(ctx)
+		require.NoError(t, err)
+		// The entry is keyed by the normalized clone address, version dropped.
+		require.Contains(t, userConfig, `[workspaces."`)
+		require.Contains(t, userConfig, `/repo"`)
+		require.Contains(t, userConfig, `region = "us-west-2"`)
+
+		// Effective reads against the remote workspace apply the overlay.
+		out, err := userConfigDaggerExec(written, "-W", remoteRef, "workspace", "config", "modules.aws.settings.region").Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", strings.TrimSpace(out))
+	})
+
+	t.Run("settings --global writes for a remote workspace", func(ctx context.Context, t *testctx.T) {
+		written := userConfigDaggerExec(ctr, "-W", remoteRef, "settings", "-g", "aws", "region", "eu-west-1")
+
+		userConfig, err := written.File("/cfg/config.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, userConfig, `region = "eu-west-1"`)
+
+		out, err := userConfigDaggerExec(written, "-W", remoteRef, "settings", "aws", "region").Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "eu-west-1", strings.TrimSpace(out))
 	})
 }

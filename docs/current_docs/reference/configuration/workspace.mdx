@@ -135,6 +135,8 @@ dagger workspace config -g modules.eslint.settings.packageManager pnpm
 
 `--global` selects where a write is stored; reads always show the effective merged view. Unsetting with `-g` removes only the user-level value — the repository value underneath is untouched.
 
+`-g` also composes with `-W`: a remote workspace is a readable target whose repository config can't be written, but its user-level overrides live in your local config file, so `dagger -W https://github.com/acme/api settings -g aws profile alice-dev` works and keys the entry by the clone address.
+
 **Scope and safety.** Only module settings can be stored user-level: `modules.<name>.settings.*`, optionally under `env.<name>.*`. Because one key spans every branch and clone of a repository, an always-applied user entry for a module that doesn't exist in the current checkout is ignored there rather than being an error. User-level environments are validated normally when selected with `--env`.
 
 ## Other keys
