@@ -5046,26 +5046,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
 		// this check's own orchestrating command error here.
 	} else if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
-		// Filter self-references and causes already rendered elsewhere in this
-		// trace: a span propagated as its own error origin should never be
-		// rendered as the cause of itself, and a cause already shown as a
-		// primary row doesn't need a redundant "↳ ..." block here. A cause
-		// whose span data never arrived (e.g. an origin linked across a nested
-		// session) is dropped too: rendering it would produce an empty stub
-		// while suppressing the only copy of the message below.
-		origins := make([]*dagui.Span, 0, len(row.Span.ErrorOrigins.Order))
-		for _, cause := range row.Span.ErrorOrigins.Order {
-			if cause.ID == row.Span.ID {
-				continue
-			}
-			if !cause.Received {
-				continue
-			}
-			if fe.claims.hasError(cause.ID) {
-				continue
-			}
-			origins = append(origins, cause)
-		}
+		origins := fe.renderableErrorOrigins(row.Span)
 		sortErrorOrigins(origins)
 		multi := len(origins) > 1
 		for _, cause := range origins {
@@ -5085,6 +5066,30 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderStepError(out, r, row, prefix)
 	}
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+}
+
+// renderableErrorOrigins filters a failed span's tracked origins down to the
+// ones worth rendering as inline "↳ ..." cause blocks: a span propagated as
+// its own error origin should never be rendered as the cause of itself, a
+// cause already shown as a primary row doesn't need a redundant block, and a
+// cause whose span data never arrived (e.g. an origin linked across a nested
+// session) would render as an empty stub while suppressing the only copy of
+// the message.
+func (fe *frontendPretty) renderableErrorOrigins(span *dagui.Span) []*dagui.Span {
+	origins := make([]*dagui.Span, 0, len(span.ErrorOrigins.Order))
+	for _, cause := range span.ErrorOrigins.Order {
+		if cause.ID == span.ID {
+			continue
+		}
+		if !cause.Received {
+			continue
+		}
+		if fe.claims.hasError(cause.ID) {
+			continue
+		}
+		origins = append(origins, cause)
+	}
+	return origins
 }
 
 func sortErrorOrigins(origins []*dagui.Span) {
