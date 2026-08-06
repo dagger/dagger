@@ -1193,10 +1193,13 @@ type vcsTestCase struct {
 	isPrivateRepo      bool
 	skipProxyTest      bool
 
-	// encodedToken is a based64 encoded read-only PAT
-	encodedToken string
+	// HTTP credentials for private repositories. Tokens are base64 encoded to
+	// avoid storing token-shaped strings directly in the source.
+	httpAuthUsername string
+	encodedToken     string
 	// encodedToken2 is an optional second token to test cases of using different tokens for the same repo
-	encodedToken2 string
+	httpAuthUsername2 string
+	encodedToken2     string
 	// sshKey determines whether to propagate the host's ssh-key
 	sshKey bool
 }
@@ -1274,7 +1277,7 @@ var vcsTestCases = []vcsTestCase{
 		skipProxyTest:            true,
 		sshKey:                   true,
 	},
-	// GitLab private repository using PAT
+	// GitLab private repository using project-scoped deploy tokens
 	{
 		name:                     "Private GitLab",
 		gitTestRepoRef:           "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
@@ -1284,10 +1287,11 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
-		// NOTE: this is not a security vulnerability, these tokens are read-only and scoped to a test repository
-		// with no actual private code
-		encodedToken:  "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx",
-		encodedToken2: "Z2xwYXQtcFVIWDVmZmVCUmdjZ2FYTHdndjNPVzg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxa2oyMHJi",
+		// NOTE: these tokens are read-only and scoped to a test repository with no actual private code.
+		httpAuthUsername:  "dagger-read-only",
+		encodedToken:      "Z2xkdC1ucHU2TTFGRkF3WXFoUnFrcHhXdA==",
+		httpAuthUsername2: "dagger-read-only-2",
+		encodedToken2:     "Z2xkdC1LN3p3Q3I3RW1HclFocmJSZmcteg==",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
 	{
