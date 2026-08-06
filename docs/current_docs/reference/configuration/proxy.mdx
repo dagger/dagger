@@ -27,19 +27,9 @@ As well as the custom environment variable:
 
 Configuring these settings requires [provisioning a custom
 engine](./custom-runner.mdx). Set the variable(s) on that engine container,
-then point the CLI at it with `_EXPERIMENTAL_DAGGER_RUNNER_HOST`.
-
-Example:
-
-```shell
-docker run -d --name dagger-engine-v0.21.7 \
-  --privileged \
-  -v dagger-engine:/var/lib/dagger \
-  -e _DAGGER_ENGINE_SYSTEMENV_GOPROXY=https://goproxy.cn,direct \
-  registry.dagger.io/engine:v0.21.7
-
-export _EXPERIMENTAL_DAGGER_RUNNER_HOST=container://dagger-engine-v0.21.7
-```
+then point the CLI at it with `_EXPERIMENTAL_DAGGER_RUNNER_HOST` — see
+[Custom Runner](./custom-runner.mdx#configuration) for how to start the
+engine with those environment variables.
 
 :::warning Applies to all containers
 As mentioned above, these proxy environment variables set on Dagger will also
