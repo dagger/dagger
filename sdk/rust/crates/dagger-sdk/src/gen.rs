@@ -489,6 +489,168 @@ impl Node for Address {
     }
 }
 #[derive(Clone)]
+pub struct Agent {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Agent {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Agent {
+    fn graphql_type() -> &'static str {
+        "Agent"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Agent {
+    /// The description of the agent
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Agent.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the fully qualified name of the agent
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The original module in which the agent has been defined
+    pub fn original_module(&self) -> Module {
+        let query = self.selection.select("originalModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The path of the agent within its module
+    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Agent {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct AgentGroup {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct AgentGroupComposeOpts {
+    /// The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
+    #[builder(setter(into, strip_option), default)]
+    pub base: Option<Id>,
+}
+impl IntoID<Id> for AgentGroup {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for AgentGroup {
+    fn graphql_type() -> &'static str {
+        "AgentGroup"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl AgentGroup {
+    /// Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn compose(&self) -> Llm {
+        let query = self.selection.select("compose");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn compose_opts(&self, opts: AgentGroupComposeOpts) -> Llm {
+        let mut query = self.selection.select("compose");
+        if let Some(base) = opts.base {
+            query = query.arg("base", base);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this AgentGroup.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return a list of individual agents and their details
+    pub async fn list(&self) -> Result<Vec<Agent>, DaggerError> {
+        let query = self.selection.select("list");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Agent {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Agent"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+}
+impl Node for AgentGroup {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct CacheVolume {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -7503,6 +7665,15 @@ impl Function {
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns the function with a flag indicating it is an agent middleware.
+    pub fn with_agent(&self) -> Function {
+        let query = self.selection.select("withAgent");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Returns the function with the provided argument
     ///
@@ -14651,6 +14822,12 @@ pub struct Workspace {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceAgentsOpts<'a> {
+    /// Only include agents matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChecksOpts<'a> {
     /// Only include checks matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -14861,6 +15038,35 @@ impl Workspace {
     pub async fn address(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("address");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Return all agent middlewares from modules loaded in the workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn agents(&self) -> AgentGroup {
+        let query = self.selection.select("agents");
+        AgentGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all agent middlewares from modules loaded in the workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn agents_opts<'a>(&self, opts: WorkspaceAgentsOpts<'a>) -> AgentGroup {
+        let mut query = self.selection.select("agents");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        AgentGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Return this workspace's pending overlay changes.
     pub fn changes(&self) -> Changeset {

@@ -37,6 +37,16 @@ export const generate = registry.generate
 export const up = registry.up
 
 /**
+ * The definition of @agent decorator that marks a function as an agent
+ * middleware: it takes a base LLM and returns an LLM with the module's tools
+ * and prompting folded onto it. `dagger agent` discovers and composes these.
+ *
+ * Besides the base LLM, an agent function may not declare any other required
+ * argument.
+ */
+export const agent = registry.agent
+
+/**
  * The definition of @field decorator that should be on top of any
  * class' property that must be exposed to the Dagger API.
  *

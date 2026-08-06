@@ -176,6 +176,10 @@ export class Register {
       fnDef = fnDef.withUp()
     }
 
+    if ((fct as Method).isAgent) {
+      fnDef = fnDef.withAgent()
+    }
+
     return fnDef
   }
 

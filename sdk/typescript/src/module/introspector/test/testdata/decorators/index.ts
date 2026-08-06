@@ -3,9 +3,11 @@ import {
   Container,
   Directory,
   File,
+  LLM,
   Service,
 } from "../../../../../api/client.gen.js"
 import {
+  agent,
   argument,
   check,
   field,
@@ -138,7 +140,7 @@ export class Decorators {
     return "cached"
   }
 
-  // --- @check / @generate / @up markers (combined with @func) ---
+  // --- @check / @generate / @up / @agent markers (combined with @func) ---
 
   @func()
   @check()
@@ -154,5 +156,11 @@ export class Decorators {
   @up()
   upSomething(): Service {
     throw new Error("not implemented")
+  }
+
+  @func()
+  @agent()
+  agentSomething(base: LLM): LLM {
+    return base
   }
 }

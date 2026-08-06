@@ -5122,6 +5122,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withAgent",
+			"p": "Dagger/Function_.html#method_withAgent",
+			"d": "<p>Returns the function with a flag indicating it is an agent middleware.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withArg",
 			"p": "Dagger/Function_.html#method_withArg",
 			"d": "<p>Returns the function with the provided argument</p>"
@@ -7249,6 +7255,12 @@
 			"n": "Dagger\\Workspace::address",
 			"p": "Dagger/Workspace.html#method_address",
 			"d": "<p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::agents",
+			"p": "Dagger/Workspace.html#method_agents",
+			"d": "<p>Return all agent middlewares from modules loaded in the workspace.</p>"
 		},
 		{
 			"t": "M",
