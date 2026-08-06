@@ -1,0 +1,7 @@
+"""A deliberately malformed service module (@up with a required arg) for validation tests."""
+type BadupArg {
+  """@up with a required arg, which the contract forbids."""
+  web(image: String!): Service! @up {
+    container.from(image).withExposedPort(80).asService
+  }
+}
