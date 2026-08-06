@@ -15,11 +15,11 @@ import (
 	"github.com/vito/tuist"
 )
 
-// workspaceReferencePrefix mirrors core.WorkspaceReferencePrefix: the reserved
-// workspace-relative directory under which @-referenced host paths are mounted
-// read-only. Kept as a local constant so reference plumbing on the client side
-// doesn't need to import core; it is only used to render the workspace-relative
-// path back to the user and the model.
+// workspaceReferencePrefix is the workspace directory under which @-referenced
+// host paths are mounted read-only (via Workspace.withMountedDirectory/
+// withMountedFile). Purely a CLI convention: the engine treats it like any
+// other mount path, so it only exists to give attached references a
+// predictable, out-of-the-way home in the workspace.
 const workspaceReferencePrefix = ".refs"
 
 // referenceInfo records a host path the user attached with @, along with the
@@ -226,7 +226,7 @@ func (s *LLMSession) hasReference(mount string) bool {
 // directly, so the token is simply rewritten in place to a path relative to the
 // workspace's cwd (e.g. "@/abs/path/to/foo.go" → "./foo.go"). Paths outside the
 // workspace are mounted into the LLM's workspace read-only under the references
-// prefix (see core.WorkspaceReferencePrefix); those are sticky for the session
+// prefix (see workspaceReferencePrefix); those are sticky for the session
 // and shown in the "References" sidebar, and the prompt is annotated with their
 // workspace locations so the model knows where to read them. Nonexistent paths
 // are left untouched.
@@ -274,9 +274,9 @@ func (s *LLMSession) attachReferences(ctx context.Context, input string) string 
 		}
 		ws := llm.Workspace()
 		if fi.IsDir() {
-			ws = ws.WithReferenceDirectory(rel, s.dag.Host().Directory(abs))
+			ws = ws.WithMountedDirectory(mount, s.dag.Host().Directory(abs))
 		} else {
-			ws = ws.WithReferenceFile(rel, s.dag.Host().File(abs))
+			ws = ws.WithMountedFile(mount, s.dag.Host().File(abs))
 		}
 		llm = llm.WithWorkspace(ws)
 		s.references = append(s.references, info)

@@ -172,21 +172,21 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc("Workspace-relative path to use as the working directory."),
 			),
-		dagql.NodeFunc("withReferenceDirectory", s.withReferenceDirectory).
+		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a directory mounted read-only under the reserved references prefix.",
-				"Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.").
+			Doc("Return this workspace with a directory mounted read-only at the given path, without mutating the source.",
+				"Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.").
 			Args(
-				dagql.Arg("path").Doc("Reference-relative mount path under the reserved references prefix."),
-				dagql.Arg("source").Doc("Directory to mount read-only."),
+				dagql.Arg("path").Doc("Location of the mounted directory. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("Directory to mount."),
 			),
-		dagql.NodeFunc("withReferenceFile", s.withReferenceFile).
+		dagql.NodeFunc("withMountedFile", s.withMountedFile).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return this workspace with a file mounted read-only under the reserved references prefix.",
-				"Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.").
+			Doc("Return this workspace with a file mounted read-only at the given path, without mutating the source.",
+				"Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.").
 			Args(
-				dagql.Arg("path").Doc("Reference-relative mount path under the reserved references prefix."),
-				dagql.Arg("source").Doc("File to mount read-only."),
+				dagql.Arg("path").Doc("Location of the mounted file. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("File to mount."),
 			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
@@ -591,6 +591,121 @@ type workspaceDirectoryArgs struct {
 	Gitignore bool `default:"false"`
 }
 
+// resolveReadRootfs resolves a workspace read (Workspace.directory/file) with
+// mounted content visible:
+//   - Paths at or under a mount point resolve entirely against the read-only
+//     mounts tree — mounted content shadows the source.
+//   - Paths with mount points beneath them get the mounted content overlaid on
+//     the source read, so listings include it. As with container mounts, the
+//     mount point's parents don't need to exist in the source.
+//
+// Everything that materializes the workspace *source* (module loading,
+// lockfiles, migration, git) resolves through resolveRootfs directly and never
+// sees mounts, mirroring how changes and export exclude them.
+func (s *workspaceSchema) resolveReadRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	mounts, ok := ws.MountsDir()
+	if !ok {
+		return s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if ws.MountedPath(resolvedPath) {
+		return s.resolveRootfsFromDirectory(ctx, srv, ws, mounts, resolvedPath, filter, gitignore)
+	}
+	if !ws.HasMountsUnder(resolvedPath) {
+		return s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+	}
+	sub, err := s.resolveRootfsFromDirectory(ctx, srv, ws, mounts, resolvedPath, filter, gitignore)
+	if err != nil {
+		return inst, err
+	}
+	// The source path itself may not exist (mounts materialize their own
+	// parents); serve the mounted content alone rather than erroring on the
+	// source read.
+	exists, err := s.workspaceReadPathExists(ctx, ws, resolvedPath)
+	if err != nil {
+		return inst, err
+	}
+	if !exists {
+		return sub, nil
+	}
+	base, err := s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+	if err != nil {
+		return inst, err
+	}
+	subID, err := sub.ID()
+	if err != nil {
+		return inst, err
+	}
+	var merged dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, base, &merged, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](subID)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return merged, nil
+}
+
+// workspaceReadPathExists reports whether a resolved workspace path exists in
+// the workspace source (host, overlay edits, or in-engine tree), without
+// considering mounts.
+func (s *workspaceSchema) workspaceReadPathExists(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+) (bool, error) {
+	rp := filepath.ToSlash(resolvedPath)
+	// Overlay edits can create paths that exist in no base source; host-backed
+	// overlays track them as touched paths (tree-backed overlays already fold
+	// edits into the source directory checked below).
+	if overlay, ok := ws.Source().(*core.WorkspaceSourceOverlay); ok {
+		for _, touched := range overlay.TouchedPaths {
+			tp := filepath.ToSlash(touched)
+			if tp == rp || strings.HasPrefix(tp, rp+"/") || rp == "." {
+				return true, nil
+			}
+		}
+	}
+	if ws.HostPath() != "" && ws.ClientLocalBase() {
+		ctx, err := s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return false, err
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return false, err
+		}
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return false, fmt.Errorf("buildkit: %w", err)
+		}
+		statPath, err := pathutil.SandboxedRelativePath(resolvedPath, ws.HostPath())
+		if err != nil {
+			return false, err
+		}
+		_, exists, err := core.StatFSExists(ctx, core.NewCallerStatFS(bk), statPath)
+		return exists, err
+	}
+	if root, ok := ws.SourceDirectory(); ok && root.Self() != nil {
+		_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: root}, rp)
+		return exists, err
+	}
+	// Rootless/synthetic workspaces have no base content.
+	return false, nil
+}
+
 // resolveRootfs returns a lazy directory reference for a resolved workspace path.
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Local with overlay edits: sparse host base + changeset applied on top.
@@ -605,14 +720,6 @@ func (s *workspaceSchema) resolveRootfs(
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
-	}
-
-	// Reads under the reserved references prefix resolve against the read-only
-	// reference tree, never the host or the overlay changeset.
-	if refsDir, ok := ws.ReferencesDir(); ok {
-		if rel, isRef := referenceRelPath(resolvedPath); isRef {
-			return s.resolveRootfsFromDirectory(ctx, srv, ws, refsDir, rel, filter, gitignore)
-		}
 	}
 
 	if ws.HostPath() != "" && ws.ClientLocalBase() {
@@ -916,7 +1023,7 @@ func (s *workspaceSchema) directoryAt(
 	if err != nil {
 		return inst, err
 	}
-	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
+	return s.resolveReadRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
 }
 
 type workspaceFileArgs struct {
@@ -945,7 +1052,7 @@ func (s *workspaceSchema) fileAt(
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 
-	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{
+	dir, err := s.resolveReadRootfs(ctx, ws, parentDir, core.CopyFilter{
 		Include: []string{basename},
 	}, false)
 	if err != nil {
@@ -977,7 +1084,7 @@ func (s *workspaceSchema) withNewFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -1326,7 +1433,7 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -1364,7 +1471,7 @@ func (s *workspaceSchema) withoutFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -1397,7 +1504,7 @@ func (s *workspaceSchema) withoutDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -1475,7 +1582,7 @@ func (s *workspaceSchema) applyChangeset(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	for _, p := range touched {
-		if err := guardReferencePath(parent.Self(), p); err != nil {
+		if err := guardMountedPath(parent.Self(), p); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 	}
@@ -1514,47 +1621,50 @@ func (s *workspaceSchema) withWorkdir(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
-type workspaceWithReferenceDirectoryArgs struct {
+type workspaceWithMountedDirectoryArgs struct {
 	Path   string
 	Source core.DirectoryID
 }
 
-func (s *workspaceSchema) withReferenceDirectory(
+func (s *workspaceSchema) withMountedDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceWithReferenceDirectoryArgs,
+	args workspaceWithMountedDirectoryArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	return withReferenceSource(ctx, s, parent, args.Path, args.Source, "withDirectory")
+	return withMountedSource(ctx, parent, args.Path, args.Source, "withDirectory")
 }
 
-type workspaceWithReferenceFileArgs struct {
+type workspaceWithMountedFileArgs struct {
 	Path   string
 	Source core.FileID
 }
 
-func (s *workspaceSchema) withReferenceFile(
+func (s *workspaceSchema) withMountedFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceWithReferenceFileArgs,
+	args workspaceWithMountedFileArgs,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	return withReferenceSource(ctx, s, parent, args.Path, args.Source, "withFile")
+	return withMountedSource(ctx, parent, args.Path, args.Source, "withFile")
 }
 
-// withReferenceSource is the shared implementation of withReferenceDirectory
-// and withReferenceFile: it attaches the given source (a Directory or File) at
-// the reference-internal path via the named Directory field ("withDirectory"
-// or "withFile").
-func withReferenceSource[T dagql.Typed](
+// withMountedSource is the shared implementation of withMountedDirectory and
+// withMountedFile: it attaches the given source (a Directory or File) into the
+// workspace's read-only mounts tree at the resolved workspace path via the
+// named Directory field ("withDirectory" or "withFile"), and records the mount
+// point.
+func withMountedSource[T dagql.Typed](
 	ctx context.Context,
-	s *workspaceSchema,
 	parent dagql.ObjectResult[*core.Workspace],
 	path string,
 	source dagql.ID[T],
 	field string,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	relPath, err := referenceInternalPath(path)
+	resolvedPath, err := resolveWorkspacePath(path, parent.Self().Cwd)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if resolvedPath == "." {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("cannot mount over the workspace root")
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1564,77 +1674,32 @@ func withReferenceSource[T dagql.Typed](
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.addReference(ctx, srv, parent, func(refs dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
-		var updated dagql.ObjectResult[*core.Directory]
-		err := srv.Select(ctx, refs, &updated, dagql.Selector{
-			Field: field,
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(relPath)},
-				{Name: "source", Value: dagql.NewID[T](sourceID)},
-			},
-		})
-		return updated, err
-	})
-}
-
-// addReference applies an edit to the workspace's read-only reference directory
-// tree (creating it empty if absent) and returns a new workspace carrying the
-// updated tree. References live outside the overlay changeset, so this never
-// touches the source, the pending changes, or the export path.
-func (s *workspaceSchema) addReference(
-	ctx context.Context,
-	srv *dagql.Server,
-	parent dagql.ObjectResult[*core.Workspace],
-	edit func(refs dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
-) (dagql.ObjectResult[*core.Workspace], error) {
-	refs, ok := parent.Self().ReferencesDir()
+	mounts, ok := parent.Self().MountsDir()
 	if !ok {
-		if err := srv.Select(ctx, srv.Root(), &refs, dagql.Selector{Field: "directory"}); err != nil {
+		if err := srv.Select(ctx, srv.Root(), &mounts, dagql.Selector{Field: "directory"}); err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, err
 		}
 	}
-	updated, err := edit(refs)
-	if err != nil {
+	var updated dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, mounts, &updated, dagql.Selector{
+		Field: field,
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(resolvedPath)},
+			{Name: "source", Value: dagql.NewID[T](sourceID)},
+		},
+	}); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	ws := parent.Self().Clone()
-	ws.SetReferencesDir(updated)
+	ws := parent.Self().WithMounted(updated, resolvedPath)
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
-// referenceInternalPath validates and normalizes a caller-supplied mount path
-// (relative to the references root), rejecting escapes and empty paths.
-func referenceInternalPath(p string) (string, error) {
-	clean := strings.TrimPrefix(path.Clean("/"+filepath.ToSlash(p)), "/")
-	if clean == "" || clean == "." {
-		return "", fmt.Errorf("reference path is required")
-	}
-	return clean, nil
-}
-
-// referenceRelPath reports whether a resolved workspace path lands under the
-// reserved references prefix and, if so, returns the path relative to the
-// references root ("." for the prefix itself).
-func referenceRelPath(resolvedPath string) (string, bool) {
-	p := filepath.ToSlash(resolvedPath)
-	if p == core.WorkspaceReferencePrefix {
-		return ".", true
-	}
-	if rel, ok := strings.CutPrefix(p, core.WorkspaceReferencePrefix+"/"); ok {
-		return rel, true
-	}
-	return "", false
-}
-
-// guardReferencePath rejects overlay edits that target the reserved references
-// prefix, keeping referenced content read-only. It is a no-op when the
-// workspace has no references.
-func guardReferencePath(ws *core.Workspace, resolvedPath string) error {
-	if _, ok := ws.ReferencesDir(); !ok {
-		return nil
-	}
-	if _, isRef := referenceRelPath(resolvedPath); isRef {
-		return fmt.Errorf("workspace path %q is a read-only reference and cannot be modified", resolvedPath)
+// guardMountedPath rejects overlay edits that target a path at or under a
+// mount point, keeping mounted content read-only. It is a no-op when the
+// workspace has no mounts.
+func guardMountedPath(ws *core.Workspace, resolvedPath string) error {
+	if ws.MountedPath(resolvedPath) {
+		return fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", resolvedPath)
 	}
 	return nil
 }

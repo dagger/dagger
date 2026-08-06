@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
@@ -90,14 +91,6 @@ func BumpWorkspaceReadEpoch(ctx context.Context) error {
 	return workspaceReadEpochBumper(ctx)
 }
 
-// WorkspaceReferencePrefix is the reserved workspace-relative directory under
-// which externally-referenced paths (e.g. those a user attaches with @ in the
-// agent prompt) are mounted read-only. Content under this prefix is readable
-// through the normal workspace file tools, but is deliberately excluded from
-// the overlay changeset: it never appears in Workspace.changes, is never
-// written to disk by export, and cannot be modified by the agent.
-const WorkspaceReferencePrefix = ".refs"
-
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
 	// source is the private backing source for workspace filesystem and git
@@ -109,14 +102,20 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// references is an in-engine directory tree mounted read-only under
-	// WorkspaceReferencePrefix, holding externally-referenced paths handed to
-	// the agent (see WorkspaceReferencePrefix). Internal only — not a GraphQL
-	// field, but persisted and dependency-tracked like rootfs. Nil when the
-	// workspace has no references. It is intentionally kept separate from the
-	// overlay changeset so referenced content is readable but is never treated
-	// as a pending change or exported.
-	references dagql.ObjectResult[*Directory]
+	// mounts is an in-engine directory tree holding content attached read-only
+	// via Workspace.withMountedDirectory/withMountedFile, keyed by
+	// workspace-root-relative mount path. Internal only — not a GraphQL field,
+	// but persisted and dependency-tracked like rootfs. Nil when the workspace
+	// has no mounts. It is intentionally kept separate from the overlay
+	// changeset so mounted content is readable through the normal workspace
+	// file tools but is never treated as a pending change or exported.
+	mounts dagql.ObjectResult[*Directory]
+
+	// mountPoints lists the workspace-root-relative paths at which content is
+	// mounted, sorted and deduplicated. Reads at or under a mount point
+	// resolve from mounts (shadowing the source), and overlay edits there are
+	// rejected, keeping mounted content read-only.
+	mountPoints []string
 
 	// compatWorkspace stores the originating compat-workspace projection when
 	// this workspace was loaded from a legacy dagger.json instead of an explicit
@@ -490,18 +489,60 @@ func (ws *Workspace) SetUserConfigOverlay(overlay *workspacepkg.UserWorkspaceOve
 	ws.userConfigOverlay = overlay
 }
 
-// ReferencesDir returns the read-only reference directory tree mounted under
-// WorkspaceReferencePrefix, or false when the workspace has no references.
-func (ws *Workspace) ReferencesDir() (dagql.ObjectResult[*Directory], bool) {
-	if ws == nil || ws.references.Self() == nil {
+// MountsDir returns the read-only directory tree holding mounted content,
+// keyed by workspace-root-relative mount path, or false when the workspace has
+// no mounts.
+func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
+	if ws == nil || ws.mounts.Self() == nil {
 		return dagql.ObjectResult[*Directory]{}, false
 	}
-	return ws.references, true
+	return ws.mounts, true
 }
 
-// SetReferencesDir sets the read-only reference directory tree.
-func (ws *Workspace) SetReferencesDir(dir dagql.ObjectResult[*Directory]) {
-	ws.references = dir
+// WithMounted returns a copy of the workspace with the given read-only
+// mounted content tree and the workspace-root-relative path recorded as a
+// mount point, keeping the mount point list sorted and deduplicated.
+func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path string) *Workspace {
+	cp := ws.Clone()
+	cp.mounts = newMounts
+	p := filepath.ToSlash(path)
+	if i, found := slices.BinarySearch(cp.mountPoints, p); !found {
+		cp.mountPoints = slices.Insert(cp.mountPoints, i, p)
+	}
+	return cp
+}
+
+// MountedPath reports whether a workspace-root-relative path is at or under
+// one of the workspace's mount points.
+func (ws *Workspace) MountedPath(resolvedPath string) bool {
+	if ws == nil {
+		return false
+	}
+	p := filepath.ToSlash(resolvedPath)
+	for _, mp := range ws.mountPoints {
+		if p == mp || strings.HasPrefix(p, mp+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// HasMountsUnder reports whether any mount point lies strictly below the given
+// workspace-root-relative path.
+func (ws *Workspace) HasMountsUnder(resolvedPath string) bool {
+	if ws == nil || len(ws.mountPoints) == 0 {
+		return false
+	}
+	p := filepath.ToSlash(resolvedPath)
+	if p == "." || p == "" {
+		return true
+	}
+	for _, mp := range ws.mountPoints {
+		if strings.HasPrefix(mp, p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // CompatWorkspace returns the internal compat-workspace provenance for this
@@ -531,16 +572,17 @@ var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
 var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
-	RootfsResultID     uint64                        `json:"rootfsResultID,omitempty"`
-	ReferencesResultID uint64                        `json:"referencesResultID,omitempty"`
-	Source             *persistedWorkspaceSource     `json:"source,omitempty"`
-	CompatWorkspace    *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
-	Address            string                        `json:"address,omitempty"`
-	Cwd                string                        `json:"cwd,omitempty"`
-	ConfigFile         string                        `json:"configFile,omitempty"`
-	LockFile           string                        `json:"lockFile,omitempty"`
-	ClientID           string                        `json:"clientID,omitempty"`
-	HostPath           string                        `json:"hostPath,omitempty"`
+	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
+	MountsResultID  uint64                        `json:"mountsResultID,omitempty"`
+	MountPoints     []string                      `json:"mountPoints,omitempty"`
+	Source          *persistedWorkspaceSource     `json:"source,omitempty"`
+	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
+	Address         string                        `json:"address,omitempty"`
+	Cwd             string                        `json:"cwd,omitempty"`
+	ConfigFile      string                        `json:"configFile,omitempty"`
+	LockFile        string                        `json:"lockFile,omitempty"`
+	ClientID        string                        `json:"clientID,omitempty"`
+	HostPath        string                        `json:"hostPath,omitempty"`
 
 	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
@@ -699,12 +741,13 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		}
 		payload.RootfsResultID = rootfsID
 	}
-	if ws.references.Self() != nil {
-		referencesID, err := encodePersistedObjectRef(cache, ws.references, "workspace references")
+	if ws.mounts.Self() != nil {
+		mountsID, err := encodePersistedObjectRef(cache, ws.mounts, "workspace mounts")
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
-		payload.ReferencesResultID = referencesID
+		payload.MountsResultID = mountsID
+		payload.MountPoints = ws.mountPoints
 	}
 	if ws.Source() != nil {
 		source, err := encodePersistedWorkspaceSource(cache, ws.Source())
@@ -742,10 +785,10 @@ func (*Workspace) DecodePersistedObject(
 		}
 	}
 
-	var references dagql.ObjectResult[*Directory]
-	if persisted.ReferencesResultID != 0 {
+	var mounts dagql.ObjectResult[*Directory]
+	if persisted.MountsResultID != 0 {
 		var err error
-		references, err = loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ReferencesResultID, "workspace references")
+		mounts, err = loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.MountsResultID, "workspace mounts")
 		if err != nil {
 			return nil, err
 		}
@@ -767,7 +810,8 @@ func (*Workspace) DecodePersistedObject(
 
 	ws := &Workspace{
 		rootfs:           rootfs,
-		references:       references,
+		mounts:           mounts,
+		mountPoints:      persisted.MountPoints,
 		compatWorkspace:  persisted.CompatWorkspace,
 		Address:          persisted.Address,
 		Cwd:              cwd,
@@ -820,16 +864,16 @@ func (ws *Workspace) AttachDependencyResults(
 		deps = append(deps, sourceDeps...)
 	}
 
-	if ws.references.Self() != nil {
-		attached, err := attach(ws.references)
+	if ws.mounts.Self() != nil {
+		attached, err := attach(ws.mounts)
 		if err != nil {
-			return nil, fmt.Errorf("attach workspace references: %w", err)
+			return nil, fmt.Errorf("attach workspace mounts: %w", err)
 		}
 		typed, ok := attached.(dagql.ObjectResult[*Directory])
 		if !ok {
-			return nil, fmt.Errorf("attach workspace references: unexpected result %T", attached)
+			return nil, fmt.Errorf("attach workspace mounts: unexpected result %T", attached)
 		}
-		ws.references = typed
+		ws.mounts = typed
 		deps = append(deps, typed)
 	}
 
@@ -902,6 +946,7 @@ func attachWorkspaceSource(
 
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
+	cp.mountPoints = slices.Clone(ws.mountPoints)
 	return &cp
 }
 
