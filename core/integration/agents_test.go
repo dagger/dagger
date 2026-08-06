@@ -122,6 +122,18 @@ func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t 
 	require.Contains(t, out, "may only require a single LLM! argument")
 }
 
+func (AgentsSuite) TestValidationRejectsMissingBaseArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "badagent-noarg")
+	require.NoError(t, err)
+
+	// badagent-noarg's @agent takes no LLM! base argument, which must be
+	// rejected at module load — the compose fold has nothing to thread through.
+	out, err := modGen.With(daggerExecFail("agent", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "does not declare a required LLM! argument")
+}
+
 func (AgentsSuite) TestValidationRejectsBadReturnType(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "badagent-return")

@@ -228,9 +228,10 @@ func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
 }
 
 // validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
-// §3): the function must return LLM!, and its only required argument may be a
-// single LLM! (the base the compose fold supplies, whatever it is named). Any
-// other required argument, or a non-LLM! return, is a hard error at module load.
+// §3): the function must return LLM! and must declare exactly one required
+// argument, an LLM! (the base the compose fold supplies, whatever it is
+// named). A non-LLM! return, a missing base, or any other required argument is
+// a hard error at module load.
 func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	if !returnsCoreObject(fn, "LLM") {
 		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
@@ -248,6 +249,10 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 		}
 		return fmt.Errorf("object %q function %q is marked @agent but declares required argument %q; an @agent function may only require a single LLM! argument (the base the compose fold supplies)",
 			obj.OriginalName, fn.OriginalName, arg.OriginalName)
+	}
+	if !baseExempted {
+		return fmt.Errorf("object %q function %q is marked @agent but does not declare a required LLM! argument; @agent functions must have the agent(base: LLM!): LLM! shape (the base the compose fold supplies)",
+			obj.OriginalName, fn.OriginalName)
 	}
 	return nil
 }
