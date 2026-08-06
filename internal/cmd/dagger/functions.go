@@ -305,7 +305,10 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		if ctx.Err() != nil {
 			cmd.PrintErrln("Canceled.")
 		} else if rerr != nil {
-			cmd.PrintErrln(cmd.ErrPrefix(), rerr.Error())
+			// Strip [traceparent:...] error-origin markers — they are span
+			// attribution plumbing for the TUI, not part of the message.
+			msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(rerr.Error(), ""))
+			cmd.PrintErrln(cmd.ErrPrefix(), msg)
 
 			if fc.needsHelp {
 				cmd.Println()

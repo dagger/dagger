@@ -5049,10 +5049,16 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		// Filter self-references and causes already rendered elsewhere in this
 		// trace: a span propagated as its own error origin should never be
 		// rendered as the cause of itself, and a cause already shown as a
-		// primary row doesn't need a redundant "↳ ..." block here.
+		// primary row doesn't need a redundant "↳ ..." block here. A cause
+		// whose span data never arrived (e.g. an origin linked across a nested
+		// session) is dropped too: rendering it would produce an empty stub
+		// while suppressing the only copy of the message below.
 		origins := make([]*dagui.Span, 0, len(row.Span.ErrorOrigins.Order))
 		for _, cause := range row.Span.ErrorOrigins.Order {
 			if cause.ID == row.Span.ID {
+				continue
+			}
+			if !cause.Received {
 				continue
 			}
 			if fe.claims.hasError(cause.ID) {
@@ -5591,13 +5597,63 @@ func (fe *frontendPretty) hasShownRootError() bool {
 	return fe.claims.hasRootError(fe.err)
 }
 
+// errorShownElsewhere reports whether a failed span's error message is carried
+// by some other output this render pass, so the span's own row can stay terse.
+// The span's tracked error origins normally carry the message — but only if an
+// origin actually renders: as its own row in the current view, as an
+// already-claimed block (root-cause sections render before the tree), or as a
+// root cause the render policy will append after the tree. An origin no output
+// shows — an internal span, or one whose data never arrived — must not
+// suppress the message, or the error would vanish from the report entirely.
+func (fe *frontendPretty) errorShownElsewhere(span *dagui.Span) bool {
+	if len(span.ErrorOrigins.Order) == 0 {
+		return false
+	}
+	var sectionOrigins []*dagui.Span
+	sectionsComputed := false
+	for _, origin := range span.ErrorOrigins.Order {
+		if origin == nil || origin.ID == span.ID || !origin.Received {
+			continue
+		}
+		if fe.claims.hasError(origin.ID) {
+			return true
+		}
+		if fe.rows != nil && fe.rows.BySpan[origin.ID] != nil {
+			return true
+		}
+		if !sectionsComputed {
+			sectionsComputed = true
+			if pol := fe.renderPolicy(); pol.showRootCause || pol.showRootCauseLast {
+				if zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]; zoomSpan != nil {
+					sectionOrigins = fe.checkRootCauses(zoomSpan)
+				}
+			}
+		}
+		for _, sectionOrigin := range sectionOrigins {
+			if sectionOrigin.ID == origin.ID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	if len(row.Span.ErrorOrigins.Order) > 0 {
-		// span's error originated elsewhere; don't repeat the message, the ERROR status
-		// links to its origin instead
+	if fe.errorShownElsewhere(row.Span) {
+		// span's error originated elsewhere and that origin is visible this
+		// pass; don't repeat the message, the ERROR status links to its origin
 		return
 	}
 	fe.claims.claimError(row.Span)
+	// This span's message embeds its origins' messages (error wrapping), so
+	// printing it here also represents them: claim the origins so the
+	// root-cause sections and the CLI's trailing Error: line don't repeat
+	// what was just shown.
+	for _, origin := range row.Span.ErrorOrigins.Order {
+		if origin != nil && origin.ID != row.Span.ID {
+			fe.claims.claimErrorID(origin.ID)
+		}
+	}
 	errorCounts := map[string]int{}
 	for _, span := range row.Span.Errors().Order {
 		errText := span.Status.Description

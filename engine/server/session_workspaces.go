@@ -1731,7 +1731,7 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 // [traceparent:...] error-origin markers — they are span-attribution plumbing,
 // not part of the message.
 func loadFailureMessage(err error) string {
-	return strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
+	return core.StripErrorOrigins(err.Error())
 }
 
 func moduleLoadErr(load moduleLoadRequest, err error) error {

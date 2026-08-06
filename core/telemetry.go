@@ -19,6 +19,13 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+// StripErrorOrigins removes [traceparent:...] error-origin markers from a
+// message destined for human-readable output — logs, composed summaries —
+// where the span-attribution plumbing is noise.
+func StripErrorOrigins(msg string) string {
+	return strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(msg, ""))
+}
+
 var _ dagql.AroundFunc = AroundFunc
 
 func AroundFunc(
