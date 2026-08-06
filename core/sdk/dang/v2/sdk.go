@@ -64,7 +64,7 @@ func (Impl) ModuleTypes(
 	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, nil, scopedMod, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		inst, err = initDangModule(ctx, dag, env)
 		if err != nil {
-			return nil, fmt.Errorf("init module: %w", err)
+			return nil, err
 		}
 		return nil, nil
 	})

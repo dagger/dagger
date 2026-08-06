@@ -180,15 +180,60 @@ func isCoreLLMArg(arg *FunctionArg) bool {
 		typeDef.AsObject.Value.Self().SourceModuleName == ""
 }
 
-// validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
-// §3): the function must return LLM!, and its only required argument may be a
-// single LLM! (the base the compose fold supplies, whatever it is named). Any
-// other required argument, or a non-LLM! return, is a hard error at module load.
-func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
+// returnsCoreObject reports whether the function returns the named core object
+// type, non-null. The SourceModuleName guard keeps it to the core type, not a
+// module-local type that happens to share its name.
+func returnsCoreObject(fn *Function, name string) bool {
 	ret := fn.ReturnType.Self()
-	if ret.Optional ||
-		ret.Kind != TypeDefKindObject ||
-		ret.AsObject.Value.Self().Name != "LLM" {
+	return !ret.Optional &&
+		ret.Kind == TypeDefKindObject &&
+		ret.AsObject.Value.Self().Name == name &&
+		ret.AsObject.Value.Self().SourceModuleName == ""
+}
+
+// validateUpFunction enforces the @up contract: the function must return the
+// core Service! type and must be callable with no caller-supplied arguments,
+// since `dagger up` starts services without any.
+func validateUpFunction(obj *ObjectTypeDef, fn *Function) error {
+	if !returnsCoreObject(fn, "Service") {
+		return fmt.Errorf("object %q function %q is marked @up but returns %s; @up functions must return the core Service! type",
+			obj.OriginalName, fn.OriginalName, fn.ReturnType.Self().ToType().String())
+	}
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if argRequired(arg) {
+			return fmt.Errorf("object %q function %q is marked @up but declares required argument %q; @up functions must be callable with no arguments",
+				obj.OriginalName, fn.OriginalName, arg.OriginalName)
+		}
+	}
+	return nil
+}
+
+// validateGeneratorFunction enforces the @generate contract: the function must
+// return the core Changeset! type and must be callable with no caller-supplied
+// arguments, since `dagger generate` runs generators without any.
+func validateGeneratorFunction(obj *ObjectTypeDef, fn *Function) error {
+	if !returnsCoreObject(fn, "Changeset") {
+		return fmt.Errorf("object %q function %q is marked @generate but returns %s; @generate functions must return the core Changeset! type",
+			obj.OriginalName, fn.OriginalName, fn.ReturnType.Self().ToType().String())
+	}
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if argRequired(arg) {
+			return fmt.Errorf("object %q function %q is marked @generate but declares required argument %q; @generate functions must be callable with no arguments",
+				obj.OriginalName, fn.OriginalName, arg.OriginalName)
+		}
+	}
+	return nil
+}
+
+// validateAgentFunction enforces the @agent middleware contract (hack/designs/workspace-agents.md
+// §3): the function must return LLM! and must declare exactly one required
+// argument, an LLM! (the base the compose fold supplies, whatever it is
+// named). A non-LLM! return, a missing base, or any other required argument is
+// a hard error at module load.
+func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
+	if !returnsCoreObject(fn, "LLM") {
 		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
 			obj.OriginalName, fn.OriginalName)
 	}
@@ -204,6 +249,10 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 		}
 		return fmt.Errorf("object %q function %q is marked @agent but declares required argument %q; an @agent function may only require a single LLM! argument (the base the compose fold supplies)",
 			obj.OriginalName, fn.OriginalName, arg.OriginalName)
+	}
+	if !baseExempted {
+		return fmt.Errorf("object %q function %q is marked @agent but does not declare a required LLM! argument; @agent functions must have the agent(base: LLM!): LLM! shape (the base the compose fold supplies)",
+			obj.OriginalName, fn.OriginalName)
 	}
 	return nil
 }
@@ -1312,6 +1361,16 @@ func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, 
 func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
 	if gqlFieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+	}
+	if fn.IsUp {
+		if err := validateUpFunction(obj, fn); err != nil {
+			return err
+		}
+	}
+	if fn.IsGenerator {
+		if err := validateGeneratorFunction(obj, fn); err != nil {
+			return err
+		}
 	}
 	if fn.IsAgent {
 		if err := validateAgentFunction(obj, fn); err != nil {
@@ -2550,7 +2609,7 @@ func (mod *Module) WithObject(ctx context.Context, def dagql.ObjectResult[*TypeD
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {
@@ -2577,7 +2636,7 @@ func (mod *Module) WithInterface(ctx context.Context, def dagql.ObjectResult[*Ty
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {
@@ -2604,7 +2663,7 @@ func (mod *Module) WithEnum(ctx context.Context, def dagql.ObjectResult[*TypeDef
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {

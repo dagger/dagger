@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -790,7 +791,12 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	}
 	toolName := tool.Name
 	if tool.Server != "" {
+		// External MCP tools may come prefixed `<server>_`; collision-namespaced
+		// object tools are prefixed `<gqlFieldName(server)>_` (their Server is
+		// the bound type name). Trim either so the span shows the bare tool name
+		// alongside the server attribute.
 		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
+		toolName = strings.TrimPrefix(toolName, gqlFieldName(tool.Server)+"_")
 	}
 	span := trace.SpanFromContext(ctx)
 	attrs := []attribute.KeyValue{
@@ -861,11 +867,19 @@ func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callI
 }
 
 // endToolCallDisplay ends a tool call's display span once the tool returns,
-// marking it errored if the call failed. No-op when there's no display span.
-func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, errored bool, errMsg string) {
+// marking it errored if the call failed. It also stamps the span with an
+// estimated token count for the result the tool fed back into context, so the
+// TUI can flag tool calls whose output is an outsized driver of context growth.
+// No-op when there's no display span.
+func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, errored bool, result string) {
 	if tc, ok := displays[callID]; ok {
+		if tokens := estimateTextTokens(len(result)); tokens > 0 {
+			tc.Span.SetAttributes(
+				attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
+			)
+		}
 		if errored {
-			tc.Span.SetStatus(codes.Error, errMsg)
+			tc.Span.SetStatus(codes.Error, result)
 		}
 		tc.Span.End()
 	}

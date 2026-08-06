@@ -1,3 +1,4 @@
 [["version","1"]]
 ["","git.head",["https://github.com/dagger/dang-sdk"],"c724eec4270870aae489daa9f3cb8cbacfb44680","float"]
 ["","git.head",["https://github.com/dagger/go-sdk"],"af56d1672305bcb826b16ca9bebf3c91ef9593c6","float"]
+["","git.head",["https://github.com/vito/editor"],"1e1ded886d1252071f8b50ada6a4580af8c53866","float"]

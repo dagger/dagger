@@ -57,7 +57,7 @@ func (r *runtime) eval(
 			}
 			dagMod, err := initDangModule(ctx, srv, env)
 			if err != nil {
-				return nil, fmt.Errorf("init module: %w", err)
+				return nil, err
 			}
 			return json.Marshal(dagMod)
 		}
@@ -588,7 +588,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 	}
 
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
-		return res, fmt.Errorf("failed to select module: %w", err)
+		return res, err
 	}
 
 	return res, nil

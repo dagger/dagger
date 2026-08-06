@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/interp"
@@ -245,7 +246,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				return h.llmSession.updateLLMAndAgentVar(compacted)
+				return h.llmSession.updateLLM(compacted)
 			},
 		},
 		{
@@ -264,11 +265,14 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 		},
 		{
 			Use:         ".model [model]",
-			Description: "Swap out the LLM model",
+			Description: "Swap out the LLM model (interactive picker if no model given)",
 			GroupID:     "llm",
-			Args:        ExactArgs(1),
+			Args:        MaximumArgs(1),
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				if len(args) == 0 {
+					return h.selectModelInteractive(ctx)
+				}
 				llm, err := h.llm(ctx)
 				if err != nil {
 					return err
@@ -294,7 +298,14 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 					if err != nil {
 						return err
 					}
-					if err := llm.LoadSession(ctx, args[0]); err != nil {
+					// Replay the resumed conversation at the level above the
+					// ".resume" command span so it surfaces as the top-level
+					// transcript rather than nested under ".resume".
+					replayCtx := h.cmdParentCtx
+					if replayCtx == nil {
+						replayCtx = ctx
+					}
+					if err := llm.LoadSession(ctx, replayCtx, args[0]); err != nil {
 						return err
 					}
 					// Start a fresh save file for subsequent prompts, leaving
@@ -360,12 +371,116 @@ func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := llm.LoadSession(ctx, selected); err != nil {
+	// Replay the resumed conversation above the ".resume" command span so it
+	// surfaces as the top-level transcript rather than nested under ".resume".
+	replayCtx := h.cmdParentCtx
+	if replayCtx == nil {
+		replayCtx = ctx
+	}
+	if err := llm.LoadSession(ctx, replayCtx, selected); err != nil {
 		return err
 	}
 	h.initialPrompt = ""
 	h.sessionUUID = ""
 	return nil
+}
+
+// selectModelInteractive presents a picker of the models offered by the
+// configured providers and swaps the LLM to the chosen one. It mirrors the
+// ".model <model>" path once a model is selected, and no-ops if the user
+// aborts the form.
+func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
+	llm, err := h.llm(ctx)
+	if err != nil {
+		return err
+	}
+
+	options := availableModelOptions()
+	if len(options) == 0 {
+		return fmt.Errorf("no models available; run 'dagger llm setup' to configure a provider")
+	}
+
+	var selected string
+	form := idtui.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Choose a model").
+				Height(min(len(options)+2, 12)).
+				Filtering(true).
+				Options(options...).
+				Value(&selected),
+		),
+	)
+
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return err
+	}
+
+	if selected == "" {
+		return nil // user aborted
+	}
+
+	newLLM, err := llm.Model(selected)
+	if err != nil {
+		return err
+	}
+	h.llmSession = newLLM
+	h.llmModel = newLLM.model
+	return nil
+}
+
+// availableModelOptions builds the option list for the interactive ".model"
+// picker: every model offered by each configured & enabled provider, labelled
+// with its provider and deduplicated by model ID. When no providers are
+// configured on disk (e.g. an env-var-only setup), it falls back to the full
+// embedded catalog so the picker is still useful.
+func availableModelOptions() []huh.Option[string] {
+	cfg, _ := llmconfig.Load()
+
+	var providers []string
+	if cfg != nil {
+		for name, p := range cfg.LLM.Providers {
+			if p.Enabled {
+				providers = append(providers, name)
+			}
+		}
+	}
+	// Nothing configured on disk: offer every known provider's catalog.
+	if len(providers) == 0 {
+		for _, e := range llmconfig.ProviderEntries() {
+			providers = append(providers, e.ConfigKey)
+		}
+	}
+	slices.Sort(providers)
+	providers = slices.Compact(providers)
+
+	var options []huh.Option[string]
+	seen := make(map[string]bool)
+	add := func(id, label string) {
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		options = append(options, huh.NewOption(label, id))
+	}
+
+	for _, provider := range providers {
+		// A configured provider may pin a model that isn't in the catalog
+		// (e.g. a local / custom endpoint); offer it alongside the catalog.
+		if cfg != nil {
+			if p, ok := cfg.LLM.Providers[provider]; ok && p.Model != "" {
+				add(p.Model, fmt.Sprintf("%s (%s)", p.Model, provider))
+			}
+		}
+		for _, m := range llmconfig.ModelsForProvider(provider) {
+			label := m.Label
+			if label == "" {
+				label = m.ID
+			}
+			add(m.ID, fmt.Sprintf("%s (%s)", label, provider))
+		}
+	}
+	return options
 }
 
 func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo

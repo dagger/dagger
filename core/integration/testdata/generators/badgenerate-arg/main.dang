@@ -1,0 +1,7 @@
+"""A deliberately malformed generator module (@generate with a required arg) for validation tests."""
+type BadgenerateArg {
+  """@generate with a required arg, which the contract forbids."""
+  gen(workdir: Directory! @defaultPath(path: "."), name: String!): Changeset! @generate {
+    workdir.withNewFile(name, "nope").changes(workdir)
+  }
+}

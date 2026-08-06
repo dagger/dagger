@@ -9,7 +9,7 @@
 //go:test:include ../../cmd/dagger
 //go:test:include ../../core/gitref
 //go:test:include ../../core/modules
-//go:test:include ../../core/openrouter
+//go:test:include ../../core/modelcatalog
 //go:test:include ../../core/prompts
 //go:test:include ../../core/sdk/sdkmeta
 //go:test:include ../../core/workspace

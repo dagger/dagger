@@ -1,0 +1,319 @@
+# tui-qa: give a Dagger coding agent the ability to QA its own live TUI.
+#
+# The `tui-qa` skill drives an interactive `dagger` TUI over tmux; but a
+# Dagger-native agent (the `editor` @agent) has no Bash tool, only Dagger-module
+# tools. This module reimplements that QA loop as @agent tools, using the
+# DAGGER_TUI_CONSOLE affordance (see the `tui-console` skill and
+# dagql/idtui/frontend_console.go): a from-source `dagger` CLI serves its live
+# pretty TUI over HTTP, and we drive it with GET /screen + POST /key, /type,
+# /resize, /zoom.
+#
+# Shape of the loop (see `start` for the wiring):
+#   - build the `dagger` CLI from source (cliDev)
+#   - drop it into a small client container run with privileged nesting (so it
+#     talks to this session's engine, and `dagger call/check/agent` actually
+#     run with the session's LLM auth) at a
+#     configurable workdir, with DAGGER_TUI_CONSOLE=:PORT + DAGGER_PROGRESS=tty
+#   - run the command under test as a Service and .start() it (so it persists
+#     across tool calls within this dagger session)
+#   - hold a small curl client container (bound to that service) as session
+#     state; each interaction tool curls the console over HTTP
+
+let defaultWorkdir = "/src"
+let defaultPort = 7777
+
+type TuiQa {
+  # ---- session state (private so it isn't exposed as tools; persists across
+  # tool calls the same way editor's `todos` does) --------------------------
+
+  # a minimal curl container bound to the running console service
+  let client: Container! = container
+  # the started console service (kept so `stop` can tear it down)
+  let service: Service = null
+  # base URL of the console inside the client container, e.g. http://tui-qa:7777
+  let url: String! = ""
+
+  # The skills shipped alongside this module (skills/<name>/SKILL.md), installed
+  # onto the agent's LLM instead of a static system prompt: the model discovers
+  # them with ListSkills and reads them with ReadSkill only when relevant, so
+  # the TUI-QA workflow never pollutes context until it's actually needed.
+  let skills: Directory! = currentModule.source.directory("skills")
+
+  """
+  Compose the TUI-QA tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSkills(skills)
+  }
+
+  """
+  Start a live dagger TUI session and expose it for QA.
+
+  Builds the `dagger` CLI from the workspace source, runs it inside a container
+  that has a from-source engine bound (so real commands execute), and serves its
+  live pretty TUI over HTTP via DAGGER_TUI_CONSOLE. After calling this, use
+  `screen` to read the rendered terminal and `key`/`type`/`resize`/`zoom` to
+  drive it. Call `stop` when done.
+
+  args is the dagger subcommand to run, already tokenized, WITHOUT the leading
+  "dagger" — e.g. ["call", "test"] or ["check"].
+  """
+  start(
+    source: Workspace!,
+    """
+    The dagger subcommand + flags to run, e.g. ["call", "test"]. Omit "dagger".
+    """
+    args: [String!]!,
+    """
+    Working directory inside the container to run the command from. The workspace
+    source is mounted here, so this is usually the repo root.
+    """
+    workdir: String! = defaultWorkdir,
+    """
+    Port the HTTP TUI console listens on inside the container.
+    """
+    port: Int! = defaultPort,
+    """
+    Address of an already-running engine to attach to instead of building and
+    binding a fresh one — e.g. the tcp://<host>:1234 endpoint the engine-lab
+    start tool prints. The TUI session then runs against THAT engine, so its
+    debug endpoints and logs observe exactly what the TUI is driving. Note:
+    the attached runner has no LLM auth inherited via nesting, so prefer the
+    default for `args: ["agent"]` sessions.
+    """
+    engine: String! = "",
+  ): TuiQa! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): starting a service is a side effect that must actually run
+    # every invocation, not be served stale from the dagql session cache.
+
+    let srcDir = source.directory("/")
+
+    # build the dagger CLI from source
+    let cli = cliDev(ws: source, source: srcDir).binary
+
+    # The client container the command under test runs in. Default: a lean
+    # client run with experimentalPrivilegedNesting, so it talks to the
+    # session's own engine and inherits its LLM auth (required for `agent`).
+    # With `engine`: the same lean client, pointed at the existing engine by
+    # address instead — that engine is reachable with no service binding
+    # because engine-lab starts its service under the session DNS domain, but
+    # nothing forwards LLM credentials to it.
+    let lean = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl", "git"])
+
+    let nesting = engine == ""
+
+    let base = if (nesting) {
+      lean
+    } else {
+      lean.withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine)
+    }
+
+    # we overwrite (or install) the CLI with our from-source build.
+    let runner = base
+      .withFile("/usr/local/bin/dagger", cli)
+      .withDirectory(workdir, srcDir)
+      .withWorkdir(workdir)
+      # The workspace snapshot carries no usable .git — at best a worktree
+      # pointer file whose target only exists on the real host — but agent
+      # workspace tools (commit, git.uncommitted, ctrl+s) need an actual
+      # repository. Re-initialize one from the snapshot so `dagger agent`
+      # sessions can stage commits.
+      .withExec([
+        "sh", "-c",
+        "rm -rf .git && git init -q -b main && git add -A && git " + "-c user.email=tui-qa@localhost -c user.name=tui-qa " + "commit -qm 'workspace snapshot'",
+      ])
+      .withEnvVariable("DAGGER_TUI_CONSOLE", ":" + toString(port))
+      .withEnvVariable("DAGGER_PROGRESS", "tty")
+      .withExposedPort(port)
+
+    # run the command under test as a persistent service serving the console.
+    # Short-lived commands (e.g. ["version"]) exit before the console port's
+    # healthcheck ever passes, so `.start` fails with an opaque "service
+    # exited before healthcheck" error — rescue that by rerunning the command
+    # synchronously and reporting its output instead.
+    let svc = {
+      runner
+        .asService(
+          args: ["dagger"] + args,
+          experimentalPrivilegedNesting: nesting,
+        )
+        .start
+    } rescue {
+      e: Error => {
+        let ran = runner
+          .withExec(
+            ["dagger"] + args,
+            expect: ReturnType.ANY,
+            experimentalPrivilegedNesting: nesting,
+          ).{{exitCode, combinedOutput}}
+        print(`Command exited immediately (exit code ${ran.exitCode}).`)
+        print("")
+        print(```
+          The TUI console never came up; for one-shot commands use the engine-lab dagger tool.
+
+          == OUTPUT ==
+        ```)
+        print(ran.combinedOutput)
+        null
+      }
+    }
+
+    if (svc == null) {
+      # failure path: leave client/service/url unset so later tools still
+      # report "No active TUI session. Call the tui-qa start tool first."
+      self
+    } else {
+      # a tiny client we curl the console from, on every interaction tool
+      let curlCtr = container
+        .from("alpine:3.20")
+        .withExec(["apk", "add", "--no-cache", "curl"])
+        .withServiceBinding("tui-qa", svc)
+
+      if (engine != "") {
+        print("Attached to existing engine at " + engine)
+      }
+      self.client = curlCtr
+      self.service = svc
+      self.url = "http://tui-qa:" + toString(port)
+      self
+    }
+  }
+
+  # NOTE: every tool that reads or drives the live console MUST be
+  # @cache(policy: FunctionCachePolicy.Never). Without it, dagql memoizes the
+  # function result by (object id + field + args) across tool-call queries in
+  # the session, so the SECOND call returns the FIRST call's frame — a frozen
+  # screen — and the Dang body (incl. the curl) never re-runs. `Never` mixes a
+  # per-call random value into the call id, forcing a fresh execution each time.
+  """
+  Read the current rendered TUI screen (ANSI-stripped, viewport-clipped exactly
+  like a real terminal). Call repeatedly to observe progress.
+  """
+  screen: String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/screen")
+  }
+
+  """
+  Apply a key script to the TUI and return the resulting screen. Keys are
+  whitespace/comma separated tuist key names (e.g. "down down right", "enter",
+  "esc", "C-c"); a "key*N" token repeats it. Movement/keymap:
+  ←↑↓→ / h j k l move · right/l expand · left/h collapse · enter zoom · esc back ·
+  r error origin · L logs · +/- verbosity · / search · T tests.
+  """
+  key(keys: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/key", keys)
+  }
+
+  """
+  Type a literal string into the TUI (verbatim, not tokenized) — e.g. into the
+  "/" search field. Returns the resulting screen.
+  """
+  typeText(text: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/type", text)
+  }
+
+  """
+  Resize the terminal to "<cols>x<rows>" (e.g. "120x12"). Either dimension may be
+  omitted/0 to keep it (e.g. "x12" changes only rows). Use a small height to
+  reproduce overflow-only rendering. Returns the resulting screen.
+  """
+  resize(size: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/resize", size)
+  }
+
+  """
+  Zoom straight to a span by its hex id (from `spans`). Returns the screen.
+  """
+  zoom(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    post("/zoom", spanHex)
+  }
+
+  """
+  List spans currently loaded in the TUI (id / status / name), optionally
+  filtered by a name substring. Status is ERROR (span errored), FAIL (caused a
+  failure via a link), run, or ok.
+  """
+  spans(query: String! = ""): String! @cache(policy: FunctionCachePolicy.Never) {
+    # URL-encode spaces so multi-word span names (e.g. "load SDK: go") don't
+    # produce a malformed URL that curl rejects (exit 3).
+    let path = if (query == "") { "/spans" } else {
+      "/spans?q=" + query.replace(
+        " ",
+        "%20",
+      )
+    }
+    get(path)
+  }
+
+  """
+  Show one span in depth: name, status, timing, the dagui flags that shape how
+  the UI treats it (internal, passthrough, encapsulation, log/span roll-up,
+  service, …), and the parent chain up to the root with each ancestor's flags.
+  Get ids from `spans`; use this to answer "why is this span hidden / why
+  didn't its logs roll up".
+  """
+  span(spanHex: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    get("/span?id=" + spanHex)
+  }
+
+  """
+  Show the console's own endpoint + keymap help.
+  """
+  help: String! {
+    get("/help")
+  }
+
+  # A self-call (`tuiQa`) yields the module's own type as it lives in the
+  # runtime schema — a Dagger.TuiQa, which carries a GraphQL id and implements
+  # Node. Declaring the return as Dagger.TuiQa! (rather than the bare local
+  # TuiQa!) makes the annotation match what the self-call actually produces.
+  """
+  Stop the TUI session and release the underlying service.
+  """
+  stop: Dagger.TuiQa! @cache(policy: FunctionCachePolicy.Never) {
+    if (service != null) {
+      service.stop
+      print("Stopped TUI session")
+    }
+    tuiQa
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  let get(path: String!): String! {
+    if (url == "") {
+      return "No active TUI session. Call the tui-qa start tool first."
+    }
+    client
+      # bust Dagger's exec cache so each read hits the live console, not a
+      # cached identical curl (the screen changes but the inputs wouldn't)
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", "60",
+        url + path,
+      ])
+      .stdout
+  }
+
+  let post(path: String!, body: String!): String! {
+    if (url == "") {
+      return "No active TUI session. Call the tui-qa start tool first."
+    }
+    client
+      .withEnvVariable("TUI_QA_NONCE", Random.string)
+      .withExec([
+        "curl", "-s",
+        "--retry", "15", "--retry-delay", "2", "--retry-connrefused",
+        "--max-time", "60",
+        "--data-binary", body,
+        url + path,
+      ])
+      .stdout
+  }
+}

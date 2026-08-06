@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	telemetry "github.com/dagger/otel-go"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, attrs ...otellog.KeyValue) sdklog.Record {
@@ -34,6 +36,22 @@ func newTestLogRecord(traceID trace.TraceID, spanID trace.SpanID, body string, a
 	r.SetAttributes(attrs...)
 
 	return *r
+}
+
+func TestProcessAttributeLLMToolResultTokens(t *testing.T) {
+	// The live SDK path delivers an int64.
+	var snapshot SpanSnapshot
+	snapshot.ProcessAttribute(telemetryattrs.LLMToolResultTokensAttr, int64(12345))
+	if snapshot.LLMToolResultTokens != 12345 {
+		t.Fatalf("LLMToolResultTokens = %d, want 12345", snapshot.LLMToolResultTokens)
+	}
+
+	// A value that round-tripped through a JSON number arrives as float64.
+	var fromJSON SpanSnapshot
+	fromJSON.ProcessAttribute(telemetryattrs.LLMToolResultTokensAttr, float64(678))
+	if fromJSON.LLMToolResultTokens != 678 {
+		t.Fatalf("LLMToolResultTokens (float64) = %d, want 678", fromJSON.LLMToolResultTokens)
+	}
 }
 
 // TestRollUpStateIncremental verifies that rollup state updates are incremental

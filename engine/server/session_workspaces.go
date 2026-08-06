@@ -1149,7 +1149,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				loadFailures = append(loadFailures, err.Error())
+				loadFailures = append(loadFailures, loadFailureMessage(err))
 				continue
 			}
 			kept = append(kept, mod)
@@ -1187,7 +1187,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 			client.recordFailedModule(load.mod, loadErr)
 			if bestEffort {
 				reportSkippedModule(ctx, moduleProgressName(load.mod), loadErr)
-				loadFailures = append(loadFailures, loadErr.Error())
+				loadFailures = append(loadFailures, loadFailureMessage(loadErr))
 				continue
 			}
 			if firstErr == nil {
@@ -1873,6 +1873,13 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 	telemetry.EndWithCause(span, &cause)
 }
 
+// loadFailureMessage renders a load error as a display string, stripping the
+// [traceparent:...] error-origin markers — they are span-attribution plumbing,
+// not part of the message.
+func loadFailureMessage(err error) string {
+	return core.StripErrorOrigins(err.Error())
+}
+
 func moduleLoadErr(load moduleLoadRequest, err error) error {
 	prefix := "loading module"
 	if load.mod.Kind == moduleLoadKindExtra {
@@ -2157,7 +2164,7 @@ func (srv *Server) resolveModuleSourceAsModule(
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return dagql.ObjectResult[*core.Module]{}, err
 	}
 	return resolved, nil
 }

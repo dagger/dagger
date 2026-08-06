@@ -125,6 +125,46 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 	}
 }
 
+func (GeneratorsSuite) TestGenerateValidationRejectsBadSignature(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("wrong return type", func(ctx context.Context, t *testctx.T) {
+		modGen, err := generatorsTestEnv(t, c)
+		require.NoError(t, err)
+		modGen = modGen.WithWorkdir("badgenerate-return")
+
+		// badgenerate-return's @generate returns Directory!, which must be
+		// rejected at module load.
+		out, err := modGen.
+			With(daggerExecFail("functions")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "@generate functions must return the core Changeset! type")
+
+		// generate tolerates load failures by default (best-effort), but
+		// --require-load turns the skipped module fatal.
+		out, err = modGen.
+			With(daggerExecFail("generate", "-l", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "could not be loaded")
+	})
+
+	t.Run("required arg", func(ctx context.Context, t *testctx.T) {
+		modGen, err := generatorsTestEnv(t, c)
+		require.NoError(t, err)
+		modGen = modGen.WithWorkdir("badgenerate-arg")
+
+		// badgenerate-arg's @generate declares a required `name: String!`, which
+		// must be rejected at module load.
+		out, err := modGen.
+			With(daggerExecFail("functions")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "@generate functions must be callable with no arguments")
+	})
+}
+
 func (GeneratorsSuite) TestGenerateApplyDisposition(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

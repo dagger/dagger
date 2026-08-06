@@ -15,6 +15,7 @@ import (
 )
 
 var agentListMode bool
+var agentResume agentSessionFlag
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [options] [name...]",
@@ -29,8 +30,16 @@ Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
+  dagger agent -r                 # Resume a saved session (interactive picker)
+  dagger agent -r=<session>       # Resume a specific saved session
 `,
 	Args: cobra.ArbitraryArgs,
+	Annotations: map[string]string{
+		// Drop into the same interactive prompt mode as `dagger shell`, so keep
+		// completed conversation items in scrollback rather than GC'ing them
+		// (verbosity 0 prunes completed spans after GCThreshold).
+		showFinalProgressKey: "true",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(
 			cmd.Context(),
@@ -49,14 +58,56 @@ Examples:
 				if err != nil {
 					return err
 				}
-				return startInteractivePromptMode(ctx, dag, llmID)
+				// -r/--resume optionally restores a saved session before the
+				// prompt starts: a session id resumes it directly, the picker
+				// keyword (what a bare -r resolves to) opens the interactive
+				// picker.
+				resume := cmd.Flags().Changed("resume")
+				sessionID := agentResume.SessionID()
+				return startInteractivePromptModeWithResume(ctx, dag, llmID, sessionID, resume)
 			},
 		)
 	},
 }
 
+// agentSessionFlag is the -r/--resume flag value: a saved session id, or the
+// reserved word "picker" to open the interactive session picker. Implementing
+// pflag.Value (rather than using a plain string flag) keeps the help text
+// readable — `--resume session[=picker]` — since pflag renders a custom type's
+// NoOptDefVal unquoted after the Type() name. Saved session ids are UUIDs, so
+// the keyword can't shadow a real session.
+type agentSessionFlag string
+
+// agentSessionPicker is the reserved --resume value naming the interactive
+// session picker; it's also what a bare -r resolves to (via NoOptDefVal).
+const agentSessionPicker agentSessionFlag = "picker"
+
+func (f *agentSessionFlag) String() string { return string(*f) }
+
+func (f *agentSessionFlag) Set(value string) error {
+	*f = agentSessionFlag(value)
+	return nil
+}
+
+func (f *agentSessionFlag) Type() string { return "session" }
+
+// SessionID resolves the flag to the session to resume: empty for the
+// interactive picker, otherwise the session id itself.
+func (f agentSessionFlag) SessionID() string {
+	if f == agentSessionPicker {
+		return ""
+	}
+	return string(f)
+}
+
 func init() {
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
+	agentCmd.Flags().VarP(&agentResume, "resume", "r", "Resume a saved session (interactive picker if no id given)")
+	// A bare -r (no value) resolves to the picker keyword, opening the
+	// interactive picker; -r=<id> resumes that session directly. (NoOptDefVal
+	// flags require '=' to attach a value — a space-separated one would be
+	// parsed as a positional agent name.)
+	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentSessionPicker)
 }
 
 // agentIncludeVars maps the positional agent names to the `include` variable of
