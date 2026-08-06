@@ -782,6 +782,9 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 			if err != nil {
 				return err
 			}
+			if err := waitAtDetachedQueryAcknowledgedTestBarrier(response.SessionID, response.QueryID); err != nil {
+				return err
+			}
 			if jsonOutput {
 				encoder := json.NewEncoder(cmd.OutOrStdout())
 				encoder.SetEscapeHTML(false)
