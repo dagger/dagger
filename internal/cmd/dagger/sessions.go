@@ -237,6 +237,9 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 			}
 			return cleanup.Run, err
 		}
+		if err := validateDetachedQueryResultState(query); err != nil {
+			return cleanup.Run, err
+		}
 		result, err := observer.PrimaryQueryResult(ctx)
 		if err != nil {
 			return cleanup.Run, err
@@ -248,20 +251,30 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 		if err := formatDetachedResult(cmd.OutOrStdout(), value, query.Presentation); err != nil {
 			return cleanup.Run, err
 		}
-		switch query.Status {
-		case engine.SessionQueryStateSucceeded:
+		if query.Status == engine.SessionQueryStateSucceeded {
 			return cleanup.Run, nil
-		case engine.SessionQueryStateCanceled:
-			return cleanup.Run, errors.New("detached query was canceled")
-		case engine.SessionQueryStateResultDiscarded:
-			return cleanup.Run, errors.New("detached query result was discarded")
-		default:
-			if query.Error != "" {
-				return cleanup.Run, errors.New(query.Error)
-			}
-			return cleanup.Run, fmt.Errorf("detached query finished with status %s", query.Status)
 		}
+		if query.Error != "" {
+			return cleanup.Run, errors.New(query.Error)
+		}
+		return cleanup.Run, fmt.Errorf("detached query finished with status %s", query.Status)
 	})
+}
+
+func validateDetachedQueryResultState(query engine.SessionQuery) error {
+	switch query.Status {
+	case engine.SessionQueryStateSucceeded, engine.SessionQueryStateFailed:
+		return nil
+	case engine.SessionQueryStateCanceled:
+		return errors.New("detached query was canceled")
+	case engine.SessionQueryStateResultDiscarded:
+		return errors.New("detached query result was discarded")
+	default:
+		if query.Error != "" {
+			return errors.New(query.Error)
+		}
+		return fmt.Errorf("detached query finished with status %s", query.Status)
+	}
 }
 
 func printAttachmentWaitMessage() {

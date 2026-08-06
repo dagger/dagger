@@ -99,6 +99,31 @@ func TestMalformedSessionCLIArgumentReturnsUsageExit(t *testing.T) {
 	require.Contains(t, stderr.String(), "--help")
 }
 
+func TestDetachedQueryResultStateBeforeFetch(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		query     engine.SessionQuery
+		wantError string
+	}{
+		{name: "succeeded", query: engine.SessionQuery{Status: engine.SessionQueryStateSucceeded}},
+		{name: "failed may have saved result", query: engine.SessionQuery{Status: engine.SessionQueryStateFailed}},
+		{name: "canceled", query: engine.SessionQuery{Status: engine.SessionQueryStateCanceled}, wantError: "detached query was canceled"},
+		{name: "discarded", query: engine.SessionQuery{Status: engine.SessionQueryStateResultDiscarded}, wantError: "detached query result was discarded"},
+		{name: "running", query: engine.SessionQuery{Status: engine.SessionQueryStateRunning}, wantError: "detached query finished with status running"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDetachedQueryResultState(test.query)
+			if test.wantError == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, test.wantError)
+		})
+	}
+}
+
 func testCLIValidSessionID() string {
 	return "sess_aaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
