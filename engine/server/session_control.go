@@ -23,7 +23,6 @@ type sessionAttachmentClaim struct {
 	ID         string
 	Generation uint64
 	ClientID   string
-	Owned      bool
 }
 
 func controlError(status int, code string, err error) sessionControlError {
@@ -70,6 +69,10 @@ func (srv *Server) serveSessionControl(w http.ResponseWriter, r *http.Request) e
 	mux.HandleFunc("GET "+engine.SessionsEndpoint+"/{sessionID}/queries/primary", httpHandlerFunc(srv.servePrimaryQueryInspect, struct{}{}))
 	mux.HandleFunc("GET "+engine.SessionsEndpoint+"/{sessionID}/queries/primary/result", httpHandlerFunc(srv.servePrimaryQueryResult, struct{}{}))
 	mux.HandleFunc("GET "+engine.SessionsEndpoint+"/{sessionID}/telemetry/{signal}", httpHandlerFunc(srv.serveSessionTelemetry, struct{}{}))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		controlError(http.StatusNotFound, engine.SessionErrorInvalidRequest,
+			fmt.Errorf("unknown session control route %s %s", r.Method, r.URL.Path)).WriteTo(w)
+	})
 	mux.ServeHTTP(w, r)
 	return nil
 }
@@ -279,7 +282,7 @@ func (srv *Server) claimObserverAttachment(opts *ClientInitOpts) (*sessionAttach
 	sess.currentAttachment = attachment
 	claim := &sessionAttachmentClaim{
 		ID: attachment.ID, Generation: attachment.Generation,
-		ClientID: attachment.ClientID, Owned: true,
+		ClientID: attachment.ClientID,
 	}
 	opts.claimedAttachment = claim
 	return claim, nil
@@ -305,7 +308,7 @@ func (srv *Server) claimCreatorAttachment(sess *daggerSession, opts *ClientInitO
 		sess.currentAttachment = attachment
 		claim := &sessionAttachmentClaim{
 			ID: attachment.ID, Generation: attachment.Generation,
-			ClientID: attachment.ClientID, Owned: true,
+			ClientID: attachment.ClientID,
 		}
 		opts.claimedAttachment = claim
 		return claim, nil
@@ -314,14 +317,8 @@ func (srv *Server) claimCreatorAttachment(sess *daggerSession, opts *ClientInitO
 		return nil, controlError(http.StatusConflict, engine.SessionErrorAlreadyAttached,
 			fmt.Errorf("session %s already has an attachment", sess.sessionID))
 	}
-	if !attachment.Ready {
-		return nil, controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
-			fmt.Errorf("session %s already has a creator attachment connection", sess.sessionID))
-	}
-	return &sessionAttachmentClaim{
-		ID: attachment.ID, Generation: attachment.Generation,
-		ClientID: attachment.ClientID,
-	}, nil
+	return nil, controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
+		fmt.Errorf("session %s already has a creator attachment connection", sess.sessionID))
 }
 
 func (srv *Server) snapshotDetachableSession(sess *daggerSession) (engine.SessionDescriptor, bool) {

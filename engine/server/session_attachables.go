@@ -116,13 +116,14 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 
 	defer func() {
 		m.mu.Lock()
-		if m.callers[clientID] == caller {
+		owned := m.callers[clientID] == caller
+		if owned {
 			delete(m.callers, clientID)
 			m.wakeWaitersLocked(clientID)
 		}
 		m.mu.Unlock()
 		cause := context.Cause(caller.ctx)
-		if callbacks.Removed != nil {
+		if owned && callbacks.Removed != nil {
 			callbacks.Removed(cause)
 		}
 		close(caller.done)

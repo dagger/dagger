@@ -1283,7 +1283,7 @@ func (srv *Server) getOrInitClient(
 				CreatedAt: sess.createdAt,
 			}
 			opts.claimedAttachment = &sessionAttachmentClaim{
-				ID: opts.AttachmentID, Generation: 1, ClientID: clientID, Owned: true,
+				ID: opts.AttachmentID, Generation: 1, ClientID: clientID,
 			}
 		}
 		sess.lifecycleMu.Lock()
@@ -1599,6 +1599,11 @@ func (srv *Server) ServeHTTPToNestedClient(
 		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
 		return
 	}
+	if isSessionControlPath(r.URL.Path) {
+		controlError(http.StatusForbidden, engine.SessionErrorInvalidRequest,
+			errors.New("session control routes are unavailable to nested clients")).WriteTo(w)
+		return
+	}
 	clientMetadata := nestedClientMetadataForRequest(r.Header, nestedClientMetadata)
 
 	var moduleContext dagql.ObjectResult[*core.Module]
@@ -1783,7 +1788,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		}
 		client, cleanup, err := srv.getOrInitClient(ctx, opts)
 		if err != nil {
-			if attachmentClaim != nil && attachmentClaim.Owned {
+			if attachmentClaim != nil {
 				if sess, ok := srv.lookupDetachableSession(opts.SessionID); ok {
 					srv.detachAttachment(sess, attachmentClaim.ID, attachmentClaim.Generation)
 				}
@@ -1855,7 +1860,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	}()
 
 	published := false
-	if claim != nil && claim.Owned {
+	if claim != nil {
 		defer func() {
 			if !published {
 				srv.detachAttachment(client.daggerSession, claim.ID, claim.Generation)
@@ -2231,14 +2236,15 @@ func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *dag
 }
 
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
-	if client.daggerSession.lifetime == sessionLifetimeDetachable {
+	sess := client.daggerSession
+	if sess.lifetime == sessionLifetimeDetachable &&
+		(client.observerClient || client.clientMetadata != nil && client.clientMetadata.DetachableSession) {
 		return controlError(http.StatusBadRequest, engine.SessionErrorInvalidRequest,
-			errors.New("detachable sessions must be closed by attachment or explicit termination"))
+			errors.New("detachable session attachments cannot shut down the session"))
 	}
 	ctx := r.Context()
 	var shutdownErr error
 
-	sess := client.daggerSession
 	slog := slog.With(
 		"isMainClient", client.clientID == sess.mainClientCallerID,
 		"sessionID", sess.sessionID,

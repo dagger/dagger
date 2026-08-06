@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -69,6 +70,19 @@ func TestHTTPHandlerPreservesSessionControlStatusAndCode(t *testing.T) {
 	var response engine.SessionProtocolErrorResponse
 	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&response))
 	require.Equal(t, engine.SessionErrorSessionNotFound, response.Error.Code)
+}
+
+func TestUnknownSessionControlRouteHasProtocolCode(t *testing.T) {
+	t.Parallel()
+	srv, _, _ := newDetachableLifecycleTestSession(t, 0)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "http://dagger"+engine.SessionsEndpoint+"/unknown/route", nil)
+	require.NoError(t, srv.serveSessionControl(recorder, request))
+
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+	var response engine.SessionProtocolErrorResponse
+	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&response))
+	require.Equal(t, engine.SessionErrorInvalidRequest, response.Error.Code)
 }
 
 func TestObserverClaimRolePartitionAndFailedClaimBaseline(t *testing.T) {
@@ -463,6 +477,230 @@ func TestNestedMetadataClearsDetachableRoles(t *testing.T) {
 	require.Empty(t, nested.AttachmentID)
 }
 
+func TestNestedClientCannotAccessSessionControlRoutes(t *testing.T) {
+	t.Parallel()
+	srv, sess, creator := newDetachableLifecycleTestSession(t, 0)
+	attachment := &sessionAttachment{
+		ID: testAttachmentID, Generation: 2, ClientID: creator.clientID, Ready: true,
+	}
+	sess.currentAttachment = attachment
+	sess.nextGeneration = attachment.Generation
+	metadata := &engine.ClientMetadata{
+		SessionID: testSessionID, ClientID: "nested", ClientSecretToken: "nested-token",
+		ClientVersion: engine.Version,
+	}
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "list", method: http.MethodGet, path: engine.SessionsEndpoint},
+		{name: "inspect", method: http.MethodGet, path: engine.SessionsEndpoint + "/" + testSessionID},
+		{name: "close attachment", method: http.MethodDelete, path: engine.SessionsEndpoint + "/" + testSessionID + "/attachments/" + testAttachmentID},
+		{name: "submit query", method: http.MethodPost, path: engine.SessionsEndpoint + "/" + testSessionID + "/queries/primary"},
+		{name: "inspect query", method: http.MethodGet, path: engine.SessionsEndpoint + "/" + testSessionID + "/queries/primary"},
+		{name: "read result", method: http.MethodGet, path: engine.SessionsEndpoint + "/" + testSessionID + "/queries/primary/result"},
+		{name: "read telemetry", method: http.MethodGet, path: engine.SessionsEndpoint + "/" + testSessionID + "/telemetry/traces"},
+		{name: "terminate", method: http.MethodDelete, path: engine.SessionsEndpoint + "/" + testSessionID},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(test.method, "http://dagger"+test.path, nil)
+			srv.ServeHTTPToNestedClient(recorder, request, metadata, creator.clientID, false, nil, nil)
+
+			require.Equal(t, http.StatusForbidden, recorder.Code)
+			var response engine.SessionProtocolErrorResponse
+			require.NoError(t, json.NewDecoder(recorder.Body).Decode(&response))
+			require.Equal(t, engine.SessionErrorInvalidRequest, response.Error.Code)
+			require.True(t, sessionInRegistry(srv, testSessionID))
+			require.Same(t, attachment, sess.currentAttachment)
+			require.Nil(t, sess.primaryQuery)
+			require.False(t, sess.terminating.Load())
+		})
+	}
+}
+
+func TestDetachableAttachmentShutdownRejectedButNestedShutdownSucceeds(t *testing.T) {
+	t.Parallel()
+	srv, sess, creator := newDetachableLifecycleTestSession(t, 0)
+	creator.clientMetadata = &engine.ClientMetadata{DetachableSession: true}
+	attachment := &sessionAttachment{
+		ID: testAttachmentID, Generation: 2, ClientID: creator.clientID, Ready: true,
+	}
+	sess.currentAttachment = attachment
+
+	observer := &daggerClient{
+		daggerSession: sess, clientID: testObserverID, observerClient: true,
+		shutdownCh: make(chan struct{}),
+	}
+	for name, client := range map[string]*daggerClient{
+		"creator":  creator,
+		"observer": observer,
+	} {
+		t.Run(name+" attachment", func(t *testing.T) {
+			err := srv.serveShutdown(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil), client)
+			var protocolErr sessionControlError
+			require.ErrorAs(t, err, &protocolErr)
+			require.Equal(t, http.StatusBadRequest, protocolErr.status)
+			require.Equal(t, engine.SessionErrorInvalidRequest, protocolErr.code)
+			select {
+			case <-client.shutdownCh:
+				t.Fatal("attachment shutdown channel was closed")
+			default:
+			}
+		})
+	}
+
+	nested := &daggerClient{
+		daggerSession: sess, clientID: "nested", shutdownCh: make(chan struct{}),
+	}
+	sess.clientMu.Lock()
+	sess.clients[nested.clientID] = nested
+	sess.clientMu.Unlock()
+	recorder := httptest.NewRecorder()
+	require.NoError(t, srv.serveShutdown(recorder, httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil), nested))
+	select {
+	case <-nested.shutdownCh:
+	default:
+		t.Fatal("nested shutdown channel was not closed")
+	}
+	require.Same(t, attachment, sess.currentAttachment)
+	require.True(t, sessionInRegistry(srv, testSessionID))
+	select {
+	case <-sess.closingCtx.Done():
+		t.Fatal("nested shutdown canceled the detachable session")
+	default:
+	}
+	select {
+	case <-creator.shutdownCh:
+		t.Fatal("nested shutdown closed the creator")
+	default:
+	}
+}
+
+func TestSupersededRegistrationDoesNotEmitRemoved(t *testing.T) {
+	t.Parallel()
+	manager := newSessionAttachableManager()
+
+	oldServer, oldPeer := net.Pipe()
+	oldConn := &gatedCloseConn{
+		Conn: oldServer, closeStarted: make(chan struct{}), closeRelease: make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		oldConn.release()
+		_ = oldPeer.Close()
+	})
+	oldCtx, cancelOld := context.WithCancelCause(t.Context())
+	oldPublished := make(chan struct{})
+	oldRemoved := make(chan error, 1)
+	oldResult := make(chan error, 1)
+	require.NoError(t, manager.Reserve(testObserverID))
+	go func() {
+		oldResult <- manager.Register(oldCtx, testObserverID, oldConn, nil, sessionAttachableCallbacks{
+			Published: func() { close(oldPublished) },
+			Removed:   func(err error) { oldRemoved <- err },
+		})
+	}()
+	<-oldPublished
+
+	cancelOld(errors.New("old registration lost transport"))
+	<-oldConn.closeStarted
+	require.NoError(t, manager.Reserve(testObserverID))
+
+	newServer, newPeer := net.Pipe()
+	t.Cleanup(func() { _ = newPeer.Close() })
+	newCtx, cancelNew := context.WithCancelCause(t.Context())
+	newPublished := make(chan struct{})
+	newRemoved := make(chan error, 1)
+	newResult := make(chan error, 1)
+	go func() {
+		newResult <- manager.Register(newCtx, testObserverID, newServer, nil, sessionAttachableCallbacks{
+			Published: func() { close(newPublished) },
+			Removed:   func(err error) { newRemoved <- err },
+		})
+	}()
+	<-newPublished
+
+	oldConn.release()
+	require.NoError(t, <-oldResult)
+	select {
+	case err := <-oldRemoved:
+		t.Fatalf("superseded registration emitted Removed: %v", err)
+	default:
+	}
+	_, ok := manager.Lookup(testObserverID)
+	require.True(t, ok, "old cleanup removed the replacement registration")
+
+	newCause := errors.New("replacement closed")
+	cancelNew(newCause)
+	require.NoError(t, <-newResult)
+	require.ErrorIs(t, <-newRemoved, newCause)
+}
+
+func TestCreatorRetryWaitsForRemovalThenPublishesFreshGeneration(t *testing.T) {
+	t.Parallel()
+	srv, sess, creator := newDetachableLifecycleTestSession(t, 0)
+	creator.clientMetadata = &engine.ClientMetadata{
+		SessionID: testSessionID, ClientID: creator.clientID, ClientSecretToken: creator.secretToken,
+		DetachableSession: true, AttachmentID: testAttachmentID,
+	}
+	sess.currentAttachment = &sessionAttachment{
+		ID: testAttachmentID, Generation: 2, ClientID: creator.clientID, Ready: true,
+	}
+	sess.nextGeneration = 2
+	opts := &ClientInitOpts{ClientMetadata: creator.clientMetadata}
+
+	_, err := srv.claimCreatorAttachment(sess, opts)
+	var protocolErr sessionControlError
+	require.ErrorAs(t, err, &protocolErr)
+	require.Equal(t, engine.SessionErrorAttachmentConnectionExists, protocolErr.code)
+	require.Nil(t, opts.claimedAttachment)
+
+	require.True(t, srv.detachAttachment(sess, testAttachmentID, 2))
+	claim, err := srv.claimCreatorAttachment(sess, opts)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), claim.Generation)
+	require.Same(t, claim, opts.claimedAttachment)
+	require.False(t, sess.currentAttachment.Ready)
+
+	hooks := &sessionTestHooks{Events: make(chan sessionTestEvent, 16)}
+	srv.sessionTestHooks = hooks
+	requestCtx, cancel := context.WithCancel(t.Context())
+	request := httptest.NewRequest(http.MethodGet, "http://dagger"+engine.SessionAttachablesEndpoint, nil).WithContext(requestCtx)
+	serverConn, peerConn := net.Pipe()
+	t.Cleanup(func() { _ = peerConn.Close() })
+	handshake := make(chan error, 1)
+	go func() {
+		_, readErr := http.ReadResponse(bufio.NewReader(peerConn), request)
+		if readErr == nil {
+			_, readErr = peerConn.Write([]byte{1})
+		}
+		handshake <- readErr
+		<-requestCtx.Done()
+		_ = peerConn.Close()
+	}()
+	serveResult := make(chan error, 1)
+	go func() {
+		serveResult <- srv.serveSessionAttachables(&attachmentFaultWriter{conn: serverConn}, request, sessionAttachablesRequest{
+			client: creator, claim: claim,
+		})
+	}()
+	require.NoError(t, <-handshake)
+	waitForSessionHookCount(t, hooks.Events, sessionHookAttachmentPublished, 1)
+	require.Equal(t, uint64(3), sess.currentAttachment.Generation)
+	require.True(t, sess.currentAttachment.Ready)
+
+	cancel()
+	select {
+	case err := <-serveResult:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("fresh creator registration did not stop")
+	}
+}
+
 func TestPrePublicationAttachmentFailuresReleaseClaim(t *testing.T) {
 	t.Parallel()
 
@@ -504,7 +742,7 @@ func TestPrePublicationAttachmentFailuresReleaseClaim(t *testing.T) {
 			require.NoError(t, err)
 			err = srv.serveSessionAttachables(test.writer(req), req, sessionAttachablesRequest{
 				client: observer,
-				claim:  &sessionAttachmentClaim{ID: attachmentID, Generation: 2, ClientID: testObserverID, Owned: true},
+				claim:  &sessionAttachmentClaim{ID: attachmentID, Generation: 2, ClientID: testObserverID},
 			})
 			require.Error(t, err)
 			require.Nil(t, sess.currentAttachment)
@@ -514,7 +752,7 @@ func TestPrePublicationAttachmentFailuresReleaseClaim(t *testing.T) {
 	}
 }
 
-func TestReservationConflictReleasesOwnedAttachmentClaim(t *testing.T) {
+func TestReservationConflictReleasesAttachmentClaim(t *testing.T) {
 	t.Parallel()
 	srv, sess, _ := newDetachableLifecycleTestSession(t, 1)
 	attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -530,7 +768,7 @@ func TestReservationConflictReleasesOwnedAttachmentClaim(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://dagger"+engine.SessionAttachablesEndpoint, nil)
 	err := srv.serveSessionAttachables(httptest.NewRecorder(), req, sessionAttachablesRequest{
 		client: observer,
-		claim:  &sessionAttachmentClaim{ID: attachmentID, Generation: 2, ClientID: testObserverID, Owned: true},
+		claim:  &sessionAttachmentClaim{ID: attachmentID, Generation: 2, ClientID: testObserverID},
 	})
 	var protocolErr sessionControlError
 	require.ErrorAs(t, err, &protocolErr)
@@ -595,6 +833,24 @@ func (writer *attachmentFaultWriter) Hijack() (net.Conn, *bufio.ReadWriter, erro
 }
 
 var _ http.Hijacker = (*attachmentFaultWriter)(nil)
+
+type gatedCloseConn struct {
+	net.Conn
+	closeStarted chan struct{}
+	closeRelease chan struct{}
+	startedOnce  sync.Once
+	releaseOnce  sync.Once
+}
+
+func (conn *gatedCloseConn) Close() error {
+	conn.startedOnce.Do(func() { close(conn.closeStarted) })
+	<-conn.closeRelease
+	return conn.Conn.Close()
+}
+
+func (conn *gatedCloseConn) release() {
+	conn.releaseOnce.Do(func() { close(conn.closeRelease) })
+}
 
 type shutdownRecordingSpanExporter struct {
 	done chan struct{}
