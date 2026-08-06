@@ -5905,6 +5905,40 @@ type Workspace implements Node {
   ): Workspace!
 
   """
+  Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but
+  shadows the source at the mount path and stays out of the pending changeset:
+  it never appears in changes, is never exported, and cannot be modified.
+  """
+  withMountedDirectory(
+    """
+    Location of the mounted directory. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
+
+    """Directory to mount."""
+    source: ID! @expectedType(name: "Directory")
+  ): Workspace!
+
+  """
+  Return this workspace with a file mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but
+  shadows the source at the mount path and stays out of the pending changeset:
+  it never appears in changes, is never exported, and cannot be modified.
+  """
+  withMountedFile(
+    """
+    Location of the mounted file. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
+
+    """File to mount."""
+    source: ID! @expectedType(name: "File")
+  ): Workspace!
+
+  """
   Return this workspace with a directory added, without mutating the source.
   """
   withNewDirectory(

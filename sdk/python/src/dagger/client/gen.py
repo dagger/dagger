@@ -15563,8 +15563,12 @@ class Workspace(Type):
         *,
         args: JSON | None = None,
         here: bool | None = False,
+        no_generate: bool | None = False,
     ) -> Self:
         """Return this workspace with a generated API client initialized.
+
+        The SDK's generators run for the new client, so the returned workspace
+        carries its generated bindings.
 
         Parameters
         ----------
@@ -15579,6 +15583,8 @@ class Workspace(Type):
             SDK-specific init arguments.
         here:
             Write to the workspace config directory at the workspace cwd.
+        no_generate:
+            Skip running the SDK's generators for the new client.
         """
         _args = [
             Arg("path", path),
@@ -15586,6 +15592,7 @@ class Workspace(Type):
             Arg("module", module),
             Arg("args", args, None),
             Arg("here", here, False),
+            Arg("noGenerate", no_generate, False),
         ]
         _ctx = self._select("withInitClient", _args)
         return Workspace(_ctx)
@@ -15600,8 +15607,12 @@ class Workspace(Type):
         include: list[str] | None = None,
         args: JSON | None = None,
         here: bool | None = False,
+        no_generate: bool | None = False,
     ) -> Self:
         """Return this workspace with a new module initialized.
+
+        The SDK's generators run for the new module, so the returned workspace
+        carries the generated code it needs to be loadable.
 
         Parameters
         ----------
@@ -15619,6 +15630,8 @@ class Workspace(Type):
             SDK-specific init arguments.
         here:
             Write to the workspace config directory at the workspace cwd.
+        no_generate:
+            Skip running the SDK's generators for the new module.
         """
         _args = [
             Arg("name", name),
@@ -15628,6 +15641,7 @@ class Workspace(Type):
             Arg("include", [] if include is None else include, []),
             Arg("args", args, None),
             Arg("here", here, False),
+            Arg("noGenerate", no_generate, False),
         ]
         _ctx = self._select("withInitModule", _args)
         return Workspace(_ctx)
@@ -15656,6 +15670,54 @@ class Workspace(Type):
             Arg("here", here, False),
         ]
         _ctx = self._select("withModule", _args)
+        return Workspace(_ctx)
+
+    def with_mounted_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory mounted read-only at the given
+        path, without mutating the source.
+
+        Mounted content is readable through the normal workspace file tools
+        but shadows the source at the mount path and stays out of the pending
+        changeset: it never appears in changes, is never exported, and cannot
+        be modified.
+
+        Parameters
+        ----------
+        path:
+            Location of the mounted directory. Relative paths resolve from the
+            workspace cwd.
+        source:
+            Directory to mount.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withMountedDirectory", _args)
+        return Workspace(_ctx)
+
+    def with_mounted_file(self, path: str, source: File) -> Self:
+        """Return this workspace with a file mounted read-only at the given path,
+        without mutating the source.
+
+        Mounted content is readable through the normal workspace file tools
+        but shadows the source at the mount path and stays out of the pending
+        changeset: it never appears in changes, is never exported, and cannot
+        be modified.
+
+        Parameters
+        ----------
+        path:
+            Location of the mounted file. Relative paths resolve from the
+            workspace cwd.
+        source:
+            File to mount.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withMountedFile", _args)
         return Workspace(_ctx)
 
     def with_new_directory(self, path: str, source: Directory) -> Self:
@@ -15703,52 +15765,6 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
-        return Workspace(_ctx)
-
-    def with_reference_directory(self, path: str, source: Directory) -> Self:
-        """Return this workspace with a directory mounted read-only under the
-        reserved references prefix.
-
-        Referenced content is readable through the normal workspace file tools
-        but is excluded from the pending changeset: it never appears in
-        changes and is never exported.
-
-        Parameters
-        ----------
-        path:
-            Reference-relative mount path under the reserved references
-            prefix.
-        source:
-            Directory to mount read-only.
-        """
-        _args = [
-            Arg("path", path),
-            Arg("source", source),
-        ]
-        _ctx = self._select("withReferenceDirectory", _args)
-        return Workspace(_ctx)
-
-    def with_reference_file(self, path: str, source: File) -> Self:
-        """Return this workspace with a file mounted read-only under the reserved
-        references prefix.
-
-        Referenced content is readable through the normal workspace file tools
-        but is excluded from the pending changeset: it never appears in
-        changes and is never exported.
-
-        Parameters
-        ----------
-        path:
-            Reference-relative mount path under the reserved references
-            prefix.
-        source:
-            File to mount read-only.
-        """
-        _args = [
-            Arg("path", path),
-            Arg("source", source),
-        ]
-        _ctx = self._select("withReferenceFile", _args)
         return Workspace(_ctx)
 
     def with_sdk(

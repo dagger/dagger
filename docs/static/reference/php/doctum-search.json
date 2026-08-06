@@ -7450,6 +7450,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withMountedDirectory",
+			"p": "Dagger/Workspace.html#method_withMountedDirectory",
+			"d": "<p>Return this workspace with a directory mounted read-only at the given path, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withMountedFile",
+			"p": "Dagger/Workspace.html#method_withMountedFile",
+			"d": "<p>Return this workspace with a file mounted read-only at the given path, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withNewDirectory",
 			"p": "Dagger/Workspace.html#method_withNewDirectory",
 			"d": "<p>Return this workspace with a directory added, without mutating the source.</p>"
@@ -7459,18 +7471,6 @@
 			"n": "Dagger\\Workspace::withNewFile",
 			"p": "Dagger/Workspace.html#method_withNewFile",
 			"d": "<p>Return this workspace with a new or replaced file, without mutating the source.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::withReferenceDirectory",
-			"p": "Dagger/Workspace.html#method_withReferenceDirectory",
-			"d": "<p>Return this workspace with a directory mounted read-only under the reserved references prefix.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::withReferenceFile",
-			"p": "Dagger/Workspace.html#method_withReferenceFile",
-			"d": "<p>Return this workspace with a file mounted read-only under the reserved references prefix.</p>"
 		},
 		{
 			"t": "M",

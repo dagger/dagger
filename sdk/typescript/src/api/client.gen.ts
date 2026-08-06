@@ -3248,6 +3248,11 @@ export type WorkspaceWithInitClientOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+
+  /**
+   * Skip running the SDK's generators for the new client.
+   */
+  noGenerate?: boolean
 }
 
 export type WorkspaceWithInitModuleOpts = {
@@ -3275,6 +3280,11 @@ export type WorkspaceWithInitModuleOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+
+  /**
+   * Skip running the SDK's generators for the new module.
+   */
+  noGenerate?: boolean
 }
 
 export type WorkspaceWithModuleOpts = {
@@ -15200,11 +15210,14 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a generated API client initialized.
+   *
+   * The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
    * @param path Workspace-relative output directory for the generated client.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param module Workspace-relative path or canonical ref for the module the client binds to.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.noGenerate Skip running the SDK's generators for the new client.
    */
   withInitClient = (
     path: string,
@@ -15223,6 +15236,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a new module initialized.
+   *
+   * The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
    * @param name Name of the new module.
    * @param sdk Workspace SDK name or module entry name to use.
    * @param opts.path Workspace-relative path for the new module.
@@ -15230,6 +15245,7 @@ export class Workspace extends BaseClient {
    * @param opts.include Additional include patterns for the module.
    * @param opts.args SDK-specific init arguments.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.noGenerate Skip running the SDK's generators for the new module.
    */
   withInitModule = (
     name: string,
@@ -15248,6 +15264,30 @@ export class Workspace extends BaseClient {
    */
   withModule = (ref: string, opts?: WorkspaceWithModuleOpts): Workspace => {
     const ctx = this._ctx.select("withModule", { ref, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+   *
+   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * @param path Location of the mounted directory. Relative paths resolve from the workspace cwd.
+   * @param source Directory to mount.
+   */
+  withMountedDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withMountedDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file mounted read-only at the given path, without mutating the source.
+   *
+   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * @param path Location of the mounted file. Relative paths resolve from the workspace cwd.
+   * @param source File to mount.
+   */
+  withMountedFile = (path: string, source: File): Workspace => {
+    const ctx = this._ctx.select("withMountedFile", { path, source })
     return new Workspace(ctx)
   }
 
@@ -15273,30 +15313,6 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
-    return new Workspace(ctx)
-  }
-
-  /**
-   * Return this workspace with a directory mounted read-only under the reserved references prefix.
-   *
-   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
-   * @param path Reference-relative mount path under the reserved references prefix.
-   * @param source Directory to mount read-only.
-   */
-  withReferenceDirectory = (path: string, source: Directory): Workspace => {
-    const ctx = this._ctx.select("withReferenceDirectory", { path, source })
-    return new Workspace(ctx)
-  }
-
-  /**
-   * Return this workspace with a file mounted read-only under the reserved references prefix.
-   *
-   * Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
-   * @param path Reference-relative mount path under the reserved references prefix.
-   * @param source File to mount read-only.
-   */
-  withReferenceFile = (path: string, source: File): Workspace => {
-    const ctx = this._ctx.select("withReferenceFile", { path, source })
     return new Workspace(ctx)
   }
 

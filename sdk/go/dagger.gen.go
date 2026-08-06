@@ -16580,6 +16580,34 @@ func (r *Workspace) WithModule(ref string, opts ...WorkspaceWithModuleOpts) *Wor
 	}
 }
 
+// Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+//
+// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+func (r *Workspace) WithMountedDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withMountedDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a file mounted read-only at the given path, without mutating the source.
+//
+// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+func (r *Workspace) WithMountedFile(path string, source *File) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withMountedFile")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // Return this workspace with a directory added, without mutating the source.
 func (r *Workspace) WithNewDirectory(path string, source *Directory) *Workspace {
 	assertNotNil("source", source)
@@ -16611,34 +16639,6 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
-
-	return &Workspace{
-		query: q,
-	}
-}
-
-// Return this workspace with a directory mounted read-only under the reserved references prefix.
-//
-// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
-func (r *Workspace) WithReferenceDirectory(path string, source *Directory) *Workspace {
-	assertNotNil("source", source)
-	q := r.query.Select("withReferenceDirectory")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-
-	return &Workspace{
-		query: q,
-	}
-}
-
-// Return this workspace with a file mounted read-only under the reserved references prefix.
-//
-// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
-func (r *Workspace) WithReferenceFile(path string, source *File) *Workspace {
-	assertNotNil("source", source)
-	q := r.query.Select("withReferenceFile")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
 
 	return &Workspace{
 		query: q,
