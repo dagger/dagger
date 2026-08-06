@@ -34,10 +34,14 @@ func findStaleDependencyBindings(outputDir, bindingsDir string, overlay fs.FS) (
 		}
 
 		relPath := filepath.Join(bindingsDir, name)
-		if _, err := fs.Stat(overlay, filepath.ToSlash(relPath)); err == nil {
+		overlayFile, err := overlay.Open(filepath.ToSlash(relPath))
+		if err == nil {
+			if err := overlayFile.Close(); err != nil {
+				return nil, fmt.Errorf("close generated overlay path %q: %w", relPath, err)
+			}
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("stat generated overlay path %q: %w", relPath, err)
+			return nil, fmt.Errorf("open generated overlay path %q: %w", relPath, err)
 		}
 
 		generated, err := hasDaggerGeneratedHeader(filepath.Join(outputDir, relPath))
