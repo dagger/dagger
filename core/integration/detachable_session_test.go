@@ -263,17 +263,56 @@ func (DetachableSessionSuite) TestTerminateAndInterruptLifecycle(ctx context.Con
 	progress, stderrDone := watchCommandStderr(t, attachCmd, "detached-progress")
 	var stdout bytes.Buffer
 	attachCmd.Stdout = &stdout
-	require.NoError(t, attachCmd.Start())
+	if err := attachCmd.Start(); err != nil {
+		t.Fatalf("start attach: %v\nstdout:\n%s", err, stdout.String())
+	}
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- attachCmd.Wait() }()
+	var waitErr error
+	var stderrOutput string
+	reaped := false
+	finishWait := func(err error) {
+		waitErr = err
+		stderrOutput = <-stderrDone
+		reaped = true
+	}
+	reap := func() {
+		if reaped {
+			return
+		}
+		_ = attachCmd.Process.Kill()
+		finishWait(<-waitDone)
+	}
+	t.Cleanup(reap)
+	failWithOutput := func(message string) {
+		reap()
+		t.Fatalf("%s\nwait error: %v\nstdout:\n%s\nstderr:\n%s", message, waitErr, stdout.String(), stderrOutput)
+	}
+
 	select {
 	case <-progress:
+	case err := <-waitDone:
+		finishWait(err)
+		failWithOutput("attach exited before replaying progress")
 	case <-time.After(30 * time.Second):
-		require.FailNow(t, "attach did not replay progress")
+		failWithOutput("attach did not replay progress before timeout")
 	}
-	require.NoError(t, attachCmd.Process.Signal(os.Interrupt))
-	waitErr := attachCmd.Wait()
+	if err := attachCmd.Process.Signal(os.Interrupt); err != nil {
+		failWithOutput(fmt.Sprintf("interrupt attach: %v", err))
+	}
+	select {
+	case err := <-waitDone:
+		finishWait(err)
+	case <-time.After(30 * time.Second):
+		failWithOutput("attach did not exit after interrupt")
+	}
 	var exitErr *exec.ExitError
-	require.ErrorAs(t, waitErr, &exitErr)
-	require.Equal(t, 130, exitErr.ExitCode(), (<-stderrDone)+stdout.String())
+	if !errors.As(waitErr, &exitErr) {
+		failWithOutput("attach did not return an exit error after interrupt")
+	}
+	if exitErr.ExitCode() != 130 {
+		failWithOutput(fmt.Sprintf("attach exit code = %d, want 130", exitErr.ExitCode()))
+	}
 	requireSessionPresent(ctx, t, modDir, interruptedSession)
 	terminateDetachedSession(ctx, t, modDir, interruptedSession)
 }
