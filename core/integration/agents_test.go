@@ -122,6 +122,18 @@ func (AgentsSuite) TestValidationRejectsExtraRequiredArg(ctx context.Context, t 
 	require.Contains(t, out, "may only require a single LLM! argument")
 }
 
+func (AgentsSuite) TestValidationRejectsBadReturnType(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "badagent-return")
+	require.NoError(t, err)
+
+	// badagent-return's @agent returns String! rather than LLM!, which must be
+	// rejected at module load.
+	out, err := modGen.With(daggerExecFail("agent", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "does not return LLM!")
+}
+
 func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor", "godoc")

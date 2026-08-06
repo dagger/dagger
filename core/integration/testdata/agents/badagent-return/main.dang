@@ -1,0 +1,7 @@
+"""A deliberately malformed agent module (wrong return type) for validation tests."""
+type BadagentReturn {
+  """@agent that does not return LLM!, which the contract forbids."""
+  agent(base: LLM!): String! @agent {
+    "not an LLM"
+  }
+}
