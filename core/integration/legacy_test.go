@@ -1558,6 +1558,38 @@ func (m *Test) Branch(ctx context.Context, name string) (string, error) {
 	require.Contains(t, out, "Apache License")
 }
 
+func (LegacySuite) TestLegacyGitStrictCommit(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#13088
+	// GitRepository.commit still returns a GitRef for pre-v1.0.0 modules, but
+	// views since the v0.19.0 strict-refs cutoff must keep rejecting non-SHA
+	// identifiers rather than silently resolving them as refs.
+
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		With(withLegacyGoModule(t, c, ".", "test", "v0.19.0")).
+		WithWorkdir("/work").
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Commit(ctx context.Context, name string) (string, error) {
+	return dag.Git("github.com/dagger/dagger").Commit(name).Tree().File("LICENSE").Contents(ctx)
+}
+`)
+
+	// main is a branch, not a commit
+	_, err := modGen.With(daggerCall("commit", "--name=main")).Stdout(ctx)
+	requireErrOut(t, err, "invalid commit SHA")
+
+	// a full SHA is still accepted
+	out, err := modGen.With(daggerCall("commit", "--name=c80ac2c13df7d573a069938e01ca13f7a81f0345")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Apache License")
+}
+
 func (LegacySuite) TestLegacyContainerBuild(ctx context.Context, t *testctx.T) {
 	// Deprecated in dagger/dagger#10811
 	//

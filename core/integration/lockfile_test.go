@@ -456,7 +456,7 @@ func newRemoteWorkspace(ctx context.Context, t *testctx.T, c *dagger.Client, con
 	t.Helper()
 	branchRef := workspaceSelectionRemoteRef(ctx, t, c, content)
 	repoURL := strings.TrimSuffix(branchRef, "@main")
-	commit, err := c.Git(repoURL).Branch("main").Commit(ctx)
+	commit, err := c.Git(repoURL).Branch("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Len(t, commit, 40)
 	return remoteLockWorkspace{

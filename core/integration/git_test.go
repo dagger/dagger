@@ -64,7 +64,7 @@ func requireIsCommitSHA(ctx context.Context, t *testctx.T, actual string) {
 
 // verify git ref has expected commit hash
 func requireGitRefCommitEqual(ctx context.Context, t *testctx.T, expectedCommit string, ref *dagger.GitRef) {
-	commit, err := ref.Commit(ctx)
+	commit, err := ref.CommitSHA(ctx)
 	require.NoError(t, err)
 	if expectedCommit != "" {
 		require.Equal(t, expectedCommit, commit)
@@ -76,7 +76,7 @@ func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagge
 	var first string
 	for i, ref := range refs {
 		if i == 0 {
-			commit, err := ref.Commit(ctx)
+			commit, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
 			first = commit
 			continue
@@ -87,14 +87,14 @@ func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagge
 
 // verify git ref has expected name
 func requireGitRefNameEqual(ctx context.Context, t *testctx.T, expected string, ref *dagger.GitRef) {
-	name, err := ref.Ref(ctx)
+	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expected, name)
 }
 
 // verify git ref name matches pattern
 func requireGitRefNameRegexp(ctx context.Context, t *testctx.T, pattern string, ref *dagger.GitRef) {
-	name, err := ref.Ref(ctx)
+	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Regexp(t, pattern, name)
 }
@@ -198,14 +198,14 @@ func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.C
 
 func requireStrictCommit(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
 	ref := repo.Commit(refStr)
-	_, err := ref.Commit(ctx)
+	_, err := ref.Sha(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "invalid commit SHA")
 }
 
 func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
 	ref := repo.Tag(refStr)
-	_, err := ref.Commit(ctx)
+	_, err := ref.CommitSHA(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "repository does not contain")
 	requireErrOut(t, err, "refs/tags/")
@@ -214,7 +214,7 @@ func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitReposit
 
 func requireStrictBranch(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
 	ref := repo.Branch(refStr)
-	_, err := ref.Commit(ctx)
+	_, err := ref.CommitSHA(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "repository does not contain")
 	requireErrOut(t, err, "refs/heads/")
@@ -232,11 +232,11 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 
 	// 2. TEST COMMIT REFS
 	// sample commit
-	requireSampleGitCommit(ctx, t, c, repo.Commit("c80ac2c13df7d573a069938e01ca13f7a81f0345"))
+	requireSampleGitCommit(ctx, t, c, repo.Ref("c80ac2c13df7d573a069938e01ca13f7a81f0345"))
 	// sample hidden commit
 	// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 	// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
-	requireSampleGitHiddenCommit(ctx, t, c, repo.Commit("318970484f692d7a76cfa533c5d47458631c9654"))
+	requireSampleGitHiddenCommit(ctx, t, c, repo.Ref("318970484f692d7a76cfa533c5d47458631c9654"))
 
 	// 3. TEST TAG REFS
 	// listing tags
@@ -269,6 +269,39 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	requireStrictBranch(ctx, t, repo, "refs/tags/v0.9.5")
 }
 
+func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	repo := c.Git("https://github.com/dagger/dagger")
+	sha := "c80ac2c13df7d573a069938e01ca13f7a81f0345"
+
+	commit := repo.Commit(sha)
+	gotSHA, err := commit.Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, gotSHA)
+
+	shortSHA, err := commit.ShortSha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha[:len(shortSHA)], shortSHA)
+
+	headline, err := commit.MessageHeadline(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, headline)
+
+	authoredDate, err := commit.AuthoredDate(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, authoredDate)
+
+	parents, err := commit.ParentShas(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, parents)
+
+	refCommitSHA, err := repo.Ref(sha).TargetCommit().Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, refCommitSHA)
+
+	requireSampleGitRootDir(ctx, t, c, commit.Tree())
+}
+
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -298,7 +331,7 @@ func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 	})
 	t.Run("local empty", func(ctx context.Context, t *testctx.T) {
 		repo := c.Directory().AsGit()
-		_, err := repo.Head().Commit(ctx)
+		_, err := repo.Head().CommitSHA(ctx)
 		require.ErrorContains(t, err, "not a git repository")
 		_, err = repo.Tags(ctx)
 		require.ErrorContains(t, err, "not a git repository")
@@ -347,7 +380,7 @@ func (GitSuite) TestRemoteGitTreeNormalizesTimestamps(ctx context.Context, t *te
 
 	file := c.Git("https://github.com/dagger/dagger").
 		Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		Tree(dagger.GitCommitTreeOpts{DiscardGitDir: true}).
 		File("README.md")
 
 	require.Equal(t, 1, getFileTimestamp(ctx, t, c, file))
@@ -690,7 +723,7 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 
 		t.Run("commit", func(ctx context.Context, t *testctx.T) {
 			// v0.12.0 => 133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20
-			requireGitTagsExist(ctx, t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
+			requireGitTagsExist(ctx, t, git.Ref("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
 		})
 
 		t.Run("head", func(ctx context.Context, t *testctx.T) {
@@ -1198,7 +1231,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 
 	// resolve the commit now (by syncing it), but don't clone it
 	ref := c.Git(url).Tag("v1.0")
-	result, err := ref.Commit(ctx)
+	result, err := ref.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, result)
 
@@ -1256,12 +1289,300 @@ func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
 
 	git := ctr.Directory(".").AsGit()
 
-	ref, err := git.LatestVersion().Ref(ctx)
+	ref, err := git.LatestVersion().Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v2.0", ref)
-	commit, err := git.LatestVersion().Commit(ctx)
+	commit, err := git.LatestVersion().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, v2commit, commit)
+}
+
+func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `
+			echo base > file && git add file && git commit -m base && git tag v1.0.0 &&
+			echo stable > file && git add file && git commit -m stable && git tag v2.0.0 &&
+			echo rc > file && git add file && git commit -m rc && git tag v2.1.0-rc.1 &&
+			echo next > file && git add file && git commit -m next
+		`})
+
+	stableSHA, err := ctr.WithExec([]string{"git", "rev-parse", "v2.0.0^{commit}"}).Stdout(ctx)
+	require.NoError(t, err)
+	stableSHA = strings.TrimSpace(stableSHA)
+	rcSHA, err := ctr.WithExec([]string{"git", "rev-parse", "v2.1.0-rc.1^{commit}"}).Stdout(ctx)
+	require.NoError(t, err)
+	rcSHA = strings.TrimSpace(rcSHA)
+
+	git := ctr.Directory(".").AsGit()
+
+	ancestorStable, err := git.Head().TargetCommit().AncestorReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", ancestorStable)
+
+	ancestorPreRelease, err := git.Head().TargetCommit().
+		AncestorReleaseTag(dagger.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true}).
+		Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.1.0-rc.1", ancestorPreRelease)
+
+	directStable, err := git.Commit(stableSHA).ReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", directStable)
+
+	directPreRelease, err := git.Commit(rcSHA).
+		ReleaseTag(dagger.GitCommitReleaseTagOpts{IncludePreRelease: true}).
+		Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.1.0-rc.1", directPreRelease)
+
+	// an unreachable fetch remote must not break the lookup; local tags
+	// still answer it
+	unreachable := ctr.
+		WithExec([]string{"git", "remote", "add", "origin", "https://invalid.invalid/repo.git"}).
+		Directory(".").AsGit()
+	offlineStable, err := unreachable.Head().TargetCommit().AncestorReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", offlineStable)
+}
+
+func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx.T) {
+	// A commit is immutable, but its tags aren't, so a later session must not
+	// be answered from an earlier session's cached tag lookup.
+	const hostname = "git-release-tag-freshness"
+	repoURL := "git://" + hostname + "/repo.git"
+
+	// serves the same repo, at the same URL, with the given tags added
+	serve := func(ctx context.Context, t *testctx.T, c *dagger.Client, tags ...string) {
+		t.Helper()
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git", "git-daemon"}).
+			With(gitUserConfig).
+			// pin the dates so both sessions serve the same commit SHA, whether
+			// or not the exec below is a cache hit
+			WithEnvVariable("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z").
+			WithEnvVariable("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z").
+			WithWorkdir("/src").
+			WithExec([]string{"sh", "-c", `
+				git init && echo content > README.md && git add -A && git commit -m init
+			`}).
+			WithExec([]string{"git", "clone", "--bare", "/src", "/root/srv/repo.git"})
+		for _, tag := range tags {
+			ctr = ctr.WithExec([]string{"git", "-C", "/root/srv/repo.git", "tag", tag, "main"})
+		}
+
+		_, err := ctr.
+			WithExposedPort(9418).
+			WithDefaultArgs([]string{"git", "daemon", "--verbose", "--export-all", "--base-path=/root/srv"}).
+			AsService().
+			WithHostname(hostname).
+			Start(ctx)
+		require.NoError(t, err)
+	}
+
+	lookup := func(ctx context.Context, t *testctx.T, c *dagger.Client) (sha string, advertised []string, tag string) {
+		t.Helper()
+
+		repo := c.Git(repoURL)
+		advertised, err := repo.Tags(ctx)
+		require.NoError(t, err)
+		commit := repo.Head().TargetCommit()
+		sha, err = commit.Sha(ctx)
+		require.NoError(t, err)
+		tag, err = commit.ReleaseTag().Name(ctx)
+		require.NoError(t, err)
+		return sha, advertised, tag
+	}
+
+	c1 := connect(ctx, t)
+	serve(ctx, t, c1, "v1.0.0")
+	sha1, advertised1, tag1 := lookup(ctx, t, c1)
+	require.Equal(t, []string{"v1.0.0"}, advertised1)
+	require.Equal(t, "refs/tags/v1.0.0", tag1)
+	require.NoError(t, c1.Close())
+
+	// same URL, same commit, but the remote now advertises a newer tag
+	c2 := connect(ctx, t)
+	serve(ctx, t, c2, "v1.0.0", "v2.0.0")
+	sha2, advertised2, tag2 := lookup(ctx, t, c2)
+	require.Equal(t, sha1, sha2, "both sessions must resolve the same commit")
+	require.Equal(t, []string{"v1.0.0", "v2.0.0"}, advertised2)
+	require.Equal(t, "refs/tags/v2.0.0", tag2)
+}
+
+func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// main:    A -> B -> C
+	// feature:            \-> D -> E
+	//
+	// B and E touch sub/, the rest only touch file.txt.
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `
+			echo A > file.txt && git add -A && git commit -m A &&
+			mkdir sub && echo B > sub/nested.txt && git add -A && git commit -m B &&
+			echo C >> file.txt && git add -A && git commit -m C &&
+			git checkout -b feature &&
+			echo D >> file.txt && git add -A && git commit -m D &&
+			echo E >> sub/nested.txt && git add -A && git commit -m E &&
+			git checkout main
+		`})
+
+	revParse := func(rev string) string {
+		t.Helper()
+		out, err := ctr.WithExec([]string{"git", "rev-parse", rev}).Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	shaA := revParse("main~2")
+	shaB := revParse("main~1")
+	shaC := revParse("main")
+	shaD := revParse("feature~1")
+	shaE := revParse("feature")
+
+	shas := func(commits []dagger.GitCommit) []string {
+		t.Helper()
+		out := make([]string, 0, len(commits))
+		for _, commit := range commits {
+			sha, err := commit.Sha(ctx)
+			require.NoError(t, err)
+			out = append(out, sha)
+		}
+		return out
+	}
+
+	git := ctr.Directory(".").AsGit()
+
+	t.Run("newest first, starting with the ref's own commit", func(ctx context.Context, t *testctx.T) {
+		log, err := git.Branch("main").Log(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{shaC, shaB, shaA}, shas(log))
+	})
+
+	t.Run("commit metadata", func(ctx context.Context, t *testctx.T) {
+		log, err := git.Branch("main").Log(ctx)
+		require.NoError(t, err)
+		require.Len(t, log, 3)
+
+		message, err := log[0].Message(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "C", message)
+
+		authorName, err := log[0].AuthorName(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Test User", authorName)
+
+		authorEmail, err := log[0].AuthorEmail(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test@dagger.io", authorEmail)
+
+		authoredDate, err := log[0].AuthoredDate(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, authoredDate)
+
+		parents, err := log[0].ParentShas(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{shaB}, parents)
+
+		// the oldest commit is a root commit
+		parents, err = log[2].ParentShas(ctx)
+		require.NoError(t, err)
+		require.Empty(t, parents)
+	})
+
+	t.Run("limit", func(ctx context.Context, t *testctx.T) {
+		log, err := git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Limit: 2})
+		require.NoError(t, err)
+		require.Equal(t, []string{shaC, shaB}, shas(log))
+
+		_, err = git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Limit: -1})
+		require.ErrorContains(t, err, "limit must be at least 1")
+	})
+
+	t.Run("paths", func(ctx context.Context, t *testctx.T) {
+		log, err := git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Paths: []string{"sub"}})
+		require.NoError(t, err)
+		require.Equal(t, []string{shaB}, shas(log))
+
+		log, err = git.Branch("feature").Log(ctx, dagger.GitRefLogOpts{Paths: []string{"sub"}})
+		require.NoError(t, err)
+		require.Equal(t, []string{shaE, shaB}, shas(log))
+	})
+
+	t.Run("base", func(ctx context.Context, t *testctx.T) {
+		log, err := git.Branch("feature").Log(ctx, dagger.GitRefLogOpts{Base: git.Branch("main")})
+		require.NoError(t, err)
+		require.Equal(t, []string{shaE, shaD}, shas(log))
+
+		log, err = git.Branch("main").Log(ctx, dagger.GitRefLogOpts{Base: git.Branch("main")})
+		require.NoError(t, err)
+		require.Empty(t, log)
+	})
+
+	t.Run("base from another repository", func(ctx context.Context, t *testctx.T) {
+		// a distinct repository, so the refs have to be joined to be compared
+		other := ctr.
+			WithExec([]string{"git", "checkout", "-b", "unrelated"}).
+			WithExec([]string{"sh", "-c", `echo F >> file.txt && git add -A && git commit -m F`}).
+			Directory(".").AsGit()
+
+		log, err := git.Branch("feature").Log(ctx, dagger.GitRefLogOpts{Base: other.Branch("main")})
+		require.NoError(t, err)
+		require.Equal(t, []string{shaE, shaD}, shas(log))
+	})
+
+	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
+		// a small repo: unlike a tree checkout, a log fetches the full history
+		sha := vcsTestCaseCommit
+		log, err := c.Git("https://github.com/dagger/dagger-test-modules").Ref(sha).
+			Log(ctx, dagger.GitRefLogOpts{Limit: 3})
+		require.NoError(t, err)
+		require.Len(t, log, 3)
+
+		logSHAs := shas(log)
+		require.Equal(t, sha, logSHAs[0])
+
+		// every commit but the first is reached through one listed before it;
+		// merges mean that isn't always the immediately preceding one
+		reachable := map[string]bool{}
+		for i, commit := range log {
+			if i > 0 {
+				require.True(t, reachable[logSHAs[i]],
+					"%s is not a parent of any commit listed before it", logSHAs[i])
+			}
+			parents, err := commit.ParentShas(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, parents)
+			for _, parent := range parents {
+				reachable[parent] = true
+			}
+		}
+
+		headline, err := log[1].MessageHeadline(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, headline)
+
+		// log entries are ordinary commits, re-loadable in another session
+		id, err := log[1].ID(ctx)
+		require.NoError(t, err)
+
+		c2 := connect(ctx, t)
+		reloadedSHA, err := dagger.Ref[*dagger.GitCommit](c2, id).Sha(ctx)
+		require.NoError(t, err)
+		require.Equal(t, logSHAs[1], reloadedSHA)
+	})
 }
 
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
@@ -1287,10 +1608,10 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 
 	// test the common ancestor between two branches
 	mergeBase := git.Branch("branch1").CommonAncestor(git.Branch("branch2"))
-	commit, err := mergeBase.Commit(ctx)
+	commit, err := mergeBase.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, commit)
-	ref, err := mergeBase.Ref(ctx)
+	ref, err := mergeBase.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, ref)
 
@@ -1301,10 +1622,10 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 
 	// test the common ancestor between two branches from different refs
 	mergeBase = git.Branch("branch1").CommonAncestor(git2.Branch("branch3"))
-	commit, err = mergeBase.Commit(ctx)
+	commit, err = mergeBase.CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, commit)
-	ref, err = mergeBase.Ref(ctx)
+	ref, err = mergeBase.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, base, ref)
 }
@@ -1417,18 +1738,18 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 	const repoURL = "https://github.com/dagger/dagger-test-modules"
 	repo := c.Git(repoURL)
 
-	commit, err := repo.Head().Commit(ctx)
+	commit, err := repo.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, commit)
 
-	branchCommit, err := repo.Branch("main").Commit(ctx)
+	branchCommit, err := repo.Branch("main").CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, branchCommit, "both selections should resolve the same commit in a single session")
 
 	// Resolve the same ref through a fresh Git node so the second call exercises the
 	// per-session ls-remote cache (the first one warmed it).
 	repo2 := c.Git(repoURL, dagger.GitOpts{KeepGitDir: true})
-	commit2, err := repo2.Head().Commit(ctx)
+	commit2, err := repo2.Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, commit2)
 }

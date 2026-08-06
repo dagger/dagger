@@ -111,7 +111,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	require.NoError(t, err)
 
 	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
-	commit, err := loadedRef.Commit(ctx)
+	commit, err := loadedRef.CommitSHA(ctx)
 	require.NoError(t, err)
 
 	ws := loadedRef.AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"})
@@ -137,7 +137,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	require.NoError(t, err)
 	requireNoEntry(t, unfiltered, "debug.log")
 
-	head, err := ws.Git().Head().Commit(ctx)
+	head, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, strings.TrimSpace(commit), strings.TrimSpace(head))
 
@@ -160,7 +160,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 
 	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
 
-	commit, err := loadedRef.Commit(controlCtx)
+	commit, err := loadedRef.CommitSHA(controlCtx)
 	require.NoError(t, err)
 
 	directMain, err := loadedRef.
@@ -192,7 +192,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 	require.NoError(t, err)
 	require.Equal(t, "root readme", root)
 
-	head, err := loaded.Git().Head().Commit(queryCtx)
+	head, err := loaded.Git().Head().CommitSHA(queryCtx)
 	require.NoError(t, err)
 	require.Equal(t, strings.TrimSpace(commit), strings.TrimSpace(head))
 
@@ -355,13 +355,13 @@ func (WorkspaceSuite) TestOverlayGitRefWorkspaceReportsOverlayAsUncommitted(ctx 
 	require.NoError(t, err)
 
 	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
-	commit, err := loadedRef.Commit(ctx)
+	commit, err := loadedRef.CommitSHA(ctx)
 	require.NoError(t, err)
 	baseCommit := strings.TrimSpace(commit)
 
 	ws := loadedRef.AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"})
 
-	cleanHead, err := ws.Git().Head().Commit(ctx)
+	cleanHead, err := ws.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baseCommit, strings.TrimSpace(cleanHead))
 
@@ -374,7 +374,7 @@ func (WorkspaceSuite) TestOverlayGitRefWorkspaceReportsOverlayAsUncommitted(ctx 
 	require.NoError(t, err)
 	require.Equal(t, "overlay", overlayFile)
 
-	changedHead, err := changed.Git().Head().Commit(ctx)
+	changedHead, err := changed.Git().Head().CommitSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, baseCommit, strings.TrimSpace(changedHead))
 
