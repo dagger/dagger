@@ -150,10 +150,31 @@ fn selector_matches(
                     .is_some_and(|item| &item.item_kind == kind)
             })
         })
+        && selector.source_path.as_ref().is_none_or(|path| {
+            definition.source_item_ids.iter().any(|source_item_id| {
+                source_items
+                    .items
+                    .get(source_item_id)
+                    .is_some_and(|item| source_item_has_path(item, path))
+            })
+        })
         && selector
             .capability_id_prefix
             .as_ref()
             .is_none_or(|prefix| id_is_within_prefix(&definition.capability_id, prefix))
+}
+
+fn source_item_has_path(
+    item: &crate::model::SourceItem,
+    path: &crate::model::RepositoryRelativePath,
+) -> bool {
+    // Go extractor locators append line and column coordinates to the repository path. Matching
+    // only the complete prefix keeps a path selector exact without making line-number churn part
+    // of classification identity.
+    item.locator
+        .as_str()
+        .strip_prefix(path.as_str())
+        .is_some_and(|suffix| suffix.starts_with(':') || suffix.starts_with('#'))
 }
 
 fn id_is_within_prefix(capability_id: &CapabilityId, prefix: &CapabilityId) -> bool {

@@ -626,6 +626,7 @@ fn build_contract_case(seed: &ContractSeed, reverse: bool) -> ContractCase {
         capability_kind: Some(capability_kind.clone()),
         stability: Some(seed.stability.clone()),
         source_item_kind: Some(source_item_kind),
+        source_path: None,
         capability_id_prefix: Some(capability_id.clone()),
     };
     let expected_capability_ids = canonical_set(vec![capability_id.clone()], reverse);

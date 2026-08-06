@@ -89627,6 +89627,174 @@
       "source_item_id": "source/rust-policy/rust-policy/cargo-deny",
       "state": "active"
     },
+    "source/rust-policy/rust-policy/client-beta-config-migration": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:af05b4f13c12749c0c38aa3caa71c55a12574036abbc58fefd77938b470ca717",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:248",
+      "semantic_signature": {
+        "clause_id": "client-beta-config-migration",
+        "text": "The stable Client_Config removes beta unit-encoded timeout and project-path fields."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-beta-config-migration",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-cancelled-connect-cleanup": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:9e2dc4944173316c46d2a51e0f265fa6571a111dc0c09c85464b0320982745cb",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:249",
+      "semantic_signature": {
+        "clause_id": "client-cancelled-connect-cleanup",
+        "text": "A cancelled or failed connection attempt cannot leak an owned child process or I/O task."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-cancelled-connect-cleanup",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-close-idempotency": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:b4df660ef90f5319bcfb2c780ab278110b854143718ae4eb5c186ac690565387",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:250",
+      "semantic_signature": {
+        "clause_id": "client-close-idempotency",
+        "text": "Every Client_Handle observes one single-flight close attempt and one terminal result."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-close-idempotency",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-closed-operation-rejection": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:738796d8d7df5fc0472d45a5576e2d3e1d6c4d99c3702c8dd8806823571d16ec",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:251",
+      "semantic_signature": {
+        "clause_id": "client-closed-operation-rejection",
+        "text": "Operations admitted after close begins fail without reaching the transport."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-closed-operation-rejection",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-drop-cleanup": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:d9317debed1876bf3c22536702169f96bc0ddca37186fc9bf183140decfd6bcc",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:252",
+      "semantic_signature": {
+        "clause_id": "client-drop-cleanup",
+        "text": "Dropping the final Client_Handle initiates non-blocking best-effort cleanup with an abort backstop."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-drop-cleanup",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-http-connect-timeout": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:634570ca8fc20b1e11d2389f05517229b1e67026445530fce7edf7a2b9b132e2",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:253",
+      "semantic_signature": {
+        "clause_id": "client-http-connect-timeout",
+        "text": "HTTP connection establishment has its own positive Duration timeout."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-http-connect-timeout",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-owned-lifecycle": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:999fc68e8b51af0062e5ff8f5da257d1d6a682bacccd79ac1a8a2c7388852f99",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:254",
+      "semantic_signature": {
+        "clause_id": "client-owned-lifecycle",
+        "text": "Successful connection establishment returns an owned Client which is not callback-scoped."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-owned-lifecycle",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-preflight-validation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:613e4f4395cb5ebc16f7c558a82c78702e7558908b8d744dc4a54595eac49c2c",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:255",
+      "semantic_signature": {
+        "clause_id": "client-preflight-validation",
+        "text": "Configuration conflicts and local validation failures precede external work."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-preflight-validation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-public-surface-encapsulation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:58b002aacc93b03e6a8b49fab761ed2318f29769833851453801812c230746fa",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:256",
+      "semantic_signature": {
+        "clause_id": "client-public-surface-encapsulation",
+        "text": "Public client and generated handles hide transports, processes, credentials, and synchronization state."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-public-surface-encapsulation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-query-execution-timeout": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:15e34888bb510ea3f70ed3ed740b0c3ab9f4e72f9291b98c457c04860ca3297d",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:257",
+      "semantic_signature": {
+        "clause_id": "client-query-execution-timeout",
+        "text": "One optional positive Duration bounds a complete GraphQL request without closing the Client."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-query-execution-timeout",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-reserved-environment": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:feadeb200786f9b7b511dea01509453d1bd46de055de05b875f906712146dd3e",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:258",
+      "semantic_signature": {
+        "clause_id": "client-reserved-environment",
+        "text": "Additional environment rejects reserved keys using ASCII case-insensitive comparison."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-reserved-environment",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-secret-redaction": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:80104a336728fa60eae00e2f5f48bd48ec1473979a046a657db925e2a1c8ba71",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:259",
+      "semantic_signature": {
+        "clause_id": "client-secret-redaction",
+        "text": "Ordinary errors, diagnostics, tracing, and Debug output never disclose session tokens or environment values."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-secret-redaction",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-session-startup-timeout": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:3ef974371aa91b8889fc4434dc7983d2bb20d9eecc9b101054366b6a78d447c4",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:260",
+      "semantic_signature": {
+        "clause_id": "client-session-startup-timeout",
+        "text": "Newly selected connection establishment has its own positive Duration timeout."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-session-startup-timeout",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/client-shared-handle-safety": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:4949a0abef0a077855c22dea105b7d9b4847cd628b87988bbe0bb6e5e38ac654",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md:261",
+      "semantic_signature": {
+        "clause_id": "client-shared-handle-safety",
+        "text": "Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/client-shared-handle-safety",
+      "state": "active"
+    },
     "source/rust-policy/rust-policy/dependency-policy": {
       "authority_id": "rust-policy",
       "fingerprint": "sha256:169df8d4bd97d324719cf7e0becf2d71c07e4c0c528ce4d829e3ed846be40730",
@@ -89637,6 +89805,18 @@
         "text": "New dependencies are design decisions."
       },
       "source_item_id": "source/rust-policy/rust-policy/dependency-policy",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/explicit-ownership": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:6eece321c2d05a768a706b7cddf06d1ea030bade2e58e1dbee2d8d1197799729",
+      "item_kind": "rust-policy",
+      "locator": "sdk/rust/AGENTS.md:57",
+      "semantic_signature": {
+        "clause_id": "explicit-ownership",
+        "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/explicit-ownership",
       "state": "active"
     },
     "source/rust-policy/rust-policy/idiomatic-rust": {
@@ -89661,6 +89841,42 @@
         "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
       },
       "source_item_id": "source/rust-policy/rust-policy/locked-resolution",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/panic-free-library": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:11678edd245eed90b3790550df252fe37c26484776dfec15105eee9cd44a8d2a",
+      "item_kind": "rust-policy",
+      "locator": "sdk/rust/AGENTS.md:54",
+      "semantic_signature": {
+        "clause_id": "panic-free-library",
+        "text": "Avoid `unwrap` and `panic` in library paths."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/panic-free-library",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/secret-safe-output": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:6debf131aee3326435fc72dd4eb6e5df3d0c12268a7bc5376ce50d7d3f6f6fb6",
+      "item_kind": "rust-policy",
+      "locator": "sdk/rust/AGENTS.md:102",
+      "semantic_signature": {
+        "clause_id": "secret-safe-output",
+        "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/secret-safe-output",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/typed-public-errors": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:11debe1d5f893a6b4ef3b2bc61d400e53646d46b42cffa214249ce768f173ffd",
+      "item_kind": "rust-policy",
+      "locator": "sdk/rust/AGENTS.md:52",
+      "semantic_signature": {
+        "clause_id": "typed-public-errors",
+        "text": "Prefer typed public errors."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/typed-public-errors",
       "state": "active"
     },
     "source/rust-policy/rust-policy/unsafe-denied": {

@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Establish the exact Feature 2 contract scope and test foundations
-  - [ ] 1.1 Add source-path-bounded completeness classification
+- [x] 1. Establish the exact Feature 2 contract scope and test foundations
+  - [x] 1.1 Add source-path-bounded completeness classification
     - Extend `ClassificationSelector` with an exact repository-relative source-path
       predicate and validate it against the selected `SourceItem` set.
     - Replace `baseline/go-client` with non-overlapping, digest-fenced exact-path rules
@@ -11,7 +11,7 @@
     - Add fixtures for exact paths, mixed-source capabilities, overlapping rules, stale
       overrides, and changed rule-expansion digests.
     - _Requirements: 1.1, 1.2, 1.3_
-  - [ ] 1.2 Implement Feature 2 scope-declaration validation
+  - [x] 1.2 Implement Feature 2 scope-declaration validation
     - Add `FeatureScopeDeclaration` parsing for the named requirements headings, the
       existing-capability digest, and the two fenced Capability_ID lists.
     - Validate the exact 23 existing IDs, digest
@@ -21,7 +21,7 @@
     - Keep the parser narrow to the authored convention; unrelated Markdown is not a
       second configuration language.
     - _Requirements: 1.2, 1.3, 1.4_
-  - [ ] 1.3 Add the Rust lifecycle policy capabilities and correct ownership
+  - [x] 1.3 Add the Rust lifecycle policy capabilities and correct ownership
     - Add the 14 reviewed `policy/rust-policy/client-*` definitions with pinned spec and
       `sdk/rust/AGENTS.md` anchors, stable fingerprints, and complete source coverage.
     - Route the exact 23 existing rows and 14 policy rows to Feature 2; route every other
@@ -31,7 +31,7 @@
     - Record reviewed inapplicability for Requirements 2.13–2.15 because no closure
       helper remains in the target API.
     - _Requirements: 1.1–1.7, 2.13–2.15_
-  - [ ] 1.4 Extend downstream status and blocker validation for Feature 2
+  - [x] 1.4 Extend downstream status and blocker validation for Feature 2
     - Bind Feature 2 status changes to its parsed declaration and require target-scoped
       implementation plus verification evidence in the same candidate change.
     - Preserve an exact residual blocker wherever a row still depends on Feature 3, 4,
@@ -39,7 +39,7 @@
     - Add success/failure fixtures for all Complete_Status forms and for the final
       no-blocker condition.
     - _Requirements: 1.8, 1.9, 1.10, 1.11_
-  - [ ] 1.5 Register Feature 2 runtime and development dependencies
+  - [x] 1.5 Register Feature 2 runtime and development dependencies
     - Add direct workspace `url` use for private runner-host validation, enable
       `proptest` for `dagger-sdk`, and add `loom` plus `trybuild` as development-only
       dependencies.
@@ -48,20 +48,20 @@
     - Add shared valid-first strategies, deterministic 256-case configuration, a
       checked regression corpus, and recording connection/connector/resource fixtures.
     - _Requirements: 2.3–2.6, 5.3, 10.3, 10.4_
-  - [ ] 1.6 Property test: Property 1 — exact feature scope and routing preservation
+  - [x] 1.6 Property test: Property 1 — exact feature scope and routing preservation
     - Implement a reference-routing `proptest` with at least 256 generated scope
       declarations, path-rule expansions, row states, fingerprints, and evidence sets;
       mutate IDs, digests, routes, and preserved fields independently and in combination.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 1: exact feature scope and routing preservation`
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7_
-  - [ ] 1.7 Property test: Property 2 — complete status is evidence-closed
+  - [x] 1.7 Property test: Property 2 — complete status is evidence-closed
     - Implement a reference-status `proptest` with at least 256 candidate Feature 2
-      transitions across target identity, evidence kind/scope/outcome, sibling blockers,
-      and final no-blocker states.
+      transitions across target identity, status-required evidence kind/scope/outcome,
+      sibling blockers, and final no-blocker states.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 2: complete status is evidence-closed`
     - _Requirements: 1.8, 1.9, 1.10, 1.11_
 
-- [ ] 2. Checkpoint: contract scope and test scaffolding are green
+- [x] 2. Checkpoint: contract scope and test scaffolding are green
   - Run formatting, locked checking, the completeness crate tests, new Feature 2
     property tests, and clippy; require the ownership-only artifact diff to preserve
     status, fingerprints, and evidence and to leave the Implemented count unchanged.

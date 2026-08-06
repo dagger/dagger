@@ -10,6 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use serde::Serialize;
+use serde_json::json;
 
 use crate::authority::{
     SourceCoverage, SourceItemCoverage, SourceItemDisposition, ValidatedAuthoritySources,
@@ -35,11 +36,15 @@ use crate::harness::{
 };
 use crate::inventory::{
     CapabilityCandidate, CapabilityOrigin, build_inventory, derive_schema_candidates,
+    encode_identity_segment, semantic_fingerprint,
 };
 use crate::io::{RepositoryRoots, SourceLoadError, load_source_bundles};
 use crate::model::*;
 use crate::report::{build_report, render_human_report};
 use crate::target::{TargetObservation, validate_target};
+use crate::traceability::{
+    FeatureScopeDeclaration, parse_feature_scope_declaration, validate_feature_scope_routing,
+};
 
 const DAGGER_AUTHORITY: &str = "github.com/dagger/dagger";
 const GO_AUTHORITY: &str = "github.com/dagger/dagger-go-sdk";
@@ -48,8 +53,82 @@ const SCHEMA_AUTHORITY_ID: &str = "engine-schema";
 const HARNESS_AUTHORITY_ID: &str = "sdk-contract-harness";
 const INTEGRATION_AUTHORITY_ID: &str = "go-integration-tests";
 const POLICY_AUTHORITY_ID: &str = "rust-policy";
+const FEATURE2_REQUIREMENTS: &str = ".kiro/specs/rust-sdk-client-lifecycle/requirements.md";
 const SCHEMA_SNAPSHOT: &str = "sdk/rust/completeness/snapshots/schema.json";
 const HARNESS_SOURCE: &str = "sdk-sdk.dang";
+
+const FEATURE2_POLICIES: [(&str, &str, &str); 14] = [
+    (
+        "client-beta-config-migration",
+        "The stable Client_Config removes beta unit-encoded timeout and project-path fields.",
+        "idiomatic-rust",
+    ),
+    (
+        "client-cancelled-connect-cleanup",
+        "A cancelled or failed connection attempt cannot leak an owned child process or I/O task.",
+        "panic-free-library",
+    ),
+    (
+        "client-close-idempotency",
+        "Every Client_Handle observes one single-flight close attempt and one terminal result.",
+        "explicit-ownership",
+    ),
+    (
+        "client-closed-operation-rejection",
+        "Operations admitted after close begins fail without reaching the transport.",
+        "typed-public-errors",
+    ),
+    (
+        "client-drop-cleanup",
+        "Dropping the final Client_Handle initiates non-blocking best-effort cleanup with an abort backstop.",
+        "panic-free-library",
+    ),
+    (
+        "client-http-connect-timeout",
+        "HTTP connection establishment has its own positive Duration timeout.",
+        "typed-public-errors",
+    ),
+    (
+        "client-owned-lifecycle",
+        "Successful connection establishment returns an owned Client which is not callback-scoped.",
+        "explicit-ownership",
+    ),
+    (
+        "client-preflight-validation",
+        "Configuration conflicts and local validation failures precede external work.",
+        "panic-free-library",
+    ),
+    (
+        "client-public-surface-encapsulation",
+        "Public client and generated handles hide transports, processes, credentials, and synchronization state.",
+        "secret-safe-output",
+    ),
+    (
+        "client-query-execution-timeout",
+        "One optional positive Duration bounds a complete GraphQL request without closing the Client.",
+        "typed-public-errors",
+    ),
+    (
+        "client-reserved-environment",
+        "Additional environment rejects reserved keys using ASCII case-insensitive comparison.",
+        "secret-safe-output",
+    ),
+    (
+        "client-secret-redaction",
+        "Ordinary errors, diagnostics, tracing, and Debug output never disclose session tokens or environment values.",
+        "secret-safe-output",
+    ),
+    (
+        "client-session-startup-timeout",
+        "Newly selected connection establishment has its own positive Duration timeout.",
+        "typed-public-errors",
+    ),
+    (
+        "client-shared-handle-safety",
+        "Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code.",
+        "unsafe-denied",
+    ),
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// Complete deterministic products derived from the authored F1 contract inputs.
@@ -91,6 +170,14 @@ pub fn derive_contract(
         read_canonical(&contract.join("harness-mappings.json"), "harness mappings")?;
     let compatibility: CompatibilityClaim =
         read_canonical(&contract.join("compatibility.json"), "compatibility claim")?;
+    let feature2_requirements = read_text(
+        &repository_root.join(FEATURE2_REQUIREMENTS),
+        "Feature 2 requirements",
+    )?;
+    let feature2_scope = validated(
+        parse_feature_scope_declaration(&feature2_requirements),
+        "Feature 2 scope declaration",
+    )?;
 
     let schema_bytes = read(&contract.join("snapshots/schema.json"), "schema snapshot")?;
     let schema = decode_introspection(&schema_bytes).map_err(|_| ToolError::Decode {
@@ -133,8 +220,14 @@ pub fn derive_contract(
         &target,
         &schema,
         &harness_source,
+        &feature2_requirements,
     )?;
-    let candidates = capability_candidates(&definitions, &authorities)?;
+    let mut candidates = capability_candidates(&definitions, &authorities)?;
+    candidates.extend(feature2_policy_candidates(
+        &feature2_scope,
+        &source_items,
+        &authorities,
+    )?);
     let schema_candidates = validated(
         derive_schema_candidates(&source_items),
         "schema capability candidates",
@@ -148,7 +241,7 @@ pub fn derive_contract(
         ),
         "canonical inventory",
     )?;
-    attach_schema_anchors(&mut inventory, &source_items, &authorities)?;
+    attach_missing_anchors(&mut inventory, &source_items, &authorities)?;
 
     let ledger = validated(
         resolve_classifications(&inventory, &source_items, &classifications),
@@ -157,6 +250,10 @@ pub fn derive_contract(
     validated(
         validate_status_entries(&ledger, &evidence),
         "status entries",
+    )?;
+    validated(
+        validate_feature_scope_routing(&inventory, &ledger, &feature2_scope),
+        "Feature 2 scope routing",
     )?;
 
     let target_digest = TargetDigest::new(
@@ -363,6 +460,7 @@ fn extract_source_items(
     target: &TargetDescriptor,
     schema: &crate::extract::schema::IntrospectionResponse,
     harness_source: &str,
+    feature2_requirements: &str,
 ) -> Result<SourceItemInventory, ToolError> {
     let schema_authority =
         AuthorityId::new(SCHEMA_AUTHORITY_ID).expect("static authority identity is valid");
@@ -465,9 +563,34 @@ fn extract_source_items(
                     "New dependencies are design decisions.",
                 ),
                 policy("cargo-deny", "`cargo deny check` must pass."),
+                policy("typed-public-errors", "Prefer typed public errors."),
+                policy(
+                    "panic-free-library",
+                    "Avoid `unwrap` and `panic` in library paths.",
+                ),
+                policy(
+                    "explicit-ownership",
+                    "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state.",
+                ),
+                policy(
+                    "secret-safe-output",
+                    "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code.",
+                ),
             ],
         ),
         "Rust policy extraction",
+    )?);
+    inventories.push(validated(
+        extract_policy_clauses(
+            &policy_authority,
+            FEATURE2_REQUIREMENTS,
+            feature2_requirements,
+            &FEATURE2_POLICIES
+                .iter()
+                .map(|(id, text, _)| policy(id, text))
+                .collect::<Vec<_>>(),
+        ),
+        "Feature 2 policy extraction",
     )?);
     validated(
         merge_source_inventories(inventories),
@@ -515,6 +638,90 @@ fn capability_candidates(
             })
         })
         .collect()
+}
+
+fn feature2_policy_candidates(
+    declaration: &FeatureScopeDeclaration,
+    source_items: &SourceItemInventory,
+    authorities: &AuthorityRegistry,
+) -> Result<Vec<CapabilityCandidate>, ToolError> {
+    let authority_id =
+        AuthorityId::new(POLICY_AUTHORITY_ID).expect("static authority identity is valid");
+    if !authorities.authorities.contains_key(&authority_id) {
+        return Err(ToolError::Decode {
+            artifact: "Feature 2 policy authority",
+        });
+    }
+
+    FEATURE2_POLICIES
+        .iter()
+        .map(|(clause_id, text, guidance_id)| {
+            let capability_id = CapabilityId::new(format!(
+                "policy/{POLICY_AUTHORITY_ID}/{clause_id}"
+            ))
+            .map_err(|_| ToolError::Decode {
+                artifact: "Feature 2 policy identity",
+            })?;
+            if !declaration.policy_capability_ids.contains(&capability_id) {
+                return Err(ToolError::Decode {
+                    artifact: "Feature 2 declared policy identity",
+                });
+            }
+            let spec_source_id = policy_source_item_id(clause_id)?;
+            let guidance_source_id = policy_source_item_id(guidance_id)?;
+            let spec_source = source_items
+                .items
+                .get(&spec_source_id)
+                .ok_or(ToolError::Decode {
+                    artifact: "Feature 2 policy source",
+                })?;
+            let guidance_source =
+                source_items
+                    .items
+                    .get(&guidance_source_id)
+                    .ok_or(ToolError::Decode {
+                        artifact: "Feature 2 guidance source",
+                    })?;
+            let semantic_signature = json!({
+                "requirement": spec_source.semantic_signature,
+                "rust_guidance": guidance_source.semantic_signature,
+            });
+            Ok(CapabilityCandidate {
+                definition: CapabilityDefinition {
+                    capability_id,
+                    authority_id: authority_id.clone(),
+                    capability_kind: CapabilityKind::new("rust-policy")
+                        .expect("static capability kind is valid"),
+                    source_item_ids: CanonicalSet::new([spec_source_id, guidance_source_id]),
+                    // Anchors are derived after coverage has validated both selected source items;
+                    // storing copied line numbers in authored JSON would make harmless prose motion
+                    // look like a semantic definition change.
+                    source_anchors: CanonicalSet::default(),
+                    summary: NonEmptyText::new(*text).expect("reviewed policy text is non-empty"),
+                    capability_fingerprint: semantic_fingerprint(&semantic_signature).map_err(
+                        |_| ToolError::Decode {
+                            artifact: "Feature 2 policy fingerprint",
+                        },
+                    )?,
+                    semantic_signature,
+                    stability: Stability::Stable,
+                },
+                origin: CapabilityOrigin::Independent,
+                common_contract: false,
+                target_compatible: true,
+            })
+        })
+        .collect()
+}
+
+fn policy_source_item_id(clause_id: &str) -> Result<SourceItemId, ToolError> {
+    SourceItemId::new(format!(
+        "source/{POLICY_AUTHORITY_ID}/rust-policy/{}",
+        encode_identity_segment(clause_id)
+    ))
+    .map_err(|_| ToolError::Decode {
+        artifact: "Feature 2 policy source identity",
+    })
 }
 
 fn derive_coverage(
@@ -603,7 +810,7 @@ fn source_item_path(item: &SourceItem) -> Result<RepositoryRelativePath, ToolErr
     })
 }
 
-fn attach_schema_anchors(
+fn attach_missing_anchors(
     inventory: &mut CanonicalInventory,
     source_items: &SourceItemInventory,
     authorities: &AuthorityRegistry,
@@ -612,37 +819,55 @@ fn attach_schema_anchors(
         if !definition.source_anchors.is_empty() {
             continue;
         }
-        let source_item = definition
-            .source_item_ids
-            .first()
-            .and_then(|source_item_id| source_items.items.get(source_item_id))
-            .ok_or(ToolError::Decode {
-                artifact: "schema source anchor",
-            })?;
         let authority = authorities
             .authorities
             .get(&definition.authority_id)
             .ok_or(ToolError::Decode {
-                artifact: "schema authority",
+                artifact: "capability authority anchor",
             })?;
-        definition.source_anchors = CanonicalSet::new([EvidenceReference {
-            evidence_id: EvidenceId::new(format!("authority/{}", definition.capability_id))
-                .map_err(|_| ToolError::Decode {
-                    artifact: "schema authority evidence ID",
-                })?,
-            evidence_kind: EvidenceKind::Authority,
-            repository: authority.repository.clone(),
-            revision: authority.revision.clone(),
-            path: source_item_path(source_item)?,
-            locator: source_item.locator.clone(),
-            claim: NonEmptyText::new("Pinned schema source defines this atomic capability")
-                .expect("static evidence claim is valid"),
-            command: None,
-            expected_outcome: None,
-            execution_target: None,
-            platform_scope: CanonicalSet::default(),
-            proved_capability_ids: CanonicalSet::new([definition.capability_id.clone()]),
-        }]);
+        let multiple_sources = definition.source_item_ids.len() > 1;
+        let anchors = definition
+            .source_item_ids
+            .iter()
+            .map(|source_item_id| {
+                let source_item =
+                    source_items
+                        .items
+                        .get(source_item_id)
+                        .ok_or(ToolError::Decode {
+                            artifact: "capability authority source",
+                        })?;
+                let suffix = if multiple_sources {
+                    format!("/{}", encode_identity_segment(source_item_id.as_str()))
+                } else {
+                    String::new()
+                };
+                Ok(EvidenceReference {
+                    evidence_id: EvidenceId::new(format!(
+                        "authority/{}{}",
+                        definition.capability_id, suffix
+                    ))
+                    .map_err(|_| ToolError::Decode {
+                        artifact: "capability authority evidence ID",
+                    })?,
+                    evidence_kind: EvidenceKind::Authority,
+                    repository: authority.repository.clone(),
+                    revision: authority.revision.clone(),
+                    path: source_item_path(source_item)?,
+                    locator: source_item.locator.clone(),
+                    claim: NonEmptyText::new(
+                        "Pinned authority source defines this reviewed capability",
+                    )
+                    .expect("static evidence claim is valid"),
+                    command: None,
+                    expected_outcome: None,
+                    execution_target: None,
+                    platform_scope: CanonicalSet::default(),
+                    proved_capability_ids: CanonicalSet::new([definition.capability_id.clone()]),
+                })
+            })
+            .collect::<Result<Vec<_>, ToolError>>()?;
+        definition.source_anchors = CanonicalSet::new(anchors);
     }
     Ok(())
 }

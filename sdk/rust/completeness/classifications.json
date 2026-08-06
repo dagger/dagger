@@ -1,5 +1,63 @@
 {
-  "exact": {},
+  "exact": {
+    "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny": {
+      "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+      "implementation_evidence": [
+        "implementation/rust-policy-baseline"
+      ],
+      "owner_feature": "feature-9",
+      "status": "Partial"
+    },
+    "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fdependency-policy": {
+      "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+      "implementation_evidence": [
+        "implementation/rust-policy-baseline"
+      ],
+      "owner_feature": "feature-9",
+      "status": "Partial"
+    },
+    "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust": {
+      "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+      "implementation_evidence": [
+        "implementation/rust-policy-baseline"
+      ],
+      "owner_feature": "feature-9",
+      "status": "Partial"
+    },
+    "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Flocked-resolution": {
+      "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+      "implementation_evidence": [
+        "implementation/rust-policy-baseline"
+      ],
+      "owner_feature": "feature-9",
+      "status": "Partial"
+    },
+    "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Funsafe-denied": {
+      "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+      "implementation_evidence": [
+        "implementation/rust-policy-baseline"
+      ],
+      "owner_feature": "feature-9",
+      "status": "Partial"
+    },
+    "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fwhy-comments": {
+      "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+      "implementation_evidence": [
+        "implementation/rust-policy-baseline"
+      ],
+      "owner_feature": "feature-9",
+      "status": "Partial"
+    },
+    "policy/rust-policy/workspace-target-verification": {
+      "implementation_evidence": [
+        "implementation/rust-policy-baseline"
+      ],
+      "status": "Implemented",
+      "verification_evidence": [
+        "verification/rust-workspace-target"
+      ]
+    }
+  },
   "rules": {
     "baseline/engine-schema": {
       "authority_id": "engine-schema",
@@ -18,31 +76,6 @@
       "rule_id": "baseline/engine-schema",
       "selector": {
         "authority_id": "engine-schema"
-      }
-    },
-    "baseline/go-client": {
-      "authority_id": "go-client",
-      "classification": {
-        "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
-        "implementation_evidence": [
-          "implementation/go-client-baseline"
-        ],
-        "owner_feature": "feature-2",
-        "status": "Partial"
-      },
-      "expected_capability_ids": {
-        "digest": "sha256:542bd6483dfeb61ca43082c2b9189ffe96877f72cbbf5a7b5c158d8e90a755ee"
-      },
-      "overrides": {
-        "behavior/go-client/init-client-lifecycle": {
-          "gap": "Rust has no standalone initClient lifecycle or target-scoped verification",
-          "owner_feature": "feature-7",
-          "status": "Missing"
-        }
-      },
-      "rule_id": "baseline/go-client",
-      "selector": {
-        "authority_id": "go-client"
       }
     },
     "baseline/go-codegen": {
@@ -102,35 +135,6 @@
         "authority_id": "go-integration-tests"
       }
     },
-    "baseline/rust-policy": {
-      "authority_id": "rust-policy",
-      "classification": {
-        "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
-        "implementation_evidence": [
-          "implementation/rust-policy-baseline"
-        ],
-        "owner_feature": "feature-9",
-        "status": "Partial"
-      },
-      "expected_capability_ids": {
-        "digest": "sha256:0e9e29861394bca94ea440a8a0dee086cf7afe368b1cb8fb4dc8b8fcf5411528"
-      },
-      "overrides": {
-        "policy/rust-policy/workspace-target-verification": {
-          "implementation_evidence": [
-            "implementation/rust-policy-baseline"
-          ],
-          "status": "Implemented",
-          "verification_evidence": [
-            "verification/rust-workspace-target"
-          ]
-        }
-      },
-      "rule_id": "baseline/rust-policy",
-      "selector": {
-        "authority_id": "rust-policy"
-      }
-    },
     "baseline/sdk-contract-harness": {
       "authority_id": "sdk-contract-harness",
       "classification": {
@@ -145,6 +149,323 @@
       "rule_id": "baseline/sdk-contract-harness",
       "selector": {
         "authority_id": "sdk-contract-harness"
+      }
+    },
+    "routing/go-client/client": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-2",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:9b10e3550aeffe40080db6b339b6ed84a9c0f47468d35e661195f069debad626"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/client",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "client.go"
+      }
+    },
+    "routing/go-client/client-tests": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 8 integration coverage lacks target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-8",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:d2182e3e51376fab50c33b560aa19e68127f3b7b4f38226c66432eba9328320e"
+      },
+      "overrides": {
+        "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%254%43oad%2557orkspace%254%44odules": {
+          "gap": "Feature 2 workspace-module configuration lacks target-scoped verification",
+          "implementation_evidence": [
+            "implementation/go-client-baseline"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%2557orkspace": {
+          "gap": "Feature 2 workspace configuration lacks target-scoped verification",
+          "implementation_evidence": [
+            "implementation/go-client-baseline"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        }
+      },
+      "rule_id": "routing/go-client/client-tests",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "client_test.go"
+      }
+    },
+    "routing/go-client/engineconn-cli": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-3",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:04dc8ba4e5fba99b94432b4f3215e3a0145a83c42fae4fd5f6cd15c0b0453302"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/engineconn-cli",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "engineconn/cli.go"
+      }
+    },
+    "routing/go-client/engineconn-cli-tests": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 3 CLI selection tests lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-3",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:3247f8ed3ec7e0535b56175b41bd643645c54412f05ec468fbd724150a320142"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/engineconn-cli-tests",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "engineconn/cli_test.go"
+      }
+    },
+    "routing/go-client/engineconn-core": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 3 connection selection and transport lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-3",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:e483cdd058bf3e71c4cddec80e64d1ca6ce609dfabcd7bc75857a1179651f0c3"
+      },
+      "overrides": {
+        "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onfig": {
+          "gap": "Feature 2 connection configuration lacks target-scoped verification",
+          "implementation_evidence": [
+            "implementation/go-client-baseline"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2545ngine%2543onn": {
+          "gap": "Feature 2 explicit connection abstraction lacks target-scoped verification",
+          "implementation_evidence": [
+            "implementation/go-client-baseline"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        }
+      },
+      "rule_id": "routing/go-client/engineconn-core",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "engineconn/engineconn.go"
+      }
+    },
+    "routing/go-client/engineconn-env": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 3 existing-session environment selection lacks target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-3",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:a1677f66c5a94528b8c78240b549051f202a976770665fabd3862f8480030448"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/engineconn-env",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "engineconn/env.go"
+      }
+    },
+    "routing/go-client/engineconn-session-tests": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 3 session-source compatibility tests lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-3",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:a892d5411249cbe2109acf6a2892d409859c4cb523090602292052ec43dca31e"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/engineconn-session-tests",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "engineconn/session_test.go"
+      }
+    },
+    "routing/go-client/engineconn-version": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 3 CLI version selection lacks target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-3",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:f13ffc6f156124434eb25f925cf172ffc4091ea08e8746f556d166d6a4c5caf6"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/engineconn-version",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "engineconn/version.gen.go"
+      }
+    },
+    "routing/go-client/examples": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 9 examples and release guidance lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-9",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:43d75dd5a3e626f32a02f6c9e4096fd231cd20e9d1e5233bb1ce3b365555f965"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/examples",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "examples_test.go"
+      }
+    },
+    "routing/go-client/generated": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 4 generated schema bindings lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-4",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:c98701761575b9d0eac5fa249e8b6084349b6e22513017407f90bad573cfcca9"
+      },
+      "overrides": {
+        "behavior/go-client/init-client-lifecycle": {
+          "gap": "Rust has no standalone initClient lifecycle or target-scoped verification",
+          "owner_feature": "feature-7",
+          "status": "Missing"
+        }
+      },
+      "rule_id": "routing/go-client/generated",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "dagger.gen.go"
+      }
+    },
+    "routing/go-client/module-globals": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 6 module-global generated helpers lack target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-6",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:80ad90afb6125c81ae26318371094d22b8365a4db01f2674af0d34fee3deba4f"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/module-globals",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "dag/dag.gen.go"
+      }
+    },
+    "routing/go-client/provision": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 7 standalone-client behaviour lacks target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-7",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:83b892cc222bf2334d9d2346a730784d188decfe29c79856ad2c43dc84c0cc5f"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/provision",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "provision_test.go"
+      }
+    },
+    "routing/go-client/release-manifest": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Feature 9 release-facing SDK manifest coverage lacks target-scoped verification",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-9",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:2a41948e968a84ca59af84471c79df2e11fd67814a719377d89894c8d5aaf7ab"
+      },
+      "overrides": {},
+      "rule_id": "routing/go-client/release-manifest",
+      "selector": {
+        "authority_id": "go-client",
+        "source_path": "fs.go"
+      }
+    },
+    "routing/rust-policy/client-lifecycle": {
+      "authority_id": "rust-policy",
+      "classification": {
+        "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
+        "owner_feature": "feature-2",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:68eab705ee075f3ca1525b6ad21e6f42f80d115a4b183787c30994525b17779f"
+      },
+      "overrides": {},
+      "rule_id": "routing/rust-policy/client-lifecycle",
+      "selector": {
+        "authority_id": "rust-policy",
+        "source_path": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md"
       }
     }
   }

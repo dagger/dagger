@@ -943,6 +943,9 @@ pub struct ClassificationSelector {
     pub stability: Option<Stability>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_item_kind: Option<SourceItemKind>,
+    /// Exact authority source path which at least one selected source item must inhabit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<RepositoryRelativePath>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_id_prefix: Option<CapabilityId>,
 }

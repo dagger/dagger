@@ -568,7 +568,7 @@ edge cases.
 ### Property 1: Exact feature scope and routing preservation
 
 For every successfully verified Feature 2 scope declaration, the sorted existing set
-is exactly the declared 23 IDs, its domain-separated digest equals
+is exactly the declared 23 IDs, its direct SHA-256 digest over compact JSON equals
 `sha256:81ad1a4f2efe1604b9091468bd6a6006d598a2a8ae54a94a974acf08d74b8b40`,
 and the added policy set is exactly the declared 14 IDs. Re-routing any other row can
 change only its owner and blocking gap; status, fingerprint, and evidence references
@@ -578,10 +578,12 @@ remain byte-equivalent.
 
 ### Property 2: Complete status is evidence-closed
 
-For every candidate Feature 2 status transition, a Complete_Status is accepted if and
-only if same-target implementation and verification evidence validate. A residual
-sibling dependency always produces an exact blocking gap, and the Feature 2 owner set
-has no blocker only when every local and cross-feature obligation validates.
+For every candidate Feature 2 status transition with a meaningful Rust counterpart, a
+Complete_Status is accepted if and only if same-target implementation and verification
+evidence validate. `Inapplicable` instead requires same-target decision evidence and
+must carry no contradictory implementation or verification evidence. A residual sibling
+dependency always produces an exact blocking gap, and the Feature 2 owner set has no
+blocker only when every local and cross-feature obligation validates.
 
 **Validates: Requirements 1.8, 1.9, 1.10, 1.11**
 

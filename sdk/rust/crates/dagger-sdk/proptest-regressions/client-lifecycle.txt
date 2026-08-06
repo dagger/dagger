@@ -1,0 +1,1 @@
+# Seeds for minimized Feature 2 property failures. Proptest replays these before novel cases.

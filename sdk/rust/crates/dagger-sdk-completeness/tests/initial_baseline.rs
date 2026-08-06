@@ -4,11 +4,28 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use dagger_sdk_completeness::*;
+use serde::Serialize;
 
 const DAGGER_REVISION: &str = "25300124ca110612edc09c43f89cb5fad6028170";
 const GO_REVISION: &str = "1309520660f6a5b35ef97b4fbe151e32a06a8dc5";
 const HARNESS_REVISION: &str = "8c164424b7a8a37b33a77367ef7547490d5b87b5";
 const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d19a9a22ef9e3890a40";
+const GO_CLIENT_PRESERVATION_DIGEST: &str =
+    "sha256:14495f04a376a9120208f1d17c7290ad35983442a3bad23b659b428747d0258f";
+
+#[derive(Serialize)]
+struct OwnershipProjection<'a> {
+    capability_fingerprint: &'a Digest,
+    capability_id: &'a CapabilityId,
+    #[serde(skip_serializing_if = "CanonicalSet::is_empty")]
+    decision_evidence: &'a CanonicalSet<EvidenceId>,
+    #[serde(skip_serializing_if = "CanonicalSet::is_empty")]
+    implementation_evidence: &'a CanonicalSet<EvidenceId>,
+    source_anchors: &'a CanonicalSet<EvidenceReference>,
+    status: &'a Status,
+    #[serde(skip_serializing_if = "CanonicalSet::is_empty")]
+    verification_evidence: &'a CanonicalSet<EvidenceId>,
+}
 
 #[test]
 fn initial_target_locks_authorities_harness_omissions_and_ownership() {
@@ -87,14 +104,36 @@ fn initial_target_locks_authorities_harness_omissions_and_ownership() {
     assert!(!derived.report.completeness_verdict);
     assert_eq!(
         derived.report.inventory_digest.as_str(),
-        "sha256:a553bf5a061471a29f02163b4d9e8b094b18b3e4ac85565dcd049b7fb2db5af0"
+        "sha256:c0f27c650ab5847a861c599094ecca2ffac00aee35a9a995623dd018a7b38e66"
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:623782ac6bafeb7aa72c008f6f2dca1d481b57907bb48a45ddc0afeb581e4bb8"
+        "sha256:bc4045d355e3a98dd6275905ef730fe73d1b3b118efe01f823a24f9ddd5075b8"
     );
-    assert_eq!(derived.report.blocking_capabilities.len(), 4_541);
+    assert_eq!(derived.report.blocking_capabilities.len(), 4_555);
     assert!(derived.report.complete_exceptions.is_empty());
+    let go_client_projection = derived
+        .ledger
+        .capabilities
+        .values()
+        .filter(|row| row.authority_id.as_str() == "go-client")
+        .map(|row| OwnershipProjection {
+            capability_fingerprint: &row.capability_fingerprint,
+            capability_id: &row.capability_id,
+            decision_evidence: &row.decision_evidence,
+            implementation_evidence: &row.implementation_evidence,
+            source_anchors: &row.source_anchors,
+            status: &row.status,
+            verification_evidence: &row.verification_evidence,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(go_client_projection.len(), 1_783);
+    assert_eq!(
+        canonical_digest(DigestDomain::Artifact, &go_client_projection)
+            .unwrap()
+            .as_str(),
+        GO_CLIENT_PRESERVATION_DIGEST
+    );
     assert_eq!(
         derived.report.counts_by_authority,
         std::collections::BTreeMap::from([
@@ -103,7 +142,7 @@ fn initial_target_locks_authorities_harness_omissions_and_ownership() {
             (AuthorityId::new("go-codegen").unwrap(), 83),
             (AuthorityId::new("go-engine-sdk").unwrap(), 13),
             (AuthorityId::new("go-integration-tests").unwrap(), 1_072),
-            (AuthorityId::new("rust-policy").unwrap(), 7),
+            (AuthorityId::new("rust-policy").unwrap(), 21),
             (AuthorityId::new("sdk-contract-harness").unwrap(), 17),
         ])
     );
@@ -113,21 +152,21 @@ fn initial_target_locks_authorities_harness_omissions_and_ownership() {
             (Status::IdiomaticEquivalent, 0),
             (Status::Implemented, 1),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_103),
+            (Status::Missing, 1_117),
             (Status::Partial, 3_438),
         ])
     );
     assert_eq!(
         derived.report.counts_by_owner,
         std::collections::BTreeMap::from([
-            (FeatureId::Feature2, 1_782),
-            (FeatureId::Feature3, 1),
-            (FeatureId::Feature4, 1_650),
+            (FeatureId::Feature2, 37),
+            (FeatureId::Feature3, 21),
+            (FeatureId::Feature4, 3_329),
             (FeatureId::Feature5, 12),
-            (FeatureId::Feature6, 17),
-            (FeatureId::Feature7, 1),
-            (FeatureId::Feature8, 1_072),
-            (FeatureId::Feature9, 6),
+            (FeatureId::Feature6, 53),
+            (FeatureId::Feature7, 2),
+            (FeatureId::Feature8, 1_081),
+            (FeatureId::Feature9, 20),
         ])
     );
     let init_client = derived

@@ -285,7 +285,7 @@ proptest! {
     fn property_7_exact_classification_rule_expansion(
         count in 1_usize..12,
         use_digest in any::<bool>(),
-        mutation in 0_u8..8,
+        mutation in 0_u8..10,
     ) {
         let base = fixture();
         let mut inventory = CanonicalInventory::default();
@@ -324,6 +324,7 @@ proptest! {
                 capability_kind: Some(base.definition.capability_kind.clone()),
                 stability: Some(Stability::Stable),
                 source_item_kind: Some(SourceItemKind::new("go-exported-function").unwrap()),
+                source_path: Some(RepositoryRelativePath::new("client.go").unwrap()),
                 capability_id_prefix: Some(CapabilityId::new("behavior/go-client/connect").unwrap()),
             },
             expected_capability_ids: expected,
@@ -363,6 +364,36 @@ proptest! {
             7 => {
                 rule.selector.authority_id = Some(AuthorityId::new("other-authority").unwrap());
                 input.rules.insert(rule_id, rule);
+            }
+            8 => {
+                for source in source_items.items.values_mut() {
+                    source.locator = SourceLocator::new("other.go#Connect").unwrap();
+                }
+            }
+            9 => {
+                let first_id = inventory.capabilities.keys().next().unwrap().clone();
+                let mixed_source_id = SourceItemId::new("source/go-client/mixed").unwrap();
+                let mut mixed_source = source_items.items.values().next().unwrap().clone();
+                mixed_source.source_item_id = mixed_source_id.clone();
+                mixed_source.locator = SourceLocator::new("other.go#Connect").unwrap();
+                source_items.items.insert(mixed_source_id.clone(), mixed_source);
+                let original_source_id =
+                    inventory.capabilities[&first_id].source_item_ids[0].clone();
+                inventory
+                    .capabilities
+                    .get_mut(&first_id)
+                    .unwrap()
+                    .source_item_ids =
+                    CanonicalSet::new([original_source_id, mixed_source_id]);
+
+                let other_rule_id = RuleId::new("mixed-other-path").unwrap();
+                let mut other_rule = rule.clone();
+                other_rule.rule_id = other_rule_id.clone();
+                other_rule.selector.source_path =
+                    Some(RepositoryRelativePath::new("other.go").unwrap());
+                other_rule.expected_capability_ids =
+                    ExpectedSet::CapabilityIds(CanonicalSet::new([first_id]));
+                input.rules.insert(other_rule_id, other_rule);
             }
             _ => {}
         }

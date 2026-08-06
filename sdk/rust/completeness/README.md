@@ -180,21 +180,23 @@ From `toolchains/rust-sdk-dev`, verify the Dagger module binding:
 go test ./...
 ```
 
-### Expected F1 fingerprint
+### Current checked fingerprint
 
-The exact initial result is locked by
+The exact result is locked by
 [`initial_baseline.rs`](../crates/dagger-sdk-completeness/tests/initial_baseline.rs) and reproduced
-in [`artifacts/report.json`](artifacts/report.json):
+in [`artifacts/report.json`](artifacts/report.json). Feature 2's scope foundation adds 14
+Rust-policy capabilities and corrects coarse ownership while deliberately leaving the
+`Implemented` count unchanged:
 
 | Observation | Expected value |
 | --- | ---: |
-| Capabilities | 4,542 |
+| Capabilities | 4,556 |
 | `Implemented` | 1 |
 | `Partial` | 3,438 |
-| `Missing` | 1,103 |
-| Blocking capabilities | 4,541 |
-| Inventory digest | `sha256:a553bf5a061471a29f02163b4d9e8b094b18b3e4ac85565dcd049b7fb2db5af0` |
-| Ledger digest | `sha256:623782ac6bafeb7aa72c008f6f2dca1d481b57907bb48a45ddc0afeb581e4bb8` |
+| `Missing` | 1,117 |
+| Blocking capabilities | 4,555 |
+| Inventory digest | `sha256:c0f27c650ab5847a861c599094ecca2ffac00aee35a9a995623dd018a7b38e66` |
+| Ledger digest | `sha256:bc4045d355e3a98dd6275905ef730fe73d1b3b118efe01f823a24f9ddd5075b8` |
 | Harness partition | 17 subject failures, 1 harness-self pass |
 
 Any difference requires an explained authored-input or extractor change. Do not update the

@@ -240,6 +240,26 @@ policy/rust-policy/client-session-startup-timeout
 policy/rust-policy/client-shared-handle-safety
 ```
 
+### Rust Lifecycle Policy Anchors
+
+The completeness extractor selects these exact, stable policy statements. Their IDs
+are semantic coordinates; source line numbers are evidence locators only.
+
+- `client-beta-config-migration`: The stable Client_Config removes beta unit-encoded timeout and project-path fields.
+- `client-cancelled-connect-cleanup`: A cancelled or failed connection attempt cannot leak an owned child process or I/O task.
+- `client-close-idempotency`: Every Client_Handle observes one single-flight close attempt and one terminal result.
+- `client-closed-operation-rejection`: Operations admitted after close begins fail without reaching the transport.
+- `client-drop-cleanup`: Dropping the final Client_Handle initiates non-blocking best-effort cleanup with an abort backstop.
+- `client-http-connect-timeout`: HTTP connection establishment has its own positive Duration timeout.
+- `client-owned-lifecycle`: Successful connection establishment returns an owned Client which is not callback-scoped.
+- `client-preflight-validation`: Configuration conflicts and local validation failures precede external work.
+- `client-public-surface-encapsulation`: Public client and generated handles hide transports, processes, credentials, and synchronization state.
+- `client-query-execution-timeout`: One optional positive Duration bounds a complete GraphQL request without closing the Client.
+- `client-reserved-environment`: Additional environment rejects reserved keys using ASCII case-insensitive comparison.
+- `client-secret-redaction`: Ordinary errors, diagnostics, tracing, and Debug output never disclose session tokens or environment values.
+- `client-session-startup-timeout`: Newly selected connection establishment has its own positive Duration timeout.
+- `client-shared-handle-safety`: Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code.
+
 The remaining 1,759 currently Feature 2-owned rows receive ownership-only corrections.
 Generated schema declarations route to Feature 4; module-global generated helpers
 route to Feature 6; connection selection, CLI, environment, transport, and transport
@@ -362,10 +382,13 @@ claiming generated, transport, or release work it does not own.
    SHALL preserve its Capability_Fingerprint.
 7. WHEN a non-Feature 2 row receives corrected ownership, THE Completeness_Ledger
    SHALL preserve its existing evidence references.
-8. WHEN a Feature 2 status becomes complete, THE Completeness_Ledger SHALL record
-   target-scoped implementation evidence in the same change.
-9. WHEN a Feature 2 status becomes complete, THE Completeness_Ledger SHALL record
-   target-scoped Verification_Evidence in the same change.
+8. WHEN a Feature 2 status with a meaningful Rust counterpart becomes complete, THE
+   Completeness_Ledger SHALL record target-scoped implementation evidence in the same
+   change.
+9. WHEN a Feature 2 status with a meaningful Rust counterpart becomes complete, THE
+   Completeness_Ledger SHALL record target-scoped Verification_Evidence in the same
+   change; a justified `Inapplicable` status instead requires its target-scoped
+   decision evidence under the Feature 1 status policy.
 10. IF a Feature 2 behaviour still depends on unverified sibling-feature semantics,
     THEN THE Completeness_Ledger SHALL retain a Blocking_Status with the exact residual
     gap.

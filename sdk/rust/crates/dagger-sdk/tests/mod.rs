@@ -7,6 +7,40 @@ use dagger_sdk::{
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 
+mod support;
+
+#[test]
+fn feature_2_test_foundations_record_boundaries_and_persist_256_cases() {
+    use support::{
+        EventLog, PROPTEST_CASES, RecordedAction, RecordingConnection, RecordingConnector,
+        RecordingResource, proptest_config,
+    };
+
+    let events = EventLog::default();
+    let connection = RecordingConnection(events.clone());
+    let connector = RecordingConnector(events.clone());
+    let resource = RecordingResource(events.clone());
+    connector.connect();
+    connection.execute();
+    connection.close();
+    connection.abort();
+    resource.close();
+
+    assert_eq!(
+        events.actions(),
+        [
+            RecordedAction::ConnectorConnect,
+            RecordedAction::ConnectionExecute,
+            RecordedAction::ConnectionClose,
+            RecordedAction::ConnectionAbort,
+            RecordedAction::ResourceClose,
+        ]
+    );
+    let config = proptest_config();
+    assert_eq!(config.cases, PROPTEST_CASES);
+    assert!(config.failure_persistence.is_some());
+}
+
 #[tokio::test]
 async fn test_error_parsing() {
     connect(|client| async move {

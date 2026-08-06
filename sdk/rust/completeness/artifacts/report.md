@@ -5,8 +5,8 @@
 - Dagger: v1.0.0-beta.10
 - Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
 - Rust SDK: 1.0.0-beta.10
-- Inventory digest: `sha256:a553bf5a061471a29f02163b4d9e8b094b18b3e4ac85565dcd049b7fb2db5af0`
-- Ledger digest: `sha256:623782ac6bafeb7aa72c008f6f2dca1d481b57907bb48a45ddc0afeb581e4bb8`
+- Inventory digest: `sha256:c0f27c650ab5847a861c599094ecca2ffac00aee35a9a995623dd018a7b38e66`
+- Ledger digest: `sha256:bc4045d355e3a98dd6275905ef730fe73d1b3b118efe01f823a24f9ddd5075b8`
 
 ## Verdicts
 
@@ -20,7 +20,7 @@
 - go-codegen: 83
 - go-engine-sdk: 13
 - go-integration-tests: 1072
-- rust-policy: 7
+- rust-policy: 21
 - sdk-contract-harness: 17
 
 ## Counts by capability kind
@@ -37,7 +37,7 @@
 - go-type: 321
 - go-var: 8
 - harness-check: 17
-- rust-policy: 6
+- rust-policy: 20
 - schema-argument: 611
 - schema-directive: 12
 - schema-directive-argument: 14
@@ -50,7 +50,7 @@
 
 ## Counts by status
 
-- Missing: 1103
+- Missing: 1117
 - Partial: 3438
 - Implemented: 1
 - Idiomatic_Equivalent: 0
@@ -58,14 +58,14 @@
 
 ## Counts by owner
 
-- feature-2: 1782
-- feature-3: 1
-- feature-4: 1650
+- feature-2: 37
+- feature-3: 21
+- feature-4: 3329
 - feature-5: 12
-- feature-6: 17
-- feature-7: 1
-- feature-8: 1072
-- feature-9: 6
+- feature-6: 53
+- feature-7: 2
+- feature-8: 1081
+- feature-9: 20
 
 ## Blocking capabilities
 
@@ -3037,6 +3037,20 @@
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Finstall-registers-sdk`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fscaffolded-module-loads`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fsdk-reports-module-options`
+- `policy/rust-policy/client-beta-config-migration`
+- `policy/rust-policy/client-cancelled-connect-cleanup`
+- `policy/rust-policy/client-close-idempotency`
+- `policy/rust-policy/client-closed-operation-rejection`
+- `policy/rust-policy/client-drop-cleanup`
+- `policy/rust-policy/client-http-connect-timeout`
+- `policy/rust-policy/client-owned-lifecycle`
+- `policy/rust-policy/client-preflight-validation`
+- `policy/rust-policy/client-public-surface-encapsulation`
+- `policy/rust-policy/client-query-execution-timeout`
+- `policy/rust-policy/client-reserved-environment`
+- `policy/rust-policy/client-secret-redaction`
+- `policy/rust-policy/client-session-startup-timeout`
+- `policy/rust-policy/client-shared-handle-safety`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fdependency-policy`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust`
