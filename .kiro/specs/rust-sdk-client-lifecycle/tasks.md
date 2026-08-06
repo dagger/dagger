@@ -142,8 +142,8 @@
     rustdoc for the new public values, and cargo-deny; require no public `eyre`, no
     unit-encoded timeout fields, and no secret marker in ordinary rendered output.
 
-- [ ] 5. Implement deterministic preflight, source planning, launch projection, and diagnostics
-  - [ ] 5.1 Implement two-phase config validation and process-input snapshots
+- [x] 5. Implement deterministic preflight, source planning, launch projection, and diagnostics
+  - [x] 5.1 Implement two-phase config validation and process-input snapshots
     - Add private `ValidatedConfig` and `ProcessInputs`; keep structural builder
       validation pure and validate an implicit-source workdir against current filesystem
       state during preflight.
@@ -152,7 +152,7 @@
     - Detect an explicit connection before reading Dagger session environment or probing
       the workdir.
     - _Requirements: 5.5, 5.6, 5.13–5.15, 7.6–7.10_
-  - [ ] 5.2 Implement fail-closed connection-plan selection
+  - [x] 5.2 Implement fail-closed connection-plan selection
     - Project each validated config into exactly one `ConnectionPlan::{Explicit,
       Existing, NewCli}` using the approved compatibility table.
     - Allow only GraphQL execution timeout beside an explicit connection; reject each
@@ -162,7 +162,7 @@
     - Transfer an explicit connection out of config exactly once without cloning or
       debug-formatting it.
     - _Requirements: 6.17, 6.18, 7.6–7.11_
-  - [ ] 5.3 Implement canonical CLI launch projection
+  - [x] 5.3 Implement canonical CLI launch projection
     - Add `CliLaunchRequest` with ordered argument and native environment vectors.
     - Render workdir, workspace, workspace-module opt-in, version, and untruncated
       verbosity exactly once; omit disabled module loading and obsolete project flags.
@@ -170,7 +170,7 @@
       insertion order, without rendering values in diagnostics.
     - Make repeated projection from equal config/process inputs byte-equivalent.
     - _Requirements: 6.1–6.13, 6.19_
-  - [ ] 5.4 Implement ordered, non-fatal diagnostic dispatch
+  - [x] 5.4 Implement ordered, non-fatal diagnostic dispatch
     - Add one private dispatcher which preserves ingestion order and per-stream bytes,
       discards progress when no sink exists, and never forwards the session-parameter
       control line.
@@ -178,32 +178,32 @@
       static redacted tracing event while connection and close continue.
     - Ensure final-handle destruction never invokes caller sink code.
     - _Requirements: 4.10, 6.14, 6.15, 6.16, 10.9_
-  - [ ] 5.5 Property test: Property 12 — preflight failure precedes external work
+  - [x] 5.5 Property test: Property 12 — preflight failure precedes external work
     - Implement a recording-boundary `proptest` with at least 256 structurally valid
       configs, filesystem fixtures, process-input snapshots, and independent preflight
       failures; assert discovery/network/spawn/connection counters remain zero.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 12: preflight failure precedes external work`
     - _Requirements: 5.5, 5.13, 5.14, 5.15_
-  - [ ] 5.6 Property test: Property 14 — CLI launch projection is deterministic and complete
+  - [x] 5.6 Property test: Property 14 — CLI launch projection is deterministic and complete
     - Implement a simple-reference-projection `proptest` with at least 256 valid
       non-explicit configs and process inputs; compare ordered arguments/environment,
       exact multiplicity, module opt-in/omission, and repeated output bytes.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 14: CLI launch projection is deterministic and complete`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.19_
-  - [ ] 5.7 Property test: Property 16 — diagnostic delivery is ordered and non-fatal
+  - [x] 5.7 Property test: Property 16 — diagnostic delivery is ordered and non-fatal
     - Implement a sequence/reference `proptest` with at least 256 progress streams,
       ingestion interleavings, sink-presence states, returned-error schedules, and
       unwinding sink schedules; compare operation outcomes and delivered safe events.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 16: diagnostic delivery is ordered and non-fatal`
     - _Requirements: 6.14, 6.15, 6.16_
-  - [ ] 5.8 Property test: Property 17 — source compatibility fails closed
+  - [x] 5.8 Property test: Property 17 — source compatibility fails closed
     - Implement a truth-table/reference `proptest` with at least 256 config/source pairs,
       option explicitness combinations, and recording side-effect adapters; assert exact
       conflicts, bypass behaviour, and unique connection transfer.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 17: source compatibility fails closed`
     - _Requirements: 6.17, 6.18, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11_
 
-- [ ] 6. Checkpoint: validation, source planning, and launch projection are green
+- [x] 6. Checkpoint: validation, source planning, and launch projection are green
   - Run formatting, locked config/planning/diagnostic unit and property tests, clippy,
     and rustdoc; require deterministic launch requests across repeated runs and zero
     side-effect events for every rejected or explicit-connection fixture.

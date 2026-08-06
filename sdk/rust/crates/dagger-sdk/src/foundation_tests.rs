@@ -1,4 +1,4 @@
-//! Properties and fixed examples for the Feature 2 public-value foundation.
+//! Properties and fixed examples for the public-value foundation.
 
 use std::error::Error;
 use std::ffi::OsString;

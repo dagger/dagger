@@ -13,6 +13,10 @@ pub mod errors;
 pub mod graphql;
 
 pub mod logging;
+// Keeping the planning module private lets the owned client and concrete connector
+// adopt it without making that staging seam part of the stable API.
+#[allow(dead_code)]
+mod preflight;
 mod querybuilder;
 
 pub use crate::core::config::Config;
@@ -113,6 +117,9 @@ mod tests {
 
 #[cfg(test)]
 mod foundation_tests;
+
+#[cfg(test)]
+mod preflight_tests;
 
 #[cfg(test)]
 mod test_support;

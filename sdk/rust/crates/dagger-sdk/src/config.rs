@@ -66,6 +66,27 @@ pub struct ClientConfig {
     explicit: ConfigExplicitness,
 }
 
+/// Owned projection consumed by the private preflight boundary.
+///
+/// Keeping this projection crate-private lets planning move an injected connection and
+/// native process values without widening the stable [`ClientConfig`] surface or
+/// cloning resources whose ownership must transfer exactly once.
+pub(crate) struct ClientConfigParts {
+    pub(crate) workdir: Option<PathBuf>,
+    pub(crate) workspace: Option<String>,
+    pub(crate) diagnostic_sink: Option<Arc<dyn DiagnosticSink>>,
+    pub(crate) load_workspace_modules: bool,
+    pub(crate) connection: Option<Box<dyn EngineConnection>>,
+    pub(crate) version: Option<String>,
+    pub(crate) verbosity: u8,
+    pub(crate) runner_host: Option<String>,
+    pub(crate) environment: Vec<(OsString, OsString)>,
+    pub(crate) session_startup_timeout: Duration,
+    pub(crate) http_connect_timeout: Duration,
+    pub(crate) graphql_execution_timeout: Option<Duration>,
+    pub(crate) explicit: ConfigExplicitness,
+}
+
 impl ClientConfig {
     /// Starts a consuming builder with every documented default.
     pub fn builder() -> ClientConfigBuilder {
@@ -137,6 +158,24 @@ impl ClientConfig {
     /// Returns the optional bound on one complete GraphQL request.
     pub const fn graphql_execution_timeout(&self) -> Option<Duration> {
         self.graphql_execution_timeout
+    }
+
+    pub(crate) fn into_parts(self) -> ClientConfigParts {
+        ClientConfigParts {
+            workdir: self.workdir,
+            workspace: self.workspace,
+            diagnostic_sink: self.diagnostic_sink,
+            load_workspace_modules: self.load_workspace_modules,
+            connection: self.connection,
+            version: self.version,
+            verbosity: self.verbosity,
+            runner_host: self.runner_host,
+            environment: self.environment,
+            session_startup_timeout: self.session_startup_timeout,
+            http_connect_timeout: self.http_connect_timeout,
+            graphql_execution_timeout: self.graphql_execution_timeout,
+            explicit: self.explicit,
+        }
     }
 }
 

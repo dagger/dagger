@@ -1,4 +1,4 @@
-//! Independent valid-first generators used by the Feature 2 foundation properties.
+//! Independent valid-first generators used by the foundation properties.
 //!
 //! Reference cases are deliberately expressed without calling production validators
 //! or wire codecs. A shared defect in normalization therefore cannot certify itself.

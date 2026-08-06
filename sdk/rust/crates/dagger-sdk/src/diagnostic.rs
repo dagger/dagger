@@ -6,7 +6,9 @@
 
 use std::error::Error;
 use std::fmt;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Origin of a diagnostic payload.
 #[non_exhaustive]
@@ -102,4 +104,60 @@ impl Error for DiagnosticSinkError {
 pub trait DiagnosticSink: Send + Sync + 'static {
     /// Accepts one sanitized event in ingestion order.
     fn emit(&self, diagnostic: Diagnostic<'_>) -> Result<(), DiagnosticSinkError>;
+}
+
+/// Internal input accepted by the single ordered diagnostic dispatcher.
+///
+/// The CLI session-parameter line is represented without its bytes. That control
+/// payload can contain the session token, so making it impossible to hand those bytes
+/// to the sink is stronger than relying on every caller to remember redaction.
+#[derive(Clone, Copy)]
+#[allow(dead_code)] // The CLI stream reader is not yet wired to this dispatcher.
+pub(crate) enum DiagnosticInput<'a> {
+    SessionControl,
+    Progress(Diagnostic<'a>),
+}
+
+/// Serializes optional sink callbacks and permanently contains the first sink failure.
+#[allow(dead_code)] // Connection planning is not yet wired into the public client path.
+pub(crate) struct DiagnosticDispatcher {
+    sink: Mutex<Option<Arc<dyn DiagnosticSink>>>,
+}
+
+#[allow(dead_code)]
+impl DiagnosticDispatcher {
+    pub(crate) fn new(sink: Option<Arc<dyn DiagnosticSink>>) -> Self {
+        Self {
+            sink: Mutex::new(sink),
+        }
+    }
+
+    /// Ingests one already-sanitized event without affecting its owning operation.
+    pub(crate) fn ingest(&self, input: DiagnosticInput<'_>) {
+        let DiagnosticInput::Progress(diagnostic) = input else {
+            return;
+        };
+
+        // The guard is intentionally retained across the callback: this is the one
+        // serialization point which gives mixed stdout/stderr ingestion one observable
+        // order. The dispatcher is private, so a caller sink cannot re-enter it.
+        let mut sink = match self.sink.lock() {
+            Ok(sink) => sink,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let Some(active) = sink.as_ref().cloned() else {
+            return;
+        };
+
+        let outcome = catch_unwind(AssertUnwindSafe(|| active.emit(diagnostic)));
+        if !matches!(outcome, Ok(Ok(()))) {
+            *sink = None;
+            // Neither the sink error nor a panic payload is formatted here: both are
+            // caller-controlled and may contain credentials or environment values.
+            tracing::warn!(
+                target: "dagger_sdk::diagnostics",
+                "diagnostic sink disabled after callback failure"
+            );
+        }
+    }
 }
