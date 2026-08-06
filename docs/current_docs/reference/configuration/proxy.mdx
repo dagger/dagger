@@ -41,14 +41,6 @@ docker run -d --name dagger-engine-v0.21.7 \
 export _EXPERIMENTAL_DAGGER_RUNNER_HOST=container://dagger-engine-v0.21.7
 ```
 
-:::important What does *not* work
-- Setting `_DAGGER_ENGINE_SYSTEMENV_GOPROXY` only on the **host** (for example
-  prefixing a `dagger call`) does **not** configure the auto-started engine.
-- Setting plain `GOPROXY` on the engine container is **not** enough. Codegen
-  does not inherit that value; you must use the
-  `_DAGGER_ENGINE_SYSTEMENV_GOPROXY` name.
-:::
-
 :::warning Applies to all containers
 As mentioned above, these proxy environment variables set on Dagger will also
 be automatically set on all containers created by userspace Dagger Functions
