@@ -6,6 +6,7 @@ export {
   check,
   generate,
   up,
+  agent,
   argument,
   object,
   field,

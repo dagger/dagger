@@ -54,6 +54,39 @@ func (AgentsSuite) TestListAcrossModules(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "godoc:agent")
 }
 
+// TestSDKAgents covers the @agent marker in the SDKs that carry their own
+// decorator plumbing (the Dang cases above exercise the `@agent` directive
+// directly). Each module declares one @agent function and one tool; the agent
+// must be discovered and its tool must land in the composed toolset.
+func (AgentsSuite) TestSDKAgents(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	for _, tc := range []struct {
+		name   string
+		module string
+		tool   string
+	}{
+		{"python", "editor-py", "readFilePy"},
+		{"typescript", "editor-ts", "readFileTs"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			modGen, err := installAgents(t, c, tc.module)
+			require.NoError(t, err)
+
+			out, err := modGen.With(daggerExec("agent", "-l")).CombinedOutput(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, tc.module+":agent")
+
+			out, err = modGen.
+				With(daggerQuery(`{workspace: currentWorkspace{agents{compose{tools}}}}`)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "## "+tc.tool)
+			// The @agent entrypoint is auto-excluded from the toolset.
+			require.NotContains(t, out, "## agent")
+		})
+	}
+}
+
 func (AgentsSuite) TestSelection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := installAgents(t, c, "editor", "godoc")
