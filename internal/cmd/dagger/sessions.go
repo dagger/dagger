@@ -21,6 +21,8 @@ import (
 
 var sessionsCmd = newSessionsCommand()
 
+const attachmentWaitMessage = "Waiting for the previous client connection to be declared unavailable..."
+
 func newSessionsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sessions",
@@ -204,9 +206,7 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 
 		attachParams := baseParams
 		attachParams.AttachSessionID = sessionID
-		attachParams.OnAttachWait = func() {
-			cmd.PrintErrln("Waiting for the previous client connection to be declared unavailable...")
-		}
+		attachParams.OnAttachWait = printAttachmentWaitMessage
 		observer, err := client.Connect(ctx, attachParams)
 		if err != nil {
 			return cleanup.Run, err
@@ -262,6 +262,20 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 			return cleanup.Run, fmt.Errorf("detached query finished with status %s", query.Status)
 		}
 	})
+}
+
+func printAttachmentWaitMessage() {
+	if progress == "tty" {
+		if printer, ok := Frontend.(interface{ PrintAbove(string) }); ok {
+			printer.PrintAbove(attachmentWaitMessage)
+			return
+		}
+	}
+	// Command stderr is redirected into root-span telemetry while a frontend is
+	// running. Plain/report final rendering then replays that span output, which
+	// would display a one-shot status twice. The retained process stderr is the
+	// frontend's own writer and emits this transient line exactly once.
+	fmt.Fprintln(stderr, attachmentWaitMessage)
 }
 
 func validateSessionCLIArg(cmd *cobra.Command, sessionID string) error {
