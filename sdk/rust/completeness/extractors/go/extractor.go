@@ -182,6 +182,8 @@ func extractFile(fset *token.FileSet, path string, file *ast.File, versionName s
 func extractSubtests(fset *token.FileSet, path, packageName, parent string, function *ast.FuncDecl) ([]Item, error) {
 	var items []Item
 	var extractionErr error
+	dynamicOccurrences := map[string]int{}
+	literalOccurrences := map[string]int{}
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok || len(call.Args) < 2 {
@@ -201,11 +203,31 @@ func extractSubtests(fset *token.FileSet, path, packageName, parent string, func
 			}
 			name, kind = value, "subtest"
 			dynamic = false
+			occurrence := literalOccurrences[name]
+			literalOccurrences[name] = occurrence + 1
+			if occurrence > 0 {
+				name = fmt.Sprintf("%s#%d", name, occurrence)
+			}
 		}
 		signature, err := nodeString(fset, call)
 		if err != nil {
 			extractionErr = err
 			return false
+		}
+		var tableName, tableSignature string
+		if dynamic {
+			tableSignature, err = nodeString(fset, call.Args[0])
+			if err != nil {
+				extractionErr = err
+				return false
+			}
+			identity := signature + "\x00" + tableSignature
+			occurrence := dynamicOccurrences[identity]
+			dynamicOccurrences[identity] = occurrence + 1
+			digest := sha256.Sum256([]byte(identity))
+			shortDigest := hex.EncodeToString(digest[:8])
+			name = fmt.Sprintf("<dynamic:%s:%d>", shortDigest, occurrence)
+			tableName = fmt.Sprintf("<table:%s:%d>", shortDigest, occurrence)
 		}
 		skipped := false
 		if functionLiteral, ok := call.Args[1].(*ast.FuncLit); ok {
@@ -213,12 +235,7 @@ func extractSubtests(fset *token.FileSet, path, packageName, parent string, func
 		}
 		items = append(items, newItem(fset, path, packageName, kind, name, "", parent, signature, nil, call.Pos(), skipped))
 		if dynamic {
-			tableSignature, err := nodeString(fset, call.Args[0])
-			if err != nil {
-				extractionErr = err
-				return false
-			}
-			items = append(items, newItem(fset, path, packageName, "test-table", tableSignature, "", parent, tableSignature, nil, call.Args[0].Pos(), false))
+			items = append(items, newItem(fset, path, packageName, "test-table", tableName, "", parent, tableSignature, nil, call.Args[0].Pos(), false))
 		}
 		return true
 	})

@@ -1,0 +1,151 @@
+{
+  "exact": {},
+  "rules": {
+    "baseline/engine-schema": {
+      "authority_id": "engine-schema",
+      "classification": {
+        "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+        "implementation_evidence": [
+          "implementation/engine-schema-baseline"
+        ],
+        "owner_feature": "feature-4",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:dff3048e5fac8a9f20f9aa1edf8236b2c467737a0da5f544f51fdabfef43d18d"
+      },
+      "overrides": {},
+      "rule_id": "baseline/engine-schema",
+      "selector": {
+        "authority_id": "engine-schema"
+      }
+    },
+    "baseline/go-client": {
+      "authority_id": "go-client",
+      "classification": {
+        "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+        "implementation_evidence": [
+          "implementation/go-client-baseline"
+        ],
+        "owner_feature": "feature-2",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:542bd6483dfeb61ca43082c2b9189ffe96877f72cbbf5a7b5c158d8e90a755ee"
+      },
+      "overrides": {
+        "behavior/go-client/init-client-lifecycle": {
+          "gap": "Rust has no standalone initClient lifecycle or target-scoped verification",
+          "owner_feature": "feature-7",
+          "status": "Missing"
+        }
+      },
+      "rule_id": "baseline/go-client",
+      "selector": {
+        "authority_id": "go-client"
+      }
+    },
+    "baseline/go-codegen": {
+      "authority_id": "go-codegen",
+      "classification": {
+        "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+        "implementation_evidence": [
+          "implementation/go-codegen-baseline"
+        ],
+        "owner_feature": "feature-4",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:1de77b44d8b07a2862e143a6b31ab92d2f646951811a9a091f46b31a0524b9f7"
+      },
+      "overrides": {},
+      "rule_id": "baseline/go-codegen",
+      "selector": {
+        "authority_id": "go-codegen"
+      }
+    },
+    "baseline/go-engine-sdk": {
+      "authority_id": "go-engine-sdk",
+      "classification": {
+        "gap": "The Rust SDK has no target-scoped implementation and passing verification for this capability",
+        "owner_feature": "feature-5",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:cfc553c2e1cce37f06b6380d4d501f49dc44987583003d8140c3c0889ca1a2b2"
+      },
+      "overrides": {
+        "behavior/go-engine-sdk/typed-outside-target-response": {
+          "gap": "Rust lacks a typed error for engines outside the exact supported target",
+          "owner_feature": "feature-3",
+          "status": "Missing"
+        }
+      },
+      "rule_id": "baseline/go-engine-sdk",
+      "selector": {
+        "authority_id": "go-engine-sdk"
+      }
+    },
+    "baseline/go-integration-tests": {
+      "authority_id": "go-integration-tests",
+      "classification": {
+        "gap": "The Rust SDK has no target-scoped implementation and passing verification for this capability",
+        "owner_feature": "feature-8",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:f39bddec8f6280432482172231a4a6acaa41c95c24e59fde8a5b43ec4ba4745f"
+      },
+      "overrides": {},
+      "rule_id": "baseline/go-integration-tests",
+      "selector": {
+        "authority_id": "go-integration-tests"
+      }
+    },
+    "baseline/rust-policy": {
+      "authority_id": "rust-policy",
+      "classification": {
+        "gap": "Rust source exists, but target-scoped behavioural verification is incomplete",
+        "implementation_evidence": [
+          "implementation/rust-policy-baseline"
+        ],
+        "owner_feature": "feature-9",
+        "status": "Partial"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:0e9e29861394bca94ea440a8a0dee086cf7afe368b1cb8fb4dc8b8fcf5411528"
+      },
+      "overrides": {
+        "policy/rust-policy/workspace-target-verification": {
+          "implementation_evidence": [
+            "implementation/rust-policy-baseline"
+          ],
+          "status": "Implemented",
+          "verification_evidence": [
+            "verification/rust-workspace-target"
+          ]
+        }
+      },
+      "rule_id": "baseline/rust-policy",
+      "selector": {
+        "authority_id": "rust-policy"
+      }
+    },
+    "baseline/sdk-contract-harness": {
+      "authority_id": "sdk-contract-harness",
+      "classification": {
+        "gap": "The Rust SDK has no target-scoped implementation and passing verification for this capability",
+        "owner_feature": "feature-6",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:b9e58036749a015725b8e8bc6e7d994727ac9f542188e7d71e695ad264178082"
+      },
+      "overrides": {},
+      "rule_id": "baseline/sdk-contract-harness",
+      "selector": {
+        "authority_id": "sdk-contract-harness"
+      }
+    }
+  }
+}

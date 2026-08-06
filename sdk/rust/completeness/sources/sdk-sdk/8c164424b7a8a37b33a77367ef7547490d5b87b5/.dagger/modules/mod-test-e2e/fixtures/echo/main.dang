@@ -1,0 +1,32 @@
+"""
+Tiny fixture module for mod-test e2e checks.
+"""
+type ModTestEcho {
+  """
+  Return the provided value.
+  """
+  pub echo(value: String!): String! {
+    value
+  }
+
+  """
+  Return the provided values.
+  """
+  pub values(first: String!, second: String!): [String!]! {
+    [first, second]
+  }
+
+  """
+  Return an empty string list.
+  """
+  pub empty: [String!]! {
+    []
+  }
+
+  """
+  Fail intentionally.
+  """
+  pub fail: String! {
+    raise "intentional failure"
+  }
+}

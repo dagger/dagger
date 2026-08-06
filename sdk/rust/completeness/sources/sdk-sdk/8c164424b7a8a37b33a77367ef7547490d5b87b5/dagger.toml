@@ -1,0 +1,9 @@
+# Dagger workspace configuration
+
+[modules.sdk-sdk]
+source = "."
+
+[modules.sdk-sdk.as-sdk]
+
+[modules.mod-test-e2e]
+source = ".dagger/modules/mod-test-e2e"

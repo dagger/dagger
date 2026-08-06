@@ -1,0 +1,7 @@
+30fc1bf359efe91d9282995af7cdeb3f6c75d44be4f6aa05b41b78994cdc94c7  dagger_v1.0.0-beta.9_darwin_amd64.tar.gz
+4164161eedf98b2fd205323b9c78a5b21b43f7f856766c6c08cd49271b538814  dagger_v1.0.0-beta.9_darwin_arm64.tar.gz
+776a390ecef59ff2ad8c0a3b3ca6d793bb62556bb8a512f475a725bdc830e40c  dagger_v1.0.0-beta.9_linux_amd64.tar.gz
+d4a541fa44042f78ea1166068c736e43e439a827468722fc33ca7470c58a1126  dagger_v1.0.0-beta.9_linux_arm64.tar.gz
+4f67fdc9c47bebf17df77cc14b78b31aafdb605b2df72ba18455a352e45a9987  dagger_v1.0.0-beta.9_linux_armv7.tar.gz
+df53280f072abd2d51bdd7bcdd34c5358c7cbe2dbeacb4669935fb98d6738ef7  dagger_v1.0.0-beta.9_windows_amd64.zip
+c4b1bd68a8479bf99faabbba1f5ef33541876f0e54f4e32657643c51db56d14f  dagger_v1.0.0-beta.9_windows_arm64.zip

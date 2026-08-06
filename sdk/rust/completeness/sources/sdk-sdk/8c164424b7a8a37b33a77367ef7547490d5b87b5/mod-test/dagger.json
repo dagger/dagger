@@ -1,0 +1,7 @@
+{
+  "name": "mod-test",
+  "engineVersion": "v0.21.0-20260518233302-dev-9c7d36eb1a83",
+  "sdk": {
+    "source": "dang"
+  }
+}

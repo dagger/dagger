@@ -1,0 +1,794 @@
+"""
+Black-box contract checks for Dagger SDK modules, plus tooling to start a new
+SDK helper module.
+
+Run the checks against an SDK repository, such as github.com/dagger/go-sdk or
+github.com/dagger/dang-sdk:
+
+  dagger -m github.com/dagger/sdk-sdk -W <sdk-repo> check
+
+The checks vendor the SDK module into a scratch git workspace, then drive it
+the way a user would through a release Dagger CLI: `dagger sdk install`,
+`dagger module init`, `dagger generate`, and the `dagger module` authoring
+verbs. Function-level contract checks additionally call the SDK's `initModule`
+and `@generate` hooks directly and inspect the returned changesets.
+
+Under CLI 1.0 the engine owns module bookkeeping (dagger-module.toml, workspace
+config, dependency and engine-version edits). An SDK module implements only
+what is language-specific:
+
+- `initModule(ws, name, path): Changeset!` — seed the SDK's own files for a new
+  module. The engine owns the module config, so `initModule` must not write
+  dagger.json / dagger-module.toml.
+- a `@generate` hook — regenerate the modules the SDK manages.
+
+Client generation (`initClient`) is optional and not exercised here.
+
+sdk-sdk is itself an SDK for authoring Dang SDK helper modules: install it with
+`dagger sdk install github.com/dagger/sdk-sdk`, then scaffold a new SDK with
+`dagger module init sdk-sdk my-sdk`. Because of that, running `dagger check` in
+this repository exercises every check against sdk-sdk itself.
+"""
+type SdkSdk {
+  """
+  Dagger CLI release version used by black-box tests.
+  """
+  pub daggerCliVersion: String! = "1.0.0-beta.9"
+
+  """
+  Engine runtime recorded for modules created with this SDK.
+
+  SDK helper modules scaffolded by sdk-sdk are Dang modules, so they run on the
+  engine's built-in "dang" runtime.
+  """
+  targetRuntime: String! {
+    "dang"
+  }
+
+  """
+  Scaffold a new Dang SDK helper module for `dagger module init sdk-sdk <name>`.
+
+  Only the SDK-owned files are returned; the engine writes the module config
+  and workspace entries when it drives `dagger module init`. By default the new
+  module is created in the current workspace directory. Pass `path` to choose a
+  different location.
+  """
+  initModule(ws: Workspace!, name: String!, path: String! = "."): Changeset! {
+    let modPath = cleanModulePath(path)
+    let mainPath = if (modPath == ".") { "main.dang" } else { modPath + "/main.dang" }
+
+    if (name == "" or name.contains("/") or name.contains(".") or name.contains(" ") or name.contains("\"") or name.contains("_")) {
+      raise "name must be a Dagger module name like my-sdk"
+    }
+
+    directory.withFile(mainPath, renderedInitTemplate(name)).changes(directory)
+  }
+
+  """
+  Regenerate the modules this SDK manages.
+
+  Dang SDK helper modules need no code generation, so this is a no-op.
+  """
+  generate: Changeset! @generate {
+    directory.changes(directory)
+  }
+
+  """
+  Return a black-box test target for an SDK module directory view.
+  """
+  pub target(workspaceView: Directory!, sourceRootPath: String!): SdkTarget! {
+    SdkTarget(
+      workspaceView: workspaceView,
+      sourceRootPath: sourceRootPath,
+      daggerCliVersion: daggerCliVersion,
+      timeout: "10m",
+    )
+  }
+
+  """
+  `dagger sdk install` should accept the SDK module.
+  """
+  pub installRegistersSdk(ws: Workspace!): Void @check {
+    sdkTarget(ws).install.assertSuccess
+  }
+
+  """
+  `dagger sdk install` should mark the SDK with an as-sdk marker in dagger.toml.
+  """
+  pub installMarksAsSdk(ws: Workspace!): Void @check {
+    let run = sdkTarget(ws).install
+    run.assertSuccess
+    if (run.workspaceFile("dagger.toml").contains("as-sdk") == false) {
+      raise "sdk install should record an as-sdk marker in dagger.toml"
+    }
+  }
+
+  """
+  `dagger module init <sdk> <name>` should scaffold a new module.
+  """
+  pub initScaffoldsModule(ws: Workspace!): Void @check {
+    sdkTarget(ws).initTestModule.assertSuccess
+  }
+
+  """
+  `dagger module init` should write the new module's dagger-module.toml.
+  """
+  pub initWritesModuleConfig(ws: Workspace!): Void @check {
+    let testTarget = sdkTarget(ws)
+    let run = testTarget.initTestModule
+    run.assertSuccess
+    if (run.workspaceHasFile(testTarget.moduleConfigPath) == false) {
+      raise "module init should write " + testTarget.moduleConfigPath
+    }
+  }
+
+  """
+  `dagger module init` should install the new module in dagger.toml.
+  """
+  pub initRegistersModule(ws: Workspace!): Void @check {
+    let testTarget = sdkTarget(ws)
+    let run = testTarget.initTestModule
+    run.assertSuccess
+    if (run.workspaceFile("dagger.toml").contains("[modules." + testTarget.moduleName + "]") == false) {
+      raise "module init should install the new module in dagger.toml"
+    }
+  }
+
+  """
+  `dagger module init` should record the SDK as the new module's authoring SDK.
+  """
+  pub initRecordsAuthoringSdk(ws: Workspace!): Void @check {
+    let testTarget = sdkTarget(ws)
+    let run = testTarget.initTestModule
+    run.assertSuccess
+    if (run.workspaceFile("dagger.toml").contains(".as-sdk.modules]]") == false) {
+      raise "module init should record an as-sdk.modules authoring entry in dagger.toml"
+    }
+  }
+
+  """
+  `dagger generate` should succeed on a freshly scaffolded module.
+  """
+  pub generateSucceeds(ws: Workspace!): Void @check {
+    sdkTarget(ws).generateWorkspace.assertSuccess
+  }
+
+  """
+  A scaffolded module should load and serve its API after `dagger generate`.
+
+  `dagger api functions` must succeed against the scaffolded module. Starter
+  templates may expose no functions yet (the go-sdk template scaffolds an
+  empty root type), so only introspection success is required.
+  """
+  pub scaffoldedModuleLoads(ws: Workspace!): Void @check {
+    let testTarget = sdkTarget(ws)
+    testTarget.run(["api", "functions", testTarget.moduleName]).assertSuccess
+  }
+
+  """
+  `dagger sdk module-options` should introspect the SDK's initModule capability.
+  """
+  pub sdkReportsModuleOptions(ws: Workspace!): Void @check {
+    let testTarget = sdkTarget(ws)
+    testTarget.runInstalled(["sdk", "module-options", testTarget.sdkInstallName]).assertSuccess
+  }
+
+  """
+  `dagger module engine required` should report a version for a scaffolded module.
+  """
+  pub engineRequiredReportsVersion(ws: Workspace!): Void @check {
+    let run = sdkTarget(ws).runInModule(["module", "engine", "required"])
+    run.assertSuccess
+    if (run.stdout.trimSuffix("\n") == "") {
+      raise "module engine required should report a version"
+    }
+  }
+
+  """
+  `dagger module deps list` should succeed for a scaffolded module.
+  """
+  pub depsListSucceeds(ws: Workspace!): Void @check {
+    sdkTarget(ws).runInModule(["module", "deps", "list"]).assertSuccess
+  }
+
+  """
+  `dagger generate` should be anchored at the caller's cwd.
+
+  Generation from inside one module's directory acts on the module cone at or
+  below that directory, so a sibling module elsewhere in the workspace must be
+  left untouched.
+  """
+  pub generateRespectsCwd(ws: Workspace!): Void @check {
+    let testTarget = sdkTarget(ws)
+    let run = testTarget.generateInModuleDir
+    run.assertSuccess
+
+    let drift = run.workspaceChanges(testTarget.siblingModulePath)
+    if (drift != "") {
+      raise "generate from " + testTarget.modulePath + " should not touch the sibling module " + testTarget.siblingModulePath + "\nchanged:\n" + drift
+    }
+  }
+
+  """
+  `initModule` should seed SDK files for a new module.
+  """
+  pub initModuleSeedsFiles(ws: Workspace!): Void @check {
+    contractTarget(ws).assertJsonListNotEmpty(
+      defaultInit + ["added-paths"],
+      "initModule should seed at least one SDK file",
+    )
+  }
+
+  """
+  `initModule` should not write engine-owned config files.
+  """
+  pub initModuleDoesNotWriteConfig(ws: Workspace!): Void @check {
+    let testTarget = contractTarget(ws)
+    let configBase = ".dagger/modules/" + defaultInitName
+
+    testTarget.assertJsonListNotContains(
+      defaultInit + ["added-paths"],
+      configBase + "/dagger.json",
+      "initModule should not write dagger.json; the engine owns module config",
+    )
+    testTarget.assertJsonListNotContains(
+      defaultInit + ["added-paths"],
+      configBase + "/dagger-module.toml",
+      "initModule should not write dagger-module.toml; the engine owns module config",
+    )
+  }
+
+  """
+  `initModule` should not remove existing files when creating a new module.
+  """
+  pub initModuleDoesNotRemoveExistingFiles(ws: Workspace!): Void @check {
+    contractTarget(ws).assertJsonListEmpty(
+      defaultInit + ["removed-paths"],
+      "initModule should not remove existing files",
+    )
+  }
+
+  """
+  `initModule --path` should stage files under the requested path.
+  """
+  pub initModuleHonorsCustomPath(ws: Workspace!): Void @check {
+    let name = "sdk-contract-custom-init"
+    let modulePath = ".dagger/sdk-contract-custom-init"
+    let customArgs = ["init-module", "--name", name, "--path", modulePath]
+    let testTarget = contractTarget(ws)
+
+    testTarget.assertJsonListNotEmpty(
+      customArgs + ["added-paths"],
+      "initModule should seed files for a custom module path",
+    )
+    # The engine emits a directory marker ("<path>/") for every seeded ancestor,
+    # so a run that honors --path adds the custom module directory. A run that
+    # ignores --path (seeding at the default .dagger/modules/<name>) does not.
+    testTarget.assertJsonListContains(
+      customArgs + ["added-paths"],
+      modulePath + "/",
+      "initModule should seed files under the requested --path",
+    )
+  }
+
+  """
+  An SDK module should expose a `@generate` hook.
+  """
+  pub generateExposesGenerator(ws: Workspace!): Void @check {
+    let testTarget = sdkTarget(ws)
+    let run = testTarget.runInstalled(["generate", "-l"])
+    run.assertSuccess
+    if (run.stdout.contains(testTarget.sdkInstallName + ":") == false) {
+      raise "SDK module should expose a @generate hook\ngenerators:\n" + run.stdout
+    }
+  }
+
+  """
+  sdk-sdk's own `initModule` should render CLI module names as a valid Dang root type.
+  """
+  pub initModuleRendersRootType(ws: Workspace!): Void @check {
+    let name = "my-sdk"
+    let modulePath = ".dagger/modules/" + name
+    let changes = initModule(ws, name, modulePath)
+    let mainPath = modulePath + "/main.dang"
+
+    if (changes.addedPaths.contains(mainPath) == false) {
+      raise "initModule should add main.dang for a CLI-case module name"
+    }
+    if (changes.after.file(mainPath).contents.contains("type MySdk {") == false) {
+      raise "initModule should render the CLI-case module name as a Dang root type"
+    }
+  }
+
+  """
+  Return the SDK module under test prepared by the workspace polyfill.
+  """
+  let sdkTarget(ws: Workspace!): SdkTarget! {
+    let module = sdkModule(ws)
+    target(module.workspaceView, module.sourceRootPath)
+  }
+
+  """
+  Return a function-level contract target for the SDK module under test.
+
+  The mounted view keeps the target module's config at the view root so the
+  CLI can load it from the workspace root.
+  """
+  let contractTarget(ws: Workspace!): ModTestTarget! {
+    let module = sdkModule(ws)
+    let view = module.workspaceView
+    let configView = if (module.sourceRootPath == ".") {
+      view
+    } else if (view.exists(module.sourceRootPath + "/dagger.json")) {
+      view.withFile("dagger.json", view.file(module.sourceRootPath + "/dagger.json"))
+    } else {
+      view.withFile("dagger-module.toml", view.file(module.sourceRootPath + "/dagger-module.toml"))
+    }
+
+    modTest.target(configView, module.sourceRootPath)
+  }
+
+  """
+  Return the SDK module at the workspace root.
+  """
+  let sdkModule(ws: Workspace!): PolyfillModuleSource! {
+    let configs = ws.directory("/", include: ["dagger.json", "dagger-module.toml"])
+
+    if (configs.exists("dagger.json") == false and configs.exists("dagger-module.toml") == false) {
+      raise noSdkModuleMessage
+    }
+
+    polyfill.workspace(ws).moduleSource(".")
+  }
+
+  """
+  Return a valid module path relative to the caller cwd.
+  """
+  let cleanModulePath(path: String!): String! {
+    let rawPath = path.trimPrefix("./").trimPrefix("/")
+
+    if (rawPath == "" or rawPath == ".") {
+      "."
+    } else if (rawPath == ".."
+      or rawPath.trimPrefix("../") != rawPath
+      or rawPath.contains("/../")
+      or rawPath.trimSuffix("/..") != rawPath) {
+      raise "path escapes workspace: " + rawPath
+    } else {
+      rawPath.trimSuffix("/")
+    }
+  }
+
+  """
+  Render the init template with a GraphQL-safe Dang root type derived from the module name.
+  """
+  let renderedInitTemplate(name: String!): File! {
+    container
+      .from("golang:1.26-alpine")
+      .withoutEntrypoint
+      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
+      .withDirectory(
+        "/helper",
+        currentModule.source.directory("helpers/render-init-template"),
+      )
+      .withFile("/template/main.dang", currentModule.source.file("init-template/main.dang"))
+      .withWorkdir("/helper")
+      .withExec(["go", "build", "-o", "/usr/local/bin/render-init-template", "."])
+      .withExec(["render-init-template", name, "/template/main.dang", "/rendered/main.dang"])
+      .file("/rendered/main.dang")
+  }
+
+  # The engine always passes an explicit path when it drives initModule, so the
+  # contract checks do too.
+  let defaultInitName: String! = "sdk-contract-init"
+  let defaultInit: [String!]! = [
+    "init-module",
+    "--name",
+    defaultInitName,
+    "--path",
+    ".dagger/modules/" + defaultInitName,
+  ]
+  let noSdkModuleMessage: String! = "no SDK module detected at the workspace root. Run from an SDK module workspace, or pass one with -W <sdk-repo>"
+}
+
+"""
+A Dagger SDK module under black-box test.
+
+The target vendors the SDK into a scratch git workspace inside a runner
+container, installs a release Dagger CLI, then exercises the SDK through the
+same commands a user would run.
+"""
+type SdkTarget {
+  let workspaceView: Directory!
+  let sourceRootPath: String!
+  let daggerCliVersion: String!
+  let timeout: String!
+
+  """
+  Workspace install name assigned to the SDK under test.
+  """
+  pub sdkInstallName: String! = "sdk-under-test"
+
+  """
+  Name of the module scaffolded from the SDK under test.
+  """
+  pub moduleName: String! = "test-mod"
+
+  """
+  Name of the second module scaffolded for cwd-awareness checks.
+  """
+  pub siblingModuleName: String! = "sibling-mod"
+
+  """
+  Return a copy of this target with a different command timeout.
+  """
+  pub withTimeout(timeout: String!): SdkTarget! {
+    SdkTarget(
+      workspaceView: workspaceView,
+      sourceRootPath: sourceRootPath,
+      daggerCliVersion: daggerCliVersion,
+      timeout: timeout,
+    )
+  }
+
+  """
+  Workspace-relative path of the scaffolded module.
+  """
+  pub modulePath: String! {
+    ".dagger/modules/" + moduleName
+  }
+
+  """
+  Workspace-relative path of the scaffolded module's config.
+  """
+  pub moduleConfigPath: String! {
+    modulePath + "/dagger-module.toml"
+  }
+
+  """
+  Workspace-relative path of the sibling module.
+  """
+  pub siblingModulePath: String! {
+    ".dagger/modules/" + siblingModuleName
+  }
+
+  """
+  Run `dagger sdk install` for the SDK under test and capture the result.
+  """
+  pub install: SdkRun! {
+    SdkRun(container: installedState, args: installArgs)
+  }
+
+  """
+  Run `dagger module init` with the SDK under test and capture the result.
+  """
+  pub initTestModule: SdkRun! {
+    SdkRun(container: initializedState, args: initArgs)
+  }
+
+  """
+  Run `dagger generate` on the scaffolded module and capture the result.
+  """
+  pub generateWorkspace: SdkRun! {
+    SdkRun(container: generatedState, args: generateArgs)
+  }
+
+  """
+  Run `dagger generate` from inside the first module's directory, with a
+  sibling module scaffolded elsewhere and the workspace committed beforehand,
+  and capture the result.
+  """
+  pub generateInModuleDir: SdkRun! {
+    SdkRun(container: cwdGeneratedState, args: generateArgs)
+  }
+
+  """
+  Run a dagger command from the workspace root after the SDK is installed.
+  """
+  pub runInstalled(args: [String!]!): SdkRun! {
+    runOn(installedState, "/work", args)
+  }
+
+  """
+  Run a dagger command from the workspace root after a module is scaffolded
+  and generated.
+  """
+  pub run(args: [String!]!): SdkRun! {
+    runOn(generatedState, "/work", args)
+  }
+
+  """
+  Run a dagger command from the scaffolded module directory after generation.
+  """
+  pub runInModule(args: [String!]!): SdkRun! {
+    runOn(generatedState, "/work/" + modulePath, args)
+  }
+
+  """
+  Scratch git workspace with the SDK under test vendored in.
+  """
+  let workspace: Container! {
+    runner
+      .withDirectory("/work/" + vendorRoot, workspaceView, exclude: [".git", "**/.git"])
+      .withWorkdir("/work")
+      .withExec(["git", "init", "-q"])
+      .withExec(["git", "add", "-A"])
+      .withExec([
+        "git",
+        "-c", "user.email=sdk-sdk@dagger.io",
+        "-c", "user.name=sdk-sdk",
+        "commit", "-q", "--allow-empty", "-m", "sdk-sdk scratch workspace",
+      ])
+  }
+
+  """
+  Workspace state after `dagger sdk install`.
+  """
+  let installedState: Container! {
+    pipe(workspace, "/work", installArgs)
+  }
+
+  """
+  Workspace state after `dagger module init`.
+  """
+  let initializedState: Container! {
+    pipe(installedState, "/work", initArgs)
+  }
+
+  """
+  Workspace state after `dagger generate`.
+  """
+  let generatedState: Container! {
+    pipe(initializedState, "/work", generateArgs)
+  }
+
+  """
+  Workspace state with a sibling module scaffolded next to the first one.
+  """
+  let siblingInitializedState: Container! {
+    pipe(initializedState, "/work", ["module", "init", sdkInstallName, siblingModuleName])
+  }
+
+  """
+  Sibling workspace state with every file committed, so later git status calls
+  see only the changes made after this point.
+  """
+  let cwdSnapshotState: Container! {
+    siblingInitializedState
+      .withExec(["git", "add", "-A"])
+      .withExec([
+        "git",
+        "-c", "user.email=sdk-sdk@dagger.io",
+        "-c", "user.name=sdk-sdk",
+        "commit", "-q", "--allow-empty", "-m", "before cwd-scoped generate",
+      ])
+  }
+
+  """
+  Snapshot state after `dagger generate` from inside the first module's directory.
+  """
+  let cwdGeneratedState: Container! {
+    pipe(cwdSnapshotState, "/work/" + modulePath, generateArgs)
+  }
+
+  """
+  Workspace-relative path of the vendored SDK module source.
+  """
+  let sdkPath: String! {
+    if (sourceRootPath == ".") { vendorRoot } else { vendorRoot + "/" + sourceRootPath }
+  }
+
+  let installArgs: [String!]! {
+    ["sdk", "install", "--name", sdkInstallName, "./" + sdkPath]
+  }
+
+  let initArgs: [String!]! {
+    ["module", "init", sdkInstallName, moduleName]
+  }
+
+  let generateArgs: [String!]! {
+    ["generate"]
+  }
+
+  """
+  Run a dagger command on a workspace state and capture the result.
+  """
+  let runOn(state: Container!, workdir: String!, args: [String!]!): SdkRun! {
+    SdkRun(container: pipe(state, workdir, args), args: args)
+  }
+
+  """
+  Run a dagger command and capture stdout, stderr, and exit code.
+
+  Every command runs through the same wrapper. When an earlier pipeline command
+  failed, later commands are skipped and record a `skipped` marker instead, so
+  each check reports either its own failure or a clear prerequisite failure.
+  """
+  let pipe(state: Container!, workdir: String!, args: [String!]!): Container! {
+    state.withWorkdir(workdir).withExec(
+      [
+        "sh",
+        "-c",
+        "mkdir -p /tmp/sdk-sdk; timeout_arg=$1; shift 1; if [ -f /tmp/sdk-sdk/failed-command ]; then touch /tmp/sdk-sdk/skipped; exit 0; fi; timeout \"$timeout_arg\" /usr/local/bin/dagger --progress plain -y \"$@\" > /tmp/sdk-sdk/stdout 2> /tmp/sdk-sdk/stderr; code=$?; printf '%s' \"$code\" > /tmp/sdk-sdk/exit-code; if [ \"$code\" -ne 0 ]; then printf 'dagger %s' \"$*\" > /tmp/sdk-sdk/failed-command; cp /tmp/sdk-sdk/stderr /tmp/sdk-sdk/failed-stderr; fi; exit 0",
+        "sdk-sdk-run",
+        timeout,
+      ] + args,
+      experimentalPrivilegedNesting: true,
+    )
+  }
+
+  """
+  Container with a release Dagger CLI and git installed.
+  """
+  let runner: Container! {
+    container(platform: runnerPlatform)
+      .from("alpine:3.22")
+      .withoutEntrypoint
+      .withExec(["apk", "add", "--no-cache", "git"])
+      .withFile("/tmp/" + daggerCliArchiveName, daggerCliArchive)
+      .withFile("/tmp/checksums.txt", daggerCliChecksums)
+      .withExec([
+        "sh",
+        "-c",
+        "archive=$1; cd /tmp; line=$(awk -v f=\"$archive\" '$2 == f { print }' checksums.txt); test -n \"$line\"; printf '%s\n' \"$line\" | sha256sum -c -; tar -xzf \"$archive\" -C /usr/local/bin dagger; chmod +x /usr/local/bin/dagger",
+        "install-dagger-cli",
+        daggerCliArchiveName,
+      ])
+  }
+
+  let vendorRoot: String! = "vendor/sdk-workspace"
+
+  """
+  Resolved Dagger CLI release version without a leading "v".
+  """
+  let daggerCliReleaseVersion: String! {
+    if (daggerCliVersion == "latest") {
+      http(url: "https://dl.dagger.io/dagger/versions/latest").contents.trimSuffix("\n").trimPrefix("v")
+    } else {
+      daggerCliVersion.trimPrefix("v")
+    }
+  }
+
+  """
+  Dagger CLI release archive name for the runner platform.
+  """
+  let daggerCliArchiveName: String! {
+    "dagger_v" + daggerCliReleaseVersion + "_" + runnerOS + "_" + runnerArch + ".tar.gz"
+  }
+
+  """
+  Dagger CLI release archive.
+  """
+  let daggerCliArchive: File! {
+    http(url: daggerCliReleaseURL + "/" + daggerCliArchiveName)
+  }
+
+  """
+  Dagger CLI release checksum file.
+  """
+  let daggerCliChecksums: File! {
+    http(url: daggerCliReleaseURL + "/checksums.txt")
+  }
+
+  """
+  Dagger CLI release URL.
+  """
+  let daggerCliReleaseURL: String! {
+    "https://dl.dagger.io/dagger/releases/" + daggerCliReleaseVersion
+  }
+
+  let runnerPlatform: Platform! = "linux/amd64"
+  let runnerOS: String! = "linux"
+  let runnerArch: String! = "amd64"
+}
+
+"""
+Result of a black-box dagger CLI command against an SDK under test.
+"""
+type SdkRun {
+  let container: Container!
+  let args: [String!]!
+
+  """
+  The command stdout.
+  """
+  pub stdout: String! {
+    container.file("/tmp/sdk-sdk/stdout").contents
+  }
+
+  """
+  The command stderr.
+  """
+  pub stderr: String! {
+    container.file("/tmp/sdk-sdk/stderr").contents
+  }
+
+  """
+  The command exit code as decimal text.
+  """
+  pub exitCode: String! {
+    container.file("/tmp/sdk-sdk/exit-code").contents
+  }
+
+  """
+  Whether the command exited successfully.
+  """
+  pub succeeded: Boolean! {
+    exitCode == "0"
+  }
+
+  """
+  Whether the command was skipped because an earlier pipeline command failed.
+  """
+  pub skipped: Boolean! {
+    container.directory("/tmp/sdk-sdk").exists("skipped")
+  }
+
+  """
+  Fail when the command did not exit successfully.
+
+  When the command never ran because an earlier pipeline command failed, report
+  that prerequisite failure instead.
+  """
+  pub assertSuccess: Void {
+    if (skipped) {
+      raise "prerequisite command failed: " + failedCommand + "\nstderr:\n" + failedStderr
+    }
+    if (succeeded == false) {
+      raise "dagger command failed: " + toJSON(args) + "\nstderr:\n" + stderr
+    }
+    null
+  }
+
+  """
+  Fail when the command exited successfully.
+  """
+  pub assertFailure: Void {
+    if (skipped) {
+      raise "prerequisite command failed: " + failedCommand + "\nstderr:\n" + failedStderr
+    }
+    if (succeeded) {
+      raise "dagger command unexpectedly succeeded: " + toJSON(args)
+    }
+    null
+  }
+
+  """
+  Read a workspace file after the command ran.
+  """
+  pub workspaceFile(path: String!): String! {
+    container.file("/work/" + path).contents
+  }
+
+  """
+  Return true when a workspace file exists after the command ran.
+  """
+  pub workspaceHasFile(path: String!): Boolean! {
+    container.directory("/work").exists(path)
+  }
+
+  """
+  Return the git status of a workspace path after the command ran, relative to
+  the last committed snapshot. Empty when the path is untouched.
+  """
+  pub workspaceChanges(path: String!): String! {
+    container
+      .withExec(["git", "-C", "/work", "status", "--porcelain", "--", path])
+      .stdout
+  }
+
+  """
+  The first failed pipeline command, as recorded by the run wrapper.
+  """
+  let failedCommand: String! {
+    container.file("/tmp/sdk-sdk/failed-command").contents
+  }
+
+  """
+  The stderr of the first failed pipeline command.
+  """
+  let failedStderr: String! {
+    container.file("/tmp/sdk-sdk/failed-stderr").contents
+  }
+}

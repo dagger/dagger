@@ -1,0 +1,16 @@
+{
+  "claim_digest": "sha256:acc461c049207088acb0906327e259e7fbf43d5ab57693d981443a4d008a6eda",
+  "conformance_evidence": [
+    "verification/rust-workspace-target"
+  ],
+  "outside_range_capability": "behavior/go-engine-sdk/typed-outside-target-response",
+  "range_boundaries": [
+    "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+  ],
+  "rust_sdk_version": "1.0.0-beta.10",
+  "supported_targets": {
+    "exact": [
+      "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+    ]
+  }
+}

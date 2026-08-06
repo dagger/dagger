@@ -1,0 +1,13 @@
+name = "sdk-sdk"
+engineVersion = "v1.0.0-0"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "polyfill"
+  source = "github.com/dagger/polyfill@main"
+
+[[dependencies]]
+  name = "mod-test"
+  source = "./mod-test"

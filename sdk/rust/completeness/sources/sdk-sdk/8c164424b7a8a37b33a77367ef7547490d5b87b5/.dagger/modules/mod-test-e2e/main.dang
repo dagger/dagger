@@ -1,0 +1,36 @@
+"""
+End-to-end checks for the mod-test module.
+"""
+type ModTestE2e {
+  let echoModulePath: String! = ".dagger/modules/mod-test-e2e/fixtures/echo"
+
+  """
+  mod-test should call a target module through the Dagger CLI and assert JSON strings.
+  """
+  pub jsonStringCheck(ws: Workspace!): Void @check {
+    let module = polyfill.workspace(ws).moduleSource(echoModulePath)
+    let target = modTest.target(module.workspaceView, module.sourceRootPath)
+    target.assertJsonString(["echo", "--value", "hello"], "hello")
+  }
+
+  """
+  mod-test should assert JSON string-list output.
+  """
+  pub jsonStringListCheck(ws: Workspace!): Void @check {
+    let module = polyfill.workspace(ws).moduleSource(echoModulePath)
+    let target = modTest.target(module.workspaceView, module.sourceRootPath)
+
+    target.assertJsonListContains(["values", "--first", "one", "--second", "two"], "two")
+    target.assertJsonListEmpty(["empty"])
+  }
+
+  """
+  mod-test should assert failing target calls.
+  """
+  pub failureCheck(ws: Workspace!): Void @check {
+    let module = polyfill.workspace(ws).moduleSource(echoModulePath)
+    let target = modTest.target(module.workspaceView, module.sourceRootPath)
+
+    target.assertFailure(["fail"], "target fail should exit non-zero")
+  }
+}

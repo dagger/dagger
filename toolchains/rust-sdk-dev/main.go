@@ -15,6 +15,8 @@ import (
 const (
 	rustSdkImage       = "rust:1.97.1-bookworm"
 	rustSdkImageDigest = "sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb"
+	goHelperImage      = "golang:1.26.1-bookworm"
+	goHelperDigest     = "sha256:ab3d6955bbc813a0f3fdf220c1d817dd89c0b3f283777db8ece4a32fe7858edd"
 
 	rustGeneratedClientFilePath = "crates/dagger-sdk/src/gen.rs"
 
@@ -49,13 +51,25 @@ func New(
 		Exclude: []string{
 			"*",
 			"!sdk/rust/crates",
+			"!sdk/rust/completeness",
 			"!sdk/rust/examples",
+			"!sdk/rust/AGENTS.md",
+			"!sdk/rust/CONTRIBUTING.md",
 			"!sdk/rust/Cargo.lock",
 			"!sdk/rust/Cargo.toml",
 			"!sdk/rust/clippy.toml",
 			"!sdk/rust/deny.toml",
 			"!sdk/rust/rustfmt.toml",
 			"!sdk/rust/rust-toolchain.toml",
+			"!sdk/go",
+			"!cmd/codegen/generator",
+			"!core/sdk.go",
+			"!core/sdk/go_sdk.go",
+			"!core/integration",
+			"!internal/cmd/dagger",
+			"!internal/version/VERSION",
+			"!future/sdk-tests.md",
+			"!.kiro/specs/rust-sdk-completeness-contract/requirements.md",
 		},
 	})
 

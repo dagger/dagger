@@ -1080,6 +1080,29 @@ pub struct HarnessCheckResult {
     pub stderr_digest: Digest,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// Complete normalized outcome of one pinned baseline harness profile.
+///
+/// Failed subject checks are durable observations rather than contract diagnostics. Consumers
+/// may stage individual results for admission only through their reviewed mappings.
+pub struct HarnessProfileResult {
+    /// Version of this normalized profile envelope.
+    pub format_version: SemverVersion,
+    /// Full immutable engine/Rust assessment target.
+    pub target: TargetDigest,
+    /// Exact sdk-sdk source revision that declared the checks.
+    pub harness_revision: CommitSha,
+    /// Digest of the Dagger CLI executable used for every check.
+    pub cli_artifact_digest: Digest,
+    /// Digest of the immutable Rust workspace assessed by every check.
+    pub verified_artifact_digest: Digest,
+    /// Exact operating-system and architecture scope of the execution.
+    pub platform: Platform,
+    /// One result for every mapped public check, ordered by stable check identity.
+    pub results: Vec<HarnessCheckResult>,
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 /// Approved `sdk-sdk` entry point used to execute a conformance scenario.

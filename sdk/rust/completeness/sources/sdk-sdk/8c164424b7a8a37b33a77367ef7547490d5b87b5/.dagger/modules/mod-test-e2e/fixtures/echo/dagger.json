@@ -1,0 +1,7 @@
+{
+  "name": "mod-test-echo",
+  "engineVersion": "v0.20.8",
+  "sdk": {
+    "source": "dang"
+  }
+}

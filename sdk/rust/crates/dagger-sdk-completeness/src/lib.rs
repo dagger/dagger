@@ -8,6 +8,7 @@ pub mod classification;
 pub mod cli;
 pub mod command;
 pub mod compatibility;
+pub mod contract;
 pub mod diagnostic;
 pub mod evidence;
 pub mod extract;
@@ -31,9 +32,10 @@ pub use canonical::{
     CanonicalError, DigestDomain, canonical_bytes, canonical_digest, decode_canonical,
 };
 pub use classification::{resolve_classifications, validate_status_entries};
-pub use cli::{ArtifactCliBackend, CliBackend, run_with_backend};
+pub use cli::{ArtifactCliBackend, CliBackend, ContractCliBackend, run_with_backend};
 pub use command::{CommandPolicy, command_defects};
 pub use compatibility::{ValidatedCompatibilityClaim, validate_compatibility_claim};
+pub use contract::{DerivedContract, derive_contract, rust_artifact_digest};
 pub use diagnostic::{
     ContractDiagnostic, DiagnosticCode, DiagnosticCollector, DiagnosticSet, ToolError, Validation,
 };

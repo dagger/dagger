@@ -16,6 +16,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::canonical::{DigestDomain, canonical_bytes, canonical_digest, decode_canonical};
+use crate::contract::derive_contract;
 use crate::diagnostic::{ContractDiagnostic, DiagnosticCode, ToolError};
 use crate::io::IsolatedStaging;
 use crate::model::{
@@ -86,6 +87,60 @@ pub trait CliBackend {
 /// harness results. Source extraction and network retrieval remain outside this adapter: Dagger
 /// automation supplies already-derived candidate trees before invoking the thin command surface.
 pub struct ArtifactCliBackend;
+
+#[derive(Clone, Copy, Debug, Default)]
+/// Source-derived backend used by the production completeness command.
+///
+/// Verification reconstructs every artifact from pinned inputs before comparing checked bytes.
+/// Rendering performs the same reconstruction without comparison and writes only to isolated
+/// staging, keeping authored inputs and the active contract tree immutable.
+pub struct ContractCliBackend;
+
+impl CliBackend for ContractCliBackend {
+    fn verify(&self, root: &Path) -> Result<CompletenessReport, ToolError> {
+        derive_contract(root, true).map(|derived| derived.report)
+    }
+
+    fn render(
+        &self,
+        root: &Path,
+        staging: &IsolatedStaging,
+    ) -> Result<CompletenessReport, ToolError> {
+        let derived = derive_contract(root, false)?;
+        write_canonical(
+            staging,
+            "artifacts/source-items.json",
+            &derived.source_items,
+        )?;
+        write_canonical(staging, "artifacts/inventory.json", &derived.inventory)?;
+        write_canonical(staging, "artifacts/ledger.json", &derived.ledger)?;
+        write_canonical(
+            staging,
+            "artifacts/release-compatibility.json",
+            &derived.release_metadata,
+        )?;
+        write_report(staging, &derived.report)?;
+        Ok(derived.report)
+    }
+
+    fn transition(
+        &self,
+        root: &Path,
+        candidate: &Path,
+        staging: &IsolatedStaging,
+    ) -> Result<CompletenessReport, ToolError> {
+        ArtifactCliBackend.transition(root, candidate, staging)
+    }
+
+    fn import_evidence(
+        &self,
+        root: &Path,
+        run: &Path,
+        staging: &IsolatedStaging,
+    ) -> Result<CompletenessReport, ToolError> {
+        ArtifactCliBackend.import_evidence(root, run, staging)
+    }
+}
 
 impl CliBackend for ArtifactCliBackend {
     fn verify(&self, root: &Path) -> Result<CompletenessReport, ToolError> {

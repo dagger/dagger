@@ -51,12 +51,13 @@ func TestExtractUsesLiteralAndPreservesStates(t *testing.T) {
 		"type:Old:deprecated",
 		"subtest:active:active",
 		"subtest:skipped:skipped",
-		"dynamic-subtest:<dynamic>:active",
-		"test-table:tc:active",
 	} {
 		if !strings.Contains(joined, expected) {
 			t.Errorf("items do not contain %q:\n%s", expected, joined)
 		}
+	}
+	if !strings.Contains(joined, "dynamic-subtest:<dynamic:") || !strings.Contains(joined, "test-table:<table:") {
+		t.Errorf("items do not contain stable dynamic subtest identities:\n%s", joined)
 	}
 }
 
@@ -146,6 +147,43 @@ func TestExtractPinnedRepositorySources(t *testing.T) {
 	}
 	if !test || !subtest {
 		t.Fatalf("active suite test boundaries missing: test=%t subtest=%t", test, subtest)
+	}
+}
+
+func TestRequestFromPathsIsContainedAndDeterministic(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		"root.go":        "package fixture\nfunc Root() {}\n",
+		"nested/api.go":  "package nested\nfunc API() {}\n",
+		"nested/note.md": "not Go source",
+	} {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	forward, err := RequestFromPaths(root, []string{"nested", "root.go"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverse, err := RequestFromPaths(root, []string{"root.go", "nested"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(forward.Files) != 2 || len(reverse.Files) != 2 {
+		t.Fatalf("files = %d and %d, want 2", len(forward.Files), len(reverse.Files))
+	}
+	for index := range forward.Files {
+		if forward.Files[index] != reverse.Files[index] {
+			t.Fatalf("file %d differs: %#v and %#v", index, forward.Files[index], reverse.Files[index])
+		}
+	}
+	if _, err := RequestFromPaths(root, []string{"../escape.go"}, ""); err == nil {
+		t.Fatal("parent traversal was accepted")
 	}
 }
 

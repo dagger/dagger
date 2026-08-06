@@ -13,19 +13,21 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for the human-facing workflow and
 
 ## Sources of truth
 
-Use this order when resolving design questions:
+Use the executable completeness contract's peer-authority model:
 
-1. The Dagger engine schema and protocol define the wire contract and available
-   capabilities.
-2. The Go SDK and its tests define expected feature completeness and observable
-   behaviour.
-3. Idiomatic Rust defines the Rust API's ownership, lifetimes, naming, error handling,
-   and ergonomics. Cross-SDK consistency does not justify an unidiomatic Rust API.
-4. Existing Rust code and historical proposals, including pull request #12229, are
-   evidence. Let them inform the design, not direct it.
+- The Dagger engine schema and protocol define the public wire surface.
+- Target-compatible `sdk-sdk` checks define common lifecycle behaviour only within
+  their explicit check, target, and platform scope.
+- The pinned Go SDK and tests define behaviour outside the harness scope and remain
+  reference evidence where peer scopes overlap.
+- Rust policy defines ownership, lifetimes, naming, error handling, safety, and
+  ergonomics. Cross-SDK consistency does not justify an unidiomatic Rust API.
+- Existing Rust code and historical proposals, including pull request #12229, are
+  evidence. Let them inform the design, not direct it.
 
-When these sources expose a genuine incompatibility, document the discrepancy instead
-of silently choosing one.
+No authority has blanket precedence. Preserve compatible overlap and fail or document a
+genuine incompatibility instead of silently selecting one source. The reviewed selections,
+classifications, and evidence rules live in [completeness/README.md](completeness/README.md).
 
 ## Architecture boundaries
 

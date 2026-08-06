@@ -12,10 +12,16 @@ stable Rust SDK are being designed.
 ## Design direction
 
 The Rust SDK should provide the same capabilities and observable behaviour as the Go
-SDK without mechanically copying its API shape. The engine schema and protocol define
-what can be expressed, the Go SDK is the reference for feature completeness and
-behaviour, and established Rust conventions determine ownership, error handling,
-naming, and ergonomics.
+SDK without mechanically copying its API shape. The engine schema defines the public
+wire surface, target-compatible `sdk-sdk` checks define common lifecycle behaviour
+within their bounded scope, and the pinned Go SDK defines behaviour outside that scope
+while remaining reference evidence for overlap. Established Rust conventions determine
+ownership, error handling, naming, safety, and ergonomics.
+
+These are peer authorities, not a global precedence list. Genuine incompatibility must
+remain visible and reviewed. See the executable
+[completeness contract](completeness/README.md) for the pinned source selections,
+classification model, staged refresh flow, and evidence requirements.
 
 Historical Rust implementations and proposals, including pull request #12229, are
 useful evidence. They do not override the current engine contract, Go SDK behaviour,
@@ -33,6 +39,8 @@ or a better idiomatic Rust design.
 - `examples` contains executable examples and example applications.
 - `../../toolchains/rust-sdk-dev` contains the Dagger-based development, generation,
   test, and release automation for this SDK.
+- `completeness` contains authored target and ledger inputs plus reproducible derived
+  artifacts for the Go-level completeness programme.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the existing component overview.
 

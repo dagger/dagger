@@ -5,7 +5,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 
 use crate::diagnostic::{
@@ -120,13 +121,54 @@ pub struct EnumValue {
     pub directives: Vec<AppliedDirective>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 /// Complete recursive list/nullability or named GraphQL type reference.
 pub struct TypeRef {
     pub kind: TypeKind,
     pub name: Option<String>,
     pub of_type: Option<Box<TypeRef>>,
+}
+
+impl<'de> Deserialize<'de> for TypeRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields, rename_all = "camelCase")]
+        struct WireTypeRef {
+            kind: TypeKind,
+            name: Option<String>,
+            of_type: Option<Box<TypeRef>>,
+            interfaces: Option<Value>,
+            possible_types: Option<Value>,
+            directives: Option<Value>,
+        }
+
+        let wire = WireTypeRef::deserialize(deserializer)?;
+        // EngineDev's codegen capture uses the recursive introspection fragment for relationship
+        // TypeRefs. Its three relationship-only fields are always null at that depth; accepting
+        // only null preserves the canonical TypeRef contract without weakening unknown-field
+        // rejection or allowing a second semantic representation.
+        for (name, value) in [
+            ("interfaces", wire.interfaces),
+            ("possibleTypes", wire.possible_types),
+            ("directives", wire.directives),
+        ] {
+            if value.is_some() {
+                return Err(D::Error::custom(format!(
+                    "TypeRef compatibility field {name} must be null when present"
+                )));
+            }
+        }
+
+        Ok(Self {
+            kind: wire.kind,
+            name: wire.name,
+            of_type: wire.of_type,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -160,6 +202,8 @@ pub struct AppliedDirectiveArgument {
 pub struct SchemaExtractionPolicy {
     /// Exact named types excluded as meta-types or reviewed non-public elements.
     pub excluded_type_names: BTreeSet<String>,
+    /// Exact engine-internal applied directives omitted from the public capability surface.
+    pub excluded_applied_directive_names: BTreeSet<String>,
 }
 
 /// Decodes strict introspection JSON, rejecting unknown object fields and enum variants.
@@ -228,6 +272,17 @@ pub fn extract_schema(
             ));
         }
     }
+    let applied_directive_names = applied_directive_names(&response.schema);
+    for excluded in &policy.excluded_applied_directive_names {
+        if !applied_directive_names.contains(excluded) {
+            diagnostics.push(ContractDiagnostic::new(
+                DiagnosticCode::AuthorityExclusionInvalid,
+                excluded,
+                None,
+                "reviewed applied-directive exclusion is stale",
+            ));
+        }
+    }
 
     validate_roots(&response.schema, &types, policy, &mut diagnostics);
     validate_types(
@@ -257,10 +312,22 @@ pub fn extract_schema(
         .values()
         .filter(|item| !policy.excluded_type_names.contains(&item.name))
     {
-        emit_type(authority_id, schema_type, &mut items, &mut diagnostics);
+        emit_type(
+            authority_id,
+            schema_type,
+            policy,
+            &mut items,
+            &mut diagnostics,
+        );
     }
     for directive in &response.schema.directives {
-        emit_directive(authority_id, directive, &mut items, &mut diagnostics);
+        emit_directive(
+            authority_id,
+            directive,
+            policy,
+            &mut items,
+            &mut diagnostics,
+        );
     }
     diagnostics.finish(SourceItemInventory { items })
 }
@@ -366,13 +433,18 @@ fn validate_types(
             }
             for argument in &field.args {
                 validate_type_ref(&argument.type_ref, types, policy, diagnostics);
-                validate_directives(&argument.directives, &directive_arguments, diagnostics);
+                validate_directives(
+                    &argument.directives,
+                    &directive_arguments,
+                    policy,
+                    diagnostics,
+                );
             }
-            validate_directives(&field.directives, &directive_arguments, diagnostics);
+            validate_directives(&field.directives, &directive_arguments, policy, diagnostics);
         }
         for input in inputs {
             validate_type_ref(&input.type_ref, types, policy, diagnostics);
-            validate_directives(&input.directives, &directive_arguments, diagnostics);
+            validate_directives(&input.directives, &directive_arguments, policy, diagnostics);
         }
         for relationship in schema_type.interfaces.as_deref().unwrap_or_default() {
             validate_type_ref(relationship, types, policy, diagnostics);
@@ -392,9 +464,14 @@ fn validate_types(
                 ));
             }
         }
-        validate_directives(&schema_type.directives, &directive_arguments, diagnostics);
+        validate_directives(
+            &schema_type.directives,
+            &directive_arguments,
+            policy,
+            diagnostics,
+        );
         for value in enums {
-            validate_directives(&value.directives, &directive_arguments, diagnostics);
+            validate_directives(&value.directives, &directive_arguments, policy, diagnostics);
         }
     }
 }
@@ -501,9 +578,16 @@ fn validate_type_ref(
 fn validate_directives(
     directives: &[AppliedDirective],
     definitions: &BTreeMap<String, BTreeSet<String>>,
+    policy: &SchemaExtractionPolicy,
     diagnostics: &mut DiagnosticCollector,
 ) {
     for directive in directives {
+        if policy
+            .excluded_applied_directive_names
+            .contains(&directive.name)
+        {
+            continue;
+        }
         let Some(arguments) = definitions.get(&directive.name) else {
             diagnostics.push(signature_error(
                 &directive.name,
@@ -550,6 +634,7 @@ fn emit_root(
 fn emit_type(
     authority: &AuthorityId,
     schema_type: &IntrospectionType,
+    policy: &SchemaExtractionPolicy,
     items: &mut BTreeMap<SourceItemId, SourceItem>,
     diagnostics: &mut DiagnosticCollector,
 ) {
@@ -564,7 +649,7 @@ fn emit_type(
             "description": schema_type.description,
             "interfaces": sorted(schema_type.interfaces.as_deref().unwrap_or_default()),
             "possible_types": sorted(schema_type.possible_types.as_deref().unwrap_or_default()),
-            "directives": sorted(&schema_type.directives),
+            "directives": public_directives(&schema_type.directives, policy),
         }),
         false,
         items,
@@ -591,7 +676,7 @@ fn emit_type(
                 "type": field.type_ref,
                 "deprecated": field.is_deprecated,
                 "deprecation_reason": field.deprecation_reason,
-                "directives": sorted(&field.directives),
+                "directives": public_directives(&field.directives, policy),
             }),
             field.is_deprecated,
             items,
@@ -610,6 +695,7 @@ fn emit_type(
                 ),
                 json!({"parent_type": schema_type.name, "parent_field": field.name}),
                 argument,
+                policy,
                 items,
                 diagnostics,
             );
@@ -631,6 +717,7 @@ fn emit_type(
             format!("schema:{}:{}", schema_type.name, input.name),
             json!({"parent_input": schema_type.name}),
             input,
+            policy,
             items,
             diagnostics,
         );
@@ -655,7 +742,7 @@ fn emit_type(
                 "description": value.description,
                 "deprecated": value.is_deprecated,
                 "deprecation_reason": value.deprecation_reason,
-                "directives": sorted(&value.directives),
+                "directives": public_directives(&value.directives, policy),
             }),
             value.is_deprecated,
             items,
@@ -672,6 +759,7 @@ fn emit_input(
     locator: String,
     parent: Value,
     input: &InputValue,
+    policy: &SchemaExtractionPolicy,
     items: &mut BTreeMap<SourceItemId, SourceItem>,
     diagnostics: &mut DiagnosticCollector,
 ) {
@@ -688,7 +776,7 @@ fn emit_input(
             "default": input.default_value,
             "deprecated": input.is_deprecated,
             "deprecation_reason": input.deprecation_reason,
-            "directives": sorted(&input.directives),
+            "directives": public_directives(&input.directives, policy),
         }),
         input.is_deprecated,
         items,
@@ -699,6 +787,7 @@ fn emit_input(
 fn emit_directive(
     authority: &AuthorityId,
     directive: &DirectiveDefinition,
+    policy: &SchemaExtractionPolicy,
     items: &mut BTreeMap<SourceItemId, SourceItem>,
     diagnostics: &mut DiagnosticCollector,
 ) {
@@ -729,6 +818,7 @@ fn emit_directive(
             format!("schema:directive:@{}({})", directive.name, argument.name),
             json!({"parent_directive": directive.name}),
             argument,
+            policy,
             items,
             diagnostics,
         );
@@ -799,6 +889,43 @@ fn sorted<T: Clone + Ord>(values: &[T]) -> Vec<T> {
     let mut values = values.to_vec();
     values.sort();
     values
+}
+
+fn public_directives(
+    directives: &[AppliedDirective],
+    policy: &SchemaExtractionPolicy,
+) -> Vec<AppliedDirective> {
+    let mut directives = directives
+        .iter()
+        .filter(|directive| {
+            !policy
+                .excluded_applied_directive_names
+                .contains(&directive.name)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    directives.sort();
+    directives
+}
+
+fn applied_directive_names(schema: &IntrospectionSchema) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for schema_type in &schema.types {
+        names.extend(schema_type.directives.iter().map(|item| item.name.clone()));
+        for field in schema_type.fields.as_deref().unwrap_or_default() {
+            names.extend(field.directives.iter().map(|item| item.name.clone()));
+            for argument in &field.args {
+                names.extend(argument.directives.iter().map(|item| item.name.clone()));
+            }
+        }
+        for input in schema_type.input_fields.as_deref().unwrap_or_default() {
+            names.extend(input.directives.iter().map(|item| item.name.clone()));
+        }
+        for value in schema_type.enum_values.as_deref().unwrap_or_default() {
+            names.extend(value.directives.iter().map(|item| item.name.clone()));
+        }
+    }
+    names
 }
 
 fn has_duplicate_names<'a>(names: impl IntoIterator<Item = &'a str>) -> bool {

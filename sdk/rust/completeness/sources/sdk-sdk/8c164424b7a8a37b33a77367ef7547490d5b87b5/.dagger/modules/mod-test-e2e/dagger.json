@@ -1,0 +1,17 @@
+{
+  "name": "mod-test-e2e",
+  "engineVersion": "v0.20.8",
+  "sdk": {
+    "source": "dang"
+  },
+  "dependencies": [
+    {
+      "name": "mod-test",
+      "source": "../../../mod-test"
+    },
+    {
+      "name": "polyfill",
+      "source": "github.com/dagger/polyfill@main"
+    }
+  ]
+}

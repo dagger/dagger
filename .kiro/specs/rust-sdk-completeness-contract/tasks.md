@@ -377,8 +377,8 @@
     rustdoc; require deterministic diagnostics and byte-identical outputs across repeated
     runs and distinct absolute fixture roots.
 
-- [ ] 14. Add pinned contract inputs and wire Dagger automation
-  - [ ] 14.1 Add authored target, authority, compatibility, and vendored-source inputs
+- [x] 14. Add pinned contract inputs and wire Dagger automation
+  - [x] 14.1 Add authored target, authority, compatibility, and vendored-source inputs
     - Pin Dagger `25300124ca110612edc09c43f89cb5fad6028170`, Go
       `1309520660f6a5b35ef97b4fbe151e32a06a8dc5`, and `sdk-sdk`
       `8c164424b7a8a37b33a77367ef7547490d5b87b5`; add the raw schema snapshot and exact
@@ -386,25 +386,25 @@
     - Record the target's real Rust workspace metadata and exact harness CLI/engine identity;
       do not encode the divergent Go version comment as source identity.
     - _Requirements: 1.1–1.11, 2.1–2.6, 2.10, 2.11, 11.1–11.3, 12.1_
-  - [ ] 14.2 Add completeness sources to the Rust toolchain input boundary
+  - [x] 14.2 Add completeness sources to the Rust toolchain input boundary
     - Extend the existing source filter for `sdk/rust/completeness/**`, preserve the pinned
       Rust execution image, and add a digest-pinned Go helper container compatible with the
       root Go toolchain.
     - Pass only normalized helper JSON between Go and Rust execution boundaries.
     - _Requirements: 1.8, 2.6, 7.5, 8.1, 8.10_
-  - [ ] 14.3 Implement `CompletenessIntegrity` and artifact generation
+  - [x] 14.3 Implement `CompletenessIntegrity` and artifact generation
     - Add the `+check` offline Integrity gate and the `+generate`
       `CompletenessArtifacts` path using the existing engine introspection capture; return
       only a Dagger Changeset and never mutate active artifacts directly.
     - _Requirements: 1.6–1.8, 8.1–8.10, 9.8–9.10, 10.14_
-  - [ ] 14.4 Implement the callable baseline harness profile
+  - [x] 14.4 Implement the callable baseline harness profile
     - Add `CompletenessHarness` without `+check`; run the exact pinned profile and return a
       normalized evidence file for staged import while retaining expected subject failures
       as baseline blockers rather than Integrity failures.
     - _Requirements: 1.10, 1.11, 6.13, 6.14, 7.9, 7.10, 12.4–12.9, 12.16_
 
-- [ ] 15. Populate the truthful Rust baseline and contributor guidance
-  - [ ] 15.1 Author the reviewed capability definitions and harness mappings
+- [x] 15. Populate the truthful Rust baseline and contributor guidance
+  - [x] 15.1 Author the reviewed capability definitions and harness mappings
     - Account for every extracted schema, Go client, engine SDK, codegen, active/removed
       test, harness, and Rust-policy SourceItem with atomic capabilities, reference anchors,
       or exact reviewed exclusions.
@@ -412,7 +412,7 @@
       limitation scopes, and `initModuleRendersRootType` as `harness-self` with no
       Capability_IDs; record `initClient` and non-`linux/amd64` omissions explicitly.
     - _Requirements: 2.3–2.10, 3.2–3.12, 4.1–4.12, 6.13, 6.14, 12.2, 12.3, 12.8, 12.9, 12.13, 12.15, 12.16_
-  - [ ] 15.2 Classify every initial capability and attach conservative evidence
+  - [x] 15.2 Classify every initial capability and attach conservative evidence
     - Resolve exactly one row per capability; use `Partial` for code without sufficient
       behavioural evidence and `Missing` for absent behaviour, with exact gaps and Feature
       2–9 owners.
@@ -420,54 +420,54 @@
       evidence; preserve failed subject checks as blocker state and never use harness-self,
       skipped, or removed tests as passing Rust evidence.
     - _Requirements: 6.1–6.14, 7.1–7.10, 10.1–10.11, 10.15, 10.16, 12.6–12.9, 12.16_
-  - [ ] 15.3 Generate and check in the initial derived artifacts
+  - [x] 15.3 Generate and check in the initial derived artifacts
     - Produce canonical source-items, inventory, resolved ledger, JSON report, and Markdown
       report with a true Integrity_Verdict and the truthful expected false
       Completeness_Verdict; verify exact counts, blockers, exceptions, ownership, and
       digests.
     - _Requirements: 5.4–5.9, 8.1–8.10, 9.1–9.10, 10.1, 10.14_
-  - [ ] 15.4 Add exact initial-target regression fixtures
+  - [x] 15.4 Add exact initial-target regression fixtures
     - Lock tests for the three source commits, Go literal-vs-comment selection, 18-check
       and 17/1 partition, `initClient` omission, `linux/amd64` scope, explicit CLI
       selection, five statuses, Feature 2–9 routing boundaries, schema TypeRefs, malformed
       paths/revisions, and compatibility range boundaries.
     - _Requirements: 1.1–1.11, 3.10–3.12, 6.1–6.10, 7.2–7.4, 10.4–10.11, 10.15, 10.16, 11.1–11.7, 12.1, 12.5, 12.8, 12.9, 12.15_
-  - [ ] 15.5 Align contributor documentation with the executable authority model
+  - [x] 15.5 Align contributor documentation with the executable authority model
     - Add `completeness/README.md` for artifact ownership, offline verification, staged
       refresh/import, and later-feature status updates; revise Rust `AGENTS.md` and
       `CONTRIBUTING.md` so engine schema, scoped `sdk-sdk` conformance, and scoped Go parity
       are described as peer authorities with no contradictory precedence.
     - _Requirements: 4.8, 4.9, 6.10–6.12, 10.12, 10.13, 12.10–12.14_
 
-- [ ] 16. Complete cross-boundary integration and repository verification
-  - [ ] 16.1 Test hermetic verification and canonical regeneration end to end
+- [x] 16. Complete cross-boundary integration and repository verification
+  - [x] 16.1 Test hermetic verification and canonical regeneration end to end
     - From clean synthetic checkouts with network unavailable, run `verify` and `render`,
       compare every checked-in byte, and repeat from different absolute roots and source
       enumeration orders.
     - _Requirements: 1.8, 3.13, 7.5, 8.1, 8.2, 8.10, 9.1–9.5_
-  - [ ] 16.2 Test Go extraction and engine-schema capture through Dagger
+  - [x] 16.2 Test Go extraction and engine-schema capture through Dagger
     - Exercise the standard-library Go helper through Rust revalidation and capture engine
       introspection through `RustSdkDev.CompletenessArtifacts`; require the returned
       Changeset to match canonical artifacts exactly.
     - _Requirements: 1.3–1.8, 2.1–2.10, 3.1–3.13, 4.1–4.9_
-  - [ ] 16.3 Test harness-self, expected subject failures, and portable extensions
+  - [x] 16.3 Test harness-self, expected subject failures, and portable extensions
     - Exercise one passing self check, expected subject-SDK failures, and per-check
       target/platform mismatch rejection; prove no self result or failure becomes Rust
       completion evidence and no expected incompleteness alone breaks Integrity.
     - Exercise one scenario through each `SdkTarget` and `mod-test` adapter and reject a
       command-shaped port with no observable-behaviour mapping.
     - _Requirements: 6.13, 6.14, 7.9, 7.10, 12.4–12.11, 12.15, 12.16_
-  - [ ] 16.4 Test staged transitions and evidence imports end to end
+  - [x] 16.4 Test staged transitions and evidence imports end to end
     - Cover capability/authority/harness add, remove, and semantic change; historical
       preservation; evidence revalidation; explicit new classification; SemVer/migration
       decisions; and failed import/transition with byte-identical active artifacts.
     - _Requirements: 7.5–7.8, 8.1–8.13, 11.4–11.6, 12.12_
-  - [ ] 16.5 Test report equivalence and command exit policy end to end
+  - [x] 16.5 Test report equivalence and command exit policy end to end
     - Compare JSON and human verdict/count/exception/error content and exercise statuses
       `0`, `1`, and `2` for both gate selections without conflating incomplete Rust
       capability results with tool failure.
     - _Requirements: 9.1–9.11, 10.14_
-  - [ ] 16.6 Run the complete Rust and supply-chain verification suite
+  - [x] 16.6 Run the complete Rust and supply-chain verification suite
     - From `sdk/rust`, run `cargo fmt --all --check`, locked workspace check/test/clippy,
       warning-denied rustdoc, and `cargo deny check`; run the Dagger Integrity check,
       artifact regeneration comparison, and pinned harness profile.
@@ -475,7 +475,7 @@
       subject-conformance blockers and false initial Completeness_Verdict.
     - _Requirements: 6.1–6.14, 8.10, 9.3–9.10, 10.1–10.16, 12.4–12.9, 12.16_
 
-- [ ] 17. Checkpoint: F1 implementation is complete and ready for review
+- [x] 17. Checkpoint: F1 implementation is complete and ready for review
   - Require all 21 tagged property tests to run at least 256 cases, all fixed and
     integration tests to pass, every authored/derived artifact to reproduce byte-for-byte,
     the Dagger Integrity gate to be green, the initial Completeness gate to remain
