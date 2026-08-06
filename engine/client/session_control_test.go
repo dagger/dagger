@@ -146,6 +146,49 @@ func TestAttachmentRetryReusesIdentity(t *testing.T) {
 	}
 }
 
+func TestDetachableModesRejectUnsupportedConnectionBoundaries(t *testing.T) {
+	validSessionID := "sess_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	t.Run("mutually exclusive creator and observer", func(t *testing.T) {
+		_, err := Connect(t.Context(), Params{Detachable: true, AttachSessionID: validSessionID})
+		require.ErrorContains(t, err, "mutually exclusive")
+	})
+
+	t.Run("nested session port", func(t *testing.T) {
+		t.Setenv("DAGGER_SESSION_PORT", "1234")
+		for name, connect := range map[string]func() error{
+			"creator": func() error {
+				_, err := Connect(t.Context(), Params{Detachable: true})
+				return err
+			},
+			"observer": func() error {
+				_, err := Connect(t.Context(), Params{AttachSessionID: validSessionID})
+				return err
+			},
+			"control": func() error {
+				_, err := ConnectControl(t.Context(), Params{})
+				return err
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				require.ErrorContains(t, connect(), "not supported through DAGGER_SESSION_PORT")
+			})
+		}
+	})
+
+	t.Run("engine to engine", func(t *testing.T) {
+		for name, params := range map[string]Params{
+			"creator":  {Detachable: true},
+			"observer": {AttachSessionID: validSessionID},
+		} {
+			t.Run(name, func(t *testing.T) {
+				_, err := ConnectEngineToEngine(t.Context(), EngineToEngineParams{Params: params})
+				require.ErrorContains(t, err, "not supported for engine-to-engine connections")
+			})
+		}
+	})
+}
+
 func TestClientClosePolicy(t *testing.T) {
 	t.Parallel()
 
