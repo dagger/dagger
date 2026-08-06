@@ -3,11 +3,13 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
@@ -133,18 +135,83 @@ func referenceMountRel(abs string) string {
 func parseReferenceTokens(line string) []string {
 	var out []string
 	for _, field := range strings.Fields(line) {
-		rest, ok := strings.CutPrefix(field, "@")
-		if !ok || rest == "" {
+		_, tok, _, ok := splitReferenceField(field)
+		if !ok {
 			continue
 		}
-		rest = strings.Trim(rest, "`'\"")
-		rest = strings.TrimRight(rest, ".,;:!?)")
-		if rest == "" {
-			continue
-		}
-		out = append(out, rest)
+		out = append(out, tok)
 	}
 	return out
+}
+
+// referenceQuoteChars are stripped from both ends of an @-token, and
+// referencePunctuation from its end, so a reference typed mid-sentence (e.g.
+// `@foo.go,`) still resolves.
+const (
+	referenceQuoteChars  = "`'\""
+	referencePunctuation = ".,;:!?)"
+)
+
+// splitReferenceField decomposes a whitespace-delimited word into the leading
+// "@" plus any opening quotes, the path token itself, and the trailing
+// quotes/punctuation. The three parts always concatenate back to field, so a
+// token can be rewritten in place. ok is false when the word is not an
+// @-reference.
+func splitReferenceField(field string) (prefix, tok, suffix string, ok bool) {
+	rest, ok := strings.CutPrefix(field, "@")
+	if !ok || rest == "" {
+		return "", "", "", false
+	}
+	lead := 0
+	for lead < len(rest) && strings.IndexByte(referenceQuoteChars, rest[lead]) >= 0 {
+		lead++
+	}
+	tail := len(rest)
+	for tail > lead && strings.IndexByte(referenceQuoteChars, rest[tail-1]) >= 0 {
+		tail--
+	}
+	body := rest[lead:tail]
+	tok = strings.TrimRight(body, referencePunctuation)
+	if tok == "" {
+		return "", "", "", false
+	}
+	return "@" + rest[:lead], tok, body[len(tok):] + rest[tail:], true
+}
+
+// rewriteReferenceTokens replaces @-tokens in line for which replace returns a
+// substitution, dropping the "@" sigil while preserving any quotes, trailing
+// punctuation and the line's original whitespace.
+func rewriteReferenceTokens(line string, replace func(tok string) (string, bool)) string {
+	var b strings.Builder
+	for i := 0; i < len(line); {
+		start := i
+		for i < len(line) && isReferenceSpace(line[i]) {
+			i++
+		}
+		b.WriteString(line[start:i])
+
+		start = i
+		for i < len(line) && !isReferenceSpace(line[i]) {
+			i++
+		}
+		field := line[start:i]
+		if prefix, tok, suffix, ok := splitReferenceField(field); ok {
+			if replacement, ok := replace(tok); ok {
+				b.WriteString(strings.TrimPrefix(prefix, "@") + replacement + suffix)
+				continue
+			}
+		}
+		b.WriteString(field)
+	}
+	return b.String()
+}
+
+func isReferenceSpace(c byte) bool {
+	switch c {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	}
+	return false
 }
 
 func (s *LLMSession) hasReference(mount string) bool {
@@ -156,14 +223,16 @@ func (s *LLMSession) hasReference(mount string) bool {
 	return false
 }
 
-// attachReferences resolves any @-path tokens in input, mounting each into the
-// LLM's workspace read-only under the references prefix (see
-// core.WorkspaceReferencePrefix). Newly-attached references are sticky for the
-// session and shown in the "References" sidebar. The returned string is the
-// prompt annotated with the referenced paths' workspace locations so the model
-// knows where to read them; nonexistent paths are skipped.
+// attachReferences resolves any @-path tokens in input. Paths that already live
+// inside the current workspace need no mounting: the agent can read them
+// directly, so the token is simply rewritten in place to a path relative to the
+// workspace's cwd (e.g. "@/abs/path/to/foo.go" → "./foo.go"). Paths outside the
+// workspace are mounted into the LLM's workspace read-only under the references
+// prefix (see core.WorkspaceReferencePrefix); those are sticky for the session
+// and shown in the "References" sidebar, and the prompt is annotated with their
+// workspace locations so the model knows where to read them. Nonexistent paths
+// are left untouched.
 func (s *LLMSession) attachReferences(ctx context.Context, input string) string {
-	_ = ctx
 	tokens := parseReferenceTokens(input)
 	if len(tokens) == 0 {
 		return input
@@ -172,6 +241,7 @@ func (s *LLMSession) attachReferences(ctx context.Context, input string) string 
 	llm := s.llm
 	changed := false
 	seen := map[string]bool{}
+	local := map[string]string{}
 	var mentioned []referenceInfo
 	for _, tok := range tokens {
 		abs, err := expandReferencePath(tok)
@@ -183,6 +253,14 @@ func (s *LLMSession) attachReferences(ctx context.Context, input string) string 
 			// Skip paths that don't resolve to a real host file/directory.
 			continue
 		}
+
+		// Already in the workspace: no need to copy it into .refs, just point
+		// the model at it relative to the workspace cwd.
+		if rel, ok := s.workspaceRelativePath(ctx, abs); ok {
+			local[tok] = rel
+			continue
+		}
+
 		rel := referenceMountRel(abs)
 		mount := workspaceReferencePrefix + "/" + rel
 		if seen[mount] {
@@ -211,10 +289,97 @@ func (s *LLMSession) attachReferences(ctx context.Context, input string) string 
 		s.llm = llm
 		s.updateReferencesPreview()
 	}
+	if len(local) > 0 {
+		input = rewriteReferenceTokens(input, func(tok string) (string, bool) {
+			rel, ok := local[tok]
+			return rel, ok
+		})
+	}
 	if len(mentioned) == 0 {
 		return input
 	}
 	return input + referenceAnnotation(mentioned)
+}
+
+// workspaceRelativePath reports whether abs (an absolute host path) lies inside
+// the current workspace, and if so returns it as a path relative to the
+// workspace's cwd — the form the agent's own file tools take. Paths under the
+// cwd are prefixed with "./" so they read unambiguously as paths; paths
+// elsewhere in the workspace keep their "../" prefix.
+func (s *LLMSession) workspaceRelativePath(ctx context.Context, abs string) (string, bool) {
+	root, cwd, ok := s.workspaceHostPaths(ctx)
+	if !ok {
+		return "", false
+	}
+	abs = resolveSymlinks(abs)
+	if rel, err := filepath.Rel(root, abs); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		// Outside the workspace boundary.
+		return "", false
+	}
+	rel, err := filepath.Rel(cwd, abs)
+	if err != nil {
+		return "", false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return rel, true
+	}
+	return "./" + rel, true
+}
+
+// workspaceHostPaths resolves the host filesystem paths of the workspace root
+// and its cwd, resolved once per session. Returns false for workspaces with no
+// host location (remote or synthetic ones), where @-paths always need mounting.
+func (s *LLMSession) workspaceHostPaths(ctx context.Context) (root, cwd string, ok bool) {
+	if !s.workspaceHostResolved {
+		s.workspaceHostResolved = true
+		s.workspaceHostRoot, s.workspaceHostCwd = resolveWorkspaceHostPaths(ctx, s.dag)
+	}
+	if s.workspaceHostRoot == "" {
+		return "", "", false
+	}
+	return s.workspaceHostRoot, s.workspaceHostCwd, true
+}
+
+// resolveWorkspaceHostPaths queries the current workspace for its address and
+// cwd and maps them back to host paths. Both are empty when the workspace isn't
+// local.
+func resolveWorkspaceHostPaths(ctx context.Context, dag *dagger.Client) (root, cwd string) {
+	ws := dag.CurrentWorkspace()
+	address, err := ws.Address(ctx)
+	if err != nil {
+		return "", ""
+	}
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Scheme != "file" {
+		// Remote or synthetic workspace: nothing on the host to compare to.
+		return "", ""
+	}
+	wsCwd, err := ws.Cwd(ctx)
+	if err != nil {
+		return "", ""
+	}
+	root, err = workspaceRootFromAddress(address, wsCwd)
+	if err != nil {
+		return "", ""
+	}
+	relCwd, err := workspaceRelativeCwd(wsCwd)
+	if err != nil {
+		return "", ""
+	}
+	root = resolveSymlinks(root)
+	return root, filepath.Join(root, relCwd)
+}
+
+// resolveSymlinks resolves symlinks in p, falling back to the cleaned input when
+// it can't (e.g. the path doesn't exist). Keeps host paths comparable when the
+// workspace root and an @-path reach the same place through different links,
+// such as macOS's /tmp → /private/tmp.
+func resolveSymlinks(p string) string {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return filepath.Clean(p)
 }
 
 // referenceAnnotation renders the trailing block appended to a prompt that maps

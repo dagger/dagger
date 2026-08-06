@@ -126,3 +126,78 @@ func TestReferenceAnnotation(t *testing.T) {
 	require.Contains(t, out, "~/foo/bar.txt → .refs/foo/bar.txt")
 	require.Contains(t, out, "~/proj (directory) → .refs/proj")
 }
+
+func TestRewriteReferenceTokens(t *testing.T) {
+	// The "@" sigil is dropped and quotes/punctuation/whitespace preserved.
+	rewrite := func(line string) string {
+		return rewriteReferenceTokens(line, func(tok string) (string, bool) {
+			if tok == "/ws/foo.go" {
+				return "./foo.go", true
+			}
+			return "", false
+		})
+	}
+
+	require.Equal(t, "review ./foo.go please", rewrite("review @/ws/foo.go please"))
+	require.Equal(t, "see ./foo.go.", rewrite("see @/ws/foo.go."))
+	require.Equal(t, `open "./foo.go"`, rewrite(`open @"/ws/foo.go"`))
+
+	// Unmatched tokens (and non-references) are left exactly as typed.
+	require.Equal(t, "read @/elsewhere/x.go", rewrite("read @/elsewhere/x.go"))
+	require.Equal(t, "mail me@example.com", rewrite("mail me@example.com"))
+
+	// Original whitespace, including newlines, is preserved verbatim.
+	require.Equal(t, "  a\n\t./foo.go  b\n", rewrite("  a\n\t@/ws/foo.go  b\n"))
+}
+
+func TestWorkspaceRelativePath(t *testing.T) {
+	root := t.TempDir()
+	// t.TempDir may hand back a symlinked path (e.g. macOS /tmp); compare
+	// against the resolved form, which is what the session caches.
+	root = resolveSymlinks(root)
+	sub := filepath.Join(root, "services", "api")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+
+	// Session pinned to a workspace rooted at root, with cwd services/api.
+	s := &LLMSession{
+		workspaceHostResolved: true,
+		workspaceHostRoot:     root,
+		workspaceHostCwd:      sub,
+	}
+	ctx := t.Context()
+
+	// Under the cwd → "./"-prefixed.
+	rel, ok := s.workspaceRelativePath(ctx, filepath.Join(sub, "main.go"))
+	require.True(t, ok)
+	require.Equal(t, "./main.go", rel)
+
+	rel, ok = s.workspaceRelativePath(ctx, filepath.Join(sub, "pkg", "x.go"))
+	require.True(t, ok)
+	require.Equal(t, "./pkg/x.go", rel)
+
+	// The cwd itself.
+	rel, ok = s.workspaceRelativePath(ctx, sub)
+	require.True(t, ok)
+	require.Equal(t, ".", rel)
+
+	// Elsewhere in the workspace → keeps its "../" prefix.
+	rel, ok = s.workspaceRelativePath(ctx, filepath.Join(root, "README.md"))
+	require.True(t, ok)
+	require.Equal(t, "../../README.md", rel)
+
+	// Outside the workspace → not workspace-relative, so it gets mounted.
+	_, ok = s.workspaceRelativePath(ctx, "/etc/hosts")
+	require.False(t, ok)
+
+	// A sibling of the root whose name merely shares its prefix is outside.
+	_, ok = s.workspaceRelativePath(ctx, root+"-other/x.go")
+	require.False(t, ok)
+}
+
+func TestWorkspaceRelativePathNonLocalWorkspace(t *testing.T) {
+	// A remote/synthetic workspace has no host root, so every @-path falls
+	// through to the mounting path.
+	s := &LLMSession{workspaceHostResolved: true}
+	_, ok := s.workspaceRelativePath(t.Context(), "/etc/hosts")
+	require.False(t, ok)
+}
