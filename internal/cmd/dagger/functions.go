@@ -56,6 +56,7 @@ const (
 	Socket        string = "Socket"
 	GitRepository string = "GitRepository"
 	GitRef        string = "GitRef"
+	Workspace     string = "Workspace"
 )
 
 var (
@@ -596,7 +597,10 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 			}
 			return err
 		}
-		if arg.IsRequired() {
+		// A required Workspace stays optional at the CLI: selectFunc defaults it
+		// to the session's current workspace, so marking it required would reject
+		// the call before it could be filled in.
+		if arg.IsRequired() && !arg.IsWorkspace() {
 			cmd.MarkFlagRequired(arg.FlagName())
 		}
 		cmd.Flags().SetAnnotation(
@@ -683,6 +687,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
 
 	missingFlags := []string{}
+	workspaceArgs := []string{}
 
 	type flagResult struct {
 		idx   int
@@ -695,14 +700,14 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	flags := cmd.LocalNonPersistentFlags()
 	for i, a := range fn.SupportedArgs() {
 		flag := flags.Lookup(a.FlagName())
-		if flag == nil {
-			if a.IsRequired() {
-				missingFlags = append(missingFlags, a.FlagName())
+		if flag == nil || !flag.Changed {
+			// A required Workspace comes from the session, not the user: fill it
+			// from currentWorkspace so the call doesn't demand a flag for the
+			// thing the CLI already knows.
+			if a.IsWorkspace() && a.IsRequired() {
+				workspaceArgs = append(workspaceArgs, a.Name)
+				continue
 			}
-			continue
-		}
-
-		if !flag.Changed {
 			if a.IsRequired() {
 				missingFlags = append(missingFlags, a.FlagName())
 			}
@@ -734,6 +739,16 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 
 	if len(missingFlags) > 0 {
 		return fmt.Errorf(`required flag(s) "%s" not set`, strings.Join(missingFlags, `", "`))
+	}
+
+	if len(workspaceArgs) > 0 {
+		wsID, err := fc.c.Dagger().CurrentWorkspace().ID(fc.ctx)
+		if err != nil {
+			return fmt.Errorf("resolve current workspace for %q: %w", fn.Name, err)
+		}
+		for _, name := range workspaceArgs {
+			fc.q = fc.q.Arg(name, wsID)
+		}
 	}
 
 	return nil

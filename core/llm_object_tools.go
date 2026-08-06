@@ -550,7 +550,7 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 		if !ok {
 			return nil, fmt.Errorf("no object of type %q is bound", typeName)
 		}
-		sel, err := buildObjectMethodSelector(srv, recv.ObjectType(), fieldName, args)
+		sel, err := buildObjectMethodSelector(ctx, srv, recv.ObjectType(), fieldName, args)
 		if err != nil {
 			return nil, err
 		}
@@ -564,8 +564,10 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 
 // buildObjectMethodSelector converts the model's tool arguments into a selector
 // for the method. It decodes each provided argument through the field's input
-// spec; the Workspace argument is omitted here and auto-injected downstream.
-func buildObjectMethodSelector(srv *dagql.Server, recvType dagql.ObjectType, fieldName string, args map[string]any) (dagql.Selector, error) {
+// spec. A declared-optional Workspace argument is omitted and auto-injected
+// downstream; a required one is filled from the LLM's bound workspace, since
+// dagql rejects a missing non-null argument before that injection runs.
+func buildObjectMethodSelector(ctx context.Context, srv *dagql.Server, recvType dagql.ObjectType, fieldName string, args map[string]any) (dagql.Selector, error) {
 	sel := dagql.Selector{View: srv.View, Field: fieldName}
 	field, ok := recvType.FieldSpec(fieldName, srv.View)
 	if !ok {
@@ -578,6 +580,9 @@ func buildObjectMethodSelector(srv *dagql.Server, recvType dagql.ObjectType, fie
 		}
 		val, ok := args[arg.Name]
 		if !ok {
+			if wsInput, ok := boundWorkspaceInput(ctx, srv, arg); ok {
+				sel.Args = append(sel.Args, dagql.NamedInput{Name: arg.Name, Value: wsInput})
+			}
 			continue
 		}
 		delete(provided, arg.Name)
