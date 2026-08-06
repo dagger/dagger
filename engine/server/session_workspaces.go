@@ -2011,7 +2011,7 @@ func (srv *Server) resolveModuleSourceAsModule(
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},
 	)
 	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return dagql.ObjectResult[*core.Module]{}, err
 	}
 	return resolved, nil
 }

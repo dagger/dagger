@@ -2609,7 +2609,7 @@ func (mod *Module) WithObject(ctx context.Context, def dagql.ObjectResult[*TypeD
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {
@@ -2636,7 +2636,7 @@ func (mod *Module) WithInterface(ctx context.Context, def dagql.ObjectResult[*Ty
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {
@@ -2663,7 +2663,7 @@ func (mod *Module) WithEnum(ctx context.Context, def dagql.ObjectResult[*TypeDef
 
 	if mod.Deps != nil {
 		if err := mod.validateTypeDef(ctx, def, mod.newValidationState()); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, err
 		}
 	}
 	if mod.NameField != "" {

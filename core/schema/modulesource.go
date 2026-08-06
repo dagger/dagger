@@ -3626,7 +3626,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			// path the capability-less SDK would have taken.
 			typeDefsEnabled = false
 		case terr != nil:
-			return nil, fmt.Errorf("failed to initialize module: %w", terr)
+			return nil, terr
 		default:
 			initialized = resultInst.Self()
 		}
