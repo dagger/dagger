@@ -828,9 +828,16 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 }`).
 		With(compatDaggerExec("setup", "--auto-apply"))
 
-	configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
+	// The selected config sits in a subdirectory of the repo, so its
+	// toolchains hoist into a dagger.toml at the repo root (never a nested
+	// one), with local sources rebased.
+	_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.toml"}).Sync(ctx)
+	require.NoError(t, err, "no nested workspace config in the app directory")
+	configOut, err := ctr.WithExec([]string{"cat", "/work/dagger.toml"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, configOut, "[modules.hello-with-generators]")
+	require.Contains(t, configOut, `source = "./modules/hello-with-generators"`,
+		"the toolchain's local source is rebased to the repo root")
 	require.Contains(t, configOut, `generate.skip = ["generate-other-files", "other-generators:*"]`)
 
 	listOut, err := ctr.With(compatDaggerExec("generate", "-l")).CombinedOutput(ctx)
@@ -845,6 +852,8 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 	require.Contains(t, runOut, "hello-with-generators:generate-files")
 	require.NotContains(t, runOut, "hello-with-generators:generate-other-files")
 
+	// Generated changes still apply relative to where the command runs; only
+	// the workspace config location moved to the repo root.
 	exists, err := runCtr.Exists(ctx, "foo")
 	require.NoError(t, err)
 	require.True(t, exists)
@@ -883,9 +892,16 @@ func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context,
 }`).
 		With(compatDaggerExec("setup", "--auto-apply"))
 
-	configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
+	// The subdirectory config's toolchains (and their port mappings) hoist
+	// into a dagger.toml at the repo root — nested workspace configs are
+	// never created.
+	_, err = ctr.WithExec([]string{"test", "!", "-e", "dagger.toml"}).Sync(ctx)
+	require.NoError(t, err, "no nested workspace config in the app directory")
+	configOut, err := ctr.WithExec([]string{"cat", "/work/dagger.toml"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, configOut, "[modules.hello-with-services]")
+	require.Contains(t, configOut, `source = "./modules/hello-with-services"`,
+		"the toolchain's local source is rebased to the repo root")
 	require.Contains(t, configOut, `up.skip = ["redis", "infra:database"]`)
 	require.Contains(t, configOut, "[ports.3000]")
 	require.Contains(t, configOut, `backendService = "hello-with-services:web"`)

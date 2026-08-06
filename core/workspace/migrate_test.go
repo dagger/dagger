@@ -193,7 +193,7 @@ func TestPlanMigrationRejectsAbsoluteMainModuleSource(t *testing.T) {
   "source": "/tmp"
 }`)
 
-	_, err := PlanMigration(compat)
+	_, err := PlanMigration(compat, compat.ProjectRoot)
 	require.ErrorContains(t, err, `source path "/tmp" is absolute`)
 }
 
@@ -356,6 +356,58 @@ func TestPlanMigrationAllowsDifferentPinnedWorkspaceRefs(t *testing.T) {
 	require.Contains(t, configData, `source = "github.com/acme/toolchain@2222222"`)
 }
 
+// TestPlanMigrationHoistsSubdirectoryToolchains covers a legacy config in a
+// subdirectory of the workspace: nested dagger.toml files are never created,
+// so its toolchains install into a dagger.toml at the workspace root with
+// local sources rebased, while the module config converts in place at the
+// subdirectory and the module itself is not installed.
+func TestPlanMigrationHoistsSubdirectoryToolchains(t *testing.T) {
+	t.Parallel()
+
+	root := "repo"
+	compat := testCompatWorkspace(t, filepath.Join(root, "tools", "hello"), `{
+  "name": "hello",
+  "sdk": {"source": "go"},
+  "source": "src",
+  "toolchains": [
+    {"name": "tc", "source": "./toolchain"},
+    {"name": "remote", "source": "github.com/acme/tool@main", "pin": "1111111"}
+  ]
+}`)
+
+	plan, err := PlanMigration(compat, root)
+	require.NoError(t, err)
+
+	require.Equal(t, root, plan.ProjectRoot,
+		"the workspace config lands at the workspace root, never nested")
+	require.Equal(t, filepath.Join(root, "tools", "hello"), plan.ModuleProjectRoot,
+		"the module config stays at the legacy config's own directory")
+	require.Equal(t, ModuleConfigFileName, plan.MigratedModuleConfigPath)
+
+	wsCfg, err := ParseConfig(plan.WorkspaceConfigData)
+	require.NoError(t, err)
+	require.Equal(t, "./tools/hello/toolchain", wsCfg.Modules["tc"].Source,
+		"local toolchain sources are rebased to the workspace root")
+	require.Equal(t, "github.com/acme/tool@1111111", wsCfg.Modules["remote"].Source,
+		"remote toolchain refs pass through untouched")
+	_, installed := wsCfg.Modules["hello"]
+	require.False(t, installed,
+		"a hoisted subdirectory module is not installed into the repo-wide workspace")
+}
+
+func TestPlanMigrationRefusesToHoistSubdirectoryBlueprint(t *testing.T) {
+	t.Parallel()
+
+	compat := testCompatWorkspace(t, filepath.Join("repo", "tools", "hello"), `{
+  "name": "hello",
+  "sdk": {"source": "go"},
+  "blueprint": {"name": "bp", "source": "github.com/acme/bp@main"}
+}`)
+
+	_, err := PlanMigration(compat, "repo")
+	require.ErrorContains(t, err, "blueprint cannot be hoisted")
+}
+
 func TestPlanMigrationRejectsConfigWithoutWorkspaceConfigMigration(t *testing.T) {
 	t.Parallel()
 
@@ -365,14 +417,14 @@ func TestPlanMigrationRejectsConfigWithoutWorkspaceConfigMigration(t *testing.T)
 	}`))
 	require.NoError(t, err)
 
-	_, err = PlanMigration(buildCompatWorkspace(cfg, filepath.Join("repo", LegacyModuleConfigFileName)))
+	_, err = PlanMigration(buildCompatWorkspace(cfg, filepath.Join("repo", LegacyModuleConfigFileName)), "repo")
 	require.ErrorContains(t, err, "dagger.json does not require workspace config migration")
 }
 
 func testMigrationPlan(t *testing.T, projectRoot, cfg string) *MigrationPlan {
 	t.Helper()
 
-	plan, err := PlanMigration(testCompatWorkspace(t, projectRoot, cfg))
+	plan, err := PlanMigration(testCompatWorkspace(t, projectRoot, cfg), projectRoot)
 	require.NoError(t, err)
 	return plan
 }

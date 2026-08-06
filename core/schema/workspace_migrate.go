@@ -93,16 +93,52 @@ func (s *workspaceSchema) migrate(
 	if err != nil {
 		return nil, err
 	}
+
+	// A subdirectory config with a blueprint is left as legacy: a blueprint
+	// needs a workspace config, nested dagger.toml files are not created, and
+	// hoisting an entrypoint to the repo root would change repo-wide behavior.
+	// Surface the skip as a warning-only step so setup can explain the no-op.
+	if selected := workspaceMigrationSelectedCompatWorkspace(compatWorkspaces); selected != nil &&
+		selected.Config != nil && selected.Config.Blueprint != nil {
+		rel, err := workspaceMigrationProjectRootRelPath(ws, selected.ProjectRoot)
+		if err != nil {
+			return nil, err
+		}
+		if rel != "." {
+			return &core.WorkspaceMigration{
+				Changes: emptyChanges,
+				Steps: []*core.WorkspaceMigrationStep{
+					{
+						Code:        "legacy-dagger-json",
+						Description: "Migration skipped",
+						Warnings: []string{fmt.Sprintf(
+							"skipped migrating %s: it defines a blueprint, which needs a workspace config, and migration does not create nested dagger.toml files; the config was left as legacy",
+							workspaceMigrationDisplayPath(filepath.Join(rel, workspace.LegacyModuleConfigFileName)),
+						)},
+						Changes: emptyChanges,
+					},
+				},
+			}, nil
+		}
+	}
+
 	plans := make([]*workspace.MigrationPlan, 0, len(compatWorkspaces))
 	for _, compatWorkspace := range compatWorkspaces {
 		// Discovered local modules are converted in place; never route them
 		// through PlanMigration, which would move and delete their dagger.json
 		// and break the reference that pointed at them.
-		if !compatWorkspace.MustMigrateToWorkspaceConfig() || compatWorkspace.DiscoveredLocalModule {
+		if compatWorkspace.DiscoveredLocalModule {
+			continue
+		}
+		routesThroughPlan, err := workspaceMigrationRoutesThroughPlan(ws, compatWorkspace)
+		if err != nil {
+			return nil, err
+		}
+		if !routesThroughPlan {
 			continue
 		}
 
-		plan, err := s.prepareWorkspaceMigrationPlan(ctx, compatWorkspace)
+		plan, err := s.prepareWorkspaceMigrationPlan(ctx, ws, compatWorkspace)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +149,7 @@ func (s *workspaceSchema) migrate(
 	if err != nil {
 		return nil, err
 	}
-	moduleConfigConversions, err := workspaceMigrationModuleConfigConversions(compatWorkspaces)
+	moduleConfigConversions, err := workspaceMigrationModuleConfigConversions(ws, compatWorkspaces)
 	if err != nil {
 		return nil, err
 	}
@@ -261,14 +297,49 @@ func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
 
 func (s *workspaceSchema) prepareWorkspaceMigrationPlan(
 	ctx context.Context,
+	ws *core.Workspace,
 	compatWorkspace *workspace.CompatWorkspace,
 ) (*workspace.MigrationPlan, error) {
-	plan, err := workspace.PlanMigration(compatWorkspace)
+	plan, err := workspace.PlanMigration(compatWorkspace, ws.HostPath())
 	if err != nil {
 		return nil, err
 	}
 	recordWorkspaceMigrationModuleSpans(ctx, compatWorkspace.Modules)
 	return plan, nil
+}
+
+// workspaceMigrationSelectedCompatWorkspace returns the compat workspace for
+// the selected legacy config — the one found up from cwd, as opposed to the
+// modules discovered through its local references.
+func workspaceMigrationSelectedCompatWorkspace(compatWorkspaces []*workspace.CompatWorkspace) *workspace.CompatWorkspace {
+	for _, compatWorkspace := range compatWorkspaces {
+		if compatWorkspace != nil && !compatWorkspace.DiscoveredLocalModule {
+			return compatWorkspace
+		}
+	}
+	return nil
+}
+
+// workspaceMigrationRoutesThroughPlan reports whether a selected legacy config
+// is handled by PlanMigration — which writes a workspace config — rather than
+// by in-place module conversion alone. A config at the workspace root plans
+// whenever it carries workspace semantics; a subdirectory config plans only
+// when it has toolchains to hoist into the workspace-root dagger.toml. A
+// subdirectory config that must migrate merely because its source is in a
+// subdirectory is the plain "migrate this one module" case: it converts in
+// place and creates no workspace.
+func workspaceMigrationRoutesThroughPlan(ws *core.Workspace, compatWorkspace *workspace.CompatWorkspace) (bool, error) {
+	if !compatWorkspace.MustMigrateToWorkspaceConfig() {
+		return false, nil
+	}
+	rel, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
+	if err != nil {
+		return false, err
+	}
+	if rel == "." {
+		return true, nil
+	}
+	return compatWorkspace.Config != nil && len(compatWorkspace.Config.Toolchains) > 0, nil
 }
 
 func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
@@ -792,7 +863,7 @@ func applyWorkspaceMigrationWorkspacePlan(
 	plan *workspace.MigrationPlan,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	if len(plan.MigratedModuleConfigData) > 0 {
-		migratedModuleConfigPath, err := workspaceMigrationRootPath(ws, plan, plan.MigratedModuleConfigPath)
+		migratedModuleConfigPath, err := workspaceMigrationModuleRootPath(ws, plan, plan.MigratedModuleConfigPath)
 		if err != nil {
 			return dir, err
 		}
@@ -822,7 +893,7 @@ func applyWorkspaceMigrationWorkspacePlan(
 		}
 	}
 
-	legacyConfigPath, err := workspaceMigrationRootPath(ws, plan, workspace.LegacyModuleConfigFileName)
+	legacyConfigPath, err := workspaceMigrationModuleRootPath(ws, plan, workspace.LegacyModuleConfigFileName)
 	if err != nil {
 		return dir, err
 	}
@@ -920,6 +991,15 @@ func workspaceMigrationRootTargetPaths(ws *core.Workspace, plans workspaceMigrat
 	}
 
 	for _, plan := range plans.WorkspacePlans {
+		if len(plan.MigratedModuleConfigData) > 0 {
+			rootPath, err := workspaceMigrationModuleRootPath(ws, plan, plan.MigratedModuleConfigPath)
+			if err != nil {
+				return nil, err
+			}
+			if err := addPath(rootPath); err != nil {
+				return nil, err
+			}
+		}
 		for _, targetPath := range workspaceMigrationTargetPaths(plan) {
 			rootPath, err := workspaceMigrationRootPath(ws, plan, targetPath)
 			if err != nil {
@@ -1037,6 +1117,11 @@ func workspaceMigrationLegacyLockProjectRoots(plans workspaceMigrationPlanBundle
 	}
 	for _, plan := range plans.WorkspacePlans {
 		addProject(plan.ProjectRoot)
+		if plan.ModuleProjectRoot != "" {
+			// A hoisted plan's legacy lockfile lives next to the legacy
+			// dagger.json, not at the workspace root the plan writes to.
+			addProject(plan.ModuleProjectRoot)
+		}
 	}
 	for _, plan := range plans.ParentPlans {
 		addProject(plan.ProjectRoot)
@@ -1054,6 +1139,21 @@ func workspaceMigrationRootPath(ws *core.Workspace, plan *workspace.MigrationPla
 	return workspaceMigrationRootPathForProject(ws, plan.ProjectRoot, relPath)
 }
 
+// workspaceMigrationModuleRootPath resolves a path against the plan's module
+// project root — where the legacy dagger.json lives and its converted module
+// config lands. For a hoisted subdirectory project this differs from the
+// plan's ProjectRoot (the workspace root, where dagger.toml lands).
+func workspaceMigrationModuleRootPath(ws *core.Workspace, plan *workspace.MigrationPlan, relPath string) (string, error) {
+	if plan == nil {
+		return "", fmt.Errorf("migration plan is unavailable")
+	}
+	moduleRoot := plan.ModuleProjectRoot
+	if moduleRoot == "" {
+		moduleRoot = plan.ProjectRoot
+	}
+	return workspaceMigrationRootPathForProject(ws, moduleRoot, relPath)
+}
+
 func workspaceMigrationRootPathForProject(ws *core.Workspace, projectRoot string, relPath string) (string, error) {
 	projectRootPath, err := workspaceMigrationProjectRootRelPath(ws, projectRoot)
 	if err != nil {
@@ -1065,11 +1165,12 @@ func workspaceMigrationRootPathForProject(ws *core.Workspace, projectRoot string
 	return filepath.Join(projectRootPath, relPath), nil
 }
 
+// workspaceMigrationTargetPaths returns the plan's target paths that resolve
+// against its ProjectRoot. The migrated module config is deliberately absent:
+// it resolves against the module project root (see
+// workspaceMigrationModuleRootPath), which differs for hoisted plans.
 func workspaceMigrationTargetPaths(plan *workspace.MigrationPlan) []string {
-	paths := make([]string, 0, 3)
-	if len(plan.MigratedModuleConfigData) > 0 {
-		paths = append(paths, plan.MigratedModuleConfigPath)
-	}
+	paths := make([]string, 0, 2)
 	paths = append(paths, workspace.ConfigFileName)
 	if len(plan.MigrationReportData) > 0 {
 		paths = append(paths, plan.MigrationReportPath)

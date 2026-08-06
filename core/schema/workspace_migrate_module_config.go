@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 )
@@ -13,6 +14,7 @@ type workspaceMigrationModuleConfigConversion struct {
 }
 
 func workspaceMigrationModuleConfigConversions(
+	ws *core.Workspace,
 	compatWorkspaces []*workspace.CompatWorkspace,
 ) ([]workspaceMigrationModuleConfigConversion, error) {
 	// This is filename-format migration, not workspace compat projection:
@@ -32,15 +34,22 @@ func workspaceMigrationModuleConfigConversions(
 			if workspaceMigrationLeavesModuleLegacy(compatWorkspace) {
 				continue
 			}
-		} else if compatWorkspace.MustMigrateToWorkspaceConfig() {
-			// PlanMigration writes this config's dagger-module.toml alongside
-			// its dagger.toml.
-			continue
+		} else {
+			routesThroughPlan, err := workspaceMigrationRoutesThroughPlan(ws, compatWorkspace)
+			if err != nil {
+				return nil, err
+			}
+			if routesThroughPlan {
+				// PlanMigration writes this config's dagger-module.toml
+				// itself (in place, at the module's own project root).
+				continue
+			}
 		}
 		// Reaching here non-discovered means the selected config is a plain
-		// SDK module with its source at the project root — the "repo is just
-		// a dagger module" shape. It converts in place; the minimal workspace
-		// config pinning its runtime comes from the parent-plan flow.
+		// SDK module — either the "repo is just a dagger module" shape (source
+		// at the workspace root, runtime pinned via the parent-plan flow) or a
+		// module in a subdirectory (module-only migration: converted in place
+		// with no workspace created).
 		if compatWorkspace.ProjectRoot == "" {
 			return nil, fmt.Errorf("legacy module config project root is required")
 		}

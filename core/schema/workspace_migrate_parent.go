@@ -66,19 +66,44 @@ func workspaceMigrationParentAssignments(
 		if compatWorkspace.Config == nil || compatWorkspace.Config.SDK == nil {
 			continue
 		}
-		// A project-style layout (source in a subdirectory) installs the module
-		// into its own migrated workspace config with its SDK recorded as-sdk;
-		// there is no separate runtime pin to hoist and no explicit-loading
-		// warning. Only the "repo is just a dagger module" shape — source at
-		// the project root — flows through here, whether or not toolchains
-		// force a workspace plan of its own.
+		rel, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
+		if err != nil {
+			return nil, err
+		}
+		if rel != "." {
+			// The selected config sits below the workspace root ("setup from a
+			// module subdirectory"). Its module is never installed into a
+			// workspace, so nothing records its SDK as-sdk on its behalf:
+			//   - with toolchains, those hoist into the workspace-root
+			//     dagger.toml, and the runtime pin plus explicit-loading
+			//     warning land on that hoisted plan;
+			//   - without toolchains, this is the module-only migration: the
+			//     config converts in place, no workspace is created, and there
+			//     is no runtime pin and no warning. The converted
+			//     dagger-module.toml still names its sdk, so the module stays
+			//     loadable on its own.
+			if len(compatWorkspace.Config.Toolchains) == 0 {
+				continue
+			}
+			assignments = append(assignments, workspaceMigrationParentAssignment{
+				CompatWorkspace:   compatWorkspace,
+				ParentProjectRoot: ws.HostPath(),
+			})
+			continue
+		}
+		// A project-style layout at the workspace root (source in a
+		// subdirectory) installs the module into its own migrated workspace
+		// config with its SDK recorded as-sdk; there is no separate runtime
+		// pin to hoist and no explicit-loading warning. Only the "repo is just
+		// a dagger module" shape — source at the project root — flows through
+		// here, whether or not toolchains force a workspace plan of its own.
 		if compatWorkspace.MustMigrateToWorkspaceConfig() && !workspace.ModuleSourceAtRoot(compatWorkspace.Config) {
 			continue
 		}
 		// The runtime pin and warning land at the module's own project root:
 		// either its planned dagger.toml (toolchains case) or a minimal parent
-		// config synthesized there. Never at the workspace/git root — a module
-		// repo must not grow a repo-root workspace claiming sibling modules.
+		// config synthesized there. Never above it — a module repo must not
+		// grow a workspace claiming sibling modules.
 		assignments = append(assignments, workspaceMigrationParentAssignment{
 			CompatWorkspace:   compatWorkspace,
 			ParentProjectRoot: compatWorkspace.ProjectRoot,
@@ -296,9 +321,12 @@ func workspaceMigrationInstallDiscoveredModuleSDKs(
 			return nil, err
 		}
 		if owner == "" {
-			// Every discovered module descends from a config that is itself
-			// migrated into a workspace, so a planned owner is expected.
-			return nil, fmt.Errorf("no migrated workspace owns discovered module %q", compatWorkspace.ProjectRoot)
+			// A module-only migration — setup run from a module subdirectory —
+			// plans no workspace config at all, so a discovered dependency has
+			// no config to record its SDK in. Its converted dagger-module.toml
+			// still names its sdk; the install happens when a workspace later
+			// claims these modules.
+			continue
 		}
 		modulePath, err := filepath.Rel(owner, compatWorkspace.ProjectRoot)
 		if err != nil {

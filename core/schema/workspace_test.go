@@ -341,7 +341,10 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 	ws := &core.Workspace{}
 	ws.SetHostPath(root)
 
-	t.Run("plain module in a subdirectory creates parent at its own root with SDK module", func(t *testing.T) {
+	t.Run("plain module in a subdirectory gets no parent workspace", func(t *testing.T) {
+		// Setup run from a module subdirectory migrates just the module: the
+		// config converts in place and no workspace is created anywhere — no
+		// runtime pin, no explicit-loading warning, no migration report.
 		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
   "name": "video",
   "sdk": {"source": "go"}
@@ -349,25 +352,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 
 		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, nil)
 		require.NoError(t, err)
-		require.Len(t, plans, 1)
-		// The parent lands at the module's own project root, never the
-		// workspace/git root: a module repo must not grow a repo-root
-		// workspace claiming sibling modules.
-		require.Equal(t, filepath.Join(root, "modules", "video"), plans[0].ProjectRoot)
-		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
-		require.NoError(t, err)
-		// The runtime is recorded as an as-sdk install by short name; setup's
-		// SDK fixup pass resolves it to its real ref.
-		sdk := cfg.Modules["dagger-go-sdk"]
-		require.Equal(t, "go", sdk.Source)
-		require.NotNil(t, sdk.AsSDK)
-		require.Equal(t, []string{
-			"modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m modules/video ...`.",
-		}, plans[0].Warnings)
-		require.Equal(t, filepath.Join(workspace.LockDirName, "migration-report.md"), plans[0].MigrationReportPath)
-		require.Contains(t, string(plans[0].MigrationReportData), "## modules/video requires explicit loading")
-		require.Contains(t, string(plans[0].MigrationReportData), "**This works**: `dagger -m modules/video call --help`")
-		require.Contains(t, string(plans[0].MigrationReportData), "**This no longer works**: `cd modules/video; dagger call --help`")
+		require.Empty(t, plans)
 	})
 
 	t.Run("plain root module creates root parent with SDK module", func(t *testing.T) {
@@ -394,18 +379,18 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.Contains(t, string(plans[0].MigrationReportData), "**This no longer works**: `dagger call --help`")
 	})
 
-	t.Run("module repo with its own workspace plan installs SDK in that plan", func(t *testing.T) {
-		// A must-migrate config (toolchains) whose source is at the project
-		// root is the "repo is just a dagger module" shape: its SDK runtime is
-		// pinned as a plain install in its own planned dagger.toml, and the
-		// explicit-loading warning lands on that plan.
+	t.Run("subdirectory toolchains config installs SDK in the hoisted root plan", func(t *testing.T) {
+		// A subdirectory config with toolchains hoists them into a dagger.toml
+		// planned at the workspace root; its SDK runtime pin and the
+		// explicit-loading warning land on that hoisted plan.
 		moduleRepo := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api"), `{
   "name": "api",
   "sdk": {"source": "go"},
   "toolchains": [{"name": "tc", "source": "./tc"}]
 }`)
 		migrated := &workspace.MigrationPlan{
-			ProjectRoot:         filepath.Join(root, "services", "api"),
+			ProjectRoot:         root,
+			ModuleProjectRoot:   filepath.Join(root, "services", "api"),
 			WorkspaceConfigData: []byte(initialWorkspaceConfig),
 		}
 
@@ -424,17 +409,18 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.Contains(t, string(migrated.MigrationReportData), "## services/api requires explicit loading")
 	})
 
-	t.Run("project-style module is not assigned a runtime pin", func(t *testing.T) {
-		// A must-migrate config with its source in a subdirectory installs the
-		// module into its own migrated workspace config with the SDK recorded
-		// as-sdk; the parent-plan flow must leave it alone entirely.
-		project := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api"), `{
+	t.Run("project-style module at the root is not assigned a runtime pin", func(t *testing.T) {
+		// A must-migrate config at the workspace root with its source in a
+		// subdirectory installs the module into its own migrated workspace
+		// config with the SDK recorded as-sdk; the parent-plan flow must leave
+		// it alone entirely.
+		project := testRuntimeCompatWorkspace(t, root, `{
   "name": "api",
   "sdk": {"source": "go"},
   "source": "src"
 }`)
 		migrated := &workspace.MigrationPlan{
-			ProjectRoot:         filepath.Join(root, "services", "api"),
+			ProjectRoot:         root,
 			WorkspaceConfigData: []byte(initialWorkspaceConfig),
 		}
 
@@ -447,27 +433,42 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.Empty(t, workspaceMigrationWarnings(migrated))
 	})
 
-	t.Run("plain modules each get a parent at their own root", func(t *testing.T) {
-		video := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
-  "name": "video",
-  "sdk": {"source": "go"}
-}`)
-		audio := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "audio"), `{
-  "name": "audio",
-  "sdk": {"source": "go"}
+	t.Run("subdirectory module without toolchains gets no runtime pin", func(t *testing.T) {
+		// A subdirectory config that must migrate only because its source is
+		// in a subdirectory is the module-only case: no workspace is planned
+		// anywhere, so there is no runtime pin and no warning.
+		project := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api"), `{
+  "name": "api",
+  "sdk": {"source": "go"},
+  "source": "src"
 }`)
 
-		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{video, audio}, nil)
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{project}, nil)
 		require.NoError(t, err)
-		require.Len(t, plans, 2)
-		for _, plan := range plans {
-			cfg, err := workspace.ParseConfig(plan.WorkspaceConfigData)
-			require.NoError(t, err)
-			require.Len(t, cfg.Modules, 1)
-			sdk := cfg.Modules["dagger-go-sdk"]
-			require.Equal(t, "go", sdk.Source)
-			require.NotNil(t, sdk.AsSDK)
-		}
+		require.Empty(t, plans)
+	})
+
+	t.Run("subdirectory module-only migration leaves discovered dependency SDKs unrecorded", func(t *testing.T) {
+		// With no workspace planned anywhere, a discovered local dependency has
+		// no config to record its SDK in; the install is skipped rather than
+		// failing the migration.
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "go"},
+  "dependencies": [{"name": "dep", "source": "./dep"}]
+}`)
+		dep := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video", "dep"), `{
+  "name": "dep",
+  "sdk": {"source": "go"}
+}`)
+		dep.DiscoveredLocalModule = true
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain, dep}, nil)
+		require.NoError(t, err)
+		require.Empty(t, plans)
+		plans, err = workspaceMigrationInstallDiscoveredModuleSDKs(nil, plans, []*workspace.CompatWorkspace{plain, dep})
+		require.NoError(t, err)
+		require.Empty(t, plans)
 	})
 
 	t.Run("parent SDK module name conflicts get a stable alternate name", func(t *testing.T) {
@@ -477,7 +478,8 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
   "toolchains": [{"name": "tc", "source": "./tc"}]
 }`)
 		migrated := &workspace.MigrationPlan{
-			ProjectRoot: filepath.Join(root, "services", "api"),
+			ProjectRoot:       root,
+			ModuleProjectRoot: filepath.Join(root, "services", "api"),
 			WorkspaceConfigData: []byte(`[modules.dagger-go-sdk]
 source = "github.com/acme/custom-go-sdk"
 `),
@@ -494,9 +496,9 @@ source = "github.com/acme/custom-go-sdk"
 	})
 
 	t.Run("module repo runtime pin and discovered dependency share one SDK install", func(t *testing.T) {
-		// One SDK install serves every module in the repo: the module-repo
+		// One SDK install serves every module in the repo: the hoisted
 		// runtime pin and a discovered local dependency using the same runtime
-		// must collapse into a single [modules.<sdk>] entry.
+		// must collapse into a single [modules.<sdk>] entry in the root plan.
 		moduleRepo := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api"), `{
   "name": "api",
   "sdk": {"source": "go"},
@@ -508,7 +510,8 @@ source = "github.com/acme/custom-go-sdk"
 }`)
 		dep.DiscoveredLocalModule = true
 		migrated := &workspace.MigrationPlan{
-			ProjectRoot:         filepath.Join(root, "services", "api"),
+			ProjectRoot:         root,
+			ModuleProjectRoot:   filepath.Join(root, "services", "api"),
 			WorkspaceConfigData: []byte(initialWorkspaceConfig),
 		}
 
@@ -525,7 +528,7 @@ source = "github.com/acme/custom-go-sdk"
 		require.Equal(t, "go", sdk.Source)
 		require.NotNil(t, sdk.AsSDK)
 		require.Len(t, sdk.AsSDK.Modules, 1)
-		require.Equal(t, filepath.Join("libs", "dep"), filepath.FromSlash(sdk.AsSDK.Modules[0].Path))
+		require.Equal(t, filepath.Join("services", "api", "libs", "dep"), filepath.FromSlash(sdk.AsSDK.Modules[0].Path))
 	})
 }
 
@@ -555,14 +558,16 @@ func TestWorkspaceMigrationModuleConfigConversions(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, noSDKPlain)
 
-	conversions, err := workspaceMigrationModuleConfigConversions([]*workspace.CompatWorkspace{
+	ws := &core.Workspace{}
+	ws.SetHostPath(root)
+	conversions, err := workspaceMigrationModuleConfigConversions(ws, []*workspace.CompatWorkspace{
 		plain,
 		rootSDKOnly,
 		workspaceConfig,
 		noSDKPlain,
 	})
 	require.NoError(t, err)
-	require.Len(t, conversions, 3, "everything except the workspace-shaped config converts in place")
+	require.Len(t, conversions, 4, "every selected shape without toolchains converts in place, including a subdirectory config with a source subdir")
 	require.Equal(t, filepath.Join(root, ".dagger", "modules", "video"), conversions[0].ProjectRoot)
 	cfg, err := modules.ParseModuleConfigForFilename(conversions[0].ConfigData, workspace.ModuleConfigFileName)
 	require.NoError(t, err)
@@ -580,8 +585,17 @@ func TestWorkspaceMigrationModuleConfigConversions(t *testing.T) {
 	require.Equal(t, "app", cfg.Name)
 	require.Equal(t, "go", cfg.SDK.Source)
 
-	require.Equal(t, filepath.Join(root, "modules", "data"), conversions[2].ProjectRoot)
+	// A subdirectory config that must migrate only because its source is in a
+	// subdirectory is the plain "migrate this one module" case: it converts in
+	// place with its source preserved, and no workspace is created for it.
+	require.Equal(t, filepath.Join(root, "services", "api"), conversions[2].ProjectRoot)
 	cfg, err = modules.ParseModuleConfigForFilename(conversions[2].ConfigData, workspace.ModuleConfigFileName)
+	require.NoError(t, err)
+	require.Equal(t, "api", cfg.Name)
+	require.Equal(t, "src", cfg.Source)
+
+	require.Equal(t, filepath.Join(root, "modules", "data"), conversions[3].ProjectRoot)
+	cfg, err = modules.ParseModuleConfigForFilename(conversions[3].ConfigData, workspace.ModuleConfigFileName)
 	require.NoError(t, err)
 	require.Equal(t, "data", cfg.Name)
 	require.Nil(t, cfg.SDK)
@@ -639,7 +653,9 @@ func TestWorkspaceMigrationDiscoveredLocalModuleConversions(t *testing.T) {
 }`)
 	nested.DiscoveredLocalModule = true
 
-	conversions, err := workspaceMigrationModuleConfigConversions([]*workspace.CompatWorkspace{toolchain, nested})
+	ws := &core.Workspace{}
+	ws.SetHostPath(root)
+	conversions, err := workspaceMigrationModuleConfigConversions(ws, []*workspace.CompatWorkspace{toolchain, nested})
 	require.NoError(t, err)
 	require.Len(t, conversions, 1, "the normal toolchain converts; the nested workspace is left as legacy")
 	require.Equal(t, filepath.Join(root, "toolchain"), conversions[0].ProjectRoot)

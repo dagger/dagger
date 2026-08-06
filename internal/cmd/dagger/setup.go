@@ -42,6 +42,13 @@ Migration and recommendations never run together: after applying a
 migration, run setup again to see recommendations for the migrated
 workspace. Declining the migration falls through to recommendations.
 
+Run from a module subdirectory (a dagger.json below the repository
+root), the migrate step converts just that module to dagger-module.toml:
+no workspace is created and module recommendations are skipped. If that
+config lists toolchains, they are installed into a dagger.toml at the
+repository root — never a nested one. A subdirectory config with a
+blueprint is left as legacy with a warning.
+
 Idempotent: safe to run anytime. No-ops what's already in good shape.
 Each step can be skipped at the prompt. With --auto-apply, all steps
 are applied without prompting. In non-interactive mode (no TTY) the
@@ -72,6 +79,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			recs            []recommendation
 			install         bool
 			migrated        bool
+			moduleOnly      bool
 			migratedConfigs []string
 		)
 		if err := func() error {
@@ -81,7 +89,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			}
 			defer closeSess()
 			dag := sess.Dagger()
-			migrated, migratedConfigs, err = setupStepMigrate(ctx, cmd, dag)
+			migrated, moduleOnly, migratedConfigs, err = setupStepMigrate(ctx, cmd, dag)
 			if err != nil {
 				return fmt.Errorf("step 2 (migrate): %w", err)
 			}
@@ -92,6 +100,13 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 				// `dagger setup`. A declined migration falls through — the
 				// user opted to keep the workspace as-is, so recommendations
 				// still run.
+				return nil
+			}
+			if moduleOnly {
+				// Setup ran from a module subdirectory: the migration converts
+				// just that module and creates no workspace. Recommendations
+				// are workspace-scoped and would create one, so they never run
+				// here — even when the migration was declined.
 				return nil
 			}
 			recs, install, err = planRecommend(ctx, cmd, dag)
@@ -106,8 +121,10 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		// Session 2: a fresh session re-detects the workspace migrated in
 		// session 1 as native. Resolve any SDK that migration recorded by short
 		// name to its real ref (sdks.json), then install accepted recommendations.
+		// A module-only migration writes no dagger.toml, so there is nothing to
+		// resolve or install and no second session to open.
 		needInstall := install && len(recs) > 0
-		if migrated || needInstall {
+		if (migrated && !moduleOnly) || needInstall {
 			sess, closeSess, err := connect(ctx)
 			if err != nil {
 				return err
@@ -129,7 +146,11 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		}
 
 		if migrated {
-			fmt.Fprintln(out, "\nRun `dagger setup` again to see recommended modules for the migrated workspace.")
+			if moduleOnly {
+				fmt.Fprintln(out, "\nMigrated the module in place; no workspace config was created.")
+			} else {
+				fmt.Fprintln(out, "\nRun `dagger setup` again to see recommended modules for the migrated workspace.")
+			}
 		}
 		fmt.Fprintln(out, "\nSetup complete.")
 		return nil
@@ -185,7 +206,13 @@ const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to m
 // session should resolve SDKs migration may have recorded by short name) and
 // the workspace-root-relative paths of the dagger.toml configs it wrote — the
 // exact set the SDK resolution pass must scope itself to.
-func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (applied bool, configs []string, _ error) {
+//
+// moduleOnly reports a migration that writes no dagger.toml at all: setup ran
+// from a module subdirectory, so only the module config converts (dagger.json
+// -> dagger-module.toml) and no workspace is created. It is reported whether
+// or not the migration was applied, so the caller can skip workspace-scoped
+// recommendations either way.
+func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (applied bool, moduleOnly bool, configs []string, _ error) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "\nStep 2: Workspace migration")
 
@@ -195,18 +222,34 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 
 	changesID, err := changes.ID(ctx)
 	if err != nil {
-		return false, nil, fmt.Errorf("compute migration: %w", err)
+		return false, false, nil, fmt.Errorf("compute migration: %w", err)
 	}
 	changes = dagger.Ref[*dagger.Changeset](dag, changesID)
 
 	isEmpty, err := changes.IsEmpty(ctx)
 	if err != nil {
-		return false, nil, fmt.Errorf("check migration: %w", err)
+		return false, false, nil, fmt.Errorf("check migration: %w", err)
 	}
 	if isEmpty {
+		// An empty changeset can still carry warning-only steps: a legacy
+		// config migration skipped by design (e.g. a subdirectory dagger.json
+		// with a blueprint is left as legacy). Surface those instead of "No
+		// migration needed", and skip workspace-scoped recommendations — the
+		// selected legacy config sits in a module subdirectory.
+		skipWarnings, err := migrationStepWarnings(ctx, migration)
+		if err != nil {
+			return false, false, nil, fmt.Errorf("check migration warnings: %w", err)
+		}
+		if len(skipWarnings) > 0 {
+			for _, warning := range skipWarnings {
+				fmt.Fprintf(out, "  Skipped: %s\n", warning)
+			}
+			return false, true, nil, nil
+		}
+
 		configFile, err := ws.ConfigFile(ctx)
 		if err != nil {
-			return false, nil, fmt.Errorf("check workspace config: %w", err)
+			return false, false, nil, fmt.Errorf("check workspace config: %w", err)
 		}
 		if configFile == "" {
 			// Nothing to migrate and no workspace config yet — don't seed an empty
@@ -214,30 +257,50 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 			if !silent {
 				fmt.Fprint(out, emptyWorkspaceSetupHint)
 			}
-			return false, nil, nil
+			return false, false, nil, nil
 		}
 		fmt.Fprintln(out, "  No migration needed.")
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 
 	configs, err = migratedConfigPaths(ctx, changes)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
+	moduleOnly = len(configs) == 0
 
 	// handleWorkspaceResponse owns the apply prompt via a huh form when
 	// autoApply is false — we don't run our own confirm() here, otherwise
 	// the user would face two prompts back-to-back for the same action.
 	applied, err = handleWorkspaceResponse(ctx, dag, ws.WithChanges(changes), autoApply)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 	if !applied {
 		// The user declined: the legacy config is left in place, so there is
 		// nothing to resolve and the migrated config files were never written.
-		return false, nil, nil
+		return false, moduleOnly, nil, nil
 	}
-	return true, configs, nil
+	return true, moduleOnly, configs, nil
+}
+
+// migrationStepWarnings collects the warnings attached to the migration's
+// steps. With an empty changeset these are the only signal a legacy config was
+// deliberately skipped rather than absent.
+func migrationStepWarnings(ctx context.Context, migration *dagger.WorkspaceMigration) ([]string, error) {
+	steps, err := migration.Steps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var warnings []string
+	for _, step := range steps {
+		stepWarnings, err := step.Warnings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, stepWarnings...)
+	}
+	return warnings, nil
 }
 
 // migratedConfigPaths returns the workspace-root-relative paths of the

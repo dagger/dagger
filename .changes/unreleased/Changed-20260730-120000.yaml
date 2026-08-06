@@ -17,6 +17,15 @@ body: |
     migration ends the run, and recommendations appear on the next
     `dagger setup` once the workspace is current. Declining the migration
     falls through to recommendations as before.
+  - Running `dagger setup` from a module subdirectory (a `dagger.json` below
+    the repository root) migrates just that module: `dagger.json` becomes
+    `dagger-module.toml` in place and no workspace is created. Module
+    recommendations are skipped in this case.
+  - Nested `dagger.toml` files are never created. A subdirectory `dagger.json`
+    with toolchains has them installed into a `dagger.toml` at the repository
+    root (local sources rebased); the module itself is not installed. A
+    subdirectory `dagger.json` with a `blueprint` is left as legacy with a
+    warning.
 time: 2026-07-30T12:00:00Z
 custom:
   Author: kpenfound

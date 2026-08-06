@@ -3,6 +3,7 @@ package workspace
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -136,7 +137,15 @@ func IsLocalRef(source, pin string) bool {
 // MigrationPlan is the pure filesystem plan for migrating a legacy
 // dagger.json project to workspace format.
 type MigrationPlan struct {
-	ProjectRoot              string
+	// ProjectRoot is where the workspace config (dagger.toml) and migration
+	// report land.
+	ProjectRoot string
+	// ModuleProjectRoot is where the legacy dagger.json lives: the migrated
+	// dagger-module.toml replaces it there and the legacy file is removed
+	// there. It equals ProjectRoot except for a hoisted subdirectory project,
+	// whose workspace fields migrate to the workspace root while the module
+	// config stays in place.
+	ModuleProjectRoot        string
 	Warnings                 []string
 	MigrationGapCount        int
 	MigrationReportPath      string
@@ -147,8 +156,13 @@ type MigrationPlan struct {
 }
 
 // PlanMigration computes the pure filesystem plan for migrating a compat
-// workspace into workspace format.
-func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
+// workspace into workspace format. workspaceRoot is the workspace boundary:
+// when the legacy config lives below it, the plan is "hoisted" — nested
+// dagger.toml files are never created, so the config's workspace fields
+// (toolchains) are installed into a dagger.toml at the workspace root with
+// their local sources rebased, while the module config still converts in
+// place at its own directory and the module itself is not installed.
+func PlanMigration(compatWorkspace *CompatWorkspace, workspaceRoot string) (*MigrationPlan, error) {
 	if compatWorkspace == nil || compatWorkspace.Config == nil {
 		return nil, fmt.Errorf("compat workspace is required")
 	}
@@ -158,16 +172,40 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	if compatWorkspace.ConfigPath == "" {
 		return nil, fmt.Errorf("compat workspace config path is required")
 	}
+	if workspaceRoot == "" {
+		workspaceRoot = compatWorkspace.ProjectRoot
+	}
 
 	cfg := compatWorkspace.Config
 	if !mustMigrateToWorkspaceConfig(cfg) {
 		return nil, fmt.Errorf("dagger.json does not require workspace config migration")
 	}
+
+	moduleRoot := compatWorkspace.ProjectRoot
+	hoistRel, err := filepath.Rel(filepath.Clean(workspaceRoot), filepath.Clean(moduleRoot))
+	if err != nil {
+		return nil, fmt.Errorf("project root %q relative to workspace root %q: %w", moduleRoot, workspaceRoot, err)
+	}
+	hoistRel = filepath.ToSlash(hoistRel)
+	if hoistRel == ".." || strings.HasPrefix(hoistRel, "../") {
+		return nil, fmt.Errorf("project root %q escapes workspace root %q", moduleRoot, workspaceRoot)
+	}
+	hoisted := hoistRel != "."
+	if hoisted && cfg.Blueprint != nil {
+		// A subdirectory blueprint config is left as legacy by the caller;
+		// hoisting a blueprint would change the repo-wide entrypoint.
+		return nil, fmt.Errorf("subdirectory config with a blueprint cannot be hoisted to the workspace root")
+	}
+
 	hasSDK := cfg.SDK != nil && cfg.SDK.Source != ""
 	sourceAtRoot := ModuleSourceAtRoot(cfg)
 
 	plan := &MigrationPlan{
-		ProjectRoot: compatWorkspace.ProjectRoot,
+		ProjectRoot:       workspaceRoot,
+		ModuleProjectRoot: moduleRoot,
+	}
+	if !hoisted {
+		plan.ProjectRoot = moduleRoot
 	}
 
 	// The module config replaces dagger.json at the exact same location:
@@ -190,12 +228,20 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 
 	wsCfg := compatWorkspace.WorkspaceConfig()
+	if hoisted {
+		// The toolchain installs move from the subdirectory config into the
+		// workspace-root dagger.toml, so their local sources must be
+		// re-expressed relative to the workspace root.
+		rebaseHoistedModuleSources(wsCfg, hoistRel)
+	}
 	mainModule := compatWorkspace.MainModule
-	if !hasSDK || sourceAtRoot {
+	if !hasSDK || sourceAtRoot || hoisted {
 		// A module whose source is the project root IS the repo, not a module
 		// owned by a surrounding project: it is not installed into the
 		// workspace and gets no entrypoint. Its SDK runtime is pinned
 		// separately (as a plain module install) by the migration caller.
+		// A hoisted subdirectory module is likewise never installed into the
+		// repo-wide workspace — only its toolchains are.
 		mainModule = nil
 	}
 	if mainModule != nil {
@@ -223,6 +269,20 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 
 	return plan, nil
+}
+
+// rebaseHoistedModuleSources rewrites local module install sources so refs
+// that were relative to a subdirectory legacy config resolve from the
+// workspace root, where the hoisted dagger.toml lives. Remote refs pass
+// through untouched.
+func rebaseHoistedModuleSources(wsCfg *Config, rel string) {
+	for name, entry := range wsCfg.Modules {
+		if !IsLocalRef(entry.Source, "") {
+			continue
+		}
+		entry.Source = "./" + path.Join(rel, filepath.ToSlash(entry.Source))
+		wsCfg.Modules[name] = entry
+	}
 }
 
 func renderMigrationWorkspaceConfig(cfg *Config, mainModule *CompatMainModule) ([]byte, error) {
