@@ -720,6 +720,7 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 				With(daggerCall(
 					"fn",
 					"--cache-bust", cacheBust,
+					"--username", authTokenTestCase.httpAuthUsername,
 					"--token-plaintext", authTokenTestCase.token(),
 					"stdout",
 				)).
@@ -1222,7 +1223,7 @@ func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.
 	gitConfigFile1 := filepath.Join(gitConfigDir1, "config")
 	err := os.WriteFile(
 		gitConfigFile1,
-		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken))),
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername, decodedGitToken(tc.encodedToken))),
 		0644,
 	)
 	require.NoError(t, err)
@@ -1246,7 +1247,7 @@ func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.
 	gitConfigFile2 := filepath.Join(gitConfigDir2, "config")
 	err = os.WriteFile(
 		gitConfigFile2,
-		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken2))),
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername2, decodedGitToken(tc.encodedToken2))),
 		0644,
 	)
 	require.NoError(t, err)
