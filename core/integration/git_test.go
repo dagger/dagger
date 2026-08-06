@@ -786,13 +786,11 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 	// })
 
 	t.Run("GitLab auth", func(ctx context.Context, t *testctx.T) {
-		// Base64-encoded read-only PAT for test repo
-		pat := "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx"
-		token, err := decodeAndTrimPAT(pat)
-		require.NoError(t, err)
+		tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 
-		_, err = c.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", dagger.GitOpts{
-			HTTPAuthToken: c.SetSecret("gitlab_pat", token),
+		_, err := c.Git(tc.gitTestRepoRef, dagger.GitOpts{
+			HTTPAuthUsername: tc.httpAuthUsername,
+			HTTPAuthToken:    c.SetSecret("gitlab_deploy_token", tc.token()),
 		}).
 			Branch("main").
 			Tree().

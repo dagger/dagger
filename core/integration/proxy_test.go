@@ -407,6 +407,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 					run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
 						opts := dagger.GitOpts{}
 						if token := tc.token(); token != "" {
+							opts.HTTPAuthUsername = tc.httpAuthUsername
 							opts.HTTPAuthToken = c.SetSecret("TOKEN", token)
 						}
 						gitURL := "https://" + strings.TrimPrefix(tc.gitTestRepoRef, "https://")
@@ -448,6 +449,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 					run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
 						opts := dagger.GitOpts{}
 						if token := tc.token(); token != "" {
+							opts.HTTPAuthUsername = tc.httpAuthUsername
 							opts.HTTPAuthToken = c.SetSecret("TOKEN", token)
 						}
 

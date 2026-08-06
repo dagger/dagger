@@ -27,7 +27,7 @@ func TestGitCredential(t *testing.T) {
 }
 
 // TestGitCredentialErrors verifies Git authentication for private modules across different providers
-// using host-specific PATs and isolated Git credentials per test.
+// using host-specific credentials and isolated Git configuration per test.
 func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testctx.T) {
 	// Decode base64-encoded PATs used in CI
 	decodeAndTrimPAT := func(encoded string) (string, error) {
@@ -39,9 +39,9 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 	}
 
 	// Creates isolated Git credentials per host to allow parallel test execution
-	setupGitCredentials := func(host, token, workDir string) []string {
+	setupGitCredentials := func(host, username, token, workDir string) []string {
 		gitConfigPath := filepath.Join(workDir, ".gitconfig")
-		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials(host, "x-token-auth", token)), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials(host, username, token)), 0600)
 		require.NoError(t, err)
 		return []string{"GIT_CONFIG_GLOBAL=" + gitConfigPath}
 	}
@@ -88,7 +88,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		env := setupGitCredentials("github.com", token, workDir)
+		env := setupGitCredentials("github.com", "x-token-auth", token, workDir)
 		modDir := filepath.Join(workDir, "module")
 		err = os.MkdirAll(modDir, 0755)
 		require.NoError(t, err)
@@ -117,17 +117,14 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 
 	t.Run("gitlab private module", func(ctx context.Context, t *testctx.T) {
 		workDir := t.TempDir()
+		tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 
-		pat := "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx"
-		token, err := decodeAndTrimPAT(pat)
-		require.NoError(t, err)
-
-		env := setupGitCredentials("gitlab.com", token, workDir)
+		env := setupGitCredentials(tc.expectedHost, tc.httpAuthUsername, tc.token(), workDir)
 		modDir := filepath.Join(workDir, "module")
-		err = os.MkdirAll(modDir, 0755)
+		err := os.MkdirAll(modDir, 0755)
 		require.NoError(t, err)
 
-		out, err := execWithEnv(ctx, t, modDir, env, "-m", "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", "api", "functions")
+		out, err := execWithEnv(ctx, t, modDir, env, "-m", tc.gitTestRepoRef, "api", "functions")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "Description")
 	})
@@ -140,7 +137,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
-		env := setupGitCredentials("github.com", token, workDir)
+		env := setupGitCredentials("github.com", "x-token-auth", token, workDir)
 
 		rootDir := filepath.Join(workDir, "main")
 		copyTestdataFixture(ctx, t, rootDir, "modules", "go", "gitcredential-private-dir")
