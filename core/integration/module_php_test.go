@@ -256,6 +256,48 @@ func (PHPSuite) TestConstructor(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (PHPSuite) TestCheck(ctx context.Context, t *testctx.T) {
+	t.Run("list checks", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := phpModule(t, c, "checks").
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "passing")
+		require.Contains(t, out, "failing")
+		require.Contains(t, out, "passing-container")
+		require.Contains(t, out, "failing-container")
+	})
+
+	t.Run("run passing checks", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := phpModule(t, c, "checks").
+			With(daggerExec("--progress=report", "check", "passing*")).
+			CombinedOutput(ctx)
+
+		require.NoError(t, err)
+		require.Regexp(t, `passing.*OK`, out)
+		require.Regexp(t, `passing-container.*OK`, out)
+	})
+
+	t.Run("run failing checks", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := phpModule(t, c, "checks").
+			With(daggerExecFail("--progress=report", "check", "failing*")).
+			CombinedOutput(ctx)
+
+		require.NoError(t, err)
+		require.Regexp(t, `failing.*ERROR`, out)
+		require.Regexp(t, `failing-container.*ERROR`, out)
+	})
+}
+
+
+
 func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/php", moduleName))

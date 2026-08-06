@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\Fixture;
 
+use Dagger\Attribute\Check;
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
 use Dagger\Attribute\DefaultPath;
@@ -19,7 +20,17 @@ use Dagger\ValueObject;
 final class DaggerObjectWithDaggerFunctions
 {
     #[DaggerFunction]
-    public function __construct() {
+    public function __construct() {}
+
+    #[Check]
+    #[DaggerFunction]
+    public function withCheckVoid(): void {}
+
+    #[Check]
+    #[DaggerFunction]
+    public function withCheckContainer(): Container
+    {
+        return new Container();
     }
 
     #[DaggerFunction]
@@ -135,6 +146,20 @@ final class DaggerObjectWithDaggerFunctions
                     null,
                     [],
                     new ValueObject\Type(self::class)
+                ),
+                new ValueObject\DaggerFunction(
+                    name: 'withCheckVoid',
+                    description: null,
+                    arguments: [],
+                    returnType: new ValueObject\Type('void'),
+                    withCheck: true,
+                ),
+                new ValueObject\DaggerFunction(
+                    name: 'withCheckContainer',
+                    description: null,
+                    arguments: [],
+                    returnType: new ValueObject\Type(Container::class),
+                    withCheck: true,
                 ),
                 new ValueObject\DaggerFunction(
                     'returnBool',

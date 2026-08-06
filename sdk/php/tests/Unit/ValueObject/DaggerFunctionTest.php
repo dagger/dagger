@@ -201,5 +201,33 @@ class DaggerFunctionTest extends TestCase
                 'explicitlyOptionalFile',
             ),
         ];
+
+        yield 'check that returns nothing' => [
+            new DaggerFunction(
+                name: 'withCheckVoid',
+                description: null,
+                arguments: [],
+                returnType: new Type('void'),
+                withCheck: true,
+            ),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'withCheckVoid',
+            ),
+        ];
+
+        yield 'check that returns container' => [
+            new DaggerFunction(
+                name: 'withCheckContainer',
+                description: null,
+                arguments: [],
+                returnType: new Type(Container::class),
+                withCheck: true,
+            ),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'withCheckContainer',
+            ),
+        ];
     }
 }
