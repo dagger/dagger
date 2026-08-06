@@ -83,7 +83,7 @@ If your project already uses a legacy `dagger.json`, run `dagger setup` — its 
 dagger setup
 ```
 
-This writes `dagger.toml` from your existing configuration. See [Upgrade to Workspaces](../reference/upgrade-to-workspaces.mdx) for details.
+This writes `dagger.toml` from your existing configuration. When a migration applies, setup stops there — run `dagger setup` again afterward to see module recommendations for the migrated workspace. Running setup from a module subdirectory (a `dagger.json` below the repository root) migrates just that module to `dagger-module.toml` without creating a workspace. See [Upgrade to Workspaces](../reference/upgrade-to-workspaces.mdx) for details.
 
 ## What's next
 

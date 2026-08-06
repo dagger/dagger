@@ -2,9 +2,8 @@ package schema
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 )
@@ -15,6 +14,7 @@ type workspaceMigrationModuleConfigConversion struct {
 }
 
 func workspaceMigrationModuleConfigConversions(
+	ws *core.Workspace,
 	compatWorkspaces []*workspace.CompatWorkspace,
 ) ([]workspaceMigrationModuleConfigConversion, error) {
 	// This is filename-format migration, not workspace compat projection:
@@ -35,13 +35,21 @@ func workspaceMigrationModuleConfigConversions(
 				continue
 			}
 		} else {
-			if compatWorkspace.MustMigrateToWorkspaceConfig() {
-				continue
+			routesThroughPlan, err := workspaceMigrationRoutesThroughPlan(ws, compatWorkspace)
+			if err != nil {
+				return nil, err
 			}
-			if compatWorkspace.Config.SDK != nil && !workspaceMigrationProjectRootInDefaultModules(compatWorkspace.ProjectRoot) {
+			if routesThroughPlan {
+				// PlanMigration writes this config's dagger-module.toml
+				// itself (in place, at the module's own project root).
 				continue
 			}
 		}
+		// Reaching here non-discovered means the selected config is a plain
+		// SDK module — either the "repo is just a dagger module" shape (source
+		// at the workspace root, runtime pinned via the parent-plan flow) or a
+		// module in a subdirectory (module-only migration: converted in place
+		// with no workspace created).
 		if compatWorkspace.ProjectRoot == "" {
 			return nil, fmt.Errorf("legacy module config project root is required")
 		}
@@ -82,14 +90,4 @@ func legacyModuleConfigAsCurrent(cfg *modules.ModuleConfig) ([]byte, error) {
 	return modules.MarshalModuleConfigForFormat(&modules.ModuleConfigWithUserFields{
 		ModuleConfig: cloned,
 	}, modules.ConfigFormatCurrent)
-}
-
-func workspaceMigrationProjectRootInDefaultModules(projectRoot string) bool {
-	parts := strings.Split(filepath.ToSlash(filepath.Clean(projectRoot)), "/")
-	for i := 0; i+2 < len(parts); i++ {
-		if parts[i] == workspace.LockDirName && parts[i+1] == "modules" && parts[i+2] != "" {
-			return true
-		}
-	}
-	return false
 }
