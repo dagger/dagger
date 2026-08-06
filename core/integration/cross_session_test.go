@@ -943,9 +943,12 @@ import (
 
 type Secreter struct {}
 
-func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
+func (*Secreter) Fn(cacheBust, username, tokenPlaintext string) *dagger.Container {
 	authSecret := dag.SetSecret("GIT_AUTH", tokenPlaintext)
-	gitRepo := dag.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private", dagger.GitOpts{HTTPAuthToken: authSecret}).
+	gitRepo := dag.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private", dagger.GitOpts{
+		HTTPAuthUsername: username,
+		HTTPAuthToken:    authSecret,
+	}).
 		Branch("main").
 		Tree()
 
@@ -959,6 +962,7 @@ func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
 				With(daggerCall(
 					"fn",
 					"--cache-bust", cacheBust,
+					"--username", authTokenTestCase.httpAuthUsername,
 					"--token-plaintext", authTokenTestCase.token(),
 					"stdout",
 				)).
@@ -1711,7 +1715,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 	gitConfigFile1 := filepath.Join(gitConfigDir1, "config")
 	err = os.WriteFile(
 		gitConfigFile1,
-		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken))),
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername, decodedGitToken(tc.encodedToken))),
 		0644,
 	)
 	require.NoError(t, err)
@@ -1735,7 +1739,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]st
 	gitConfigFile2 := filepath.Join(gitConfigDir2, "config")
 	err = os.WriteFile(
 		gitConfigFile2,
-		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken2))),
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, tc.httpAuthUsername2, decodedGitToken(tc.encodedToken2))),
 		0644,
 	)
 	require.NoError(t, err)
