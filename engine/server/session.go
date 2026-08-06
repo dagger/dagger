@@ -1759,7 +1759,8 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}).Debug("handling http request")
 	if isSessionControlPath(r.URL.Path) {
 		r = r.WithContext(ctx)
-		return srv.serveSessionControl(w, r)
+		srv.serveSessionControl(w, r)
+		return nil
 	}
 	if opts.AttachSession && r.URL.Path != engine.SessionAttachablesEndpoint {
 		return controlError(http.StatusBadRequest, engine.SessionErrorInvalidRequest,

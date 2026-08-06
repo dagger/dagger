@@ -77,7 +77,7 @@ func TestUnknownSessionControlRouteHasProtocolCode(t *testing.T) {
 	srv, _, _ := newDetachableLifecycleTestSession(t, 0)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "http://dagger"+engine.SessionsEndpoint+"/unknown/route", nil)
-	require.NoError(t, srv.serveSessionControl(recorder, request))
+	srv.serveSessionControl(recorder, request)
 
 	require.Equal(t, http.StatusNotFound, recorder.Code)
 	var response engine.SessionProtocolErrorResponse
@@ -673,7 +673,10 @@ func TestCreatorRetryWaitsForRemovalThenPublishesFreshGeneration(t *testing.T) {
 	t.Cleanup(func() { _ = peerConn.Close() })
 	handshake := make(chan error, 1)
 	go func() {
-		_, readErr := http.ReadResponse(bufio.NewReader(peerConn), request)
+		response, readErr := http.ReadResponse(bufio.NewReader(peerConn), request)
+		if readErr == nil {
+			readErr = response.Body.Close()
+		}
 		if readErr == nil {
 			_, readErr = peerConn.Write([]byte{1})
 		}

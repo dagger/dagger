@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -59,7 +58,7 @@ func isSessionControlPath(path string) bool {
 	return path == engine.SessionsEndpoint || strings.HasPrefix(path, engine.SessionsEndpoint+"/")
 }
 
-func (srv *Server) serveSessionControl(w http.ResponseWriter, r *http.Request) error {
+func (srv *Server) serveSessionControl(w http.ResponseWriter, r *http.Request) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+engine.SessionsEndpoint, httpHandlerFunc(srv.serveSessionList, struct{}{}))
 	mux.HandleFunc("GET "+engine.SessionsEndpoint+"/{sessionID}", httpHandlerFunc(srv.serveSessionInspect, struct{}{}))
@@ -74,7 +73,6 @@ func (srv *Server) serveSessionControl(w http.ResponseWriter, r *http.Request) e
 			fmt.Errorf("unknown session control route %s %s", r.Method, r.URL.Path)).WriteTo(w)
 	})
 	mux.ServeHTTP(w, r)
-	return nil
 }
 
 func (srv *Server) serveSessionList(w http.ResponseWriter, _ *http.Request, _ struct{}) error {
@@ -459,9 +457,4 @@ func writeSessionJSON(w http.ResponseWriter, status int, value any) error {
 		return fmt.Errorf("encode session response: %w", err)
 	}
 	return nil
-}
-
-func sessionControlErrorFrom(err error) (sessionControlError, bool) {
-	var controlErr sessionControlError
-	return controlErr, errors.As(err, &controlErr)
 }

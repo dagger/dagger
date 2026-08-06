@@ -227,6 +227,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	return connect(ctx, params, connectionModeOrdinary)
 }
 
+//nolint:gocyclo // Connection setup keeps the lifecycle of each supported role in one cleanup scope.
 func connect(ctx context.Context, params Params, requestedMode connectionMode) (_ *Client, rerr error) {
 	if params.Detachable && params.AttachSessionID != "" {
 		return nil, errors.New("detachable creation and observer attachment are mutually exclusive")

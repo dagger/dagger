@@ -289,11 +289,11 @@ func (ps *PubSub) tracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 	})
 }
 
-//nolint:dupl
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
 	return ps.logsSubscribeHandler(w, r, client, sessionSSEOptions{terminating: client.shutdownCh})
 }
 
+//nolint:dupl
 func (ps *PubSub) logsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, opts sessionSSEOptions) error {
 	return ps.sseHandler(w, r, client, opts, func(ctx context.Context, db *clientdb.DB, lastID string, maxID sessionSSEMaxID) (*sse.Event, bool, error) {
 		var since int64
@@ -337,11 +337,11 @@ func (ps *PubSub) logsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 	})
 }
 
-//nolint:dupl
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
 	return ps.metricsSubscribeHandler(w, r, client, sessionSSEOptions{terminating: client.shutdownCh})
 }
 
+//nolint:dupl
 func (ps *PubSub) metricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, opts sessionSSEOptions) error {
 	return ps.sseHandler(w, r, client, opts, func(ctx context.Context, db *clientdb.DB, lastID string, maxID sessionSSEMaxID) (*sse.Event, bool, error) {
 		var since int64

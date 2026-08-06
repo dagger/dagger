@@ -52,6 +52,7 @@ dagger [options] [subcommand | file...]
 * [dagger module](#dagger-module)	 - Author a module: edit dependencies, engine version, etc.
 * [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
 * [dagger search](#dagger-search)	 - Search for modules you can install
+* [dagger sessions](#dagger-sessions)	 - Manage detachable sessions (experimental)
 * [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger setup](#dagger-setup)	 - Ensure Dagger is properly set up and operational in the workspace
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
@@ -201,10 +202,17 @@ Call one or more functions, interconnected into a pipeline
 dagger api call [options] [function]...
 ```
 
+### Examples
+
+```
+  dagger api call --detach build
+```
+
 ### Options
 
 ```
       --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --detach               Run the final call in a detachable session
       --eager-runtime        load module runtime eagerly
   -j, --json                 Present result as JSON
   -m, --load-module string   Use a one-off module (local path or git ref)
@@ -2595,6 +2603,184 @@ dagger search wolfi
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger sessions
+
+Manage detachable sessions (experimental)
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger sessions attach](#dagger-sessions-attach)	 - Attach to a detachable session
+* [dagger sessions inspect](#dagger-sessions-inspect)	 - Inspect a detachable session
+* [dagger sessions list](#dagger-sessions-list)	 - List detachable sessions
+* [dagger sessions terminate](#dagger-sessions-terminate)	 - Terminate a detachable session
+
+## dagger sessions attach
+
+Attach to a detachable session
+
+```
+dagger sessions attach SESSION
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - Manage detachable sessions (experimental)
+
+## dagger sessions inspect
+
+Inspect a detachable session
+
+```
+dagger sessions inspect SESSION
+```
+
+### Options
+
+```
+      --json   Present result as JSON
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - Manage detachable sessions (experimental)
+
+## dagger sessions list
+
+List detachable sessions
+
+```
+dagger sessions list
+```
+
+### Options
+
+```
+      --json   Present result as JSON
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - Manage detachable sessions (experimental)
+
+## dagger sessions terminate
+
+Terminate a detachable session
+
+```
+dagger sessions terminate SESSION
+```
+
+### Options
+
+```
+      --json   Present result as JSON
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sessions](#dagger-sessions)	 - Manage detachable sessions (experimental)
 
 ## dagger settings
 

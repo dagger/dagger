@@ -166,63 +166,63 @@ func (client *ControlClient) TerminateSession(ctx context.Context, sessionID str
 	return client.client.sessionJSON(ctx, http.MethodDelete, path, nil, http.StatusNoContent, nil)
 }
 
-func (client *Client) AttachmentID() string {
-	return client.attachmentID
+func (c *Client) AttachmentID() string {
+	return c.attachmentID
 }
 
-func (client *Client) CloseAttachment(ctx context.Context) error {
-	if client.attachmentID == "" {
+func (c *Client) CloseAttachment(ctx context.Context) error {
+	if c.attachmentID == "" {
 		return nil
 	}
-	path := engine.SessionsEndpoint + "/" + url.PathEscape(client.SessionID) +
-		"/attachments/" + url.PathEscape(client.attachmentID)
-	err := client.sessionJSON(ctx, http.MethodDelete, path, nil, http.StatusNoContent, nil)
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID) +
+		"/attachments/" + url.PathEscape(c.attachmentID)
+	err := c.sessionJSON(ctx, http.MethodDelete, path, nil, http.StatusNoContent, nil)
 	var protocolErr *SessionProtocolError
 	if errors.As(err, &protocolErr) && protocolErr.Code == engine.SessionErrorSessionNotFound {
-		client.attachmentID = ""
+		c.attachmentID = ""
 		return nil
 	}
 	if err == nil {
-		client.attachmentID = ""
+		c.attachmentID = ""
 	}
 	return err
 }
 
-func (client *Client) Terminate(ctx context.Context) error {
-	err := client.terminateSessionRemote(ctx)
+func (c *Client) Terminate(ctx context.Context) error {
+	err := c.terminateSessionRemote(ctx)
 	if err != nil && ctx.Err() != nil {
 		err = fmt.Errorf("termination started but completion was not observed: %w", err)
 	}
-	client.attachmentID = ""
-	return errors.Join(err, client.closeLocalResources())
+	c.attachmentID = ""
+	return errors.Join(err, c.closeLocalResources())
 }
 
-func (client *Client) terminateSessionRemote(ctx context.Context) error {
-	path := engine.SessionsEndpoint + "/" + url.PathEscape(client.SessionID)
-	return client.sessionJSON(ctx, http.MethodDelete, path, nil, http.StatusNoContent, nil)
+func (c *Client) terminateSessionRemote(ctx context.Context) error {
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID)
+	return c.sessionJSON(ctx, http.MethodDelete, path, nil, http.StatusNoContent, nil)
 }
 
-func (client *Client) SubmitPrimaryQuery(ctx context.Context, request json.RawMessage, presentation engine.QueryPresentation) (engine.SubmitPrimaryQueryResponse, error) {
+func (c *Client) SubmitPrimaryQuery(ctx context.Context, request json.RawMessage, presentation engine.QueryPresentation) (engine.SubmitPrimaryQueryResponse, error) {
 	payload := engine.SubmitPrimaryQueryRequest{
-		AttachmentID: client.attachmentID, Request: request, Presentation: presentation,
+		AttachmentID: c.attachmentID, Request: request, Presentation: presentation,
 	}
 	var response engine.SubmitPrimaryQueryResponse
-	path := engine.SessionsEndpoint + "/" + url.PathEscape(client.SessionID) + "/queries/primary"
-	if err := client.sessionJSON(ctx, http.MethodPost, path, payload, http.StatusAccepted, &response); err != nil {
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID) + "/queries/primary"
+	if err := c.sessionJSON(ctx, http.MethodPost, path, payload, http.StatusAccepted, &response); err != nil {
 		return engine.SubmitPrimaryQueryResponse{}, err
 	}
-	client.detachedQueryAcknowledged.Store(true)
+	c.detachedQueryAcknowledged.Store(true)
 	return response, nil
 }
 
-func (client *Client) DetachedQueryAcknowledged() bool {
-	return client.detachedQueryAcknowledged.Load()
+func (c *Client) DetachedQueryAcknowledged() bool {
+	return c.detachedQueryAcknowledged.Load()
 }
 
-func (client *Client) InspectPrimaryQuery(ctx context.Context) (engine.SessionQuery, error) {
+func (c *Client) InspectPrimaryQuery(ctx context.Context) (engine.SessionQuery, error) {
 	var query engine.SessionQuery
-	path := engine.SessionsEndpoint + "/" + url.PathEscape(client.SessionID) + "/queries/primary"
-	if err := client.sessionJSON(ctx, http.MethodGet, path, nil, http.StatusOK, &query); err != nil {
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID) + "/queries/primary"
+	if err := c.sessionJSON(ctx, http.MethodGet, path, nil, http.StatusOK, &query); err != nil {
 		return engine.SessionQuery{}, err
 	}
 	return query, nil
@@ -234,13 +234,13 @@ type SessionResult struct {
 	Body       []byte
 }
 
-func (client *Client) PrimaryQueryResult(ctx context.Context) (SessionResult, error) {
-	path := engine.SessionsEndpoint + "/" + url.PathEscape(client.SessionID) + "/queries/primary/result"
+func (c *Client) PrimaryQueryResult(ctx context.Context) (SessionResult, error) {
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID) + "/queries/primary/result"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://dagger"+path, nil)
 	if err != nil {
 		return SessionResult{}, err
 	}
-	resp, err := client.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return SessionResult{}, err
 	}
@@ -262,41 +262,41 @@ func (client *Client) PrimaryQueryResult(ctx context.Context) (SessionResult, er
 	return SessionResult{StatusCode: resp.StatusCode, Header: resp.Header.Clone(), Body: body}, nil
 }
 
-func (client *Client) WaitTelemetry() error {
-	if client.telemetry == nil {
+func (c *Client) WaitTelemetry() error {
+	if c.telemetry == nil {
 		return nil
 	}
-	return client.telemetry.Wait()
+	return c.telemetry.Wait()
 }
 
-func (client *Client) SessionTelemetryPath(signal string) string {
-	return engine.SessionsEndpoint + "/" + url.PathEscape(client.SessionID) + "/telemetry/" + signal
+func (c *Client) SessionTelemetryPath(signal string) string {
+	return engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID) + "/telemetry/" + signal
 }
 
-func (client *Client) telemetryPath(signal string) string {
-	if client.connectionMode == connectionModeObserver {
-		return client.SessionTelemetryPath(signal)
+func (c *Client) telemetryPath(signal string) string {
+	if c.connectionMode == connectionModeObserver {
+		return c.SessionTelemetryPath(signal)
 	}
 	return "/v1/" + signal
 }
 
-func (client *Client) telemetryConsumerContext(ctx context.Context) context.Context {
+func (c *Client) telemetryConsumerContext(ctx context.Context) context.Context {
 	ctx = context.WithoutCancel(ctx)
-	if client.connectionMode != connectionModeDetachableCreator && client.connectionMode != connectionModeObserver {
+	if c.connectionMode != connectionModeDetachableCreator && c.connectionMode != connectionModeObserver {
 		return ctx
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
-		case <-client.closeCtx.Done():
-			cancel(context.Cause(client.closeCtx))
+		case <-c.closeCtx.Done():
+			cancel(context.Cause(c.closeCtx))
 		case <-ctx.Done():
 		}
 	}()
 	return ctx
 }
 
-func (client *Client) sessionJSON(ctx context.Context, method, path string, input any, expectedStatus int, output any) error {
+func (c *Client) sessionJSON(ctx context.Context, method, path string, input any, expectedStatus int, output any) error {
 	var body io.Reader
 	if input != nil {
 		encoded, err := json.Marshal(input)
@@ -312,7 +312,7 @@ func (client *Client) sessionJSON(ctx context.Context, method, path string, inpu
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := client.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (client *Client) sessionJSON(ctx context.Context, method, path string, inpu
 	if resp.StatusCode != expectedStatus {
 		err := decodeSessionProtocolError(resp.StatusCode, responseBody)
 		if isIncompatibleSessionProtocolError(err) {
-			return fmt.Errorf("%w: %v", ErrDetachableSessionsUnsupported, err)
+			return fmt.Errorf("%w: %w", ErrDetachableSessionsUnsupported, err)
 		}
 		return err
 	}
