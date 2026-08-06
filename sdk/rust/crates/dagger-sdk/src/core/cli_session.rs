@@ -17,13 +17,13 @@ impl Default for CliSession {
 }
 
 impl CliSession {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(InnerCliSession {}),
         }
     }
 
-    pub async fn connect(
+    pub(crate) async fn connect(
         &self,
         config: &Config,
         cli_path: &Path,
@@ -39,11 +39,11 @@ pub struct DaggerSessionProc {
 }
 
 impl DaggerSessionProc {
-    pub fn subscribe_shutdown(&self) -> broadcast::Receiver<()> {
+    pub(crate) fn subscribe_shutdown(&self) -> broadcast::Receiver<()> {
         self.shutdown.subscribe()
     }
 
-    pub async fn shutdown(&self) -> eyre::Result<()> {
+    pub(crate) async fn shutdown(&self) -> eyre::Result<()> {
         let mut proc = self.inner.lock().await;
 
         tracing::trace!("waiting for dagger subprocess to shutdown");
@@ -77,7 +77,7 @@ impl From<tokio::process::Child> for DaggerSessionProc {
 struct InnerCliSession {}
 
 impl InnerCliSession {
-    pub async fn connect(
+    async fn connect(
         &self,
         config: &Config,
         cli_path: &Path,
@@ -154,7 +154,7 @@ impl InnerCliSession {
                                 }
 
                                 if let Some(logger) = &logger {
-                                    logger.stdout(&line).unwrap();
+                                    let _ = logger.stdout(&line);
                                 }
                             }
                             // EOF or read error: the process is gone, so stop
@@ -184,7 +184,7 @@ impl InnerCliSession {
                         match line {
                             Ok(Some(line)) => {
                                 if let Some(logger) = &logger {
-                                    logger.stderr(&line).unwrap();
+                                    let _ = logger.stderr(&line);
                                 }
                             }
                             _ => break,

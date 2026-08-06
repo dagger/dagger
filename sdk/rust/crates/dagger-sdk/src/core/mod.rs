@@ -7,8 +7,12 @@ pub mod gql_client;
 pub mod graphql_client;
 pub mod introspection;
 pub mod logger;
-pub mod schema;
-pub mod session;
+// These beta introspection adapters remain compiled for the later connector migration,
+// but they are not part of the stable public facade and currently have no call site.
+#[allow(dead_code)]
+pub(crate) mod schema;
+#[allow(dead_code)]
+pub(crate) mod session;
 
 mod version;
 

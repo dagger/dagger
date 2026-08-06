@@ -1,7 +1,7 @@
 use crate::core::introspection::IntrospectionResponse;
 use crate::core::{config::Config, engine::Engine, session::Session};
 
-pub async fn get_schema() -> eyre::Result<IntrospectionResponse> {
+pub(crate) async fn get_schema() -> eyre::Result<IntrospectionResponse> {
     let cfg = Config::default();
 
     //TODO: Implement context for proc

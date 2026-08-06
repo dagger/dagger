@@ -1,10 +1,32 @@
+//! Public Rust SDK surface and the private adapters which currently back it.
+//!
+//! The 1.0 client foundation keeps configuration, raw GraphQL values, diagnostic
+//! delivery, injected connections, and public failures in separate modules. The
+//! existing beta connection implementation remains available during the staged
+//! migration, but new code should depend on the intentional re-exports below.
+
+pub mod config;
+pub mod connection;
 pub mod core;
+pub mod diagnostic;
 pub mod errors;
+pub mod graphql;
 
 pub mod logging;
 mod querybuilder;
 
 pub use crate::core::config::Config;
+pub use config::{ClientConfig, ClientConfigBuilder};
+pub use connection::{EngineConnection, EngineConnectionError, EngineConnectionErrorKind};
+pub use diagnostic::{Diagnostic, DiagnosticSink, DiagnosticSinkError, DiagnosticStream};
+pub use errors::{
+    CloseError, ConfigError, ConfigOption, ConnectError, QueryBuildError, QueryBuildErrorKind,
+    QueryError, RequestEncodingError, RequestEncodingErrorKind, RequestError,
+    ResponseDecodingError, ResponseDecodingErrorKind, TimeoutPhase,
+};
+pub use graphql::{
+    GraphQlError, GraphQlLocation, GraphQlPathSegment, RawRequest, RawResponse, ResponseData,
+};
 
 #[cfg(feature = "gen")]
 #[allow(dead_code)]
@@ -88,3 +110,9 @@ mod tests {
         assert_eq!(publish_opts.protocol, Some(RegistryProtocol::Http));
     }
 }
+
+#[cfg(test)]
+mod foundation_tests;
+
+#[cfg(test)]
+mod test_support;

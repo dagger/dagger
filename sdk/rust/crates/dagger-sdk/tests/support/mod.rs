@@ -6,6 +6,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
+use dagger_sdk::{EngineConnection, EngineConnectionError, RawRequest, RawResponse, ResponseData};
 use proptest::test_runner::{Config, FileFailurePersistence};
 
 /// Required generated-case count for every Feature 2 property.
@@ -62,6 +64,23 @@ impl RecordingConnection {
 
     /// Records the non-blocking connection backstop.
     pub(crate) fn abort(&self) {
+        self.0.record(RecordedAction::ConnectionAbort);
+    }
+}
+
+#[async_trait]
+impl EngineConnection for RecordingConnection {
+    async fn execute(&self, _request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
+        self.0.record(RecordedAction::ConnectionExecute);
+        Ok(RawResponse::new(ResponseData::Absent))
+    }
+
+    async fn close(&self) -> Result<(), EngineConnectionError> {
+        self.0.record(RecordedAction::ConnectionClose);
+        Ok(())
+    }
+
+    fn abort(&self) {
         self.0.record(RecordedAction::ConnectionAbort);
     }
 }

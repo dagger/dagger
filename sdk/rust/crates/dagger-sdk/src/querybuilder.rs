@@ -250,11 +250,13 @@ impl Selection {
                 })
                 .collect();
             return serde_json::from_value::<D>(serde_json::Value::Array(unwrapped))
+                .map_err(crate::errors::ResponseDecodingError::from)
                 .map_err(DaggerUnpackError::Deserialize)
                 .map_err(DaggerError::Unpack);
         }
 
         serde_json::from_value::<D>(data)
+            .map_err(crate::errors::ResponseDecodingError::from)
             .map_err(DaggerUnpackError::Deserialize)
             .map_err(DaggerError::Unpack)
     }

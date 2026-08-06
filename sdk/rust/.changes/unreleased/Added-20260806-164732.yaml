@@ -1,0 +1,9 @@
+kind: Added
+body: |
+    Add the Rust SDK's typed client foundations for configuration, injected connections, diagnostics, errors, and lossless raw GraphQL values.
+
+    Configuration construction is now pure and duration-based, public failures retain inspectable causes without rendering sensitive source text, and raw GraphQL responses preserve partial data, ordered errors, extensions, and the distinction between absent and explicit null data.
+time: 2026-08-06T16:47:32Z
+custom:
+    Author: iw
+    PR: "16"

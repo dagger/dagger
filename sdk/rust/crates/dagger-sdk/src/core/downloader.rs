@@ -52,7 +52,7 @@ pub struct TempFile {
 
 #[allow(dead_code)]
 impl TempFile {
-    pub fn new(prefix: &str, directory: &Path) -> eyre::Result<Self> {
+    pub(crate) fn new(prefix: &str, directory: &Path) -> eyre::Result<Self> {
         let prefix = prefix.to_string();
 
         let file = tempfile()?;
@@ -112,7 +112,7 @@ impl Downloader {
         format!("{}/{version}/checksums.txt", self.cli_base_url)
     }
 
-    pub fn cache_dir(&self) -> eyre::Result<PathBuf> {
+    pub(crate) fn cache_dir(&self) -> eyre::Result<PathBuf> {
         let env = std::env::var("XDG_CACHE_HOME").unwrap_or("".into());
         let env = env.trim();
         let mut path = match env {
@@ -131,7 +131,9 @@ impl Downloader {
 
     pub async fn get_cli(&self) -> Result<PathBuf, DaggerError> {
         let version = &self.version;
-        let mut cli_bin_path = self.cache_dir().map_err(DaggerError::DownloadClient)?;
+        let mut cli_bin_path = self
+            .cache_dir()
+            .map_err(DaggerError::from_legacy_download)?;
         cli_bin_path.push(format!("{CLI_BIN_PREFIX}{version}"));
         if self.platform.os == "windows" {
             cli_bin_path = cli_bin_path.with_extension("exe")
@@ -142,7 +144,7 @@ impl Downloader {
                 .download(cli_bin_path)
                 .await
                 .context("failed to download CLI from archive")
-                .map_err(DaggerError::DownloadClient)?;
+                .map_err(DaggerError::from_legacy_download)?;
         }
 
         Ok(cli_bin_path)
@@ -204,7 +206,7 @@ impl Downloader {
         eyre::bail!("could not find a matching version or binary in checksums.txt")
     }
 
-    pub async fn extract_cli_archive(&self, dest: &mut Vec<u8>) -> eyre::Result<String> {
+    pub(crate) async fn extract_cli_archive(&self, dest: &mut Vec<u8>) -> eyre::Result<String> {
         let archive_url = self.archive_url();
         let resp = reqwest::get(&archive_url).await?;
         let resp = resp.error_for_status()?;
@@ -250,12 +252,17 @@ pub(super) struct CliReleaseUnavailableError {
 }
 
 pub(super) fn has_cli_release_unavailable_error(error: &DaggerError) -> bool {
-    match error {
-        DaggerError::DownloadClient(error) => {
-            error.downcast_ref::<CliReleaseUnavailableError>().is_some()
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(source) = current {
+        if source
+            .downcast_ref::<CliReleaseUnavailableError>()
+            .is_some()
+        {
+            return true;
         }
-        _ => false,
+        current = source.source();
     }
+    false
 }
 
 fn is_cli_release_unavailable(status: StatusCode) -> bool {
@@ -321,7 +328,7 @@ mod tests {
             status: StatusCode::NOT_FOUND,
         };
         let error = eyre::Report::new(error).wrap_err("failed to download CLI from archive");
-        let error = DaggerError::DownloadClient(error);
+        let error = DaggerError::from_legacy_download(error);
 
         assert!(has_cli_release_unavailable_error(&error));
     }

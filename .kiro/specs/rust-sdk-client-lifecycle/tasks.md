@@ -66,8 +66,8 @@
     property tests, and clippy; require the ownership-only artifact diff to preserve
     status, fingerprints, and evidence and to leave the Implemented count unchanged.
 
-- [ ] 3. Implement public values, typed errors, raw GraphQL, and configuration
-  - [ ] 3.1 Replace public catch-all errors with stable typed families
+- [x] 3. Implement public values, typed errors, raw GraphQL, and configuration
+  - [x] 3.1 Replace public catch-all errors with stable typed families
     - Implement non-exhaustive `ConfigError`, `ConnectError`, `RequestError`,
       `QueryError`, `CloseError`, and `EngineConnectionError` families with intentional
       source relationships and static redacted `Display`/`Debug` output.
@@ -78,7 +78,7 @@
     - Add fixed variant/source/redaction tests without asserting unstable third-party
       prose.
     - _Requirements: 3.4–3.7, 3.11, 3.12, 5.3, 8.7, 8.8, 9.4, 9.7, 9.9, 10.1–10.4, 10.7, 10.8_
-  - [ ] 3.2 Implement the raw GraphQL request, response, and wire models
+  - [x] 3.2 Implement the raw GraphQL request, response, and wire models
     - Add `RawRequest` with query, optional variables, and optional operation name plus
       read-only accessors and consuming builder methods.
     - Add `ResponseData::{Absent, Null, Value}`, `RawResponse`, ordered
@@ -89,7 +89,7 @@
     - Map encoding and malformed response shapes to typed errors without discarding the
       raw causal context.
     - _Requirements: 7.4, 8.1–8.11, 10.17_
-  - [ ] 3.3 Define the stable connection and diagnostic contracts
+  - [x] 3.3 Define the stable connection and diagnostic contracts
     - Add the documented `EngineConnection: Send + Sync + 'static` async execute/close
       interface and required non-blocking `abort` backstop.
     - Add constructible, typed `EngineConnectionError` values which retain an opaque
@@ -98,7 +98,7 @@
       `DiagnosticSinkError`; document prompt callback, ownership-transfer,
       cancellation, close, abort, and secret-handling obligations.
     - _Requirements: 6.14–6.16, 7.1–7.5, 7.13, 10.6–10.9, 10.14, 10.18_
-  - [ ] 3.4 Implement `ClientConfig` and its fallible builder
+  - [x] 3.4 Implement `ClientConfig` and its fallible builder
     - Replace public mutable `Config` fields with immutable private state and consuming
       builder methods for every Client Configuration Policy row.
     - Store all time values as `Duration`, retain explicitness separately from effective
@@ -111,33 +111,33 @@
       keys and option presence only.
     - Remove `config_path`, `timeout_ms`, and `execute_timeout_ms` from the stable type.
     - _Requirements: 5.1–5.4, 5.7–5.12, 5.16, 5.17, 6.10–6.13, 7.11, 9.1–9.3, 10.5, 10.16_
-  - [ ] 3.5 Add shared public-value and configuration test strategies
+  - [x] 3.5 Add shared public-value and configuration test strategies
     - Generate valid and targeted-invalid native paths, workspace/version/URI strings,
       explicitness combinations, durations, verbosity values, environment entries,
       bounded JSON trees, GraphQL paths, errors, extensions, and secret markers.
     - Keep reference normalization and wire models independent of production builders
       and codecs so a shared defect cannot certify itself.
     - _Requirements: 5.1–5.12, 6.9–6.13, 8.2–8.11, 9.1–9.3, 10.3_
-  - [ ] 3.6 Property test: Property 11 — configuration construction is total and side-effect free
+  - [x] 3.6 Property test: Property 11 — configuration construction is total and side-effect free
     - Implement a valid-first/reference-validation `proptest` with at least 256 builder
       inputs, defaults, explicitness states, and targeted invalid scalar mutations;
       record and assert zero external-work events.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 11: configuration construction is total and side-effect free`
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11, 5.12, 9.1, 9.2, 9.3, 10.3_
-  - [ ] 3.7 Property test: Property 15 — additional environment validation is portable
+  - [x] 3.7 Property test: Property 15 — additional environment validation is portable
     - Implement a reference-normalization `proptest` with at least 256 ordered native
       key/value vectors, ASCII-case variants, non-ASCII units, NUL/equals mutations,
       duplicates, and every reserved key; assert accepted order and redacted failures.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 15: additional environment validation is portable`
     - _Requirements: 6.9, 6.10, 6.11, 6.12, 6.13_
-  - [ ] 3.8 Property test: Property 19 — raw GraphQL round-trips protocol information
+  - [x] 3.8 Property test: Property 19 — raw GraphQL round-trips protocol information
     - Implement a codec/reference-model `proptest` with at least 256 bounded requests
       and responses covering absent/null/value data, partial data plus errors, ordered
       locations and paths, extension objects, and malformed wire mutations.
     - Tag: `// Feature: rust-sdk-client-lifecycle, Property 19: raw GraphQL round-trips protocol information`
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10, 8.11_
 
-- [ ] 4. Checkpoint: public value, error, and configuration foundations are green
+- [x] 4. Checkpoint: public value, error, and configuration foundations are green
   - Run formatting, locked `dagger-sdk` unit/property tests, clippy, warning-denied
     rustdoc for the new public values, and cargo-deny; require no public `eyre`, no
     unit-encoded timeout fields, and no secret marker in ordinary rendered output.

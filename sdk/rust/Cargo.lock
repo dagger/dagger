@@ -373,6 +373,7 @@ dependencies = [
  "proptest",
  "rand 0.8.7",
  "reqwest",
+ "semver",
  "serde",
  "serde_graphql_input",
  "serde_json",

@@ -1,1 +1,2 @@
 # Seeds for minimized Feature 2 property failures. Proptest replays these before novel cases.
+cc 5bd1fad53aac776167b3e0841c39f3ec583379280e04684cb4d0f73ea6f42095 # shrinks to (request, response) = (RawRequest { query_len: 0, variables_present: true, operation_name_present: false }, RawResponse { data_kind: "absent", error_count: 0, extensions_present: false })

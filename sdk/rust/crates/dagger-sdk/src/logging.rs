@@ -1,22 +1,27 @@
-use crate::core::logger::{DynLogger, Logger};
+use crate::{
+    core::logger::{DynLogger, Logger},
+    diagnostic::DiagnosticSinkError,
+};
 use tracing::Level;
 
-pub fn default_logging() -> eyre::Result<()> {
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
-    Ok(())
+pub fn default_logging() -> Result<(), DiagnosticSinkError> {
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .try_init()
+        .map_err(DiagnosticSinkError::with_boxed_source)
 }
 
 #[derive(Default)]
 pub struct StdLogger {}
 
 impl Logger for StdLogger {
-    fn stdout(&self, output: &str) -> eyre::Result<()> {
+    fn stdout(&self, output: &str) -> Result<(), DiagnosticSinkError> {
         println!("{}", output);
 
         Ok(())
     }
 
-    fn stderr(&self, output: &str) -> eyre::Result<()> {
+    fn stderr(&self, output: &str) -> Result<(), DiagnosticSinkError> {
         eprintln!("{}", output);
 
         Ok(())
@@ -27,13 +32,13 @@ impl Logger for StdLogger {
 pub struct TracingLogger {}
 
 impl Logger for TracingLogger {
-    fn stdout(&self, output: &str) -> eyre::Result<()> {
+    fn stdout(&self, output: &str) -> Result<(), DiagnosticSinkError> {
         tracing::info!(output = output, "dagger-sdk");
 
         Ok(())
     }
 
-    fn stderr(&self, output: &str) -> eyre::Result<()> {
+    fn stderr(&self, output: &str) -> Result<(), DiagnosticSinkError> {
         tracing::warn!(output = output, "dagger-sdk");
 
         Ok(())
@@ -46,17 +51,17 @@ pub struct AggregateLogger {
 }
 
 impl Logger for AggregateLogger {
-    fn stdout(&self, output: &str) -> eyre::Result<()> {
+    fn stdout(&self, output: &str) -> Result<(), DiagnosticSinkError> {
         for logger in &self.loggers {
-            logger.stdout(output).unwrap()
+            logger.stdout(output)?;
         }
 
         Ok(())
     }
 
-    fn stderr(&self, output: &str) -> eyre::Result<()> {
+    fn stderr(&self, output: &str) -> Result<(), DiagnosticSinkError> {
         for logger in &self.loggers {
-            logger.stderr(output).unwrap()
+            logger.stderr(output)?;
         }
 
         Ok(())

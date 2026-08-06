@@ -15,7 +15,7 @@ use super::cli_session::DaggerSessionProc;
 pub struct Engine {}
 
 impl Engine {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 
@@ -73,7 +73,7 @@ impl Engine {
         }
     }
 
-    pub async fn start(
+    pub(crate) async fn start(
         &self,
         cfg: &Config,
     ) -> eyre::Result<(ConnectParams, Option<DaggerSessionProc>)> {
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn no_fallback_to_local_cli_for_other_errors() {
-        let download_error = DaggerError::DownloadClient(eyre!("download failed"));
+        let download_error = DaggerError::from_legacy_download(eyre!("download failed"));
 
         let error = fallback_to_local_cli(download_error, "unreleased", None, || {
             panic!("non-release errors must not resolve a fallback CLI")
@@ -335,7 +335,7 @@ mod tests {
             status: StatusCode::NOT_FOUND,
         };
         let error = eyre::Report::new(error).wrap_err("failed to download CLI from archive");
-        DaggerError::DownloadClient(error)
+        DaggerError::from_legacy_download(error)
     }
 
     fn create_dagger_executable(temp_dir: &TempDir) -> PathBuf {
@@ -365,11 +365,11 @@ mod tests {
     }
 
     impl Logger for TestLogger {
-        fn stdout(&self, _output: &str) -> eyre::Result<()> {
+        fn stdout(&self, _output: &str) -> Result<(), crate::DiagnosticSinkError> {
             Ok(())
         }
 
-        fn stderr(&self, output: &str) -> eyre::Result<()> {
+        fn stderr(&self, output: &str) -> Result<(), crate::DiagnosticSinkError> {
             self.stderr.lock().unwrap().push_str(output);
             Ok(())
         }

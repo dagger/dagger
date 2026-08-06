@@ -27,7 +27,11 @@ impl Session {
         Self {}
     }
 
-    pub fn start(&self, _cfg: &Config, conn: &ConnectParams) -> eyre::Result<RequestBuilder> {
+    pub(crate) fn start(
+        &self,
+        _cfg: &Config,
+        conn: &ConnectParams,
+    ) -> eyre::Result<RequestBuilder> {
         let client = Client::builder()
             .user_agent("graphql-rust/0.10.0")
             .connection_verbose(true)
@@ -42,7 +46,10 @@ impl Session {
         Ok(req_builder)
     }
 
-    pub async fn schema(&self, req_builder: RequestBuilder) -> eyre::Result<IntrospectionResponse> {
+    pub(crate) async fn schema(
+        &self,
+        req_builder: RequestBuilder,
+    ) -> eyre::Result<IntrospectionResponse> {
         let request_body: graphql_client::QueryBody<()> = graphql_client::QueryBody {
             variables: (),
             query: introspection_query::QUERY,

@@ -13,10 +13,20 @@ use crate::querybuilder::query;
 
 pub type DaggerConn = Query;
 
+/// Type-erased failure returned by the transitional callback facade.
+///
+/// The callback is removed once the shared-session client becomes the sole public
+/// facade. Keeping its boundary on the standard error trait avoids exposing an
+/// internal report crate while still allowing application errors to use `?`.
+pub type ConnectCallbackError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+/// Result expected from the transitional [`connect`] callback.
+pub type ConnectCallbackResult = Result<(), ConnectCallbackError>;
+
 pub async fn connect<F, Fut>(dagger: F) -> Result<(), ConnectError>
 where
     F: FnOnce(DaggerConn) -> Fut + 'static,
-    Fut: futures::Future<Output = eyre::Result<()>> + 'static,
+    Fut: futures::Future<Output = ConnectCallbackResult> + 'static,
 {
     let cfg = Config::builder()
         .logger(Arc::new(StdLogger::default()))
@@ -28,12 +38,12 @@ where
 pub async fn connect_opts<F, Fut>(cfg: Config, dagger: F) -> Result<(), ConnectError>
 where
     F: FnOnce(DaggerConn) -> Fut + 'static,
-    Fut: futures::Future<Output = eyre::Result<()>> + 'static,
+    Fut: futures::Future<Output = ConnectCallbackResult> + 'static,
 {
     let (conn, proc) = DaggerEngine::new()
         .start(&cfg)
         .await
-        .map_err(ConnectError::FailedToConnect)?;
+        .map_err(ConnectError::from_legacy_connection)?;
 
     let proc = proc.map(Arc::new);
 
@@ -43,12 +53,17 @@ where
         graphql_client: Arc::new(DefaultGraphQLClient::new(&conn, &cfg)),
     };
 
-    dagger(client).await.map_err(ConnectError::DaggerContext)?;
+    dagger(client).await.map_err(|source| {
+        ConnectError::CallbackFailed(crate::EngineConnectionError::with_boxed_source(
+            crate::EngineConnectionErrorKind::Other,
+            source,
+        ))
+    })?;
 
     if let Some(proc) = &proc {
         proc.shutdown()
             .await
-            .map_err(ConnectError::FailedToShutdown)?;
+            .map_err(ConnectError::from_legacy_close)?;
     }
 
     Ok(())
