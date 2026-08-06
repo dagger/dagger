@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -31,10 +32,35 @@ type DetachableSessionSuite struct{}
 const (
 	detachedQueryAcknowledgedTestSocketEnv = "_DAGGER_TEST_DETACHED_QUERY_ACK_SOCKET"
 	attachmentWaitMessage                  = "Waiting for the previous client connection to be declared unavailable..."
+	commandStderrMaxLineBytes              = 4 << 20
+	commandStderrDiagnosticBytes           = 8 << 20
 )
 
 func TestDetachableSession(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(DetachableSessionSuite{})
+}
+
+func TestWatchCommandStderrDrainsOversizedLine(t *testing.T) {
+	const marker = "oversized-stderr-marker"
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf(
+		"{ head -c %d /dev/zero | tr '\\000' x; printf '\\n%s\\n'; yes drained-after-marker | head -c %d; } >&2",
+		bufio.MaxScanTokenSize+(32<<10), marker, commandStderrDiagnosticBytes+(1<<20),
+	))
+	matched, stderrDone := watchCommandStderr(t, cmd, marker)
+	runErr := cmd.Run()
+	output := <-stderrDone
+	require.NoError(t, runErr, output)
+	select {
+	case <-matched:
+	default:
+		t.Fatal("oversized stderr marker was not observed")
+	}
+	require.Contains(t, output, "drained-after-marker")
+	require.Contains(t, output, "stderr truncated to last")
+	require.LessOrEqual(t, len(output), commandStderrDiagnosticBytes+128)
 }
 
 func (DetachableSessionSuite) TestRunningAndCompletedAttachDoNotReexecute(ctx context.Context, t *testctx.T) {
@@ -56,7 +82,7 @@ func (DetachableSessionSuite) TestRunningAndCompletedAttachDoNotReexecute(ctx co
 		require.NoError(t, err, string(attachOutput))
 		require.Contains(t, string(attachOutput), "detached-progress")
 		require.Contains(t, string(attachOutput), "result-1")
-		require.Equal(t, "1", callModuleScalar(ctx, t, modDir, "count", "--key", key))
+		require.Equal(t, "1", callModuleState(ctx, t, modDir, "count", key))
 
 		terminateDetachedSession(ctx, t, modDir, sessionID)
 		requireSessionAbsent(ctx, t, modDir, sessionID)
@@ -79,7 +105,7 @@ func (DetachableSessionSuite) TestRunningAndCompletedAttachDoNotReexecute(ctx co
 		attachOutput, err := hostDaggerOutput(ctx, t, modDir, "sessions", "attach", sessionID)
 		require.NoError(t, err, string(attachOutput))
 		require.Equal(t, "result-1", string(attachOutput))
-		require.Equal(t, "1", callModuleScalar(ctx, t, modDir, "count", "--key", key))
+		require.Equal(t, "1", callModuleState(ctx, t, modDir, "count", key))
 
 		terminateDetachedSession(ctx, t, modDir, sessionID)
 	})
@@ -118,24 +144,16 @@ func (DetachableSessionSuite) TestCreatorTransportLossAcrossStorageBoundary(ctx 
 	modDir := writeDetachableSessionModule(t)
 
 	t.Run("session published before storage", func(ctx context.Context, t *testctx.T) {
-		before := listedSessionIDs(ctx, t, modDir)
 		key := "detachable-pre-storage-kill-" + identity.NewID()
+		clientID := "detachable-pre-storage-client-" + identity.NewID()
 		cmd := hostDaggerCommand(ctx, t, modDir, "--debug", "--progress=plain", "-m", ".", "call", "--detach", "slow", "--key", key, "--delay", "4")
+		setCommandEnv(cmd, "DAGGER_SESSION_CLIENT_ID", clientID)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		require.NoError(t, cmd.Start())
 
-		var observed engine.SessionDescriptor
-		require.Eventually(t, func() bool {
-			for _, descriptor := range listDetachedSessions(ctx, t, modDir) {
-				if _, existed := before[descriptor.ID]; !existed {
-					observed = descriptor
-					return true
-				}
-			}
-			return false
-		}, 30*time.Second, 100*time.Millisecond, "creator session was never published")
+		observed := waitForAttachedSessionByClientID(ctx, t, modDir, clientID)
 		require.NoError(t, cmd.Process.Kill(), "creator exited before the publication-side transport cut")
 		require.Error(t, cmd.Wait(), stderr.String()+stdout.String())
 
@@ -152,7 +170,7 @@ func (DetachableSessionSuite) TestCreatorTransportLossAcrossStorageBoundary(ctx 
 		attachOutput, err := hostDaggerExec(ctx, t, modDir, "--debug", "--progress=plain", "sessions", "attach", observed.ID)
 		require.NoError(t, err, string(attachOutput))
 		require.Contains(t, string(attachOutput), "result-1")
-		require.Equal(t, "1", callModuleScalar(ctx, t, modDir, "count", "--key", key))
+		require.Equal(t, "1", callModuleState(ctx, t, modDir, "count", key))
 		terminateDetachedSession(ctx, t, modDir, observed.ID)
 	})
 
@@ -211,7 +229,7 @@ func (DetachableSessionSuite) TestCreatorTransportLossAcrossStorageBoundary(ctx 
 		require.NoError(t, attachErr, string(attachOutput))
 		require.Contains(t, string(attachOutput), "detached-progress")
 		require.Contains(t, string(attachOutput), "result-1")
-		require.Equal(t, "1", callModuleScalar(ctx, t, modDir, "count", "--key", key))
+		require.Equal(t, "1", callModuleState(ctx, t, modDir, "count", key))
 		terminateDetachedSession(ctx, t, modDir, sessionID)
 	})
 }
@@ -323,24 +341,29 @@ func (DetachableSessionSuite) TestOrdinaryDisconnectStillCancelsSlowCall(ctx con
 	require.NoError(t, err, "warm detachable test module")
 
 	key := "ordinary-disconnect-" + identity.NewID()
-	cmd := hostDaggerCommand(ctx, t, modDir, "--debug", "--progress=plain", "-m", ".", "call", "slow", "--key", key, "--delay", "30")
-	progress, stderrDone := watchCommandStderr(t, cmd, "detached-progress")
-	var stdout bytes.Buffer
+	const delay = 10
+	cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "slow", "--key", key, "--delay", fmt.Sprint(delay))
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	require.NoError(t, cmd.Start())
-	select {
-	case <-progress:
-	case <-time.After(30 * time.Second):
-		require.FailNow(t, "ordinary call did not enter its slow resolver")
-	}
-	require.NoError(t, cmd.Process.Kill())
-	require.Error(t, cmd.Wait())
-	_ = <-stderrDone
+	require.Eventually(t, func() bool {
+		output, countErr := hostDaggerOutput(ctx, t, modDir, "-m", ".", "call", "count", "--key", key, "--nonce", identity.NewID())
+		return countErr == nil && strings.TrimSpace(string(output)) == "1"
+	}, 30*time.Second, 250*time.Millisecond, "ordinary call did not begin before disconnect")
+	require.NoError(t, cmd.Process.Kill(), stderr.String()+stdout.String())
+	require.Error(t, cmd.Wait(), stderr.String()+stdout.String())
 
-	countCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	require.Equal(t, "0", callModuleScalar(countCtx, t, modDir, "count", "--key", key),
-		"ordinary query did not roll back promptly after client disconnect")
+	// The increment happens before the sleep and is allowed to survive
+	// cancellation. A call that keeps running after disconnect would write the
+	// completion marker at the end of that sleep.
+	select {
+	case <-time.After((delay + 2) * time.Second):
+	case <-ctx.Done():
+		t.Fatalf("waiting past ordinary call completion window: %v", context.Cause(ctx))
+	}
+	require.Equal(t, "0", callModuleState(ctx, t, modDir, "completed", key),
+		"ordinary call completed successfully after its client disconnected")
 }
 
 type DetachableSessionPreAcknowledgmentSuite struct{}
@@ -353,13 +376,21 @@ func (DetachableSessionPreAcknowledgmentSuite) TestFailureTerminatesSession(ctx 
 	modDir := writeDetachableSessionModule(t)
 	_, err := hostDaggerExec(ctx, t, modDir, "-m", ".", "api", "functions")
 	require.NoError(t, err, "warm detachable test module")
-	before := listedSessionIDs(ctx, t, modDir)
 
-	output, callErr := hostDaggerExec(ctx, t, modDir, "-m", ".", "call", "--detach", "containers")
-	require.Error(t, callErr, string(output))
-	require.Contains(t, string(output), "object-list results")
-	require.Equal(t, before, listedSessionIDs(ctx, t, modDir),
-		"CLI validation failure left an unacknowledged session")
+	clientID := "detachable-preack-client-" + identity.NewID()
+	cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "--detach", "containers")
+	setCommandEnv(cmd, "DAGGER_SESSION_CLIENT_ID", clientID)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	require.NoError(t, cmd.Start())
+	created := waitForAttachedSessionByClientID(ctx, t, modDir, clientID)
+
+	callErr := cmd.Wait()
+	diagnostics := stderr.String() + stdout.String()
+	require.Error(t, callErr, diagnostics)
+	require.Contains(t, diagnostics, "object-list results")
+	requireSessionAbsent(ctx, t, modDir, created.ID)
 }
 
 type DetachableSessionRestartSuite struct{}
@@ -624,6 +655,32 @@ func listDetachedSessions(ctx context.Context, t testing.TB, modDir string) []en
 	return sessions
 }
 
+func waitForAttachedSessionByClientID(ctx context.Context, t *testctx.T, modDir, clientID string) engine.SessionDescriptor {
+	t.Helper()
+	var observed engine.SessionDescriptor
+	require.Eventually(t, func() bool {
+		for _, descriptor := range listDetachedSessions(ctx, t, modDir) {
+			if descriptor.Attachment != nil && descriptor.Attachment.ClientID == clientID {
+				observed = descriptor
+				return true
+			}
+		}
+		return false
+	}, 30*time.Second, 100*time.Millisecond, "session for client %s was never published", clientID)
+	return observed
+}
+
+func setCommandEnv(cmd *exec.Cmd, key, value string) {
+	prefix := key + "="
+	for i, entry := range cmd.Env {
+		if strings.HasPrefix(entry, prefix) {
+			cmd.Env[i] = prefix + value
+			return
+		}
+	}
+	cmd.Env = append(cmd.Env, prefix+value)
+}
+
 func watchCommandStderr(t testing.TB, cmd *exec.Cmd, match string) (<-chan struct{}, <-chan string) {
 	t.Helper()
 	stderr, err := cmd.StderrPipe()
@@ -631,12 +688,13 @@ func watchCommandStderr(t testing.TB, cmd *exec.Cmd, match string) (<-chan struc
 	matched := make(chan struct{}, 1)
 	done := make(chan string, 1)
 	go func() {
-		var output strings.Builder
+		var output boundedStderrOutput
 		scanner := bufio.NewScanner(stderr)
+		scanner.Buffer(make([]byte, 64<<10), commandStderrMaxLineBytes)
 		for scanner.Scan() {
 			line := scanner.Text()
 			output.WriteString(line)
-			output.WriteByte('\n')
+			output.WriteString("\n")
 			if strings.Contains(line, match) {
 				select {
 				case matched <- struct{}{}:
@@ -645,11 +703,57 @@ func watchCommandStderr(t testing.TB, cmd *exec.Cmd, match string) (<-chan struc
 			}
 		}
 		if scanErr := scanner.Err(); scanErr != nil && !errors.Is(scanErr, os.ErrClosed) {
-			output.WriteString(scanErr.Error())
+			output.WriteString("[stderr scan error: " + scanErr.Error() + "]\n")
+		}
+		if _, drainErr := io.Copy(io.Discard, stderr); drainErr != nil && !errors.Is(drainErr, os.ErrClosed) {
+			output.WriteString("[stderr drain error: " + drainErr.Error() + "]\n")
 		}
 		done <- output.String()
 	}()
 	return matched, done
+}
+
+type boundedStderrOutput struct {
+	data    []byte
+	start   int
+	written int64
+}
+
+func (output *boundedStderrOutput) WriteString(value string) {
+	output.written += int64(len(value))
+	if len(value) >= commandStderrDiagnosticBytes {
+		if cap(output.data) < commandStderrDiagnosticBytes {
+			output.data = make([]byte, commandStderrDiagnosticBytes)
+		} else {
+			output.data = output.data[:commandStderrDiagnosticBytes]
+		}
+		copy(output.data, value[len(value)-commandStderrDiagnosticBytes:])
+		output.start = 0
+		return
+	}
+	if available := commandStderrDiagnosticBytes - len(output.data); available > 0 {
+		if len(value) <= available {
+			output.data = append(output.data, value...)
+			return
+		}
+		output.data = append(output.data, value[:available]...)
+		value = value[available:]
+		output.start = 0
+	}
+	first := min(len(value), commandStderrDiagnosticBytes-output.start)
+	copy(output.data[output.start:], value[:first])
+	copy(output.data, value[first:])
+	output.start = (output.start + len(value)) % commandStderrDiagnosticBytes
+}
+
+func (output *boundedStderrOutput) String() string {
+	if output.written <= commandStderrDiagnosticBytes {
+		return string(output.data)
+	}
+	ordered := make([]byte, 0, len(output.data))
+	ordered = append(ordered, output.data[output.start:]...)
+	ordered = append(ordered, output.data[:output.start]...)
+	return fmt.Sprintf("[stderr truncated to last %d bytes]\n%s", commandStderrDiagnosticBytes, ordered)
 }
 
 func requireValidDetachedIDs(t testing.TB, sessionID, queryID string) {
@@ -665,6 +769,11 @@ func callModuleScalar(ctx context.Context, t testing.TB, modDir string, args ...
 	output, err := hostDaggerOutput(ctx, t, modDir, command...)
 	require.NoError(t, err, string(output))
 	return strings.TrimSpace(string(output))
+}
+
+func callModuleState(ctx context.Context, t testing.TB, modDir, function, key string) string {
+	t.Helper()
+	return callModuleScalar(ctx, t, modDir, function, "--key", key, "--nonce", identity.NewID())
 }
 
 func writeDetachableSessionModule(t testing.TB) string {
@@ -686,7 +795,7 @@ import (
 type Detachable struct{}
 
 func (m *Detachable) Slow(ctx context.Context, key string, delay int) (string, error) {
-	script := fmt.Sprintf("set -eu; n=$(cat /state/count 2>/dev/null || echo 0); n=$((n+1)); echo $n >/state/count; echo detached-progress >&2; sleep %%d; printf result-$n", delay)
+	script := fmt.Sprintf("set -eu; n=$(cat /state/count 2>/dev/null || echo 0); n=$((n+1)); echo $n >/state/count; echo detached-progress >&2; sleep %%d; echo $n >/state/completed; printf result-$n", delay)
 	return dag.Container().
 		From(%q).
 		WithMountedCache("/state", dag.CacheVolume(key)).
@@ -694,11 +803,21 @@ func (m *Detachable) Slow(ctx context.Context, key string, delay int) (string, e
 		Stdout(ctx)
 }
 
-func (m *Detachable) Count(ctx context.Context, key string) (string, error) {
+func (m *Detachable) Count(ctx context.Context, key, nonce string) (string, error) {
 	return dag.Container().
 		From(%q).
 		WithMountedCache("/state", dag.CacheVolume(key)).
+		WithEnvVariable("STATE_NONCE", nonce).
 		WithExec([]string{"sh", "-c", "cat /state/count 2>/dev/null || echo 0"}).
+		Stdout(ctx)
+}
+
+func (m *Detachable) Completed(ctx context.Context, key, nonce string) (string, error) {
+	return dag.Container().
+		From(%q).
+		WithMountedCache("/state", dag.CacheVolume(key)).
+		WithEnvVariable("STATE_NONCE", nonce).
+		WithExec([]string{"sh", "-c", "cat /state/completed 2>/dev/null || echo 0"}).
 		Stdout(ctx)
 }
 
@@ -725,7 +844,7 @@ func (m *Detachable) DelayedSocketRead(ctx context.Context, socket *dagger.Socke
 func (m *Detachable) Containers() []*dagger.Container {
 	return []*dagger.Container{dag.Container().From(%q)}
 }
-`, identity.NewID(), alpineImage, alpineImage, alpineImage, alpineImage)
+`, identity.NewID(), alpineImage, alpineImage, alpineImage, alpineImage, alpineImage)
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.go"), []byte(source), 0o644))
 	return modDir
 }
