@@ -48,6 +48,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (
@@ -922,7 +923,10 @@ func Main() {
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
 			exitWithCode(2)
 		default:
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			// Strip [traceparent:...] error-origin markers — they are span
+			// attribution plumbing for the TUI, not part of the message.
+			msg := strings.TrimSpace(telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), msg)
 			var es interp.ExitStatus
 			if errors.As(err, &es) {
 				exitWithCode(int(es))

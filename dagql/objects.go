@@ -641,7 +641,13 @@ func (r ObjectResult[T]) call(
 	s *Server,
 	req *CallRequest,
 	inputArgs map[string]Input,
-) (AnyResult, error) {
+) (res AnyResult, err error) {
+	// NOTE: named returns are load-bearing: the telemetry done callback
+	// (core.AroundFunc -> telemetry.EndWithCause) stamps the error with the
+	// span's origin marker by writing through the error pointer, and only a
+	// named return makes that mutation visible to the caller. With the marker
+	// propagated, ancestor spans link to the origin instead of repeating the
+	// same message, and frontends collapse the duplicates.
 	ctx = ContextWithCall(ctx, req.ResultCall)
 	fieldName := req.Field
 	view := req.View
@@ -652,10 +658,6 @@ func (r ObjectResult[T]) call(
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
 	}
-	var (
-		res AnyResult
-		err error
-	)
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
 		telemetryCtx, done := s.telemetry(ctx, req)
 		defer func() {
