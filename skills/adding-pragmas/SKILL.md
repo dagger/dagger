@@ -155,6 +155,7 @@ Two things that look redundant but aren't:
 - **The key constant is declared twice**, in `_module.py` and `_resolver.py`.
   They don't import from each other; keep both in sync.
 - **The resolver property ORs both sources**, so decorator order doesn't matter:
+
   ```python
   @property
   def agent(self) -> bool:
@@ -193,7 +194,7 @@ generated `sdk/index.ts` embedded in the runtime, which re-exports a **hand-
 maintained, explicit list** of names from the rolled-up bundle. Leave a name out
 and everything compiles, then every module using it dies at load with:
 
-```
+```text
 SyntaxError: The requested module '@dagger.io/dagger' does not provide an export named 'agent'
 ```
 
@@ -235,7 +236,7 @@ the matching entry in `expected.json`.
 **Integration** — per-SDK modules under `core/integration/testdata/<feature>/`,
 driven by a table test. Minimum viable modules:
 
-```
+```text
 editor-py/   dagger.json  pyproject.toml  src/editor_py/{__init__,main}.py
 editor-ts/   dagger.json  package.json  tsconfig.json  src/index.ts
 ```
