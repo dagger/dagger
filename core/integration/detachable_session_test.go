@@ -198,11 +198,11 @@ func (DetachableSessionSuite) TestCreatorTransportLossAcrossStorageBoundary(ctx 
 		unixBarrier := barrier.(*net.UnixListener)
 		require.NoError(t, unixBarrier.SetDeadline(time.Now().Add(30*time.Second)))
 		barrierConn, err := unixBarrier.Accept()
-		require.NoError(t, err, stderr.String())
+		require.NoError(t, err, "accept detached acknowledgment barrier")
 		defer barrierConn.Close()
 		require.NoError(t, barrierConn.SetReadDeadline(time.Now().Add(30*time.Second)))
 		acknowledgment, err := bufio.NewReader(barrierConn).ReadString('\n')
-		require.NoError(t, err, stderr.String())
+		require.NoError(t, err, "read detached acknowledgment barrier")
 		parts := strings.Fields(acknowledgment)
 		require.Len(t, parts, 2, "detached acknowledgment test barrier: %q", acknowledgment)
 		sessionID, queryID := parts[0], parts[1]
@@ -351,7 +351,7 @@ func (DetachableSessionSuite) TestOrdinaryDisconnectStillCancelsSlowCall(ctx con
 		output, countErr := hostDaggerOutput(ctx, t, modDir, "-m", ".", "call", "count", "--key", key, "--nonce", identity.NewID())
 		return countErr == nil && strings.TrimSpace(string(output)) == "1"
 	}, 30*time.Second, 250*time.Millisecond, "ordinary call did not begin before disconnect")
-	require.NoError(t, cmd.Process.Kill(), stderr.String()+stdout.String())
+	require.NoError(t, cmd.Process.Kill(), "kill ordinary call after runtime start")
 	require.Error(t, cmd.Wait(), stderr.String()+stdout.String())
 
 	// The increment happens before the sleep and is allowed to survive
