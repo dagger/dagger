@@ -142,7 +142,7 @@ func (s *currentTypeDefsTestServer) EngineVolumeState() core.EngineVolumeState {
 	return core.EngineVolumeState{}
 }
 
-func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error {
+func (s *currentTypeDefsTestServer) FlushCallTelemetry(context.Context) error {
 	return nil
 }
 

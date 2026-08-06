@@ -172,8 +172,8 @@ type Server interface {
 	// resolve operator-managed volumes at exec time.
 	EngineVolumeState() EngineVolumeState
 
-	// Flush telemetry for all clients in the current session.
-	FlushSessionTelemetry(ctx context.Context) error
+	// Flush telemetry for the calling client and any clients nested beneath it.
+	FlushCallTelemetry(ctx context.Context) error
 
 	// SessionScopedContext returns a context that lives for the remainder of
 	// the current client's session: it is detached from the given context's
