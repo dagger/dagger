@@ -359,7 +359,7 @@ type ClientGeneratorFixture struct{}
 
 // +generate
 func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
-	clients, err := dag.CurrentModule().AsSDK(dagger.CurrentModuleAsSDKOpts{Workspace: ws}).Clients(ctx)
+	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func (m *InitFixture) GenerateModules(ctx context.Context, ws *dagger.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	modules, err := dag.CurrentModule().AsSDK(dagger.CurrentModuleAsSDKOpts{Workspace: ws}).Modules(ctx)
+	modules, err := dag.CurrentModule().AsSDK(ws).Modules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +514,7 @@ func (m *InitFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	clients, err := dag.CurrentModule().AsSDK(dagger.CurrentModuleAsSDKOpts{Workspace: ws}).Clients(ctx)
+	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
 	if err != nil {
 		return nil, err
 	}
