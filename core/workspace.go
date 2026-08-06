@@ -106,6 +106,16 @@ type Workspace struct {
 	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
+	// userConfigKey is the normalized Git remote key identifying this
+	// workspace in user-level config. Empty when the workspace has no usable
+	// remote. Internal only.
+	userConfigKey string
+
+	// userConfigOverlay is the user-level config overlay matched for this
+	// workspace by userConfigKey. Internal only — user config can carry
+	// personal values that must not surface through GraphQL or IDs.
+	userConfigOverlay *workspacepkg.UserWorkspaceOverlay
+
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
 	ConfigFile string
@@ -439,6 +449,28 @@ func (ws *Workspace) HostPath() string {
 // SetHostPath sets the internal host filesystem path.
 func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
+}
+
+func (ws *Workspace) UserConfigKey() string {
+	if ws == nil {
+		return ""
+	}
+	return ws.userConfigKey
+}
+
+func (ws *Workspace) SetUserConfigKey(key string) {
+	ws.userConfigKey = key
+}
+
+func (ws *Workspace) UserConfigOverlay() *workspacepkg.UserWorkspaceOverlay {
+	if ws == nil {
+		return nil
+	}
+	return ws.userConfigOverlay
+}
+
+func (ws *Workspace) SetUserConfigOverlay(overlay *workspacepkg.UserWorkspaceOverlay) {
+	ws.userConfigOverlay = overlay
 }
 
 // CompatWorkspace returns the internal compat-workspace provenance for this

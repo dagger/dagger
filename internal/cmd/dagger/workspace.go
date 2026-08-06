@@ -23,6 +23,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -225,10 +226,14 @@ var activityCmd = &cobra.Command{
 
 var workspaceActivityAll bool
 
-var workspaceConfigUnset bool
+var (
+	workspaceConfigUnset  bool
+	workspaceConfigGlobal bool
+)
 
 func init() {
 	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
+	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigGlobal, "global", "g", false, "Write to user-level config instead of the repository, keyed by the workspace's git remote")
 
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
@@ -248,6 +253,16 @@ func addWorkspaceHereFlag(cmd *cobra.Command) {
 func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 	if workspaceConfigUnset && len(args) != 1 {
 		return fmt.Errorf("--unset requires a KEY argument")
+	}
+	if workspaceConfigGlobal {
+		ctx := cmd.Context()
+		if workspaceConfigUnset {
+			return unsetUserConfigValue(ctx, userScopedConfigKey(args[0]))
+		}
+		if len(args) != 2 {
+			return fmt.Errorf("--global writes to user-level config; pass KEY VALUE to set or --unset KEY (reads always show the effective merged config)")
+		}
+		return writeUserConfigValue(ctx, userScopedConfigKey(args[0]), args[1], nil)
 	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
@@ -597,6 +612,69 @@ func WorkspaceActivity(cmd *cobra.Command, _ []string) error {
 	}
 	renderWorkspaceActivityRows(cmd, activityRows)
 	return nil
+}
+
+// userConfigWorkspaceKey resolves the selected workspace's user-level config
+// key: the normalized git remote of the -W target, or of the local checkout's
+// origin. Workspaces without a usable remote have no key and cannot store
+// user-level overrides.
+func userConfigWorkspaceKey(ctx context.Context) (string, error) {
+	address := strings.TrimSpace(workspaceRef)
+	if address != "" {
+		remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			if key := workspacepkg.NormalizeGitRemote(remote.CloneRef); key != "" {
+				return key, nil
+			}
+			return "", fmt.Errorf("workspace remote %q has no stable identity for user-level config", remote.CloneRef)
+		}
+	}
+	info, err := localWorkspaceRemoteInfoForAddress(ctx, address)
+	if err != nil {
+		return "", fmt.Errorf("user-level config is keyed by the workspace's git remote: %w", err)
+	}
+	key := workspacepkg.NormalizeGitRemote(info.cloneRef)
+	if key == "" {
+		return "", fmt.Errorf("workspace git origin %q has no stable identity for user-level config", info.cloneRef)
+	}
+	return key, nil
+}
+
+// userScopedConfigKey mirrors the repository write path's env scoping for
+// user-level writes: with --env selected, non-explicit keys target that
+// environment's overlay.
+func userScopedConfigKey(key string) string {
+	if workspaceEnv == "" || key == "env" || strings.HasPrefix(key, "env.") {
+		return key
+	}
+	return workspacepkg.JoinConfigPath("env", workspaceEnv) + "." + key
+}
+
+// writeUserConfigValue stores a config value for the current workspace in the
+// user-level config file, under the cross-process lock.
+func writeUserConfigValue(ctx context.Context, key, value string, values []string) error {
+	workspaceKey, err := userConfigWorkspaceKey(ctx)
+	if err != nil {
+		return err
+	}
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		return workspacepkg.WriteUserConfigValue(existing, workspaceKey, key, value, values)
+	})
+}
+
+// unsetUserConfigValue removes a config value for the current workspace from
+// the user-level config file, under the cross-process lock.
+func unsetUserConfigValue(ctx context.Context, key string) error {
+	workspaceKey, err := userConfigWorkspaceKey(ctx)
+	if err != nil {
+		return err
+	}
+	return llmconfig.UpdateFile(func(existing []byte) ([]byte, error) {
+		return workspacepkg.DeleteUserConfigValue(existing, workspaceKey, key)
+	})
 }
 
 func currentWorkspaceRemoteAddress(ctx context.Context) (string, bool, error) {

@@ -147,6 +147,12 @@ type ClientMetadata struct {
 	// this client. When unset, no environment overlay is applied.
 	WorkspaceEnv *string `json:"workspace_env,omitempty"`
 
+	// UserConfigPath is the caller-host path to the user-level Dagger config
+	// file (~/.config/dagger/config.toml). The engine reads it through the
+	// caller host session to apply user-level workspace overrides. When unset,
+	// no user-level config is consulted.
+	UserConfigPath string `json:"user_config_path,omitempty"`
+
 	// WorkspaceModuleScope hints at the workspace module this client's first
 	// schema introspection targets: the leading CLI command token, unresolved
 	// (it may name a module, an entrypoint-proxied function, or a typo). The

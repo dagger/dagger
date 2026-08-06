@@ -145,6 +145,10 @@ type Params struct {
 	// WorkspaceEnv explicitly selects the workspace environment overlay for this client.
 	WorkspaceEnv *string
 
+	// UserConfigPath is the caller-host path to the user-level Dagger config
+	// file, read by the engine for user-level workspace overrides.
+	UserConfigPath string
+
 	// WorkspaceModuleScope hints at the workspace module this client's first
 	// schema introspection targets (the leading CLI command token, unresolved).
 	WorkspaceModuleScope string
@@ -1476,6 +1480,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.WorkspaceEnv != nil {
 		md.WorkspaceEnv = c.WorkspaceEnv
+	}
+	if c.UserConfigPath != "" {
+		md.UserConfigPath = c.UserConfigPath
 	}
 
 	return md

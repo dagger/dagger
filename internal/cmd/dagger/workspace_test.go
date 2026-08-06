@@ -423,6 +423,22 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
 
+	// --global writes go to the caller-local user config, so a remote
+	// workspace stays selectable as the key/introspection target.
+	oldSettingsGlobal := workspaceSettingsGlobal
+	oldConfigGlobal := workspaceConfigGlobal
+	t.Cleanup(func() {
+		workspaceSettingsGlobal = oldSettingsGlobal
+		workspaceConfigGlobal = oldConfigGlobal
+	})
+	workspaceSettingsGlobal = true
+	workspaceConfigGlobal = true
+	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}))
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.settings.x", "x"}))
+	workspaceSettingsGlobal = false
+	workspaceConfigGlobal = false
+
 	workspaceRef = "./local-workspace"
 	require.NoError(t, validateWorkspaceFlagPolicy(apiCallCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))

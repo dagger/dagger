@@ -75,7 +75,10 @@ func init() {
 	addWorkspaceHereFlag(settingsCmd)
 }
 
-var workspaceSettingsUnset bool
+var (
+	workspaceSettingsUnset  bool
+	workspaceSettingsGlobal bool
+)
 
 func newSettingsCmd(hidden bool) *cobra.Command {
 	cmd := &cobra.Command{
@@ -86,12 +89,16 @@ func newSettingsCmd(hidden bool) *cobra.Command {
 		RunE:   runWorkspaceSettings,
 	}
 	cmd.Flags().BoolVarP(&workspaceSettingsUnset, "unset", "u", false, "Remove the setting from workspace config")
+	cmd.Flags().BoolVarP(&workspaceSettingsGlobal, "global", "g", false, "Store the setting in user-level config instead of the repository, keyed by the workspace's git remote")
 	return cmd
 }
 
 func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 	if workspaceSettingsUnset && len(args) != 2 {
 		return fmt.Errorf("--unset requires MODULE and KEY arguments")
+	}
+	if workspaceSettingsGlobal && !workspaceSettingsUnset && len(args) < 3 {
+		return fmt.Errorf("--global stores a setting in user-level config; pass MODULE KEY VALUE to set or use --unset (reads always show the effective value)")
 	}
 	return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 		moduleName := ""
@@ -108,6 +115,9 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			setting, err := state.lookupSetting(args[1])
 			if err != nil {
 				return err
+			}
+			if workspaceSettingsGlobal {
+				return unsetUserConfigValue(ctx, userScopedConfigKey(workspaceSettingConfigKey(setting.Module, setting.Key)))
 			}
 			return state.Workspace.
 				WithoutConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).
@@ -132,6 +142,9 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			value, values, err := workspaceSettingWriteValue(setting, args[2:])
 			if err != nil {
 				return err
+			}
+			if workspaceSettingsGlobal {
+				return writeUserConfigValue(ctx, userScopedConfigKey(workspaceSettingConfigKey(setting.Module, setting.Key)), value, values)
 			}
 			return state.Workspace.
 				WithConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).

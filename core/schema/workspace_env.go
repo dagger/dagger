@@ -22,6 +22,12 @@ func (s *workspaceSchema) envList(
 		return nil, err
 	}
 
+	// User-level overrides may add environments for this workspace.
+	cfg, err = workspace.ApplyUserOverlay(cfg, parent.UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
+
 	names := workspace.EnvNames(cfg)
 	out := make(dagql.Array[dagql.String], len(names))
 	for i, name := range names {

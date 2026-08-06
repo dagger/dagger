@@ -179,10 +179,14 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, err
 	}
 
-	// Source comes from base config; values come from the selected env overlay.
-	effectiveCfg := cfg
+	// Source comes from base config; values come from the user-level overlay
+	// and the selected env overlay, merged in the same order as module loading.
+	effectiveCfg, err := workspace.ApplyUserOverlay(cfg, ws.Self().UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
 	if envName, ok := selectedWorkspaceEnv(ctx); ok {
-		effectiveCfg, err = workspace.ApplyEnvOverlay(cfg, envName)
+		effectiveCfg, err = workspace.ApplyEnvOverlay(effectiveCfg, envName)
 		if err != nil {
 			return nil, err
 		}
