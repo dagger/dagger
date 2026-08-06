@@ -23,8 +23,8 @@ func Entrypoint(ctx context.Context, cfg generator.Config, fn EntrypointFunc) er
 		return err
 	}
 
-	if err := generator.Overlay(ctx, generated.Overlay, cfg.OutputDir); err != nil {
-		return fmt.Errorf("failed to overlay generated entrypoint: %w", err)
+	if err := generator.Apply(ctx, generated, cfg.OutputDir); err != nil {
+		return fmt.Errorf("failed to apply generated entrypoint: %w", err)
 	}
 
 	slog.Info("done!")
