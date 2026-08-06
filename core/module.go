@@ -188,7 +188,8 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	ret := fn.ReturnType.Self()
 	if ret.Optional ||
 		ret.Kind != TypeDefKindObject ||
-		ret.AsObject.Value.Self().Name != "LLM" {
+		ret.AsObject.Value.Self().Name != "LLM" ||
+		ret.AsObject.Value.Self().SourceModuleName != "" {
 		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
 			obj.OriginalName, fn.OriginalName)
 	}
