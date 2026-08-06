@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -2230,70 +2229,4 @@ func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core
 	)
 	require.NoError(t, err)
 	return res
-}
-
-// TestSubtreeClientsSelectsOnlyNestedClients pins the scoping of a call-level
-// telemetry flush: a Dang eval flushes what it produced, not the whole session.
-// Sibling clients accumulate for the lifetime of a session, so including them
-// makes each flush cost grow with session age.
-func TestSubtreeClientsSelectsOnlyNestedClients(t *testing.T) {
-	t.Parallel()
-
-	root := &daggerClient{clientID: "root"}
-	caller := &daggerClient{clientID: "caller", parents: []*daggerClient{root}}
-	child := &daggerClient{clientID: "child", parents: []*daggerClient{root, caller}}
-	grandchild := &daggerClient{
-		clientID: "grandchild",
-		parents:  []*daggerClient{root, caller, child},
-	}
-	sibling := &daggerClient{clientID: "sibling", parents: []*daggerClient{root}}
-
-	sess := &daggerSession{clients: map[string]*daggerClient{}}
-	for _, client := range []*daggerClient{root, caller, child, grandchild, sibling} {
-		sess.clients[client.clientID] = client
-	}
-
-	ids := func(clients []*daggerClient) []string {
-		out := make([]string, 0, len(clients))
-		for _, client := range clients {
-			out = append(out, client.clientID)
-		}
-		sort.Strings(out)
-		return out
-	}
-
-	// The caller flushes itself and everything nested beneath it, at any depth.
-	require.Equal(t,
-		[]string{"caller", "child", "grandchild"},
-		ids(sess.subtreeClients(caller)))
-
-	// A leaf flushes only itself, even with siblings present.
-	require.Equal(t, []string{"grandchild"}, ids(sess.subtreeClients(grandchild)))
-
-	// The root still covers the whole session when it is the one calling.
-	require.Equal(t,
-		[]string{"caller", "child", "grandchild", "root", "sibling"},
-		ids(sess.subtreeClients(root)))
-}
-
-// TestSubtreeClientsIgnoresUnrelatedSiblings is the regression this scoping
-// exists for: a session that has accumulated many sibling clients must not turn
-// a single call's flush into a session-wide fan-out.
-func TestSubtreeClientsIgnoresUnrelatedSiblings(t *testing.T) {
-	t.Parallel()
-
-	root := &daggerClient{clientID: "root"}
-	sess := &daggerSession{clients: map[string]*daggerClient{"root": root}}
-
-	caller := &daggerClient{clientID: "caller", parents: []*daggerClient{root}}
-	sess.clients[caller.clientID] = caller
-	for i := range 500 {
-		sibling := &daggerClient{
-			clientID: fmt.Sprintf("sibling-%d", i),
-			parents:  []*daggerClient{root},
-		}
-		sess.clients[sibling.clientID] = sibling
-	}
-
-	require.Len(t, sess.subtreeClients(caller), 1)
 }

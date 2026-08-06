@@ -433,6 +433,9 @@ func (sess *daggerSession) StoreTelemetrySeenKey(key string) {
 var inflightSessionTelemetryFlushes atomic.Int64
 
 func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) error {
+	inflight := inflightSessionTelemetryFlushes.Add(1)
+	defer inflightSessionTelemetryFlushes.Add(-1)
+
 	sess.clientMu.Lock()
 	clients := make([]*daggerClient, 0, len(sess.clients))
 	for _, client := range sess.clients {
@@ -440,53 +443,8 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) er
 	}
 	sess.clientMu.Unlock()
 
-	return sess.flushClientsTelemetry(ctx, clients, "session", reason)
-}
-
-// FlushSubtreeTelemetry flushes root and every client nested beneath it,
-// leaving the rest of the session alone.
-//
-// Exports already fan out to the emitting client and all of its ancestors (see
-// exportSpans and friends), so anything a descendant still has buffered lands
-// in root's providers once that descendant flushes. Clients elsewhere in the
-// session cannot hold telemetry produced beneath root, so flushing them is
-// pure overhead: each provider flush allocates a full-capacity record buffer
-// regardless of how much is queued.
-func (sess *daggerSession) FlushSubtreeTelemetry(ctx context.Context, root *daggerClient, reason string) error {
-	return sess.flushClientsTelemetry(ctx, sess.subtreeClients(root), "subtree", reason)
-}
-
-// subtreeClients returns root along with every client in the session nested
-// beneath it, at any depth. A client's parents hold its full ancestry, so
-// membership is a single containment check.
-func (sess *daggerSession) subtreeClients(root *daggerClient) []*daggerClient {
-	sess.clientMu.RLock()
-	defer sess.clientMu.RUnlock()
-
-	clients := []*daggerClient{root}
-	for _, client := range sess.clients {
-		if client != root && slices.Contains(client.parents, root) {
-			clients = append(clients, client)
-		}
-	}
-	return clients
-}
-
-// flushClientsTelemetry force flushes the given clients' telemetry providers
-// concurrently. scope describes how the client set was chosen, so a wide
-// session-wide flush can be told apart from a narrow subtree flush in logs.
-func (sess *daggerSession) flushClientsTelemetry(
-	ctx context.Context,
-	clients []*daggerClient,
-	scope string,
-	reason string,
-) error {
-	inflight := inflightSessionTelemetryFlushes.Add(1)
-	defer inflightSessionTelemetryFlushes.Add(-1)
-
 	lg := slog.With(
 		"sessionID", sess.sessionID,
-		"scope", scope,
 		"reason", reason,
 		"clients", len(clients),
 		"inflightSessionFlushes", inflight)
@@ -2856,15 +2814,13 @@ func (srv *Server) SecretSalt() []byte {
 	return srv.secretSalt
 }
 
-// FlushCallTelemetry flushes telemetry for the calling client and any clients
-// nested beneath it, so telemetry emitted while serving the current call is
-// durable before that call returns.
-func (srv *Server) FlushCallTelemetry(ctx context.Context) error {
+// Provides access to the client's telemetry database.
+func (srv *Server) FlushSessionTelemetry(ctx context.Context) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return err
 	}
-	return client.daggerSession.FlushSubtreeTelemetry(ctx, client, "FlushCallTelemetry API")
+	return client.daggerSession.FlushTelemetry(ctx, "FlushSessionTelemetry API")
 }
 
 func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.DB, error) {
