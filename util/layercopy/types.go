@@ -11,6 +11,17 @@ type Mount struct {
 	Mount *mount.Mount
 }
 
+type sourceCacheKey struct {
+	root  string
+	mount *mount.Mount
+}
+
+type sourceCache struct {
+	// ancestorMinLayers maps an ancestor path to the lowest visible layer after
+	// applying every visibility bound from the source root through that path.
+	ancestorMinLayers map[string]int
+}
+
 type Ownership struct {
 	UID int
 	GID int
@@ -45,5 +56,6 @@ type CopyOptions struct {
 }
 
 type Copier struct {
-	dest *destination
+	dest         *destination
+	sourceCaches map[sourceCacheKey]*sourceCache
 }
