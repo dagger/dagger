@@ -1,12 +1,17 @@
-//! Placeholder binary boundary for the completeness contract tool.
+//! Thin binary boundary for the Rust SDK completeness contract.
 //!
-//! F1 establishes the library contract before the CLI workflow is specified. The binary therefore
-//! fails explicitly instead of exposing an accidental or partially validated command interface;
-//! Task 12 will replace this boundary with the approved CLI.
+//! Domain validation and staging live in the library. This process owns only host streams, argv,
+//! and conversion of the reviewed 0/1/2 status policy into [`ExitCode`].
 
+use dagger_sdk_completeness::{ArtifactCliBackend, run_with_backend};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    eprintln!("dagger-sdk-completeness command wiring is not available in this build");
-    ExitCode::from(2)
+    let status = run_with_backend(
+        std::env::args_os(),
+        &ArtifactCliBackend,
+        &mut std::io::stdout().lock(),
+        &mut std::io::stderr().lock(),
+    );
+    ExitCode::from(status)
 }

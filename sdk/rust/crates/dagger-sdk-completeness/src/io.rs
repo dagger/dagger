@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use thiserror::Error;
 
@@ -18,6 +19,8 @@ use crate::authority::{
 };
 use crate::diagnostic::{ContractDiagnostic, DiagnosticCode, DiagnosticSet, ToolError};
 use crate::model::{CommitSha, RepositoryId, RepositoryRelativePath, SourceSelector};
+
+static STAGING_NONCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 /// Local checkout roots keyed by the immutable repository identities in the target.
@@ -62,6 +65,126 @@ pub trait ImmutableTransitionRetrieval {
         repository: &RepositoryId,
         revision: &CommitSha,
     ) -> Result<PathBuf, ToolError>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Explicit output tree for render, transition, and evidence-import commands.
+///
+/// Construction refuses any pre-existing content. Each artifact is first created under a unique
+/// name on the destination filesystem and then atomically renamed into place, so callers never
+/// observe a partially written file and the active contract tree is never an output target.
+pub struct IsolatedStaging {
+    root: PathBuf,
+}
+
+impl IsolatedStaging {
+    /// Creates or validates an empty output directory.
+    pub fn prepare(output: impl Into<PathBuf>) -> Result<Self, ToolError> {
+        let root = output.into();
+        match fs::metadata(&root) {
+            Ok(metadata) if !metadata.is_dir() => {
+                let error = io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "staging output exists and is not a directory",
+                );
+                return Err(ToolError::io("prepare staging output", &error, None));
+            }
+            Ok(_) => {
+                let mut entries = fs::read_dir(&root)
+                    .map_err(|error| ToolError::io("inspect staging output", &error, None))?;
+                if entries
+                    .next()
+                    .transpose()
+                    .map_err(|error| ToolError::io("inspect staging output entry", &error, None))?
+                    .is_some()
+                {
+                    let error = io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "staging output must be empty",
+                    );
+                    return Err(ToolError::io("prepare staging output", &error, None));
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                fs::create_dir_all(&root)
+                    .map_err(|error| ToolError::io("create staging output", &error, None))?;
+            }
+            Err(error) => return Err(ToolError::io("inspect staging output", &error, None)),
+        }
+        Ok(Self { root })
+    }
+
+    /// Borrows the isolated output root.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Writes one repository-relative artifact using an atomic same-filesystem rename.
+    pub fn write(
+        &self,
+        relative_path: &RepositoryRelativePath,
+        bytes: &[u8],
+    ) -> Result<(), ToolError> {
+        let destination = self.root.join(relative_path.as_str());
+        let Some(parent) = destination.parent() else {
+            let error = io::Error::new(io::ErrorKind::InvalidInput, "artifact has no parent");
+            return Err(ToolError::io(
+                "resolve staged artifact parent",
+                &error,
+                Some(relative_path.clone()),
+            ));
+        };
+        fs::create_dir_all(parent).map_err(|error| {
+            ToolError::io(
+                "create staged artifact directory",
+                &error,
+                Some(relative_path.clone()),
+            )
+        })?;
+        if destination.exists() {
+            let error = io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "staged artifact already exists",
+            );
+            return Err(ToolError::io(
+                "refuse staged artifact replacement",
+                &error,
+                Some(relative_path.clone()),
+            ));
+        }
+
+        let nonce = STAGING_NONCE.fetch_add(1, Ordering::Relaxed);
+        let temporary = parent.join(format!(
+            ".dagger-sdk-completeness-{}-{nonce}.tmp",
+            std::process::id()
+        ));
+        let write_result = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .and_then(|mut file| {
+                use std::io::Write as _;
+                file.write_all(bytes)?;
+                file.sync_all()
+            });
+        if let Err(error) = write_result {
+            let _ = fs::remove_file(&temporary);
+            return Err(ToolError::io(
+                "write staged artifact",
+                &error,
+                Some(relative_path.clone()),
+            ));
+        }
+        if let Err(error) = fs::rename(&temporary, &destination) {
+            let _ = fs::remove_file(&temporary);
+            return Err(ToolError::io(
+                "commit staged artifact",
+                &error,
+                Some(relative_path.clone()),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Loads exact selected source bytes without network access or extractor filesystem access.

@@ -5,7 +5,7 @@
 //! malformed, unrelated scaffolding.
 
 mod authority_case;
-mod contract_case;
+pub(crate) mod contract_case;
 mod models;
 mod mutations;
 mod scalars;

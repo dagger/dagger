@@ -389,6 +389,7 @@ dependencies = [
 name = "dagger-sdk-completeness"
 version = "1.0.0-beta.10"
 dependencies = [
+ "clap",
  "pretty_assertions",
  "proptest",
  "semver",

@@ -1149,11 +1149,47 @@ pub enum SemverEffect {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+/// Reviewed public-API meaning of one capability-level transition.
+///
+/// Addition and removal are structural facts checked against the target diff. The remaining
+/// variants make a reviewer state whether a fingerprint change is compatible, a deprecation, or
+/// incompatible; a hash change alone cannot answer that Rust API question.
+pub enum RustApiChangeKind {
+    Added,
+    Removed,
+    Compatible,
+    Deprecated,
+    Incompatible,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 /// Portable anchor to a migration requirement in an approved specification.
 pub struct SpecReference {
     pub path: RepositoryRelativePath,
     pub locator: SourceLocator,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// Feature-owned specification reference used for user-facing migration work.
+pub struct OwnedSpecReference {
+    pub owner_feature: FeatureId,
+    pub reference: SpecReference,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// Human review of the Rust API effect represented by one semantic target diff entry.
+pub struct RustApiTransitionReview {
+    pub capability_id: CapabilityId,
+    pub change_kind: RustApiChangeKind,
+    pub user_facing: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub experimental_condition: Option<SpecReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_requirement: Option<OwnedSpecReference>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1202,6 +1238,18 @@ pub struct CompatibilityClaim {
     pub range_boundaries: CanonicalSet<TargetDigest>,
     pub conformance_evidence: CanonicalSet<EvidenceId>,
     pub outside_range_capability: CapabilityId,
+    pub claim_digest: Digest,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// Release-facing compatibility fields projected from one validated claim.
+///
+/// This deliberately contains no separately editable range or evidence state. Consumers publish
+/// the exact normalized target claim and its digest that passed contract validation.
+pub struct ReleaseCompatibilityMetadata {
+    pub rust_sdk_version: SemverVersion,
+    pub supported_targets: SupportedTargets,
     pub claim_digest: Digest,
 }
 

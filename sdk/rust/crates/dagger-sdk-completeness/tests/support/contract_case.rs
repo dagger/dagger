@@ -55,10 +55,13 @@ pub struct ContractCase {
     pub authority_change: AuthorityChange,
     pub harness_change: HarnessCheckChange,
     pub spec_reference: SpecReference,
+    pub owned_spec_reference: OwnedSpecReference,
+    pub rust_api_transition_review: RustApiTransitionReview,
     pub transition: TargetTransition,
     pub inclusive_range: InclusiveTargetRange,
     pub supported_targets: SupportedTargets,
     pub compatibility: CompatibilityClaim,
+    pub release_compatibility_metadata: ReleaseCompatibilityMetadata,
     pub complete_exception: CompleteException,
     pub report: CompletenessReport,
     pub diagnostic: ContractDiagnostic,
@@ -101,10 +104,13 @@ impl ContractCase {
             DurableModel::AuthorityChange(self.authority_change.clone()),
             DurableModel::HarnessCheckChange(self.harness_change.clone()),
             DurableModel::SpecReference(self.spec_reference.clone()),
+            DurableModel::OwnedSpecReference(self.owned_spec_reference.clone()),
+            DurableModel::RustApiTransitionReview(self.rust_api_transition_review.clone()),
             DurableModel::TargetTransition(self.transition.clone()),
             DurableModel::InclusiveTargetRange(self.inclusive_range.clone()),
             DurableModel::SupportedTargets(self.supported_targets.clone()),
             DurableModel::CompatibilityClaim(self.compatibility.clone()),
+            DurableModel::ReleaseCompatibilityMetadata(self.release_compatibility_metadata.clone()),
             DurableModel::CompleteException(self.complete_exception.clone()),
             DurableModel::CompletenessReport(self.report.clone()),
             DurableModel::ContractDiagnostic(self.diagnostic.clone()),
@@ -747,6 +753,18 @@ fn build_contract_case(seed: &ContractSeed, reverse: bool) -> ContractCase {
         path: path(".kiro/specs/rust-sdk-completeness-contract/design.md"),
         locator: locator("transition-and-compatibility-engines"),
     };
+    let owned_spec_reference = OwnedSpecReference {
+        owner_feature: FeatureId::Feature9,
+        reference: spec_reference.clone(),
+    };
+    let rust_api_transition_review = RustApiTransitionReview {
+        capability_id: capability_id.clone(),
+        change_kind: RustApiChangeKind::Incompatible,
+        user_facing: true,
+        experimental_condition: (seed.stability == Stability::Experimental)
+            .then(|| spec_reference.clone()),
+        migration_requirement: Some(owned_spec_reference.clone()),
+    };
     let transition = TargetTransition {
         from_target: previous_target.clone(),
         to_target: target.clone(),
@@ -794,6 +812,11 @@ fn build_contract_case(seed: &ContractSeed, reverse: bool) -> ContractCase {
         conformance_evidence,
         outside_range_capability,
         claim_digest,
+    };
+    let release_compatibility_metadata = ReleaseCompatibilityMetadata {
+        rust_sdk_version: compatibility.rust_sdk_version.clone(),
+        supported_targets: compatibility.supported_targets.clone(),
+        claim_digest: compatibility.claim_digest.clone(),
     };
 
     let complete_exception = CompleteException {
@@ -871,10 +894,13 @@ fn build_contract_case(seed: &ContractSeed, reverse: bool) -> ContractCase {
         authority_change,
         harness_change,
         spec_reference,
+        owned_spec_reference,
+        rust_api_transition_review,
         transition,
         inclusive_range,
         supported_targets,
         compatibility,
+        release_compatibility_metadata,
         complete_exception,
         report,
         diagnostic,

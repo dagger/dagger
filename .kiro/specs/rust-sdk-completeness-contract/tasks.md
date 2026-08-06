@@ -291,88 +291,88 @@
     harness outcome to remain inside its mapped target/platform/assertion boundary and every
     expected subject failure to leave Integrity unaffected.
 
-- [ ] 11. Implement target transitions, stability, and compatibility claims
-  - [ ] 11.1 Implement semantic target-transition differencing
+- [x] 11. Implement target transitions, stability, and compatibility claims
+  - [x] 11.1 Implement semantic target-transition differencing
     - Compare validated target, capability, authority-source, and Harness_Check identities
       and fingerprints; emit complete ordered added, removed, changed, authority-changed,
       and harness-changed sets.
     - Preserve prior rows and evidence for removals, invalidate changed-row evidence until
       revalidated, and require explicit classifications for additions.
     - _Requirements: 8.1–8.9, 8.13, 12.12_
-  - [ ] 11.2 Implement Rust stability and migration classification
+  - [x] 11.2 Implement Rust stability and migration classification
     - Validate stable, experimental, internal, and not-applicable states; compute none,
       additive, deprecation, or breaking SemVer effects; require graduation/removal
       conditions and Feature 9 migration references where specified.
     - _Requirements: 8.11, 8.12, 11.4–11.6_
-  - [ ] 11.3 Implement compatibility validation and release-data derivation
+  - [x] 11.3 Implement compatibility validation and release-data derivation
     - Validate exact target sets or inclusive ranges with ordered full target boundaries,
       passing evidence at every claimed target/boundary, a typed outside-range capability,
       canonical claim digest, and release metadata derived from the validated claim.
     - _Requirements: 11.1–11.3, 11.7, 11.8_
-  - [ ] 11.4 Property test: Property 13 — semantic drift and target-transition diff
+  - [x] 11.4 Property test: Property 13 — semantic drift and target-transition diff
     - Implement a simple-set/reference-diff `proptest` with at least 256 validated contract
       pairs and generated capability, authority, and harness additions/removals/changes,
       including historical preservation and evidence revalidation.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 13: semantic drift and target-transition diff`
     - _Requirements: 8.1–8.9, 8.13, 12.12_
-  - [ ] 11.5 Property test: Property 14 — stability and migration classification
+  - [x] 11.5 Property test: Property 14 — stability and migration classification
     - Implement a reference-table `proptest` with at least 256 public Rust transitions
       across stability states, compatible/incompatible changes, experimental conditions,
       and present/missing Feature 9 migrations.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 14: stability and migration classification`
     - _Requirements: 8.11, 8.12, 11.4–11.6_
-  - [ ] 11.6 Property test: Property 19 — compatibility-claim truthfulness
+  - [x] 11.6 Property test: Property 19 — compatibility-claim truthfulness
     - Implement a reference-model `proptest` with at least 256 exact-set and bounded-range
       claims, boundary orderings and evidence sets, outside-range capabilities, claim
       digests, and derived release metadata.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 19: compatibility-claim truthfulness`
     - _Requirements: 11.1–11.3, 11.7, 11.8_
 
-- [ ] 12. Implement reports, gates, CLI, and artifact-preserving staging
-  - [ ] 12.1 Implement deterministic report aggregation
+- [x] 12. Implement reports, gates, CLI, and artifact-preserving staging
+  - [x] 12.1 Implement deterministic report aggregation
     - Build exact counts by primary authority, kind, all five statuses including zeroes,
       and Feature 2–9 owner; emit deterministically ordered diagnostics, blockers, and
       decision-backed complete exceptions.
     - Compute Integrity solely from integrity diagnostics and Completeness solely from true
       Integrity plus absence of `Missing`/`Partial` rows.
     - _Requirements: 9.1, 9.3–9.7_
-  - [ ] 12.2 Implement the human report as a pure JSON-report projection
+  - [x] 12.2 Implement the human report as a pure JSON-report projection
     - Render stable headings, target identity, verdicts, counts, blockers, exceptions, and
       diagnostics solely from `CompletenessReport`; test exact parity with `report.json`,
       including zero-count rendering.
     - _Requirements: 9.1, 9.2_
-  - [ ] 12.3 Implement gate selection and the thin CLI
+  - [x] 12.3 Implement gate selection and the thin CLI
     - Add `verify`, `render`, `transition`, and `import-evidence` with the designed argv,
       stdout/stderr separation, selected integrity/completeness gate semantics, and exit
       statuses `0`, `1`, and `2`.
     - Make `verify` read-only and network-free; keep the initial CI profile on Integrity and
       expose Completeness for Feature 9 without enabling it as the F1 required gate.
     - _Requirements: 1.8, 9.8–9.11, 10.14_
-  - [ ] 12.4 Implement isolated staging and atomic output adapters
+  - [x] 12.4 Implement isolated staging and atomic output adapters
     - Refuse a non-empty output directory; render and import into a destination-filesystem
       temporary staging tree; never edit or replace the active contract tree; and keep
       immutable network retrieval exclusive to explicit transitions.
     - Execute subprocesses directly from argv with a secret-free environment allowlist and
       retain no raw durable logs.
     - _Requirements: 7.5–7.7, 8.1–8.5, 9.3–9.5_
-  - [ ] 12.5 Property test: Property 15 — verdict and report aggregation
+  - [x] 12.5 Property test: Property 15 — verdict and report aggregation
     - Implement a simple-reference-aggregation `proptest` with at least 256 generated
       inventories, ledgers, statuses, owners, exceptions, and diagnostic sets.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 15: verdict and report aggregation`
     - _Requirements: 9.1–9.7_
-  - [ ] 12.6 Property test: Property 16 — gate selection
+  - [x] 12.6 Property test: Property 16 — gate selection
     - Implement a truth-table `proptest` with at least 256 generated reports and gate
       selections, including initial Integrity CI and Feature 9 Completeness release profiles.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 16: gate selection`
     - _Requirements: 9.8–9.11, 10.14_
-  - [ ] 12.7 Property test: Property 20 — rejection is artifact-preserving
+  - [x] 12.7 Property test: Property 20 — rejection is artifact-preserving
     - Implement a filesystem-fixture `proptest` with at least 256 invalid contract,
       evidence-import, and transition cases; snapshot every active byte before/after and
       compare the full deterministic diagnostic set.
     - Tag: `// Feature: rust-sdk-completeness-contract, Property 20: rejection is artifact-preserving`
     - _Requirements: 7.5–7.7, 8.1–8.5, 9.3–9.5_
 
-- [ ] 13. Checkpoint: transitions, reports, and command surfaces are green
+- [x] 13. Checkpoint: transitions, reports, and command surfaces are green
   - Run formatting, locked checks, all implemented PBTs, CLI fixture tests, clippy, and
     rustdoc; require deterministic diagnostics and byte-identical outputs across repeated
     runs and distinct absolute fixture roots.

@@ -44,17 +44,20 @@ pub enum DurableModel {
     AuthorityChange(AuthorityChange),
     HarnessCheckChange(HarnessCheckChange),
     SpecReference(SpecReference),
+    OwnedSpecReference(OwnedSpecReference),
+    RustApiTransitionReview(RustApiTransitionReview),
     TargetTransition(TargetTransition),
     InclusiveTargetRange(InclusiveTargetRange),
     SupportedTargets(SupportedTargets),
     CompatibilityClaim(CompatibilityClaim),
+    ReleaseCompatibilityMetadata(ReleaseCompatibilityMetadata),
     CompleteException(CompleteException),
     CompletenessReport(CompletenessReport),
     ContractDiagnostic(ContractDiagnostic),
 }
 
 impl DurableModel {
-    pub const VARIANT_COUNT: usize = 41;
+    pub const VARIANT_COUNT: usize = 44;
 
     pub fn kind(&self) -> &'static str {
         match self {
@@ -92,10 +95,13 @@ impl DurableModel {
             Self::AuthorityChange(_) => "authority-change",
             Self::HarnessCheckChange(_) => "harness-check-change",
             Self::SpecReference(_) => "spec-reference",
+            Self::OwnedSpecReference(_) => "owned-spec-reference",
+            Self::RustApiTransitionReview(_) => "rust-api-transition-review",
             Self::TargetTransition(_) => "target-transition",
             Self::InclusiveTargetRange(_) => "inclusive-target-range",
             Self::SupportedTargets(_) => "supported-targets",
             Self::CompatibilityClaim(_) => "compatibility-claim",
+            Self::ReleaseCompatibilityMetadata(_) => "release-compatibility-metadata",
             Self::CompleteException(_) => "complete-exception",
             Self::CompletenessReport(_) => "completeness-report",
             Self::ContractDiagnostic(_) => "contract-diagnostic",
