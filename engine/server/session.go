@@ -1973,10 +1973,10 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 }
 
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
-	return srv.executeGraphQL(client.daggerSession.withClosingCancel(r.Context()), client, w, r)
+	return srv.executeGraphQL(client.daggerSession.withClosingCancel(r.Context()), client, w, r, true)
 }
 
-func (srv *Server) executeGraphQL(ctx context.Context, client *daggerClient, w http.ResponseWriter, r *http.Request) (rerr error) {
+func (srv *Server) executeGraphQL(ctx context.Context, client *daggerClient, w http.ResponseWriter, r *http.Request, requireClientAttachables bool) (rerr error) {
 	sess := client.daggerSession
 
 	// Profiling is recorded for this request if the engine is recording
@@ -2085,7 +2085,7 @@ func (srv *Server) executeGraphQL(ctx context.Context, client *daggerClient, w h
 
 	r = r.WithContext(ctx)
 
-	if client.hostServiceProxyClientID == "" {
+	if requireClientAttachables && client.hostServiceProxyClientID == "" {
 		profWait := wcprof.BeginWaitIdent(ctx, "session:attachables", wcprof.WaitReasonIO)
 		_, err := client.getClientCaller(ctx, client.clientID)
 		profWait.End()

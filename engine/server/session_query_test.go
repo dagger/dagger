@@ -10,14 +10,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core"
+	coreschema "github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/baggage"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -161,7 +168,8 @@ func TestPrimaryQueryDisconnectBeforeStorageIsNotAccepted(t *testing.T) {
 
 func TestPrimaryQueryDisconnectAfterStorageCompletesIndependently(t *testing.T) {
 	t.Parallel()
-	srv, sess, _ := newDetachedQuerySubmitTestSession(t)
+	srv, sess, creator := newDetachedQuerySubmitTestSession(t)
+	prepareEngineOnlyDetachedQueryClient(t, srv, creator)
 	hooks := &sessionTestHooks{Events: make(chan sessionTestEvent, 32)}
 	barrier := make(chan struct{})
 	hooks.setBarrier(sessionHookQueryBodyCommitted, barrier)
@@ -190,10 +198,62 @@ func TestPrimaryQueryDisconnectAfterStorageCompletesIndependently(t *testing.T) 
 	case <-time.After(10 * time.Second):
 		t.Fatal("stored detached query did not complete after submitter disconnect")
 	}
-	require.NotEqual(t, engine.SessionQueryStateCanceled, query.snapshot().Status)
+	snapshot := query.snapshot()
+	require.Equal(t, engine.SessionQueryStateSucceeded, snapshot.Status)
+	require.True(t, snapshot.ResultAvailable)
 	stored, err := os.ReadFile(query.requestPath)
 	require.NoError(t, err)
 	require.Equal(t, []byte(requestBody), stored)
+}
+
+func TestAcceptedEngineOnlyQuerySurvivesCreatorAttachmentClose(t *testing.T) {
+	t.Parallel()
+	srv, sess, creator := newDetachedQuerySubmitTestSession(t)
+	prepareEngineOnlyDetachedQueryClient(t, srv, creator)
+	hooks := &sessionTestHooks{Events: make(chan sessionTestEvent, 32)}
+	barrier := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(barrier) }) }
+	t.Cleanup(release)
+	hooks.setBarrier(sessionHookGraphQLEntered, barrier)
+	srv.sessionTestHooks = hooks
+
+	recorder := httptest.NewRecorder()
+	req := newDetachedQuerySubmitRequest(t, t.Context(), testAttachmentID,
+		json.RawMessage(`{"query":"query Query { version }"}`))
+	require.NoError(t, srv.servePrimaryQuerySubmit(recorder, req, struct{}{}))
+	require.Equal(t, http.StatusAccepted, recorder.Code)
+	waitForSessionHookCount(t, hooks.Events, sessionHookGraphQLEntered, 1)
+
+	require.True(t, srv.detachAttachment(sess, testAttachmentID, 1))
+	require.Nil(t, sess.currentAttachment)
+	release()
+
+	sess.queryMu.RLock()
+	query := sess.primaryQuery
+	sess.queryMu.RUnlock()
+	require.NotNil(t, query)
+	select {
+	case <-query.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("accepted engine-only query did not complete after creator attachment close")
+	}
+	snapshot := query.snapshot()
+	require.Equal(t, engine.SessionQueryStateSucceeded, snapshot.Status)
+	require.True(t, snapshot.ResultAvailable)
+
+	resultReq := httptest.NewRequest(http.MethodGet, engine.SessionsEndpoint+"/"+testSessionID+"/queries/primary/result", nil)
+	resultReq.SetPathValue("sessionID", testSessionID)
+	resultRecorder := httptest.NewRecorder()
+	require.NoError(t, srv.servePrimaryQueryResult(resultRecorder, resultReq, struct{}{}))
+	require.Equal(t, http.StatusOK, resultRecorder.Code)
+	var result struct {
+		Data struct {
+			Version string `json:"version"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(resultRecorder.Body.Bytes(), &result))
+	require.Equal(t, engine.FullVersion(), result.Data.Version)
 }
 
 func TestPrimaryQueryRequestSizeBoundary(t *testing.T) {
@@ -404,6 +464,29 @@ func newDetachedQuerySubmitTestSession(t *testing.T) (*Server, *daggerSession, *
 		ID: testAttachmentID, Generation: 1, ClientID: creator.clientID, Ready: true,
 	}
 	return srv, sess, creator
+}
+
+func prepareEngineOnlyDetachedQueryClient(t *testing.T, srv *Server, creator *daggerClient) {
+	t.Helper()
+	ctx := dagql.ContextWithCache(t.Context(), srv.engineCache)
+	ctx = engine.ContextWithClientMetadata(ctx, creator.clientMetadata)
+	base, err := coreschema.NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	root := core.NewRoot(srv)
+	coreMod := base.CoreMod("")
+	creator.dagqlRoot = root
+	creator.defaultDeps = core.NewSchemaBuilder(root, []core.Mod{coreMod})
+	creator.servedMods = core.NewSchemaBuilder(root, []core.Mod{coreMod})
+	creator.pendingWorkspaceLoad = true
+	creator.workspaceLoaded = true
+	creator.tracerProvider = sdktrace.NewTracerProvider()
+	creator.loggerProvider = sdklog.NewLoggerProvider()
+	creator.meterProvider = sdkmetric.NewMeterProvider()
+	t.Cleanup(func() {
+		require.NoError(t, creator.tracerProvider.Shutdown(context.Background()))
+		require.NoError(t, creator.loggerProvider.Shutdown(context.Background()))
+		require.NoError(t, creator.meterProvider.Shutdown(context.Background()))
+	})
 }
 
 func newDetachedQuerySubmitRequest(t *testing.T, ctx context.Context, attachmentID string, request json.RawMessage) *http.Request {

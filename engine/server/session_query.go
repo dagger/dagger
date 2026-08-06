@@ -226,7 +226,7 @@ func (srv *Server) runDetachedQuery(sess *daggerSession, q *detachedQuery) {
 		writer, err = newDetachedResultWriter(q.resultPath)
 	}
 	if err == nil {
-		err = srv.executeGraphQL(ctx, q.creator, writer, req)
+		err = srv.executeGraphQL(ctx, q.creator, writer, req, false)
 		if err != nil {
 			writeDetachedExecutionError(writer, err)
 		}
