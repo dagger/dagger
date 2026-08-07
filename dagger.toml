@@ -118,6 +118,9 @@ source = ".dagger/modules/engine-lab"
 [env.dev.modules.tui-qa]
 source = ".dagger/modules/tui-qa"
 
+[env.dev.modules.mcp-lab]
+source = ".dagger/modules/mcp-lab"
+
 [env.dev.modules.editor]
 source = "modules/editor"
 
