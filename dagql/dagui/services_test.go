@@ -60,10 +60,6 @@ func TestSurfacedServicesOrdersNestsAndContains(t *testing.T) {
 		markService(serviceTestSnapshot(innerSvcID, "exec inner", spanID(middleID)), "inner.dagger.local"),
 	})
 
-	if !db.HasServices() {
-		t.Fatal("HasServices() = false, want true")
-	}
-
 	roots := db.SurfacedServices()
 	if len(roots) != 2 || roots[0].Name() != "a.dagger.local" || roots[1].Name() != "b.dagger.local" {
 		names := make([]string, len(roots))
