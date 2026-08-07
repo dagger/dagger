@@ -169,6 +169,77 @@ func TestLimitIndirectLines(t *testing.T) {
 		got := limitIndirectLines("s", direct(long), 8, 10)
 		requireLines(t, got, []string{strings.Repeat("x", 10) + "[... 10 chars truncated]"})
 	})
+
+	t.Run("a runaway direct print hits the byte cap", func(t *testing.T) {
+		// Direct lines are never dropped by the line limit, so the byte cap is
+		// the only bound on a tool that prints far more than any report: the
+		// head and tail survive around a counted marker, and the total stays
+		// within budget.
+		var lines []capturedLine
+		for i := 1; i <= 40; i++ {
+			lines = append(lines, capturedLine{text: "LINE-" + itoa(i) + "-" + strings.Repeat("x", 995), direct: true})
+		}
+		got := limitIndirectLines("s", lines, 8, 2000)
+		if len(got) >= 40 {
+			t.Fatalf("got %d lines, want the byte cap to drop some", len(got))
+		}
+		joined := strings.Join(got, "\n")
+		if len(joined) > llmToolLogsMaxBytes+100 {
+			t.Errorf("joined output is %d bytes, want within ~%d", len(joined), llmToolLogsMaxBytes)
+		}
+		if !strings.HasPrefix(got[0], "LINE-01") {
+			t.Errorf("first line = %.20q, want the head to survive", got[0])
+		}
+		if !strings.HasPrefix(got[len(got)-1], "LINE-40") {
+			t.Errorf("last line = %.20q, want the tail to survive", got[len(got)-1])
+		}
+		if !strings.Contains(joined, "lines omitted (use ReadLogs(span: s)") {
+			t.Errorf("output lacks the counted ReadLogs marker:\n%s", joined)
+		}
+	})
+}
+
+// TestCapLinesBytes covers the last-resort byte cap on captured tool logs:
+// under budget the lines pass through untouched; over budget the middle is
+// dropped behind a counted marker, with the head keeping the larger share
+// and at least one line surviving on each side.
+func TestCapLinesBytes(t *testing.T) {
+	t.Run("under budget passes through", func(t *testing.T) {
+		lines := []string{"one", "two", "three"}
+		requireLines(t, capLinesBytes("s", lines, 1000), lines)
+	})
+
+	t.Run("zero budget disables the cap", func(t *testing.T) {
+		lines := []string{strings.Repeat("x", 100)}
+		requireLines(t, capLinesBytes("s", lines, 0), lines)
+	})
+
+	t.Run("over budget drops the middle behind a marker", func(t *testing.T) {
+		// 10 lines of 10 bytes (11 with newline); budget 66 → head budget 44
+		// keeps 4 lines, tail budget 22 keeps 2, marker counts the 4 dropped.
+		var lines []string
+		for i := 1; i <= 10; i++ {
+			lines = append(lines, "line-"+itoa(i)+"xxx")
+		}
+		got := capLinesBytes("s", lines, 66)
+		requireLines(t, got, []string{
+			"line-01xxx", "line-02xxx", "line-03xxx", "line-04xxx",
+			"... 4 lines omitted (use ReadLogs(span: s) to read more) ...",
+			"line-09xxx", "line-10xxx",
+		})
+	})
+
+	t.Run("an oversized boundary line still survives", func(t *testing.T) {
+		// The first and last lines are always kept even when either alone
+		// exceeds its share of the budget.
+		lines := []string{strings.Repeat("a", 50), "mid", strings.Repeat("z", 50)}
+		got := capLinesBytes("s", lines, 40)
+		requireLines(t, got, []string{
+			strings.Repeat("a", 50),
+			"... 1 lines omitted (use ReadLogs(span: s) to read more) ...",
+			strings.Repeat("z", 50),
+		})
+	})
 }
 
 func requireLines(t *testing.T, got, want []string) {

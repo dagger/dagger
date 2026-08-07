@@ -1917,7 +1917,9 @@ func limitLines(spanID string, logs []string, limit, maxLineLen int) []string {
 // underneath it are limited to the last `limit` lines, with each dropped run
 // replaced by a count. A tool's report is deliberate output and stays intact
 // no matter how noisy the work beneath it was; nested logs remain fully
-// readable via ReadLogs.
+// readable via ReadLogs. "In full" still answers to the last-resort total
+// byte cap (llmToolLogsMaxBytes) — deliberate output is unbounded by lines,
+// not by bytes.
 func limitIndirectLines(spanID string, lines []capturedLine, limit, maxLineLen int) []string {
 	// Indirect lines are kept from the tail: the most recent nested output is
 	// the most relevant (e.g. the error that ended a build).
@@ -1966,6 +1968,63 @@ func limitIndirectLines(spanID string, lines []capturedLine, limit, maxLineLen i
 			out[i] = line[:maxLineLen] + fmt.Sprintf("[... %d chars truncated]", len(line)-maxLineLen)
 		}
 	}
+	return capLinesBytes(spanID, out, llmToolLogsMaxBytes)
+}
+
+// llmToolLogsMaxBytes is the total byte budget for a tool result's captured
+// logs. Direct output survives line-based abridging by design — a tool's
+// report is the point of the call — but a runaway print (a cat'd file,
+// megabytes of dumped state) shouldn't ride into the model's context
+// wholesale. 16 KiB is roughly 4k tokens: far above any deliberate report,
+// low enough that an accident can't crowd out the conversation.
+const llmToolLogsMaxBytes = 16 * 1024
+
+// capLinesBytes bounds the total size of a tool-log capture as a last-resort
+// safeguard, by bytes so that long lines count for what they cost. The
+// middle is dropped rather than the tail — a report's opening and its
+// conclusion both carry signal — behind the usual counted ReadLogs marker,
+// with the head taking the larger share. At least one line survives on each
+// side; the per-line char cap upstream keeps that from busting the budget.
+func capLinesBytes(spanID string, lines []string, maxBytes int) []string {
+	if maxBytes <= 0 {
+		return lines
+	}
+	total := 0
+	for _, line := range lines {
+		total += len(line) + 1 // +1 for the newline that rejoins it
+	}
+	if total <= maxBytes {
+		return lines
+	}
+	headBudget := maxBytes * 2 / 3
+	tailBudget := maxBytes - headBudget
+	head, spent := 0, 0
+	for head < len(lines) {
+		cost := len(lines[head]) + 1
+		if spent+cost > headBudget && head > 0 {
+			break
+		}
+		spent += cost
+		head++
+	}
+	tail, spent := len(lines), 0
+	for tail > head {
+		cost := len(lines[tail-1]) + 1
+		if spent+cost > tailBudget && tail < len(lines) {
+			break
+		}
+		spent += cost
+		tail--
+	}
+	if head >= tail {
+		// the kept head and tail already meet; nothing left to drop
+		return lines
+	}
+	out := make([]string, 0, head+(len(lines)-tail)+1)
+	out = append(out, lines[:head]...)
+	out = append(out, fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...",
+		tail-head, spanID))
+	out = append(out, lines[tail:]...)
 	return out
 }
 
