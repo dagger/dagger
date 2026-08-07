@@ -67,12 +67,12 @@
     <li><a href="#errors">Error propagation and isolation</a></li>
     <li><a href="#reattach">Reattachment semantics</a></li>
     <li><a href="#implementation">Recommended minimal implementation</a></li>
+    <li><a href="#tunnel-lifecycle">Shared tunnel completion and startup cleanup</a></li>
     <li><a href="#files">Exact package and file changes</a></li>
     <li><a href="#phases">Implementation phases and commit boundaries</a></li>
     <li><a href="#tests">Test plan</a></li>
     <li><a href="#faults">Fault-injection seams</a></li>
     <li><a href="#acceptance">Acceptance criteria</a></li>
-    <li><a href="#tunnel-lifecycle">Shared tunnel completion and startup ownership</a></li>
     <li><a href="#deferred">Explicit deferred work</a></li>
   </ol>
 
@@ -380,13 +380,13 @@ There is no arrow from observer attachables to creator source lookup.</code></pr
 
   <h4>Required change 4: stop reporting a dead host listener as live</h4>
   <div class="table-wrap"><table class="medium"><tbody>
-    <tr><th>Current behavior</th><td>After <code>TunnelListener/Listen</code> starts, the receive goroutine in <code>engineutil.Client.ListenHostToContainer</code> logs a <code>Recv</code> error and returns. The function exposes only the initial response and a close function. <code>core.Service.startTunnel</code> waits for upstream exit, explicit stop, or <code>svcCtx</code> cancellation. It cannot observe listener death.</td></tr>
-    <tr><th>Why it is wrong for detachable sessions</th><td>The source-backed listener operation has failed, but the affected <code>RunningService</code> remains advertised as running. The policy requires that operation to fail without stopping unrelated services.</td></tr>
-    <tr><th>Concrete failure scenario</th><td>A host-to-container tunnel reports its port successfully. The creator then disconnects. The listener stream closes, but <code>RunningService.Wait</code> continues waiting and clients keep seeing a service whose host port no longer exists.</td></tr>
-    <tr><th>New behavior</th><td>Listener death converges through <code>startTunnel</code>'s existing <code>shutdown(cause)</code> and <code>sync.Once</code>. Startup rolls back every acquired listener and this tunnel's upstream binding. After publication, listener death removes the failed tunnel from running state and releases this tunnel's binding. It does not unconditionally terminate an upstream that still has another binder.</td></tr>
-    <tr><th>Minimal code change</th><td>Add the guarded sticky listener result in <code>engine/engineutil/client.go</code>. Add one synchronized listener registry and the existing <code>shutdown(cause)</code> owner in <code>core/service.go</code>. Add two private <code>RunningService</code> hooks in <code>core/services.go</code>. Section 14 pins the types, methods, and lock order.</td></tr>
-    <tr><th>Evidence in current code</th><td>The post-start <code>listener.Recv</code> error path in <code>engine/engineutil/client.go::ListenHostToContainer</code> only logs and returns. <code>core.Service.startTunnel</code> has no listener completion result. <code>Services.startWithKey</code> already holds <code>Services.l</code> and checks <code>context.Cause(svcCtx)</code> before insertion. That check is not atomic with listener completion and insertion. Adding only a monitor would not close the gap. The monitor might not propagate completion before the check, or completion might occur between the check and insertion.</td></tr>
-    <tr><th>Required test</th><td>Use deterministic ordinary and detachable cases for first-listener failure, later-port failure, completion before publication, and completion after publication. Pause the listener's actual completion guard during the publication race. Also cover a second listen returning after the first listener starts shutdown, shared stream Send failure, sticky Close/Wait results, no leaked listener or binding, no panic, and survival of another upstream binding.</td></tr>
+    <tr><th>Current behavior</th><td>After <code>TunnelListener/Listen</code> starts, the receive goroutine in <code>engineutil.Client.ListenHostToContainer</code> logs a <code>Recv</code> error and returns. The function exposes only the initial response and a close function. <code>core.Service.startTunnel</code> cannot observe listener death. Its partial-start error paths do not release the acquired upstream binding. The close function waits for <code>sendL</code> before its deferred stream cancellation. <code>RunningService.stopFromManager</code> skips tracked-resource release when <code>Stop</code> returns an error.</td></tr>
+    <tr><th>Why it is wrong for detachable sessions</th><td>The source-backed listener can fail while the affected <code>RunningService</code> remains advertised as running. Cleanup can also retain the tunnel binding, listeners, or tracked resources. The policy requires the affected operation to end without stopping unrelated services or leaking its resources.</td></tr>
+    <tr><th>Concrete failure scenario</th><td>A host-to-container tunnel reports its port successfully and the creator disconnects. The listener stream closes, but clients keep seeing the failed service. Separately, a shared <code>Send</code> can hold <code>sendL</code> until stream cancellation while <code>Close</code> waits for <code>sendL</code> before issuing that cancellation.</td></tr>
+    <tr><th>New behavior</th><td>Listener death converges through <code>startTunnel</code>'s existing <code>shutdown(cause)</code> and <code>sync.Once</code>. Startup rolls back every acquired listener and this tunnel's upstream binding. <code>Close</code> cancels before waiting for <code>sendL</code>. Tracked-resource release runs even after a shutdown error. After publication, listener death removes the failed tunnel and releases this tunnel's binding without unconditionally terminating an upstream that still has another binder.</td></tr>
+    <tr><th>Minimal code change</th><td>Add the guarded sticky listener result in <code>engine/engineutil/client.go</code>. Add one synchronized listener registry and the existing <code>shutdown(cause)</code> owner in <code>core/service.go</code>. Add only <code>RunningService.publishIfReady</code> plus a local failed-start cleanup sequence in <code>Services.startWithKey</code>. Section 9 pins the types, methods, and lock order.</td></tr>
+    <tr><th>Evidence in current code</th><td>The post-start <code>listener.Recv</code> error path in <code>engine/engineutil/client.go::ListenHostToContainer</code> only logs and returns. The same function holds <code>sendL</code> across <code>listener.Send</code>, but its close function takes <code>sendL</code> before the deferred <code>cancel</code>. <code>core.Service.startTunnel</code> creates <code>shutdown</code> only after all listeners and returns directly from earlier setup errors. <code>RunningService.stopFromManager</code> returns a <code>Stop</code> error before <code>releaseTrackedRefsOnce</code>. <code>Services.startWithKey</code> already holds <code>Services.l</code> and checks <code>context.Cause(svcCtx)</code> before insertion, but that check is not atomic with listener completion and insertion. Adding only a monitor would not close that final gap.</td></tr>
+    <tr><th>Required test</th><td>Use deterministic ordinary and detachable cases for first-listener failure, later-port failure, completion before publication, and completion after publication. Select each publication outcome through the listener's actual completion guard. Also cover a second listen returning after shutdown starts, a shared <code>Send</code> released by cancellation before <code>Close</code> takes <code>sendL</code>, explicit Stop races, cleanup errors, sticky Close/Wait results, no leaked listener or binding, no panic, and survival of another upstream binding.</td></tr>
   </tbody></table></div>
 
   <h4>Behavior already correct and requiring tests only</h4>
@@ -405,7 +405,7 @@ There is no arrow from observer attachables to creator source lookup.</code></pr
     <li>Enforce one successful publication for each detachable non-observer source with the race-safe registration protocol in section 8.2.</li>
     <li>End blocking lookup with <code>SourceClientUnavailableError</code> when that published source has no active caller.</li>
     <li>Deregister a nested source after workspace and telemetry flush and before closing <code>client.shutdownCh</code>.</li>
-    <li>Apply the shared host-to-container tunnel correction in section 14.</li>
+    <li>Apply the shared host-to-container tunnel correction in section 9.</li>
   </ol>
 
   <h3>8.2 Race-safe one-time publication</h3>
@@ -448,8 +448,139 @@ func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></p
   <h3>8.5 Shared tunnel completion</h3>
   <p>Apply the same correction to ordinary and detachable host-to-container tunnels. Listener death routes through the existing per-tunnel <code>shutdown(cause)</code>. It does not cancel the session. <code>Services.Detach</code> releases this tunnel's binding. It stops the upstream only when no other binding remains.</p>
 
-  <h2 id="files">9. Exact package, file, type, and function changes</h2>
-  <p>This is the authoritative production file list. Section 14 defines the shared tunnel changes.</p>
+  <h2 id="tunnel-lifecycle">9. Shared tunnel completion and startup cleanup</h2>
+  <p><code>engine/engineutil/client.go::ListenHostToContainer</code> logs a post-start <code>Recv</code> error and returns from its goroutine. <code>core/service.go::startTunnel</code> cannot observe that error. A dead host listener can therefore remain in <code>Services.running</code>. The approved correction changes this shared code for ordinary and detachable tunnels.</p>
+
+  <div class="finding"><strong>Approved scope:</strong> use the shared correction. Do not add detachable-lifetime metadata. Ordinary behavior changes only when a host listener has already failed. A healthy ordinary tunnel keeps its current startup and runtime behavior.</div>
+
+  <h3>Private listener completion contract</h3>
+  <p><code>ListenHostToContainer</code> returns a pointer to the private engineutil type below. Core stores it through the private <code>tunnelListenerHandle</code> interface. The three exported methods are an internal cross-package contract. They are not a product or SDK API.</p>
+  <pre><code>// engine/engineutil/client.go
+type hostToContainerListener struct {
+    completionMu sync.Mutex
+    completed    bool
+    result       error
+    done         chan struct{}
+
+    closeOnce sync.Once
+    // stream, cancel, connection map, send mutex, and drain wait group
+}
+
+func (c *Client) ListenHostToContainer(
+    ctx context.Context,
+    hostListenAddr, proto, upstream string,
+) (*h2c.ListenResponse, *hostToContainerListener, error)
+
+func (l *hostToContainerListener) Close() error
+func (l *hostToContainerListener) Wait() error
+func (l *hostToContainerListener) WithCompletionGuard(func() error) (completed bool, result error)
+
+// core/service.go
+type tunnelListenerHandle interface {
+    Close() error
+    Wait() error
+    WithCompletionGuard(func() error) (bool, error)
+}</code></pre>
+  <ul>
+    <li>The private <code>finish(result)</code> method locks <code>completionMu</code>. The first call stores <code>result</code>, sets <code>completed</code>, and closes <code>done</code>. Later calls do nothing.</li>
+    <li><code>finish</code> publishes the sticky result and returns. It does not cancel or drain work. This prevents a receive or connection goroutine from waiting for itself.</li>
+    <li><code>Wait</code> waits for <code>done</code>, briefly locks <code>completionMu</code>, and returns the stored result. It returns the same result before or after <code>Close</code>.</li>
+    <li><code>WithCompletionGuard</code> holds <code>completionMu</code> while it either reports the stored result or invokes its function. It never drains or invokes cleanup.</li>
+    <li>A local upstream connection dial, read, or write failure removes and closes only that connection. The listener sends that connection's close message when possible and continues accepting other connections. Failure of that shared stream <code>Send</code>, or of any other runtime <code>Send</code> or <code>Recv</code>, calls <code>finish</code> with the stream error and is listener-terminal.</li>
+    <li><code>Close</code> is idempotent through <code>closeOnce</code>. It first calls <code>finish(nil)</code>. It then cancels the stream context and closes active upstream connections. These actions unblock a shared <code>Send</code> or local connection copy without waiting for <code>sendL</code>.</li>
+    <li>After cancellation, <code>Close</code> acquires <code>sendL</code>, calls <code>CloseSend</code>, and releases <code>sendL</code>. This preserves grpc-go's rule that <code>CloseSend</code> must not run concurrently with <code>SendMsg</code>. <code>Close</code> then drains every receive and connection goroutine, even when listener completion already contains an error.</li>
+    <li>grpc-go v1.80 documents <code>ClientStream.CloseSend</code> as always returning nil. <code>google.golang.org/grpc/stream.go::clientStream.CloseSend</code> and <code>addrConnStream.CloseSend</code> both implement that contract. Stream status comes from <code>RecvMsg</code>. Keep <code>Close() error</code> for the existing internal closer contract, but return nil from the production handle after draining. Do not add <code>closeErr</code> state or a production <code>CloseSend</code>-error branch.</li>
+  </ul>
+
+  <h3>Multi-port listener registry</h3>
+  <pre><code>type tunnelListenerRegistry struct {
+    mu         sync.Mutex
+    closed     bool
+    closeCause error
+    handles    []tunnelListenerHandle // listener creation order
+}
+
+var errTunnelListenerClosed = errors.New("host-to-container listener closed before publication")
+
+func (r *tunnelListenerRegistry) AddOrClose(tunnelListenerHandle) error
+func (r *tunnelListenerRegistry) BeginClose(cause error) (error, []tunnelListenerHandle)
+func (r *tunnelListenerRegistry) Publish(commit func()) error</code></pre>
+  <p><code>AddOrClose</code> appends a handle while the registry is open. If shutdown already marked it closed, <code>AddOrClose</code> releases <code>mu</code>, closes the late handle immediately, and returns <code>errors.Join(closeCause, lateCloseErr)</code>. <code>startTunnel</code> then aborts. This makes listener registration and shutdown atomic without closing a handle under the registry mutex.</p>
+  <p><code>BeginClose</code> preserves an existing <code>closeCause</code>, or records its argument as the first cause. It marks the registry closed and snapshots all registered handles under <code>mu</code>. It returns the first cause and the snapshot after releasing <code>mu</code>. The caller performs <code>Close</code>, <code>Wait</code>, and <code>Services.Detach</code> only after that release.</p>
+  <p>The registry appends only a non-nil handle returned by a successful listen. It does not preallocate closer slots. A first-listener failure therefore closes an empty snapshot, and a later-port failure closes only handles that were acquired. Neither path can call a nil closer.</p>
+
+  <h3>Startup rollback, publication, and lock order</h3>
+  <pre><code>// core/services.go
+type RunningService struct {
+    // existing fields
+    publishIfReady func(commit func()) error
+}</code></pre>
+  <p><code>startTunnel</code> creates the registry and the <code>sync.Once</code>-guarded <code>shutdown</code> closure immediately after <code>StartResult</code> acquires the upstream binding. No listener setup or fallible parsing occurs between binding acquisition and creation of that cleanup owner. It assigns <code>publishIfReady = registry.Publish</code>. Other service kinds leave the field nil. The upstream-exit monitor starts at this point, so upstream exit during listener setup uses the same cleanup owner.</p>
+  <p>Keep <code>startTunnel</code>'s named <code>rerr</code> defer at function scope. Declare <code>shutdown</code> before the defer and assign it immediately after binding acquisition:</p>
+  <pre><code>var shutdown func(error) error
+defer func() {
+    if rerr == nil {
+        return
+    }
+    if shutdown == nil {
+        stop(fmt.Errorf("tunnel start error: %w", rerr))
+        return
+    }
+    rerr = errors.Join(rerr, shutdown(rerr))
+}()</code></pre>
+  <p>An error before binding acquisition retains the current local-context cancellation. An error after binding acquisition joins the primary setup error with the shutdown cleanup error. The defer closes every registered listener and releases this tunnel's upstream binding before <code>svc.Start</code> returns. There is no <code>startupRollback</code> field and no generic startup defer in <code>startWithKey</code>.</p>
+  <p>After each successful <code>ListenHostToContainer</code> call, <code>startTunnel</code> calls <code>AddOrClose</code> before parsing the returned address or starting the next listen. It starts that handle's <code>Wait</code> monitor immediately after the add. The monitor remains active after publication. First-listener failure closes an empty registry and releases the binding. Address parsing failure and later-port failure close every earlier handle and release the binding.</p>
+  <p><code>startWithKey</code> preserves its existing <code>context.Cause(svcCtx)</code> check under <code>Services.l</code>. If that check passes, it calls <code>publishIfReady</code> before releasing <code>Services.l</code> or inserting the service.</p>
+  <p><code>registry.Publish</code> is called while <code>Services.startWithKey</code> holds <code>Services.l</code>. It locks <code>registry.mu</code>. A closed registry rejects publication with its first cause. An empty cause becomes <code>errTunnelListenerClosed</code>. An open registry nests <code>WithCompletionGuard</code> for every handle in listener creation order. The final guarded function inserts the service into <code>Services.running</code> and sets its binding count. If a guard reports completion, <code>Publish</code> marks the registry closed and records that result, or <code>errTunnelListenerClosed</code> for a nil result. It then returns the result without invoking cleanup. The stable lock order is:</p>
+  <pre><code>Services.l
+  → tunnelListenerRegistry.mu
+    → hostToContainerListener.completionMu in listener creation order</code></pre>
+  <p>If completion records first, <code>WithCompletionGuard</code> reports it and <code>Publish</code> rejects synchronously. This does not depend on the monitor goroutine. If publication holds the guard first, insertion commits before completion can record. The same completion records after the guards are released and becomes runtime shutdown.</p>
+  <p>Terminal completion never calls cleanup while holding <code>completionMu</code>. A monitor calls <code>Wait</code> without registry or completion locks. It calls <code>shutdown(cause)</code> only after <code>Wait</code> returns. An unexpected nil result becomes <code>errTunnelListenerClosed</code>. <code>shutdown</code> releases <code>registry.mu</code> before it closes handles or calls <code>Services.Detach</code>. This prevents inversion with <code>Services.l</code>.</p>
+
+  <h3>One shutdown owner and unconditional resource release</h3>
+  <p>The existing <code>shutdown(cause)</code> closure remains guarded by one <code>sync.Once</code>. It is the only upstream-binding and registered-listener cleanup owner. Setup failure, publication rejection through <code>RunningService.Stop</code>, explicit <code>Stop</code>, listener failure, and upstream exit all converge on it. <code>AddOrClose</code> closes only a late handle that never entered the registry.</p>
+  <p><code>shutdown</code> calls <code>BeginClose</code> and uses its returned first cause to cancel <code>svcCtx</code>. It calls <code>Services.Detach</code> once for this tunnel's upstream binding. It then closes the snapshot of listener handles and joins their cleanup errors. Another binder can keep the upstream running.</p>
+  <p>Keep <code>RunningService.stopFromManager</code> unchanged. Changing it globally would release tracked resources before <code>stopGraceful</code> performs its force-stop retry. Instead, define one local closure in the new-start branch of <code>startWithKey</code>:</p>
+  <pre><code>cleanupFailedStart := func(primary error, stopRequired bool) error {
+    var stopErr error
+    if stopRequired &amp;&amp; running.Stop != nil {
+        stopErr = running.Stop(context.WithoutCancel(ctx), true)
+    }
+    resourceErr := running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
+    return stderrors.Join(primary, stopErr, resourceErr)
+}</code></pre>
+  <p>The closure always attempts tracked-resource release. When <code>stopRequired</code> is true, a failed <code>Stop</code> cannot skip that release. The false case is used only after <code>svc.Start</code> returns an error. For a tunnel, <code>startTunnel</code>'s defer already attempted shutdown and joined its error. For other service kinds, false preserves the current rule that <code>startWithKey</code> does not call <code>Stop</code> after <code>Start</code> itself fails. Normal runtime stop and graceful-to-force escalation keep their current behavior.</p>
+  <p>Update the existing <code>startWithKey</code> failure branches as follows:</p>
+  <ol>
+    <li>If <code>svc.Start</code> returns an error, <code>startTunnel</code>'s defer has already run <code>shutdown</code>. Replace the current standalone <code>releaseTrackedRefsOnce</code> call with <code>cleanupFailedStart(err, false)</code>. Assign the joined result to <code>start.err</code>, profiling, cancellation, and the return value.</li>
+    <li>If <code>running.Wait</code> is nil, replace <code>running.stopFromManager</code> with <code>cleanupFailedStart(err, true)</code>. Preserve the missing-Wait error as the primary error. Assign the joined result before ending profiling, canceling, and returning.</li>
+    <li>If <code>context.Cause(svcCtx)</code> is non-nil, capture the cause and release <code>Services.l</code>. Replace <code>running.stopFromManager</code> with <code>cleanupFailedStart(cause, true)</code>. Return the cause joined with shutdown and resource errors.</li>
+    <li>If <code>publishIfReady</code> rejects, let <code>Publish</code> release every completion guard and <code>registry.mu</code>. Delete the starting entry and release <code>Services.l</code>. Then call <code>cleanupFailedStart(err, true)</code>. Its <code>Stop</code> reaches the same tunnel <code>shutdown</code>, and its independent resource step runs even if shutdown fails.</li>
+  </ol>
+  <p>On publication rejection, <code>Publish</code> records the listener result as <code>closeCause</code> before releasing the registry. <code>BeginClose</code> preserves that cause when <code>RunningService.Stop</code> later supplies the ordinary stop sentinel. The listener result therefore remains primary.</p>
+  <p>No branch calls <code>cleanupFailedStart</code> while holding <code>Services.l</code>, <code>registry.mu</code>, or a completion guard. The tunnel's <code>shutdownOnce</code> makes every race call <code>Services.Detach</code> exactly once.</p>
+
+  <h3>Explicit Stop versus listener completion</h3>
+  <p>The first call that enters <code>shutdownOnce</code> wins the service result. Listener completion alone does not reserve the win. If the listener has finished but its monitor is paused before <code>shutdown</code>, an explicit <code>Stop</code> can win and <code>RunningService.Wait</code> returns the existing successful-stop result. If the monitor enters <code>shutdown</code> first, its listener error remains the service result and the later <code>Stop</code> only observes the stored cleanup result. Both orders close the same handles and detach the same binding once.</p>
+
+  <h3>Deterministic tunnel tests</h3>
+  <p>Run every row for an ordinary session and a detachable session. Use channels to choose the failure point. Do not use timing sleeps.</p>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Failure point</th><th>Required assertions</th></tr></thead><tbody>
+    <tr><td>First listener fails</td><td>No listener handle is published. <code>Services.Detach</code> releases this tunnel's upstream binding once. <code>Services.running</code> has no tunnel entry. No goroutine or binding remains.</td></tr>
+    <tr><td>Later port fails</td><td>Every earlier listener closes. This tunnel's upstream binding is released once. No tunnel is published. Concurrent cleanup does not panic.</td></tr>
+    <tr><td>Completion wins publication</td><td>Use a channel hook to let <code>finish</code> record the result under the actual <code>completionMu</code> before publication completes. Release the hook and assert that publication returns the sticky result and inserts nothing. Do not infer ordering from elapsed time.</td></tr>
+    <tr><td>Publication wins completion</td><td>Use a channel hook inside the guarded publication callback to select publication first. Trigger <code>finish</code>, let insertion commit, then release the callback. Assert that the same completion becomes runtime shutdown, removes the failed tunnel, and releases only this tunnel's binding.</td></tr>
+    <tr><td>Second listen returns after shutdown</td><td>Block the second <code>ListenHostToContainer</code> call. Fail the first listener and let <code>BeginClose</code> mark the registry closed. Return a successful second handle. <code>AddOrClose</code> closes it immediately, startup aborts with the first listener error, and no listener or binding leaks.</td></tr>
+    <tr><td>Explicit Stop wins</td><td>Finish a published listener and hold its monitor before <code>shutdown</code>. Call <code>Stop</code>. Assert the successful-stop result, then release the monitor and assert one detach and one cleanup.</td></tr>
+    <tr><td>Listener completion wins</td><td>Let the monitor enter <code>shutdown</code> before calling <code>Stop</code>. Assert that <code>RunningService.Wait</code> keeps the listener error and that the later stop causes no second detach or cleanup.</td></tr>
+    <tr><td>Cleanup errors</td><td>Reject publication with a primary sentinel. Inject a core fake-handle close error and a tracked-resource release error. The fake error exercises cleanup aggregation; it is not a grpc-go <code>CloseSend</code> result. Assert all three with <code>errors.Is</code>, one <code>Services.Detach</code>, and one tracked-resource release.</td></tr>
+  </tbody></table></div>
+  <p>Add engineutil tests for shared <code>Send</code> failure and shared <code>Recv</code> failure. Each must publish one sticky listener error. Add both <code>Close</code>-wins and stream-error-wins tests. Assert the exact <code>Wait</code> result, repeated idempotent <code>Close</code>, one detach, no leaked listener, and no panic.</p>
+  <p>Add a deterministic fake-stream test in which <code>Send</code> holds <code>sendL</code> and waits for stream-context cancellation. Signal when <code>Send</code> has entered. Call <code>Close</code>. Cancellation must release <code>Send</code>, after which <code>Close</code> serializes <code>CloseSend</code>, drains all goroutines, and returns. Select outcomes with channels and a test deadline. Do not use a sleep to claim that <code>Close</code> was blocked or unblocked.</p>
+
+  <h2 id="files">10. Exact package, file, type, and function changes</h2>
+  <p>This is the authoritative production file list. Section 9 defines the shared tunnel changes.</p>
   <div class="table-wrap"><table class="wide"><thead><tr><th>Status</th><th>File</th><th>Type or function</th><th>Change</th><th>Reason</th></tr></thead><tbody>
     <tr><td><strong>Required</strong></td><td><code>engine/source_client.go</code></td><td><code>SourceClientUnavailableError</code></td><td>Add the small recognizable error with <code>ClientID</code>.</td><td>A blocking lookup for a published source with no caller must not look like initial-publication timeout.</td></tr>
     <tr><td><strong>Required</strong></td><td><code>engine/server/session.go</code></td><td><code>daggerSession</code></td><td>Add the source publication set and two small methods.</td><td>Distinguish successful publication from initial startup and failed pre-publication handshakes.</td></tr>
@@ -460,23 +591,23 @@ func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></p
     <tr><td>Tests only</td><td><code>engine/server/session_control.go</code></td><td><code>serveSessionAttachmentClose</code></td><td>Keep exact <code>Deregister</code>-before-detach ordering.</td><td>Top-level graceful deregistration is already correct.</td></tr>
     <tr><td><strong>Required</strong></td><td><code>engine/server/session_attachables.go</code></td><td><code>sessionAttachableManager.Reserve</code>, <code>Wait</code></td><td>Add strict reservation and the read-only terminal function. Store no detachable policy in the manager.</td><td>Protect registration and end a blocking wait after permanent source loss.</td></tr>
     <tr><td>Test seam only</td><td><code>engine/server/session_attachables.go</code></td><td><code>monitorAttachableHealth</code></td><td>Add package-private clock or check injection only where deterministic tests need it.</td><td>No production behavior change.</td></tr>
-    <tr><td><strong>Required</strong></td><td><code>engine/engineutil/client.go</code></td><td><code>hostToContainerListener</code>; <code>Close</code>, <code>Wait</code>, <code>WithCompletionGuard</code></td><td>Store the sticky result under <code>completionMu</code>. Keep completion publication separate from draining.</td><td>Expose actual listener completion to core without depending on monitor scheduling.</td></tr>
-    <tr><td><strong>Required</strong></td><td><code>core/service.go</code></td><td><code>tunnelListenerHandle</code>, <code>tunnelListenerRegistry</code>, <code>Service.startTunnel</code>, existing <code>shutdown(cause)</code></td><td>Add atomic add-or-close, guarded publication, deferred startup rollback, and post-publication monitoring.</td><td>Release every resource on partial startup and route every terminal path through one cleanup owner.</td></tr>
-    <tr><td><strong>Required</strong></td><td><code>core/services.go</code></td><td><code>RunningService.startupRollback</code>, <code>RunningService.publishIfReady</code>, <code>Services.startWithKey</code></td><td>Defer startup rollback before <code>Start</code>. Commit insertion through <code>publishIfReady</code> while holding <code>Services.l</code>.</td><td>Serialize actual listener completion with publication.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>engine/engineutil/client.go</code></td><td><code>hostToContainerListener</code>; <code>Close</code>, <code>Wait</code>, <code>WithCompletionGuard</code></td><td>Store the sticky result under <code>completionMu</code>. Cancel before taking <code>sendL</code> in <code>Close</code>. Keep completion publication separate from draining.</td><td>Expose actual listener completion to core and let cancellation release a blocked shared send.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>core/service.go</code></td><td><code>tunnelListenerHandle</code>, <code>tunnelListenerRegistry</code>, <code>Service.startTunnel</code>, existing <code>shutdown(cause)</code></td><td>Add atomic add-or-close, guarded publication, startup rollback in <code>startTunnel</code>'s own error defer, and listener monitoring.</td><td>Release every resource on partial startup and route every terminal path through one cleanup owner.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>core/services.go</code></td><td><code>RunningService.publishIfReady</code>, local <code>cleanupFailedStart</code>, <code>Services.startWithKey</code></td><td>Commit insertion through <code>publishIfReady</code> while holding <code>Services.l</code>. On every failed-start branch, release all locks, call <code>Stop</code>, and independently release tracked resources.</td><td>Serialize actual listener completion with publication and prevent a failed-start stop error from skipping resource cleanup without changing normal stop escalation.</td></tr>
     <tr><td>Tests only</td><td><code>engine/server/*_test.go</code>, <code>core/*_test.go</code>, <code>core/integration/detachable_session_test.go</code></td><td>Focused tests and fakes</td><td>Add required tests and lock down behavior already correct.</td><td>Prove all four required changes.</td></tr>
   </tbody></table></div>
 
-  <h2 id="phases">10. Ordered implementation phases and intentional commit boundaries</h2>
+  <h2 id="phases">11. Ordered implementation phases and intentional commit boundaries</h2>
   <ol>
     <li><strong>Commit 1 — enforce one-time source publication.</strong> Add publication state, the two-check strict-reservation protocol, and deterministic race tests. Invert the current post-publication retry test.</li>
     <li><strong>Commit 2 — end blocking lookup after source loss.</strong> Add the immediate source-unavailable error and the read-only <code>Wait</code> terminal function. Include lock-order and missed-wake tests.</li>
     <li><strong>Commit 3 — order nested shutdown.</strong> Insert deregistration after both flush phases and before <code>client.shutdownCh</code> closes. Include the real registration, dirty lock, and termination-race test.</li>
-    <li><strong>Commit 4 — shared tunnel completion.</strong> Keep the guarded listener result, synchronized registry, deferred startup rollback, serialized publication, monitoring, and ordinary/detachable tests together.</li>
+    <li><strong>Commit 4 — shared tunnel completion.</strong> Keep the guarded listener result, cancel-before-<code>sendL</code> close order, synchronized registry, local startup rollback, serialized publication, unconditional failed-start resource release, monitoring, and ordinary/detachable tests together.</li>
     <li><strong>Tests-only commit — preserve existing behavior.</strong> Cover observer non-substitution, copied values, callback failure isolation, and ordinary-session compatibility.</li>
   </ol>
   <p>Do not mix SDK, <code>dagger up</code>, cache ownership, or rebinding work into these commits.</p>
 
-  <h2 id="tests">11. Unit, race, server lifecycle, CLI, and source-built test plan</h2>
+  <h2 id="tests">12. Unit, race, server lifecycle, CLI, and source-built test plan</h2>
   <p>Follow <code>skills/engine-debugging/SKILL.md</code>. Use focused package tests. Run core integration through <code>dagger api call engine-dev test --pkg ... --run='...'</code>. Capture full integration output under <code>/tmp</code>. Do not use broad <code>./...</code> campaigns.</p>
 
   <h3>Unit tests</h3>
@@ -492,7 +623,7 @@ func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></p
     <li>Other blocking host export, default registry credential, prompt, terminal, pipe-open, and image-transfer lookups receive the immediate source-unavailable error.</li>
     <li>No callback error calls the session termination hooks or closes <code>sess.closingCtx</code>.</li>
     <li><code>hostToContainerListener</code> publishes shared <code>Send</code> and <code>Recv</code> failures once. Connection-local failures do not complete the listener.</li>
-    <li><code>Close</code>-wins and stream-error-wins cases return the exact sticky <code>Wait</code> result and repeated <code>Close</code> result. Both drain fully after <code>CloseSend</code> failure.</li>
+    <li><code>Close</code>-wins and stream-error-wins cases return the exact sticky <code>Wait</code> result and repeated idempotent <code>Close</code> result. A fake shared <code>Send</code> holding <code>sendL</code> exits on cancellation before <code>CloseSend</code> runs, and <code>Close</code> drains fully.</li>
   </ul>
 
   <h3>Race and generation tests</h3>
@@ -518,6 +649,8 @@ func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></p
     <li>For both lifetimes, first-listener failure, later-port failure, and death before publication leave no entry in <code>Services.running</code>. Every acquired listener closes. This tunnel's upstream binding is released.</li>
     <li>For both lifetimes, death after publication removes only the failed tunnel. Concurrent <code>Close</code>, <code>Wait</code>, and shutdown complete without panic or duplicate detach.</li>
     <li>For both lifetimes, a second listen can return successfully after the first listener closes the registry. <code>AddOrClose</code> closes the late handle and preserves the first listener error.</li>
+    <li>For both lifetimes, channels select explicit-Stop-first and listener-monitor-first outcomes. The first <code>shutdownOnce</code> caller determines <code>RunningService.Wait</code>, and each outcome detaches once.</li>
+    <li>Publication rejection with fake-handle close and tracked-resource errors returns all sentinel errors. It attempts tracked-resource release and <code>Services.Detach</code> exactly once.</li>
     <li>Explicit termination remains the only path that stops all session services and releases the engine cache session.</li>
     <li>Hard-close health detection and blackhole timeout use a fake ticker and fake health client. Do not sleep for 80 seconds.</li>
   </ul>
@@ -546,6 +679,8 @@ func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></p
 
   <h3>Investigation evidence at this base</h3>
   <div class="table-wrap"><table class="medium"><thead><tr><th>Command or probe</th><th>Question</th><th>Result</th></tr></thead><tbody>
+    <tr><td>Static inspection of <code>core/service.go::startTunnel</code>, <code>core/services.go::startWithKey</code>, and <code>RunningService.stopFromManager</code></td><td>Can startup rollback stay local, and where must cleanup ordering change?</td><td>Yes. <code>startTunnel</code> has named <code>rerr</code>. Its existing error defer can use the one shutdown closure as soon as binding acquisition assigns it. <code>startWithKey</code> has separate start-error, missing-Wait, canceled, and publication paths. <code>stopFromManager</code> currently skips resource release after a Stop error.</td></tr>
+    <tr><td>Static inspection of grpc-go v1.80 <code>ClientStream</code>, <code>clientStream.CloseSend</code>, and <code>addrConnStream.CloseSend</code></td><td>What result and serialization does <code>CloseSend</code> require?</td><td>The API forbids concurrent <code>SendMsg</code> and <code>CloseSend</code>. Both implementations always return nil. Stream status is read through <code>RecvMsg</code>.</td></tr>
     <tr><td><code>go test ./engine/server -count=1 -run='Test(DetachableLastDisconnectPreservesSession|SupersededRegistrationDoesNotEmitRemoved|CreatorRetryWaitsForRemovalThenPublishesFreshGeneration|ExplicitCloseOfReservationPreventsLateRegistration|AcceptedEngineOnlyQuerySurvivesCreatorAttachmentClose)$'</code></td><td>Do current lifecycle, generation, explicit-close, and accepted-query boundaries pass?</td><td>Pass.</td></tr>
     <tr><td><code>go test -race ./engine/server -count=1 -run='Test(SupersededRegistrationDoesNotEmitRemoved|CreatorRetryWaitsForRemovalThenPublishesFreshGeneration|ExplicitCloseOfReservationPreventsLateRegistration)$'</code></td><td>Do the focused registration/generation tests expose a race?</td><td>Pass. No race reported.</td></tr>
     <tr><td><code>dagger api call engine-dev test --pkg ./core/integration --run='TestDetachableSession/TestHostCallbackRemainsBoundToCreator'</code></td><td>Can an observer satisfy a creator-bound socket?</td><td>Pass. It cannot.</td></tr>
@@ -554,20 +689,20 @@ func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></p
   </tbody></table></div>
   <p>No telemetry trace was captured. Static call-graph inspection and focused process tests answered the callback identity and cancellation questions without a trace.</p>
 
-  <h2 id="faults">12. Fault-injection seams for disconnect and callback races</h2>
+  <h2 id="faults">13. Fault-injection seams for disconnect and callback races</h2>
   <ul>
     <li>Parameterize <code>monitorAttachableHealth</code> behind package-private tick, timeout, clock, and <code>Check</code> functions. Production defaults remain unchanged.</li>
     <li>Add channel hooks after the first publication read and after strict reservation. Use them only in the two-request registration test.</li>
     <li>Add a hook after a waiter wakes and before it checks for an active caller and terminal publication state.</li>
     <li>Use a real attachable registration and a channel-blocked workspace export for nested shutdown ordering.</li>
-    <li>Add package-private channel hooks at actual <code>completionMu</code> acquisition in <code>finish</code> and <code>WithCompletionGuard</code>. Prove both publication race outcomes without delaying the monitor.</li>
+    <li>Add package-private channel hooks at actual <code>completionMu</code> acquisition in <code>finish</code> and <code>WithCompletionGuard</code>. Select both publication race outcomes without relying on monitor scheduling.</li>
     <li>Use a channel-controlled second listen to return a successful handle after <code>BeginClose</code>. Assert atomic add-or-close.</li>
-    <li>Inject shared <code>Send</code>, shared <code>Recv</code>, <code>CloseSend</code>, connection-local I/O, concurrent <code>Close</code>/<code>Wait</code>, and explicit stop outcomes.</li>
+    <li>Inject shared <code>Send</code>, shared <code>Recv</code>, connection-local I/O, concurrent <code>Close</code>/<code>Wait</code>, explicit stop ordering, core fake-handle close errors, and tracked-resource release errors.</li>
     <li>Use sentinel cancellation causes for query, affected service, unrelated service, session root, and engine shutdown. Assert only the intended sentinel fires.</li>
     <li>Use channels and fake clocks. Do not use sleeps to choose race winners.</li>
   </ul>
 
-  <h2 id="acceptance">13. Acceptance criteria</h2>
+  <h2 id="acceptance">14. Acceptance criteria</h2>
   <ol>
     <li>Every active engine-to-client RPC and callback lookup in the catalogue has an exact source identity.</li>
     <li>Every value is classified as copied, lazy, permanently callback-backed, engine-owned, or inactive.</li>
@@ -586,109 +721,15 @@ func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></p
     <li>Ordinary and detachable tests cover first-listener failure, later-port failure, death before publication, and death after publication. They leave no listener or binding behind and do not panic.</li>
     <li>Publication is serialized against each listener's actual <code>completionMu</code>. Monitor scheduling is not part of correctness.</li>
     <li>The synchronized listener registry closes a successful late handle after shutdown and preserves the primary listener error.</li>
-    <li>Shared stream errors are listener-terminal. Connection-local errors are not. <code>Close</code> always drains and has deterministic repeated results.</li>
+    <li>Shared stream errors are listener-terminal. Connection-local errors are not. <code>Close</code> publishes local completion, cancels, closes active upstream connections, serializes <code>CloseSend</code> after cancellation, and drains.</li>
+    <li>The production listener stores no <code>CloseSend</code> error state. grpc-go stream status remains a <code>Recv</code>/<code>Wait</code> result.</li>
+    <li>Publication rejection, shutdown failure, and tracked-resource release failure are joined once. Tracked-resource release is attempted even when shutdown fails.</li>
+    <li>An explicit Stop and an already-finished listener follow the first call into <code>shutdownOnce</code>. Either selected order detaches the binding and cleans up once.</li>
     <li>Observer reattachment remains health-only and provides observation, result/telemetry following, lifecycle control, and explicit termination.</li>
     <li>Ordinary sessions retain existing startup, wait, shutdown, disconnect, and cleanup behavior except that an already-failed host-to-container tunnel now stops appearing live and releases its binding.</li>
     <li>No callback rebinding, general role framework, observer GraphQL work, SDK work, or deferred feature enters the implementation.</li>
     <li>Focused unit, race, server lifecycle, CLI, and source-built integration tests pass under the engine-debugging workflow.</li>
   </ol>
-
-  <h2 id="tunnel-lifecycle">14. Shared tunnel completion and startup ownership</h2>
-  <p><code>engine/engineutil/client.go::ListenHostToContainer</code> logs a post-start <code>Recv</code> error and returns from its goroutine. <code>core/service.go::startTunnel</code> cannot observe that error. A dead host listener can therefore remain in <code>Services.running</code>. The approved correction changes this shared code for ordinary and detachable tunnels.</p>
-
-  <div class="finding"><strong>Approved scope:</strong> use the shared correction. Do not add detachable-lifetime metadata. Ordinary behavior changes only when a host listener has already failed. A healthy ordinary tunnel keeps its current startup and runtime behavior.</div>
-
-  <h3>Private listener completion contract</h3>
-  <p><code>ListenHostToContainer</code> returns a pointer to the private engineutil type below. Core stores it through the private <code>tunnelListenerHandle</code> interface. The three exported methods are an internal cross-package contract. They are not a product or SDK API.</p>
-  <pre><code>// engine/engineutil/client.go
-type hostToContainerListener struct {
-    completionMu sync.Mutex
-    completed    bool
-    result       error
-    done         chan struct{}
-
-    closeOnce sync.Once
-    closeErr  error
-    // stream, cancel, connection map, send mutex, and drain wait group
-}
-
-func (c *Client) ListenHostToContainer(
-    ctx context.Context,
-    hostListenAddr, proto, upstream string,
-) (*h2c.ListenResponse, *hostToContainerListener, error)
-
-func (l *hostToContainerListener) Close() error
-func (l *hostToContainerListener) Wait() error
-func (l *hostToContainerListener) WithCompletionGuard(func() error) (completed bool, result error)
-
-// core/service.go
-type tunnelListenerHandle interface {
-    Close() error
-    Wait() error
-    WithCompletionGuard(func() error) (bool, error)
-}</code></pre>
-  <ul>
-    <li>The private <code>finish(result)</code> method locks <code>completionMu</code>. The first call stores <code>result</code>, sets <code>completed</code>, and closes <code>done</code>. Later calls do nothing.</li>
-    <li><code>finish</code> publishes the sticky result and returns. It does not cancel or drain work. This prevents a receive or connection goroutine from waiting for itself.</li>
-    <li><code>Wait</code> waits for <code>done</code>, briefly locks <code>completionMu</code>, and returns the stored result. It returns the same result before or after <code>Close</code>.</li>
-    <li><code>WithCompletionGuard</code> holds <code>completionMu</code> while it either reports the stored result or invokes its function. It never drains or invokes cleanup.</li>
-    <li>A local upstream connection dial, read, or write failure removes and closes only that connection. The listener sends that connection's close message when possible and continues accepting other connections. Failure of that shared stream <code>Send</code>, or of any other runtime <code>Send</code> or <code>Recv</code>, calls <code>finish</code> with the stream error and is listener-terminal. <code>CloseSend</code> after local <code>Close</code> is the cleanup exception described below.</li>
-    <li><code>Close</code> is idempotent through <code>closeOnce</code>. It calls <code>finish(nil)</code>. It then calls <code>CloseSend</code> under the existing send mutex, cancels the stream context, closes active connections, and drains all receive and connection goroutines. It performs the drain even when completion already contains an error.</li>
-    <li>If <code>CloseSend</code> fails after local <code>Close</code> won completion, <code>Wait</code> still returns nil. <code>Close</code> returns the <code>CloseSend</code> cleanup error. Later <code>Close</code> calls return the same <code>closeErr</code>. If a stream error won first, <code>Wait</code> keeps that stream error and <code>Close</code> still reports only its cleanup result.</li>
-  </ul>
-
-  <h3>Multi-port listener registry</h3>
-  <pre><code>type tunnelListenerRegistry struct {
-    mu         sync.Mutex
-    closed     bool
-    closeCause error
-    handles    []tunnelListenerHandle // listener creation order
-}
-
-var errTunnelListenerClosed = errors.New("host-to-container listener closed before publication")
-
-func (r *tunnelListenerRegistry) AddOrClose(tunnelListenerHandle) error
-func (r *tunnelListenerRegistry) BeginClose(cause error) (error, []tunnelListenerHandle)
-func (r *tunnelListenerRegistry) Publish(commit func()) error</code></pre>
-  <p><code>AddOrClose</code> appends a handle while the registry is open. If shutdown already marked it closed, <code>AddOrClose</code> releases <code>mu</code>, closes the late handle immediately, and returns <code>errors.Join(closeCause, closeErr)</code>. <code>startTunnel</code> then aborts. This makes listener registration and shutdown atomic without closing a handle under the registry mutex.</p>
-  <p><code>BeginClose</code> preserves an existing <code>closeCause</code>, or records its argument as the first cause. It marks the registry closed and snapshots all registered handles under <code>mu</code>. It returns the first cause and the snapshot after releasing <code>mu</code>. The caller performs <code>Close</code>, <code>Wait</code>, and <code>Services.Detach</code> only after that release.</p>
-  <p>The registry appends only a non-nil handle returned by a successful listen. It does not preallocate closer slots. A first-listener failure therefore closes an empty snapshot, and a later-port failure closes only handles that were acquired. Neither path can call a nil closer.</p>
-
-  <h3>Publication serialization and lock order</h3>
-  <pre><code>// core/services.go
-type RunningService struct {
-    // existing fields
-    startupRollback func(cause error) error
-    publishIfReady  func(commit func()) error
-}</code></pre>
-  <p><code>startTunnel</code> creates the registry and the <code>sync.Once</code>-guarded <code>shutdown</code> closure immediately after <code>StartResult</code> acquires the upstream binding. It then assigns <code>startupRollback = shutdown</code> and <code>publishIfReady = registry.Publish</code>. Other service kinds leave both fields nil. The upstream-exit monitor starts at this point, so upstream exit during listener setup uses the same rollback.</p>
-  <p><code>startWithKey</code> preserves its existing <code>context.Cause(svcCtx)</code> check under <code>Services.l</code>. If that check passes, it calls <code>publishIfReady</code> before releasing <code>Services.l</code> or inserting the service.</p>
-  <p><code>registry.Publish</code> is called while <code>Services.startWithKey</code> holds <code>Services.l</code>. It locks <code>registry.mu</code>. A closed registry rejects publication with its first cause. An empty cause becomes <code>errTunnelListenerClosed</code>. An open registry nests <code>WithCompletionGuard</code> for every handle in listener creation order. The final guarded function inserts the service into <code>Services.running</code> and sets its binding count. If a guard reports completion, <code>Publish</code> marks the registry closed and records that result, or <code>errTunnelListenerClosed</code> for a nil result. It then returns the result without invoking cleanup. The stable lock order is:</p>
-  <pre><code>Services.l
-  → tunnelListenerRegistry.mu
-    → hostToContainerListener.completionMu in listener creation order</code></pre>
-  <p>If completion records first, <code>WithCompletionGuard</code> reports it and <code>Publish</code> rejects synchronously. This does not depend on the monitor goroutine. If publication holds the guard first, insertion commits before completion can record. The same completion records after the guards are released and becomes runtime shutdown.</p>
-  <p>Terminal completion never calls cleanup while holding <code>completionMu</code>. A monitor calls <code>Wait</code> without registry or completion locks. It calls <code>shutdown(cause)</code> only after <code>Wait</code> returns. An unexpected nil result becomes <code>errTunnelListenerClosed</code>. <code>shutdown</code> releases <code>registry.mu</code> before it closes handles or calls <code>Services.Detach</code>. This prevents inversion with <code>Services.l</code>.</p>
-
-  <h3>One shutdown owner and deferred startup rollback</h3>
-  <p><code>startWithKey</code> registers one deferred startup rollback before it calls <code>svc.Start</code>. The deferred function reads <code>running.startupRollback</code> after <code>Start</code> returns. This lets <code>startTunnel</code> install the closure immediately after binding acquisition while keeping the defer active through publication.</p>
-  <p>For a service with <code>startupRollback</code>, pre-publication error branches leave <code>running.stopFromManager</code> to this deferred function. The function first calls <code>startupRollback(primaryErr)</code>. It then calls <code>running.stopFromManager</code>, which reaches the same <code>shutdown</code> closure and performs the existing tracked-resource cleanup. The direct rollback result is not joined separately. The deferred function joins the cached shutdown or resource-cleanup result returned by <code>stopFromManager</code> to the primary error once. This order makes the setup or listener error the cause that wins <code>shutdownOnce</code>.</p>
-  <p>The insertion callback sets a local <code>published</code> boolean while <code>Services.l</code> and all completion guards are still held. The deferred function sees <code>published == true</code> and skips only the startup invocation. It does not clear or replace <code>shutdown</code>. The same closure remains active for explicit <code>Stop</code>, listener failure, and upstream exit.</p>
-  <p>The existing <code>shutdown(cause)</code> closure remains guarded by one <code>sync.Once</code>. It is the only binding and registered-listener cleanup owner. Setup errors, publication rejection, the deferred startup rollback, explicit <code>Stop</code>, listener failure, and upstream exit all converge on it. Replace the current <code>startTunnel</code> defer that directly calls <code>stop</code> on <code>rerr</code>; the outer deferred rollback now supplies the original setup error to <code>shutdown</code>. <code>AddOrClose</code> closes only a late handle that never entered the registry. It is the rejection half of the same registry protocol, not another binding cleanup path.</p>
-  <p>On publication rejection, <code>Publish</code> releases every completion guard and <code>registry.mu</code>. <code>startWithKey</code> then releases <code>Services.l</code> and returns the listener result as its named primary error. Only then does the deferred function call <code>startupRollback</code> and <code>running.stopFromManager</code>. No cleanup path enters the registry or <code>Services.Detach</code> while a publication lock is held.</p>
-  <p><code>shutdown</code> calls <code>BeginClose</code> and uses its returned first cause to cancel <code>svcCtx</code>. It releases this tunnel's binding through <code>Services.Detach</code> and closes the snapshot of listener handles. Another binder can keep the upstream running. During setup or publication rejection, listener cleanup errors are joined to the primary setup or listener error. They never replace it. During runtime shutdown, <code>RunningService.Wait</code> keeps the primary terminal cause and cleanup errors are logged. Explicit <code>Stop</code> returns its cleanup error.</p>
-  <p>After each successful <code>ListenHostToContainer</code> call, <code>startTunnel</code> calls <code>AddOrClose</code> before parsing the returned address or starting the next listen. It starts that handle's <code>Wait</code> monitor immediately after the add. The monitor remains active after publication. First-listener failure, address parsing failure, later-port failure, and a late handle rejected by <code>AddOrClose</code> all return through the deferred startup rollback. Every handle successfully added before failure is in the registry snapshot.</p>
-
-  <h3>Deterministic tunnel tests</h3>
-  <p>Run every row for an ordinary session and a detachable session. Use channels to choose the failure point. Do not use timing sleeps.</p>
-  <div class="table-wrap"><table class="wide"><thead><tr><th>Failure point</th><th>Required assertions</th></tr></thead><tbody>
-    <tr><td>First listener fails</td><td>No listener handle is published. <code>Services.Detach</code> releases this tunnel's upstream binding once. <code>Services.running</code> has no tunnel entry. No goroutine or binding remains.</td></tr>
-    <tr><td>Later port fails</td><td>Every earlier listener closes. This tunnel's upstream binding is released once. No tunnel is published. Concurrent cleanup does not panic.</td></tr>
-    <tr><td>Completion wins publication</td><td>Pause <code>finish</code> while it holds the actual <code>completionMu</code> after recording the result. Start publication and prove it blocks on that guard. Release <code>finish</code> without scheduling the monitor. Publication returns the sticky result synchronously and inserts nothing.</td></tr>
-    <tr><td>Publication wins completion</td><td>Pause <code>WithCompletionGuard</code> while it holds the actual <code>completionMu</code>. Start <code>finish</code> and prove it blocks. Commit insertion, then release the guard. The same completion becomes runtime shutdown, removes the failed tunnel, and releases only this tunnel's binding.</td></tr>
-    <tr><td>Second listen returns after shutdown</td><td>Block the second <code>ListenHostToContainer</code> call. Fail the first listener and let <code>BeginClose</code> mark the registry closed. Return a successful second handle. <code>AddOrClose</code> closes it immediately, startup aborts with the first listener error, and no listener or binding leaks.</td></tr>
-  </tbody></table></div>
-  <p>Add engineutil tests for shared <code>Send</code> failure and shared <code>Recv</code> failure. Each must publish one sticky listener error. Add both <code>Close</code>-wins and stream-error-wins tests. Assert the exact <code>Wait</code> result, exact repeated <code>Close</code> result, complete drain after <code>CloseSend</code> failure, one detach, no leaked listener, and no panic.</p>
 
   <h2 id="deferred">15. Explicit deferred work</h2>
   <ul>
