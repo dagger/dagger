@@ -3419,6 +3419,23 @@ export type WorkspaceWithoutSdkOpts = {
   here?: boolean
 }
 
+export type WorkspaceGitPushOpts = {
+  /**
+   * Remote to push to: a remote name from the checkout's configuration, or a URL.
+   */
+  remote?: string
+
+  /**
+   * Remote branch to update. Defaults to the checkout's currently checked-out branch, and is required when its HEAD is detached. A fully qualified ref (refs/...) is used as-is.
+   */
+  branch?: string
+
+  /**
+   * Allow a non-fast-forward update of the remote ref.
+   */
+  force?: boolean
+}
+
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -15806,14 +15823,16 @@ export class Workspace extends BaseClient {
  */
 export class WorkspaceGit extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _push?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ID) {
+  constructor(ctx?: Context, _id?: ID, _push?: string) {
     super(ctx)
 
     this._id = _id
+    this._push = _push
   }
 
   /**
@@ -15837,6 +15856,26 @@ export class WorkspaceGit extends BaseClient {
   head = (): GitRef => {
     const ctx = this._ctx.select("head")
     return new GitRef(ctx)
+  }
+
+  /**
+   * Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.
+   *
+   * The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.
+   * @param opts.remote Remote to push to: a remote name from the checkout's configuration, or a URL.
+   * @param opts.branch Remote branch to update. Defaults to the checkout's currently checked-out branch, and is required when its HEAD is detached. A fully qualified ref (refs/...) is used as-is.
+   * @param opts.force Allow a non-fast-forward update of the remote ref.
+   */
+  push = async (opts?: WorkspaceGitPushOpts): Promise<string> => {
+    if (this._push) {
+      return this._push
+    }
+
+    const ctx = this._ctx.select("push", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
