@@ -20,6 +20,7 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use crate::diagnostic::{Diagnostic, DiagnosticInput, DiagnosticStream};
 use crate::discovery::{LaunchExecutable, NativeDiscoveryInputs, resolve_compatibility_path_cli};
 use crate::preflight::CliLaunchRequest;
+use crate::propagation::W3cPropagation;
 use crate::provision::{DefaultCliProvisioner, ProvisioningHttp, RetentionRemover};
 use crate::provisioning_control::{ProvisioningCancellation, ProvisioningObserver};
 use crate::provisioning_error::{ProvisionError, ProvisionErrorKind};
@@ -230,6 +231,7 @@ pub(crate) struct CliSessionStart {
     selected: SelectedCli,
     options: CliLaunchRequest,
     labels: SessionLabels,
+    propagation_environment: Vec<(OsString, OsString)>,
 }
 
 impl CliSessionStart {
@@ -245,10 +247,13 @@ impl CliSessionStart {
                     payload: warning.as_bytes(),
                 }));
         }
+        let propagation_environment =
+            W3cPropagation::new(options.ambient().propagation().clone()).child_environment();
         Self {
             selected,
             options,
             labels: SessionLabels::rust_sdk(),
+            propagation_environment,
         }
     }
 
@@ -286,10 +291,8 @@ impl CliSessionStart {
                 token.to_os_string(),
             );
         }
-        for (key, value) in ambient.propagation().values() {
-            if let Some(value) = value {
-                set_environment(&mut environment, OsString::from(key), value.to_os_string());
-            }
+        for (key, value) in &self.propagation_environment {
+            set_environment(&mut environment, key.clone(), value.clone());
         }
 
         CliLaunchProjection {

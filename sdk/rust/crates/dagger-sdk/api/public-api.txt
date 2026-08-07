@@ -29,6 +29,16 @@ PlatformError
 PlatformErrorKind
 TargetError
 TargetErrorKind
+CompatibilityError
+CompatibilityErrorKind
+CompatibilityEvidenceGap
+ProvisioningError
+ProvisioningErrorKind
+SessionStartupError
+SessionStartupErrorKind
+ShutdownError
+ShutdownFailureKind
+ExecError
 RequestError
 QueryError
 CloseError

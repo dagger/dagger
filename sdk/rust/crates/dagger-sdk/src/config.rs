@@ -42,6 +42,7 @@ pub(crate) struct ConfigExplicitness {
     pub(crate) session_startup_timeout: bool,
     pub(crate) http_connect_timeout: bool,
     pub(crate) graphql_execution_timeout: bool,
+    pub(crate) allow_unverified_compatibility: bool,
 }
 
 /// Immutable, validated inputs used to establish an owned Dagger client.
@@ -63,6 +64,7 @@ pub struct ClientConfig {
     session_startup_timeout: Duration,
     http_connect_timeout: Duration,
     graphql_execution_timeout: Option<Duration>,
+    allow_unverified_compatibility: bool,
     explicit: ConfigExplicitness,
 }
 
@@ -84,6 +86,7 @@ pub(crate) struct ClientConfigParts {
     pub(crate) session_startup_timeout: Duration,
     pub(crate) http_connect_timeout: Duration,
     pub(crate) graphql_execution_timeout: Option<Duration>,
+    pub(crate) allow_unverified_compatibility: bool,
     pub(crate) explicit: ConfigExplicitness,
 }
 
@@ -160,6 +163,14 @@ impl ClientConfig {
         self.graphql_execution_timeout
     }
 
+    /// Returns whether missing runtime provenance may be accepted for implicit sessions.
+    ///
+    /// This escape hatch applies only when identity is unprovable. A known semantic
+    /// version or revision mismatch is always rejected.
+    pub const fn allows_unverified_compatibility(&self) -> bool {
+        self.allow_unverified_compatibility
+    }
+
     pub(crate) fn into_parts(self) -> ClientConfigParts {
         ClientConfigParts {
             workdir: self.workdir,
@@ -174,6 +185,7 @@ impl ClientConfig {
             session_startup_timeout: self.session_startup_timeout,
             http_connect_timeout: self.http_connect_timeout,
             graphql_execution_timeout: self.graphql_execution_timeout,
+            allow_unverified_compatibility: self.allow_unverified_compatibility,
             explicit: self.explicit,
         }
     }
@@ -194,6 +206,7 @@ impl Default for ClientConfig {
             session_startup_timeout: DEFAULT_SESSION_STARTUP_TIMEOUT,
             http_connect_timeout: DEFAULT_HTTP_CONNECT_TIMEOUT,
             graphql_execution_timeout: None,
+            allow_unverified_compatibility: false,
             explicit: ConfigExplicitness::default(),
         }
     }
@@ -232,6 +245,10 @@ impl fmt::Debug for ClientConfig {
                 "graphql_execution_timeout_present",
                 &self.graphql_execution_timeout.is_some(),
             )
+            .field(
+                "allow_unverified_compatibility",
+                &self.allow_unverified_compatibility,
+            )
             // Explicitness is lifecycle-planning state, not a second set of values;
             // rendering the bitset makes defaults reviewable without exposing inputs.
             .field("explicit_inputs", &self.explicit)
@@ -257,6 +274,7 @@ pub struct ClientConfigBuilder {
     session_startup_timeout: Option<Duration>,
     http_connect_timeout: Option<Duration>,
     graphql_execution_timeout: Option<Duration>,
+    allow_unverified_compatibility: Option<bool>,
 }
 
 impl ClientConfigBuilder {
@@ -344,6 +362,15 @@ impl ClientConfigBuilder {
         self
     }
 
+    /// Allows an implicit session whose exact source provenance cannot be verified.
+    ///
+    /// This does not permit a known engine-version or source-revision mismatch.
+    #[must_use]
+    pub fn allow_unverified_compatibility(mut self, allow: bool) -> Self {
+        self.allow_unverified_compatibility = Some(allow);
+        self
+    }
+
     /// Validates and normalizes the candidate without performing external work.
     pub fn build(self) -> Result<ClientConfig, ConfigError> {
         validate_workdir(self.workdir.as_deref())?;
@@ -380,6 +407,7 @@ impl ClientConfigBuilder {
             session_startup_timeout: self.session_startup_timeout.is_some(),
             http_connect_timeout: self.http_connect_timeout.is_some(),
             graphql_execution_timeout: self.graphql_execution_timeout.is_some(),
+            allow_unverified_compatibility: self.allow_unverified_compatibility.is_some(),
         };
 
         Ok(ClientConfig {
@@ -399,6 +427,7 @@ impl ClientConfigBuilder {
                 .http_connect_timeout
                 .unwrap_or(DEFAULT_HTTP_CONNECT_TIMEOUT),
             graphql_execution_timeout: self.graphql_execution_timeout,
+            allow_unverified_compatibility: self.allow_unverified_compatibility.unwrap_or(false),
             explicit,
         })
     }
@@ -498,6 +527,8 @@ fn validate_explicit_connection_conflicts(
         Some(ConfigOption::SessionStartupTimeout)
     } else if builder.http_connect_timeout.is_some() {
         Some(ConfigOption::HttpConnectTimeout)
+    } else if builder.allow_unverified_compatibility.is_some() {
+        Some(ConfigOption::AllowUnverifiedCompatibility)
     } else {
         None
     };

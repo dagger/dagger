@@ -13,6 +13,9 @@ use std::time::Duration;
 
 use crate::connection::{EngineConnectionError, EngineConnectionErrorKind};
 use crate::graphql::RawResponse;
+use crate::runtime_errors::{
+    CompatibilityError, ExecError, ProvisioningError, SessionStartupError,
+};
 
 type SharedError = Arc<dyn Error + Send + Sync + 'static>;
 
@@ -62,6 +65,8 @@ pub enum ConfigOption {
     SessionStartupTimeout,
     /// SDK-owned HTTP connection timeout.
     HttpConnectTimeout,
+    /// Acceptance of an implicit engine whose provenance cannot be proved.
+    AllowUnverifiedCompatibility,
 }
 
 impl fmt::Display for ConfigOption {
@@ -77,6 +82,7 @@ impl fmt::Display for ConfigOption {
             Self::Environment => "additional environment",
             Self::SessionStartupTimeout => "session startup timeout",
             Self::HttpConnectTimeout => "HTTP connect timeout",
+            Self::AllowUnverifiedCompatibility => "unverified compatibility bypass",
         })
     }
 }
@@ -651,6 +657,12 @@ pub enum ConnectError {
     },
     /// Provisioning or connection establishment failed.
     Connection(EngineConnectionError),
+    /// Verified CLI acquisition failed before process startup.
+    Provisioning(ProvisioningError),
+    /// The selected CLI process or its control protocol failed during startup.
+    SessionStartup(SessionStartupError),
+    /// The implicit engine could not prove the SDK's exact runtime target.
+    Compatibility(CompatibilityError),
 }
 
 impl fmt::Display for ConnectError {
@@ -663,6 +675,9 @@ impl fmt::Display for ConnectError {
             Self::Target(_) => "the compiled Dagger target is invalid",
             Self::StartupTimeout { .. } => "the Dagger session did not start in time",
             Self::Connection(_) => "the Dagger connection could not be established",
+            Self::Provisioning(_) => "the Dagger CLI could not be provisioned",
+            Self::SessionStartup(_) => "the Dagger CLI session could not be started",
+            Self::Compatibility(_) => "the Dagger engine is not compatible with this SDK build",
         })
     }
 }
@@ -682,6 +697,16 @@ impl fmt::Debug for ConnectError {
             Self::Target(error) => formatter.debug_tuple("Target").field(error).finish(),
             Self::StartupTimeout { .. } => formatter.write_str("StartupTimeout"),
             Self::Connection(error) => formatter.debug_tuple("Connection").field(error).finish(),
+            Self::Provisioning(error) => {
+                formatter.debug_tuple("Provisioning").field(error).finish()
+            }
+            Self::SessionStartup(error) => formatter
+                .debug_tuple("SessionStartup")
+                .field(error)
+                .finish(),
+            Self::Compatibility(error) => {
+                formatter.debug_tuple("Compatibility").field(error).finish()
+            }
         }
     }
 }
@@ -695,6 +720,9 @@ impl Error for ConnectError {
             Self::Platform(error) => Some(error),
             Self::Target(error) => Some(error),
             Self::Connection(error) => Some(error),
+            Self::Provisioning(error) => Some(error),
+            Self::SessionStartup(error) => Some(error),
+            Self::Compatibility(error) => Some(error),
             Self::StartupTimeout { .. } => None,
         }
     }
@@ -822,6 +850,13 @@ pub enum QueryError {
         /// The complete raw response, including partial data and extensions.
         response: RawResponse,
     },
+    /// A conservatively recognized engine execution failure.
+    Exec {
+        /// Typed access to known execution fields and all extensions.
+        error: ExecError,
+        /// The structurally complete response, including partial data and all errors.
+        response: RawResponse,
+    },
     /// Selected response data did not match the requested Rust type.
     Decode(ResponseDecodingError),
 }
@@ -832,6 +867,7 @@ impl fmt::Display for QueryError {
             Self::Build(_) => "the GraphQL query could not be built",
             Self::Request(_) => "the GraphQL query request failed",
             Self::GraphQl { .. } => "the engine returned GraphQL errors",
+            Self::Exec { .. } => "the engine execution failed",
             Self::Decode(_) => "the selected GraphQL data could not be decoded",
         })
     }
@@ -847,6 +883,12 @@ impl fmt::Debug for QueryError {
                 .field("error_count", &response.errors().len())
                 .field("data_kind", &response.data().kind_name())
                 .finish(),
+            Self::Exec { error, response } => formatter
+                .debug_struct("Exec")
+                .field("error", error)
+                .field("error_count", &response.errors().len())
+                .field("data_kind", &response.data().kind_name())
+                .finish(),
             Self::Decode(error) => formatter.debug_tuple("Decode").field(error).finish(),
         }
     }
@@ -859,6 +901,7 @@ impl Error for QueryError {
             Self::Request(error) => Some(error),
             Self::Decode(error) => Some(error),
             Self::GraphQl { .. } => None,
+            Self::Exec { error, .. } => Some(error),
         }
     }
 }

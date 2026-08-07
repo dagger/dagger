@@ -325,8 +325,8 @@
     and cargo-deny; require secret-scanning assertions over all ordinary output and no
     child/task/lease leak across the complete startup failure matrix.
 
-- [ ] 11. Implement local W3C propagation and confined loopback HTTP
-  - [ ] 11.1 Add instance-local OpenTelemetry propagation
+- [x] 11. Implement local W3C propagation and confined loopback HTTP
+  - [x] 11.1 Add instance-local OpenTelemetry propagation
     - Use `tracing` as the public instrumentation facade, `opentelemetry` for context
       and carrier APIs, `tracing-opentelemetry` for the bridge, and only the minimal
       `opentelemetry_sdk` W3C Trace Context/Baggage propagators.
@@ -337,7 +337,7 @@
     - Add integration coverage with one workspace-compatible crate family so dependency
       skew and bridge behavior fail visibly.
     - _Requirements: 9.7-9.12, 9.17, 14.9_
-  - [ ] 11.2 Add the private Reqwest loopback transport
+  - [x] 11.2 Add the private Reqwest loopback transport
     - Build a client with `no_proxy`, redirects disabled, and a connection-only timeout;
       confine requests to `http://127.0.0.1:<validated-port>/query` using HTTP Basic with
       the token as username and an empty password.
@@ -345,35 +345,35 @@
       status and invalid GraphQL response shape as typed errors, and retain the complete
       `RawResponse` only in the domain result—not in ordinary formatting.
     - _Requirements: 9.1-9.6, 9.13-9.17_
-  - [ ] 11.3 Make request execution structurally at-most-once
+  - [x] 11.3 Make request execution structurally at-most-once
     - Keep connection setup/retry policy separate from body transmission; once sending
       begins, never replay the GraphQL request for transport, status, decode, or engine
       errors.
     - Add an adversarial loopback server that counts accepted connections, received
       bodies, redirects, proxy attempts, and truncated/failed replies.
     - _Requirements: 7.20, 14.10_
-  - [ ] 11.4 Property test: Property 15 — request transmission is at most once
+  - [x] 11.4 Property test: Property 15 — request transmission is at most once
     - Generate at least 128 server failure schedules before, during, and after body
       receipt; assert the transport observes at most one complete/partial body and the
       connector never converts ambiguous delivery into a replay.
     - Test identifier: `property_15_request_transmission_at_most_once`.
     - _Requirements: 7.20, 14.10_
-  - [ ] 11.5 Property test: Property 19 — implicit HTTP is confined and authenticated
+  - [x] 11.5 Property test: Property 19 — implicit HTTP is confined and authenticated
     - Generate at least 128 proxy/redirect/port/token/status/body combinations against
       instrumented local servers; assert the only destination is the validated IPv4
       loopback query endpoint, redirects/proxies receive nothing, and Basic auth/body
       framing are exact without diagnostic credential leakage.
     - Test identifier: `property_19_implicit_http_confined_authenticated`.
     - _Requirements: 9.1-9.6, 9.13-9.17_
-  - [ ] 11.6 Property test: Property 20 — W3C propagation has coherent precedence and request isolation
+  - [x] 11.6 Property test: Property 20 — W3C propagation has coherent precedence and request isolation
     - Generate at least 256 active/attached/inherited valid-invalid context combinations
       and at least 128 concurrent request schedules; compare canonical child/request
       carriers to a local reference and assert no global mutation or cross-request data.
     - Test identifier: `property_20_w3c_propagation_coherent_isolated`.
     - _Requirements: 9.7-9.12, 14.9_
 
-- [ ] 12. Complete the public failure taxonomy and engine-domain mapping
-  - [ ] 12.1 Implement layered, cloneable, secret-safe public errors
+- [x] 12. Complete the public failure taxonomy and engine-domain mapping
+  - [x] 12.1 Implement layered, cloneable, secret-safe public errors
     - Add non-exhaustive top-level errors and non-exhaustive safe-kind accessors for
       discovery, provisioning, startup, protocol, transport, compatibility, timeout,
       shutdown, and query failures; preserve typed causes with `Arc` where terminal
@@ -384,28 +384,28 @@
     - Remove `eyre` and production `unwrap`/`expect`/panic paths from the connector and
       add catch-unwind/fault-injection coverage over every public operation boundary.
     - _Requirements: 11.1-11.6, 11.21-11.22_
-  - [ ] 12.2 Add conservative, lossless `EXEC_ERROR` mapping
+  - [x] 12.2 Add conservative, lossless `EXEC_ERROR` mapping
     - Require the definitive extension type marker; parse known message/exit-code/
       command/stdout/stderr fields into private `ExecError` state while retaining unknown
       extensions and the original `RawResponse`.
     - Expose typed read-only accessors; if a known field is malformed, retain the full
       response as generic GraphQL failure instead of guessing, panicking, or losing data.
     - _Requirements: 11.7-11.20_
-  - [ ] 12.3 Property test: Property 23 — failure taxonomy is total, stable, and panic-free
+  - [x] 12.3 Property test: Property 23 — failure taxonomy is total, stable, and panic-free
     - Generate at least 256 leaf failures, source chains, adversarial strings, and public
       operation fault points; assert total kind mapping, clone-equivalent terminal
       results, stable safe formatting, zero secret/output substrings, and no unwind.
     - Test identifier: `property_23_failure_taxonomy_total_stable_panic_free`.
     - _Requirements: 11.1-11.6, 11.21-11.22_
-  - [ ] 12.4 Property test: Property 24 — engine-domain mapping is lossless and conservative
+  - [x] 12.4 Property test: Property 24 — engine-domain mapping is lossless and conservative
     - Generate at least 256 GraphQL responses with error ordering, marker variants,
       valid/malformed known fields, arbitrary extensions, and raw data; assert exact
       `Exec` recognition/accessors or exact generic fallback with unchanged `RawResponse`.
     - Test identifier: `property_24_engine_domain_mapping_lossless_conservative`.
     - _Requirements: 11.7-11.20_
 
-- [ ] 13. Enforce exact target compatibility in the concrete connector
-  - [ ] 13.1 Implement constant raw compatibility validation
+- [x] 13. Enforce exact target compatibility in the concrete connector
+  - [x] 13.1 Implement constant raw compatibility validation
     - Execute `query RustSdkCompatibility { version }` before exposing a new session;
       normalize and require semantic version `v1.0.0-beta.10` and clean build metadata
       `+25300124`, exactly matching the target revision prefix.
@@ -413,7 +413,7 @@
       transport/GraphQL/shape, absent, malformed, dirty, or unknown-format evidence;
       never include the raw response in ordinary output.
     - _Requirements: 12.1-12.11_
-  - [ ] 13.2 Assemble the stable default connector path
+  - [x] 13.2 Assemble the stable default connector path
     - Compose the concrete snapshot, discovery, provisioner, launcher, propagation,
       loopback transport, validator, diagnostics, and resource owner behind the existing
       public builder/client surface while retaining compile-time generic test seams.
@@ -421,7 +421,7 @@
       up SDK-owned children on rejection, leave Existing Session engines externally
       owned, and expose only an explicit documented bypass for unverified compatibility.
     - _Requirements: 12.12-12.15_
-  - [ ] 13.3 Property test: Property 25 — compatibility accepts exactly the declared target
+  - [x] 13.3 Property test: Property 25 — compatibility accepts exactly the declared target
     - Generate at least 256 version strings across SemVer normalization, prerelease,
       build metadata, revision prefix/case/length, dirty/unknown formats, response shapes,
       ownership sources, and bypass state; compare outcomes and cleanup to the exact
@@ -429,8 +429,8 @@
     - Test identifier: `property_25_compatibility_accepts_exact_declared_target`.
     - _Requirements: 12.1-12.15_
 
-- [ ] 14. Implement bounded, convergent shutdown
-  - [ ] 14.1 Add the single terminal shutdown state machine
+- [x] 14. Implement bounded, convergent shutdown
+  - [x] 14.1 Add the single terminal shutdown state machine
     - Close child stdin, wait up to 300 seconds, kill and reap on expiry, join diagnostic
       workers, release connection/cache resources, and aggregate all cleanup outcomes in
       deterministic order without short-circuiting later cleanup.
@@ -438,12 +438,12 @@
       converge on the same owned state; all callers observe the same terminal result and
       Existing Session never receives process control.
     - _Requirements: 13.1-13.17_
-  - [ ] 14.2 Add portable shutdown integration cases
+  - [x] 14.2 Add portable shutdown integration cases
     - Extend the Rust helper binary with clean-exit, hung-stdin, ignore-termination,
       delayed-worker, pipe-failure, and already-exited modes; drive time with injectable
       clocks/signals where possible and bound the remaining native integration tests.
     - _Requirements: 13.1-13.17_
-  - [ ] 14.3 Property test: Property 26 — shutdown is bounded, exhaustive, and repeatable
+  - [x] 14.3 Property test: Property 26 — shutdown is bounded, exhaustive, and repeatable
     - Generate at least 128 close/abort/drop/concurrent-call schedules and cleanup
       failure combinations using a model state machine; assert each action occurs at
       most once, all applicable actions are attempted, results/order are identical, the
@@ -451,7 +451,7 @@
     - Test identifier: `property_26_shutdown_bounded_exhaustive_repeatable`.
     - _Requirements: 13.1-13.17_
 
-- [ ] 15. Checkpoint: complete runtime connector is green
+- [x] 15. Checkpoint: complete runtime connector is green
   - Run formatting, locked SDK unit/property/integration tests, rustdoc, clippy, public
     API/error snapshots, compatibility matrices, and cargo-deny; require the default
     connector to provision, launch, validate, query, and shut down without leak, replay,
