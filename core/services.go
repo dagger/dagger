@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -288,6 +289,58 @@ func (svc *RunningService) originSpanContextsSnapshot() []trace.SpanContext {
 	svc.originMu.Lock()
 	defer svc.originMu.Unlock()
 	return slices.Clone(svc.originSpanContexts)
+}
+
+// ServiceSpanContext returns the span context of the service's long-lived
+// exec span — the span whose subtree carries the service's stdout/stderr —
+// or an invalid SpanContext when the runtime did not record one (e.g.
+// tunnels, or a start that predates telemetry).
+func (svc *RunningService) ServiceSpanContext() trace.SpanContext {
+	if svc == nil {
+		return trace.SpanContext{}
+	}
+	svc.originMu.Lock()
+	defer svc.originMu.Unlock()
+	if svc.serviceSpan == nil {
+		return trace.SpanContext{}
+	}
+	return svc.serviceSpan.SpanContext()
+}
+
+// InstallSpanContexts returns the span contexts of the API spans that
+// returned/own this service in the current session (e.g. Container.asService)
+// — the spans a UI attributes the service to, and valid roots for reading the
+// service's logs beneath.
+func (svc *RunningService) InstallSpanContexts() []trace.SpanContext {
+	return svc.originSpanContextsSnapshot()
+}
+
+// RunningServices returns a snapshot of the currently running services for
+// the given session, or for every session when sessionID is empty. The
+// listing is ordered by hostname, then by the rest of the service key, so
+// repeated calls are deterministic — including across sessions, where the
+// same service (same hostname and digest) can run once per session.
+func (ss *Services) RunningServices(sessionID string) []*RunningService {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+	var out []*RunningService
+	for key, svc := range ss.running {
+		if sessionID != "" && key.SessionID != sessionID {
+			continue
+		}
+		out = append(out, svc)
+	}
+	slices.SortFunc(out, func(a, b *RunningService) int {
+		return cmp.Or(
+			cmp.Compare(a.Host, b.Host),
+			cmp.Compare(a.Key.Digest, b.Key.Digest),
+			cmp.Compare(a.Key.SessionID, b.Key.SessionID),
+			cmp.Compare(a.Key.ClientID, b.Key.ClientID),
+			cmp.Compare(a.Key.Kind, b.Key.Kind),
+			cmp.Compare(a.Key.InstanceID, b.Key.InstanceID),
+		)
+	})
+	return out
 }
 
 func (svc *RunningService) setServiceSpan(span trace.Span, alreadyLinked []trace.SpanContext) {
@@ -927,7 +980,8 @@ func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, t
 
 	// attempt to gentle stop within a timeout
 	cause := stderrors.New("service did not terminate")
-	ctx2, _ := context.WithTimeoutCause(ctx, timeout, cause)
+	ctx2, cancel := context.WithTimeoutCause(ctx, timeout, cause)
+	defer cancel()
 	err := running.stopFromManager(ctx2, false)
 	if context.Cause(ctx2) == cause {
 		// service didn't terminate within timeout, so force it to stop
