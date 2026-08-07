@@ -1048,7 +1048,10 @@ func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], i
 	}
 }
 
-const lockContainerFromOperation = "container.from"
+const (
+	lockContainerFromOperation       = "container.from"
+	lockContainerFromLatestOperation = "container.from.latest"
+)
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
@@ -1111,8 +1114,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	// add a default :latest if no tag or digest, otherwise this is a no-op
-	refName = reference.TagNameOnly(refName)
+	lockOperation := lockContainerFromOperation
+	latestRelease := reference.IsNameOnly(refName)
+	if latestRelease {
+		refName = reference.TrimNamed(refName)
+		lockOperation = lockContainerFromLatestOperation
+	} else {
+		// TagNameOnly is deliberately called after testing IsNameOnly so an
+		// implicit tag remains distinguishable from an explicit latest tag.
+		refName = reference.TagNameOnly(refName)
+	}
 	if args.RegistryService.Valid {
 		service, err := args.RegistryService.Value.Load(ctx, srv)
 		if err != nil {
@@ -1222,7 +1233,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	// depending on registryService, so disable workspace lock entries when
 	// registryService is set.
 	if len(registryServices) == 0 {
-		lockMode, lookupLock, err = lookupLockForMode(ctx, query, lockContainerFromOperation)
+		lockMode, lookupLock, err = lookupLockForMode(ctx, query, lockOperation)
 		if err != nil {
 			return inst, err
 		}
@@ -1231,32 +1242,60 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 	}
 
-	lockInputs := []any{refName.String(), platform.Format()}
-	if registryTransport.Protocol != "" {
-		lockInputs = append(lockInputs, registryTransport.Protocol)
+	lockInputsFor := func(ref reference.Named) []any {
+		inputs := []any{ref.String(), platform.Format()}
+		if registryTransport.Protocol != "" {
+			inputs = append(inputs, registryTransport.Protocol)
+		}
+		if registryTransport.InsecureSkipTLSVerify {
+			inputs = append(inputs, "insecureSkipTLSVerify")
+		}
+		return inputs
 	}
-	if registryTransport.InsecureSkipTLSVerify {
-		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
+
+	// Engines that predate container.from.latest recorded a bare address like
+	// "alpine" as an exact container.from entry pinned at the implicit :latest
+	// tag. When the lockfile has such an entry and no container.from.latest
+	// entry, keep resolving through it so existing workspaces don't break
+	// after an engine upgrade.
+	if latestRelease && rawLock != nil {
+		if _, ok, _ := rawLock.GetLookup(lockCoreNamespace, lockOperation, lockInputsFor(refName)); !ok {
+			legacyRef := reference.TagNameOnly(refName)
+			if _, ok, err := rawLock.GetLookup(lockCoreNamespace, lockContainerFromOperation, lockInputsFor(legacyRef)); err == nil && ok {
+				latestRelease = false
+				lockOperation = lockContainerFromOperation
+				refName = legacyRef
+			}
+		}
 	}
+
+	lockInputs := lockInputsFor(refName)
 	lockResolution, err := resolveLookupFromLock(
 		lockMode,
 		rawLock,
-		lockContainerFromOperation,
+		lockOperation,
 		lockInputs,
 		workspace.PolicyPin,
 	)
 	if err != nil {
-		return inst, fmt.Errorf("container.from lock resolution: %w", err)
+		return inst, fmt.Errorf("%s lock resolution: %w", lockOperation, err)
 	}
 
 	if lockResolution.Pin != "" {
-		resolvedDigest, err := digest.Parse(lockResolution.Pin)
-		if err != nil {
-			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
-		}
-		refName, err = reference.WithDigest(refName, resolvedDigest)
-		if err != nil {
-			return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
+		if latestRelease {
+			refName, err = core.ParseContainerLatestPin(lockResolution.Pin, refName.String())
+			if err != nil {
+				return inst, fmt.Errorf("%s lock value: %w", lockOperation, err)
+			}
+		} else {
+			resolvedDigest, err := digest.Parse(lockResolution.Pin)
+			if err != nil {
+				return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
+			}
+			refName, err = reference.WithDigest(refName, resolvedDigest)
+			if err != nil {
+				return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
+			}
 		}
 	} else {
 		// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -1271,6 +1310,25 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 		defer detach()
+
+		if latestRelease {
+			// Encapsulate so the tag listing's raw HTTP spans stay out of the
+			// default TUI; they surface if the listing fails.
+			listCtx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("select latest release for %s", refName.String()),
+				telemetry.Internal(), telemetry.Encapsulate())
+			tags, err := rslvr.ListImageTags(listCtx, refName.String(), serverresolver.ListImageTagsOpts{
+				Network:           network,
+				RegistryTransport: registryTransport,
+			})
+			telemetry.EndWithCause(span, &err)
+			if err != nil {
+				return inst, fmt.Errorf("failed to list image tags for %q: %w", refName.String(), err)
+			}
+			refName, err = reference.WithTag(refName, core.SelectLatestContainerTag(tags))
+			if err != nil {
+				return inst, fmt.Errorf("failed to select latest release for image %q: %w", refName.String(), err)
+			}
+		}
 
 		_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
 			Platform:          ptr(platform.Spec()),
@@ -1287,16 +1345,20 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 
 		if lockResolution.ShouldWrite && lookupLock != nil {
+			lockValue := resolvedDigest.String()
+			if latestRelease {
+				lockValue = refName.String()
+			}
 			if err := lookupLock.SetLookup(
 				lockCoreNamespace,
-				lockContainerFromOperation,
+				lockOperation,
 				lockInputs,
 				workspace.LookupResult{
-					Value:  resolvedDigest.String(),
+					Value:  lockValue,
 					Policy: lockResolution.Policy,
 				},
 			); err != nil {
-				return inst, fmt.Errorf("set lock entry for container.from: %w", err)
+				return inst, fmt.Errorf("set lock entry for %s: %w", lockOperation, err)
 			}
 		}
 	}

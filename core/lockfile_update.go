@@ -7,18 +7,24 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
+	digest "github.com/opencontainers/go-digest"
 )
 
 const (
-	lockCoreNamespace          = ""
-	lockContainerFromOperation = "container.from"
-	lockGitHeadOperation       = "git.head"
-	lockGitRefOperation        = "git.ref"
-	lockGitBranchOperation     = "git.branch"
-	lockGitTagOperation        = "git.tag"
+	lockCoreNamespace                = ""
+	lockContainerFromOperation       = "container.from"
+	lockContainerFromLatestOperation = "container.from.latest"
+	lockGitHeadOperation             = "git.head"
+	lockGitLatestOperation           = "git.latest"
+	lockGitRefOperation              = "git.ref"
+	lockGitBranchOperation           = "git.branch"
+	lockGitTagOperation              = "git.tag"
 )
 
 // UpdateWorkspaceLock refreshes the existing entries in a workspace lockfile in place.
@@ -45,8 +51,12 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 	switch {
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromOperation:
 		return updateContainerFromLockEntry(ctx, query, entry)
+	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromLatestOperation:
+		return updateContainerFromLatestLockEntry(ctx, query, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitHeadOperation:
 		return updateGitHeadLockEntry(ctx, entry)
+	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitLatestOperation:
+		return updateGitLatestLockEntry(ctx, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitRefOperation:
 		return updateGitRefLockEntry(ctx, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitBranchOperation:
@@ -58,58 +68,156 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 	}
 }
 
-func updateContainerFromLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	if len(entry.Inputs) != 2 {
-		return workspace.LookupResult{}, fmt.Errorf("invalid container.from inputs %v", entry.Inputs)
+type containerFromLockInputs struct {
+	ref               string
+	platform          string
+	registryTransport serverresolver.RegistryTransport
+}
+
+func parseContainerFromLockInputs(operation string, inputs []any) (containerFromLockInputs, error) {
+	var parsed containerFromLockInputs
+	if len(inputs) < 2 || len(inputs) > 4 {
+		return parsed, fmt.Errorf("invalid %s inputs %v", operation, inputs)
 	}
 
-	ref, ok := entry.Inputs[0].(string)
+	ref, ok := inputs[0].(string)
 	if !ok || ref == "" {
-		return workspace.LookupResult{}, fmt.Errorf("invalid container.from ref %v", entry.Inputs[0])
+		return parsed, fmt.Errorf("invalid %s ref %v", operation, inputs[0])
 	}
+	parsed.ref = ref
 
-	platform, ok := entry.Inputs[1].(string)
+	platform, ok := inputs[1].(string)
 	if !ok || platform == "" {
-		return workspace.LookupResult{}, fmt.Errorf("invalid container.from platform %v", entry.Inputs[1])
+		return parsed, fmt.Errorf("invalid %s platform %v", operation, inputs[1])
+	}
+	parsed.platform = platform
+
+	if len(inputs) >= 3 {
+		protocol, ok := inputs[2].(string)
+		if !ok {
+			return parsed, fmt.Errorf("invalid %s registry protocol %v", operation, inputs[2])
+		}
+		switch serverresolver.RegistryProtocol(protocol) {
+		case serverresolver.RegistryProtocolHTTP, serverresolver.RegistryProtocolHTTPS:
+			parsed.registryTransport.Protocol = serverresolver.RegistryProtocol(protocol)
+		default:
+			return parsed, fmt.Errorf("invalid %s registry protocol %q", operation, protocol)
+		}
 	}
 
-	digest, err := resolveContainerFromDigest(ctx, query, ref, platform)
+	if len(inputs) == 4 {
+		marker, ok := inputs[3].(string)
+		if !ok || marker != "insecureSkipTLSVerify" {
+			return parsed, fmt.Errorf("invalid %s registry transport option %v", operation, inputs[3])
+		}
+		if parsed.registryTransport.Protocol != serverresolver.RegistryProtocolHTTPS {
+			return parsed, fmt.Errorf("invalid %s registry transport options %v", operation, inputs[2:])
+		}
+		parsed.registryTransport.InsecureSkipTLSVerify = true
+	}
+
+	return parsed, nil
+}
+
+func updateContainerFromLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
+	inputs, err := parseContainerFromLockInputs(lockContainerFromOperation, entry.Inputs)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+
+	resolvedDigest, err := resolveContainerFromDigest(ctx, query, inputs)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
 
 	return workspace.LookupResult{
-		Value:  digest,
+		Value:  resolvedDigest.String(),
 		Policy: entry.Result.Policy,
 	}, nil
 }
 
-func resolveContainerFromDigest(ctx context.Context, query *Query, refString, platformString string) (string, error) {
+func updateContainerFromLatestLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
+	inputs, err := parseContainerFromLockInputs(lockContainerFromLatestOperation, entry.Inputs)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+
+	refName, err := reference.ParseNormalizedNamed(inputs.ref)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("parse image address %q: %w", inputs.ref, err)
+	}
+	if !reference.IsNameOnly(refName) {
+		return workspace.LookupResult{}, fmt.Errorf(
+			"invalid %s ref %q: expected an image repository without a tag or digest",
+			lockContainerFromLatestOperation,
+			inputs.ref,
+		)
+	}
+	refName = reference.TrimNamed(refName)
+
+	rslvr, err := query.RegistryResolver(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("failed to get registry resolver: %w", err)
+	}
+	// Encapsulate so the tag listing's raw HTTP spans stay out of the default
+	// TUI; they surface if the listing fails.
+	listCtx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("select latest release for %s", refName.String()),
+		telemetry.Internal(), telemetry.Encapsulate())
+	tags, err := rslvr.ListImageTags(listCtx, refName.String(), serverresolver.ListImageTagsOpts{
+		RegistryTransport: inputs.registryTransport,
+	})
+	telemetry.EndWithCause(span, &err)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("list image tags for %q: %w", refName.String(), err)
+	}
+	refName, err = reference.WithTag(refName, SelectLatestContainerTag(tags))
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("select latest release for image %q: %w", inputs.ref, err)
+	}
+
+	inputs.ref = refName.String()
+	resolvedDigest, err := resolveContainerFromDigest(ctx, query, inputs)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+	refName, err = reference.WithDigest(refName, resolvedDigest)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("pin image %q: %w", inputs.ref, err)
+	}
+
+	return workspace.LookupResult{
+		Value:  refName.String(),
+		Policy: workspace.PolicyPin,
+	}, nil
+}
+
+func resolveContainerFromDigest(ctx context.Context, query *Query, inputs containerFromLockInputs) (digest.Digest, error) {
 	rslvr, err := query.RegistryResolver(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get registry resolver: %w", err)
 	}
 
-	refName, err := reference.ParseNormalizedNamed(refString)
+	refName, err := reference.ParseNormalizedNamed(inputs.ref)
 	if err != nil {
-		return "", fmt.Errorf("parse image address %q: %w", refString, err)
+		return "", fmt.Errorf("parse image address %q: %w", inputs.ref, err)
 	}
 	refName = reference.TagNameOnly(refName)
 
-	platform, err := platforms.Parse(platformString)
+	platform, err := platforms.Parse(inputs.platform)
 	if err != nil {
-		return "", fmt.Errorf("parse platform %q: %w", platformString, err)
+		return "", fmt.Errorf("parse platform %q: %w", inputs.platform, err)
 	}
 
 	_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
-		Platform:    ptr(platform),
-		ResolveMode: serverresolver.ResolveModeDefault,
+		Platform:          ptr(platform),
+		ResolveMode:       serverresolver.ResolveModeDefault,
+		RegistryTransport: inputs.registryTransport,
 	})
 	if err != nil {
-		return "", fmt.Errorf("resolve image %q (platform: %q): %w", refName.String(), platformString, err)
+		return "", fmt.Errorf("resolve image %q (platform: %q): %w", refName.String(), inputs.platform, err)
 	}
 
-	return resolvedDigest.String(), nil
+	return resolvedDigest, nil
 }
 
 func updateGitHeadLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
@@ -220,4 +328,52 @@ func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remo
 		return remote, nil
 	}
 	return nil, fmt.Errorf("load git remote %q: %w", remoteURL, lastErr)
+}
+
+func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
+	if len(entry.Inputs) != 1 {
+		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest inputs %v", entry.Inputs)
+	}
+	remoteURL, ok := entry.Inputs[0].(string)
+	if !ok || remoteURL == "" {
+		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest remote %v", entry.Inputs[0])
+	}
+
+	// Resolve through the schema's git resolver rather than a bare
+	// RemoteGitRepository so the same access context that created the pin
+	// (credential helpers, SSH sockets, protocol fallback) applies here too.
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+
+	// The update loop writes the refreshed value itself; disable lock
+	// resolution inside the sub-query so it neither reads the stale entry nor
+	// writes one of its own.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("client metadata: %w", err)
+	}
+	noLockMetadata := *clientMetadata
+	noLockMetadata.LockMode = string(workspace.LockModeDisabled)
+	ctx = engine.ContextWithClientMetadata(ctx, &noLockMetadata)
+
+	var latest dagql.ObjectResult[*GitRef]
+	if err := srv.Select(ctx, srv.Root(), &latest,
+		dagql.Selector{
+			Field: "git",
+			Args: []dagql.NamedInput{
+				{Name: "url", Value: dagql.String(remoteURL)},
+			},
+		},
+		dagql.Selector{Field: "latest"},
+	); err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("resolve latest git release for %q: %w", remoteURL, err)
+	}
+
+	pin, err := EncodeGitRefPin(latest.Self().Ref)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+	return workspace.LookupResult{Value: pin, Policy: workspace.PolicyPin}, nil
 }

@@ -98,6 +98,22 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
+  Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+
+  This operation is pinned.
+  """
+  @spec latest(t()) :: Dagger.GitRef.t()
+  def latest(%__MODULE__{} = git_repository) do
+    query_builder =
+      git_repository.query_builder |> QB.select("latest")
+
+    %Dagger.GitRef{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
   Returns details for the latest semver tag.
   """
   @spec latest_version(t()) :: Dagger.GitRef.t()

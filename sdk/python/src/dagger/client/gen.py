@@ -8767,6 +8767,16 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    def latest(self) -> GitRef:
+        """Return the latest release tag. If no release tag exists, fall back to
+        the remote HEAD branch.
+
+        This operation is pinned.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("latest", _args)
+        return GitRef(_ctx)
+
     def latest_version(self) -> GitRef:
         """Returns details for the latest semver tag."""
         _args: list[Arg] = []

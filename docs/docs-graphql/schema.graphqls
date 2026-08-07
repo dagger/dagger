@@ -3308,6 +3308,13 @@ type GitRepository implements Node {
   """A unique identifier for this GitRepository."""
   id: ID!
 
+  """
+  Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+
+  This operation is pinned.
+  """
+  latest: GitRef!
+
   """Returns details for the latest semver tag."""
   latestVersion: GitRef!
 
