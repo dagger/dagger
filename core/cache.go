@@ -105,6 +105,48 @@ func (cache *CacheVolume) getSnapshot() bkcache.MutableRef {
 	return cache.snapshot
 }
 
+// cacheVolumeWriteGens tracks, engine-wide, how many times each cache volume
+// has potentially been written: it bumps when an exec or service that mounted
+// the volume writable finishes, and when a workspace export commits edits into
+// it. The count is keyed by the same identity locking uses (lockKey), so every
+// CacheVolume value for the same underlying volume shares one counter.
+//
+// The generation is a cache-invalidation salt, not content provenance: readers
+// (Workspace cache mounts via CacheVolume.__snapshotDirectory) fold it into
+// their call IDs so a bumped volume re-snapshots on the next read instead of
+// serving a view memoized before the write. It is process-local by design —
+// cross-process staleness is already handled by scoping snapshots per session.
+var (
+	cacheVolumeWriteGensMu sync.Mutex
+	cacheVolumeWriteGens   = map[string]uint64{}
+)
+
+// WriteGeneration returns the volume's current write generation (see
+// cacheVolumeWriteGens). A volume that no exec has written to in this engine
+// process is at generation 0.
+func (cache *CacheVolume) WriteGeneration() (uint64, error) {
+	key, err := cache.lockKey()
+	if err != nil {
+		return 0, err
+	}
+	cacheVolumeWriteGensMu.Lock()
+	defer cacheVolumeWriteGensMu.Unlock()
+	return cacheVolumeWriteGens[key], nil
+}
+
+// BumpWriteGeneration records a potential write to the volume, invalidating
+// snapshot reads taken at earlier generations (see cacheVolumeWriteGens).
+func (cache *CacheVolume) BumpWriteGeneration() error {
+	key, err := cache.lockKey()
+	if err != nil {
+		return err
+	}
+	cacheVolumeWriteGensMu.Lock()
+	defer cacheVolumeWriteGensMu.Unlock()
+	cacheVolumeWriteGens[key]++
+	return nil
+}
+
 func (cache *CacheVolume) getSnapshotSelector() string {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()

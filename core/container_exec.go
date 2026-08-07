@@ -616,6 +616,24 @@ func cacheSharingModeLocksWrites(mode CacheSharingMode) bool {
 	return mode == CacheSharingModeLocked || mode == CacheSharingModePrivate
 }
 
+// bumpMountedCacheWriteGenerations records a potential write on every cache
+// volume the given mounts expose writable. Called after an exec or service run
+// (regardless of its outcome — a failed command may still have written), so
+// snapshot readers like workspace cache mounts re-read the volume instead of
+// serving a view taken before the run. Best-effort: generation bookkeeping
+// must never fail the run it annotates.
+func bumpMountedCacheWriteGenerations(mounts []ContainerMount) {
+	for _, ctrMount := range mounts {
+		if ctrMount.Readonly || ctrMount.CacheSource == nil || ctrMount.CacheSource.Volume.Self() == nil {
+			continue
+		}
+		if err := ctrMount.CacheSource.Volume.Self().BumpWriteGeneration(); err != nil {
+			slog.Warn("could not bump cache volume write generation",
+				"target", ctrMount.Target, "error", err)
+		}
+	}
+}
+
 func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
 	var rerr error
 	for i := len(plan.States) - 1; i >= 0; i-- {
@@ -1256,6 +1274,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return err
 		}
 		defer releaseLockedCaches()
+		// Once this exec has run it may have written any writable cache mount;
+		// record that (before the locks release — deferred LIFO) so snapshot
+		// readers re-read the volumes instead of serving pre-run views.
+		defer bumpMountedCacheWriteGenerations(inputMounts)
 
 		volatileEnvsFromSession := dagCache.ResolveVolatileVars(ctx, clientMetadata.SessionID)
 		var volatileEnvs []string

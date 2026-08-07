@@ -670,6 +670,14 @@ func (svc *Service) startContainer(
 		releaseLockedCaches()
 		return nil
 	})
+	// A stopped service may have written any writable cache mount while it ran;
+	// record that so snapshot readers re-read the volumes instead of serving
+	// pre-run views. Registered after the lock release above so it runs before
+	// it (cleanups run LIFO).
+	cleanup.Add("record cache volume write generations", func() error {
+		bumpMountedCacheWriteGenerations(ctr.Mounts)
+		return nil
+	})
 
 	p, err := prepareMounts(ctx, ctr, nil, nil, nil, cache, "", runtime.GOOS, func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 		return cache.New(ctx, ref)

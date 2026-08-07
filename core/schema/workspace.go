@@ -70,7 +70,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.Func("initialized", s.legacyInitialized).
 			View(BeforeVersion("v1.0.0-0")).
 			Doc("Whether .dagger/config.toml exists."),
-		dagql.NodeFunc("directory", s.directory).
+		dagql.NodeFuncWithDynamicInputs("directory", s.directory, workspaceReadCacheKey[workspaceDirectoryArgs]).
 			WithInput(dagql.PerClientInput).
 			Doc(`Returns a Directory from the workspace.`,
 				`Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.`).
@@ -80,14 +80,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
-		dagql.NodeFunc("file", s.file).
+		dagql.NodeFuncWithDynamicInputs("file", s.file, workspaceReadCacheKey[workspaceFileArgs]).
 			WithInput(dagql.PerClientInput).
 			Doc(`Returns a File from the workspace.`,
 				`Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the workspace root.`),
 			),
-		dagql.NodeFunc("glob", s.glob).
+		dagql.NodeFuncWithDynamicInputs("glob", s.glob, workspaceReadCacheKey[workspaceGlobArgs]).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
 			Doc(`Returns a list of files and directories that match the given pattern.`,
@@ -95,7 +95,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
-		dagql.NodeFunc("search", s.search).
+		dagql.NodeFuncWithDynamicInputs("search", s.search, workspaceReadCacheKey[workspaceSearchArgs]).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
 			Doc(
@@ -111,7 +111,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				args = append(args, (core.SearchOpts{}).Args()...)
 				return args
 			})()...),
-		dagql.NodeFunc("findUp", s.findUp).
+		dagql.NodeFuncWithDynamicInputs("findUp", s.findUp, workspaceReadCacheKey[workspaceFindUpArgs]).
 			WithInput(dagql.PerClientInput).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the absolute workspace path if found, or null if not found.`,
@@ -431,6 +431,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("stagedCommits", s.stagedCommits).
 			Doc("Commits staged in this workspace but not yet saved to the local checkout.",
 				"Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged."),
+		dagql.NodeFunc("push", s.workspaceGitPush).
+			DoNotCache("Updates a ref on a remote git repository").
+			Doc("Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.",
+				"The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.").
+			Args(
+				dagql.Arg("remote").Doc("Remote to push to: a remote name from the checkout's configuration, or a URL."),
+				dagql.Arg("branch").Doc("Remote branch to update. Defaults to the checkout's currently checked-out branch, and is required when its HEAD is detached. A fully qualified ref (refs/...) is used as-is."),
+				dagql.Arg("force").Doc("Allow a non-fast-forward update of the remote ref."),
+			),
 		dagql.NodeFunc("__stagedCommitEntry", s.stagedCommitEntry).
 			IsPersistable().
 			Doc("(Internal-only) One entry of WorkspaceGit.stagedCommits.").
@@ -648,6 +657,57 @@ type workspaceDirectoryArgs struct {
 	core.CopyFilter
 
 	Gitignore bool `default:"false"`
+
+	// CacheMountWriteGenerations folds the write generations of the
+	// workspace's cache-mounted volumes into the call ID (see
+	// workspaceReadCacheKey); the resolver itself ignores it.
+	CacheMountWriteGenerations string `internal:"true" default:""`
+}
+
+// workspaceReadCacheKey folds the write generations of the workspace's
+// cache-mounted volumes into a read call's ID, so a read issued after a
+// container, service, or export wrote a mounted volume misses the pre-write
+// cached call and re-resolves against the refreshed mounts view (see
+// readMountsDir) — the cache-mount analog of the workspace read epoch that
+// scopes host reads. A workspace without written cache mounts contributes an
+// empty token, leaving call IDs (and their cached reads) exactly as before.
+func workspaceReadCacheKey[A any](
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ A,
+	req *dagql.CallRequest,
+) error {
+	token, err := cacheMountWriteGenerationsToken(parent.Self())
+	if err != nil {
+		return err
+	}
+	if token == "" {
+		return nil
+	}
+	return req.SetArgInput(ctx, "cacheMountWriteGenerations", dagql.NewString(token), false)
+}
+
+// cacheMountWriteGenerationsToken summarizes the current write generation of
+// every cache volume mounted into the workspace, in stable (Target-sorted)
+// order. Volumes still at generation 0 — never written in this engine process
+// — are omitted, so the token is empty (and cache keys unchanged) until a
+// write actually happens.
+func cacheMountWriteGenerationsToken(ws *core.Workspace) (string, error) {
+	var sb strings.Builder
+	for _, mount := range ws.CacheMounts() {
+		if mount.Volume.Self() == nil {
+			continue
+		}
+		gen, err := mount.Volume.Self().WriteGeneration()
+		if err != nil {
+			return "", err
+		}
+		if gen == 0 {
+			continue
+		}
+		fmt.Fprintf(&sb, "%s=%d;", mount.Target, gen)
+	}
+	return sb.String(), nil
 }
 
 // resolveReadRootfs resolves a workspace read (Workspace.directory/file) with
@@ -669,7 +729,10 @@ func (s *workspaceSchema) resolveReadRootfs(
 	filter core.CopyFilter,
 	gitignore bool,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	mounts, ok := ws.MountsDir()
+	mounts, ok, err := s.readMountsDir(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
 	if !ok {
 		return s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
 	}
@@ -716,6 +779,134 @@ func (s *workspaceSchema) resolveReadRootfs(
 		return inst, err
 	}
 	return merged, nil
+}
+
+// readMountsDir returns the workspace's mounts tree as reads should see it:
+// a cache mount's subtree is refreshed to its volume's current content when
+// the volume has been written since the mount's baseline snapshot was taken
+// (a container exec, service, or another workspace's export bumped its write
+// generation), with the edits made through this workspace re-applied on top —
+// so this workspace's own pending edits win over concurrent volume writes to
+// the same paths. Read-only Directory/File mounts and cache mounts whose
+// volume is unwritten are served from the stored tree unchanged.
+//
+// The refresh is read-side only: the stored mounts tree and each mount's
+// Baseline are untouched, so edits keep landing in the stored tree (see
+// mountEdit) and export still commits exactly diff(Baseline, stored subtree)
+// into the volume.
+func (s *workspaceSchema) readMountsDir(
+	ctx context.Context,
+	ws *core.Workspace,
+) (inst dagql.ObjectResult[*core.Directory], _ bool, _ error) {
+	stored, ok := ws.MountsDir()
+	if !ok {
+		return inst, false, nil
+	}
+	cacheMounts := ws.CacheMounts()
+	if len(cacheMounts) == 0 {
+		return stored, true, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, false, err
+	}
+	mounts := stored
+	for _, mount := range cacheMounts {
+		if mount.Volume.Self() == nil || mount.Baseline.Self() == nil {
+			continue
+		}
+		// The volume's snapshot at its current write generation. The same ID
+		// digest as the baseline means nothing wrote the volume since the
+		// mount (and no session boundary lies in between): the stored tree is
+		// current and the refresh is skipped. The select is lazy either way —
+		// no volume content is copied here.
+		var fresh dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, mount.Volume, &fresh, dagql.Selector{
+			Field: "__snapshotDirectory",
+		}); err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: refresh snapshot: %w", mount.Target, err)
+		}
+		freshID, err := fresh.ID()
+		if err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: refresh snapshot ID: %w", mount.Target, err)
+		}
+		baselineID, err := mount.Baseline.ID()
+		if err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: baseline ID: %w", mount.Target, err)
+		}
+		if sameResultID(freshID, baselineID) {
+			continue
+		}
+		// Re-apply this workspace's own edits — the same delta export commits
+		// (see cacheMountChanges) — on top of the fresh snapshot. Diffing from
+		// the stored tree keeps nested mounts' content intact too: whatever
+		// shadows the baseline in the stored subtree rides along in the delta.
+		var current dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, stored, &current, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(mount.Target)}},
+		}); err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: stored subtree: %w", mount.Target, err)
+		}
+		var edits dagql.ObjectResult[*core.Changeset]
+		if err := srv.Select(ctx, current, &edits, dagql.Selector{
+			Field: "changes",
+			Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](baselineID)}},
+		}); err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: edits delta: %w", mount.Target, err)
+		}
+		editsID, err := edits.ID()
+		if err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: edits delta ID: %w", mount.Target, err)
+		}
+		var refreshed dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, fresh, &refreshed, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](editsID)}},
+		}); err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: apply edits: %w", mount.Target, err)
+		}
+		refreshedID, err := refreshed.ID()
+		if err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: refreshed subtree ID: %w", mount.Target, err)
+		}
+		// Replace (not merge) the subtree, so paths a concurrent writer
+		// removed from the volume do not linger from the stale view.
+		if err := srv.Select(ctx, mounts, &mounts,
+			dagql.Selector{
+				Field: "withoutDirectory",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(mount.Target)}},
+			},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(mount.Target)},
+					{Name: "source", Value: dagql.NewID[*core.Directory](refreshedID)},
+				},
+			},
+		); err != nil {
+			return inst, false, fmt.Errorf("cache mount %q: refresh mounts tree: %w", mount.Target, err)
+		}
+	}
+	return mounts, true, nil
+}
+
+// sameResultID reports whether two call IDs name the same result. Handle-form
+// IDs (session-scoped engine result references) compare by engine result ID —
+// within a session, re-selecting an unchanged call hits the session cache and
+// hands back the same result — while recipe-form IDs compare by digest. Mixed
+// forms compare unequal, erring toward re-resolving.
+func sameResultID(a, b *call.ID) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	if a.IsHandle() != b.IsHandle() {
+		return false
+	}
+	if a.IsHandle() {
+		return a.EngineResultID() == b.EngineResultID()
+	}
+	return a.Digest() == b.Digest()
 }
 
 // workspaceReadPathExists reports whether a resolved workspace path exists in
@@ -1122,6 +1313,11 @@ func (s *workspaceSchema) directoryAt(
 
 type workspaceFileArgs struct {
 	Path string
+
+	// CacheMountWriteGenerations folds the write generations of the
+	// workspace's cache-mounted volumes into the call ID (see
+	// workspaceReadCacheKey); the resolver itself ignores it.
+	CacheMountWriteGenerations string `internal:"true" default:""`
 }
 
 func (s *workspaceSchema) file(
@@ -1203,6 +1399,11 @@ type workspaceSearchArgs struct {
 	core.SearchOpts
 	Paths []string `default:"[]"`
 	Globs []string `default:"[]"`
+
+	// CacheMountWriteGenerations folds the write generations of the
+	// workspace's cache-mounted volumes into the call ID (see
+	// workspaceReadCacheKey); the resolver itself ignores it.
+	CacheMountWriteGenerations string `internal:"true" default:""`
 }
 
 func (s *workspaceSchema) search(
@@ -1244,7 +1445,9 @@ func (s *workspaceSchema) search(
 	// Mounted content is readable through the normal workspace file tools, so
 	// it is searchable too: the mounts tree's results win at and under mount
 	// points, mirroring resolveReadRootfs's shadowing.
-	if mounts, ok := ws.MountsDir(); ok {
+	if mounts, ok, err := s.readMountsDir(ctx, ws); err != nil {
+		return nil, fmt.Errorf("search: mounts: %w", err)
+	} else if ok {
 		mountResults, err := searchDirectoryTree(ctx, mounts, args)
 		if err != nil {
 			return nil, fmt.Errorf("search: mounts: %w", err)
@@ -1424,6 +1627,11 @@ func emitSearchResults(ctx context.Context, results []*core.SearchResult, filesO
 
 type workspaceGlobArgs struct {
 	Pattern string
+
+	// CacheMountWriteGenerations folds the write generations of the
+	// workspace's cache-mounted volumes into the call ID (see
+	// workspaceReadCacheKey); the resolver itself ignores it.
+	CacheMountWriteGenerations string `internal:"true" default:""`
 }
 
 func (s *workspaceSchema) glob(
@@ -1472,7 +1680,9 @@ func (s *workspaceSchema) glob(
 	// Mounted content is readable through the normal workspace file tools, so
 	// it is globbable too: the mounts tree's matches win at and under mount
 	// points, mirroring resolveReadRootfs's shadowing.
-	if mounts, ok := ws.MountsDir(); ok {
+	if mounts, ok, err := s.readMountsDir(ctx, ws); err != nil {
+		return nil, fmt.Errorf("glob: mounts: %w", err)
+	} else if ok {
 		mountMatches, err := globDirectoryTree(ctx, mounts, args.Pattern)
 		if err != nil {
 			return nil, fmt.Errorf("glob: mounts: %w", err)
@@ -3121,6 +3331,11 @@ func workspacePathRelativeToCwd(rootRelPath, cwd string) (string, error) {
 type workspaceFindUpArgs struct {
 	Name string
 	From string `default:"."`
+
+	// CacheMountWriteGenerations folds the write generations of the
+	// workspace's cache-mounted volumes into the call ID (see
+	// workspaceReadCacheKey); the resolver itself ignores it.
+	CacheMountWriteGenerations string `internal:"true" default:""`
 }
 
 func (s *workspaceSchema) findUp(
@@ -3181,7 +3396,9 @@ func (s *workspaceSchema) findUp(
 	// mounts tree (which also materializes mount points' parents) is consulted
 	// first, and at or under a mount point it fully shadows the source.
 	var mountsFS core.StatFS
-	if mounts, ok := ws.MountsDir(); ok {
+	if mounts, ok, err := s.readMountsDir(ctx, ws); err != nil {
+		return none, err
+	} else if ok {
 		mountsFS = &core.DirectoryStatFS{Dir: mounts}
 	}
 	candidateExists := func(candidate string) (bool, error) {

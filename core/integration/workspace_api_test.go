@@ -887,6 +887,84 @@ func (WorkspaceAPISuite) TestWorkspaceMountedCache(ctx context.Context, t *testc
 		require.ElementsMatch(t, []string{"seed.txt", "late.txt"}, entries)
 	})
 
+	t.Run("container writes after the mount was read appear in later reads", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		vol := seededVolume(ctx, t, c)
+		ws := c.Directory().AsWorkspace().WithMountedCache("cache", vol)
+
+		// Materialize the mount's snapshot: this read pins a point-in-time view
+		// of the volume.
+		entries, err := ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"seed.txt"}, entries)
+
+		// A container writes the volume AFTER the snapshot was taken. The exec
+		// bumps the volume's write generation, which must invalidate the
+		// snapshot reads above — the long-lived agent flow: run `go mod
+		// download` through a container, then read the sources through the
+		// workspace mount.
+		_, err = c.Container().From(alpineImage).
+			WithMountedCache("/cache", vol).
+			WithExec([]string{"sh", "-c", "echo -n late > /cache/late.txt"}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		entries, err = ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"seed.txt", "late.txt"}, entries)
+
+		contents, err := ws.File("cache/late.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "late", contents)
+
+		// The refreshed view reaches search and glob too.
+		matches, err := ws.Glob(ctx, "**/*.txt")
+		require.NoError(t, err)
+		require.Contains(t, matches, "cache/late.txt")
+	})
+
+	t.Run("workspace edits survive a post-write refresh", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		vol := seededVolume(ctx, t, c)
+		ws := c.Directory().AsWorkspace().
+			WithMountedCache("cache", vol).
+			WithNewFile("cache/written.txt", "written")
+
+		// Materialize the pre-write view, edits included.
+		entries, err := ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"seed.txt", "written.txt"}, entries)
+
+		_, err = c.Container().From(alpineImage).
+			WithMountedCache("/cache", vol).
+			WithExec([]string{"sh", "-c", "echo -n late > /cache/late.txt && rm /cache/seed.txt"}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		// The refresh picks up the container's write AND removal, while the
+		// workspace's own pending edit rides on top.
+		entries, err = ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"late.txt", "written.txt"}, entries)
+
+		contents, err := ws.File("cache/written.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "written", contents)
+
+		// Export still commits only this workspace's own edits into the volume:
+		// the concurrent write is left alone and the removal not resurrected.
+		require.NoError(t, ws.Export(ctx))
+
+		contents, err = volumeFile(ctx, t, c, vol, "written.txt")
+		require.NoError(t, err)
+		require.Equal(t, "written", contents)
+		contents, err = volumeFile(ctx, t, c, vol, "late.txt")
+		require.NoError(t, err)
+		require.Equal(t, "late", contents)
+		_, err = volumeFile(ctx, t, c, vol, "seed.txt")
+		require.Error(t, err, "export must not resurrect a file a concurrent writer removed")
+	})
+
 	t.Run("edits under the mount are readable but not pending changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ws := c.Directory().

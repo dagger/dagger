@@ -32,6 +32,26 @@ class WorkspaceGit extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.
+     *
+     * The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.
+     */
+    public function push(?string $remote = 'origin', ?string $branch = '', ?bool $force = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('push');
+        if (null !== $remote) {
+        $leafQueryBuilder->setArgument('remote', $remote);
+        }
+        if (null !== $branch) {
+        $leafQueryBuilder->setArgument('branch', $branch);
+        }
+        if (null !== $force) {
+        $leafQueryBuilder->setArgument('force', $force);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'push');
+    }
+
+    /**
      * Commits staged in this workspace but not yet saved to the local checkout.
      *
      * Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.

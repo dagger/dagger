@@ -368,7 +368,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("New",
 							dag.TypeDef().WithObject("DocsDev")).
 							WithSourceMap(dag.SourceMap("main.go", 17, 1)).
-							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 26, 2), DefaultPath: "/", Ignore: []string{"*", "**/node_modules", "!docs", "!sdk/typescript", "!CONTRIBUTING.md"}}).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 26, 2), DefaultPath: "/", Ignore: []string{"*", "!docs", "!sdk/typescript", "!CONTRIBUTING.md", "**/node_modules"}}).
 							WithArg("nginxConfig", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 28, 2), DefaultPath: "/docs/nginx.conf"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)

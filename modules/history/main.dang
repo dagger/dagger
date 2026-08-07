@@ -1,0 +1,120 @@
+# history: let a Dagger coding agent read the commits it has staged in its
+# workspace — the `git log` half of self-review.
+#
+# `review` covers *uncommitted* changes (status/diff), and `commit` prints a
+# summary at the moment it runs, but once a commit is staged there is no way to
+# look back at it. Workspace.git.stagedCommits is exactly that history: the
+# commits staged on top of the checkout's HEAD, not yet saved locally.
+"""
+Read-only view of the commits staged in your workspace.
+"""
+type History {
+  """
+  Compose the history tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Show the commits staged in this workspace but not yet saved to the user's
+  local checkout — the "git log" of the work done in this session.
+
+  Commits are listed oldest first, matching the order they were staged on top
+  of the checkout's HEAD. Each entry shows the short hash, date, author, the
+  full commit message, and (unless `files` is false) the per-file changes that
+  commit folded in.
+
+  For changes that are still uncommitted, use the review tools instead.
+  """
+  log(
+    source: Workspace!,
+    """
+    Maximum number of commits to show, counting back from the newest.
+    """
+    limit: Int! = 10,
+    """
+    Include the per-file changes each commit folded in.
+    """
+    files: Boolean! = true,
+  ): String! {
+    let head = short(source.git.head.commit)
+    # Project the staged commits into records up front: list methods like
+    # isEmpty/takeLast/length operate on materialized records, not on a raw
+    # GraphQL object list, and the one batched selection fetches everything
+    # the rendering below needs.
+    let commits = source.git.stagedCommits.{{
+      sha, date, authorName, message,
+      changes.{{ diffStats.{{ path, kind, addedLines, removedLines }} }},
+    }}
+    if (commits.isEmpty) {
+      return `No commits staged in this workspace (checkout HEAD ${head}).`
+    }
+
+    let shown = commits.takeLast(limit)
+    let entries = shown.map { c =>
+      let header = `${short(c.sha)}  ${c.date}  ${c.authorName}`
+      let body = c.message.split("\n").map { line => "    " + line }.join("\n")
+      let fileRows = if (files) {
+        let stats = c.changes.diffStats
+        stats.map { s =>
+          `      ${renderKind(s.kind)}  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
+        }.join("\n")
+      } else {
+        ""
+      }
+      if (fileRows == "") {
+        header + "\n" + body
+      } else {
+        header + "\n" + body + "\n" + fileRows
+      }
+    }
+
+    let omitted = commits.length - shown.length
+    let footer = if (omitted > 0) {
+      # "\n" escapes only work in double-quoted strings, not backtick templates.
+      "\n\n" + `(${toString(omitted)} older staged commit(s) not shown; raise limit to see them)`
+    } else {
+      ""
+    }
+
+    `${toString(commits.length)} commit(s) staged on top of checkout HEAD ${head}:` +
+      "\n\n" + entries.join("\n\n") + footer
+  }
+
+  let short(sha: String!): String! {
+    sha.split("", 8).takeFirst(7).join("")
+  }
+
+  # Nullable: the projected record's fields inherit nullability from the
+  # nullable `changes` field they were selected through.
+  let renderKind(kind: DiffStatKind): String! {
+    case (kind) {
+      DiffStatKind.ADDED => "A"
+      DiffStatKind.MODIFIED => "M"
+      DiffStatKind.REMOVED => "D"
+      DiffStatKind.RENAMED => "R"
+      else => "?"
+    }
+  }
+
+  let systemPrompt: String! = """
+    You can look back at the commits you have staged in the workspace with the
+    History tool:
+
+    - `log` — the commits staged on top of the user's checkout HEAD, oldest
+      first: short hash, date, author, full message, and the files each commit
+      touched (A/M/D/R with added/removed line counts).
+
+    These commits live in the workspace and are only written to the user's
+    local checkout when the session is saved. Use `log` to recall what you have
+    already committed — e.g. before writing a summary of your work, or to check
+    whether a change landed in a commit or is still pending. Pass `limit` to
+    show more or fewer commits, and `files: false` for just the messages.
+
+    For changes that are NOT yet committed, use the review tools (`status` /
+    `diff`) instead. `log` is read-only and never modifies anything.
+  """
+}
