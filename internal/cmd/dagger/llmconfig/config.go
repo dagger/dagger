@@ -4,11 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/adrg/xdg"
 	"github.com/gofrs/flock"
 	toml "github.com/pelletier/go-toml"
 )
+
+// oauthRefreshMu serializes OAuth load→refresh→persist sequences so
+// concurrent secret resolutions can't double-spend a one-time refresh
+// token (providers rotate them), or clobber another provider's freshly
+// rotated token via Save's whole-section rewrite.
+var oauthRefreshMu sync.Mutex
 
 const (
 	ConfigFileName = "config.toml"
@@ -307,6 +314,9 @@ func refreshProviderToken(name string, provider Provider) (Provider, bool, error
 // refreshes any expired tokens. This should be called client-side before
 // connecting to the engine.
 func RefreshOAuthTokensIfNeeded() error {
+	oauthRefreshMu.Lock()
+	defer oauthRefreshMu.Unlock()
+
 	cfg, err := Load()
 	if err != nil || cfg == nil {
 		// a missing or unreadable config is non-fatal here
@@ -340,6 +350,9 @@ func RefreshOAuthTokensIfNeeded() error {
 // an OAuth provider. Used to keep a long-running session's bearer token fresh:
 // the client re-resolves the token on demand rather than only at startup.
 func RefreshOAuthProviderIfNeeded(name string) (string, error) {
+	oauthRefreshMu.Lock()
+	defer oauthRefreshMu.Unlock()
+
 	cfg, err := Load()
 	if err != nil || cfg == nil {
 		return "", err
