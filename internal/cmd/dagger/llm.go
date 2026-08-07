@@ -93,6 +93,22 @@ type LLMSession struct {
 	// growth shown in --debug mode (see reportContextUsage).
 	prevContextTokens int
 	prevStepContext   int
+
+	// references tracks the host paths the user has attached with @ this
+	// session (see attachReferences). They are mounted read-only in the LLM's
+	// workspace, shown in the "References" sidebar, and dropped on .clear.
+	// Paths already inside the workspace are not tracked here: they are
+	// rewritten to workspace-relative paths instead of being mounted.
+	references []referenceInfo
+
+	// workspaceHostRoot/workspaceHostCwd are the host filesystem paths of the
+	// workspace root and cwd, resolved lazily on the first @-path and cached
+	// for the session (workspaceHostResolved records that the lookup ran, since
+	// a non-local workspace legitimately resolves to empty). Used to detect
+	// @-paths that already live in the workspace.
+	workspaceHostResolved bool
+	workspaceHostRoot     string
+	workspaceHostCwd      string
 }
 
 func NewLLMSession(
@@ -192,6 +208,12 @@ func (s *LLMSession) Fork() *LLMSession {
 
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
+
+	// Resolve any @-path references in the prompt: paths already inside the
+	// workspace are rewritten to workspace-relative paths, and the rest are
+	// mounted read-only in the workspace with the prompt annotated with their
+	// workspace locations.
+	input = s.attachReferences(s.plumbingCtx, input)
 
 	resolvedModel, err := s.llm.Model(s.plumbingCtx)
 	if err != nil {
@@ -549,6 +571,8 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr 
 func (s *LLMSession) Clear() *LLMSession {
 	s = s.Fork()
 	s.reset()
+	s.references = nil
+	s.updateReferencesPreview()
 	return s
 }
 
@@ -594,6 +618,19 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 		return nil, err
 	}
 	s.model = model
+	return s, nil
+}
+
+// Effort changes the reasoning effort for the rest of the conversation,
+// overriding any provider-configured default. "none" disables reasoning.
+func (s *LLMSession) Effort(effort string) (*LLMSession, error) {
+	s = s.Fork()
+	s.updateLLM(s.llm.WithReasoningEffort(effort))
+	// Resolve the endpoint eagerly so a configuration problem surfaces now
+	// rather than on the next prompt, mirroring Model above.
+	if _, err := s.llm.ReasoningEffort(s.plumbingCtx); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 

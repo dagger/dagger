@@ -949,3 +949,57 @@ func (LLMSuite) TestWorkspaceReloaded(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "NEW", after)
 }
+
+// TestNestedClientInheritsSessionConfig verifies that LLM configuration is
+// session-wide: a nested client (an experimentalPrivilegedNesting exec, e.g.
+// `dagger agent` running inside a container) with no LLM configuration of its
+// own inherits the session main client's config; its own config still wins
+// where set; and the underlying credentials never become readable from inside
+// the nested container — the env:// lookups resolve through the *main*
+// client's session, so nesting grants use of the LLM, not the keys.
+func (LLMSuite) TestNestedClientInheritsSessionConfig(ctx context.Context, t *testctx.T) {
+	// Config on the session's main client (this test process): the router
+	// resolves env:// through the client's session attachables at load time,
+	// so a plain os.Setenv is all it takes (same pattern as
+	// AddressSuite/TestSecret). The values are inert for other tests: replay
+	// models ignore credentials, and an anthropic model only routes when
+	// nothing higher-priority is configured.
+	sessionModel := "claude-session-wide-model"
+	apiKey := "secret" + identity.NewID()
+	os.Setenv("ANTHROPIC_MODEL", sessionModel)
+	os.Setenv("ANTHROPIC_API_KEY", apiKey)
+
+	// Each subtest connects on its own: LLM settings resolve once per session
+	// (see TestCrossSessionLLM), so a shared session would serve the first
+	// subtest's model to the others from the session cache.
+
+	t.Run("inherits main client config", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := goGitBase(t, c).
+			With(daggerExecRaw("core", "llm", "model")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, sessionModel, out)
+	})
+
+	t.Run("nested config wins where set", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := goGitBase(t, c).
+			WithEnvVariable("ANTHROPIC_MODEL", "claude-nested-override").
+			With(daggerExecRaw("core", "llm", "model")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "claude-nested-override", out)
+	})
+
+	t.Run("credentials stay with the main client", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		// Inheritance must not hand out the keys: resolving the credential
+		// env var directly still happens inside the nested container, which
+		// doesn't have it.
+		_, err := goGitBase(t, c).
+			With(daggerExecRaw("core", "secret", "--uri", "env://ANTHROPIC_API_KEY", "plaintext")).
+			Sync(ctx)
+		requireErrOut(t, err, `secret env var not found: "ANT..."`)
+	})
+}

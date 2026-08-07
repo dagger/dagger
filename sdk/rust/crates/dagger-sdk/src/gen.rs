@@ -10095,6 +10095,11 @@ impl Llm {
         let query = self.selection.select("provider");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+    pub async fn reasoning_effort(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("reasoningEffort");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
     pub async fn replay(&self) -> Result<Llm, DaggerError> {
         let query = self.selection.select("replay");
@@ -10271,6 +10276,20 @@ impl Llm {
                 Box::pin(async move { file.into_id().await.unwrap().quote() })
             }),
         );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+    ///
+    /// # Arguments
+    ///
+    /// * `effort` - The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".
+    pub fn with_reasoning_effort(&self, effort: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("withReasoningEffort");
+        query = query.arg("effort", effort.into());
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -15784,6 +15803,56 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+    /// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted directory. Relative paths resolve from the workspace cwd.
+    /// * `source` - Directory to mount.
+    pub fn with_mounted_directory(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withMountedDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a file mounted read-only at the given path, without mutating the source.
+    /// Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted file. Relative paths resolve from the workspace cwd.
+    /// * `source` - File to mount.
+    pub fn with_mounted_file(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withMountedFile");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
         Workspace {
             proc: self.proc.clone(),
             selection: query,

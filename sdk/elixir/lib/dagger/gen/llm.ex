@@ -159,6 +159,17 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+  """
+  @spec reasoning_effort(t()) :: {:ok, String.t()} | {:error, term()}
+  def reasoning_effort(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("reasoningEffort")
+
+    Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
   Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
   """
   @spec replay(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
@@ -330,6 +341,20 @@ defmodule Dagger.LLM do
   def with_prompt_file(%__MODULE__{} = llm, file) do
     query_builder =
       llm.query_builder |> QB.select("withPromptFile") |> QB.put_arg("file", Dagger.ID.id!(file))
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+  """
+  @spec with_reasoning_effort(t(), String.t()) :: Dagger.LLM.t()
+  def with_reasoning_effort(%__MODULE__{} = llm, effort) do
+    query_builder =
+      llm.query_builder |> QB.select("withReasoningEffort") |> QB.put_arg("effort", effort)
 
     %Dagger.LLM{
       query_builder: query_builder,

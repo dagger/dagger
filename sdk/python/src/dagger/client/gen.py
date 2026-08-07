@@ -9955,6 +9955,28 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
+    async def reasoning_effort(self) -> str:
+        """The reasoning effort in use, e.g. "low", "medium", or "high". Empty or
+        "none" when reasoning is disabled.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reasoningEffort", _args)
+        return await _ctx.execute(str)
+
     async def replay(self) -> Self:
         """Re-emit telemetry spans for the full message history, so a loaded
         conversation displays in the TUI.
@@ -10132,6 +10154,24 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
+        return LLM(_ctx)
+
+    def with_reasoning_effort(self, effort: str) -> Self:
+        """Change the reasoning effort for the rest of the conversation,
+        overriding any configured default. The message history is preserved;
+        the new effort takes effect on the next step.
+
+        Parameters
+        ----------
+        effort:
+            The reasoning effort, e.g. "low", "medium", or "high"; "none"
+            disables reasoning. Supported levels are model-specific — some
+            models also accept e.g. "minimal", "xhigh", or "max".
+        """
+        _args = [
+            Arg("effort", effort),
+        ]
+        _ctx = self._select("withReasoningEffort", _args)
         return LLM(_ctx)
 
     def with_response(
@@ -15630,6 +15670,54 @@ class Workspace(Type):
             Arg("here", here, False),
         ]
         _ctx = self._select("withModule", _args)
+        return Workspace(_ctx)
+
+    def with_mounted_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory mounted read-only at the given
+        path, without mutating the source.
+
+        Mounted content is readable through the normal workspace file tools
+        but shadows the source at the mount path and stays out of the pending
+        changeset: it never appears in changes, is never exported, and cannot
+        be modified.
+
+        Parameters
+        ----------
+        path:
+            Location of the mounted directory. Relative paths resolve from the
+            workspace cwd.
+        source:
+            Directory to mount.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withMountedDirectory", _args)
+        return Workspace(_ctx)
+
+    def with_mounted_file(self, path: str, source: File) -> Self:
+        """Return this workspace with a file mounted read-only at the given path,
+        without mutating the source.
+
+        Mounted content is readable through the normal workspace file tools
+        but shadows the source at the mount path and stays out of the pending
+        changeset: it never appears in changes, is never exported, and cannot
+        be modified.
+
+        Parameters
+        ----------
+        path:
+            Location of the mounted file. Relative paths resolve from the
+            workspace cwd.
+        source:
+            File to mount.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withMountedFile", _args)
         return Workspace(_ctx)
 
     def with_new_directory(self, path: str, source: Directory) -> Self:

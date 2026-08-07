@@ -589,6 +589,44 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+  """
+  @spec with_mounted_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
+  def with_mounted_directory(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withMountedDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a file mounted read-only at the given path, without mutating the source.
+
+  Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+  """
+  @spec with_mounted_file(t(), String.t(), Dagger.File.t()) :: Dagger.Workspace.t()
+  def with_mounted_file(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withMountedFile")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a directory added, without mutating the source.
   """
   @spec with_new_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()

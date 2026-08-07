@@ -488,6 +488,32 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+     *
+     * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+     */
+    public function withMountedDirectory(string $path, Directory $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a file mounted read-only at the given path, without mutating the source.
+     *
+     * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+     */
+    public function withMountedFile(string $path, File $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a directory added, without mutating the source.
      */
     public function withNewDirectory(string $path, Directory $source): Workspace

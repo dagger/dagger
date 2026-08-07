@@ -12,12 +12,13 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "hostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {
+	for _, name := range []string{"source", "rootfs", "mounts", "mountPoints", "hostPath", "ClientID", "userConfigKey", "userConfigOverlay"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
@@ -84,6 +85,62 @@ func TestEffectiveWorkspaceConfigBytesAppliesUserOverlay(t *testing.T) {
 		profile, err := workspace.ReadConfigValue(data, "modules.aws.settings.profile")
 		require.NoError(t, err)
 		require.Equal(t, "shared", profile)
+	})
+}
+
+func TestWorkspaceMountedPath(t *testing.T) {
+	ws := (&core.Workspace{}).
+		WithMounted(dagql.ObjectResult[*core.Directory]{}, ".refs/notes.txt").
+		WithMounted(dagql.ObjectResult[*core.Directory]{}, "deps/vendored")
+
+	t.Run("at or under a mount point", func(t *testing.T) {
+		cases := []struct {
+			in      string
+			mounted bool
+		}{
+			{".refs/notes.txt", true},
+			{"deps/vendored", true},
+			{"deps/vendored/lib/util.go", true},
+			// parents of mount points are not themselves mounted
+			{".refs", false},
+			{"deps", false},
+			{".", false},
+			// prefix spoofing does not match
+			{"deps/vendored-extra", false},
+			{".refs/notes.txt.bak", false},
+			{"src/main.go", false},
+		}
+		for _, tc := range cases {
+			t.Run(tc.in, func(t *testing.T) {
+				require.Equal(t, tc.mounted, ws.MountedPath(tc.in))
+			})
+		}
+	})
+
+	t.Run("mounts under", func(t *testing.T) {
+		cases := []struct {
+			in    string
+			under bool
+		}{
+			{".", true},
+			{".refs", true},
+			{"deps", true},
+			// mount points themselves have no mounts strictly below
+			{"deps/vendored", false},
+			{"src", false},
+			{"deps/vendored-extra", false},
+		}
+		for _, tc := range cases {
+			t.Run(tc.in, func(t *testing.T) {
+				require.Equal(t, tc.under, ws.HasMountsUnder(tc.in))
+			})
+		}
+	})
+
+	t.Run("no mounts", func(t *testing.T) {
+		empty := &core.Workspace{}
+		require.False(t, empty.MountedPath("anything"))
+		require.False(t, empty.HasMountsUnder("."))
 	})
 }
 

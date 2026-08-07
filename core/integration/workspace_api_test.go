@@ -524,6 +524,287 @@ func (WorkspaceAPISuite) TestHostWorkspaceSparseOverlayDiff(ctx context.Context,
 	require.Equal(t, "one\nCHANGED\nthree\n", string(sparseGot))
 }
 
+// TestWorkspaceMounts covers Workspace.withMountedDirectory/withMountedFile:
+// mounted content is readable through the normal workspace file tools (shadowing
+// the source at the mount path, visible in listings above it), but stays out of
+// the pending changeset, is never exported, and cannot be modified.
+func (WorkspaceAPISuite) TestWorkspaceMounts(ctx context.Context, t *testctx.T) {
+	t.Run("mounted directory reads, listings and changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := c.Directory().
+			WithNewFile("base.txt", "base").
+			AsWorkspace().
+			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "vendored"))
+
+		contents, err := ws.File(".refs/deps/vendored.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "vendored", contents)
+
+		entries, err := ws.Directory(".refs/deps").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"vendored.txt"}, entries)
+
+		// The mount's parent doesn't exist in the source; the mounted content
+		// alone is served, like a container mount materializing its parents.
+		entries, err = ws.Directory(".refs").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"deps/"}, entries)
+
+		// Mounted content shows up in listings above the mount point.
+		entries, err = ws.Directory("/").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "base.txt")
+		require.Contains(t, entries, ".refs/")
+
+		// But it never rides along with the pending changeset.
+		isEmpty, err := ws.Changes().IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, isEmpty)
+	})
+
+	t.Run("mounted file reads", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		note := c.Directory().WithNewFile("note.txt", "mounted note").File("note.txt")
+		ws := c.Directory().
+			WithNewFile("base.txt", "base").
+			AsWorkspace().
+			WithMountedFile(".refs/note.txt", note)
+
+		contents, err := ws.File(".refs/note.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "mounted note", contents)
+
+		entries, err := ws.Directory(".refs").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"note.txt"}, entries)
+	})
+
+	t.Run("mounts shadow the source", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := c.Directory().
+			WithNewFile("shadowed/real.txt", "real").
+			AsWorkspace().
+			WithMountedDirectory("shadowed", c.Directory().WithNewFile("vendored.txt", "vendored"))
+
+		entries, err := ws.Directory("shadowed").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"vendored.txt"}, entries)
+	})
+
+	t.Run("mounted content is read-only", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := c.Directory().
+			AsWorkspace().
+			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "vendored"))
+
+		_, err := ws.WithNewFile(".refs/deps/hack.txt", "nope").Changes().IsEmpty(ctx)
+		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
+
+		_, err = ws.WithoutDirectory(".refs/deps").Changes().IsEmpty(ctx)
+		require.ErrorContains(t, err, "is a read-only mount and cannot be modified")
+	})
+
+	t.Run("mounting over the workspace root is rejected", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := c.Directory().
+			AsWorkspace().
+			WithMountedDirectory(".", c.Directory().WithNewFile("vendored.txt", "vendored")).
+			Changes().IsEmpty(ctx)
+		require.ErrorContains(t, err, "cannot mount over the workspace root")
+	})
+
+	t.Run("host workspace reads mounted content", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "shell", "-c",
+			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | file .refs/deps/vendored.txt | contents`)
+		require.NoError(t, err)
+		require.Contains(t, string(out), "vendored")
+
+		// The .refs parent exists only through the mount, never on the host.
+		out, err = hostDaggerExec(ctx, t, workdir, "shell", "-c",
+			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | directory .refs | entries`)
+		require.NoError(t, err)
+		require.Contains(t, string(out), "deps")
+		_, err = os.Stat(filepath.Join(workdir, ".refs"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+
+	t.Run("export skips mounts", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "shell", "-c",
+			`current-workspace | with-mounted-directory .refs/deps $(directory | with-new-file vendored.txt "vendored") | with-new-file staged.txt "staged" | export`)
+		require.NoError(t, err)
+
+		got, err := os.ReadFile(filepath.Join(workdir, "staged.txt"))
+		require.NoError(t, err)
+		require.Equal(t, "staged", string(got))
+		_, err = os.Stat(filepath.Join(workdir, ".refs"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
+// TestWorkspaceMountsSearchGlobFindUp verifies that Workspace.search,
+// Workspace.glob, and Workspace.findUp observe mounted content the same way
+// Workspace.file and Workspace.directory do: mounted paths surface in results
+// (including mount points whose parents exist only through the mount) and
+// shadow the source at and under the mount point, on both value and
+// host-backed workspaces.
+func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context, t *testctx.T) {
+	// valueWorkspace mounts content at .refs/deps (whose parents exist only
+	// through the mount) and over the source directory shadowed/.
+	valueWorkspace := func(c *dagger.Client) *dagger.Workspace {
+		return c.Directory().
+			WithNewFile("src/hay.txt", "needle in source\n").
+			WithNewFile("shadowed/real.txt", "needle shadowed\n").
+			AsWorkspace().
+			WithMountedDirectory(".refs/deps", c.Directory().WithNewFile("vendored.txt", "needle vendored\n")).
+			WithMountedDirectory("shadowed", c.Directory().WithNewFile("mounted.txt", "needle mounted\n"))
+	}
+
+	searchFilePaths := func(ctx context.Context, t *testctx.T, results []dagger.SearchResult) []string {
+		t.Helper()
+		paths := make([]string, 0, len(results))
+		for _, r := range results {
+			p, err := r.FilePath(ctx)
+			require.NoError(t, err)
+			paths = append(paths, p)
+		}
+		return paths
+	}
+
+	t.Run("value workspace search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{Literal: true})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Contains(t, paths, "src/hay.txt")
+		require.Contains(t, paths, ".refs/deps/vendored.txt", "mounted content must be searchable")
+		require.Contains(t, paths, "shadowed/mounted.txt", "content mounted over a source directory must be searchable")
+		require.NotContains(t, paths, "shadowed/real.txt", "mounts must shadow the source in search results")
+	})
+
+	t.Run("value workspace search scoped to a mounted path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		results, err := valueWorkspace(c).Search(ctx, "needle", dagger.WorkspaceSearchOpts{
+			Literal: true,
+			Paths:   []string{"shadowed"},
+		})
+		require.NoError(t, err)
+		paths := searchFilePaths(ctx, t, results)
+		require.Equal(t, []string{"shadowed/mounted.txt"}, paths)
+	})
+
+	t.Run("value workspace glob", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		matches, err := valueWorkspace(c).Glob(ctx, "**/*.txt")
+		require.NoError(t, err)
+		require.Contains(t, matches, "src/hay.txt")
+		require.Contains(t, matches, ".refs/deps/vendored.txt", "mounted content must be globbable")
+		require.Contains(t, matches, "shadowed/mounted.txt")
+		require.NotContains(t, matches, "shadowed/real.txt", "mounts must shadow the source in glob results")
+	})
+
+	t.Run("value workspace findUp", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := valueWorkspace(c)
+
+		found, err := ws.FindUp(ctx, "vendored.txt", dagger.WorkspaceFindUpOpts{From: ".refs/deps"})
+		require.NoError(t, err)
+		require.Equal(t, "/.refs/deps/vendored.txt", found, "mounted content must be findable")
+
+		// A mount point is findable as a directory even though its parents
+		// exist only through the mount.
+		found, err = ws.FindUp(ctx, "deps", dagger.WorkspaceFindUpOpts{From: ".refs"})
+		require.NoError(t, err)
+		require.Equal(t, "/.refs/deps", found)
+
+		// The walk falls back to the source on its way up out of the mount.
+		found, err = ws.FindUp(ctx, "src", dagger.WorkspaceFindUpOpts{From: ".refs/deps"})
+		require.NoError(t, err)
+		require.Equal(t, "/src", found)
+
+		found, err = ws.FindUp(ctx, "mounted.txt", dagger.WorkspaceFindUpOpts{From: "shadowed"})
+		require.NoError(t, err)
+		require.Equal(t, "/shadowed/mounted.txt", found)
+
+		found, err = ws.FindUp(ctx, "real.txt", dagger.WorkspaceFindUpOpts{From: "shadowed"})
+		require.NoError(t, err)
+		require.Empty(t, found, "sources shadowed by a mount must not resurface")
+	})
+
+	t.Run("host workspace", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Mount sources are engine-side directories, so their IDs replay in
+		// the nested session.
+		depsID, err := c.Directory().WithNewFile("vendored.txt", "needle vendored\n").ID(ctx)
+		require.NoError(t, err)
+		shadowID, err := c.Directory().WithNewFile("mounted.txt", "needle mounted\n").ID(ctx)
+		require.NoError(t, err)
+
+		base := workspaceBase(t, c).
+			// The base image only has BusyBox grep; install ripgrep so the
+			// client-side search runs its primary code path.
+			WithExec([]string{"apk", "add", "ripgrep"}).
+			WithNewFile("hay.txt", "needle in host\n").
+			WithNewFile("shadowed/real.txt", "needle shadowed\n")
+
+		mountedQuery := func(t *testctx.T, body string) map[string]any {
+			t.Helper()
+			out, err := base.With(daggerQuery(fmt.Sprintf(`{
+				currentWorkspace {
+					withMountedDirectory(path: ".refs/deps", source: %q) {
+						withMountedDirectory(path: "shadowed", source: %q) {
+							%s
+						}
+					}
+				}
+			}`, depsID, shadowID, body))).Stdout(ctx)
+			require.NoError(t, err)
+			var payload map[string]any
+			require.NoError(t, json.Unmarshal([]byte(out), &payload))
+			result := payload
+			for _, key := range []string{"currentWorkspace", "withMountedDirectory", "withMountedDirectory"} {
+				result = result[key].(map[string]any)
+			}
+			return result
+		}
+
+		t.Run("search sees mounts and shadows the host", func(ctx context.Context, t *testctx.T) {
+			got := mountedQuery(t, `search(pattern: "needle", literal: true) { filePath }`)
+			paths := []string{}
+			for _, raw := range got["search"].([]any) {
+				paths = append(paths, raw.(map[string]any)["filePath"].(string))
+			}
+			require.Contains(t, paths, "hay.txt")
+			require.Contains(t, paths, ".refs/deps/vendored.txt")
+			require.Contains(t, paths, "shadowed/mounted.txt")
+			require.NotContains(t, paths, "shadowed/real.txt")
+		})
+
+		t.Run("glob sees mounts and shadows the host", func(ctx context.Context, t *testctx.T) {
+			got := mountedQuery(t, `glob(pattern: "**/*.txt")`)
+			require.Contains(t, got["glob"], ".refs/deps/vendored.txt")
+			require.Contains(t, got["glob"], "shadowed/mounted.txt")
+			require.NotContains(t, got["glob"], "shadowed/real.txt")
+		})
+
+		t.Run("findUp sees mounts and shadows the host", func(ctx context.Context, t *testctx.T) {
+			got := mountedQuery(t, `findUp(name: "vendored.txt", from: ".refs/deps")`)
+			require.Equal(t, "/.refs/deps/vendored.txt", got["findUp"])
+
+			got = mountedQuery(t, `findUp(name: "real.txt", from: "shadowed")`)
+			require.Nil(t, got["findUp"], "sources shadowed by a mount must not resurface")
+		})
+	})
+}
+
 func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Context, t *testctx.T) {
 	tmp := t.TempDir()
 	repoDir := filepath.Join(tmp, "repo")

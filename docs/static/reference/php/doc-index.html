@@ -1394,7 +1394,9 @@
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Returns details of a ref.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_retries">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::retries</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
-                    <dd><p>The maximum number of consecutive failures before the container is marked as unhealthy. Example:3</p></dd><dt><a href="Dagger/LLM.html#method_replay">
+                    <dd><p>The maximum number of consecutive failures before the container is marked as unhealthy. Example:3</p></dd><dt><a href="Dagger/LLM.html#method_reasoningEffort">
+<abbr title="Dagger\LLM">LLM</abbr>::reasoningEffort</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>The reasoning effort in use, e.g. &quot;low&quot;, &quot;medium&quot;, or &quot;high&quot;. Empty or &quot;none&quot; when reasoning is disabled.</p></dd><dt><a href="Dagger/LLM.html#method_replay">
 <abbr title="Dagger\LLM">LLM</abbr>::replay</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></dd><dt><a href="Dagger/LLMMessage.html#method_role">
 <abbr title="Dagger\LLMMessage">LLMMessage</abbr>::role</a>() &mdash; <em>Method in class <a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a></em></dt>
@@ -2070,7 +2072,9 @@
 <abbr title="Dagger\LLM">LLM</abbr>::withPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Queue a user prompt, to be sent to the model on the next step or loop.</p></dd><dt><a href="Dagger/LLM.html#method_withPromptFile">
 <abbr title="Dagger\LLM">LLM</abbr>::withPromptFile</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
+                    <dd><p>Queue a file's contents as a user prompt, like withPrompt.</p></dd><dt><a href="Dagger/LLM.html#method_withReasoningEffort">
+<abbr title="Dagger\LLM">LLM</abbr>::withReasoningEffort</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.</p></dd><dt><a href="Dagger/LLM.html#method_withResponse">
 <abbr title="Dagger\LLM">LLM</abbr>::withResponse</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></dd><dt><a href="Dagger/LLM.html#method_withSkills">
 <abbr title="Dagger\LLM">LLM</abbr>::withSkills</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -2175,7 +2179,11 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::withInitModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a new module initialized.</p></dd><dt><a href="Dagger/Workspace.html#method_withModule">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withModule</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return this workspace with a module installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewDirectory">
+                    <dd><p>Return this workspace with a module installed in its config.</p></dd><dt><a href="Dagger/Workspace.html#method_withMountedDirectory">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withMountedDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a directory mounted read-only at the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withMountedFile">
+<abbr title="Dagger\Workspace">Workspace</abbr>::withMountedFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Return this workspace with a file mounted read-only at the given path, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewDirectory">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Return this workspace with a directory added, without mutating the source.</p></dd><dt><a href="Dagger/Workspace.html#method_withNewFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>

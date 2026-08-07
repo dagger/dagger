@@ -172,6 +172,22 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc("Workspace-relative path to use as the working directory."),
 			),
+		dagql.NodeFunc("withMountedDirectory", s.withMountedDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a directory mounted read-only at the given path, without mutating the source.",
+				"Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.").
+			Args(
+				dagql.Arg("path").Doc("Location of the mounted directory. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("Directory to mount."),
+			),
+		dagql.NodeFunc("withMountedFile", s.withMountedFile).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a file mounted read-only at the given path, without mutating the source.",
+				"Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.").
+			Args(
+				dagql.Arg("path").Doc("Location of the mounted file. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("File to mount."),
+			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a module installed in its config.").
@@ -575,6 +591,121 @@ type workspaceDirectoryArgs struct {
 	Gitignore bool `default:"false"`
 }
 
+// resolveReadRootfs resolves a workspace read (Workspace.directory/file) with
+// mounted content visible:
+//   - Paths at or under a mount point resolve entirely against the read-only
+//     mounts tree — mounted content shadows the source.
+//   - Paths with mount points beneath them get the mounted content overlaid on
+//     the source read, so listings include it. As with container mounts, the
+//     mount point's parents don't need to exist in the source.
+//
+// Everything that materializes the workspace *source* (module loading,
+// lockfiles, migration, git) resolves through resolveRootfs directly and never
+// sees mounts, mirroring how changes and export exclude them.
+func (s *workspaceSchema) resolveReadRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	mounts, ok := ws.MountsDir()
+	if !ok {
+		return s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if ws.MountedPath(resolvedPath) {
+		return s.resolveRootfsFromDirectory(ctx, srv, ws, mounts, resolvedPath, filter, gitignore)
+	}
+	if !ws.HasMountsUnder(resolvedPath) {
+		return s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+	}
+	sub, err := s.resolveRootfsFromDirectory(ctx, srv, ws, mounts, resolvedPath, filter, gitignore)
+	if err != nil {
+		return inst, err
+	}
+	// The source path itself may not exist (mounts materialize their own
+	// parents); serve the mounted content alone rather than erroring on the
+	// source read.
+	exists, err := s.workspaceReadPathExists(ctx, ws, resolvedPath)
+	if err != nil {
+		return inst, err
+	}
+	if !exists {
+		return sub, nil
+	}
+	base, err := s.resolveRootfs(ctx, ws, resolvedPath, filter, gitignore)
+	if err != nil {
+		return inst, err
+	}
+	subID, err := sub.ID()
+	if err != nil {
+		return inst, err
+	}
+	var merged dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, base, &merged, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](subID)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return merged, nil
+}
+
+// workspaceReadPathExists reports whether a resolved workspace path exists in
+// the workspace source (host, overlay edits, or in-engine tree), without
+// considering mounts.
+func (s *workspaceSchema) workspaceReadPathExists(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+) (bool, error) {
+	rp := filepath.ToSlash(resolvedPath)
+	// Overlay edits can create paths that exist in no base source; host-backed
+	// overlays track them as touched paths (tree-backed overlays already fold
+	// edits into the source directory checked below).
+	if overlay, ok := ws.Source().(*core.WorkspaceSourceOverlay); ok {
+		for _, touched := range overlay.TouchedPaths {
+			tp := filepath.ToSlash(touched)
+			if tp == rp || strings.HasPrefix(tp, rp+"/") || rp == "." {
+				return true, nil
+			}
+		}
+	}
+	if ws.HostPath() != "" && ws.ClientLocalBase() {
+		ctx, err := s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return false, err
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return false, err
+		}
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return false, fmt.Errorf("buildkit: %w", err)
+		}
+		statPath, err := pathutil.SandboxedRelativePath(resolvedPath, ws.HostPath())
+		if err != nil {
+			return false, err
+		}
+		_, exists, err := core.StatFSExists(ctx, core.NewCallerStatFS(bk), statPath)
+		return exists, err
+	}
+	if root, ok := ws.SourceDirectory(); ok && root.Self() != nil {
+		_, exists, err := core.StatFSExists(ctx, &core.DirectoryStatFS{Dir: root}, rp)
+		return exists, err
+	}
+	// Rootless/synthetic workspaces have no base content.
+	return false, nil
+}
+
 // resolveRootfs returns a lazy directory reference for a resolved workspace path.
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Local with overlay edits: sparse host base + changeset applied on top.
@@ -892,7 +1023,7 @@ func (s *workspaceSchema) directoryAt(
 	if err != nil {
 		return inst, err
 	}
-	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
+	return s.resolveReadRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
 }
 
 type workspaceFileArgs struct {
@@ -921,7 +1052,7 @@ func (s *workspaceSchema) fileAt(
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 
-	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{
+	dir, err := s.resolveReadRootfs(ctx, ws, parentDir, core.CopyFilter{
 		Include: []string{basename},
 	}, false)
 	if err != nil {
@@ -951,6 +1082,9 @@ func (s *workspaceSchema) withNewFile(
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
 	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -984,6 +1118,7 @@ func (s *workspaceSchema) search(
 ) (dagql.Array[*core.SearchResult], error) {
 	ws := parent.Self()
 
+	var results []*core.SearchResult
 	if ws.HostPath() == "" {
 		// No host boundary: search the workspace's in-engine root filesystem.
 		// Overlay edits are already visible here: value/git overlays surface
@@ -992,24 +1127,35 @@ func (s *workspaceSchema) search(
 		if err != nil {
 			return nil, err
 		}
-		results, err := rootfs.Self().Search(ctx, rootfs, args.SearchOpts, true, args.Paths, args.Globs)
+		results, err = rootfs.Self().Search(ctx, rootfs, args.SearchOpts, false, args.Paths, args.Globs)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
-		return dagql.Array[*core.SearchResult](results), nil
-	}
-
-	results, err := s.searchHost(ctx, ws, args)
-	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
-	}
-
-	if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
-		overlayResults, err := s.overlaySearchResults(ctx, ws, args)
+	} else {
+		var err error
+		results, err = s.searchHost(ctx, ws, args)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
-		results = mergeOverlaySearchResults(results, overlayResults, ws.OverlayPathTouched, args.Limit)
+
+		if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
+			overlayResults, err := s.overlaySearchResults(ctx, ws, args)
+			if err != nil {
+				return nil, fmt.Errorf("search: %w", err)
+			}
+			results = mergeSearchResults(results, overlayResults, ws.OverlayPathTouched, args.Limit)
+		}
+	}
+
+	// Mounted content is readable through the normal workspace file tools, so
+	// it is searchable too: the mounts tree's results win at and under mount
+	// points, mirroring resolveReadRootfs's shadowing.
+	if mounts, ok := ws.MountsDir(); ok {
+		mountResults, err := searchDirectoryTree(ctx, mounts, args)
+		if err != nil {
+			return nil, fmt.Errorf("search: mounts: %w", err)
+		}
+		results = mergeSearchResults(results, mountResults, ws.MountedPath, args.Limit)
 	}
 
 	emitSearchResults(ctx, results, args.FilesOnly)
@@ -1076,9 +1222,7 @@ func (s *workspaceSchema) searchHost(
 
 // overlaySearchResults searches the overlay's delta root — the accumulated
 // edits applied to an empty base, which holds the full after-state of every
-// touched path. The sparse delta lacks paths that only exist host-side, so
-// explicit search paths are applied as a post-filter instead of being passed
-// to ripgrep (which errors on missing path operands).
+// touched path.
 func (s *workspaceSchema) overlaySearchResults(
 	ctx context.Context,
 	ws *core.Workspace,
@@ -1088,11 +1232,28 @@ func (s *workspaceSchema) overlaySearchResults(
 	if !ok || delta.Self() == nil {
 		return nil, nil
 	}
-	opts := args.SearchOpts
-	opts.Limit = nil // the limit caps the merged results, not each side
-	results, err := delta.Self().Search(ctx, delta, opts, false, nil, args.Globs)
+	results, err := searchDirectoryTree(ctx, delta, args)
 	if err != nil {
 		return nil, fmt.Errorf("overlay: %w", err)
+	}
+	return results, nil
+}
+
+// searchDirectoryTree runs the search against a sparse in-engine tree (the
+// overlay's delta root or the mounts tree). The tree lacks paths that only
+// exist elsewhere in the workspace, so explicit search paths are applied as a
+// post-filter instead of being passed to ripgrep (which errors on missing
+// path operands).
+func searchDirectoryTree(
+	ctx context.Context,
+	tree dagql.ObjectResult[*core.Directory],
+	args workspaceSearchArgs,
+) ([]*core.SearchResult, error) {
+	opts := args.SearchOpts
+	opts.Limit = nil // the limit caps the merged results, not each side
+	results, err := tree.Self().Search(ctx, tree, opts, false, nil, args.Globs)
+	if err != nil {
+		return nil, err
 	}
 	if len(args.Paths) == 0 {
 		return results, nil
@@ -1106,23 +1267,23 @@ func (s *workspaceSchema) overlaySearchResults(
 	return scoped, nil
 }
 
-// mergeOverlaySearchResults combines host and overlay search results with
-// per-file replacement: the overlay's view wins for every path its edits
-// touch, so modified files don't surface stale host lines and removed files
-// drop out entirely. The merged set is sorted for determinism and capped at
-// limit when set.
-func mergeOverlaySearchResults(
-	host, overlay []*core.SearchResult,
-	touched func(string) bool,
+// mergeSearchResults combines two sides of a workspace search with per-file
+// replacement: the second side's view wins for every path the predicate
+// claims (an overlay's touched paths, a mount's shadowed paths), so replaced
+// files don't surface stale lines and removed files drop out entirely. The
+// merged set is sorted for determinism and capped at limit when set.
+func mergeSearchResults(
+	base, winning []*core.SearchResult,
+	claimed func(string) bool,
 	limit *int,
 ) []*core.SearchResult {
-	merged := make([]*core.SearchResult, 0, len(host)+len(overlay))
-	for _, r := range host {
-		if !touched(r.FilePath) {
+	merged := make([]*core.SearchResult, 0, len(base)+len(winning))
+	for _, r := range base {
+		if !claimed(r.FilePath) {
 			merged = append(merged, r)
 		}
 	}
-	merged = append(merged, overlay...)
+	merged = append(merged, winning...)
 	sort.SliceStable(merged, func(i, j int) bool {
 		if merged[i].FilePath != merged[j].FilePath {
 			return merged[i].FilePath < merged[j].FilePath
@@ -1178,6 +1339,7 @@ func (s *workspaceSchema) glob(
 ) (dagql.Array[dagql.String], error) {
 	ws := parent.Self()
 
+	var matches []string
 	if ws.HostPath() != "" {
 		hostCtx, err := s.withWorkspaceClientContext(ctx, ws)
 		if err != nil {
@@ -1191,7 +1353,7 @@ func (s *workspaceSchema) glob(
 		if err != nil {
 			return nil, fmt.Errorf("buildkit: %w", err)
 		}
-		matches, err := bk.GlobCallerHostPath(hostCtx, ws.HostPath(), args.Pattern)
+		matches, err = bk.GlobCallerHostPath(hostCtx, ws.HostPath(), args.Pattern)
 		if err != nil {
 			return nil, fmt.Errorf("glob: %w", err)
 		}
@@ -1200,29 +1362,31 @@ func (s *workspaceSchema) glob(
 			if err != nil {
 				return nil, fmt.Errorf("glob: %w", err)
 			}
-			matches = mergeOverlayGlobMatches(matches, overlayMatches, ws.OverlayPathTouched)
+			matches = mergeGlobMatches(matches, overlayMatches, ws.OverlayPathTouched)
 		}
-		return dagql.NewStringArray(matches...), nil
+	} else {
+		rootfs, err := workspaceRootfs(ws)
+		if err != nil {
+			return nil, err
+		}
+		matches, err = globDirectoryTree(ctx, rootfs, args.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("glob: %w", err)
+		}
 	}
 
-	rootfs, err := workspaceRootfs(ws)
-	if err != nil {
-		return nil, err
+	// Mounted content is readable through the normal workspace file tools, so
+	// it is globbable too: the mounts tree's matches win at and under mount
+	// points, mirroring resolveReadRootfs's shadowing.
+	if mounts, ok := ws.MountsDir(); ok {
+		mountMatches, err := globDirectoryTree(ctx, mounts, args.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("glob: mounts: %w", err)
+		}
+		matches = mergeGlobMatches(matches, mountMatches, ws.MountedPath)
 	}
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var matches dagql.Array[dagql.String]
-	if err := srv.Select(ctx, rootfs, &matches, dagql.Selector{
-		Field: "glob",
-		Args: []dagql.NamedInput{
-			{Name: "pattern", Value: dagql.NewString(args.Pattern)},
-		},
-	}); err != nil {
-		return nil, fmt.Errorf("glob: %w", err)
-	}
-	return matches, nil
+
+	return dagql.NewStringArray(matches...), nil
 }
 
 // overlayGlobMatches runs the glob against the overlay's delta root — the
@@ -1237,18 +1401,32 @@ func (s *workspaceSchema) overlayGlobMatches(
 	if !ok || delta.Self() == nil {
 		return nil, nil
 	}
+	matches, err := globDirectoryTree(ctx, delta, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("overlay: %w", err)
+	}
+	return matches, nil
+}
+
+// globDirectoryTree runs a glob against an in-engine directory tree (the
+// workspace rootfs, the overlay's delta root, or the mounts tree).
+func globDirectoryTree(
+	ctx context.Context,
+	tree dagql.ObjectResult[*core.Directory],
+	pattern string,
+) ([]string, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var matches dagql.Array[dagql.String]
-	if err := srv.Select(ctx, delta, &matches, dagql.Selector{
+	if err := srv.Select(ctx, tree, &matches, dagql.Selector{
 		Field: "glob",
 		Args: []dagql.NamedInput{
 			{Name: "pattern", Value: dagql.NewString(pattern)},
 		},
 	}); err != nil {
-		return nil, fmt.Errorf("overlay: %w", err)
+		return nil, err
 	}
 	out := make([]string, len(matches))
 	for i, m := range matches {
@@ -1257,14 +1435,15 @@ func (s *workspaceSchema) overlayGlobMatches(
 	return out, nil
 }
 
-// mergeOverlayGlobMatches combines host and overlay glob matches with
-// per-path replacement: the overlay's view wins for every path its edits
-// touch, so removed paths drop out and added ones come from the delta.
-// Parent directories of touched files exist in both trees and dedup to the
-// host's entry. The merged set is sorted for determinism.
-func mergeOverlayGlobMatches(host, overlay []string, touched func(string) bool) []string {
-	seen := make(map[string]bool, len(host)+len(overlay))
-	merged := make([]string, 0, len(host)+len(overlay))
+// mergeGlobMatches combines two sides of a workspace glob with per-path
+// replacement: the second side's view wins for every path the predicate
+// claims (an overlay's touched paths, a mount's shadowed paths), so removed
+// paths drop out and added ones come from the winning tree. Parent
+// directories that exist in both trees dedup to the base's entry. The merged
+// set is sorted for determinism.
+func mergeGlobMatches(base, winning []string, claimed func(string) bool) []string {
+	seen := make(map[string]bool, len(base)+len(winning))
+	merged := make([]string, 0, len(base)+len(winning))
 	add := func(m string) {
 		key := path.Clean(filepath.ToSlash(m))
 		if !seen[key] {
@@ -1272,13 +1451,13 @@ func mergeOverlayGlobMatches(host, overlay []string, touched func(string) bool) 
 			merged = append(merged, m)
 		}
 	}
-	for _, m := range host {
-		if touched(m) {
+	for _, m := range base {
+		if claimed(m) {
 			continue
 		}
 		add(m)
 	}
-	for _, m := range overlay {
+	for _, m := range winning {
 		add(m)
 	}
 	sort.Strings(merged)
@@ -1297,6 +1476,9 @@ func (s *workspaceSchema) withNewDirectory(
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
 	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -1334,6 +1516,9 @@ func (s *workspaceSchema) withoutFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -1362,6 +1547,9 @@ func (s *workspaceSchema) withoutDirectory(
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
 	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := guardMountedPath(parent.Self(), resolvedPath); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -1438,6 +1626,11 @@ func (s *workspaceSchema) applyChangeset(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	for _, p := range touched {
+		if err := guardMountedPath(parent.Self(), p); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
 	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
@@ -1471,6 +1664,89 @@ func (s *workspaceSchema) withWorkdir(
 	ws := parent.Self().Clone()
 	ws.Cwd = cwd
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+type workspaceWithMountedDirectoryArgs struct {
+	Path   string
+	Source core.DirectoryID
+}
+
+func (s *workspaceSchema) withMountedDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithMountedDirectoryArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return withMountedSource(ctx, parent, args.Path, args.Source, "withDirectory")
+}
+
+type workspaceWithMountedFileArgs struct {
+	Path   string
+	Source core.FileID
+}
+
+func (s *workspaceSchema) withMountedFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithMountedFileArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return withMountedSource(ctx, parent, args.Path, args.Source, "withFile")
+}
+
+// withMountedSource is the shared implementation of withMountedDirectory and
+// withMountedFile: it attaches the given source (a Directory or File) into the
+// workspace's read-only mounts tree at the resolved workspace path via the
+// named Directory field ("withDirectory" or "withFile"), and records the mount
+// point.
+func withMountedSource[T dagql.Typed](
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	path string,
+	source dagql.ID[T],
+	field string,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPath, err := resolveWorkspacePath(path, parent.Self().Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if resolvedPath == "." {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("cannot mount over the workspace root")
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	sourceID, err := source.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	mounts, ok := parent.Self().MountsDir()
+	if !ok {
+		if err := srv.Select(ctx, srv.Root(), &mounts, dagql.Selector{Field: "directory"}); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
+	var updated dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, mounts, &updated, dagql.Selector{
+		Field: field,
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(resolvedPath)},
+			{Name: "source", Value: dagql.NewID[T](sourceID)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	ws := parent.Self().WithMounted(updated, resolvedPath)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+// guardMountedPath rejects overlay edits that target a path at or under a
+// mount point, keeping mounted content read-only. It is a no-op when the
+// workspace has no mounts.
+func guardMountedPath(ws *core.Workspace, resolvedPath string) error {
+	if ws.MountedPath(resolvedPath) {
+		return fmt.Errorf("workspace path %q is a read-only mount and cannot be modified", resolvedPath)
+	}
+	return nil
 }
 
 func (s *workspaceSchema) changes(
@@ -2196,14 +2472,39 @@ func (s *workspaceSchema) findUp(
 		statFS = &core.DirectoryStatFS{Dir: rootfs}
 	}
 
+	// Mounted content is visible to findUp like any other workspace read: the
+	// mounts tree (which also materializes mount points' parents) is consulted
+	// first, and at or under a mount point it fully shadows the source.
+	var mountsFS core.StatFS
+	if mounts, ok := ws.MountsDir(); ok {
+		mountsFS = &core.DirectoryStatFS{Dir: mounts}
+	}
+	candidateExists := func(candidate string) (bool, error) {
+		if mountsFS != nil {
+			_, exists, err := core.StatFSExists(ctx, mountsFS, candidate)
+			if err != nil {
+				return false, err
+			}
+			if exists {
+				return true, nil
+			}
+			if ws.MountedPath(candidate) {
+				// The mount shadows whatever the source holds here.
+				return false, nil
+			}
+		}
+		statPath, err := pathForStat(candidate)
+		if err != nil {
+			return false, err
+		}
+		_, exists, err := core.StatFSExists(ctx, statFS, statPath)
+		return exists, err
+	}
+
 	// Walk up from the resolved start path, stopping at the workspace boundary.
 	for {
 		candidate := path.Join(curDir, args.Name)
-		statPath, err := pathForStat(candidate)
-		if err != nil {
-			return none, err
-		}
-		_, exists, err := core.StatFSExists(ctx, statFS, statPath)
+		exists, err := candidateExists(candidate)
 		if err != nil {
 			return none, fmt.Errorf("stat %s: %w", candidate, err)
 		}

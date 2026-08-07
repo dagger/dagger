@@ -10427,6 +10427,7 @@ export class LLM extends BaseClient {
   private readonly _model?: string = undefined
   private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
+  private readonly _reasoningEffort?: string = undefined
   private readonly _replay?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
@@ -10445,6 +10446,7 @@ export class LLM extends BaseClient {
     _model?: string,
     _portableID?: ID,
     _provider?: string,
+    _reasoningEffort?: string,
     _replay?: ID,
     _sync?: ID,
     _tools?: string,
@@ -10460,6 +10462,7 @@ export class LLM extends BaseClient {
     this._model = _model
     this._portableID = _portableID
     this._provider = _provider
+    this._reasoningEffort = _reasoningEffort
     this._replay = _replay
     this._sync = _sync
     this._tools = _tools
@@ -10623,6 +10626,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.
+   */
+  reasoningEffort = async (): Promise<string> => {
+    if (this._reasoningEffort) {
+      return this._reasoningEffort
+    }
+
+    const ctx = this._ctx.select("reasoningEffort")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
    */
   replay = async (): Promise<LLM> => {
@@ -10743,6 +10761,15 @@ export class LLM extends BaseClient {
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Change the reasoning effort for the rest of the conversation, overriding any configured default. The message history is preserved; the new effort takes effect on the next step.
+   * @param effort The reasoning effort, e.g. "low", "medium", or "high"; "none" disables reasoning. Supported levels are model-specific — some models also accept e.g. "minimal", "xhigh", or "max".
+   */
+  withReasoningEffort = (effort: string): LLM => {
+    const ctx = this._ctx.select("withReasoningEffort", { effort })
     return new LLM(ctx)
   }
 
@@ -15237,6 +15264,30 @@ export class Workspace extends BaseClient {
    */
   withModule = (ref: string, opts?: WorkspaceWithModuleOpts): Workspace => {
     const ctx = this._ctx.select("withModule", { ref, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+   *
+   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * @param path Location of the mounted directory. Relative paths resolve from the workspace cwd.
+   * @param source Directory to mount.
+   */
+  withMountedDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withMountedDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a file mounted read-only at the given path, without mutating the source.
+   *
+   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * @param path Location of the mounted file. Relative paths resolve from the workspace cwd.
+   * @param source File to mount.
+   */
+  withMountedFile = (path: string, source: File): Workspace => {
+    const ctx = this._ctx.select("withMountedFile", { path, source })
     return new Workspace(ctx)
   }
 
