@@ -258,8 +258,11 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 		}
 
 		// Workspace arguments are always optional, regardless of how they're declared in code.
-		// They are automatically injected when not explicitly set.
-		if argSelf.IsWorkspace() {
+		// They are automatically injected when not explicitly set. The same holds for an LLM
+		// argument on a non-@agent function: it is auto-injected with the conversation that
+		// dispatched the tool call (an @agent's `base: LLM!` stays required — it is the
+		// composition entrypoint, always passed explicitly).
+		if argSelf.IsWorkspace() || (!fn.IsAgent && argSelf.IsLLM()) {
 			argTypeDef.Self().Optional = true
 		}
 
@@ -688,12 +691,31 @@ func (arg *FunctionArg) isContextual() bool {
 // IsWorkspace returns true if the argument is of type Workspace.
 // Workspace arguments are always optional and automatically injected when not set.
 func (arg *FunctionArg) IsWorkspace() bool {
+	return arg.isCoreObjectType("Workspace")
+}
+
+// IsLLM returns true if the argument is of type LLM. On a non-@agent function,
+// such an argument is optional and auto-injected with the conversation that
+// dispatched the call (see [LLMToContext]), making the function a continuation:
+// it can transform the conversation it was handed and return the result.
+//
+// @agent middlewares are excluded by their callers (see Function.FieldSpec and
+// ModuleFunction.setCallInputs): their `base: LLM!` is the composition
+// entrypoint, always passed explicitly, and must stay required.
+func (arg *FunctionArg) IsLLM() bool {
+	return arg.isCoreObjectType("LLM")
+}
+
+func (arg *FunctionArg) isCoreObjectType(name string) bool {
 	typeDef := arg.TypeDef.Self()
-	return typeDef.Kind == TypeDefKindObject &&
-		typeDef.AsObject.Value.Self().Name == "Workspace" &&
+	if typeDef == nil || typeDef.Kind != TypeDefKindObject || !typeDef.AsObject.Valid {
+		return false
+	}
+	obj := typeDef.AsObject.Value.Self()
+	return obj != nil && obj.Name == name &&
 		// Functions can't currently accept types from other modules, but be
 		// explicit anyway.
-		typeDef.AsObject.Value.Self().SourceModuleName == ""
+		obj.SourceModuleName == ""
 }
 
 func (arg FunctionArg) Directives() []*ast.Directive {
