@@ -39,6 +39,15 @@ type spanLookup struct {
 	// (RunningService.addOriginSpanContexts), so later snapshots carry edges
 	// the first row lacked.
 	causalChildren map[string][]string
+	// causalParents is causalChildren's reverse: linking span ID → linked
+	// (target) span IDs — dagui's causesViaLinks direction. It seeds the
+	// log-scope walk from the other end of a cause link: a service's exec
+	// span cause-links the API spans that installed the Service value, and
+	// the service's stdio log records are deliberately attributed to those
+	// install spans (core/service.go routes them there), so reading logs
+	// "beneath" the exec span must reach the install spans' rows too. Fed
+	// from every snapshot row, like causalChildren.
+	causalParents map[string][]string
 }
 
 func newSpanLookup() *spanLookup {
@@ -46,6 +55,7 @@ func newSpanLookup() *spanLookup {
 		firstRow:       make(map[spanLookupKey]int64),
 		children:       make(map[string][]string),
 		causalChildren: make(map[string][]string),
+		causalParents:  make(map[string][]string),
 	}
 }
 
@@ -76,6 +86,10 @@ func (l *spanLookup) addLocked(row Span, causalTargets []string) {
 		kids := l.causalChildren[target]
 		if !slices.Contains(kids, row.SpanID) {
 			l.causalChildren[target] = append(kids, row.SpanID)
+		}
+		parents := l.causalParents[row.SpanID]
+		if !slices.Contains(parents, target) {
+			l.causalParents[row.SpanID] = append(parents, target)
 		}
 	}
 	key := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
@@ -157,10 +171,12 @@ func (l *spanLookup) causalChildrenOf(spanID string) []string {
 }
 
 // hasDescendants reports whether root has anything nested beneath it, over
-// the same edges descendants walks (child edges and cause-purpose link
+// the downward edges logScope walks (child edges and cause-purpose link
 // edges). It only ever inspects root's own direct edges -- a span with any
 // child at all has a descendant -- so it is O(direct children) and never
-// materializes the subtree.
+// materializes the subtree. Note it deliberately ignores logScope's reverse
+// seeds: a service exec span's install spans sit beside it, not beneath it,
+// and don't make it "have descendants".
 func (l *spanLookup) hasDescendants(root string) bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -179,14 +195,35 @@ func (l *spanLookup) hasDescendants(root string) bool {
 	return false
 }
 
-// descendants returns every span reachable from root via child edges and
-// cause-purpose link edges — the same containment dagui renders, where a
-// cause-linking span (e.g. a service's exec span) appears as a child of the
-// span it links to (e.g. the Container.asService install span).
-func (l *spanLookup) descendants(root string) map[string]struct{} {
-	descendants := make(map[string]struct{})
-	seen := map[string]struct{}{root: {}}
-	queue := []string{root}
+// logScope returns every span whose log rows belong to a capture rooted at
+// root: root itself, the spans root cause-links to (its containing spans in
+// dagui's model — e.g. the install spans a service exec span links, which
+// carry the service's stdio records; see causalParents), and everything
+// reachable from those seeds via child edges and cause-purpose link edges —
+// the same containment dagui renders, where a cause-linking span (e.g. a
+// service's exec span) appears as a child of the span it links to (e.g. the
+// Container.asService install span). Seeding from both ends of the root's
+// cause links is what keeps a capture rooted at either handle — the exec
+// span or an install span — returning the same log lines.
+//
+// The reverse (linking→linked) edges are followed from the root ONLY: a span
+// merely reached during the walk (e.g. a lazy resume span beneath a tool
+// call, which cause-links the install spans of the value it resumes) must
+// not drag unrelated subtrees into the capture.
+func (l *spanLookup) logScope(root string) map[string]struct{} {
+	l.mu.RLock()
+	seeds := append([]string{root}, l.causalParents[root]...)
+	l.mu.RUnlock()
+
+	scope := make(map[string]struct{}, len(seeds))
+	queue := make([]string, 0, len(seeds))
+	for _, seed := range seeds {
+		if _, exists := scope[seed]; exists {
+			continue
+		}
+		scope[seed] = struct{}{}
+		queue = append(queue, seed)
+	}
 	for len(queue) > 0 {
 		parent := queue[0]
 		queue = queue[1:]
@@ -197,15 +234,14 @@ func (l *spanLookup) descendants(root string) map[string]struct{} {
 		l.mu.RUnlock()
 
 		for _, child := range children {
-			if _, exists := seen[child]; exists {
+			if _, exists := scope[child]; exists {
 				continue
 			}
-			seen[child] = struct{}{}
-			descendants[child] = struct{}{}
+			scope[child] = struct{}{}
 			queue = append(queue, child)
 		}
 	}
-	return descendants
+	return scope
 }
 
 // DB is one client's standalone append-only telemetry store.
@@ -344,13 +380,15 @@ func (s *DB) CausalChildren(spanID string) []string {
 	return s.lookup.causalChildrenOf(spanID)
 }
 
-// DescendantSpans returns the set of span IDs beneath the given span — the
-// same child-edge + cause-link walk SelectLogsBeneathSpan scopes its logs to,
-// so a caller can ask which spans a capture actually contains (the root
-// itself is not included). The returned map is a fresh snapshot the caller
-// owns; the set only ever grows as spans arrive.
-func (s *DB) DescendantSpans(spanID string) map[string]struct{} {
-	return s.lookup.descendants(spanID)
+// SpanLogScope returns the set of span IDs whose log rows belong to a capture
+// rooted at spanID — the same walk SelectLogsBeneathSpan scopes its logs to:
+// the span itself, the spans it cause-links to (e.g. the install spans a
+// service exec span links, which carry the service's stdio records), and
+// everything beneath either over child edges and cause-purpose link edges.
+// The returned map is a fresh snapshot the caller owns; the set only ever
+// grows as spans arrive.
+func (s *DB) SpanLogScope(spanID string) map[string]struct{} {
+	return s.lookup.logScope(spanID)
 }
 
 // HasDescendants reports whether any span is nested beneath spanID, following
@@ -363,15 +401,19 @@ func (s *DB) HasDescendants(spanID string) bool {
 	return s.lookup.hasDescendants(spanID)
 }
 
+// SelectLogsBeneathSpan returns the log rows of the capture rooted at
+// arg.SpanID — the rows attributed to any span in its log scope (the span
+// itself, its cause-link targets, and both sets' subtrees; see SpanLogScope)
+// — in append order, starting after cursor arg.ID, up to arg.Limit rows. The
+// root's own rows are part of the capture: a span's directly-attributed
+// output (e.g. the service stdio records routed to an install span) is
+// exactly what a reader asking about that span wants.
 func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
 	limit := storeLimit(arg.Limit)
 	if limit == 0 || !arg.SpanID.Valid {
 		return nil, nil
 	}
-	descendants := s.lookup.descendants(arg.SpanID.String)
-	if len(descendants) == 0 {
-		return nil, nil
-	}
+	scope := s.lookup.logScope(arg.SpanID.String)
 
 	const scanBatch = int(sparseIndexStride)
 	logs := make([]Log, 0, limit)
@@ -389,7 +431,7 @@ func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpa
 			if !row.SpanID.Valid {
 				continue
 			}
-			if _, found := descendants[row.SpanID.String]; !found {
+			if _, found := scope[row.SpanID.String]; !found {
 				continue
 			}
 			logs = append(logs, row)
