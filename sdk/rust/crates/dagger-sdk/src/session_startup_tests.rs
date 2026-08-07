@@ -1,5 +1,6 @@
 //! Protocol, ownership, redaction, and background-outcome properties.
 
+use std::error::Error;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command as StdCommand;
@@ -9,6 +10,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use proptest::prelude::*;
 
 use crate::ClientConfig;
+use crate::connection::EngineConnectionErrorKind;
+use crate::connector::{ConnectionRequest, Connector, DefaultConnector};
 use crate::diagnostic::{
     Diagnostic, DiagnosticDispatcher, DiagnosticFailureKind, DiagnosticRouter, DiagnosticSink,
     DiagnosticSinkError, DiagnosticStream, StreamKind,
@@ -17,11 +20,13 @@ use crate::discovery::LaunchExecutable;
 use crate::launch::{CliSessionStart, SelectedCli, TokioProcessSpawner, TokioRetryClock};
 use crate::preflight::{ConnectionPlan, PreflightContext, ProcessInputs, preflight_with};
 use crate::provisioning_control::ProvisioningCancellation;
+use crate::runtime_errors::{ShutdownError, ShutdownFailureKind};
 use crate::session_startup::{
     BackgroundFailureKind, ControlAccumulator, ControlErrorKind, SessionCloseReport,
     SessionLauncher, StreamOutcome, order_outcomes,
 };
 use crate::test_support::io_proptest_config;
+use crate::{RawRequest, ResponseData};
 
 #[derive(Clone, Copy)]
 enum SinkBehavior {
@@ -442,17 +447,20 @@ async fn rust_helper_exercises_control_isolation_transfer_and_background_observa
         .expect("the helper emits a valid control record");
     assert_eq!(started.parameters().port().get(), 4321);
     let (_parameters, resources) = started.transfer();
-    let report = resources.close().await.expect("helper resources close");
-    assert!(
-        report.stream_outcomes().iter().any(|outcome| {
-            matches!(outcome.failure(), Some(BackgroundFailureKind::SinkPanicked))
-        })
-    );
-    assert_eq!(report.child_failure(), None);
-    assert!(
-        !String::from_utf8_lossy(report.diagnostics().stdout())
-            .contains("FIXTURE_TOKEN_0123456789")
-    );
+    let error = resources
+        .close()
+        .await
+        .expect_err("the sink panic remains observable at close");
+    assert_eq!(error.kind(), EngineConnectionErrorKind::Shutdown);
+    let shutdown = error
+        .source()
+        .and_then(|source| source.downcast_ref::<ShutdownError>())
+        .expect("shutdown source remains typed");
+    assert!(shutdown.failures().iter().any(|failure| matches!(
+        failure,
+        ShutdownFailureKind::Stdout | ShutdownFailureKind::Stderr
+    )));
+    assert!(!String::from_utf8_lossy(shutdown.stdout_tail()).contains("FIXTURE_TOKEN_0123456789"));
     let delivered = delivered
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -496,15 +504,112 @@ async fn rust_helper_unexpected_exit_remains_in_the_close_report() {
         .await
         .expect("the failing helper still emits valid session parameters");
     let (_, resources) = started.transfer();
-    let report = resources
+    let error = resources
         .close()
         .await
-        .expect("the failing helper is reaped");
-    assert_eq!(
-        report.child_failure(),
-        Some(BackgroundFailureKind::UnexpectedChildExit)
+        .expect_err("the failing helper is reaped and reported");
+    let shutdown = error
+        .source()
+        .and_then(|source| source.downcast_ref::<ShutdownError>())
+        .expect("shutdown source remains typed");
+    assert!(
+        shutdown
+            .failures()
+            .contains(&ShutdownFailureKind::UnexpectedExit)
     );
-    assert_eq!(report.stream_outcomes().len(), 2);
+}
+
+#[tokio::test]
+async fn rust_helper_hung_stdin_is_killed_and_reaped_under_the_shutdown_bound() {
+    for mode in ["hung-stdin", "ignore-termination"] {
+        let mut launcher = SessionLauncher::new(TokioProcessSpawner, TokioRetryClock);
+        let started = launcher
+            .launch(fixture_start(mode, None), &ProvisioningCancellation::new())
+            .await
+            .expect("the hung helper emits valid parameters");
+        let (_, mut resources) = started.transfer();
+        let error = resources
+            .close_with_timeout(std::time::Duration::from_millis(20))
+            .await
+            .expect_err("the injected bound forces termination");
+        let shutdown = error
+            .source()
+            .and_then(|source| source.downcast_ref::<ShutdownError>())
+            .expect("shutdown source remains typed");
+        assert!(shutdown.failures().contains(&ShutdownFailureKind::Timeout));
+    }
+}
+
+#[tokio::test]
+async fn rust_helper_already_exited_and_delayed_workers_converge_cleanly() {
+    for mode in ["already-exited", "delayed-worker"] {
+        let mut launcher = SessionLauncher::new(TokioProcessSpawner, TokioRetryClock);
+        let started = launcher
+            .launch(fixture_start(mode, None), &ProvisioningCancellation::new())
+            .await
+            .expect("portable helper emits valid parameters");
+        let (_, resources) = started.transfer();
+        resources
+            .close()
+            .await
+            .expect("clean child exit and delayed drain both converge");
+    }
+}
+
+#[tokio::test]
+async fn rust_helper_pipe_failure_is_reaped_and_reported() {
+    let mut launcher = SessionLauncher::new(TokioProcessSpawner, TokioRetryClock);
+    let started = launcher
+        .launch(
+            fixture_start("pipe-failure", None),
+            &ProvisioningCancellation::new(),
+        )
+        .await
+        .expect("the helper emits its control record before failing");
+    let (_, resources) = started.transfer();
+    let error = resources
+        .close()
+        .await
+        .expect_err("the child failure is observable");
+    let shutdown = error
+        .source()
+        .and_then(|source| source.downcast_ref::<ShutdownError>())
+        .expect("shutdown source remains typed");
+    assert!(
+        shutdown
+            .failures()
+            .contains(&ShutdownFailureKind::UnexpectedExit)
+    );
+}
+
+#[tokio::test]
+async fn default_connector_launches_validates_queries_and_shuts_down_the_rust_fixture() {
+    let config = ClientConfig::builder()
+        .environment("DAGGER_TEST_SESSION_FIXTURE_MODE", "engine")
+        .environment("DAGGER_TEST_SECRET", "FIXTURE_TOKEN_0123456789")
+        .build()
+        .expect("fixture config is valid");
+    let plan = preflight_with(
+        config,
+        &FixtureContext(ProcessInputs::explicit_cli(
+            session_helper().into_os_string(),
+        )),
+    )
+    .expect("fixture source planning succeeds");
+    let request = match ConnectionRequest::try_from(plan) {
+        Ok(request) => request,
+        Err(_) => panic!("fixture planning must remain implicit"),
+    };
+    let connection = DefaultConnector
+        .connect(request)
+        .await
+        .expect("default connector validates the exact fixture target");
+    let response = connection
+        .execute(RawRequest::new("query { version }"))
+        .await
+        .expect("query executes through the owned connection");
+    assert!(matches!(response.data(), ResponseData::Value(_)));
+    connection.close().await.expect("owned fixture shuts down");
 }
 
 #[test]

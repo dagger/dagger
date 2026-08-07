@@ -115,11 +115,17 @@ async fn default_connect_child() {
     let failure = match dagger_sdk::connect().await {
         Ok(client) => {
             client.close().await.expect("unexpected client closes");
-            panic!("CLI provisioning remains an explicitly tracked connector gap");
+            return;
         }
         Err(failure) => failure,
     };
-    assert!(matches!(failure, dagger_sdk::ConnectError::Connection(_)));
+    assert!(matches!(
+        failure,
+        dagger_sdk::ConnectError::Provisioning(_)
+            | dagger_sdk::ConnectError::SessionStartup(_)
+            | dagger_sdk::ConnectError::Connection(_)
+            | dagger_sdk::ConnectError::Compatibility(_)
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

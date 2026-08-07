@@ -461,9 +461,12 @@ proptest! {
             environment_value(environment, "_EXPERIMENTAL_DAGGER_RUNNER_TOKEN").and_then(OsStr::to_str),
             expected_token,
         );
+        let expected_tracestate = traceparent
+            .as_ref()
+            .map(|_| tracestate.as_deref().unwrap_or(""));
         for (key, expected) in [
             ("TRACEPARENT", traceparent.as_deref()),
-            ("TRACESTATE", tracestate.as_deref()),
+            ("TRACESTATE", expected_tracestate),
             ("BAGGAGE", baggage.as_deref()),
         ] {
             prop_assert_eq!(environment_value(environment, key).and_then(OsStr::to_str), expected);

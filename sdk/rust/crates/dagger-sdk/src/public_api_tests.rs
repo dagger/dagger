@@ -55,6 +55,10 @@ fn production_source_is_panic_free() -> bool {
         include_str!("provisioning_error.rs"),
         include_str!("launch.rs"),
         include_str!("session_startup.rs"),
+        include_str!("propagation.rs"),
+        include_str!("transport.rs"),
+        include_str!("compatibility.rs"),
+        include_str!("runtime_errors.rs"),
     ]
     .into_iter()
     .all(|source| {
@@ -171,7 +175,7 @@ proptest! {
     // Feature: rust-sdk-client-lifecycle, Property 23: the stable surface is documented and intentionally exported
     #[test]
     fn stable_surface_is_documented_and_intentionally_exported(
-        index in 0_usize..37,
+        index in 0_usize..47,
         mutate in any::<bool>(),
     ) {
         let manifest = manifest_lines(PUBLIC_API);

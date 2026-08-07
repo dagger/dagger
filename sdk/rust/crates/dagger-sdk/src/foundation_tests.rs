@@ -579,6 +579,12 @@ fn explicit_connection_rejects_every_cli_or_startup_option_but_allows_execution_
                 .connection(connection())
                 .http_connect_timeout(Duration::from_secs(10)),
         ),
+        (
+            ConfigOption::AllowUnverifiedCompatibility,
+            ClientConfig::builder()
+                .connection(connection())
+                .allow_unverified_compatibility(true),
+        ),
     ];
 
     for (option, builder) in candidates {

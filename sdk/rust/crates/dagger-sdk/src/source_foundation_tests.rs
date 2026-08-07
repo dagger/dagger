@@ -701,13 +701,16 @@ async fn connector_preserves_typed_terminal_errors_for_selected_process_sources(
 }
 
 #[tokio::test]
-async fn valid_existing_connection_close_and_abort_do_not_contact_the_engine() {
+async fn valid_existing_connection_close_and_abort_do_not_signal_the_engine() {
     let context = SnapshotContext {
         inputs: ProcessInputs::existing_session("1234", Some(OsString::from("secret"))),
         reads: Arc::new(AtomicUsize::new(0)),
     };
     let plan = preflight_with(
-        ClientConfig::builder().build().expect("valid config"),
+        ClientConfig::builder()
+            .allow_unverified_compatibility(true)
+            .build()
+            .expect("valid config"),
         &context,
     )
     .expect("valid existing-session selection succeeds");
@@ -717,7 +720,7 @@ async fn valid_existing_connection_close_and_abort_do_not_contact_the_engine() {
     let connection = DefaultConnector
         .connect(request)
         .await
-        .expect("valid existing-session values build a loopback transport");
+        .expect("the explicit unverified bypass accepts unavailable provenance");
 
     connection
         .close()

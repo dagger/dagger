@@ -16,6 +16,7 @@ use crate::errors::{
 };
 use crate::graphql::{RawRequest, RawResponse, ResponseData};
 use crate::lifecycle::SessionHandle;
+use crate::runtime_errors::ExecError;
 
 type LazyFuture = Pin<Box<dyn Future<Output = Result<String, QueryBuildError>> + Send>>;
 type LazyFunction = dyn Fn() -> LazyFuture + Send + Sync;
@@ -157,6 +158,9 @@ impl Selection {
         D: DeserializeOwned,
     {
         if !response.errors().is_empty() {
+            if let Some(error) = ExecError::from_response(&response) {
+                return Err(QueryError::Exec { error, response });
+            }
             return Err(QueryError::GraphQl { response });
         }
 
@@ -412,6 +416,45 @@ mod tests {
             panic!("expected complete GraphQL response");
         };
         assert_eq!(actual, response);
+    }
+
+    #[test]
+    fn valid_exec_errors_map_without_losing_the_raw_response() {
+        let extensions = serde_json::Map::from_iter([
+            ("_type".to_owned(), serde_json::json!("EXEC_ERROR")),
+            ("exitCode".to_owned(), serde_json::json!(127)),
+            ("cmd".to_owned(), serde_json::json!(["sh", "-c", "false"])),
+            ("stdout".to_owned(), serde_json::json!("captured-out")),
+            ("stderr".to_owned(), serde_json::json!("captured-err")),
+            ("future".to_owned(), serde_json::json!(true)),
+        ]);
+        let response = RawResponse::new(ResponseData::Value(serde_json::json!({
+            "container": null
+        })))
+        .with_errors(vec![
+            GraphQlError::new("process exited with code 127").with_extensions(extensions),
+        ]);
+        let error = query()
+            .select("container")
+            .decode::<String>(response.clone())
+            .expect_err("execution failure is authoritative");
+        let QueryError::Exec {
+            error,
+            response: actual,
+        } = error
+        else {
+            panic!("expected typed execution error");
+        };
+        assert_eq!(error.exit_code(), Some(127));
+        assert_eq!(
+            error.command(),
+            Some(&["sh".into(), "-c".into(), "false".into()][..])
+        );
+        assert_eq!(error.stdout(), Some("captured-out"));
+        assert_eq!(error.stderr(), Some("captured-err"));
+        assert_eq!(actual, response);
+        assert!(!error.to_string().contains("captured-out"));
+        assert!(!error.to_string().contains("captured-err"));
     }
 
     #[test]

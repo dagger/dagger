@@ -197,6 +197,19 @@ impl PropagationEnvironment {
             (BAGGAGE_KEY, self.baggage.as_deref()),
         ]
     }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        traceparent: Option<OsString>,
+        tracestate: Option<OsString>,
+        baggage: Option<OsString>,
+    ) -> Self {
+        Self {
+            traceparent,
+            tracestate,
+            baggage,
+        }
+    }
 }
 
 impl fmt::Debug for PropagationEnvironment {
@@ -250,6 +263,7 @@ struct ValidatedConfig {
     session_startup_timeout: Duration,
     http_connect_timeout: Duration,
     graphql_execution_timeout: Option<Duration>,
+    allow_unverified_compatibility: bool,
     explicit: ConfigExplicitness,
 }
 
@@ -267,6 +281,7 @@ impl ValidatedConfig {
             session_startup_timeout: parts.session_startup_timeout,
             http_connect_timeout: parts.http_connect_timeout,
             graphql_execution_timeout: parts.graphql_execution_timeout,
+            allow_unverified_compatibility: parts.allow_unverified_compatibility,
             explicit: parts.explicit,
         }
     }
@@ -287,7 +302,7 @@ impl ValidatedConfig {
                     port,
                     token: session_token,
                 },
-                request: self.into_existing_request(),
+                request: self.into_existing_request(propagation),
             });
         }
 
@@ -342,9 +357,14 @@ impl ValidatedConfig {
         }
     }
 
-    fn into_existing_request(self) -> ExistingConnectionRequest {
+    fn into_existing_request(
+        self,
+        propagation: PropagationEnvironment,
+    ) -> ExistingConnectionRequest {
         ExistingConnectionRequest {
             diagnostics: Arc::new(DiagnosticDispatcher::new(self.diagnostic_sink)),
+            propagation,
+            allow_unverified_compatibility: self.allow_unverified_compatibility,
             session_startup_timeout: self.session_startup_timeout,
             http_connect_timeout: self.http_connect_timeout,
             graphql_execution_timeout: self.graphql_execution_timeout,
@@ -390,6 +410,7 @@ impl ValidatedConfig {
             environment,
             ambient,
             diagnostics: Arc::new(DiagnosticDispatcher::new(self.diagnostic_sink)),
+            allow_unverified_compatibility: self.allow_unverified_compatibility,
             session_startup_timeout: self.session_startup_timeout,
             http_connect_timeout: self.http_connect_timeout,
             graphql_execution_timeout: self.graphql_execution_timeout,
@@ -427,6 +448,8 @@ pub(crate) enum CliSourcePlan {
 
 pub(crate) struct ExistingConnectionRequest {
     pub(crate) diagnostics: Arc<DiagnosticDispatcher>,
+    pub(crate) propagation: PropagationEnvironment,
+    pub(crate) allow_unverified_compatibility: bool,
     pub(crate) session_startup_timeout: Duration,
     pub(crate) http_connect_timeout: Duration,
     pub(crate) graphql_execution_timeout: Option<Duration>,
@@ -438,6 +461,7 @@ pub(crate) struct CliLaunchRequest {
     environment: Vec<(OsString, OsString)>,
     ambient: CliAmbientInputs,
     pub(crate) diagnostics: Arc<DiagnosticDispatcher>,
+    pub(crate) allow_unverified_compatibility: bool,
     pub(crate) session_startup_timeout: Duration,
     pub(crate) http_connect_timeout: Duration,
     pub(crate) graphql_execution_timeout: Option<Duration>,

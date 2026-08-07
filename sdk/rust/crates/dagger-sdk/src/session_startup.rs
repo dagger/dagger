@@ -25,10 +25,12 @@ use crate::launch::{
 };
 use crate::preflight::CliLaunchRequest;
 use crate::provisioning_control::ProvisioningCancellation;
+use crate::runtime_errors::{ShutdownError, ShutdownFailureKind};
 use crate::session::SecretString;
 
 const CONTROL_LINE_LIMIT: usize = 64 * 1024;
 const STREAM_BUFFER_SIZE: usize = 16 * 1024;
+const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Validated parameters emitted by the CLI session control record.
 #[derive(Clone)]
@@ -591,6 +593,10 @@ impl StartedSession {
     pub(crate) fn transfer(self) -> (SessionParameters, SessionResources) {
         (self.parameters, self.resources.transfer())
     }
+
+    pub(crate) async fn rollback(self) {
+        self.resources.cleanup().await;
+    }
 }
 
 /// Process resources after the one successful pending-to-session transfer.
@@ -604,6 +610,7 @@ pub(crate) struct SessionResources {
 }
 
 /// Deterministic terminal observation of child and background worker state.
+#[derive(Debug)]
 pub(crate) struct SessionCloseReport {
     stream_outcomes: Vec<StreamOutcome>,
     child_failure: Option<BackgroundFailureKind>,
@@ -639,12 +646,36 @@ impl SessionCloseReport {
 
 impl SessionResources {
     pub(crate) async fn close(mut self) -> Result<SessionCloseReport, EngineConnectionError> {
+        self.close_with_timeout(SHUTDOWN_TIMEOUT).await
+    }
+
+    pub(crate) async fn close_with_timeout(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<SessionCloseReport, EngineConnectionError> {
+        let mut failures = Vec::new();
         self.stdin.take();
         let child_failure = if let Some(mut child) = self.child.take() {
-            let status = child.wait().await.map_err(|error| {
-                EngineConnectionError::with_source(EngineConnectionErrorKind::Transport, error)
-            })?;
-            (!status.success()).then_some(BackgroundFailureKind::UnexpectedChildExit)
+            match tokio::time::timeout(timeout, child.wait()).await {
+                Ok(Ok(status)) => {
+                    if status.success() {
+                        None
+                    } else {
+                        failures.push(ShutdownFailureKind::UnexpectedExit);
+                        Some(BackgroundFailureKind::UnexpectedChildExit)
+                    }
+                }
+                Ok(Err(_)) => {
+                    failures.push(ShutdownFailureKind::Reap);
+                    force_kill_and_reap(&mut child, &mut failures).await;
+                    None
+                }
+                Err(_) => {
+                    failures.push(ShutdownFailureKind::Timeout);
+                    force_kill_and_reap(&mut child, &mut failures).await;
+                    None
+                }
+            }
         } else {
             None
         };
@@ -656,26 +687,63 @@ impl SessionResources {
         ] {
             if let Some(task) = task {
                 match task.await {
-                    Ok(outcome) => outcomes.push(outcome),
-                    Err(_) => outcomes.push(StreamOutcome {
-                        kind,
-                        bytes_seen: 0,
-                        failure: Some(BackgroundFailureKind::Join),
-                    }),
+                    Ok(outcome) => {
+                        if outcome.failure().is_some() {
+                            failures.push(stream_shutdown_failure(kind));
+                        }
+                        outcomes.push(outcome);
+                    }
+                    Err(_) => {
+                        failures.push(stream_shutdown_failure(kind));
+                        outcomes.push(StreamOutcome {
+                            kind,
+                            bytes_seen: 0,
+                            failure: Some(BackgroundFailureKind::Join),
+                        });
+                    }
                 }
             }
         }
         order_outcomes(&mut outcomes);
         self.executable.take();
-        Ok(SessionCloseReport {
+        let diagnostics = self.router.snapshot();
+        let report = SessionCloseReport {
             stream_outcomes: outcomes,
             child_failure,
-            diagnostics: self.router.snapshot(),
-        })
+            diagnostics: diagnostics.clone(),
+        };
+        if failures.is_empty() {
+            Ok(report)
+        } else {
+            Err(EngineConnectionError::with_source(
+                EngineConnectionErrorKind::Shutdown,
+                ShutdownError::with_diagnostics(
+                    failures,
+                    diagnostics.stdout().to_vec(),
+                    diagnostics.stderr().to_vec(),
+                ),
+            ))
+        }
     }
 
     pub(crate) fn diagnostics(&self) -> DiagnosticSnapshot {
         self.router.snapshot()
+    }
+}
+
+async fn force_kill_and_reap(child: &mut Child, failures: &mut Vec<ShutdownFailureKind>) {
+    if child.start_kill().is_err() {
+        failures.push(ShutdownFailureKind::Kill);
+    }
+    if child.wait().await.is_err() {
+        failures.push(ShutdownFailureKind::Reap);
+    }
+}
+
+const fn stream_shutdown_failure(kind: StreamKind) -> ShutdownFailureKind {
+    match kind {
+        StreamKind::Stdout => ShutdownFailureKind::Stdout,
+        StreamKind::Stderr => ShutdownFailureKind::Stderr,
     }
 }
 

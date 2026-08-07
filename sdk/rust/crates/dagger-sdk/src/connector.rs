@@ -4,25 +4,38 @@
 //! connector future under the session-startup deadline; any process resources created
 //! by a connector remain armed until a complete connection is ready for transfer.
 
+#[cfg(test)]
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+#[cfg(test)]
 use tokio::process::{Child, ChildStdin, Command};
+#[cfg(test)]
 use tokio::task::JoinHandle;
 
+use crate::compatibility::CompatibilityValidator;
 use crate::connection::{EngineConnection, EngineConnectionError, EngineConnectionErrorKind};
 use crate::discovery::{LaunchExecutable, NativeDiscoveryInputs, resolve_explicit_cli};
 use crate::errors::{ConnectError, RequestError};
 use crate::graphql::{RawRequest, RawResponse};
+use crate::launch::{
+    CliSelectionError, CliSessionStart, NativeCompatibilityResolver, SelectedCli,
+    TokioProcessSpawner, TokioRetryClock, select_compiled_cli,
+};
 use crate::preflight::{
     CliLaunchRequest, CliSourcePlan, ConnectionPlan, ExistingConnectionRequest,
 };
-use crate::session::{
-    ExistingSessionInput, ExistingSessionResource, SecretString, validate_existing_session,
+use crate::provision::{DefaultCliProvisioner, ReqwestProvisioningHttp};
+use crate::provisioning_control::ProvisioningCancellation;
+use crate::runtime_errors::{
+    ProvisioningError, ProvisioningErrorKind, SessionStartupError, SessionStartupErrorKind,
 };
+use crate::session::{ExistingSessionInput, validate_existing_session};
+use crate::session_startup::{SessionLauncher, SessionResources, SessionStartError};
 use crate::target::ArchiveDescriptor;
+use crate::transport::{LoopbackTransportFactory, ReqwestLoopbackFactory};
 
 pub(crate) enum ConnectionRequest {
     Existing {
@@ -82,23 +95,157 @@ impl Connector for DefaultConnector {
     ) -> Result<Box<dyn EngineConnection>, ConnectError> {
         match request {
             ConnectionRequest::Existing { input, request } => {
-                ExistingSessionConnection::connect(input, request.http_connect_timeout)
-                    .map(|connection| Box::new(connection) as Box<dyn EngineConnection>)
+                let session = validate_existing_session(input)?;
+                let connection = ReqwestLoopbackFactory
+                    .loopback(
+                        session.port(),
+                        session.token().clone(),
+                        request.http_connect_timeout,
+                        request.propagation,
+                        Some(session.resource()),
+                    )
+                    .map_err(ConnectError::Connection)?;
+                let validator = CompatibilityValidator::exact()?;
+                validator
+                    .validate(&connection, request.allow_unverified_compatibility)
+                    .await
+                    .map_err(ConnectError::Compatibility)?;
+                Ok(Box::new(connection))
             }
-            ConnectionRequest::NewCli { source, request } => {
-                let _prepared = PreparedCliSource::from_plan(source)?;
-                // CLI discovery, download, and launch belong to the concrete connector
-                // milestone. Constructing the guard here keeps the ownership boundary
-                // in place without silently routing the stable facade through the beta
-                // callback implementation.
-                let pending = PendingConnection::new();
-                pending.cleanup().await;
-                let _ = request;
-                Err(ConnectError::Connection(EngineConnectionError::new(
-                    EngineConnectionErrorKind::Unavailable,
-                )))
-            }
+            ConnectionRequest::NewCli { source, request } => connect_new_cli(source, request).await,
         }
+    }
+}
+
+async fn connect_new_cli(
+    source: Box<CliSourcePlan>,
+    request: CliLaunchRequest,
+) -> Result<Box<dyn EngineConnection>, ConnectError> {
+    let prepared = PreparedCliSource::from_plan(source)?;
+    let cancellation = ProvisioningCancellation::new();
+    let selected = match prepared {
+        PreparedCliSource::ExplicitLocal(executable) => SelectedCli::explicit(executable),
+        PreparedCliSource::CompiledRelease {
+            descriptor,
+            discovery,
+        } => {
+            let http = ReqwestProvisioningHttp::new()
+                .map_err(|error| ConnectError::Provisioning(ProvisioningError::from(error)))?;
+            let provisioner = DefaultCliProvisioner::native(http)
+                .map_err(|error| ConnectError::Provisioning(ProvisioningError::from(error)))?;
+            select_compiled_cli(
+                &provisioner,
+                &NativeCompatibilityResolver,
+                &descriptor,
+                &discovery,
+                &cancellation,
+            )
+            .await
+            .map_err(map_selection_error)?
+        }
+    };
+
+    let inherited = request.ambient().propagation().clone();
+    let connect_timeout = request.http_connect_timeout;
+    let allow_unverified = request.allow_unverified_compatibility;
+    let start = CliSessionStart::new(selected, request);
+    let mut launcher = SessionLauncher::new(TokioProcessSpawner, TokioRetryClock);
+    let started = launcher
+        .launch(start, &cancellation)
+        .await
+        .map_err(map_start_error)?;
+    let transport = match ReqwestLoopbackFactory.loopback(
+        started.parameters().port().get(),
+        started.parameters().token().clone(),
+        connect_timeout,
+        inherited,
+        None,
+    ) {
+        Ok(transport) => transport,
+        Err(error) => {
+            started.rollback().await;
+            return Err(ConnectError::Connection(error));
+        }
+    };
+    let validator = CompatibilityValidator::exact()?;
+    if let Err(error) = validator.validate(&transport, allow_unverified).await {
+        started.rollback().await;
+        return Err(ConnectError::Compatibility(error));
+    }
+    let (_, resources) = started.transfer();
+    Ok(Box::new(OwnedCliConnection::new(transport, resources)))
+}
+
+fn map_selection_error(error: CliSelectionError) -> ConnectError {
+    match error {
+        CliSelectionError::Provision(error) => {
+            ConnectError::Provisioning(ProvisioningError::from(error))
+        }
+        compound @ CliSelectionError::Compatibility { .. } => {
+            let status = compound
+                .release_cause()
+                .and_then(crate::provisioning_error::ProvisionError::status);
+            ConnectError::Provisioning(ProvisioningError::new(
+                ProvisioningErrorKind::CompatibilityFallback,
+                status,
+                Some(Arc::new(compound)),
+            ))
+        }
+    }
+}
+
+fn map_start_error(error: SessionStartError) -> ConnectError {
+    let kind = match &error {
+        SessionStartError::Spawn(_) => SessionStartupErrorKind::Spawn,
+        SessionStartError::Protocol { .. } => SessionStartupErrorKind::ControlProtocol,
+    };
+    ConnectError::SessionStartup(SessionStartupError::with_source(kind, error))
+}
+
+struct OwnedCliConnection<T> {
+    transport: T,
+    resources: Mutex<Option<SessionResources>>,
+}
+
+impl<T> OwnedCliConnection<T> {
+    fn new(transport: T, resources: SessionResources) -> Self {
+        Self {
+            transport,
+            resources: Mutex::new(Some(resources)),
+        }
+    }
+
+    fn take_resources(&self) -> Option<SessionResources> {
+        match self.resources.lock() {
+            Ok(mut resources) => resources.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        }
+    }
+}
+
+#[async_trait]
+impl<T> EngineConnection for OwnedCliConnection<T>
+where
+    T: EngineConnection,
+{
+    async fn execute(&self, request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
+        self.transport.execute(request).await
+    }
+
+    async fn close(&self) -> Result<(), EngineConnectionError> {
+        let transport = self.transport.close().await;
+        let resources = match self.take_resources() {
+            Some(resources) => resources.close().await.map(|_| ()),
+            None => Ok(()),
+        };
+        transport.and(resources)
+    }
+
+    fn abort(&self) {
+        // Dropping the single resource bundle starts termination before the transport
+        // backstop and never waits in the caller's destructor.
+        drop(self.take_resources());
+        self.transport.abort();
     }
 }
 
@@ -131,88 +278,8 @@ impl PreparedCliSource {
     }
 }
 
-struct ExistingSessionConnection {
-    client: reqwest::Client,
-    endpoint: String,
-    token: SecretString,
-    resource: ExistingSessionResource,
-}
-
-impl ExistingSessionConnection {
-    fn connect(
-        input: ExistingSessionInput,
-        http_connect_timeout: Duration,
-    ) -> Result<Self, ConnectError> {
-        let session = validate_existing_session(input)?;
-        let client = reqwest::Client::builder()
-            .connect_timeout(http_connect_timeout)
-            .build()
-            .map_err(|error| {
-                ConnectError::Connection(EngineConnectionError::with_source(
-                    EngineConnectionErrorKind::Transport,
-                    error,
-                ))
-            })?;
-
-        Ok(Self {
-            client,
-            endpoint: format!("http://127.0.0.1:{}/query", session.port()),
-            token: session.token().clone(),
-            resource: session.resource(),
-        })
-    }
-}
-
-#[async_trait]
-impl EngineConnection for ExistingSessionConnection {
-    async fn execute(&self, request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
-        let body = request.encode_wire().map_err(|error| {
-            EngineConnectionError::with_source(EngineConnectionErrorKind::Protocol, error)
-        })?;
-        let response = self
-            .client
-            .post(&self.endpoint)
-            .basic_auth(self.token.expose_for_authentication(), Some(""))
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body)
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|error| {
-                let kind = if error.is_connect() && error.is_timeout() {
-                    EngineConnectionErrorKind::ConnectTimeout
-                } else {
-                    EngineConnectionErrorKind::Transport
-                };
-                EngineConnectionError::with_source(kind, error)
-            })?;
-        let bytes = response.bytes().await.map_err(|error| {
-            EngineConnectionError::with_source(EngineConnectionErrorKind::Transport, error)
-        })?;
-        RawResponse::decode_wire(&bytes).map_err(|error| {
-            EngineConnectionError::with_source(EngineConnectionErrorKind::Protocol, error)
-        })
-    }
-
-    async fn close(&self) -> Result<(), EngineConnectionError> {
-        // An environment-selected session is externally owned. Dropping this SDK's
-        // transport state is sufficient; signalling the engine would violate the
-        // ownership boundary shared with sibling clients.
-        self.resource.close();
-        Ok(())
-    }
-
-    fn abort(&self) {
-        // The external engine is deliberately untouched for the same reason as close.
-        self.resource.abort();
-    }
-}
-
-/// Armed owner for process resources created before connection establishment finishes.
-// The concrete CLI connector consumes the remaining methods in its milestone. Keeping
-// them compiled now makes its cancellation contract reviewable alongside the owned
-// facade which already depends on the guard's cleanup behavior.
-#[cfg_attr(not(test), allow(dead_code))]
+/// Test guard for partially acquired process resources at cancellation boundaries.
+#[cfg(test)]
 pub(crate) struct PendingConnection {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
@@ -220,7 +287,7 @@ pub(crate) struct PendingConnection {
     armed: bool,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 impl PendingConnection {
     pub(crate) fn new() -> Self {
         Self {
@@ -272,6 +339,7 @@ impl PendingConnection {
     }
 }
 
+#[cfg(test)]
 impl Drop for PendingConnection {
     fn drop(&mut self) {
         if !self.armed {
@@ -306,14 +374,14 @@ impl Drop for PendingConnection {
 }
 
 /// Process resources transferred only after a complete connection is available.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) struct PendingResources {
     pub(crate) child: Option<Child>,
     pub(crate) stdin: Option<ChildStdin>,
     pub(crate) io_tasks: Vec<JoinHandle<()>>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 impl PendingResources {
     pub(crate) async fn close(mut self) -> Result<(), EngineConnectionError> {
         // Closing stdin is the portable graceful session signal used by the CLI. The
@@ -334,6 +402,7 @@ impl PendingResources {
     }
 }
 
+#[cfg(test)]
 impl Drop for PendingResources {
     fn drop(&mut self) {
         let mut child = self.child.take();
@@ -363,13 +432,13 @@ impl Drop for PendingResources {
 /// The concrete discovery and launch adapter creates this value only after session
 /// parameters and the HTTP transport are ready. It centralizes graceful close and
 /// emergency cleanup so generated handles never own process state separately.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) struct CliSessionConnection {
     transport: Arc<dyn EngineConnection>,
     resources: Mutex<Option<PendingResources>>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 impl CliSessionConnection {
     pub(crate) fn new(transport: Box<dyn EngineConnection>, resources: PendingResources) -> Self {
         Self {
@@ -387,6 +456,7 @@ impl CliSessionConnection {
 }
 
 #[async_trait]
+#[cfg(test)]
 impl EngineConnection for CliSessionConnection {
     async fn execute(&self, request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
         self.transport.execute(request).await

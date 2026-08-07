@@ -26,6 +26,7 @@
 
 #![warn(missing_docs)]
 
+mod compatibility;
 mod config;
 mod connection;
 mod connector;
@@ -46,12 +47,16 @@ mod lifecycle;
 #[allow(dead_code)]
 mod preflight;
 mod query;
+mod runtime_errors;
 mod session;
+mod transport;
 
 #[allow(dead_code)]
 mod archive;
 #[allow(dead_code)]
 mod launch;
+#[allow(dead_code)]
+mod propagation;
 #[allow(dead_code)]
 mod provision;
 #[allow(dead_code)]
@@ -73,6 +78,11 @@ pub use errors::{
 };
 pub use graphql::{
     GraphQlError, GraphQlLocation, GraphQlPathSegment, RawRequest, RawResponse, ResponseData,
+};
+pub use runtime_errors::{
+    CompatibilityError, CompatibilityErrorKind, CompatibilityEvidenceGap, ExecError,
+    ProvisioningError, ProvisioningErrorKind, SessionStartupError, SessionStartupErrorKind,
+    ShutdownError, ShutdownFailureKind,
 };
 
 /// Introspection wire types used by Dagger's Rust code-generation tools.
@@ -207,3 +217,6 @@ mod test_support;
 
 #[cfg(test)]
 mod transport_foundation_tests;
+
+#[cfg(test)]
+mod runtime_connector_tests;

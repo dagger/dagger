@@ -27,6 +27,10 @@ pub enum EngineConnectionErrorKind {
     Closed,
     /// SDK-owned HTTP connection establishment exceeded its configured bound.
     ConnectTimeout,
+    /// The loopback endpoint returned a non-success HTTP status.
+    HttpStatus,
+    /// SDK-owned process or background resources failed during shutdown.
+    Shutdown,
     /// A source-specific failure without a more precise stable category.
     Other,
 }
@@ -39,6 +43,8 @@ impl EngineConnectionErrorKind {
             Self::Unavailable => "the engine connection is unavailable",
             Self::Closed => "the engine connection is closed",
             Self::ConnectTimeout => "the engine HTTP connection timed out",
+            Self::HttpStatus => "the engine returned an unsuccessful HTTP status",
+            Self::Shutdown => "the owned engine session could not be shut down cleanly",
             Self::Other => "the engine connection failed",
         }
     }
@@ -48,13 +54,20 @@ impl EngineConnectionErrorKind {
 #[derive(Clone)]
 pub struct EngineConnectionError {
     kind: EngineConnectionErrorKind,
+    http_status: Option<u16>,
+    response: Option<RawResponse>,
     source: Option<Arc<dyn Error + Send + Sync + 'static>>,
 }
 
 impl EngineConnectionError {
     /// Creates a synthetic typed failure without an opaque cause.
     pub fn new(kind: EngineConnectionErrorKind) -> Self {
-        Self { kind, source: None }
+        Self {
+            kind,
+            http_status: None,
+            response: None,
+            source: None,
+        }
     }
 
     /// Creates a typed failure while retaining the implementation's original cause.
@@ -64,13 +77,38 @@ impl EngineConnectionError {
     {
         Self {
             kind,
+            http_status: None,
+            response: None,
             source: Some(Arc::new(source)),
+        }
+    }
+
+    /// Creates an HTTP-status failure while retaining a successfully decoded body.
+    ///
+    /// Ordinary formatting exposes only the status coordinate. Callers must opt in to
+    /// inspecting the complete response, which can contain engine-authored output.
+    pub fn with_http_response(status: u16, response: Option<RawResponse>) -> Self {
+        Self {
+            kind: EngineConnectionErrorKind::HttpStatus,
+            http_status: Some(status),
+            response,
+            source: None,
         }
     }
 
     /// Returns the stable connection failure category.
     pub const fn kind(&self) -> EngineConnectionErrorKind {
         self.kind
+    }
+
+    /// Returns the non-success HTTP status when the transport reached the engine.
+    pub const fn http_status(&self) -> Option<u16> {
+        self.http_status
+    }
+
+    /// Returns a decoded non-success response without including it in formatting.
+    pub const fn raw_response(&self) -> Option<&RawResponse> {
+        self.response.as_ref()
     }
 }
 
@@ -85,6 +123,8 @@ impl fmt::Debug for EngineConnectionError {
         formatter
             .debug_struct("EngineConnectionError")
             .field("kind", &self.kind)
+            .field("http_status", &self.http_status)
+            .field("response_present", &self.response.is_some())
             .finish_non_exhaustive()
     }
 }
