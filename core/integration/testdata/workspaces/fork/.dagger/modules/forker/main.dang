@@ -1,0 +1,30 @@
+type Forker {
+  """
+  Stage one file before forking and one through the fork; only the fork's
+  own edit should show up in its changes.
+  """
+  pub forkAdded(ws: Workspace!): [String!]! {
+    ws
+      .withNewFile("pre.txt", "pre")
+      .fork
+      .withNewFile("post.txt", "post")
+      .changes
+      .addedPaths
+  }
+
+  """
+  Remove a host file through a fork; the removal should show up even though
+  the file was never staged before.
+  """
+  pub forkRemoved(ws: Workspace!): [String!]! {
+    ws.fork.withoutFile("host.txt").changes.removedPaths
+  }
+
+  """
+  Overwrite a host file through a fork; it should report as modified, not
+  added, because its pre-fork content is the host's.
+  """
+  pub forkModified(ws: Workspace!): [String!]! {
+    ws.fork.withNewFile("host.txt", "changed").changes.modifiedPaths
+  }
+}
