@@ -610,6 +610,59 @@ type Editor {
     out + "\n" + toString(matches.length) + " matches in " + toString(fileCount) + " files"
   }
 
+  """
+  Fetch a URL and render it as text.
+
+  Runs a real textual browser (lynx) in a container rather than a raw HTTP
+  fetch, so HTML pages come back readable: layout flattened to plain text,
+  followed by a numbered reference list of the page's links for follow-up
+  fetches. Non-HTML content (plain text, JSON, ...) passes through as-is.
+
+  Output is paged by line, with a note telling you the offset to continue
+  from when the page is longer than the limit. Every call fetches the page
+  fresh — results are not cached.
+  """
+  webFetch(
+    """
+    The URL to fetch, e.g. https://example.com/docs
+    """
+    url: String!,
+    """
+    Line offset to start the rendered output from, for paging long pages
+    """
+    offset: Int! = 0,
+    """
+    Limit the number of lines returned
+    """
+    limit: Int! = 1000,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    let result = container
+      .from("alpine")
+      .withExec(["apk", "add", "--no-cache", "lynx"])
+      # bust the exec cache so every call observes the live page
+      .withEnvVariable("CACHE_BUST", Random.string)
+      .withExec(
+        ["lynx", "-dump", "-accept_all_cookies", "-width=120", url],
+        expect: ReturnType.ANY,
+      )
+    if (result.exitCode != 0) {
+      raise `failed to fetch ${url}: ${result.stderr.trimSpace}`
+    }
+
+    let lines = result.stdout.split("\n")
+    let page = lines.dropFirst(offset).takeFirst(limit)
+    if (page.isEmpty) {
+      `WARNING: nothing to show at line offset ${offset} — the rendered page is ${lines.length} lines long.`
+    } else {
+      let out = page.join("\n")
+      let shown = offset + page.length
+      if (shown < lines.length) {
+        out += "\n" + `... truncated (${lines.length - shown} more lines; continue with offset: ${shown})`
+      }
+      out
+    }
+  }
+
   # """
   # Run a bash command in a container.
   #
