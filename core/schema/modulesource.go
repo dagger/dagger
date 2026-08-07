@@ -81,6 +81,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceRootPath").Doc(
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
+				dagql.Arg("workspaceCwd").Internal(),
 			),
 		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
 			WithInput(dagql.PerClientInput).
@@ -89,6 +90,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceRootPath").Doc(
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
+				dagql.Arg("workspaceCwd").Internal(),
 			),
 	}.Install(dag)
 
@@ -927,6 +929,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
+	// WorkspaceCwd is set by Workspace.moduleSource so generate fields can
+	// re-root their changesets to the caller's cwd. Internal — not part of
+	// the public schema.
+	WorkspaceCwd string `default:""`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -978,6 +984,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		SourceRootSubpath: sourceRootSubpath,
 		ContextDirectory:  contextDir,
 		Kind:              core.ModuleSourceKindDir,
+		WorkspaceCwd:      args.WorkspaceCwd,
 		DirSrc: &core.DirModuleSource{
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
@@ -1100,6 +1107,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigToolchains = modCfg.Toolchains
 	src.ConfigClients = modCfg.Clients
 
+	// Keep the version as declared before resolving it: config edits write
+	// the declared form back, so a config that says "latest" stays floating.
+	src.ConfigEngineVersion = modCfg.EngineVersion
 	engineVersion := modCfg.EngineVersion
 	switch engineVersion {
 	case "":
@@ -1585,11 +1595,19 @@ func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	src = src.Clone()
 
 	engineVersion := args.Version
+	// Asking for "latest" keeps the config floating: the file says "latest"
+	// and resolves to the newest engine on every load. Asking for a concrete
+	// version pins the normalized form. Either way EngineVersion holds the
+	// resolved version, which is what drives behavior.
 	switch engineVersion {
 	case "":
 		engineVersion = engine.MinimumModuleVersion
+		src.ConfigEngineVersion = ""
 	case modules.EngineVersionLatest:
 		engineVersion = engine.Version
+		src.ConfigEngineVersion = modules.EngineVersionLatest
+	default:
+		src.ConfigEngineVersion = engine.NormalizeVersion(engineVersion)
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
@@ -2488,12 +2506,14 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		return nil, err
 	}
 
-	// Check version compatibility.
-	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
-		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
+	// Check version compatibility against the resolved version: the built
+	// config carries the version as declared — possibly the floating
+	// "latest" — while EngineVersion always holds what it resolved to.
+	if !engine.CheckVersionCompatibility(src.EngineVersion, engine.MinimumModuleVersion) {
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", src.EngineVersion)
 	}
-	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
-		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
+	if !engine.CheckMaxVersionCompatibility(src.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", src.EngineVersion, engine.Version)
 	}
 
 	return modCfg, nil
@@ -2509,11 +2529,15 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
 	// construct the module config based on any config read during load and any settings changed via with* APIs
+	engineVersion := src.ConfigEngineVersion
+	if engineVersion == "" {
+		engineVersion = src.EngineVersion
+	}
 	modCfg := &modules.ModuleConfigWithUserFields{
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
 		ModuleConfig: modules.ModuleConfig{
 			Name:          src.ModuleOriginalName,
-			EngineVersion: src.EngineVersion,
+			EngineVersion: engineVersion,
 			Include:       src.IncludePaths,
 			Codegen:       src.CodegenConfig,
 			Clients:       src.ConfigClients,
@@ -3012,6 +3036,9 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	// Decide the path contract up front, before any client-context swaps.
+	reRoot := callerPastChangesetCwdCutover(ctx)
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get dag server: %w", err)
@@ -3036,6 +3063,14 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 		},
 	); err != nil {
 		return res, fmt.Errorf("failed to compute changeset: %w", err)
+	}
+
+	// The changeset is measured from the workspace root, but clients apply a
+	// returned changeset at their own cwd. Callers past the cutover get it
+	// re-measured from the cwd the source was loaded under; older callers
+	// keep the root-measured form and translate themselves (the polyfill).
+	if reRoot {
+		return reRootChangesetToCwd(ctx, res, srcInst.Self().WorkspaceCwd, true)
 	}
 
 	return res, nil
@@ -3285,6 +3320,12 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 	}); err != nil {
 		return res, fmt.Errorf("compute staged dependency changeset: %w", err)
 	}
+
+	// Deliberately workspace-root-measured, unlike generatedContextChangeset:
+	// this changeset is intermediate staging data, consumed by
+	// Workspace.withChanges / __withGeneratedLocalDependencies, which overlay
+	// at the workspace root — it is never handed to a client to apply at its
+	// cwd.
 	return res, nil
 }
 

@@ -1,0 +1,3 @@
+[modules.forker]
+source = ".dagger/modules/forker"
+entrypoint = true

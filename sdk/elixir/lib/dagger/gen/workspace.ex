@@ -192,6 +192,25 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.
+
+  Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.
+
+  Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+  """
+  @spec find_config_dirs(t(), [String.t()], [{:exclude, [String.t()]}]) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def find_config_dirs(%__MODULE__{} = workspace, filenames, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("findConfigDirs")
+      |> QB.put_arg("filenames", filenames)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Search for a file or directory by walking up from the start path within the workspace.
 
   Returns the absolute workspace path if found, or null if not found.
@@ -210,6 +229,22 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("from", optional_args[:from])
 
     Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+
+  A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
+  """
+  @spec fork(t()) :: Dagger.Workspace.t()
+  def fork(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("fork")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
   end
 
   @doc """

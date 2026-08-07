@@ -15156,6 +15156,57 @@ class Workspace(Type):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
+    async def find_config_dirs(
+        self,
+        filenames: list[str],
+        *,
+        exclude: list[str] | None = None,
+    ) -> list[str]:
+        """Find the directories holding any of the given config filenames,
+        anchored at the workspace cwd rather than the workspace root — so a
+        module run from a subdirectory acts on the project it is in, and the
+        projects beneath it.
+
+        Two searches, both returning cwd-relative directory paths: every
+        directory at or below the cwd holding a config file (".", "sub/dir"),
+        and the nearest enclosing project when the cwd itself holds no config
+        ("..", "../.."), so a ".." prefix marks the one result outside the
+        cwd's cone.
+
+        Each returned path is usable as-is with other workspace APIs, e.g.
+        directory(path).
+
+        Parameters
+        ----------
+        filenames:
+            Config file basenames to match (e.g., ["deno.json", "deno.jsonc"]
+            or ["Dockerfile", "Containerfile"]).
+        exclude:
+            Glob patterns pruning the walk below the cwd (e.g.,
+            ["**/node_modules/**"]), since vendored trees are full of false
+            positives.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("filenames", filenames),
+            Arg("exclude", [] if exclude is None else exclude, []),
+        ]
+        _ctx = self._select("findConfigDirs", _args)
+        return await _ctx.execute(list[str])
+
     async def find_up(
         self,
         name: str,
@@ -15199,6 +15250,18 @@ class Workspace(Type):
         ]
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
+
+    def fork(self) -> Self:
+        """A copy of the workspace for staging edits in isolation: changes() on a
+        fork returns only the edits made through the fork, not everything
+        already staged on the workspace.
+
+        A fork's changes are measured from the workspace cwd, matching how a
+        returned changeset is applied; a change outside the cwd is an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("fork", _args)
+        return Workspace(_ctx)
 
     def generators(
         self,

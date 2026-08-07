@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"golang.org/x/mod/semver"
 )
 
 type workspaceSchema struct{}
@@ -115,6 +116,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.`),
+			),
+		dagql.NodeFunc("findConfigDirs", s.findConfigDirs).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc(`Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.`,
+				`Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.`,
+				`Each returned path is usable as-is with other workspace APIs, e.g. directory(path).`).
+			Args(
+				dagql.Arg("filenames").Doc(`Config file basenames to match (e.g., ["deno.json", "deno.jsonc"] or ["Dockerfile", "Containerfile"]).`),
+				dagql.Arg("exclude").Doc(`Glob patterns pruning the walk below the cwd (e.g., ["**/node_modules/**"]), since vendored trees are full of false positives.`),
 			),
 		dagql.NodeFunc("git", s.git).
 			View(AfterVersion("v1.0.0-0")).
@@ -272,6 +283,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("SDK name to look up."),
 			),
+		dagql.NodeFunc("fork", s.fork).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.`,
+				`A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.`),
 		dagql.NodeFunc("changes", s.changes).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace's pending overlay changes."),
@@ -1483,6 +1498,9 @@ func (s *workspaceSchema) changes(
 	if err != nil {
 		return inst, err
 	}
+	if forkBase := parent.Self().ForkBase(); forkBase != nil {
+		return s.forkChangesRelativeToCwd(ctx, parent, forkBase)
+	}
 	if changes, ok := parent.Self().OverlayChanges(); ok {
 		return changes, nil
 	}
@@ -1491,6 +1509,287 @@ func (s *workspaceSchema) changes(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, changes)
+}
+
+// fork marks a copy of the workspace as a staging area of its own: everything
+// reads and edits the same way, but changes() reports only the edits made
+// through the fork. It snapshots the current overlay state, and forkChanges
+// later diffs against that snapshot instead of the workspace base.
+func (s *workspaceSchema) fork(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	var inst dagql.ObjectResult[*core.Workspace]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ws := parent.Self()
+
+	forkBase := &core.WorkspaceForkBase{}
+	if ws.HostPath() != "" && ws.ClientLocalBase() {
+		// Host-backed: the empty-based delta root is all the fork-time state
+		// that is not just the host tree. Absent when nothing is staged yet.
+		if delta, ok := ws.OverlayDeltaRoot(); ok {
+			forkBase.Delta = delta
+			forkBase.TouchedPaths = ws.OverlayTouchedPaths()
+		}
+	} else {
+		// Value/git/rootless: snapshot the full tree with any staged edits
+		// applied.
+		rootfs, err := s.workspaceOverlayRootfs(ctx, ws)
+		if err != nil {
+			return inst, err
+		}
+		forkBase.Delta = rootfs
+	}
+
+	forked := ws.Clone()
+	forked.SetForkBase(forkBase)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, forked)
+}
+
+// forkChanges computes the edits made through a fork: the diff between the
+// overlay state now and the overlay state the fork snapshotted.
+func (s *workspaceSchema) forkChanges(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	forkBase *core.WorkspaceForkBase,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ws := parent.Self()
+
+	emptyDir := func() (dagql.ObjectResult[*core.Directory], error) {
+		var dir dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, srv.Root(), &dir, dagql.Selector{Field: "directory"})
+		return dir, err
+	}
+
+	var before, after dagql.ObjectResult[*core.Directory]
+	if ws.HostPath() != "" && ws.ClientLocalBase() {
+		after, _ = ws.OverlayDeltaRoot()
+		if after.Self() == nil {
+			if after, err = emptyDir(); err != nil {
+				return inst, err
+			}
+		}
+		before = forkBase.Delta
+		if before.Self() == nil {
+			if before, err = emptyDir(); err != nil {
+				return inst, err
+			}
+		}
+		// Paths already touched at fork time diff against the fork-time
+		// delta; paths first touched through the fork diff against their
+		// host content, fetched sparsely like the overlay itself does.
+		newTouched := subtractPaths(ws.OverlayTouchedPaths(), forkBase.TouchedPaths)
+		if len(newTouched) > 0 {
+			hostBase, err := s.sparseHostBase(ctx, ws, newTouched)
+			if err != nil {
+				return inst, err
+			}
+			hostBaseID, err := hostBase.ID()
+			if err != nil {
+				return inst, err
+			}
+			var merged dagql.ObjectResult[*core.Directory]
+			if err := srv.Select(ctx, before, &merged, dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString("/")},
+					{Name: "source", Value: dagql.NewID[*core.Directory](hostBaseID)},
+				},
+			}); err != nil {
+				return inst, err
+			}
+			before = merged
+		}
+	} else {
+		if after, err = s.workspaceOverlayRootfs(ctx, ws); err != nil {
+			return inst, err
+		}
+		before = forkBase.Delta
+		if before.Self() == nil {
+			if before, err = emptyDir(); err != nil {
+				return inst, err
+			}
+		}
+	}
+
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, after, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// changesetCwdCutover is the first module engine version whose changesets
+// come back from the engine measured from the workspace cwd instead of the
+// workspace root. Clients apply a returned changeset at their own cwd, so
+// cwd-measured is what lands files in the right place; modules built before
+// the cutover keep the root-measured form and do the translation themselves
+// (via the polyfill, #13769).
+//
+// NOTE: this must be the release that ships the polyfill-removal surface —
+// adjust here if that release ends up with a different number.
+const changesetCwdCutover = "v1.0.0-beta.10"
+
+// callerPastChangesetCwdCutover reports whether the calling module declares
+// an engine version at or past the cwd cutover. The schema view cannot carry
+// this decision — views are base-version granular, so v1.0.0-beta.7 and the
+// cutover both collapse to the v1.0.0 view — hence the exact declared
+// version decides. Callers that are not module code (the CLI, SDK clients,
+// tests) always get the new behavior.
+//
+// Call this at resolver entry: some resolvers swap in another client's
+// metadata mid-flight, which would change the answer.
+func callerPastChangesetCwdCutover(ctx context.Context) bool {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return true
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		return errors.Is(err, core.ErrNoCurrentModule)
+	}
+	return semver.Compare(mod.Self().Source.Value.Self().EngineVersion, changesetCwdCutover) >= 0
+}
+
+// reRootChangesetToCwd re-measures a workspace-root-measured changeset from
+// the workspace cwd, so a client applying it at its own cwd writes the right
+// files. A change outside the cwd cannot be expressed cwd-relative — e.g. a
+// module above the caller — and silently dropping it would leave that module
+// never regenerated, so it fails loudly instead.
+//
+// dropOutsideRemovals softens that for generated-context changesets: a
+// generated context is a reduced tree (the module and its deps), so diffing
+// it against the full workspace reports everything else as removed. Those
+// removals are artifacts of the reduction, not changes, and get dropped by
+// the subtree selection; removals under the cwd are real and survive. Fork
+// changesets keep the strict treatment — an outside removal staged through a
+// fork is user intent, not an artifact.
+func reRootChangesetToCwd(
+	ctx context.Context,
+	changeset dagql.ObjectResult[*core.Changeset],
+	cwd string,
+	dropOutsideRemovals bool,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	cwd = cleanWorkspaceRelPath(cwd)
+	if cwd == "" || cwd == "." {
+		return changeset, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	paths, err := changeset.Self().ComputePaths(ctx)
+	if err != nil {
+		return inst, err
+	}
+	checked := [][]string{paths.Added, paths.Modified}
+	if !dropOutsideRemovals {
+		checked = append(checked, paths.Removed)
+	}
+	var outside []string
+	for _, group := range checked {
+		for _, p := range group {
+			p = strings.TrimSuffix(p, "/")
+			if p != cwd && !strings.HasPrefix(p, cwd+"/") {
+				outside = append(outside, p)
+			}
+		}
+	}
+	if len(outside) > 0 {
+		return inst, fmt.Errorf("changes fall outside the current directory %q: %s", cwd, strings.Join(outside, ", "))
+	}
+	if len(paths.Added)+len(paths.Modified)+len(paths.Removed) == 0 {
+		return changeset, nil
+	}
+
+	// Selecting a subdirectory is metadata only, so this costs nothing. A
+	// side that holds nothing under the cwd (e.g. the before side of a pure
+	// addition, on a sparse fork delta) becomes an empty directory.
+	subdirOrEmpty := func(dir dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var exists bool
+		if err := srv.Select(ctx, dir, &exists, dagql.Selector{
+			Field: "exists",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(cwd)}},
+		}); err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, err
+		}
+		var sub dagql.ObjectResult[*core.Directory]
+		if !exists {
+			err := srv.Select(ctx, srv.Root(), &sub, dagql.Selector{Field: "directory"})
+			return sub, err
+		}
+		err := srv.Select(ctx, dir, &sub, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(cwd)}},
+		})
+		return sub, err
+	}
+	before, err := subdirOrEmpty(changeset.Self().Before)
+	if err != nil {
+		return inst, err
+	}
+	after, err := subdirOrEmpty(changeset.Self().After)
+	if err != nil {
+		return inst, err
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, after, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// forkChangesRelativeToCwd wraps forkChanges so the result is measured from
+// the workspace cwd. fork only exists past the cwd cutover, so unlike the
+// module-source generate fields there is no root-measured variant to keep.
+func (s *workspaceSchema) forkChangesRelativeToCwd(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	forkBase *core.WorkspaceForkBase,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	changes, err := s.forkChanges(ctx, parent, forkBase)
+	if err != nil {
+		return changes, err
+	}
+	return reRootChangesetToCwd(ctx, changes, parent.Self().Cwd, false)
+}
+
+// subtractPaths returns the paths of a that are not in b, preserving order.
+func subtractPaths(a, b []string) []string {
+	drop := make(map[string]struct{}, len(b))
+	for _, p := range b {
+		drop[p] = struct{}{}
+	}
+	var out []string
+	for _, p := range a {
+		if _, ok := drop[p]; !ok {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (s *workspaceSchema) export(
@@ -2225,6 +2524,155 @@ func (s *workspaceSchema) findUp(
 	}
 
 	return none, nil
+}
+
+type workspaceFindConfigDirsArgs struct {
+	Filenames []string
+	Exclude   []string `default:"[]"`
+}
+
+func (s *workspaceSchema) findConfigDirs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceFindConfigDirsArgs,
+) (dagql.Array[dagql.String], error) {
+	if len(args.Filenames) == 0 {
+		return nil, fmt.Errorf("workspace findConfigDirs requires at least one filename")
+	}
+	for _, name := range args.Filenames {
+		if !isWorkspaceBasename(name) {
+			return nil, fmt.Errorf("workspace findConfigDirs filename must be a basename: %q", name)
+		}
+	}
+
+	var dirs []string
+	seen := map[string]bool{}
+	add := func(dir string) {
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+
+	ancestor, err := s.nearestAncestorConfigDir(ctx, parent, args.Filenames)
+	if err != nil {
+		return nil, err
+	}
+	if ancestor != "" {
+		add(ancestor)
+	}
+
+	descendants, err := s.descendantConfigDirs(ctx, parent, args.Filenames, args.Exclude)
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range descendants {
+		add(dir)
+	}
+
+	return dagql.NewStringArray(dirs...), nil
+}
+
+// nearestAncestorConfigDir returns the closest strict ancestor of the cwd
+// holding one of filenames, as a ".."-relative path, or "" when there is none.
+// Every filename is searched and the deepest hit wins, so a farther-up project
+// never shadows a closer one written with a different filename. findUp counts
+// the cwd itself as a hit; that case is dropped here because the walk-down
+// already covers the cwd and below, leaving only strict ancestors.
+func (s *workspaceSchema) nearestAncestorConfigDir(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	filenames []string,
+) (string, error) {
+	bestDir := ""
+	bestDepth := -1
+	for _, name := range filenames {
+		hit, err := s.findUp(ctx, parent, workspaceFindUpArgs{Name: name, From: "."})
+		if err != nil {
+			return "", err
+		}
+		if !hit.Valid {
+			continue
+		}
+		// findUp returns a workspace-absolute path like "/sub/deno.json".
+		dir := strings.TrimPrefix(path.Dir(hit.Value.String()), "/")
+		if dir == "" {
+			dir = "."
+		}
+		if depth := workspaceDirDepth(dir); depth > bestDepth {
+			bestDepth = depth
+			bestDir = dir
+		}
+	}
+	if bestDepth < 0 {
+		return "", nil
+	}
+	cwd := cleanWorkspaceRelPath(parent.Self().Cwd)
+	if bestDir == cwd {
+		return "", nil
+	}
+	// Hits lie on the cwd's own ancestor chain, so the ancestor is a strict
+	// prefix of the cwd and the number of ".." segments is the depth difference.
+	segments := workspaceDirDepth(cwd) - bestDepth
+	return strings.TrimSuffix(strings.Repeat("../", segments), "/"), nil
+}
+
+// workspaceDirDepth returns the depth of a workspace-root-relative directory,
+// 0 at the root.
+func workspaceDirDepth(dir string) int {
+	if dir == "." {
+		return 0
+	}
+	return strings.Count(dir, "/") + 1
+}
+
+// descendantConfigDirs returns every directory at or below the cwd holding one
+// of filenames, as cwd-relative paths.
+func (s *workspaceSchema) descendantConfigDirs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	filenames []string,
+	exclude []string,
+) ([]string, error) {
+	ws := parent.Self()
+	include := make([]string, len(filenames))
+	for i, name := range filenames {
+		include[i] = "**/" + name
+	}
+	dir, err := s.directoryAt(ctx, ws, ws.Cwd, workspaceDirectoryArgs{
+		Path: ".",
+		CopyFilter: core.CopyFilter{
+			Include: include,
+			Exclude: exclude,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var dirs []string
+	for _, name := range filenames {
+		var matches dagql.Array[dagql.String]
+		if err := srv.Select(ctx, dir, &matches, dagql.Selector{
+			Field: "glob",
+			Args: []dagql.NamedInput{
+				{Name: "pattern", Value: dagql.NewString("**/" + name)},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("glob %s: %w", name, err)
+		}
+		for _, match := range matches {
+			dir := path.Dir(match.String())
+			if dir == "/" || dir == "" {
+				dir = "."
+			}
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs, nil
 }
 
 func isWorkspaceBasename(name string) bool {

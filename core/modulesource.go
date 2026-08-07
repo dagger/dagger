@@ -176,11 +176,23 @@ func (src *ModuleSource) SelfCallsEnabled() bool {
 }
 
 type ModuleSource struct {
-	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
-	ConfigFilename                string
-	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
-	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
-	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
+	ConfigExists       bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
+	ConfigFilename     string
+	ModuleName         string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
+	ModuleOriginalName string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
+	EngineVersion      string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
+	// ConfigEngineVersion is the engine version as declared in the module
+	// config — possibly the floating "latest". EngineVersion always holds
+	// the resolved version that drives behavior; this one is what config
+	// edits write back, so a config that says "latest" stays floating
+	// instead of getting silently pinned on the next edit.
+	ConfigEngineVersion string
+	// WorkspaceCwd is the workspace cwd this source was loaded under, set
+	// by Workspace.moduleSource ("." at the workspace root, "" when the
+	// source was not loaded through a workspace). Generate fields use it to
+	// re-root their changesets from the workspace root to the cwd for
+	// modules past the cwd cutover.
+	WorkspaceCwd                  string
 	CodegenConfig                 *modules.ModuleCodegenConfig
 	ModuleConfigUserFields        modules.ModuleConfigUserFields
 	DisableDefaultFunctionCaching bool
@@ -449,6 +461,8 @@ type persistedModuleSourcePayload struct {
 	ModuleName                      string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                   string                                `json:"engineVersion,omitempty"`
+	ConfigEngineVersion             string                                `json:"configEngineVersion,omitempty"`
+	WorkspaceCwd                    string                                `json:"workspaceCwd,omitempty"`
 	CodegenConfig                   *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
 	ModuleConfigUserFields          modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
 	DisableDefaultFunctionCaching   bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
@@ -771,6 +785,8 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		ModuleName:                    src.ModuleName,
 		ModuleOriginalName:            src.ModuleOriginalName,
 		EngineVersion:                 src.EngineVersion,
+		ConfigEngineVersion:           src.ConfigEngineVersion,
+		WorkspaceCwd:                  src.WorkspaceCwd,
 		CodegenConfig:                 src.CodegenConfig,
 		ModuleConfigUserFields:        src.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: src.DisableDefaultFunctionCaching,
@@ -919,6 +935,8 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		ModuleName:                    persisted.ModuleName,
 		ModuleOriginalName:            persisted.ModuleOriginalName,
 		EngineVersion:                 persisted.EngineVersion,
+		ConfigEngineVersion:           persisted.ConfigEngineVersion,
+		WorkspaceCwd:                  persisted.WorkspaceCwd,
 		CodegenConfig:                 persisted.CodegenConfig,
 		ModuleConfigUserFields:        persisted.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,

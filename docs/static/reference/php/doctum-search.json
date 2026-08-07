@@ -7318,9 +7318,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::findConfigDirs",
+			"p": "Dagger/Workspace.html#method_findConfigDirs",
+			"d": "<p>Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root \u2014 so a module run from a subdirectory acts on the project it is in, and the projects beneath it.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::findUp",
 			"p": "Dagger/Workspace.html#method_findUp",
 			"d": "<p>Search for a file or directory by walking up from the start path within the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::fork",
+			"p": "Dagger/Workspace.html#method_fork",
+			"d": "<p>A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.</p>"
 		},
 		{
 			"t": "M",

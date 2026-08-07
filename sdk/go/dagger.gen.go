@@ -16011,6 +16011,33 @@ func (r *Workspace) File(path string) *File {
 	}
 }
 
+// WorkspaceFindConfigDirsOpts contains options for Workspace.FindConfigDirs
+type WorkspaceFindConfigDirsOpts struct {
+	// Glob patterns pruning the walk below the cwd (e.g., ["**/node_modules/**"]), since vendored trees are full of false positives.
+	Exclude []string
+}
+
+// Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.
+//
+// Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.
+//
+// Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+func (r *Workspace) FindConfigDirs(ctx context.Context, filenames []string, opts ...WorkspaceFindConfigDirsOpts) ([]string, error) {
+	q := r.query.Select("findConfigDirs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+	q = q.Arg("filenames", filenames)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
 	// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
@@ -16043,6 +16070,17 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+//
+// A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
+func (r *Workspace) Fork() *Workspace {
+	q := r.query.Select("fork")
+
+	return &Workspace{
+		query: q,
+	}
 }
 
 // WorkspaceGeneratorsOpts contains options for Workspace.Generators

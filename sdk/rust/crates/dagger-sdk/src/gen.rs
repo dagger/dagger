@@ -14861,6 +14861,12 @@ pub struct WorkspaceDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceFindConfigDirsOpts<'a> {
+    /// Glob patterns pruning the walk below the cwd (e.g., ["**/node_modules/**"]), since vendored trees are full of false positives.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindUpOpts<'a> {
     /// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
     #[builder(setter(into, strip_option), default)]
@@ -15227,6 +15233,54 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.
+    /// Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.
+    /// Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+    ///
+    /// # Arguments
+    ///
+    /// * `filenames` - Config file basenames to match (e.g., ["deno.json", "deno.jsonc"] or ["Dockerfile", "Containerfile"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn find_config_dirs(
+        &self,
+        filenames: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("findConfigDirs");
+        query = query.arg(
+            "filenames",
+            filenames
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.
+    /// Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.
+    /// Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+    ///
+    /// # Arguments
+    ///
+    /// * `filenames` - Config file basenames to match (e.g., ["deno.json", "deno.jsonc"] or ["Dockerfile", "Containerfile"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn find_config_dirs_opts<'a>(
+        &self,
+        filenames: Vec<impl Into<String>>,
+        opts: WorkspaceFindConfigDirsOpts<'a>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("findConfigDirs");
+        query = query.arg(
+            "filenames",
+            filenames
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Search for a file or directory by walking up from the start path within the workspace.
     /// Returns the absolute workspace path if found, or null if not found.
     /// Relative start paths resolve from the workspace cwd.
@@ -15261,6 +15315,16 @@ impl Workspace {
             query = query.arg("from", from);
         }
         query.execute(self.graphql_client.clone()).await
+    }
+    /// A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+    /// A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
+    pub fn fork(&self) -> Workspace {
+        let query = self.selection.select("fork");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Return all generators from modules loaded in the workspace.
     ///
