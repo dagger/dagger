@@ -7,6 +7,8 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/distribution/reference"
@@ -330,15 +332,40 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 	if !ok || remoteURL == "" {
 		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest remote %v", entry.Inputs[0])
 	}
-	remote, err := loadRemoteGitMetadata(ctx, remoteURL)
+
+	// Resolve through the schema's git resolver rather than a bare
+	// RemoteGitRepository so the same access context that created the pin
+	// (credential helpers, SSH sockets, protocol fallback) applies here too.
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
-	ref, err := SelectLatestGitRef(remote)
+
+	// The update loop writes the refreshed value itself; disable lock
+	// resolution inside the sub-query so it neither reads the stale entry nor
+	// writes one of its own.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("client metadata: %w", err)
+	}
+	noLockMetadata := *clientMetadata
+	noLockMetadata.LockMode = string(workspace.LockModeDisabled)
+	ctx = engine.ContextWithClientMetadata(ctx, &noLockMetadata)
+
+	var latest dagql.ObjectResult[*GitRef]
+	if err := srv.Select(ctx, srv.Root(), &latest,
+		dagql.Selector{
+			Field: "git",
+			Args: []dagql.NamedInput{
+				{Name: "url", Value: dagql.String(remoteURL)},
+			},
+		},
+		dagql.Selector{Field: "latest"},
+	); err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("resolve latest git release for %q: %w", remoteURL, err)
 	}
-	pin, err := EncodeGitRefPin(ref)
+
+	pin, err := EncodeGitRefPin(latest.Self().Ref)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
