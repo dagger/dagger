@@ -29,6 +29,21 @@ func TestConsumeRecursiveReadOnlyOption(t *testing.T) {
 	require.Equal(t, []string{"rbind", "ro"}, got.Options)
 }
 
+func TestWithoutEnvVariables(t *testing.T) {
+	t.Parallel()
+
+	env := []string{
+		"KEEP=value",
+		DaggerSessionPortEnv + "=1234",
+		DaggerSessionTokenEnv + "=parent-secret",
+		DaggerNestingEnv + "=NESTED_CLIENT",
+		DaggerEngineNumCPUEnv + "=8",
+	}
+	got := withoutEnvVariables(env,
+		DaggerSessionPortEnv, DaggerSessionTokenEnv, DaggerNestingEnv, DaggerEngineNumCPUEnv)
+	require.Equal(t, []string{"KEEP=value"}, got)
+}
+
 func TestSetupNetworkUsesPoolForDefaultHostname(t *testing.T) {
 	provider := &recordingNetworkProvider{}
 	client := &Client{

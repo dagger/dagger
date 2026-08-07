@@ -215,10 +215,7 @@ func (sdk *goSDK) GenerateClient(
 						"codegen",
 					}, codegenArgs...),
 				},
-				{
-					Name:  "experimentalPrivilegedNesting",
-					Value: dagql.NewBoolean(true),
-				},
+				{Name: "daggerNesting", Value: dagql.Opt(core.DaggerNestingNestedClient)},
 			},
 		},
 	)
@@ -624,12 +621,9 @@ func (sdk *goSDK) baseWithCodegen(
 						"codegen",
 					}, codegenArgs...),
 				},
-				{
-					// The self-calls schema merge dials the engine from inside
-					// the codegen container.
-					Name:  "experimentalPrivilegedNesting",
-					Value: dagql.NewBoolean(true),
-				},
+				// The self-calls schema merge dials the engine from inside
+				// the codegen container.
+				{Name: "daggerNesting", Value: dagql.Opt(core.DaggerNestingNestedClient)},
 			},
 		},
 	)

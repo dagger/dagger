@@ -31,8 +31,16 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(BeforeVersion("v1.0.0-0")).
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Deprecated("Use daggerNesting: NESTED_CLIENT.").
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("daggerNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`Configure how the executed command may connect back to Dagger.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -74,8 +82,16 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 					`If empty, the container's default command is used.`),
 				dagql.Arg("useEntrypoint").Doc(
 					`If the container has an entrypoint, prepend it to the args.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(BeforeVersion("v1.0.0-0")).
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Deprecated("Use daggerNesting: NESTED_CLIENT.").
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("daggerNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`Configure how the executed command may connect back to Dagger.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 					running a command with "sudo" or executing "docker run" with the
@@ -259,6 +275,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		Args:                          expandedArgs,
 		UseEntrypoint:                 withExecArgs.UseEntrypoint,
 		ExperimentalPrivilegedNesting: withExecArgs.ExperimentalPrivilegedNesting,
+		DaggerNesting:                 withExecArgs.DaggerNesting,
 		InsecureRootCapabilities:      withExecArgs.InsecureRootCapabilities,
 		NoInit:                        withExecArgs.NoInit,
 	})
@@ -327,6 +344,12 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 		inputs = append(inputs, dagql.NamedInput{
 			Name:  "experimentalPrivilegedNesting",
 			Value: dagql.Boolean(true),
+		})
+	}
+	if args.DaggerNesting.Valid {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "daggerNesting",
+			Value: args.DaggerNesting,
 		})
 	}
 	if args.InsecureRootCapabilities {

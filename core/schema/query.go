@@ -74,6 +74,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	core.ReturnTypesEnum.Install(srv)
 	core.ModuleSourceExperimentalFeatures.Install(srv)
 	core.FunctionCachePolicyEnum.Install(srv)
+	core.DaggerNestings.Install(srv, AfterVersion("v1.0.0-0"))
 
 	dagql.MustInputSpec(PipelineLabel{}).Install(srv)
 	dagql.MustInputSpec(core.PortForward{}).Install(srv)

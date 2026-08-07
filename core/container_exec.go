@@ -68,6 +68,9 @@ type ContainerExecOpts struct {
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
 
+	// Configure how the executed command may connect back to Dagger
+	DaggerNesting dagql.Optional[DaggerNesting]
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
@@ -1186,6 +1189,9 @@ func (container *Container) WithExec(
 	moduleContext dagql.ObjectResult[*Module],
 	functionCall *FunctionCall,
 ) error {
+	if _, err := daggerNestingMode(opts.ExperimentalPrivilegedNesting, opts.DaggerNesting); err != nil {
+		return err
+	}
 	state := &ContainerExecState{
 		LazyState:     NewLazyState(),
 		Parent:        parent,
@@ -2130,8 +2136,12 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			defer stopServiceMonitors()
 		}
 
+		daggerNesting, err := daggerNestingMode(opts.ExperimentalPrivilegedNesting, opts.DaggerNesting)
+		if err != nil {
+			return err
+		}
 		var nestedClientMetadata *engine.ClientMetadata
-		if opts.ExperimentalPrivilegedNesting {
+		if opts.ExperimentalPrivilegedNesting || daggerNesting == engineutil.DaggerNestingNestedClient {
 			nestedClientMetadata = &engine.ClientMetadata{
 				ClientID:              identity.NewID(),
 				ClientVersion:         engine.Version,
@@ -2159,6 +2169,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				execMD,
 				clientMetadata.SessionID,
 				clientMetadata.ClientID,
+				daggerNesting,
 				nestedClientMetadata,
 				state.ModuleContext,
 				state.FunctionCall,

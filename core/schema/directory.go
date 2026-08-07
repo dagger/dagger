@@ -303,8 +303,16 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("container").Doc(`If set, override the default container used for the terminal.`),
 				dagql.Arg("cmd").Doc(`If set, override the container's default terminal command and invoke these command arguments instead.`),
-				dagql.Arg("experimentalPrivilegedNesting").Doc(
-					`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(BeforeVersion("v1.0.0-0")).
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("experimentalPrivilegedNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Deprecated("Use daggerNesting: NESTED_CLIENT.").
+					Doc(`Provides Dagger access to the executed command.`),
+				dagql.Arg("daggerNesting").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`Configure how the executed command may connect back to Dagger.`),
 				dagql.Arg("insecureRootCapabilities").Doc(
 					`Execute the command with all root capabilities. This is similar to
 			running a command with "sudo" or executing "docker run" with the
