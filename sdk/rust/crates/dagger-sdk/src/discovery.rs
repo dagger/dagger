@@ -6,8 +6,9 @@
 
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::errors::{CliDiscoveryError, CliDiscoveryErrorKind, DiscoveryPathRole};
 
@@ -112,10 +113,48 @@ impl std::fmt::Debug for NativeDiscoveryInputs {
 }
 
 /// Ownership attached to an executable selected for launch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) enum ExecutableLease {
     Unmanaged,
+    Cache(CacheExecutionLease),
 }
+
+impl std::fmt::Debug for ExecutableLease {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unmanaged => formatter.write_str("Unmanaged"),
+            Self::Cache(_) => formatter.write_str("Cache"),
+        }
+    }
+}
+
+/// Exclusive cache ownership retained until the selected executable is opened.
+#[derive(Clone)]
+pub(crate) struct CacheExecutionLease {
+    lock: Arc<File>,
+}
+
+impl CacheExecutionLease {
+    pub(crate) fn new(lock: File) -> Self {
+        Self {
+            lock: Arc::new(lock),
+        }
+    }
+}
+
+impl std::fmt::Debug for CacheExecutionLease {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CacheExecutionLease")
+    }
+}
+
+impl PartialEq for CacheExecutionLease {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.lock, &other.lock)
+    }
+}
+
+impl Eq for CacheExecutionLease {}
 
 /// One resolved native executable and its ownership policy.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,8 +168,15 @@ impl LaunchExecutable {
         &self.path
     }
 
-    pub(crate) const fn lease(&self) -> ExecutableLease {
-        self.lease
+    pub(crate) fn lease(&self) -> ExecutableLease {
+        self.lease.clone()
+    }
+
+    pub(crate) fn cached(path: PathBuf, lock: File) -> Self {
+        Self {
+            path,
+            lease: ExecutableLease::Cache(CacheExecutionLease::new(lock)),
+        }
     }
 }
 

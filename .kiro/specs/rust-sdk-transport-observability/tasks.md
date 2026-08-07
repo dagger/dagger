@@ -134,22 +134,22 @@
     public error formatting tests, and cargo-deny; require deterministic source
     snapshots, exact target generation, and no lower-source work on failure.
 
-- [ ] 5. Implement bounded release acquisition and archive validation
-  - [ ] 5.1 Add bounded, cancellable HTTP acquisition adapters
+- [x] 5. Implement bounded release acquisition and archive validation
+  - [x] 5.1 Add bounded, cancellable HTTP acquisition adapters
     - Stream the manifest with an 8 MiB hard limit and the archive with a 1 GiB
       compressed-byte limit, checking cancellation while reading and returning typed
       HTTP/status/size failures without retaining response secrets.
     - Keep URL construction fixed to the validated release descriptor and prevent
       redirects or caller-supplied release hosts from widening provisioning authority.
     - _Requirements: 5.1-5.4, 5.16-5.18, 11.1-11.6_
-  - [ ] 5.2 Parse the release manifest into one exact checksum
+  - [x] 5.2 Parse the release manifest into one exact checksum
     - Parse UTF-8 lines without unbounded allocation, accept only the exact archive
       basename, require one unambiguous SHA-256 value, and reject missing, malformed,
       duplicated, or conflicting matches.
     - Add fixed fixtures for ordinary Dagger manifests, line-ending variants, boundary
       sizes, malformed digests, duplicates, and irrelevant entries.
     - _Requirements: 5.1-5.4, 5.17-5.18_
-  - [ ] 5.3 Implement streaming checksum and bounded exact-member extraction
+  - [x] 5.3 Implement streaming checksum and bounded exact-member extraction
     - Hash every compressed byte before acceptance; extract only `dagger` or
       `dagger.exe` from the descriptor-selected tar.gz/ZIP format into a private file.
     - Reject absent/duplicate members, links, non-regular entries, traversal/absolute
@@ -157,35 +157,35 @@
       private state on every exit and never execute an unverified byte.
     - Add archive fixtures at entry/count/path/type/size boundaries for both formats.
     - _Requirements: 5.5-5.18, 14.4_
-  - [ ] 5.4 Property test: Property 7 — manifest parsing is bounded and total
+  - [x] 5.4 Property test: Property 7 — manifest parsing is bounded and total
     - Generate at least 256 manifests with arbitrary line structure, exact-name
       multiplicity, digest syntax, line endings, and size-boundary metadata; compare
       against a bounded reference parser and assert no panic or archive request on error.
     - Test identifier: `property_07_manifest_parsing_bounded_total`.
     - _Requirements: 5.1-5.4, 5.17-5.18_
-  - [ ] 5.5 Property test: Property 8 — archive acceptance is integrity-gated, bounded, and confined
+  - [x] 5.5 Property test: Property 8 — archive acceptance is integrity-gated, bounded, and confined
     - Generate at least 128 tar.gz/ZIP entry plans and streamed chunk schedules covering
       digest, member, link, traversal, compressed/extracted limit, and corruption cases;
       assert accepted bytes exactly equal the one verified member and all writes remain
       beneath the private directory.
     - Test identifier: `property_08_archive_integrity_bounded_confined`.
     - _Requirements: 5.5-5.15, 5.17-5.18, 14.4_
-  - [ ] 5.6 Property test: Property 9 — provisioning cancellation removes private state
+  - [x] 5.6 Property test: Property 9 — provisioning cancellation removes private state
     - Inject cancellation at at least 128 generated manifest, download, checksum,
       extraction, flush, and pre-publication boundaries; assert prompt typed cancellation,
       zero publication/execution, and no surviving private artifact.
     - Test identifier: `property_09_provisioning_cancellation_removes_private_state`.
     - _Requirements: 5.16, 6.20_
 
-- [ ] 6. Implement the native cache publication transaction
-  - [ ] 6.1 Add no-follow cache validation and native permissions
+- [x] 6. Implement the native cache publication transaction
+  - [x] 6.1 Add no-follow cache validation and native permissions
     - Use the platform-native cache root and a target-derived entry name; on Unix create
       private directories/files with `0700` semantics and reject symlinks and every
       non-regular executable shape without following them.
     - Validate a cache hit without network access and return an owned execution lease
       that prevents replacement or pruning through process spawn.
     - _Requirements: 6.1-6.6, 14.5-14.6_
-  - [ ] 6.2 Add cross-process locked, atomic publication
+  - [x] 6.2 Add cross-process locked, atomic publication
     - Coordinate publishers with a cache-wide `fs4` lock, download outside the lock,
       then lock, revalidate, flush bytes and metadata, set executable permissions, and
       atomically rename one complete file into place.
@@ -193,33 +193,33 @@
       entry, release all locks on cancellation/error, and add deterministic helper-
       process tests using barriers rather than timing.
     - _Requirements: 6.7-6.13, 6.20, 14.5-14.6_
-  - [ ] 6.3 Add locked, best-effort retention
+  - [x] 6.3 Add locked, best-effort retention
     - While holding the cache lock, prune only SDK-owned compiled-release entries beyond
       the declared retention bound; preserve the current target, leased executables,
       explicit-local paths, and every unrelated file/directory.
     - Make cleanup failure non-fatal, secret-safe, and observable through diagnostics.
     - _Requirements: 6.14-6.19_
-  - [ ] 6.4 Property test: Property 10 — cache validation is no-follow and network-free on hits
+  - [x] 6.4 Property test: Property 10 — cache validation is no-follow and network-free on hits
     - Generate at least 128 native cache entry shapes and permission states, including
       symlink swaps at controlled boundaries; assert valid hits acquire a lease with
       zero HTTP events and unsafe shapes are never followed or executed.
     - Test identifier: `property_10_cache_validation_no_follow_network_free`.
     - _Requirements: 6.1-6.6_
-  - [ ] 6.5 Property test: Property 11 — concurrent publication has one atomic result
+  - [x] 6.5 Property test: Property 11 — concurrent publication has one atomic result
     - Generate at least 128 cross-process publisher schedules and failure/cancellation
       points with deterministic barriers; assert observers see no partial executable,
       all successful publishers converge on identical verified bytes, and locks/private
       state are released.
     - Test identifier: `property_11_concurrent_publication_one_atomic_result`.
     - _Requirements: 6.7-6.13, 6.20, 14.5-14.6_
-  - [ ] 6.6 Property test: Property 12 — retention is locked, confined, and non-destructive
+  - [x] 6.6 Property test: Property 12 — retention is locked, confined, and non-destructive
     - Generate at least 128 cache trees with owned, unrelated, current, leased, and
       adversarial entries plus cleanup failures; assert deletion is confined to eligible
       owned entries and never changes connector success.
     - Test identifier: `property_12_retention_locked_confined_non_destructive`.
     - _Requirements: 6.14-6.19_
 
-- [ ] 7. Checkpoint: provisioning and cache transaction are green
+- [x] 7. Checkpoint: provisioning and cache transaction are green
   - Run formatting, locked SDK tests, cross-process cache tests, clippy, rustdoc, and
     cargo-deny; require all archive formats, injected cancellation points, and cache
     schedules to leave no partial or unverified executable.

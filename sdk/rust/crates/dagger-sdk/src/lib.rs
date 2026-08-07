@@ -48,6 +48,15 @@ mod preflight;
 mod query;
 mod session;
 
+#[allow(dead_code)]
+mod archive;
+#[allow(dead_code)]
+mod provision;
+#[allow(dead_code)]
+mod provisioning_control;
+#[allow(dead_code)]
+mod provisioning_error;
+
 pub use config::{ClientConfig, ClientConfigBuilder};
 pub use connection::{EngineConnection, EngineConnectionError, EngineConnectionErrorKind};
 pub use diagnostic::{Diagnostic, DiagnosticSink, DiagnosticSinkError, DiagnosticStream};
@@ -179,6 +188,9 @@ mod contract_regression_tests;
 
 #[cfg(test)]
 mod preflight_tests;
+
+#[cfg(test)]
+mod provisioning_tests;
 
 #[cfg(test)]
 mod test_support;

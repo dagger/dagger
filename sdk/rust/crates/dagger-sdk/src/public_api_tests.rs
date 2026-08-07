@@ -49,6 +49,10 @@ fn production_source_is_panic_free() -> bool {
         include_str!("preflight.rs"),
         include_str!("session.rs"),
         include_str!("target.rs"),
+        include_str!("archive.rs"),
+        include_str!("provision.rs"),
+        include_str!("provisioning_control.rs"),
+        include_str!("provisioning_error.rs"),
     ]
     .into_iter()
     .all(|source| {

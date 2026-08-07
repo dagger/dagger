@@ -220,6 +220,16 @@ impl ArchiveDescriptor {
         &self.archive_name
     }
 
+    pub(crate) fn cli_version(&self) -> Result<Version, PlatformError> {
+        let version = self
+            .archive_name
+            .strip_prefix("dagger_v")
+            .and_then(|value| value.split_once('_').map(|(version, _)| version))
+            .ok_or_else(|| PlatformError::new(PlatformErrorKind::InvalidDescriptor))?;
+        Version::parse(version)
+            .map_err(|_| PlatformError::new(PlatformErrorKind::InvalidDescriptor))
+    }
+
     pub(crate) const fn member_name(&self) -> &'static str {
         self.member_name
     }
