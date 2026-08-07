@@ -80,3 +80,15 @@ func (p GitAttachableProxy) PackCheckout(req *PackCheckoutRequest, srv Git_PackC
 
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
 }
+
+func (p GitAttachableProxy) Push(srv Git_PushServer) error {
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("proxy stream closed"))
+
+	clientStream, err := p.client.Push(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, srv)
+}

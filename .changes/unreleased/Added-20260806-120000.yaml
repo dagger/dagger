@@ -1,0 +1,25 @@
+kind: Added
+body: |
+  Add `WorkspaceGit.push`: push a workspace's git HEAD — including commits
+  staged with `Workspace.withCommit` — to a remote, e.g.
+  `currentWorkspace { git { push(branch: "feature") } }`.
+
+  The push runs through the local checkout's own git, so the checkout's
+  configured remotes, credential helpers, ssh agent and hooks apply exactly as
+  for `git push` run in the checkout. The checkout itself is never modified:
+  staged commits travel as a git bundle, enter the checkout's object database
+  without creating or moving any local ref, and are pushed by hash — so an
+  agent can push a branch for a pull request without first saving its staged
+  commits to the local checkout.
+
+  - `remote` names a remote from the checkout's configuration, or a URL;
+    defaults to `origin`.
+  - `branch` names the remote branch to update; defaults to the checkout's
+    currently checked-out branch, and is required when HEAD is detached. A
+    fully qualified ref (`refs/...`) is used as-is.
+  - `force` allows a non-fast-forward update of the remote ref.
+  - Returns the fully qualified remote ref that was updated.
+time: 2026-08-06T12:00:00Z
+custom:
+  Author: vito
+  PR: ""

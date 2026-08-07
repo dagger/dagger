@@ -11,6 +11,7 @@ service Git {
   rpc ApplyBundle(stream ApplyBundleRequest) returns (ApplyBundleResponse);
   rpc CheckoutState(CheckoutStateRequest) returns (CheckoutStateResponse);
   rpc PackCheckout(PackCheckoutRequest) returns (stream PackCheckoutResponse);
+  rpc Push(stream PushRequest) returns (PushResponse);
 }
 
 message GitCredentialRequest {
@@ -146,6 +147,53 @@ message PackCheckoutMetadata {
   ErrorInfo error = 4;
 }
 
+// PushRequest streams a push order to the client: one metadata message
+// first, then — when the commit being pushed only exists engine-side — the
+// bytes of a git bundle carrying it, in chunks. The client's own git runs the
+// push, so the checkout's configured remotes, credentials and hooks apply,
+// and the checkout's own refs and work tree are never modified.
+message PushRequest {
+  oneof msg {
+    PushMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PushMetadata {
+  // checkout_path is the local checkout the push runs in.
+  string checkout_path = 1;
+  // remote is what to push to: a remote name from the checkout's
+  // configuration, or a URL.
+  string remote = 2;
+  // dest_ref is the fully qualified ref to update on the remote. Empty means
+  // the checkout's current branch, resolved here on the host; that
+  // resolution fails when HEAD is detached.
+  string dest_ref = 3;
+  // target_sha is the commit the remote ref is updated to.
+  string target_sha = 4;
+  // force allows a non-fast-forward update of the remote ref.
+  bool force = 5;
+  // bundle_ref is the ref the bundle records for target_sha, when bundle
+  // chunks follow the metadata. Empty when no bundle follows (the commit is
+  // already present in the checkout's repository).
+  string bundle_ref = 6;
+}
+
+message PushResponse {
+  oneof result {
+    PushResult pushed = 1;
+    ErrorInfo error = 2;
+  }
+}
+
+message PushResult {
+  // dest_ref is the fully qualified remote ref that was updated, resolved
+  // when the request left it empty.
+  string dest_ref = 1;
+  // sha is the commit the remote ref was updated to.
+  string sha = 2;
+}
+
 message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
@@ -158,6 +206,8 @@ message ErrorInfo {
     BUNDLE_APPLY_FAILED = 7;
     NOT_A_REPO = 8;
     PACK_FAILED = 9;
+    PUSH_FAILED = 10;
+    DETACHED_HEAD = 11;
 }
   ErrorType type = 1;
   string message = 2;
