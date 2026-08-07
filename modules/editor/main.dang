@@ -379,19 +379,42 @@ type Editor {
   	- Before starting a risky or sweeping change, so it can be reverted
   	- With paths, to split unrelated changes into separate commits
 
-  Write messages like good git commits: a concise imperative subject line,
-  optionally followed by a blank line and an explanatory body.
+  MESSAGE FORMAT — Conventional Commits (conventionalcommits.org):
+
+  	type(scope): short summary limited to 50 chars
+
+  	Required descriptive body wrapped at 80 characters. Explain what
+  	changed and why without being verbose.
+
+  Types: feat (new feature), fix (bug fix), chore (maintenance: deps, golden
+  files, ...), style (formatting, no logic change), test (adding or updating
+  tests), refactor (restructuring without behavior change). The scope is
+  optional but preferred when the change is localized: use the package or
+  subsystem name, e.g. fmt, lsp, parser.
+
+  GRANULARITY: each commit contains exactly one logical change. When a task
+  produced several distinct changes, commit each one separately, scoped with
+  paths to just its files — never sweep unrelated pending changes into one
+  commit. A good test: could you write a clear, single-purpose subject line?
+  If not, split it up. To commit only part of a file's changes, edit the file
+  down to just those changes, commit, then reapply the rest.
+
+  CAUTION: if you encounter pending changes you don't recognize, do NOT
+  remove them or fold them into a commit — ask the user first.
   """
   commit(
     source: Workspace!,
     """
-    The headline of the commit (50 chars or less).
+    The headline: "type(scope): summary" — imperative mood, lowercase, no
+    trailing period, 50 chars or less.
     """
     subject: String!,
     """
-    The body for the commit.
+    What changed and why, as a concise paragraph (not bullet points) wrapped
+    at 80 characters. Required: even routine fixes get a short body. Never
+    add Co-authored-by or other trailers.
     """
-    body: String! = "",
+    body: String!,
     """
     Relative paths (files or directories) to commit, like `git commit -- <paths>`.
     Empty commits all uncommitted changes.
@@ -408,6 +431,23 @@ type Editor {
     if (subject.split("").length > 50) {
       raise "commit subject too long (must be 50 characters or less)"
     }
+    if (!(subject.containsMatch(`^(feat|fix|chore|style|test|refactor)(\([^()]+\))?!?: \S`))) {
+      raise "commit subject must follow Conventional Commits — \"type(scope): summary\", with type one of: feat, fix, chore, style, test, refactor"
+    }
+    if (subject.hasSuffix(".")) {
+      raise "commit subject must not end with a period"
+    }
+    if (body.trimSpace == "") {
+      raise "commit body is required: explain what changed and why, as a concise paragraph wrapped at 80 characters"
+    }
+    if (body.split("\n").any { line => line.trimSpace.hasPrefix("Co-authored-by:") }) {
+      raise "commit messages must not contain Co-authored-by trailers"
+    }
+    body.split("\n").each { line =>
+      if (line.split("").length > 80) {
+        print(`WARNING: commit body line exceeds 80 characters: ${line}`)
+      }
+    }
 
     let normalizedPaths = paths.map { normalize(_) }
     let stats = source.git.uncommitted.diffStats.{{path, kind, addedLines, removedLines}}
@@ -419,10 +459,7 @@ type Editor {
       }
     }
 
-    let message = subject
-    if (body != "") {
-      message += "\n\n" + body
-    }
+    let message = subject + "\n\n" + body.trimSpace
 
     if (scoped.isEmpty) {
       if (stats.isEmpty) {
