@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -61,6 +62,34 @@ func (WorkspaceSuite) TestWorkspaceForkChanges(ctx context.Context, t *testctx.T
 		removed, err := base.Fork().WithoutFile("README.md").Changes().RemovedPaths(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"README.md"}, removed)
+	})
+}
+
+// TestWorkspaceForkChangesAtCwd covers the fork's path contract: changes are
+// measured from the workspace cwd — matching how a client applies a returned
+// changeset at its own cwd — and a change that cannot be expressed
+// cwd-relative fails loudly instead of landing in the wrong place.
+func (WorkspaceSuite) TestWorkspaceForkChangesAtCwd(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := syntheticWorkspaceSource(c).AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
+		Cwd: "/app",
+	})
+
+	t.Run("fork changes are measured from the cwd", func(ctx context.Context, t *testctx.T) {
+		changes := ws.Fork().WithNewFile("f.txt", "x").Changes()
+
+		added, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"f.txt"}, added)
+
+		contents, err := changes.Layer().File("f.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "x", contents)
+	})
+
+	t.Run("a change above the cwd is an error", func(ctx context.Context, t *testctx.T) {
+		_, err := ws.Fork().WithNewFile("/outside.txt", "x").Changes().AddedPaths(ctx)
+		require.ErrorContains(t, err, "outside the current directory")
 	})
 }
 
