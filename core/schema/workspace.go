@@ -517,6 +517,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("stagedCommits", s.stagedCommits).
 			Doc("Commits staged in this workspace but not yet saved to the local checkout.",
 				"Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged."),
+		dagql.NodeFunc("push", s.workspaceGitPush).
+			DoNotCache("Updates a ref on a remote git repository").
+			Doc("Push this workspace's git HEAD - including any staged commits - to a remote, and return the fully qualified remote ref that was updated.",
+				"The push runs through the local checkout's own git, so the checkout's configured remotes, credential helpers and hooks apply, exactly as for `git push` run in the checkout. The checkout itself is never modified: commits staged in the workspace are transferred engine-side and pushed by hash, so they can land on a remote branch without first being saved to the local checkout.").
+			Args(
+				dagql.Arg("remote").Doc("Remote to push to: a remote name from the checkout's configuration, or a URL."),
+				dagql.Arg("branch").Doc("Remote branch to update. Defaults to the checkout's currently checked-out branch, and is required when its HEAD is detached. A fully qualified ref (refs/...) is used as-is."),
+				dagql.Arg("force").Doc("Allow a non-fast-forward update of the remote ref."),
+			),
 		dagql.NodeFunc("__stagedCommitEntry", s.stagedCommitEntry).
 			IsPersistable().
 			Doc("(Internal-only) One entry of WorkspaceGit.stagedCommits.").
