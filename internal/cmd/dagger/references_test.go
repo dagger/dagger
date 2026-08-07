@@ -38,12 +38,16 @@ func TestReferenceMountRel(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	// Under home → relative to home.
-	require.Equal(t, "foo/bar.txt", referenceMountRel(filepath.Join(home, "foo", "bar.txt")))
-	require.Equal(t, "proj", referenceMountRel(filepath.Join(home, "proj")))
+	// Under home → "~/"-prefixed, relative to home.
+	require.Equal(t, "~/foo/bar.txt", referenceMountRel(filepath.Join(home, "foo", "bar.txt")))
+	require.Equal(t, "~/proj", referenceMountRel(filepath.Join(home, "proj")))
+	require.Equal(t, "~", referenceMountRel(home))
 
-	// Outside home → basename only.
-	require.Equal(t, "hosts", referenceMountRel("/etc/hosts"))
+	// Outside home → the full path minus the leading separator, so paths
+	// sharing a basename keep distinct mounts.
+	require.Equal(t, "etc/hosts", referenceMountRel("/etc/hosts"))
+	require.Equal(t, "tmp/frontend/config.json", referenceMountRel("/tmp/frontend/config.json"))
+	require.Equal(t, "tmp/backend/config.json", referenceMountRel("/tmp/backend/config.json"))
 }
 
 func TestExpandReferencePath(t *testing.T) {
@@ -120,11 +124,11 @@ func TestAutoCompleteReferencePath(t *testing.T) {
 
 func TestReferenceAnnotation(t *testing.T) {
 	out := referenceAnnotation([]referenceInfo{
-		{original: "~/foo/bar.txt", mount: ".refs/foo/bar.txt", isDir: false},
-		{original: "~/proj", mount: ".refs/proj", isDir: true},
+		{original: "~/foo/bar.txt", mount: ".refs/~/foo/bar.txt", isDir: false},
+		{original: "~/proj", mount: ".refs/~/proj", isDir: true},
 	})
-	require.Contains(t, out, "~/foo/bar.txt → .refs/foo/bar.txt")
-	require.Contains(t, out, "~/proj (directory) → .refs/proj")
+	require.Contains(t, out, "~/foo/bar.txt → .refs/~/foo/bar.txt")
+	require.Contains(t, out, "~/proj (directory) → .refs/~/proj")
 }
 
 func TestRewriteReferenceTokens(t *testing.T) {

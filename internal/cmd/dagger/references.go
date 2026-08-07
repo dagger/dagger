@@ -26,7 +26,7 @@ const workspaceReferencePrefix = ".refs"
 // read-only workspace path it was mounted at.
 type referenceInfo struct {
 	original string // path as typed after @, e.g. ~/foo/bar.txt
-	mount    string // workspace-relative mount path, e.g. .refs/foo/bar.txt
+	mount    string // workspace-relative mount path, e.g. .refs/~/foo/bar.txt
 	isDir    bool
 }
 
@@ -116,15 +116,22 @@ func expandReferencePath(p string) (string, error) {
 }
 
 // referenceMountRel computes the reference-relative mount path for an absolute
-// host path: relative to the home directory when the path is under it,
-// otherwise just the basename.
+// host path, preserving the full path shape so that distinct host paths never
+// collapse onto the same mount (e.g. /tmp/frontend/config.json vs
+// /tmp/backend/config.json). Paths under the home directory are shortened to a
+// "~/" prefix — mirroring how they're typed — and everything else keeps its
+// path from the root, minus the leading separator.
 func referenceMountRel(abs string) string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		if rel, err := filepath.Rel(home, abs); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-			return filepath.ToSlash(rel)
+		if rel, err := filepath.Rel(home, abs); err == nil && !strings.HasPrefix(rel, "..") {
+			if rel == "." {
+				return "~"
+			}
+			return "~/" + filepath.ToSlash(rel)
 		}
 	}
-	return filepath.Base(abs)
+	rel := strings.TrimPrefix(abs, filepath.VolumeName(abs))
+	return strings.TrimPrefix(filepath.ToSlash(rel), "/")
 }
 
 // parseReferenceTokens extracts the @-path tokens from a prompt line. A token is
