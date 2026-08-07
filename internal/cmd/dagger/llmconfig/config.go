@@ -309,7 +309,8 @@ func refreshProviderToken(name string, provider Provider) (Provider, bool, error
 func RefreshOAuthTokensIfNeeded() error {
 	cfg, err := Load()
 	if err != nil || cfg == nil {
-		return nil //nolint:nilerr // a missing or unreadable config is non-fatal here
+		// a missing or unreadable config is non-fatal here
+		return nil
 	}
 
 	var changed bool
