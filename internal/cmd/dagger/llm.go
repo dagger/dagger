@@ -449,15 +449,17 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 }
 
 // updateChangesPreview refreshes the "Changes" notification bubble with a summary
-// of the workspace's pending overlay edits (Workspace.changes). Pressing ctrl+s
-// exports them to the local Git workspace (see ExportChanges). When there are no
-// pending edits the bubble is cleared (an empty body renders nothing).
+// of the workspace's pending overlay edits (Workspace.changes) plus the commits
+// staged engine-side but not yet saved (WorkspaceGit.stagedCommits, newest
+// first). Pressing ctrl+s exports them to the local Git workspace (see
+// ExportChanges). When there is neither a pending edit nor a staged commit the
+// bubble is cleared (an empty body renders nothing).
 func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
-	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, llm.Workspace().Changes())
+	changes, err := idtui.PreviewWorkspaceChanges(s.plumbingCtx, s.dag, llm.Workspace())
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
+	if changes.Empty() {
 		s.frontend.SetSidebarContent(idtui.SidebarSection{Title: "Changes"})
 		return nil
 	}
@@ -465,7 +467,7 @@ func (s *LLMSession) updateChangesPreview(llm *dagger.LLM) error {
 		Title: "Changes",
 		ContentFunc: func(width int) string {
 			var buf strings.Builder
-			patchpreview.Summarize(idtui.NewOutput(&buf), entries, width)
+			patchpreview.SummarizeChanges(idtui.NewOutput(&buf), changes.Uncommitted, changes.StagedCommits, width)
 			return buf.String()
 		},
 		KeyMap: []key.Binding{

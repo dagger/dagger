@@ -1,10 +1,13 @@
 package core
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,4 +130,91 @@ func TestFindRejectFiles(t *testing.T) {
 		"a.rej":                       true,
 		filepath.Join("sub", "b.rej"): true,
 	}, rejects)
+}
+
+func TestGitDiagnosticsWrap(t *testing.T) {
+	t.Run("no output", func(t *testing.T) {
+		var d gitDiagnostics
+		err := d.wrap("git apply", io.ErrUnexpectedEOF)
+		require.ErrorContains(t, err, "git apply")
+		require.ErrorContains(t, err, "(no output)")
+	})
+
+	t.Run("includes subprocess output", func(t *testing.T) {
+		var d gitDiagnostics
+		_, err := d.Write([]byte("error: patch failed: a.txt:1\n"))
+		require.NoError(t, err)
+		require.ErrorContains(t, d.wrap("git apply", io.ErrUnexpectedEOF), "error: patch failed: a.txt:1")
+	})
+
+	t.Run("bounds output", func(t *testing.T) {
+		var d gitDiagnostics
+		n, err := d.Write([]byte(strings.Repeat("x", gitDiagnosticsMaxLen*2)))
+		require.NoError(t, err)
+		// Reports a full write (it's a tee, not a sink) but retains a bounded head.
+		require.Equal(t, gitDiagnosticsMaxLen*2, n)
+		require.Len(t, d.buf, gitDiagnosticsMaxLen)
+	})
+
+	t.Run("quotes the patch line git named", func(t *testing.T) {
+		patch := writeTempPatch(t, "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-hello\n+bye")
+		d := gitDiagnostics{patchPath: patch}
+		_, err := d.Write([]byte("error: corrupt patch at <stdin>:6\n"))
+		require.NoError(t, err)
+		msg := d.wrap("git apply", io.ErrUnexpectedEOF).Error()
+		require.Contains(t, msg, "patch around <stdin>:6:")
+		// Quoted, so trailing-whitespace-sensitive lines stay legible.
+		require.Contains(t, msg, `> 6: "+bye"`)
+		require.Contains(t, msg, `4: "@@ -1 +1 @@"`)
+	})
+}
+
+// writeTempPatch writes contents to a temp file and returns its path.
+func writeTempPatch(t *testing.T, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "patch")
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+	return path
+}
+
+func TestApplyGitPatchIgnoresEmbeddedRepo(t *testing.T) {
+	patch := "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-hello\n+bye\n"
+
+	// A checkout made with `git worktree` has a .git FILE naming a gitdir
+	// elsewhere on the developer's machine. Inside the engine that path
+	// doesn't exist, and git used to die during repository discovery —
+	// "fatal: not a git repository" — before it even read the patch, so
+	// EVERY patch against such a tree failed. Patching a working tree needs
+	// no repository at all.
+	for _, tc := range []struct {
+		name     string
+		writeGit func(t *testing.T, dir string)
+	}{
+		{"no repo", func(*testing.T, string) {}},
+		{"dangling worktree pointer", func(t *testing.T, dir string) {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ".git"),
+				[]byte("gitdir: /nonexistent/host/path/.bare/worktrees/wip\n"), 0o644))
+		}},
+		{"garbage .git directory", func(t *testing.T, dir string) {
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, onConflict := range []PatchConflict{PatchConflictFail, PatchConflictLeaveMarkers} {
+				t.Run(string(onConflict), func(t *testing.T) {
+					dir := t.TempDir()
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello\n"), 0o644))
+					tc.writeGit(t, dir)
+
+					err := applyGitPatch(t.Context(), dir, strings.NewReader(patch), "",
+						telemetry.SpanStdio(t.Context(), InstrumentationLibrary), onConflict)
+					require.NoError(t, err)
+
+					got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+					require.NoError(t, err)
+					require.Equal(t, "bye\n", string(got))
+				})
+			}
+		})
+	}
 }

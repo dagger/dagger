@@ -41,12 +41,53 @@ defmodule Dagger.WorkspaceGit do
   end
 
   @doc """
+  Commits staged in this workspace but not yet saved to the local checkout.
+
+  Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.
+  """
+  @spec staged_commits(t()) :: {:ok, [Dagger.WorkspaceStagedCommit.t()]} | {:error, term()}
+  def staged_commits(%__MODULE__{} = workspace_git) do
+    query_builder =
+      workspace_git.query_builder |> QB.select("stagedCommits") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace_git.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceStagedCommit{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceStagedCommit"),
+           client: workspace_git.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
   """
   @spec uncommitted(t()) :: Dagger.Changeset.t()
   def uncommitted(%__MODULE__{} = workspace_git) do
     query_builder =
       workspace_git.query_builder |> QB.select("uncommitted")
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace_git.client
+    }
+  end
+
+  @doc """
+  Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+
+  Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+  """
+  @spec unmanaged(t()) :: Dagger.Changeset.t()
+  def unmanaged(%__MODULE__{} = workspace_git) do
+    query_builder =
+      workspace_git.query_builder |> QB.select("unmanaged")
 
     %Dagger.Changeset{
       query_builder: query_builder,

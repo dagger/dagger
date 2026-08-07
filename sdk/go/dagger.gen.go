@@ -12985,9 +12985,10 @@ func (r *Port) AsNode() Node {
 type Query struct {
 	query *querybuilder.Selection
 
-	defaultPlatform *Platform
-	id              *ID
-	version         *string
+	currentTimestamp *string
+	defaultPlatform  *Platform
+	id               *ID
+	version          *string
 }
 
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
@@ -13113,6 +13114,16 @@ func (r *Query) CurrentNode() Node {
 	return &NodeClient{
 		query: q,
 	}
+}
+
+// The current UTC time in RFC3339 format. Never cached.
+func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
+	q := r.query.Select("currentTimestamp")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // CurrentTypeDefsOpts contains options for Query.CurrentTypeDefs
@@ -16410,6 +16421,45 @@ func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
 	}
 }
 
+// WorkspaceWithCommitOpts contains options for Workspace.WithCommit
+type WorkspaceWithCommitOpts struct {
+	// Restrict the commit to these paths, like `git commit -- <paths>`. Relative paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+	Paths []string
+	// Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+	AuthorName string
+	// Author and committer email. Defaults to the git identity recorded when the workspace was loaded, else "dagger@localhost".
+	AuthorEmail string
+}
+
+// Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+//
+// The commit is created engine-side, on top of the workspace's git HEAD plus any previously staged commit: the local checkout is left untouched. Afterwards Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted holds whatever was left out of it, still pending on top.
+//
+// The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+func (r *Workspace) WithCommit(message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
+	q := r.query.Select("withCommit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `authorName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorName) {
+			q = q.Arg("authorName", opts[i].AuthorName)
+		}
+		// `authorEmail` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AuthorEmail) {
+			q = q.Arg("authorEmail", opts[i].AuthorEmail)
+		}
+	}
+	q = q.Arg("message", message)
+	q = q.Arg("date", date)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
 type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
@@ -16906,9 +16956,55 @@ func (r *WorkspaceGit) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Commits staged in this workspace but not yet saved to the local checkout.
+//
+// Ordered oldest to newest, matching the order they were staged in on top of the checkout's HEAD. Empty when nothing is staged.
+func (r *WorkspaceGit) StagedCommits(ctx context.Context) ([]WorkspaceStagedCommit, error) {
+	q := r.query.Select("stagedCommits")
+
+	q = q.Select("id")
+
+	type stagedCommits struct {
+		Id ID
+	}
+
+	convert := func(fields []stagedCommits) []WorkspaceStagedCommit {
+		out := []WorkspaceStagedCommit{}
+
+		for i := range fields {
+			val := WorkspaceStagedCommit{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceStagedCommit")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []stagedCommits
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
 func (r *WorkspaceGit) Uncommitted() *Changeset {
 	q := r.query.Select("uncommitted")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+//
+// Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+func (r *WorkspaceGit) Unmanaged() *Changeset {
+	q := r.query.Select("unmanaged")
 
 	return &Changeset{
 		query: q,
@@ -17537,6 +17633,146 @@ func (r *WorkspaceSDK) Ref(ctx context.Context) (string, error) {
 // AsNode returns this WorkspaceSDK as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *WorkspaceSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A commit staged in a workspace but not yet saved to the local checkout.
+type WorkspaceStagedCommit struct {
+	query *querybuilder.Selection
+
+	authorEmail *string
+	authorName  *string
+	date        *string
+	id          *ID
+	message     *string
+	sha         *string
+}
+
+func (r *WorkspaceStagedCommit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceStagedCommit {
+	return &WorkspaceStagedCommit{
+		query: q,
+	}
+}
+
+// The author and committer email the commit was made with.
+func (r *WorkspaceStagedCommit) AuthorEmail(ctx context.Context) (string, error) {
+	if r.authorEmail != nil {
+		return *r.authorEmail, nil
+	}
+	q := r.query.Select("authorEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The author and committer name the commit was made with.
+func (r *WorkspaceStagedCommit) AuthorName(ctx context.Context) (string, error) {
+	if r.authorName != nil {
+		return *r.authorName, nil
+	}
+	q := r.query.Select("authorName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The changes this commit folded in, relative to the state staged before it.
+func (r *WorkspaceStagedCommit) Changes() *Changeset {
+	q := r.query.Select("changes")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// The RFC3339 author and committer date the commit was made with.
+func (r *WorkspaceStagedCommit) Date(ctx context.Context) (string, error) {
+	if r.date != nil {
+		return *r.date, nil
+	}
+	q := r.query.Select("date")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceStagedCommit.
+func (r *WorkspaceStagedCommit) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceStagedCommit) XXX_GraphQLType() string {
+	return "WorkspaceStagedCommit"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceStagedCommit) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceStagedCommit) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceStagedCommit) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The full commit message, subject and body.
+func (r *WorkspaceStagedCommit) Message(ctx context.Context) (string, error) {
+	if r.message != nil {
+		return *r.message, nil
+	}
+	q := r.query.Select("message")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The full hash of the staged commit.
+func (r *WorkspaceStagedCommit) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceStagedCommit as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceStagedCommit) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}

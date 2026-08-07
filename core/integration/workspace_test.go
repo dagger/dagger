@@ -256,3 +256,170 @@ func (WorkspaceSuite) TestEntrypointWithFieldHidden(ctx context.Context, t *test
 		require.Contains(t, out, `"name": "with"`)
 	})
 }
+
+// workspaceRemovalProbe is the decoded shape of the removal-pruning probe
+// query: the workspace tree's own view (glob) plus git-anchored status.
+type workspaceRemovalProbe struct {
+	Glob []string `json:"glob"`
+	Git  struct {
+		Uncommitted struct {
+			IsEmpty   bool `json:"isEmpty"`
+			DiffStats []struct {
+				Path string `json:"path"`
+				Kind string `json:"kind"`
+			} `json:"diffStats"`
+		} `json:"uncommitted"`
+	} `json:"git"`
+}
+
+// decodeWorkspaceRemovalProbe pulls the probe payload out of a
+// `currentWorkspace { ...edits... { glob git{...} } }` response, following the
+// given chain of edit field names.
+func decodeWorkspaceRemovalProbe(t *testctx.T, out string, chain ...string) workspaceRemovalProbe {
+	t.Helper()
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &raw))
+	cur := raw["currentWorkspace"].(map[string]any)
+	for _, field := range chain {
+		cur = cur[field].(map[string]any)
+	}
+	leaf, err := json.Marshal(cur)
+	require.NoError(t, err)
+	var probe workspaceRemovalProbe
+	require.NoError(t, json.Unmarshal(leaf, &probe))
+	return probe
+}
+
+// globHas reports whether a Workspace.glob result contains the given path,
+// ignoring the trailing slash directories are reported with.
+func globHas(matches []string, want string) bool {
+	want = strings.TrimSuffix(want, "/")
+	for _, m := range matches {
+		if strings.TrimSuffix(m, "/") == want {
+			return true
+		}
+	}
+	return false
+}
+
+// diffStatHas reports whether a diffStats result mentions the given path,
+// ignoring the trailing slash directory entries are reported with.
+func diffStatHas(probe workspaceRemovalProbe, want string) bool {
+	want = strings.TrimSuffix(want, "/")
+	for _, s := range probe.Git.Uncommitted.DiffStats {
+		if strings.TrimSuffix(s.Path, "/") == want {
+			return true
+		}
+	}
+	return false
+}
+
+// TestWorkspaceRemovalPrunesEmptiedDirectories locks in `git rm`-like workspace
+// removal semantics: removing the last entry in a directory must take the
+// now-empty directory with it, walking up as far as the removal empties (but
+// never past the workspace root).
+//
+// Git cannot represent an empty directory, so a leftover one shows up in
+// git-anchored status as a phantom `ADDED qa/ +0 -0` entry — and can even make
+// Changeset.isEmpty (true) disagree with Changeset.diffStats (one bare dir
+// entry). Directories that are *not* emptied by the removal must be left alone.
+func (WorkspaceSuite) TestWorkspaceRemovalPrunesEmptiedDirectories(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("tracked.txt", "v1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	t.Run("removing the last file prunes the emptied directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+      withoutFile(path: "qa/probe.txt") {
+        glob(pattern: "qa*")
+        git { uncommitted { isEmpty diffStats { path kind } } }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+		probe := decodeWorkspaceRemovalProbe(t, out, "withNewFile", "withoutFile")
+
+		require.False(t, globHas(probe.Glob, "qa"), "empty %q left behind in workspace tree: %v", "qa/", probe.Glob)
+		require.False(t, diffStatHas(probe, "qa"), "phantom %q entry in git status: %v", "qa/", probe.Git.Uncommitted.DiffStats)
+		// isEmpty and diffStats must agree: nothing changed at all.
+		require.True(t, probe.Git.Uncommitted.IsEmpty)
+		require.Empty(t, probe.Git.Uncommitted.DiffStats)
+	})
+
+	t.Run("removing one of two files prunes nothing", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/keep.txt", contents: "keep\n") {
+      withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+        withoutFile(path: "qa/probe.txt") {
+          glob(pattern: "qa/*")
+          git { uncommitted { isEmpty diffStats { path kind } } }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+		probe := decodeWorkspaceRemovalProbe(t, out, "withNewFile", "withNewFile", "withoutFile")
+
+		require.True(t, globHas(probe.Glob, "qa/keep.txt"), "surviving sibling was pruned: %v", probe.Glob)
+		require.False(t, globHas(probe.Glob, "qa/probe.txt"), "removed file still present: %v", probe.Glob)
+		require.False(t, probe.Git.Uncommitted.IsEmpty)
+		require.True(t, diffStatHas(probe, "qa/keep.txt"))
+		require.False(t, diffStatHas(probe, "qa"), "non-emptied directory reported: %v", probe.Git.Uncommitted.DiffStats)
+	})
+
+	t.Run("pruning stops at the first ancestor that still has entries", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "a/keep.txt", contents: "keep\n") {
+      withNewFile(path: "a/b/c/probe.txt", contents: "probe\n") {
+        withoutFile(path: "a/b/c/probe.txt") {
+          glob(pattern: "a/**")
+          git { uncommitted { isEmpty diffStats { path kind } } }
+        }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+		probe := decodeWorkspaceRemovalProbe(t, out, "withNewFile", "withNewFile", "withoutFile")
+
+		// a/b and a/b/c were emptied by the removal and go away; a still has
+		// keep.txt, so it survives.
+		require.False(t, globHas(probe.Glob, "a/b"), "emptied ancestor left behind: %v", probe.Glob)
+		require.False(t, globHas(probe.Glob, "a/b/c"), "emptied ancestor left behind: %v", probe.Glob)
+		require.True(t, globHas(probe.Glob, "a/keep.txt"), "non-emptied ancestor was pruned: %v", probe.Glob)
+		require.False(t, diffStatHas(probe, "a/b"), "phantom dir entry in git status: %v", probe.Git.Uncommitted.DiffStats)
+		require.True(t, diffStatHas(probe, "a/keep.txt"))
+	})
+
+	t.Run("a directory that was already empty is left alone", func(ctx context.Context, t *testctx.T) {
+		// Workspace.withNewDirectory requires a source Directory ID, which a
+		// single raw GraphQL document cannot produce, so the pre-existing empty
+		// directory is created on the host instead. Either way it is not the
+		// product of a removal, so pruning must not touch it.
+		out, err := base.
+			WithExec([]string{"mkdir", "-p", "/work/already-empty"}).
+			With(daggerQuery(`{
+  currentWorkspace {
+    withNewFile(path: "qa/probe.txt", contents: "probe\n") {
+      withoutFile(path: "qa/probe.txt") {
+        glob(pattern: "already-empty*")
+        git { uncommitted { isEmpty diffStats { path kind } } }
+      }
+    }
+  }
+}`)).Stdout(ctx)
+		require.NoError(t, err)
+		probe := decodeWorkspaceRemovalProbe(t, out, "withNewFile", "withoutFile")
+
+		require.True(t, globHas(probe.Glob, "already-empty"), "pre-existing empty directory was pruned: %v", probe.Glob)
+	})
+}

@@ -4665,6 +4665,9 @@ type Query implements Node {
   """
   currentNode: Node!
 
+  """The current UTC time in RFC3339 format. Never cached."""
+  currentTimestamp: String!
+
   """
   The TypeDef representations of the objects currently being served in the session.
   """
@@ -5810,6 +5813,43 @@ type Workspace implements Node {
     changes: ID! @expectedType(name: "Changeset")
   ): Workspace!
 
+  """
+  Return this workspace with its uncommitted changes staged as a git commit, without mutating the source.
+
+  The commit is created engine-side, on top of the workspace's git HEAD plus any
+  previously staged commit: the local checkout is left untouched. Afterwards
+  Workspace.git.head resolves to the new commit, and Workspace.git.uncommitted
+  holds whatever was left out of it, still pending on top.
+
+  The commit is deterministic: the same workspace state and the same arguments always produce the same commit hash.
+  """
+  withCommit(
+    """Commit message."""
+    message: String!
+
+    """
+    Restrict the commit to these paths, like `git commit -- <paths>`. Relative
+    paths resolve from the workspace cwd. Empty commits all uncommitted changes.
+    """
+    paths: [String!] = []
+
+    """
+    RFC3339 author and committer date. Required, so that the resulting commit hash does not depend on a hidden clock.
+    """
+    date: String!
+
+    """
+    Author and committer name. Defaults to the git identity recorded when the workspace was loaded, else "Dagger".
+    """
+    authorName: String
+
+    """
+    Author and committer email. Defaults to the git identity recorded when the
+    workspace was loaded, else "dagger@localhost".
+    """
+    authorEmail: String
+  ): Workspace!
+
   """Return this workspace with a named config environment created."""
   withConfigEnv(
     """Environment name."""
@@ -6099,9 +6139,24 @@ type WorkspaceGit implements Node {
   id: ID!
 
   """
+  Commits staged in this workspace but not yet saved to the local checkout.
+
+  Ordered oldest to newest, matching the order they were staged in on top of the
+  checkout's HEAD. Empty when nothing is staged.
+  """
+  stagedCommits: [WorkspaceStagedCommit!]!
+
+  """
   Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
   """
   uncommitted: Changeset!
+
+  """
+  Pending workspace edits git cannot see - gitignored, or inside a nested repository.
+
+  Workspace.export writes these to the local checkout, but they never appear in `uncommitted` and cannot be committed.
+  """
+  unmanaged: Changeset!
 }
 
 """A planned workspace migration."""
@@ -6192,5 +6247,33 @@ type WorkspaceSDK implements Node {
 
   """The module reference this SDK was installed from."""
   ref: String!
+}
+
+"""
+A commit staged in a workspace but not yet saved to the local checkout.
+"""
+type WorkspaceStagedCommit implements Node {
+  """The author and committer email the commit was made with."""
+  authorEmail: String!
+
+  """The author and committer name the commit was made with."""
+  authorName: String!
+
+  """
+  The changes this commit folded in, relative to the state staged before it.
+  """
+  changes: Changeset!
+
+  """The RFC3339 author and committer date the commit was made with."""
+  date: String!
+
+  """A unique identifier for this WorkspaceStagedCommit."""
+  id: ID!
+
+  """The full commit message, subject and body."""
+  message: String!
+
+  """The full hash of the staged commit."""
+  sha: String!
 }
 

@@ -169,6 +169,96 @@ type Workspace struct {
 	// generation fans out exponentially over the dependency DAG. Kept sorted
 	// and deduplicated; carried through Clone so derived workspaces keep it.
 	StagedGeneration []string
+
+	// GitAuthorName and GitAuthorEmail record the git identity observed on the
+	// client at workspace load time (user.name / user.email). They are read
+	// once, here, so that engine-side commits (Workspace.withCommit) are
+	// hermetic: nothing consults the client's git config per call.
+	GitAuthorName  string
+	GitAuthorEmail string
+
+	// BaseHeadSHA is the commit the workspace's git HEAD resolved to before any
+	// pending commit was staged. Recorded when the first pending commit is
+	// staged, so a later export can check that the local checkout has not moved
+	// out from under the staged stack.
+	BaseHeadSHA string
+
+	// pendingCommits is the stack of commits staged engine-side by
+	// Workspace.withCommit. They exist only in the engine: the user's checkout
+	// is untouched until the stack is exported. Internal only — not a GraphQL
+	// field, but persisted and dependency-tracked like mounts.
+	pendingCommits []WorkspacePendingCommit
+}
+
+// WorkspacePendingCommit is one commit staged engine-side on top of the
+// workspace's base HEAD (and any previously staged commits), without touching
+// the user's local checkout.
+type WorkspacePendingCommit struct {
+	// SHA is the resulting commit hash.
+	SHA string
+	// Message is the commit message.
+	Message string
+	// Date is the RFC3339 author *and* committer date the commit was made with.
+	Date string
+	// AuthorName and AuthorEmail are the identity the commit was made with.
+	AuthorName  string
+	AuthorEmail string
+	// Paths is the path scope the commit was made with, empty for "everything
+	// uncommitted at the time".
+	Paths []string
+	// Repo is the repository tree whose .git holds this commit (and every
+	// commit staged before it).
+	Repo dagql.ObjectResult[*Directory]
+	// Committed is the cumulative content of every commit staged so far,
+	// expressed as a changeset from the workspace overlay's base to the staged
+	// state. Staging a commit never changes what the workspace tree contains —
+	// the overlay keeps carrying every edit — so this is what tells the diff
+	// views (Workspace.changes, WorkspaceGit.uncommitted) which part of the
+	// overlay is already committed: they diff the overlay's "after" tree
+	// against base+Committed, leaving exactly the uncommitted remainder.
+	//
+	// Unset for workspaces whose pending changes come from the repository
+	// rather than an overlay: those read their remainder from git directly.
+	Committed dagql.ObjectResult[*Changeset]
+}
+
+// PendingCommits returns the stack of engine-side staged commits, oldest first.
+func (ws *Workspace) PendingCommits() []WorkspacePendingCommit {
+	if ws == nil {
+		return nil
+	}
+	return ws.pendingCommits
+}
+
+// LatestPendingCommit returns the newest staged commit, if any.
+func (ws *Workspace) LatestPendingCommit() (WorkspacePendingCommit, bool) {
+	if ws == nil || len(ws.pendingCommits) == 0 {
+		return WorkspacePendingCommit{}, false
+	}
+	return ws.pendingCommits[len(ws.pendingCommits)-1], true
+}
+
+// StagedChanges returns the cumulative content of the staged commits, as a
+// changeset anchored at the workspace overlay's base. Applying it to that base
+// yields the staged tree — the "HEAD" the uncommitted views diff against.
+func (ws *Workspace) StagedChanges() (dagql.ObjectResult[*Changeset], bool) {
+	latest, ok := ws.LatestPendingCommit()
+	if !ok || latest.Committed.Self() == nil {
+		return dagql.ObjectResult[*Changeset]{}, false
+	}
+	return latest.Committed, true
+}
+
+// WithPendingCommit returns a clone of the workspace with the given commit
+// pushed onto the pending commit stack. The slice is copied so the clone never
+// aliases the parent's backing array.
+func (ws *Workspace) WithPendingCommit(c WorkspacePendingCommit) *Workspace {
+	cp := ws.Clone()
+	commits := make([]WorkspacePendingCommit, 0, len(ws.pendingCommits)+1)
+	commits = append(commits, ws.pendingCommits...)
+	commits = append(commits, c)
+	cp.pendingCommits = commits
+	return cp
 }
 
 // WorkspaceCacheMount is a CacheVolume mounted into the workspace's mounts tree
@@ -710,6 +800,12 @@ type persistedWorkspacePayload struct {
 
 	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
+	GitAuthorName  string `json:"gitAuthorName,omitempty"`
+	GitAuthorEmail string `json:"gitAuthorEmail,omitempty"`
+	BaseHeadSHA    string `json:"baseHeadSHA,omitempty"`
+
+	PendingCommits []persistedWorkspacePendingCommit `json:"pendingCommits,omitempty"`
+
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
 	LegacyConfigPath string `json:"configPath,omitempty"`
@@ -723,6 +819,20 @@ type persistedWorkspaceCacheMount struct {
 	Target           string `json:"target,omitempty"`
 	VolumeResultID   uint64 `json:"volumeResultID,omitempty"`
 	BaselineResultID uint64 `json:"baselineResultID,omitempty"`
+}
+
+// persistedWorkspacePendingCommit is the on-disk encoding of a
+// WorkspacePendingCommit: its metadata plus a reference to the repository tree
+// holding the commit.
+type persistedWorkspacePendingCommit struct {
+	SHA          string   `json:"sha,omitempty"`
+	Message      string   `json:"message,omitempty"`
+	Date         string   `json:"date,omitempty"`
+	AuthorName   string   `json:"authorName,omitempty"`
+	AuthorEmail  string   `json:"authorEmail,omitempty"`
+	Paths        []string `json:"paths,omitempty"`
+	RepoResultID uint64   `json:"repoResultID,omitempty"`
+	CommittedID  uint64   `json:"committedID,omitempty"`
 }
 
 type persistedWorkspaceSource struct {
@@ -867,6 +977,9 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		ClientID:         ws.ClientID,
 		HostPath:         ws.hostPath,
 		StagedGeneration: ws.StagedGeneration,
+		GitAuthorName:    ws.GitAuthorName,
+		GitAuthorEmail:   ws.GitAuthorEmail,
+		BaseHeadSHA:      ws.BaseHeadSHA,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -907,6 +1020,31 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 			persistedMount.BaselineResultID = baselineID
 		}
 		payload.CacheMounts = append(payload.CacheMounts, persistedMount)
+	}
+	for _, c := range ws.pendingCommits {
+		persistedCommit := persistedWorkspacePendingCommit{
+			SHA:         c.SHA,
+			Message:     c.Message,
+			Date:        c.Date,
+			AuthorName:  c.AuthorName,
+			AuthorEmail: c.AuthorEmail,
+			Paths:       c.Paths,
+		}
+		if c.Repo.Self() != nil {
+			repoID, err := encodePersistedObjectRef(cache, c.Repo, "workspace pending commit repo")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			persistedCommit.RepoResultID = repoID
+		}
+		if c.Committed.Self() != nil {
+			committedID, err := encodePersistedObjectRef(cache, c.Committed, "workspace pending commit committed changes")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			persistedCommit.CommittedID = committedID
+		}
+		payload.PendingCommits = append(payload.PendingCommits, persistedCommit)
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -966,6 +1104,33 @@ func (*Workspace) DecodePersistedObject(
 		cacheMounts = append(cacheMounts, mount)
 	}
 
+	var pendingCommits []WorkspacePendingCommit
+	for _, persistedCommit := range persisted.PendingCommits {
+		commit := WorkspacePendingCommit{
+			SHA:         persistedCommit.SHA,
+			Message:     persistedCommit.Message,
+			Date:        persistedCommit.Date,
+			AuthorName:  persistedCommit.AuthorName,
+			AuthorEmail: persistedCommit.AuthorEmail,
+			Paths:       persistedCommit.Paths,
+		}
+		if persistedCommit.RepoResultID != 0 {
+			repo, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persistedCommit.RepoResultID, "workspace pending commit repo")
+			if err != nil {
+				return nil, err
+			}
+			commit.Repo = repo
+		}
+		if persistedCommit.CommittedID != 0 {
+			committed, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dag, persistedCommit.CommittedID, "workspace pending commit committed changes")
+			if err != nil {
+				return nil, err
+			}
+			commit.Committed = committed
+		}
+		pendingCommits = append(pendingCommits, commit)
+	}
+
 	cwd := persisted.Cwd
 	if cwd == "" {
 		cwd = persisted.LegacyPath
@@ -993,6 +1158,10 @@ func (*Workspace) DecodePersistedObject(
 		ClientID:         persisted.ClientID,
 		hostPath:         persisted.HostPath,
 		StagedGeneration: persisted.StagedGeneration,
+		GitAuthorName:    persisted.GitAuthorName,
+		GitAuthorEmail:   persisted.GitAuthorEmail,
+		BaseHeadSHA:      persisted.BaseHeadSHA,
+		pendingCommits:   pendingCommits,
 	}
 	if persisted.Source != nil {
 		src, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Source, rootfs, persisted.HostPath)
@@ -1073,6 +1242,33 @@ func (ws *Workspace) AttachDependencyResults(
 				return nil, fmt.Errorf("attach workspace cache mount baseline: unexpected result %T", attached)
 			}
 			ws.cacheMounts[i].Baseline = typed
+			deps = append(deps, typed)
+		}
+	}
+
+	for i := range ws.pendingCommits {
+		if ws.pendingCommits[i].Repo.Self() != nil {
+			attached, err := attach(ws.pendingCommits[i].Repo)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace pending commit repo: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace pending commit repo: unexpected result %T", attached)
+			}
+			ws.pendingCommits[i].Repo = typed
+			deps = append(deps, typed)
+		}
+		if ws.pendingCommits[i].Committed.Self() != nil {
+			attached, err := attach(ws.pendingCommits[i].Committed)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace pending commit committed changes: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Changeset])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace pending commit committed changes: unexpected result %T", attached)
+			}
+			ws.pendingCommits[i].Committed = typed
 			deps = append(deps, typed)
 		}
 	}

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -619,6 +620,13 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 		return nil, err
 	}
 
+	return buildDiffStats(paths, statsByPath), nil
+}
+
+// buildDiffStats turns computed changeset paths and their line counts into the
+// reported diff stat entries, deciding which directory entries are worth
+// reporting on their own.
+func buildDiffStats(paths *ChangesetPaths, statsByPath map[string]lineChanges) []*DiffStat {
 	addEntry := func(path string, kind DiffStatKind) *DiffStat {
 		entry := &DiffStat{Path: path, Kind: kind}
 		if stat, ok := statsByPath[path]; ok {
@@ -637,6 +645,14 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 
 	var entries []*DiffStat
 	for _, path := range paths.Added {
+		// An added directory is reported by the files it contains; emitting
+		// the directory itself as well would double-count the same change
+		// (e.g. "core/ ADDED" next to "core/probe.txt ADDED"). A directory
+		// that adds no files is still worth reporting — it is the only
+		// evidence the directory appeared at all.
+		if strings.HasSuffix(path, "/") && pathHasReportedChildren(path, paths) {
+			continue
+		}
 		if oldPath, isRenamed := paths.Renamed[path]; isRenamed {
 			entry := addEntry(path, DiffStatKindRenamed)
 			entry.OldPath = &oldPath
@@ -648,10 +664,18 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	for _, path := range paths.Modified {
 		entries = append(entries, addEntry(path, DiffStatKindModified))
 	}
-	// Use AllRemoved (uncollapsed) so that patchpreview.foldRemovedDirs can
-	// fold child files into their parent directory with summed line counts.
+	// Use AllRemoved (uncollapsed) so every removed file gets its own entry.
 	for _, path := range paths.AllRemoved {
 		if renamedOld[path] {
+			continue
+		}
+		// A removed directory whose removal is implied by the paths removed
+		// beneath it carries no information: every consumer can infer it, git
+		// doesn't track directories, and a unified diff (Changeset.asPatch)
+		// cannot express it. Report only removals that nothing else records,
+		// i.e. directories that held no files at all — the mirror of the
+		// added empty directory, which is likewise the only record of itself.
+		if strings.HasSuffix(path, "/") && removalImpliedByChildren(path, paths.AllRemoved) {
 			continue
 		}
 		entries = append(entries, addEntry(path, DiffStatKindRemoved))
@@ -660,7 +684,43 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	slices.SortFunc(entries, func(a, b *DiffStat) int {
 		return strings.Compare(a.Path, b.Path)
 	})
-	return entries, nil
+	return entries
+}
+
+// pathHasReportedChildren reports whether any added or modified path lies
+// beneath the given directory path (which carries a trailing "/"), i.e.
+// whether the directory's appearance is already described by per-file entries.
+func pathHasReportedChildren(dir string, paths *ChangesetPaths) bool {
+	for _, group := range [][]string{paths.Added, paths.Modified} {
+		for _, p := range group {
+			if p == dir || strings.HasSuffix(p, "/") {
+				continue
+			}
+			if strings.HasPrefix(p, dir) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// removalImpliedByChildren reports whether a removed directory path (carrying
+// a trailing "/") holds any removed file beneath it, i.e. whether its removal
+// is already implied by per-file removal entries. Directories whose removal is
+// implied are omitted from diff stats, matching git — which does not track
+// directories — and the unified diff, which cannot represent one. A directory
+// holding no files (empty, or holding only empty directories) is not implied
+// by anything, so it stays reported.
+func removalImpliedByChildren(dir string, allRemoved []string) bool {
+	for _, p := range allRemoved {
+		if p == dir || strings.HasSuffix(p, "/") {
+			continue
+		}
+		if strings.HasPrefix(p, dir) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
@@ -753,45 +813,11 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 					return nil
 				}
 
-				// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
-				// from the ---/+++ lines but not from rename from/to lines, so a
-				// rename entry makes the patch unapplyable ("inconsistent old
-				// filename"). Emitting renames as delete+add avoids the mismatch;
-				// with --binary the result is identical.
-				args := []string{"diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b"}
-				if len(pathSpecs) > 0 {
-					// -- so a path starting with - isn't parsed as a flag, and
-					// GIT_LITERAL_PATHSPECS below so one starting with : isn't
-					// parsed as pathspec magic. Either would otherwise fail the
-					// diff or silently drop the path from the patch.
-					args = append(args, "--")
-					args = append(args, pathSpecs...)
-				}
 				return enginetel.Task(ctx, "git diff", func(ctx context.Context) error {
 					stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 					defer stdio.Close()
-					// The span is named for the command rather than the whole
-					// argv, which the pathspecs make unbounded; log those.
-					fmt.Fprintln(stdio.Stdout, "running git", strings.Join(args, " "))
-					cmd := exec.CommandContext(ctx, "git", args...)
-					cmd.Dir = root
-					cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
-					cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
-					cmd.Stderr = stdio.Stderr
-					if err := cmd.Run(); err != nil {
-						var exitErr *exec.ExitError
-						// Exit code 1 just means the trees differ, which is the
-						// whole point; returning it would end the span in error
-						// for every patch that isn't empty.
-						if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-							return nil
-						}
-						// NB: we could technically populate an ExecError here, but that
-						// feels like it leaks implementation details; "exit status 128" isn't
-						// exactly clear
-						return fmt.Errorf("failed to generate patch: %w", err)
-					}
-					return nil
+					return writeGitDiffPatch(ctx, root, pathSpecs,
+						io.MultiWriter(patchFile, stdio.Stdout), stdio.Stdout, stdio.Stderr)
 				})
 			})
 		}, mountRefAsReadOnly)
@@ -811,6 +837,147 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	file.File.setValue(ChangesetPatchFilename)
 	file.Snapshot.setValue(snap)
 	return file, nil
+}
+
+// writeGitDiffPatch runs `git diff` between the a/ and b/ mount dirs beneath
+// root and writes the resulting unified diff to out, normalizing the
+// `diff --git` header lines along the way (see diffGitHeaderRewriter).
+//
+// logOut/logErr receive the command's own diagnostics; logOut also gets the
+// argv, which the span name can't carry.
+func writeGitDiffPatch(ctx context.Context, root string, pathSpecs []string, out, logOut, logErr io.Writer) error {
+	// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
+	// from the ---/+++ lines but not from rename from/to lines, so a
+	// rename entry makes the patch unapplyable ("inconsistent old
+	// filename"). Emitting renames as delete+add avoids the mismatch;
+	// with --binary the result is identical.
+	args := []string{"diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b"}
+	if len(pathSpecs) > 0 {
+		// -- so a path starting with - isn't parsed as a flag, and
+		// GIT_LITERAL_PATHSPECS below so one starting with : isn't
+		// parsed as pathspec magic. Either would otherwise fail the
+		// diff or silently drop the path from the patch.
+		args = append(args, "--")
+		args = append(args, pathSpecs...)
+	}
+	// The span is named for the command rather than the whole argv, which the
+	// pathspecs make unbounded; log those.
+	fmt.Fprintln(logOut, "running git", strings.Join(args, " "))
+
+	rewriter := &diffGitHeaderRewriter{w: out}
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
+	cmd.Stdout = rewriter
+	cmd.Stderr = logErr
+	runErr := cmd.Run()
+	if flushErr := rewriter.Flush(); flushErr != nil && runErr == nil {
+		return flushErr
+	}
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		// Exit code 1 just means the trees differ, which is the
+		// whole point; returning it would end the span in error
+		// for every patch that isn't empty.
+		if errors.As(runErr, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil
+		}
+		// NB: we could technically populate an ExecError here, but that
+		// feels like it leaks implementation details; "exit status 128" isn't
+		// exactly clear
+		return fmt.Errorf("failed to generate patch: %w", runErr)
+	}
+	return nil
+}
+
+// diffGitHeaderRewriter is an io.Writer that passes a unified diff through
+// unchanged apart from its `diff --git` header lines, which it rewrites via
+// fixDiffGitHeader. Data is buffered until a newline, so callers must Flush
+// once the source is exhausted.
+type diffGitHeaderRewriter struct {
+	w   io.Writer
+	buf []byte
+}
+
+func (r *diffGitHeaderRewriter) Write(p []byte) (int, error) {
+	r.buf = append(r.buf, p...)
+	for {
+		i := bytes.IndexByte(r.buf, '\n')
+		if i < 0 {
+			return len(p), nil
+		}
+		line := string(r.buf[:i])
+		r.buf = r.buf[i+1:]
+		if _, err := io.WriteString(r.w, fixDiffGitHeader(line)+"\n"); err != nil {
+			return 0, err
+		}
+	}
+}
+
+// Flush writes any trailing data not terminated by a newline.
+func (r *diffGitHeaderRewriter) Flush() error {
+	if len(r.buf) == 0 {
+		return nil
+	}
+	line := string(r.buf)
+	r.buf = nil
+	_, err := io.WriteString(r.w, fixDiffGitHeader(line))
+	return err
+}
+
+// fixDiffGitHeader normalizes the path prefixes on a `diff --git` header line.
+//
+// AsPatch diffs two bind mounts literally named a/ and b/ with --no-prefix, so
+// the header line carries whichever mount dir the file exists in on both
+// sides: an added file yields "diff --git b/f b/f" and a deleted one
+// "diff --git a/f a/f". Real git always writes "diff --git a/<path> b/<path>"
+// regardless of the change kind (only the ---/+++ lines use /dev/null), and
+// `git apply` — plus anything else consuming these patches — expects that, so
+// rewrite the prefixes to a/ and b/.
+//
+// Lines that aren't headers, or that don't parse as a header, are returned
+// unchanged. Diff payload lines can never be mistaken for a header: text hunk
+// lines always start with ' ', '+', '-' or '\', and --binary payload lines are
+// base85, which has no space or '-'.
+func fixDiffGitHeader(line string) string {
+	const marker = "diff --git "
+	rest, ok := strings.CutPrefix(line, marker)
+	if !ok {
+		return line
+	}
+	// The two paths only differ in their leading mount dir (--no-renames means
+	// git never emits a rename header here), so they have equal length and the
+	// separating space sits exactly in the middle. Splitting there — rather
+	// than on the first space — keeps paths containing spaces intact.
+	var left, right string
+	if mid := len(rest) / 2; len(rest)%2 == 1 && rest[mid] == ' ' {
+		left, right = rest[:mid], rest[mid+1:]
+	} else if fields := strings.Split(rest, " "); len(fields) == 2 {
+		left, right = fields[0], fields[1]
+	} else {
+		return line
+	}
+	newLeft, leftOK := retagDiffPath(left, 'a')
+	newRight, rightOK := retagDiffPath(right, 'b')
+	if !leftOK || !rightOK {
+		return line
+	}
+	return marker + newLeft + " " + newRight
+}
+
+// retagDiffPath replaces the leading a/ or b/ prefix of a path as it appears on
+// a `diff --git` line with the given tag, accounting for git's C-style quoting
+// of paths with unusual characters. It reports false if the path doesn't have
+// such a prefix, in which case the caller leaves the line alone.
+func retagDiffPath(p string, tag byte) (string, bool) {
+	i := 0
+	if strings.HasPrefix(p, `"`) {
+		i = 1
+	}
+	if len(p) < i+2 || (p[i] != 'a' && p[i] != 'b') || p[i+1] != '/' {
+		return "", false
+	}
+	return p[:i] + string(tag) + p[i+1:], true
 }
 
 func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
@@ -1675,24 +1842,35 @@ var gitEphemeralConfig = []string{
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
+	_, err := runGitEnv(ctx, dir, nil, args...)
+	return err
+}
+
+// runGitEnv runs git in dir with extra environment entries layered over the
+// hermetic base environment, returning its standard output. Errors carry the
+// standard error stream, which is where git reports what went wrong.
+func runGitEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
 	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
 	gitArgs = append(gitArgs, gitEphemeralConfig...)
 	gitArgs = append(gitArgs, args...)
 
 	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Dir = dir
-	cmd.Env = []string{
+	cmd.Env = append([]string{
 		"GIT_CONFIG_NOSYSTEM=1",
 		"HOME=/dev/null",
 		"GIT_AUTHOR_NAME=Dagger",
 		"GIT_AUTHOR_EMAIL=dagger@localhost",
 		"GIT_COMMITTER_NAME=Dagger",
 		"GIT_COMMITTER_EMAIL=dagger@localhost",
+	}, extraEnv...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()+stdout.String()))
 	}
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git %v: %w: %s", args, err, output)
-	}
-	return nil
+	return stdout.String(), nil
 }
 
 func initGitRepo(ctx context.Context, dir string) error {
