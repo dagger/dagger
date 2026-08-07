@@ -33,6 +33,14 @@ git@github.com:some-user/some-repo.git` + nullChar + `remote.origin.fetch
 			expected: &GitConfig{
 				Entries: []*GitConfigEntry{
 					{
+						Key:   "user.name",
+						Value: "User Name",
+					},
+					{
+						Key:   "user.email",
+						Value: "user-name@gmail.com",
+					},
+					{
 						Key:   "url.ssh://git@github.com/.insteadof",
 						Value: "https://github.com/",
 					},
