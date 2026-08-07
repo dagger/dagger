@@ -1242,13 +1242,34 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 	}
 
-	lockInputs := []any{refName.String(), platform.Format()}
-	if registryTransport.Protocol != "" {
-		lockInputs = append(lockInputs, registryTransport.Protocol)
+	lockInputsFor := func(ref reference.Named) []any {
+		inputs := []any{ref.String(), platform.Format()}
+		if registryTransport.Protocol != "" {
+			inputs = append(inputs, registryTransport.Protocol)
+		}
+		if registryTransport.InsecureSkipTLSVerify {
+			inputs = append(inputs, "insecureSkipTLSVerify")
+		}
+		return inputs
 	}
-	if registryTransport.InsecureSkipTLSVerify {
-		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
+
+	// Engines that predate container.from.latest recorded a bare address like
+	// "alpine" as an exact container.from entry pinned at the implicit :latest
+	// tag. When the lockfile has such an entry and no container.from.latest
+	// entry, keep resolving through it so existing workspaces don't break
+	// after an engine upgrade.
+	if latestRelease && rawLock != nil {
+		if _, ok, _ := rawLock.GetLookup(lockCoreNamespace, lockOperation, lockInputsFor(refName)); !ok {
+			legacyRef := reference.TagNameOnly(refName)
+			if _, ok, err := rawLock.GetLookup(lockCoreNamespace, lockContainerFromOperation, lockInputsFor(legacyRef)); err == nil && ok {
+				latestRelease = false
+				lockOperation = lockContainerFromOperation
+				refName = legacyRef
+			}
+		}
 	}
+
+	lockInputs := lockInputsFor(refName)
 	lockResolution, err := resolveLookupFromLock(
 		lockMode,
 		rawLock,
