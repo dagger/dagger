@@ -181,3 +181,122 @@ func itoa(i int) string {
 	}
 	return string(rune('0'+i/10)) + string(rune('0'+i%10))
 }
+
+// TestNormalizeSpanArg covers span-argument normalization: agents paste span
+// IDs in whatever form they last saw them — bare hex, the "span=<hex>" report
+// rendering, or a traceparent marker from an error — and all of them should
+// resolve to the bare span ID.
+func TestNormalizeSpanArg(t *testing.T) {
+	const (
+		traceID = "000102030405060708090a0b0c0d0e0f"
+		spanID  = "00000000000000cc"
+	)
+	for _, tc := range []struct {
+		name string
+		arg  string
+		want string
+	}{
+		{name: "bare span ID", arg: spanID, want: spanID},
+		{name: "surrounding whitespace", arg: "  " + spanID + "\n", want: spanID},
+		{name: "span= report rendering", arg: "span=" + spanID, want: spanID},
+		{name: "error-origin marker", arg: "[traceparent:" + traceID + "-" + spanID + "]", want: spanID},
+		{name: "traceparent prefix", arg: "traceparent:" + traceID + "-" + spanID, want: spanID},
+		{name: "w3c traceparent", arg: "00-" + traceID + "-" + spanID + "-01", want: spanID},
+		{name: "unrecognized input passes through", arg: "not-a-span", want: "not-a-span"},
+		{name: "16 chars but not hex passes through", arg: "zzzzzzzzzzzzzzzz", want: "zzzzzzzzzzzzzzzz"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeSpanArg(tc.arg); got != tc.want {
+				t.Errorf("normalizeSpanArg(%q) = %q, want %q", tc.arg, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRenderReadLogs covers ReadLogs result shaping: offset/grep/limit
+// handling, and — for agent recovery — that the failure and empty cases
+// report how many lines actually exist.
+func TestRenderReadLogs(t *testing.T) {
+	logLines := func() []string { return []string{"alpha", "beta", "gamma"} }
+
+	t.Run("numbers the lines", func(t *testing.T) {
+		got, err := renderReadLogs("s", logLines(), 0, 100, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "     1→alpha\n     2→beta\n     3→gamma"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("offset trims from the end", func(t *testing.T) {
+		got, err := renderReadLogs("s", logLines(), 1, 100, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "     1→alpha\n     2→beta"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("negative offset reads the tail", func(t *testing.T) {
+		got, err := renderReadLogs("s", logLines(), -5, 100, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(got, "gamma") {
+			t.Errorf("got %q, want the full tail", got)
+		}
+	})
+
+	t.Run("offset past the start reports the total", func(t *testing.T) {
+		_, err := renderReadLogs("s", logLines(), 3, 100, "")
+		if err == nil {
+			t.Fatal("want error")
+		}
+		if !strings.Contains(err.Error(), "3 available lines") {
+			t.Errorf("error %q should report the available line count", err)
+		}
+	})
+
+	t.Run("grep filters and keeps original numbering", func(t *testing.T) {
+		got, err := renderReadLogs("s", logLines(), 0, 100, "ta$")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "     2→beta"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("grep with no matches reports the searched count", func(t *testing.T) {
+		got, err := renderReadLogs("s", logLines(), 0, 100, "nope")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(got, `"nope"`) || !strings.Contains(got, "3 lines") {
+			t.Errorf("got %q, want a no-matches message with the searched count", got)
+		}
+	})
+
+	t.Run("invalid grep pattern errors", func(t *testing.T) {
+		_, err := renderReadLogs("s", logLines(), 0, 100, "(")
+		if err == nil {
+			t.Fatal("want error")
+		}
+	})
+
+	t.Run("limit keeps the tail with a counted marker", func(t *testing.T) {
+		got, err := renderReadLogs("s", logLines(), 0, 2, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "... 1 lines omitted (use ReadLogs(span: s) to read more) ...\n     2→beta\n     3→gamma"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+}
