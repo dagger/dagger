@@ -1529,6 +1529,12 @@ func (f *internalSpanFilter) beneathInternal(ctx context.Context, traceID, spanI
 // is one of the API spans that installed a Service value. Service stdio log
 // records are tied to those install spans (see core/service.go), so
 // filtering service logs means filtering the install spans' subtrees.
+//
+// That is deliberately coarse: when a Service comes from a module function
+// call, that call is the install span, so the function's own construction
+// logs are filtered along with the service stdio. Acceptable for a
+// tool-result capture — the tool's own prints sit outside the install span,
+// and ReadLogs remains the deliberate path to anything filtered.
 func (f *internalSpanFilter) serviceInstallSpan(ctx context.Context, traceID, spanID string) (bool, error) {
 	for _, childID := range f.db.CausalChildren(spanID) {
 		child, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
@@ -1600,7 +1606,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "ReadLogs",
 		Description: "Read the logs beneath a span: exec output, service logs, prints. Can filter with grep pattern or read the last N lines." + "\n" +
 			"Span IDs come from tool results, ListServices, or [traceparent:traceID-spanID] markers in errors (pasting the whole marker works).",
-		ReadOnly: true, // Read-only operation
+		ReadOnly: true,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1635,7 +1641,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Description: "List the services currently running in this session: hostname, exposed ports, and span IDs." + "\n" +
 			"Read a service's logs with ReadLogs(span: <spanID>) — useful for tailing a server or engine that runs as a service." + "\n" +
 			"installSpanIDs are the API calls that produced the service (e.g. Container.asService); they work with ReadLogs too.",
-		ReadOnly: true, // Read-only operation
+		ReadOnly: true,
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},
