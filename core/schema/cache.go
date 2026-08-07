@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -35,11 +36,38 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.CacheVolume]{
-		dagql.NodeFunc("__snapshotDirectory", s.snapshotDirectory).
+		dagql.NodeFuncWithDynamicInputs("__snapshotDirectory", s.snapshotDirectory, s.snapshotDirectoryCacheKey).
 			WithInput(dagql.PerSessionInput).
 			NotReplayable("Reads the live cache volume; a recorded read is a snapshot, not a reproducible value.").
 			Doc("(Internal-only) A point-in-time Directory view of the cache volume's current content, materialized lazily."),
 	}.Install(srv)
+}
+
+type snapshotDirectoryArgs struct {
+	// WriteGeneration folds the volume's current write generation into the
+	// call ID (see snapshotDirectoryCacheKey); the resolver itself ignores it.
+	WriteGeneration string `internal:"true" default:""`
+}
+
+// snapshotDirectoryCacheKey scopes the snapshot per write generation: an exec
+// or commit that wrote the volume bumps its generation, so the next snapshot
+// select misses the memoized pre-write view and re-reads the volume, while an
+// unwritten volume keeps deduping. Generation 0 (never written in this engine
+// process) leaves the ID untouched.
+func (s *cacheSchema) snapshotDirectoryCacheKey(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.CacheVolume],
+	_ snapshotDirectoryArgs,
+	req *dagql.CallRequest,
+) error {
+	gen, err := parent.Self().WriteGeneration()
+	if err != nil {
+		return err
+	}
+	if gen == 0 {
+		return nil
+	}
+	return req.SetArgInput(ctx, "writeGeneration", dagql.NewString(strconv.FormatUint(gen, 10)), false)
 }
 
 // snapshotDirectory returns a point-in-time Directory view of the cache
@@ -48,15 +76,16 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 // like a workspace cache mount nobody has touched yet — never pay for the copy.
 //
 // It is scoped per session and not replayable, the same treatment
-// host.directory gets: within a session the view is stable, and a later session
-// re-reads the volume. (It cannot be DoNotCache — the Directory owns a snapshot
-// ref, and a do-not-cache result may neither be lazy nor implement OnReleaser.)
-// The resulting snapshot's digest is content-derived, so downstream reads of an
+// host.directory gets: within a session the view is stable for a given write
+// generation (see snapshotDirectoryCacheKey), and a later session re-reads the
+// volume. (It cannot be DoNotCache — the Directory owns a snapshot ref, and a
+// do-not-cache result may neither be lazy nor implement OnReleaser.) The
+// resulting snapshot's digest is content-derived, so downstream reads of an
 // unchanged cache still dedup.
 func (s *cacheSchema) snapshotDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.CacheVolume],
-	_ struct{},
+	_ snapshotDirectoryArgs,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

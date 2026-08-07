@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/util/layercopy"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // CacheVolumeSnapshotLazy defers materializing a cache volume's mutable
@@ -177,7 +178,17 @@ func (cache *CacheVolume) CommitChanges(ctx context.Context, changes *Changeset)
 	if ref == nil {
 		return fmt.Errorf("cache volume %q has no snapshot", cache.Key)
 	}
-	return changes.CommitInto(ctx, ref, cache.getSnapshotSelector())
+	if err := changes.CommitInto(ctx, ref, cache.getSnapshotSelector()); err != nil {
+		return err
+	}
+	// The volume's content just changed; invalidate snapshot reads taken at
+	// earlier write generations so other readers observe the commit.
+	// Best-effort: the commit itself succeeded.
+	if err := cache.BumpWriteGeneration(); err != nil {
+		slog.Warn("could not bump cache volume write generation after commit",
+			"cacheVolume", cache.Key, "error", err)
+	}
+	return nil
 }
 
 // CommitInto applies the changeset's delta into a mounted (mutable) ref at
