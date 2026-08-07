@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -316,8 +317,9 @@ func (svc *RunningService) InstallSpanContexts() []trace.SpanContext {
 
 // RunningServices returns a snapshot of the currently running services for
 // the given session, or for every session when sessionID is empty. The
-// listing is ordered by hostname (then digest) so repeated calls are
-// deterministic.
+// listing is ordered by hostname, then by the rest of the service key, so
+// repeated calls are deterministic — including across sessions, where the
+// same service (same hostname and digest) can run once per session.
 func (ss *Services) RunningServices(sessionID string) []*RunningService {
 	ss.l.Lock()
 	defer ss.l.Unlock()
@@ -329,10 +331,14 @@ func (ss *Services) RunningServices(sessionID string) []*RunningService {
 		out = append(out, svc)
 	}
 	slices.SortFunc(out, func(a, b *RunningService) int {
-		if cmp := bytes.Compare([]byte(a.Host), []byte(b.Host)); cmp != 0 {
-			return cmp
-		}
-		return bytes.Compare([]byte(a.Key.Digest), []byte(b.Key.Digest))
+		return cmp.Or(
+			cmp.Compare(a.Host, b.Host),
+			cmp.Compare(a.Key.Digest, b.Key.Digest),
+			cmp.Compare(a.Key.SessionID, b.Key.SessionID),
+			cmp.Compare(a.Key.ClientID, b.Key.ClientID),
+			cmp.Compare(a.Key.Kind, b.Key.Kind),
+			cmp.Compare(a.Key.InstanceID, b.Key.InstanceID),
+		)
 	})
 	return out
 }
