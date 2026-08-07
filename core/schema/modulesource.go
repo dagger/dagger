@@ -3070,7 +3070,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 	// re-measured from the cwd the source was loaded under; older callers
 	// keep the root-measured form and translate themselves (the polyfill).
 	if reRoot {
-		return reRootChangesetToCwd(ctx, res, srcInst.Self().WorkspaceCwd)
+		return reRootChangesetToCwd(ctx, res, srcInst.Self().WorkspaceCwd, true)
 	}
 
 	return res, nil

@@ -1671,10 +1671,19 @@ func callerPastChangesetCwdCutover(ctx context.Context) bool {
 // files. A change outside the cwd cannot be expressed cwd-relative — e.g. a
 // module above the caller — and silently dropping it would leave that module
 // never regenerated, so it fails loudly instead.
+//
+// dropOutsideRemovals softens that for generated-context changesets: a
+// generated context is a reduced tree (the module and its deps), so diffing
+// it against the full workspace reports everything else as removed. Those
+// removals are artifacts of the reduction, not changes, and get dropped by
+// the subtree selection; removals under the cwd are real and survive. Fork
+// changesets keep the strict treatment — an outside removal staged through a
+// fork is user intent, not an artifact.
 func reRootChangesetToCwd(
 	ctx context.Context,
 	changeset dagql.ObjectResult[*core.Changeset],
 	cwd string,
+	dropOutsideRemovals bool,
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var inst dagql.ObjectResult[*core.Changeset]
 	cwd = cleanWorkspaceRelPath(cwd)
@@ -1690,8 +1699,12 @@ func reRootChangesetToCwd(
 	if err != nil {
 		return inst, err
 	}
+	checked := [][]string{paths.Added, paths.Modified}
+	if !dropOutsideRemovals {
+		checked = append(checked, paths.Removed)
+	}
 	var outside []string
-	for _, group := range [][]string{paths.Added, paths.Modified, paths.Removed} {
+	for _, group := range checked {
 		for _, p := range group {
 			p = strings.TrimSuffix(p, "/")
 			if p != cwd && !strings.HasPrefix(p, cwd+"/") {
@@ -1761,7 +1774,7 @@ func (s *workspaceSchema) forkChangesRelativeToCwd(
 	if err != nil {
 		return changes, err
 	}
-	return reRootChangesetToCwd(ctx, changes, parent.Self().Cwd)
+	return reRootChangesetToCwd(ctx, changes, parent.Self().Cwd, false)
 }
 
 // subtractPaths returns the paths of a that are not in b, preserving order.

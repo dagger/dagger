@@ -91,6 +91,11 @@ func (WorkspaceSuite) TestWorkspaceForkChangesAtCwd(ctx context.Context, t *test
 		_, err := ws.Fork().WithNewFile("/outside.txt", "x").Changes().AddedPaths(ctx)
 		require.ErrorContains(t, err, "outside the current directory")
 	})
+
+	t.Run("a removal above the cwd is an error too", func(ctx context.Context, t *testctx.T) {
+		_, err := ws.Fork().WithoutFile("/README.md").Changes().RemovedPaths(ctx)
+		require.ErrorContains(t, err, "outside the current directory")
+	})
 }
 
 // TestWorkspaceForkChangesOnHost covers the same isolation against a
