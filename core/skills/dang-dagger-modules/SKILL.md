@@ -58,14 +58,14 @@ as a **Dagger module SDK**.
 ```dang
 type Greeter {
   let secret: String! = "hidden"          # private state, never exposed
-  pub name: String!                        # data field (also a ctor param)
+  name: String!                            # public data field (also a ctor param)
 
   new(name: String! = "world") {           # explicit constructor
     self.name = name.capitalize
     self                                   # must end with self
   }
 
-  pub greet: String! { "Hey, " + name }    # computed field / zero-arg function
+  greet: String! { "Hey, " + name }        # computed field / zero-arg function
 }
 ```
 
@@ -73,8 +73,10 @@ type Greeter {
   in declaration order (positional construction works).
 - Constructor args become top-level flags: `dagger call --name alice greet`.
   Arg names need not match field names; the body really executes.
-- `pub` and bare typed declarations are exposed; `let` is private — including
-  `let` *functions*, the idiom for internal helpers.
+- Public is the default: bare typed declarations are exposed; `let` is
+  private — including `let` *functions*, the idiom for internal helpers. The
+  `pub` keyword is legacy: it still parses (as a no-op) and the formatter
+  strips it — don't write it in new code.
 - A field with a body is a function/computed field; a plain typed field is
   data. Docstrings (`"""..."""` before a declaration or arg) become API
   descriptions.
@@ -96,15 +98,15 @@ module's root binding (the module name in camelCase):
 
 ```dang
 type Test {
-  pub containerEcho(msg: String!): Container! {
+  containerEcho(msg: String!): Container! {
     container.from("alpine").withExec(["echo", msg])
   }
 
-  pub print(msg: String!): String! {
+  print(msg: String!): String! {
     test.containerEcho(msg: msg).stdout    # self-call
   }
 
-  pub fresh: Dagger.Test! { test }         # self-call the constructor
+  fresh: Dagger.Test! { test }             # self-call the constructor
 }
 ```
 
@@ -135,7 +137,7 @@ type Test {
 
 - `enum Status { PENDING RUNNING DONE }` — compare with `==`; CLI passes
   members verbatim (`--status DONE`).
-- `interface Local { pub greet(name: String!): String! }` plus
+- `interface Local { greet(name: String!): String! }` plus
   `type Hey implements Local` — implementers must **not** declare the
   synthesized `id: ID!` field Dagger adds to every interface.
 - Structural conformance crosses module boundaries: an object matching a dep
@@ -197,7 +199,7 @@ type Test {
   conclude otherwise from old comments.)
 - Missing `@cache(policy: FunctionCachePolicy.Never)` on a stateful/live tool
   → the second call replays the first result.
-- `pub`-exposing a `Map[...]` or an ad-hoc record type → hard error.
+- Exposing a `Map[...]` or an ad-hoc record type → hard error.
 - Declaring `id` when implementing a dep interface → error; omit it.
 - Using v1 `.{ }` selection in a `>= v0.21.5` module — that's dot-block now;
   select with `.{{ }}`.
