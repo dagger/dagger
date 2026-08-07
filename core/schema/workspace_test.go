@@ -814,9 +814,136 @@ func TestEnvScopedConfigKeyQuotesDynamicSegments(t *testing.T) {
 		},
 	}
 
-	key, err := envScopedConfigKey(cfg, "review env", `modules."my.module".settings."some.key"`)
+	key, err := envScopedConfigKey(cfg, "review env", `modules."my.module".settings."some.key"`, workspaceConfigMustExist)
 	require.NoError(t, err)
 	require.Equal(t, `env."review env".modules."my.module".settings."some.key"`, key)
+}
+
+func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
+	t.Run("creates the env and records the module in its overlay", func(t *testing.T) {
+		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "dep", "dep")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.True(t, plan.Added)
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+		require.Empty(t, cfg.Modules)
+	})
+
+	t.Run("reinstall with the same source is a no-op", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Env: map[string]workspace.EnvOverlay{
+				"dev": {Modules: map[string]workspace.EnvModuleOverlay{
+					"dep": {Source: "dep"},
+				}},
+			},
+		}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "dep", "dep")
+		require.NoError(t, err)
+		require.False(t, plan.Changed)
+	})
+
+	t.Run("conflicting source in the same env is rejected", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Env: map[string]workspace.EnvOverlay{
+				"dev": {Modules: map[string]workspace.EnvModuleOverlay{
+					"dep": {Source: "dep"},
+				}},
+			},
+		}
+
+		_, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "dep", "other/dep")
+		require.ErrorContains(t, err, `module "dep" already exists in env "dev"`)
+	})
+
+	t.Run("base module with another source is overridden, not rejected", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"dep": {Source: "base/dep"},
+			},
+		}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "dep", "dep")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.Equal(t, "dep", cfg.Env["dev"].Modules["dep"].Source)
+		require.Equal(t, "base/dep", cfg.Modules["dep"].Source)
+		require.Empty(t, cfg.Env["dev"].Modules["dep"].Pin)
+	})
+
+	t.Run("redundant overlay of a base module carries the base pin", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"dep": {Source: "github.com/foo/dep", Pin: "abc123"},
+			},
+		}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "dep", "github.com/foo/dep")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.Equal(t, "github.com/foo/dep", cfg.Env["dev"].Modules["dep"].Source)
+		require.Equal(t, "abc123", cfg.Env["dev"].Modules["dep"].Pin)
+	})
+
+	t.Run("settings-only overlay entry is upgraded in place", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"dep": {Source: "base/dep"},
+			},
+			Env: map[string]workspace.EnvOverlay{
+				"dev": {Modules: map[string]workspace.EnvModuleOverlay{
+					"dep": {Settings: map[string]any{"region": "eu"}},
+				}},
+			},
+		}
+
+		plan, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "dep", "dep")
+		require.NoError(t, err)
+		require.True(t, plan.Changed)
+		require.True(t, plan.Added)
+		entry := cfg.Env["dev"].Modules["dep"]
+		require.Equal(t, "dep", entry.Source)
+		require.Equal(t, map[string]any{"region": "eu"}, entry.Settings)
+	})
+
+	t.Run("SDK installs are rejected under an env selection", func(t *testing.T) {
+		cfg := &workspace.Config{}
+
+		_, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{AsSdk: true}, "go-sdk", "go-sdk")
+		require.ErrorContains(t, err, `SDKs cannot be installed in env "dev"`)
+		require.Empty(t, cfg.Env)
+	})
+
+	t.Run("re-sourcing a base SDK entry is rejected", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"go-sdk": {Source: "sdk/go", AsSDK: &workspace.ModuleAsSDK{}},
+			},
+		}
+
+		_, err := planWorkspaceEnvInstallConfig(cfg, "dev", workspaceInstallArgs{}, "go-sdk", "other/go")
+		require.ErrorContains(t, err, `module "go-sdk" is an SDK; SDKs cannot be installed in env "dev"`)
+		require.Empty(t, cfg.Env)
+	})
+}
+
+func TestEnvScopedConfigKeyMissingEnv(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"aws": {Source: "modules/aws"},
+		},
+	}
+
+	// Writes create the env, so the key maps even when the env is undefined.
+	key, err := envScopedConfigKey(cfg, "staging", "modules.aws.settings.region", workspaceConfigInitIfMissing)
+	require.NoError(t, err)
+	require.Equal(t, "env.staging.modules.aws.settings.region", key)
+
+	// Unsets still require the env to exist.
+	_, err = envScopedConfigKey(cfg, "staging", "modules.aws.settings.region", workspaceConfigMustExist)
+	require.ErrorContains(t, err, `workspace env "staging" is not defined`)
 }
 
 func TestWorkspaceSettingConfigKeyQuotesDynamicSegments(t *testing.T) {

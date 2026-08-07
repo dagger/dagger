@@ -17,12 +17,32 @@ func (s *workspaceSchema) workspaceModules(
 ) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
 	ws := parent.Self()
 	if ws.ConfigFile == "" {
+		// An env selection has nowhere to resolve from without a config, and
+		// silently listing nothing would read as "the env is empty".
+		if envName, ok := selectedWorkspaceEnv(ctx); ok {
+			return nil, fmt.Errorf("workspace env %q requires dagger.toml", envName)
+		}
 		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
 	}
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
 		return nil, err
+	}
+	// The listing is the effective view, merged in the same order as module
+	// loading (base, user-level overlay, selected env overlay), so modules an
+	// overlay adds are discoverable. It inherits the env overlay's strictness
+	// too — a missing or broken env fails listing instead of silently falling
+	// back to the base config, deliberately matching env-selected config reads.
+	if envName, ok := selectedWorkspaceEnv(ctx); ok {
+		cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+		if err != nil {
+			return nil, err
+		}
+		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	configDir, err := workspaceConfigDirectory(ws)
@@ -179,8 +199,9 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, err
 	}
 
-	// Source comes from base config; values come from the user-level overlay
-	// and the selected env overlay, merged in the same order as module loading.
+	// Values come from the user-level overlay and the selected env overlay,
+	// merged in the same order as module loading. The entry lookup is also
+	// effective so modules an overlay itself adds resolve their settings.
 	effectiveCfg, err := workspace.ApplyUserOverlay(cfg, ws.Self().UserConfigOverlay())
 	if err != nil {
 		return nil, err
@@ -192,7 +213,7 @@ func (s *workspaceSchema) moduleSettings(
 		}
 	}
 
-	entry, ok := cfg.Modules[parent.Self().Name]
+	entry, ok := effectiveCfg.Modules[parent.Self().Name]
 	if !ok {
 		return nil, fmt.Errorf("module %q is not installed in the workspace", parent.Self().Name)
 	}

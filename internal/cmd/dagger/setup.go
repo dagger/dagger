@@ -58,6 +58,10 @@ default is to skip steps that would mutate state.`,
 }
 
 func runSetup(cmd *cobra.Command, _ []string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("setup does not support --env; it configures the base workspace")
+	}
+
 	out := cmd.OutOrStdout()
 
 	if err := setupStepLogin(cmd); err != nil {

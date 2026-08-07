@@ -15337,6 +15337,8 @@ class Workspace(Type):
     def module(self, name: str) -> "WorkspaceModule":
         """Return a module defined in the workspace configuration.
 
+        Reflects the selected env's effective view.
+
         Parameters
         ----------
         name:
@@ -15369,7 +15371,10 @@ class Workspace(Type):
         return ModuleSource(_ctx)
 
     async def modules(self) -> list["WorkspaceModule"]:
-        """List modules defined in the workspace configuration."""
+        """List modules defined in the workspace configuration.
+
+        Reflects the selected env's effective view.
+        """
         _args: list[Arg] = []
         _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
@@ -15533,6 +15538,9 @@ class Workspace(Type):
     ) -> Self:
         """Return this workspace with a configuration value written.
 
+        When the session selects an env, the key is scoped to that env's
+        overlay and the env is created if missing.
+
         Parameters
         ----------
         key:
@@ -15654,6 +15662,9 @@ class Workspace(Type):
         here: bool | None = False,
     ) -> Self:
         """Return this workspace with a module installed in its config.
+
+        When the session selects an env, the module is recorded in that env's
+        overlay and the env is created if missing.
 
         Parameters
         ----------
@@ -15851,6 +15862,9 @@ class Workspace(Type):
 
         Errors when the key is not currently set.
 
+        When the session selects an env, the key is scoped to that env's
+        overlay.
+
         Parameters
         ----------
         key:
@@ -15904,6 +15918,9 @@ class Workspace(Type):
         here: bool | None = False,
     ) -> Self:
         """Return this workspace with a module removed from its config.
+
+        When the session selects an env, only that env's overlay entry is
+        removed.
 
         Parameters
         ----------
