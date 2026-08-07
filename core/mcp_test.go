@@ -1,8 +1,19 @@
 package core
 
 import (
+	"context"
+	"database/sql"
 	"strings"
 	"testing"
+
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+
+	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 // TestAssembleLines covers log-line assembly from raw stdio segments: log
@@ -180,6 +191,135 @@ func itoa(i int) string {
 		return "0" + string(rune('0'+i))
 	}
 	return string(rune('0'+i/10)) + string(rune('0'+i%10))
+}
+
+// TestInternalSpanFilterSubtreeBounds covers beneathInternal's containment
+// rule: a cause-linked span's parent chain leaves the captured subtree
+// without passing through the capture root (a service exec span is parented
+// under whatever call triggered the start), so internal spans on that
+// unrelated chain must not hide the capture's logs. Internal-ness within the
+// subtree still hides, service filtering still applies to the cause-linked
+// exec span itself, and refresh picks up spans that joined the subtree after
+// the filter's snapshot.
+func TestInternalSpanFilterSubtreeBounds(t *testing.T) {
+	ctx := context.Background()
+	store, err := clientdb.NewDBs(t.TempDir()).Open(ctx, "filter-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// Link targets round-trip through OTLP span IDs, so use valid hex IDs.
+	const (
+		traceID     = "000102030405060708090a0b0c0d0e0f"
+		rootSpan    = "0000000000000001" // trace root
+		hiddenSpan  = "0000000000000002" // internal span OUTSIDE the capture
+		triggerSpan = "0000000000000003" // triggered the service start, beneath hiddenSpan
+		installSpan = "0000000000000004" // Container.asService: the capture root
+		execSpan    = "0000000000000005" // service exec span, cause-links to installSpan
+		execChild   = "0000000000000006" // e.g. the exec's process span
+		innerHidden = "0000000000000007" // internal span WITHIN the capture
+		innerLeaf   = "0000000000000008" // beneath innerHidden; appended late
+	)
+
+	internalAttrs := marshalSpanAttrs(t, boolAttr(telemetry.UIInternalAttr))
+	serviceAttrs := marshalSpanAttrs(t, boolAttr(telemetryattrs.ServiceAttr))
+	noAttrs := marshalSpanAttrs(t)
+
+	_, err = store.AppendSpans([]clientdb.Span{
+		{TraceID: traceID, SpanID: rootSpan, Attributes: noAttrs},
+		{TraceID: traceID, SpanID: hiddenSpan, ParentSpanID: validSpanID(rootSpan), Attributes: internalAttrs},
+		{TraceID: traceID, SpanID: triggerSpan, ParentSpanID: validSpanID(hiddenSpan), Attributes: noAttrs},
+		{TraceID: traceID, SpanID: installSpan, ParentSpanID: validSpanID(rootSpan), Attributes: noAttrs},
+		{TraceID: traceID, SpanID: execSpan, ParentSpanID: validSpanID(triggerSpan),
+			Attributes: serviceAttrs, Links: marshalCauseLink(t, traceID, installSpan)},
+		{TraceID: traceID, SpanID: execChild, ParentSpanID: validSpanID(execSpan), Attributes: noAttrs},
+		{TraceID: traceID, SpanID: innerHidden, ParentSpanID: validSpanID(installSpan), Attributes: internalAttrs},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := newInternalSpanFilter(store, installSpan, false)
+
+	// The exec child's chain (execSpan → triggerSpan → hiddenSpan) leaves the
+	// subtree at triggerSpan; the internal span above is not between these
+	// logs and the capture root and must not hide them.
+	if beneathInternalOrFatal(t, f, traceID, execChild) {
+		t.Error("execChild hidden by an internal span outside the captured subtree")
+	}
+
+	// innerLeaf hasn't been appended: it's outside the snapshot, unhidden.
+	if beneathInternalOrFatal(t, f, traceID, innerLeaf) {
+		t.Error("innerLeaf hidden before joining the subtree")
+	}
+	_, err = store.AppendSpans([]clientdb.Span{
+		{TraceID: traceID, SpanID: innerLeaf, ParentSpanID: validSpanID(innerHidden), Attributes: noAttrs},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.refresh()
+	// Now within the subtree, beneath an internal span: hidden.
+	if !beneathInternalOrFatal(t, f, traceID, innerLeaf) {
+		t.Error("innerLeaf not hidden by an internal ancestor within the subtree")
+	}
+
+	// Service filtering still applies to the cause-linked exec span itself:
+	// it IS within the capture — that's how its logs got here.
+	sf := newInternalSpanFilter(store, installSpan, true)
+	if !beneathInternalOrFatal(t, sf, traceID, execChild) {
+		t.Error("execChild not filtered as service logs with skipServices set")
+	}
+}
+
+func beneathInternalOrFatal(t *testing.T, f *internalSpanFilter, traceID, spanID string) bool {
+	t.Helper()
+	hidden, err := f.beneathInternal(context.Background(), traceID, spanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hidden
+}
+
+func boolAttr(key string) *otlpcommonv1.KeyValue {
+	return &otlpcommonv1.KeyValue{
+		Key:   key,
+		Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BoolValue{BoolValue: true}},
+	}
+}
+
+func marshalSpanAttrs(t *testing.T, attrs ...*otlpcommonv1.KeyValue) []byte {
+	t.Helper()
+	data, err := clientdb.MarshalProtoJSONs(attrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func marshalCauseLink(t *testing.T, traceID, spanID string) []byte {
+	t.Helper()
+	tid, err := trace.TraceIDFromHex(traceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid, err := trace.SpanIDFromHex(spanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB([]sdktrace.Link{{
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid}),
+		Attributes:  []attribute.KeyValue{attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause)},
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func validSpanID(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: true}
 }
 
 // TestNormalizeSpanArg covers span-argument normalization: agents paste span

@@ -321,6 +321,15 @@ func (s *DB) CausalChildren(spanID string) []string {
 	return s.lookup.causalChildrenOf(spanID)
 }
 
+// DescendantSpans returns the set of span IDs beneath the given span — the
+// same child-edge + cause-link walk SelectLogsBeneathSpan scopes its logs to,
+// so a caller can ask which spans a capture actually contains (the root
+// itself is not included). The returned map is a fresh snapshot the caller
+// owns; the set only ever grows as spans arrive.
+func (s *DB) DescendantSpans(spanID string) map[string]struct{} {
+	return s.lookup.descendants(spanID)
+}
+
 func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
 	limit := storeLimit(arg.Limit)
 	if limit == 0 || !arg.SpanID.Valid {
