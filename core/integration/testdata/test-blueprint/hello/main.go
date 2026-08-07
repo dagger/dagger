@@ -19,6 +19,13 @@ func (m *Hello) ConfigurableMessage(
 	return fmt.Sprintf("%s from blueprint", message)
 }
 
+func (m *Hello) ShoutMessage(
+	// +default="hello"
+	message string,
+) string {
+	return fmt.Sprintf("%s FROM BLUEPRINT!!!", message)
+}
+
 // This should read Hello's own config file
 func (m *Hello) BlueprintConfig(ctx context.Context) (string, error) {
 	return dag.CurrentModule().Source().File("blueprint-config.txt").Contents(ctx)
