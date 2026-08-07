@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -802,6 +803,259 @@ func (WorkspaceAPISuite) TestWorkspaceMountsSearchGlobFindUp(ctx context.Context
 			got = mountedQuery(t, `findUp(name: "real.txt", from: "shadowed")`)
 			require.Nil(t, got["findUp"], "sources shadowed by a mount must not resurface")
 		})
+	})
+}
+
+// TestWorkspaceMountedCache covers Workspace.withMountedCache. A mounted cache
+// volume behaves like any other mount for reads — it shadows the source and
+// stays out of the pending changeset — but it is writable, and export commits
+// the edits made under it into the volume instead of into the workspace.
+func (WorkspaceAPISuite) TestWorkspaceMountedCache(ctx context.Context, t *testctx.T) {
+	// seededVolume returns a fresh cache volume with seed.txt already written by
+	// a container, so the workspace mount has pre-existing content to read.
+	seededVolume := func(ctx context.Context, t *testctx.T, c *dagger.Client) *dagger.CacheVolume {
+		t.Helper()
+		vol := c.CacheVolume("workspace-mounted-cache-" + identity.NewID())
+		_, err := c.Container().From(alpineImage).
+			WithMountedCache("/cache", vol).
+			WithExec([]string{"sh", "-c", "echo -n seeded > /cache/seed.txt"}).
+			Sync(ctx)
+		require.NoError(t, err)
+		return vol
+	}
+
+	// volumeFile reads a path from the volume through a container, which is the
+	// only view that proves write-through actually landed.
+	volumeFile := func(ctx context.Context, t *testctx.T, c *dagger.Client, vol *dagger.CacheVolume, path string) (string, error) {
+		t.Helper()
+		return c.Container().From(alpineImage).
+			WithMountedCache("/cache", vol).
+			WithExec([]string{"cat", "/cache/" + path}).
+			Stdout(ctx)
+	}
+
+	t.Run("reads the volume and shadows the source", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := c.Directory().
+			WithNewFile("base.txt", "base").
+			WithNewFile("cache/real.txt", "real").
+			AsWorkspace().
+			WithMountedCache("cache", seededVolume(ctx, t, c))
+
+		contents, err := ws.File("cache/seed.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "seeded", contents)
+
+		entries, err := ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"seed.txt"}, entries, "the mount must shadow the source subtree")
+
+		// Mounted content shows up in listings above the mount point, and the
+		// source outside it is untouched.
+		entries, err = ws.Directory("/").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "base.txt")
+		require.Contains(t, entries, "cache/")
+
+		isEmpty, err := ws.Changes().IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, isEmpty, "a mounted cache is not a pending change")
+	})
+
+	t.Run("the volume is read at first use, not at mount time", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		vol := seededVolume(ctx, t, c)
+		ws := c.Directory().AsWorkspace().WithMountedCache("cache", vol)
+
+		// Run the mount server-side without touching the mount. Asking for the
+		// ID resolves withMountedCache and nothing under it.
+		_, err := ws.ID(ctx)
+		require.NoError(t, err)
+
+		_, err = c.Container().From(alpineImage).
+			WithMountedCache("/cache", vol).
+			WithExec([]string{"sh", "-c", "echo -n late > /cache/late.txt"}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		// Reading re-issues the same calls, which hit the session cache and hand
+		// back the still-unmaterialized mount — so this is the first thing that
+		// actually reads the volume, and it sees the write that landed after the
+		// mount. An eager mount would have copied the volume above and missed it.
+		entries, err := ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"seed.txt", "late.txt"}, entries)
+	})
+
+	t.Run("edits under the mount are readable but not pending changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := c.Directory().
+			AsWorkspace().
+			WithMountedCache("cache", seededVolume(ctx, t, c)).
+			WithNewFile("cache/written.txt", "written")
+
+		contents, err := ws.File("cache/written.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "written", contents)
+
+		// The seeded content is still there alongside the edit.
+		entries, err := ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"seed.txt", "written.txt"}, entries)
+
+		isEmpty, err := ws.Changes().IsEmpty(ctx)
+		require.NoError(t, err)
+		require.True(t, isEmpty, "cache mount edits belong to the volume, not the workspace changeset")
+	})
+
+	t.Run("export commits edits into the volume", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		vol := seededVolume(ctx, t, c)
+
+		err := c.Directory().
+			AsWorkspace().
+			WithMountedCache("cache", vol).
+			WithNewFile("cache/written.txt", "written").
+			Export(ctx)
+		require.NoError(t, err)
+
+		contents, err := volumeFile(ctx, t, c, vol, "written.txt")
+		require.NoError(t, err)
+		require.Equal(t, "written", contents)
+
+		// Write-through is a delta: content the workspace never touched survives.
+		contents, err = volumeFile(ctx, t, c, vol, "seed.txt")
+		require.NoError(t, err)
+		require.Equal(t, "seeded", contents)
+	})
+
+	t.Run("export commits removals into the volume", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		vol := seededVolume(ctx, t, c)
+
+		err := c.Directory().
+			AsWorkspace().
+			WithMountedCache("cache", vol).
+			WithoutFile("cache/seed.txt").
+			Export(ctx)
+		require.NoError(t, err)
+
+		_, err = volumeFile(ctx, t, c, vol, "seed.txt")
+		require.Error(t, err, "the removal must have been committed into the volume")
+	})
+
+	t.Run("without export the volume is untouched", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		vol := seededVolume(ctx, t, c)
+
+		_, err := c.Directory().
+			AsWorkspace().
+			WithMountedCache("cache", vol).
+			WithNewFile("cache/written.txt", "written").
+			Changes().IsEmpty(ctx)
+		require.NoError(t, err)
+
+		_, err = volumeFile(ctx, t, c, vol, "written.txt")
+		require.Error(t, err, "edits reach the volume only through export")
+	})
+
+	t.Run("withoutMount restores the source", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := c.Directory().
+			WithNewFile("cache/real.txt", "real").
+			AsWorkspace().
+			WithMountedCache("cache", seededVolume(ctx, t, c)).
+			WithoutMount("cache")
+
+		entries, err := ws.Directory("cache").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"real.txt"}, entries)
+	})
+
+	t.Run("search and glob see the mounted cache", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ws := c.Directory().
+			WithNewFile("src/hay.txt", "needle in source\n").
+			AsWorkspace().
+			WithMountedCache("cache", seededVolume(ctx, t, c)).
+			WithNewFile("cache/written.txt", "needle written\n")
+
+		results, err := ws.Search(ctx, "needle", dagger.WorkspaceSearchOpts{Literal: true})
+		require.NoError(t, err)
+		paths := make([]string, 0, len(results))
+		for _, r := range results {
+			p, err := r.FilePath(ctx)
+			require.NoError(t, err)
+			paths = append(paths, p)
+		}
+		require.Contains(t, paths, "src/hay.txt")
+		require.Contains(t, paths, "cache/written.txt")
+
+		matches, err := ws.Glob(ctx, "**/*.txt")
+		require.NoError(t, err)
+		require.Contains(t, matches, "cache/seed.txt")
+		require.Contains(t, matches, "cache/written.txt")
+	})
+
+	t.Run("mounting over the workspace root is rejected", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := c.Directory().
+			AsWorkspace().
+			WithMountedCache(".", seededVolume(ctx, t, c)).
+			Changes().IsEmpty(ctx)
+		require.ErrorContains(t, err, "cannot mount over the workspace root")
+	})
+
+	t.Run("withChanges across a cache mount is rejected", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		changes := c.Directory().
+			WithNewFile("cache/patched.txt", "patched").
+			Changes(c.Directory())
+
+		_, err := c.Directory().
+			AsWorkspace().
+			WithMountedCache("cache", seededVolume(ctx, t, c)).
+			WithChanges(changes).
+			Changes().IsEmpty(ctx)
+		require.ErrorContains(t, err, "falls under cache mount")
+	})
+
+	t.Run("host workspace keeps cache edits out of its export", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		vol := seededVolume(ctx, t, c)
+		volID, err := vol.ID(ctx)
+		require.NoError(t, err)
+
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
+
+		queryPath := writeQueryDoc(t, workdir, "cache-mount-export.graphql", fmt.Sprintf(`{
+  currentWorkspace {
+    withMountedCache(path: "cache", cache: %q) {
+      withNewFile(path: "cache/written.txt", contents: "written") {
+        withNewFile(path: "staged.txt", contents: "staged") {
+          export
+        }
+      }
+    }
+  }
+}
+`, volID))
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+		require.NoError(t, err)
+
+		// The base edit landed on disk; the cache edit did not.
+		got, err := os.ReadFile(filepath.Join(workdir, "staged.txt"))
+		require.NoError(t, err)
+		require.Equal(t, "staged", string(got))
+		_, err = os.Stat(filepath.Join(workdir, "cache"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+
+		// It went into the volume instead.
+		contents, err := volumeFile(ctx, t, c, vol, "written.txt")
+		require.NoError(t, err)
+		require.Equal(t, "written", contents)
 	})
 }
 
