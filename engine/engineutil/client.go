@@ -597,6 +597,89 @@ func (c *Client) ApplyGitBundle(
 	}
 }
 
+// pushMethod is the RPC's fully qualified name, used to detect clients too
+// old to know about it.
+const pushMethod = "/dagger.git.Git/Push"
+
+// PushGitCommits has the client's own git push targetSHA to a remote,
+// updating destRef (or the checkout's current branch when destRef is empty).
+// Commits the checkout does not have yet travel alongside as a git bundle,
+// recorded under bundleRef; they enter the checkout's object database without
+// creating or moving any local ref. Running on the host is what makes the
+// push behave exactly like `git push` in the checkout: the checkout's
+// configured remotes, credential helpers, ssh agent and hooks all apply. It
+// returns the fully qualified remote ref that was updated.
+func (c *Client) PushGitCommits(
+	ctx context.Context,
+	checkoutPath string,
+	remote string,
+	destRef string,
+	targetSHA string,
+	force bool,
+	bundleRef string,
+	bundle []byte,
+) (string, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
+	}
+	if !caller.Supports(pushMethod) {
+		return "", fmt.Errorf("client does not support pushing git commits; upgrade the dagger CLI")
+	}
+
+	stream, err := git.NewGitClient(caller.Conn()).Push(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to open push stream: %w", err)
+	}
+
+	err = stream.Send(&git.PushRequest{
+		Msg: &git.PushRequest_Metadata{
+			Metadata: &git.PushMetadata{
+				CheckoutPath: checkoutPath,
+				Remote:       remote,
+				DestRef:      destRef,
+				TargetSha:    targetSHA,
+				Force:        force,
+				BundleRef:    bundleRef,
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to send push metadata: %w", err)
+	}
+	for len(bundle) > 0 {
+		chunk := bundle
+		if len(chunk) > applyBundleChunkSize {
+			chunk = chunk[:applyBundleChunkSize]
+		}
+		bundle = bundle[len(chunk):]
+		err := stream.Send(&git.PushRequest{
+			Msg: &git.PushRequest_Chunk{Chunk: chunk},
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to send bundle: %w", err)
+		}
+	}
+
+	response, err := stream.CloseAndRecv()
+	if err != nil {
+		return "", fmt.Errorf("failed to push: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *git.PushResponse_Pushed:
+		return result.Pushed.DestRef, nil
+	case *git.PushResponse_Error:
+		return "", errors.New(result.Error.Message)
+	default:
+		return "", fmt.Errorf("unexpected response type")
+	}
+}
+
 // checkoutStateMethod and packCheckoutMethod are the RPCs' fully qualified
 // names, used to detect clients too old to know about them.
 const (

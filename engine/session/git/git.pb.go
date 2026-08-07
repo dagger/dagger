@@ -43,19 +43,23 @@ const (
 	BUNDLE_APPLY_FAILED         ErrorInfo_ErrorType = 7
 	NOT_A_REPO                  ErrorInfo_ErrorType = 8
 	PACK_FAILED                 ErrorInfo_ErrorType = 9
+	PUSH_FAILED                 ErrorInfo_ErrorType = 10
+	DETACHED_HEAD               ErrorInfo_ErrorType = 11
 )
 
 var ErrorInfo_ErrorType_name = map[int32]string{
-	0: "UNKNOWN",
-	1: "INVALID_REQUEST",
-	2: "NOT_FOUND",
-	3: "TIMEOUT",
-	4: "CREDENTIAL_RETRIEVAL_FAILED",
-	5: "CONFIG_RETRIEVAL_FAILED",
-	6: "HEAD_MISMATCH",
-	7: "BUNDLE_APPLY_FAILED",
-	8: "NOT_A_REPO",
-	9: "PACK_FAILED",
+	0:  "UNKNOWN",
+	1:  "INVALID_REQUEST",
+	2:  "NOT_FOUND",
+	3:  "TIMEOUT",
+	4:  "CREDENTIAL_RETRIEVAL_FAILED",
+	5:  "CONFIG_RETRIEVAL_FAILED",
+	6:  "HEAD_MISMATCH",
+	7:  "BUNDLE_APPLY_FAILED",
+	8:  "NOT_A_REPO",
+	9:  "PACK_FAILED",
+	10: "PUSH_FAILED",
+	11: "DETACHED_HEAD",
 }
 
 var ErrorInfo_ErrorType_value = map[string]int32{
@@ -69,10 +73,12 @@ var ErrorInfo_ErrorType_value = map[string]int32{
 	"BUNDLE_APPLY_FAILED":         7,
 	"NOT_A_REPO":                  8,
 	"PACK_FAILED":                 9,
+	"PUSH_FAILED":                 10,
+	"DETACHED_HEAD":               11,
 }
 
 func (ErrorInfo_ErrorType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{18, 0}
+	return fileDescriptor_0d2ecb6e8d788208, []int{22, 0}
 }
 
 type GitCredentialRequest struct {
@@ -1268,6 +1274,331 @@ func (m *PackCheckoutMetadata) GetError() *ErrorInfo {
 	return nil
 }
 
+// PushRequest streams a push order to the client: one metadata message
+// first, then — when the commit being pushed only exists engine-side — the
+// bytes of a git bundle carrying it, in chunks. The client's own git runs the
+// push, so the checkout's configured remotes, credentials and hooks apply,
+// and the checkout's own refs and work tree are never modified.
+type PushRequest struct {
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*PushRequest_Metadata
+	//	*PushRequest_Chunk
+	Msg isPushRequest_Msg `protobuf_oneof:"msg"`
+}
+
+func (m *PushRequest) Reset()      { *m = PushRequest{} }
+func (*PushRequest) ProtoMessage() {}
+func (*PushRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{18}
+}
+func (m *PushRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PushRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PushRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PushRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PushRequest.Merge(m, src)
+}
+func (m *PushRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *PushRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_PushRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PushRequest proto.InternalMessageInfo
+
+type isPushRequest_Msg interface {
+	isPushRequest_Msg()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type PushRequest_Metadata struct {
+	Metadata *PushMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+}
+type PushRequest_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof" json:"chunk,omitempty"`
+}
+
+func (*PushRequest_Metadata) isPushRequest_Msg() {}
+func (*PushRequest_Chunk) isPushRequest_Msg()    {}
+
+func (m *PushRequest) GetMsg() isPushRequest_Msg {
+	if m != nil {
+		return m.Msg
+	}
+	return nil
+}
+
+func (m *PushRequest) GetMetadata() *PushMetadata {
+	if x, ok := m.GetMsg().(*PushRequest_Metadata); ok {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (m *PushRequest) GetChunk() []byte {
+	if x, ok := m.GetMsg().(*PushRequest_Chunk); ok {
+		return x.Chunk
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*PushRequest) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*PushRequest_Metadata)(nil),
+		(*PushRequest_Chunk)(nil),
+	}
+}
+
+type PushMetadata struct {
+	// checkout_path is the local checkout the push runs in.
+	CheckoutPath string `protobuf:"bytes,1,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+	// remote is what to push to: a remote name from the checkout's
+	// configuration, or a URL.
+	Remote string `protobuf:"bytes,2,opt,name=remote,proto3" json:"remote,omitempty"`
+	// dest_ref is the fully qualified ref to update on the remote. Empty means
+	// the checkout's current branch, resolved here on the host; that
+	// resolution fails when HEAD is detached.
+	DestRef string `protobuf:"bytes,3,opt,name=dest_ref,json=destRef,proto3" json:"dest_ref,omitempty"`
+	// target_sha is the commit the remote ref is updated to.
+	TargetSha string `protobuf:"bytes,4,opt,name=target_sha,json=targetSha,proto3" json:"target_sha,omitempty"`
+	// force allows a non-fast-forward update of the remote ref.
+	Force bool `protobuf:"varint,5,opt,name=force,proto3" json:"force,omitempty"`
+	// bundle_ref is the ref the bundle records for target_sha, when bundle
+	// chunks follow the metadata. Empty when no bundle follows (the commit is
+	// already present in the checkout's repository).
+	BundleRef string `protobuf:"bytes,6,opt,name=bundle_ref,json=bundleRef,proto3" json:"bundle_ref,omitempty"`
+}
+
+func (m *PushMetadata) Reset()      { *m = PushMetadata{} }
+func (*PushMetadata) ProtoMessage() {}
+func (*PushMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{19}
+}
+func (m *PushMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PushMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PushMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PushMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PushMetadata.Merge(m, src)
+}
+func (m *PushMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *PushMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_PushMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PushMetadata proto.InternalMessageInfo
+
+func (m *PushMetadata) GetCheckoutPath() string {
+	if m != nil {
+		return m.CheckoutPath
+	}
+	return ""
+}
+
+func (m *PushMetadata) GetRemote() string {
+	if m != nil {
+		return m.Remote
+	}
+	return ""
+}
+
+func (m *PushMetadata) GetDestRef() string {
+	if m != nil {
+		return m.DestRef
+	}
+	return ""
+}
+
+func (m *PushMetadata) GetTargetSha() string {
+	if m != nil {
+		return m.TargetSha
+	}
+	return ""
+}
+
+func (m *PushMetadata) GetForce() bool {
+	if m != nil {
+		return m.Force
+	}
+	return false
+}
+
+func (m *PushMetadata) GetBundleRef() string {
+	if m != nil {
+		return m.BundleRef
+	}
+	return ""
+}
+
+type PushResponse struct {
+	// Types that are valid to be assigned to Result:
+	//
+	//	*PushResponse_Pushed
+	//	*PushResponse_Error
+	Result isPushResponse_Result `protobuf_oneof:"result"`
+}
+
+func (m *PushResponse) Reset()      { *m = PushResponse{} }
+func (*PushResponse) ProtoMessage() {}
+func (*PushResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{20}
+}
+func (m *PushResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PushResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PushResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PushResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PushResponse.Merge(m, src)
+}
+func (m *PushResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *PushResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_PushResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PushResponse proto.InternalMessageInfo
+
+type isPushResponse_Result interface {
+	isPushResponse_Result()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type PushResponse_Pushed struct {
+	Pushed *PushResult `protobuf:"bytes,1,opt,name=pushed,proto3,oneof" json:"pushed,omitempty"`
+}
+type PushResponse_Error struct {
+	Error *ErrorInfo `protobuf:"bytes,2,opt,name=error,proto3,oneof" json:"error,omitempty"`
+}
+
+func (*PushResponse_Pushed) isPushResponse_Result() {}
+func (*PushResponse_Error) isPushResponse_Result()  {}
+
+func (m *PushResponse) GetResult() isPushResponse_Result {
+	if m != nil {
+		return m.Result
+	}
+	return nil
+}
+
+func (m *PushResponse) GetPushed() *PushResult {
+	if x, ok := m.GetResult().(*PushResponse_Pushed); ok {
+		return x.Pushed
+	}
+	return nil
+}
+
+func (m *PushResponse) GetError() *ErrorInfo {
+	if x, ok := m.GetResult().(*PushResponse_Error); ok {
+		return x.Error
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*PushResponse) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*PushResponse_Pushed)(nil),
+		(*PushResponse_Error)(nil),
+	}
+}
+
+type PushResult struct {
+	// dest_ref is the fully qualified remote ref that was updated, resolved
+	// when the request left it empty.
+	DestRef string `protobuf:"bytes,1,opt,name=dest_ref,json=destRef,proto3" json:"dest_ref,omitempty"`
+	// sha is the commit the remote ref was updated to.
+	Sha string `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
+}
+
+func (m *PushResult) Reset()      { *m = PushResult{} }
+func (*PushResult) ProtoMessage() {}
+func (*PushResult) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{21}
+}
+func (m *PushResult) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *PushResult) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_PushResult.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *PushResult) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PushResult.Merge(m, src)
+}
+func (m *PushResult) XXX_Size() int {
+	return m.Size()
+}
+func (m *PushResult) XXX_DiscardUnknown() {
+	xxx_messageInfo_PushResult.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PushResult proto.InternalMessageInfo
+
+func (m *PushResult) GetDestRef() string {
+	if m != nil {
+		return m.DestRef
+	}
+	return ""
+}
+
+func (m *PushResult) GetSha() string {
+	if m != nil {
+		return m.Sha
+	}
+	return ""
+}
+
 type ErrorInfo struct {
 	Type    ErrorInfo_ErrorType `protobuf:"varint,1,opt,name=type,proto3,enum=dagger.git.ErrorInfo_ErrorType" json:"type,omitempty"`
 	Message string              `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
@@ -1276,7 +1607,7 @@ type ErrorInfo struct {
 func (m *ErrorInfo) Reset()      { *m = ErrorInfo{} }
 func (*ErrorInfo) ProtoMessage() {}
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{18}
+	return fileDescriptor_0d2ecb6e8d788208, []int{22}
 }
 func (m *ErrorInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1339,79 +1670,93 @@ func init() {
 	proto.RegisterType((*PackCheckoutRequest)(nil), "dagger.git.PackCheckoutRequest")
 	proto.RegisterType((*PackCheckoutResponse)(nil), "dagger.git.PackCheckoutResponse")
 	proto.RegisterType((*PackCheckoutMetadata)(nil), "dagger.git.PackCheckoutMetadata")
+	proto.RegisterType((*PushRequest)(nil), "dagger.git.PushRequest")
+	proto.RegisterType((*PushMetadata)(nil), "dagger.git.PushMetadata")
+	proto.RegisterType((*PushResponse)(nil), "dagger.git.PushResponse")
+	proto.RegisterType((*PushResult)(nil), "dagger.git.PushResult")
 	proto.RegisterType((*ErrorInfo)(nil), "dagger.git.ErrorInfo")
 }
 
 func init() { proto.RegisterFile("git.proto", fileDescriptor_0d2ecb6e8d788208) }
 
 var fileDescriptor_0d2ecb6e8d788208 = []byte{
-	// 1047 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x6f, 0xe3, 0x44,
-	0x1c, 0xb5, 0x9b, 0xb6, 0x49, 0x7e, 0xe9, 0x9f, 0x74, 0xda, 0xb2, 0xa1, 0xa5, 0x6e, 0xf1, 0x5e,
-	0x56, 0x20, 0x0a, 0xea, 0x82, 0xc4, 0xf2, 0x4f, 0x72, 0x12, 0xb7, 0x89, 0x36, 0x4d, 0x82, 0x9b,
-	0x2e, 0x62, 0x2f, 0xd6, 0x34, 0x9e, 0x38, 0xa6, 0x49, 0x6c, 0xec, 0x09, 0x6c, 0x0e, 0x48, 0x5c,
-	0xb9, 0x20, 0x3e, 0x01, 0x27, 0x0e, 0x5c, 0xf9, 0x16, 0x1c, 0x7b, 0xe0, 0xb0, 0x47, 0x9a, 0x4a,
-	0x88, 0xe3, 0x7e, 0x04, 0xe4, 0xf1, 0xd8, 0xb5, 0xd3, 0x64, 0x45, 0x73, 0xf3, 0xbc, 0x79, 0xbf,
-	0xe7, 0xdf, 0xbc, 0x79, 0x9e, 0x31, 0x64, 0x4d, 0x8b, 0x1e, 0x3a, 0xae, 0x4d, 0x6d, 0x04, 0x06,
-	0x36, 0x4d, 0xe2, 0x1e, 0x9a, 0x16, 0x95, 0x9f, 0xc3, 0xd6, 0x89, 0x45, 0x4b, 0x2e, 0x31, 0xc8,
-	0x80, 0x5a, 0xb8, 0xa7, 0x91, 0x6f, 0x87, 0xc4, 0xa3, 0x68, 0x07, 0x32, 0x8c, 0xdc, 0xb6, 0x7b,
-	0x05, 0xf1, 0x40, 0x7c, 0x94, 0xd5, 0xa2, 0x31, 0x42, 0xb0, 0xd8, 0xb5, 0x3d, 0x5a, 0x58, 0x60,
-	0x38, 0x7b, 0xf6, 0x31, 0x07, 0xd3, 0x6e, 0x21, 0x15, 0x60, 0xfe, 0xb3, 0xfc, 0xb3, 0x08, 0xdb,
-	0x13, 0xe2, 0x9e, 0x63, 0x0f, 0x3c, 0x82, 0x3e, 0x03, 0x68, 0x47, 0x28, 0xd3, 0xcf, 0x1d, 0xed,
-	0x1c, 0xde, 0xb6, 0x75, 0x78, 0x5b, 0x53, 0x1d, 0x74, 0xec, 0x8a, 0xa0, 0xc5, 0xf8, 0xe8, 0x3d,
-	0x58, 0x22, 0xae, 0x6b, 0xbb, 0xac, 0x81, 0xdc, 0xd1, 0x76, 0xbc, 0x50, 0xf5, 0x27, 0x78, 0x4d,
-	0xc0, 0x2a, 0x66, 0x60, 0xd9, 0x25, 0xde, 0xb0, 0x47, 0xe5, 0x17, 0xb0, 0x96, 0x14, 0xbe, 0xf7,
-	0x32, 0x77, 0x20, 0x33, 0xf4, 0x88, 0x3b, 0xc0, 0x7d, 0xc2, 0x97, 0x1a, 0x8d, 0x99, 0x16, 0xf6,
-	0xbc, 0xef, 0x6d, 0xd7, 0x28, 0x2c, 0x72, 0x2d, 0x3e, 0x96, 0x11, 0xe4, 0x7d, 0x27, 0xec, 0x41,
-	0xc7, 0x32, 0xb9, 0xc5, 0xf2, 0x0f, 0xb0, 0x11, 0xc3, 0xb8, 0x33, 0xef, 0xc3, 0x72, 0x9b, 0x21,
-	0xdc, 0x95, 0xc4, 0xe2, 0x22, 0x7a, 0x45, 0xd0, 0x38, 0x6d, 0x7e, 0x33, 0x14, 0xc8, 0x46, 0x7a,
-	0xe8, 0x43, 0x48, 0x93, 0x01, 0x75, 0x2d, 0xe2, 0x15, 0xc4, 0x83, 0xd4, 0xe4, 0x6e, 0x44, 0x3c,
-	0x75, 0x40, 0xdd, 0x91, 0x16, 0x52, 0xe5, 0x8f, 0x61, 0x2d, 0x39, 0x85, 0xf2, 0x90, 0xba, 0x24,
-	0x23, 0x6e, 0xa5, 0xff, 0x88, 0xb6, 0x60, 0xe9, 0x3b, 0xdc, 0x1b, 0x12, 0x6e, 0x63, 0x30, 0x90,
-	0x3f, 0x62, 0x95, 0x15, 0x82, 0x8d, 0x30, 0x70, 0x0f, 0x61, 0xb5, 0xdd, 0x25, 0xed, 0x4b, 0x7b,
-	0x48, 0x75, 0x96, 0xa4, 0x40, 0x63, 0x25, 0x04, 0x9b, 0x7e, 0xa2, 0x4c, 0x58, 0x8f, 0xca, 0xb8,
-	0x61, 0xbb, 0x90, 0xe9, 0x12, 0x6c, 0xe8, 0x5e, 0x17, 0x07, 0x25, 0x15, 0x41, 0x4b, 0xfb, 0xc8,
-	0x59, 0x17, 0xcf, 0x6f, 0x8e, 0x0b, 0x48, 0x71, 0x9c, 0xde, 0xa8, 0x38, 0x1c, 0x18, 0x3d, 0x12,
-	0xf6, 0xf8, 0x39, 0x64, 0xfa, 0x84, 0x62, 0x03, 0x53, 0xcc, 0xb7, 0x67, 0x3f, 0xae, 0x18, 0xab,
-	0x38, 0xe5, 0xb4, 0x8a, 0xa0, 0x45, 0x25, 0xe8, 0x0d, 0x58, 0x6a, 0x77, 0x87, 0x83, 0x4b, 0xd6,
-	0xcd, 0x8a, 0xff, 0x5a, 0x36, 0x2c, 0x2e, 0x41, 0xaa, 0xef, 0x99, 0xf2, 0x6f, 0x22, 0x6c, 0x4e,
-	0x91, 0xf8, 0x5f, 0xce, 0xa0, 0x3d, 0x00, 0x8a, 0x5d, 0x93, 0x50, 0x66, 0x44, 0xe0, 0x75, 0x36,
-	0x40, 0x7c, 0x23, 0xde, 0x81, 0x0d, 0xf2, 0xc2, 0x21, 0x6d, 0x4a, 0x0c, 0xfd, 0x02, 0x7b, 0x84,
-	0xb1, 0x82, 0x00, 0xaf, 0x87, 0x13, 0x45, 0xec, 0x11, 0x9f, 0xbb, 0x07, 0x70, 0xc1, 0x3a, 0xd0,
-	0x5d, 0xd2, 0xe1, 0x49, 0xce, 0x5e, 0x70, 0x23, 0x3a, 0xf2, 0x4f, 0xc9, 0x36, 0xa3, 0x8d, 0x78,
-	0x02, 0x69, 0xec, 0x38, 0x3d, 0x8b, 0x18, 0xdc, 0x9b, 0xbd, 0x19, 0xde, 0x68, 0xcc, 0x62, 0x7f,
-	0x9b, 0x38, 0x7f, 0xfe, 0x6d, 0x3a, 0x84, 0x8d, 0x3b, 0xc2, 0xe8, 0xcd, 0xc9, 0x44, 0x44, 0x79,
-	0x90, 0x3f, 0x85, 0xad, 0x12, 0x77, 0xed, 0x8c, 0x62, 0x4a, 0xee, 0x15, 0xbe, 0x21, 0x6c, 0x4f,
-	0x14, 0xf3, 0x95, 0x3f, 0x84, 0x15, 0xcf, 0x07, 0x74, 0xc3, 0x32, 0x89, 0x47, 0xa3, 0x18, 0xe6,
-	0x18, 0x5a, 0x66, 0xe0, 0xfc, 0x6b, 0xfc, 0x04, 0x36, 0x9b, 0xb8, 0x7d, 0x19, 0xbe, 0xfa, 0x9e,
-	0x2d, 0x6f, 0x25, 0x6b, 0x79, 0xc7, 0x5f, 0xdc, 0x09, 0xf2, 0x41, 0xbc, 0x9f, 0x78, 0xcd, 0x3c,
-	0x49, 0xfe, 0x55, 0x4c, 0xbe, 0x37, 0x8a, 0xf2, 0xec, 0xad, 0x89, 0xa6, 0xfc, 0xcc, 0x2d, 0xdc,
-	0x4e, 0x69, 0xa4, 0xe3, 0x2f, 0xd5, 0xbe, 0xf8, 0x86, 0xb4, 0xa9, 0xde, 0xb1, 0xdd, 0x3e, 0xa6,
-	0x3c, 0xb8, 0x2b, 0x01, 0x78, 0xcc, 0x30, 0xf4, 0x6e, 0xe8, 0xef, 0xe2, 0x6b, 0xfc, 0xe5, 0xee,
-	0xca, 0x7f, 0x2c, 0x40, 0x36, 0x02, 0xd1, 0x63, 0x58, 0xa4, 0x23, 0x87, 0xb0, 0x8e, 0xd6, 0x92,
-	0x9f, 0x74, 0x44, 0x0a, 0x9e, 0x5a, 0x23, 0x87, 0x68, 0x8c, 0x8c, 0x0a, 0x90, 0xee, 0x13, 0xcf,
-	0xc3, 0x66, 0x78, 0xb2, 0x85, 0x43, 0xf9, 0x2f, 0x91, 0x8b, 0xfb, 0x6c, 0x94, 0x83, 0xf4, 0x79,
-	0xfd, 0x69, 0xbd, 0xf1, 0x55, 0x3d, 0x2f, 0xa0, 0x4d, 0x58, 0xaf, 0xd6, 0x9f, 0x29, 0xb5, 0x6a,
-	0x59, 0xd7, 0xd4, 0x2f, 0xcf, 0xd5, 0xb3, 0x56, 0x5e, 0x44, 0xab, 0x90, 0xad, 0x37, 0x5a, 0xfa,
-	0x71, 0xe3, 0xbc, 0x5e, 0xce, 0x2f, 0xf8, 0x05, 0xad, 0xea, 0xa9, 0xda, 0x38, 0x6f, 0xe5, 0x53,
-	0x68, 0x1f, 0x76, 0x4b, 0x9a, 0x5a, 0x56, 0xeb, 0xad, 0xaa, 0x52, 0xd3, 0x35, 0xb5, 0xa5, 0x55,
-	0xd5, 0x67, 0x4a, 0x4d, 0x3f, 0x56, 0xaa, 0x35, 0xb5, 0x9c, 0x5f, 0x44, 0xbb, 0xf0, 0xa0, 0xd4,
-	0xa8, 0x1f, 0x57, 0x4f, 0xee, 0x4e, 0x2e, 0xa1, 0x0d, 0x58, 0xad, 0xa8, 0x4a, 0x59, 0x3f, 0xad,
-	0x9e, 0x9d, 0x2a, 0xad, 0x52, 0x25, 0xbf, 0x8c, 0x1e, 0xc0, 0x66, 0xf1, 0xbc, 0x5e, 0xae, 0xa9,
-	0xba, 0xd2, 0x6c, 0xd6, 0xbe, 0x0e, 0xb9, 0x69, 0xb4, 0x06, 0xe0, 0x77, 0xa1, 0xe8, 0x9a, 0xda,
-	0x6c, 0xe4, 0x33, 0x68, 0x1d, 0x72, 0x4d, 0xa5, 0xf4, 0x34, 0x24, 0x64, 0x8f, 0xfe, 0x49, 0x41,
-	0xea, 0xc4, 0xa2, 0xa8, 0x05, 0xab, 0x27, 0x24, 0x76, 0xa9, 0xa3, 0x83, 0xc9, 0xab, 0x62, 0xf2,
-	0x67, 0x62, 0xe7, 0xed, 0xd7, 0x30, 0x78, 0x22, 0x2b, 0x90, 0xf5, 0x55, 0x83, 0xdb, 0xe8, 0xad,
-	0xa9, 0x97, 0x4f, 0xa8, 0xb6, 0x37, 0x63, 0x96, 0x2b, 0x15, 0x21, 0x7d, 0x42, 0xd8, 0x1d, 0x81,
-	0x26, 0x2f, 0xb1, 0xd8, 0x7d, 0xb3, 0xb3, 0x3b, 0x75, 0x8e, 0x6b, 0x34, 0x21, 0x17, 0x3b, 0x57,
-	0x90, 0x34, 0xf3, 0x24, 0x0b, 0xb4, 0xf6, 0x67, 0x9f, 0x74, 0x4c, 0xef, 0x91, 0xe8, 0xbb, 0x96,
-	0x38, 0x3c, 0x92, 0xae, 0x4d, 0x3b, 0x94, 0x92, 0xae, 0x4d, 0x3f, 0x79, 0xce, 0x60, 0x25, 0xfe,
-	0x9d, 0xa1, 0xfd, 0x59, 0x5f, 0x71, 0xa8, 0x79, 0x30, 0x9b, 0x10, 0x48, 0x7e, 0x20, 0x16, 0x9f,
-	0x5c, 0x5d, 0x4b, 0xc2, 0xcb, 0x6b, 0x49, 0x78, 0x75, 0x2d, 0x89, 0x3f, 0x8e, 0x25, 0xf1, 0xf7,
-	0xb1, 0x24, 0xfe, 0x39, 0x96, 0xc4, 0xab, 0xb1, 0x24, 0xfe, 0x3d, 0x96, 0xc4, 0x7f, 0xc7, 0x92,
-	0xf0, 0x6a, 0x2c, 0x89, 0xbf, 0xdc, 0x48, 0xc2, 0xd5, 0x8d, 0x24, 0xbc, 0xbc, 0x91, 0x84, 0xe7,
-	0x29, 0xd3, 0xa2, 0x17, 0xcb, 0xec, 0xe7, 0xe9, 0xf1, 0x7f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x39,
-	0x28, 0xe1, 0x36, 0x6d, 0x0a, 0x00, 0x00,
+	// 1202 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x73, 0xdb, 0x44,
+	0x14, 0xb7, 0xe2, 0xff, 0xcf, 0x4e, 0xe2, 0x6c, 0xd2, 0xd6, 0x24, 0x44, 0x31, 0xea, 0xa5, 0x03,
+	0x43, 0xe8, 0xb4, 0xc0, 0x10, 0x0a, 0xcc, 0xc8, 0xb6, 0x12, 0x7b, 0xea, 0xd8, 0x46, 0xb6, 0xcb,
+	0xd0, 0x8b, 0x46, 0xb1, 0xd6, 0x7f, 0x88, 0x6d, 0x19, 0x69, 0x0d, 0xf5, 0x81, 0x19, 0xae, 0x5c,
+	0x18, 0x3e, 0x01, 0x17, 0x38, 0xf0, 0x19, 0xf8, 0x04, 0x1c, 0x73, 0x61, 0xa6, 0x47, 0xe2, 0x5c,
+	0x38, 0xf6, 0xc8, 0x91, 0xd9, 0xd5, 0x4a, 0x91, 0x1c, 0xbb, 0xd3, 0xf8, 0xa6, 0x7d, 0xfb, 0x7b,
+	0x3f, 0xbd, 0xf7, 0xdb, 0xf7, 0x76, 0x1f, 0x24, 0xbb, 0x7d, 0x72, 0x38, 0xb6, 0x4c, 0x62, 0x22,
+	0x30, 0xf4, 0x6e, 0x17, 0x5b, 0x87, 0xdd, 0x3e, 0x91, 0x9e, 0xc3, 0xce, 0x49, 0x9f, 0x14, 0x2c,
+	0x6c, 0xe0, 0x11, 0xe9, 0xeb, 0x03, 0x15, 0x7f, 0x3b, 0xc1, 0x36, 0x41, 0xbb, 0x90, 0x60, 0xe0,
+	0xb6, 0x39, 0xc8, 0x0a, 0x39, 0xe1, 0x41, 0x52, 0xf5, 0xd6, 0x08, 0x41, 0xa4, 0x67, 0xda, 0x24,
+	0xbb, 0xc6, 0xec, 0xec, 0x9b, 0xda, 0xc6, 0x3a, 0xe9, 0x65, 0xc3, 0x8e, 0x8d, 0x7e, 0x4b, 0x3f,
+	0x0b, 0x70, 0x67, 0x8e, 0xdc, 0x1e, 0x9b, 0x23, 0x1b, 0xa3, 0xcf, 0x00, 0xda, 0x9e, 0x95, 0xf1,
+	0xa7, 0x1e, 0xed, 0x1e, 0x5e, 0x87, 0x75, 0x78, 0xed, 0x53, 0x1e, 0x75, 0xcc, 0x52, 0x48, 0xf5,
+	0xe1, 0xd1, 0xfb, 0x10, 0xc5, 0x96, 0x65, 0x5a, 0x2c, 0x80, 0xd4, 0xa3, 0x3b, 0x7e, 0x47, 0x85,
+	0x6e, 0x70, 0x1f, 0x07, 0x95, 0x4f, 0x40, 0xcc, 0xc2, 0xf6, 0x64, 0x40, 0xa4, 0x17, 0xb0, 0x11,
+	0x24, 0xbe, 0x75, 0x9a, 0xbb, 0x90, 0x98, 0xd8, 0xd8, 0x1a, 0xe9, 0x43, 0xcc, 0x53, 0xf5, 0xd6,
+	0x8c, 0x4b, 0xb7, 0xed, 0xef, 0x4d, 0xcb, 0xc8, 0x46, 0x38, 0x17, 0x5f, 0x4b, 0x08, 0x32, 0x54,
+	0x09, 0x73, 0xd4, 0xe9, 0x77, 0xb9, 0xc4, 0xd2, 0x0f, 0xb0, 0xe5, 0xb3, 0x71, 0x65, 0x3e, 0x80,
+	0x58, 0x9b, 0x59, 0xb8, 0x2a, 0x81, 0xe4, 0x3c, 0x78, 0x29, 0xa4, 0x72, 0xd8, 0xea, 0x62, 0xc8,
+	0x90, 0xf4, 0xf8, 0xd0, 0x87, 0x10, 0xc7, 0x23, 0x62, 0xf5, 0xb1, 0x9d, 0x15, 0x72, 0xe1, 0xf9,
+	0xd3, 0xf0, 0x70, 0xca, 0x88, 0x58, 0x53, 0xd5, 0x85, 0x4a, 0x9f, 0xc0, 0x46, 0x70, 0x0b, 0x65,
+	0x20, 0x7c, 0x8e, 0xa7, 0x5c, 0x4a, 0xfa, 0x89, 0x76, 0x20, 0xfa, 0x9d, 0x3e, 0x98, 0x60, 0x2e,
+	0xa3, 0xb3, 0x90, 0x3e, 0x62, 0x9e, 0x25, 0xac, 0x1b, 0x6e, 0xc1, 0xdd, 0x87, 0xf5, 0x76, 0x0f,
+	0xb7, 0xcf, 0xcd, 0x09, 0xd1, 0x58, 0x25, 0x39, 0x1c, 0x69, 0xd7, 0x58, 0xa7, 0x15, 0xd5, 0x85,
+	0x4d, 0xcf, 0x8d, 0x0b, 0xb6, 0x07, 0x89, 0x1e, 0xd6, 0x0d, 0xcd, 0xee, 0xe9, 0x8e, 0x4b, 0x29,
+	0xa4, 0xc6, 0xa9, 0xa5, 0xd1, 0xd3, 0x57, 0x17, 0xc7, 0x02, 0x24, 0x8f, 0xc7, 0x83, 0x69, 0x7e,
+	0x32, 0x32, 0x06, 0xd8, 0x8d, 0xf1, 0x73, 0x48, 0x0c, 0x31, 0xd1, 0x0d, 0x9d, 0xe8, 0xfc, 0x78,
+	0x0e, 0xfc, 0x8c, 0x3e, 0x8f, 0x53, 0x0e, 0x2b, 0x85, 0x54, 0xcf, 0x05, 0xdd, 0x85, 0x68, 0xbb,
+	0x37, 0x19, 0x9d, 0xb3, 0x68, 0xd2, 0xf4, 0xb7, 0x6c, 0x99, 0x8f, 0x42, 0x78, 0x68, 0x77, 0xa5,
+	0xdf, 0x05, 0xd8, 0x5e, 0x40, 0xf1, 0x46, 0xca, 0xa0, 0x7d, 0x00, 0xa2, 0x5b, 0x5d, 0x4c, 0x98,
+	0x10, 0x8e, 0xd6, 0x49, 0xc7, 0x42, 0x85, 0x78, 0x17, 0xb6, 0xf0, 0x8b, 0x31, 0x6e, 0x13, 0x6c,
+	0x68, 0x67, 0xba, 0x8d, 0x19, 0xca, 0x29, 0xe0, 0x4d, 0x77, 0x23, 0xaf, 0xdb, 0x98, 0x62, 0xf7,
+	0x01, 0xce, 0x58, 0x04, 0x9a, 0x85, 0x3b, 0xbc, 0x92, 0x93, 0x67, 0x5c, 0x88, 0x8e, 0xf4, 0x53,
+	0x30, 0x4c, 0xef, 0x20, 0x8e, 0x20, 0xae, 0x8f, 0xc7, 0x83, 0x3e, 0x36, 0xb8, 0x36, 0xfb, 0x4b,
+	0xb4, 0x51, 0x99, 0xc4, 0xf4, 0x98, 0x38, 0x7e, 0xf5, 0x63, 0x3a, 0x84, 0xad, 0x1b, 0xc4, 0xe8,
+	0xad, 0xf9, 0x8a, 0xf0, 0xea, 0x41, 0x7a, 0x02, 0x3b, 0x05, 0xae, 0x5a, 0x83, 0xe8, 0x04, 0xdf,
+	0xaa, 0xf8, 0x26, 0x70, 0x67, 0xce, 0x99, 0x67, 0x7e, 0x1f, 0xd2, 0x36, 0x35, 0x68, 0x46, 0xbf,
+	0x8b, 0x6d, 0xe2, 0x95, 0x61, 0x8a, 0x59, 0x8b, 0xcc, 0xb8, 0x7a, 0x8e, 0x9f, 0xc2, 0x76, 0x5d,
+	0x6f, 0x9f, 0xbb, 0xbf, 0xbe, 0x65, 0xc8, 0x3b, 0x41, 0x5f, 0x1e, 0xf1, 0x17, 0x37, 0x0a, 0x39,
+	0xe7, 0x8f, 0xc7, 0xef, 0xb3, 0x4a, 0x25, 0xff, 0x2a, 0x04, 0xff, 0xeb, 0x95, 0xf2, 0xf2, 0xa3,
+	0xf1, 0xb6, 0x68, 0xcd, 0xad, 0x5d, 0x6f, 0xa9, 0xb8, 0x43, 0x53, 0x35, 0xcf, 0xbe, 0xc1, 0x6d,
+	0xa2, 0x75, 0x4c, 0x6b, 0xa8, 0x13, 0x5e, 0xb8, 0x69, 0xc7, 0x78, 0xcc, 0x6c, 0xe8, 0x3d, 0x57,
+	0xdf, 0xc8, 0x6b, 0xf4, 0xe5, 0xea, 0x4a, 0x06, 0xa4, 0xea, 0x13, 0xbb, 0xe7, 0x6a, 0xf9, 0xf1,
+	0x0d, 0x39, 0xb2, 0x01, 0x39, 0x26, 0x76, 0x6f, 0x15, 0x19, 0xfe, 0x14, 0x20, 0xed, 0xf7, 0x7d,
+	0xb3, 0x4e, 0xbe, 0x4b, 0x4f, 0x7e, 0x68, 0x12, 0xf7, 0xc6, 0xe4, 0x2b, 0x2a, 0x90, 0x81, 0x6d,
+	0xc2, 0x04, 0x72, 0x04, 0x88, 0xd3, 0x35, 0x15, 0x28, 0xd8, 0xfc, 0x91, 0xf9, 0xe6, 0xdf, 0x81,
+	0x68, 0xc7, 0xb4, 0xda, 0x38, 0x1b, 0xcd, 0x09, 0x0f, 0x12, 0xaa, 0xb3, 0x98, 0x6b, 0xf3, 0xd8,
+	0x7c, 0x9b, 0x4f, 0x9d, 0xd8, 0xbd, 0x92, 0x79, 0x08, 0xb1, 0xf1, 0xc4, 0xee, 0x79, 0xdd, 0x7d,
+	0x77, 0x5e, 0x21, 0xaf, 0xad, 0x39, 0x6e, 0xf5, 0x8a, 0x3f, 0x02, 0xb8, 0x26, 0x0c, 0xe4, 0x2d,
+	0x04, 0xf3, 0xce, 0x40, 0xf8, 0xfa, 0xb6, 0xa3, 0x9f, 0xd2, 0xdf, 0x6b, 0x90, 0xf4, 0xb8, 0xd1,
+	0x63, 0x88, 0x90, 0xe9, 0x18, 0x33, 0xb7, 0x8d, 0xe0, 0x5d, 0xed, 0x81, 0x9c, 0xaf, 0xe6, 0x74,
+	0x8c, 0x55, 0x06, 0x46, 0x59, 0x88, 0x0f, 0xb1, 0x6d, 0xeb, 0x5d, 0xf7, 0x00, 0xdc, 0xa5, 0xf4,
+	0x9f, 0xc0, 0xc9, 0x29, 0x1a, 0xa5, 0x20, 0xde, 0xaa, 0x3e, 0xad, 0xd6, 0xbe, 0xaa, 0x66, 0x42,
+	0x68, 0x1b, 0x36, 0xcb, 0xd5, 0x67, 0x72, 0xa5, 0x5c, 0xd4, 0x54, 0xe5, 0xcb, 0x96, 0xd2, 0x68,
+	0x66, 0x04, 0xb4, 0x0e, 0xc9, 0x6a, 0xad, 0xa9, 0x1d, 0xd7, 0x5a, 0xd5, 0x62, 0x66, 0x8d, 0x3a,
+	0x34, 0xcb, 0xa7, 0x4a, 0xad, 0xd5, 0xcc, 0x84, 0xd1, 0x01, 0xec, 0x15, 0x54, 0xa5, 0xa8, 0x54,
+	0x9b, 0x65, 0xb9, 0xa2, 0xa9, 0x4a, 0x53, 0x2d, 0x2b, 0xcf, 0xe4, 0x8a, 0x76, 0x2c, 0x97, 0x2b,
+	0x4a, 0x31, 0x13, 0x41, 0x7b, 0x70, 0xaf, 0x50, 0xab, 0x1e, 0x97, 0x4f, 0x6e, 0x6e, 0x46, 0xd1,
+	0x16, 0xac, 0x97, 0x14, 0xb9, 0xa8, 0x9d, 0x96, 0x1b, 0xa7, 0x72, 0xb3, 0x50, 0xca, 0xc4, 0xd0,
+	0x3d, 0xd8, 0xce, 0xb7, 0xaa, 0xc5, 0x8a, 0xa2, 0xc9, 0xf5, 0x7a, 0xe5, 0x6b, 0x17, 0x1b, 0x47,
+	0x1b, 0x00, 0x34, 0x0a, 0x59, 0x53, 0x95, 0x7a, 0x2d, 0x93, 0x40, 0x9b, 0x90, 0xaa, 0xcb, 0x85,
+	0xa7, 0x2e, 0x20, 0xc9, 0x0c, 0xad, 0x46, 0xc9, 0x35, 0x00, 0x65, 0x2f, 0x2a, 0x4d, 0xb9, 0x50,
+	0x52, 0x8a, 0x1a, 0xfd, 0x4d, 0x26, 0xf5, 0xe8, 0xb7, 0x08, 0x84, 0x4f, 0xfa, 0x04, 0x35, 0x61,
+	0xfd, 0x04, 0xfb, 0x26, 0x3a, 0x94, 0x9b, 0x9f, 0x13, 0xe6, 0x27, 0xc9, 0xdd, 0x77, 0x5e, 0x83,
+	0xe0, 0xb5, 0x55, 0x82, 0x24, 0x65, 0x75, 0x46, 0x91, 0xb7, 0x17, 0x4e, 0x1e, 0x2e, 0xdb, 0xfe,
+	0x92, 0x5d, 0xce, 0x94, 0x87, 0xf8, 0x09, 0x66, 0x03, 0x02, 0x9a, 0x9f, 0x60, 0x7c, 0xc3, 0xc6,
+	0xee, 0xde, 0xc2, 0x3d, 0xce, 0x51, 0x87, 0x94, 0xef, 0x51, 0x41, 0xe2, 0xd2, 0x67, 0xcc, 0xe1,
+	0x3a, 0x58, 0xfe, 0xcc, 0x31, 0xbe, 0x07, 0x02, 0x55, 0x2d, 0xf0, 0x72, 0x04, 0x55, 0x5b, 0xf4,
+	0x22, 0x05, 0x55, 0x5b, 0xfc, 0xec, 0x34, 0x20, 0xed, 0xbf, 0x64, 0xd1, 0xc1, 0xb2, 0x2b, 0xdc,
+	0xe5, 0xcc, 0x2d, 0x07, 0x38, 0x94, 0x0f, 0x05, 0xf4, 0x04, 0x22, 0xb4, 0xf7, 0xd0, 0xbd, 0x9b,
+	0xed, 0xed, 0x90, 0x64, 0x17, 0xf4, 0x3d, 0xcf, 0x33, 0x7f, 0x74, 0x71, 0x29, 0x86, 0x5e, 0x5e,
+	0x8a, 0xa1, 0x57, 0x97, 0xa2, 0xf0, 0xe3, 0x4c, 0x14, 0xfe, 0x98, 0x89, 0xc2, 0x5f, 0x33, 0x51,
+	0xb8, 0x98, 0x89, 0xc2, 0x3f, 0x33, 0x51, 0xf8, 0x77, 0x26, 0x86, 0x5e, 0xcd, 0x44, 0xe1, 0x97,
+	0x2b, 0x31, 0x74, 0x71, 0x25, 0x86, 0x5e, 0x5e, 0x89, 0xa1, 0xe7, 0xe1, 0x6e, 0x9f, 0x9c, 0xc5,
+	0xd8, 0xd8, 0xfd, 0xf8, 0xff, 0x00, 0x00, 0x00, 0xff, 0xff, 0x0e, 0x67, 0x82, 0x64, 0xa7, 0x0c,
+	0x00, 0x00,
 }
 
 func (x ErrorInfo_ErrorType) String() string {
@@ -2269,6 +2614,228 @@ func (this *PackCheckoutMetadata) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *PushRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushRequest)
+	if !ok {
+		that2, ok := that.(PushRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Msg == nil {
+		if this.Msg != nil {
+			return false
+		}
+	} else if this.Msg == nil {
+		return false
+	} else if !this.Msg.Equal(that1.Msg) {
+		return false
+	}
+	return true
+}
+func (this *PushRequest_Metadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushRequest_Metadata)
+	if !ok {
+		that2, ok := that.(PushRequest_Metadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	return true
+}
+func (this *PushRequest_Chunk) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushRequest_Chunk)
+	if !ok {
+		that2, ok := that.(PushRequest_Chunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
+		return false
+	}
+	return true
+}
+func (this *PushMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushMetadata)
+	if !ok {
+		that2, ok := that.(PushMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CheckoutPath != that1.CheckoutPath {
+		return false
+	}
+	if this.Remote != that1.Remote {
+		return false
+	}
+	if this.DestRef != that1.DestRef {
+		return false
+	}
+	if this.TargetSha != that1.TargetSha {
+		return false
+	}
+	if this.Force != that1.Force {
+		return false
+	}
+	if this.BundleRef != that1.BundleRef {
+		return false
+	}
+	return true
+}
+func (this *PushResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushResponse)
+	if !ok {
+		that2, ok := that.(PushResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Result == nil {
+		if this.Result != nil {
+			return false
+		}
+	} else if this.Result == nil {
+		return false
+	} else if !this.Result.Equal(that1.Result) {
+		return false
+	}
+	return true
+}
+func (this *PushResponse_Pushed) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushResponse_Pushed)
+	if !ok {
+		that2, ok := that.(PushResponse_Pushed)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Pushed.Equal(that1.Pushed) {
+		return false
+	}
+	return true
+}
+func (this *PushResponse_Error) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushResponse_Error)
+	if !ok {
+		that2, ok := that.(PushResponse_Error)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Error.Equal(that1.Error) {
+		return false
+	}
+	return true
+}
+func (this *PushResult) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PushResult)
+	if !ok {
+		that2, ok := that.(PushResult)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.DestRef != that1.DestRef {
+		return false
+	}
+	if this.Sha != that1.Sha {
+		return false
+	}
+	return true
+}
 func (this *ErrorInfo) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -2617,6 +3184,88 @@ func (this *PackCheckoutMetadata) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *PushRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.PushRequest{")
+	if this.Msg != nil {
+		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PushRequest_Metadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.PushRequest_Metadata{` +
+		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
+	return s
+}
+func (this *PushRequest_Chunk) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.PushRequest_Chunk{` +
+		`Chunk:` + fmt.Sprintf("%#v", this.Chunk) + `}`}, ", ")
+	return s
+}
+func (this *PushMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 10)
+	s = append(s, "&git.PushMetadata{")
+	s = append(s, "CheckoutPath: "+fmt.Sprintf("%#v", this.CheckoutPath)+",\n")
+	s = append(s, "Remote: "+fmt.Sprintf("%#v", this.Remote)+",\n")
+	s = append(s, "DestRef: "+fmt.Sprintf("%#v", this.DestRef)+",\n")
+	s = append(s, "TargetSha: "+fmt.Sprintf("%#v", this.TargetSha)+",\n")
+	s = append(s, "Force: "+fmt.Sprintf("%#v", this.Force)+",\n")
+	s = append(s, "BundleRef: "+fmt.Sprintf("%#v", this.BundleRef)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PushResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.PushResponse{")
+	if this.Result != nil {
+		s = append(s, "Result: "+fmt.Sprintf("%#v", this.Result)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *PushResponse_Pushed) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.PushResponse_Pushed{` +
+		`Pushed:` + fmt.Sprintf("%#v", this.Pushed) + `}`}, ", ")
+	return s
+}
+func (this *PushResponse_Error) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&git.PushResponse_Error{` +
+		`Error:` + fmt.Sprintf("%#v", this.Error) + `}`}, ", ")
+	return s
+}
+func (this *PushResult) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&git.PushResult{")
+	s = append(s, "DestRef: "+fmt.Sprintf("%#v", this.DestRef)+",\n")
+	s = append(s, "Sha: "+fmt.Sprintf("%#v", this.Sha)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *ErrorInfo) GoString() string {
 	if this == nil {
 		return "nil"
@@ -2655,6 +3304,7 @@ type GitClient interface {
 	ApplyBundle(ctx context.Context, opts ...grpc.CallOption) (Git_ApplyBundleClient, error)
 	CheckoutState(ctx context.Context, in *CheckoutStateRequest, opts ...grpc.CallOption) (*CheckoutStateResponse, error)
 	PackCheckout(ctx context.Context, in *PackCheckoutRequest, opts ...grpc.CallOption) (Git_PackCheckoutClient, error)
+	Push(ctx context.Context, opts ...grpc.CallOption) (Git_PushClient, error)
 }
 
 type gitClient struct {
@@ -2767,6 +3417,40 @@ func (x *gitPackCheckoutClient) Recv() (*PackCheckoutResponse, error) {
 	return m, nil
 }
 
+func (c *gitClient) Push(ctx context.Context, opts ...grpc.CallOption) (Git_PushClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Git_serviceDesc.Streams[2], "/dagger.git.Git/Push", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gitPushClient{stream}
+	return x, nil
+}
+
+type Git_PushClient interface {
+	Send(*PushRequest) error
+	CloseAndRecv() (*PushResponse, error)
+	grpc.ClientStream
+}
+
+type gitPushClient struct {
+	grpc.ClientStream
+}
+
+func (x *gitPushClient) Send(m *PushRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *gitPushClient) CloseAndRecv() (*PushResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(PushResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GitServer is the server API for Git service.
 type GitServer interface {
 	GetCredential(context.Context, *GitCredentialRequest) (*GitCredentialResponse, error)
@@ -2775,6 +3459,7 @@ type GitServer interface {
 	ApplyBundle(Git_ApplyBundleServer) error
 	CheckoutState(context.Context, *CheckoutStateRequest) (*CheckoutStateResponse, error)
 	PackCheckout(*PackCheckoutRequest, Git_PackCheckoutServer) error
+	Push(Git_PushServer) error
 }
 
 // UnimplementedGitServer can be embedded to have forward compatible implementations.
@@ -2798,6 +3483,9 @@ func (*UnimplementedGitServer) CheckoutState(ctx context.Context, req *CheckoutS
 }
 func (*UnimplementedGitServer) PackCheckout(req *PackCheckoutRequest, srv Git_PackCheckoutServer) error {
 	return status.Errorf(codes.Unimplemented, "method PackCheckout not implemented")
+}
+func (*UnimplementedGitServer) Push(srv Git_PushServer) error {
+	return status.Errorf(codes.Unimplemented, "method Push not implemented")
 }
 
 func RegisterGitServer(s *grpc.Server, srv GitServer) {
@@ -2923,6 +3611,32 @@ func (x *gitPackCheckoutServer) Send(m *PackCheckoutResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Git_Push_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GitServer).Push(&gitPushServer{stream})
+}
+
+type Git_PushServer interface {
+	SendAndClose(*PushResponse) error
+	Recv() (*PushRequest, error)
+	grpc.ServerStream
+}
+
+type gitPushServer struct {
+	grpc.ServerStream
+}
+
+func (x *gitPushServer) SendAndClose(m *PushResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *gitPushServer) Recv() (*PushRequest, error) {
+	m := new(PushRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 var _Git_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "dagger.git.Git",
 	HandlerType: (*GitServer)(nil),
@@ -2954,6 +3668,11 @@ var _Git_serviceDesc = grpc.ServiceDesc{
 			StreamName:    "PackCheckout",
 			Handler:       _Git_PackCheckout_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "Push",
+			Handler:       _Git_Push_Handler,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "git.proto",
@@ -3872,6 +4591,254 @@ func (m *PackCheckoutMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *PushRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PushRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Msg != nil {
+		{
+			size := m.Msg.Size()
+			i -= size
+			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PushRequest_Metadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushRequest_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PushRequest_Chunk) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushRequest_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Chunk != nil {
+		i -= len(m.Chunk)
+		copy(dAtA[i:], m.Chunk)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Chunk)))
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PushMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PushMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BundleRef) > 0 {
+		i -= len(m.BundleRef)
+		copy(dAtA[i:], m.BundleRef)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.BundleRef)))
+		i--
+		dAtA[i] = 0x32
+	}
+	if m.Force {
+		i--
+		if m.Force {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x28
+	}
+	if len(m.TargetSha) > 0 {
+		i -= len(m.TargetSha)
+		copy(dAtA[i:], m.TargetSha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.TargetSha)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.DestRef) > 0 {
+		i -= len(m.DestRef)
+		copy(dAtA[i:], m.DestRef)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.DestRef)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Remote) > 0 {
+		i -= len(m.Remote)
+		copy(dAtA[i:], m.Remote)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Remote)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.CheckoutPath) > 0 {
+		i -= len(m.CheckoutPath)
+		copy(dAtA[i:], m.CheckoutPath)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.CheckoutPath)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PushResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PushResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Result != nil {
+		{
+			size := m.Result.Size()
+			i -= size
+			if _, err := m.Result.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *PushResponse_Pushed) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushResponse_Pushed) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Pushed != nil {
+		{
+			size, err := m.Pushed.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PushResponse_Error) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushResponse_Error) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Error != nil {
+		{
+			size, err := m.Error.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PushResult) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PushResult) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PushResult) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Sha) > 0 {
+		i -= len(m.Sha)
+		copy(dAtA[i:], m.Sha)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Sha)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.DestRef) > 0 {
+		i -= len(m.DestRef)
+		copy(dAtA[i:], m.DestRef)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.DestRef)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *ErrorInfo) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -4355,6 +5322,127 @@ func (m *PackCheckoutMetadata) Size() (n int) {
 	return n
 }
 
+func (m *PushRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Msg != nil {
+		n += m.Msg.Size()
+	}
+	return n
+}
+
+func (m *PushRequest_Metadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *PushRequest_Chunk) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Chunk != nil {
+		l = len(m.Chunk)
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *PushMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.CheckoutPath)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.Remote)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.DestRef)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.TargetSha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	if m.Force {
+		n += 2
+	}
+	l = len(m.BundleRef)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
+func (m *PushResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Result != nil {
+		n += m.Result.Size()
+	}
+	return n
+}
+
+func (m *PushResponse_Pushed) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Pushed != nil {
+		l = m.Pushed.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *PushResponse_Error) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Error != nil {
+		l = m.Error.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *PushResult) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.DestRef)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.Sha)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
 func (m *ErrorInfo) Size() (n int) {
 	if m == nil {
 		return 0
@@ -4709,6 +5797,92 @@ func (this *PackCheckoutMetadata) String() string {
 		`HeadRef:` + fmt.Sprintf("%v", this.HeadRef) + `,`,
 		`ObjectFormat:` + fmt.Sprintf("%v", this.ObjectFormat) + `,`,
 		`Error:` + strings.Replace(this.Error.String(), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushRequest{`,
+		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushRequest_Metadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushRequest_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "PushMetadata", "PushMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushRequest_Chunk) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushRequest_Chunk{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushMetadata{`,
+		`CheckoutPath:` + fmt.Sprintf("%v", this.CheckoutPath) + `,`,
+		`Remote:` + fmt.Sprintf("%v", this.Remote) + `,`,
+		`DestRef:` + fmt.Sprintf("%v", this.DestRef) + `,`,
+		`TargetSha:` + fmt.Sprintf("%v", this.TargetSha) + `,`,
+		`Force:` + fmt.Sprintf("%v", this.Force) + `,`,
+		`BundleRef:` + fmt.Sprintf("%v", this.BundleRef) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushResponse{`,
+		`Result:` + fmt.Sprintf("%v", this.Result) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushResponse_Pushed) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushResponse_Pushed{`,
+		`Pushed:` + strings.Replace(fmt.Sprintf("%v", this.Pushed), "PushResult", "PushResult", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushResponse_Error) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushResponse_Error{`,
+		`Error:` + strings.Replace(fmt.Sprintf("%v", this.Error), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *PushResult) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&PushResult{`,
+		`DestRef:` + fmt.Sprintf("%v", this.DestRef) + `,`,
+		`Sha:` + fmt.Sprintf("%v", this.Sha) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -6800,6 +7974,588 @@ func (m *PackCheckoutMetadata) Unmarshal(dAtA []byte) error {
 			if err := m.Error.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PushRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PushRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PushRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &PushMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Msg = &PushRequest_Metadata{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Msg = &PushRequest_Chunk{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PushMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PushMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PushMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CheckoutPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CheckoutPath = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Remote", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Remote = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DestRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DestRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TargetSha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TargetSha = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Force", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Force = bool(v != 0)
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BundleRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BundleRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PushResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PushResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PushResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Pushed", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &PushResult{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Result = &PushResponse_Pushed{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &ErrorInfo{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Result = &PushResponse_Error{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PushResult) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PushResult: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PushResult: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DestRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DestRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sha", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Sha = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
