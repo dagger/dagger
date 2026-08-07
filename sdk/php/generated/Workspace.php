@@ -164,6 +164,23 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.
+     *
+     * Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.
+     *
+     * Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+     */
+    public function findConfigDirs(array $filenames, ?array $exclude = []): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findConfigDirs');
+        $leafQueryBuilder->setArgument('filenames', $filenames);
+        if (null !== $exclude) {
+        $leafQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'findConfigDirs');
+    }
+
+    /**
      * Search for a file or directory by walking up from the start path within the workspace.
      *
      * Returns the absolute workspace path if found, or null if not found.
