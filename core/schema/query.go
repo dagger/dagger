@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"os"
 	"strings"
 	"time"
 
@@ -104,6 +105,10 @@ func (s *querySchema) Install(srv *dagql.Server) {
 		dagql.Func("currentTimestamp", s.currentTimestamp).
 			DoNotCache("Returns the live current time").
 			Doc(`The current UTC time in RFC3339 format. Never cached.`),
+
+		dagql.Func("_debugCrash", s.debugCrash).
+			DoNotCache("Crashes the engine process").
+			Doc(`(Internal-only) Deliberately crash the engine process, for testing crash observability.`),
 	}.Install(srv)
 }
 
@@ -132,6 +137,18 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 
 func (s *querySchema) currentTimestamp(_ context.Context, _ *core.Query, args struct{}) (string, error) {
 	return time.Now().UTC().Format(time.RFC3339), nil
+}
+
+func (s *querySchema) debugCrash(_ context.Context, _ *core.Query, _ struct{}) (core.Void, error) {
+	// Simulate a fatal engine failure: log a distinctive cause to stderr (the
+	// diagnosis a user should be able to recover from the service's logs), then
+	// take the whole process down the way a real bug would — an unrecovered
+	// panic on a fresh goroutine, which no HTTP/graphql recover can catch.
+	fmt.Fprintln(os.Stderr, "ENGINE FATAL: simulated crash triggered via _debugCrash; the cause of death is THIS log line")
+	go func() {
+		panic("simulated engine crash via _debugCrash")
+	}()
+	select {} // block until the panic kills the process
 }
 
 func (s *querySchema) remoteGitMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args remoteGitMirrorArgs) (dagql.Result[*core.RemoteGitMirror], error) {
