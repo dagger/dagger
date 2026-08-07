@@ -16073,6 +16073,8 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 }
 
 // A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+//
+// A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
 func (r *Workspace) Fork() *Workspace {
 	q := r.query.Select("fork")
 

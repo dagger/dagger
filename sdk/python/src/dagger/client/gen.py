@@ -15251,6 +15251,18 @@ class Workspace(Type):
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
 
+    def fork(self) -> Self:
+        """A copy of the workspace for staging edits in isolation: changes() on a
+        fork returns only the edits made through the fork, not everything
+        already staged on the workspace.
+
+        A fork's changes are measured from the workspace cwd, matching how a
+        returned changeset is applied; a change outside the cwd is an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("fork", _args)
+        return Workspace(_ctx)
+
     def generators(
         self,
         *,

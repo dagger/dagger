@@ -7330,6 +7330,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::fork",
+			"p": "Dagger/Workspace.html#method_fork",
+			"d": "<p>A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::generators",
 			"p": "Dagger/Workspace.html#method_generators",
 			"d": "<p>Return all generators from modules loaded in the workspace.</p>"

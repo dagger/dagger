@@ -15316,6 +15316,16 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
+    /// A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+    /// A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
+    pub fn fork(&self) -> Workspace {
+        let query = self.selection.select("fork");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return all generators from modules loaded in the workspace.
     ///
     /// # Arguments

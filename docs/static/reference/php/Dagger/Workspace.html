@@ -273,6 +273,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_fork">fork</a>()
+        
+                                            <p><p>A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -1199,8 +1209,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_fork">
+        <div class="location">at line 207</div>
+        <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
+    <strong>fork</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.</p></p>                <p><p>A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_generators">
-        <div class="location">at line 205</div>
+        <div class="location">at line 216</div>
         <code>                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
     <strong>generators</strong>(array|null $include = null)
         </code>
@@ -1242,7 +1284,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_git">
-        <div class="location">at line 217</div>
+        <div class="location">at line 228</div>
         <code>                    <a href="../Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a>
     <strong>git</strong>()
         </code>
@@ -1274,7 +1316,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_glob">
-        <div class="location">at line 228</div>
+        <div class="location">at line 239</div>
         <code>                    array
     <strong>glob</strong>(string $pattern)
         </code>
@@ -1316,7 +1358,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 238</div>
+        <div class="location">at line 249</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -1348,7 +1390,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_migrate">
-        <div class="location">at line 249</div>
+        <div class="location">at line 260</div>
         <code>                    <a href="../Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a>
     <strong>migrate</strong>()
         </code>
@@ -1380,7 +1422,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_module">
-        <div class="location">at line 258</div>
+        <div class="location">at line 269</div>
         <code>                    <a href="../Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a>
     <strong>module</strong>(string $name)
         </code>
@@ -1422,7 +1464,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 272</div>
+        <div class="location">at line 283</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>moduleSource</strong>(string $path)
         </code>
@@ -1465,7 +1507,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_modules">
-        <div class="location">at line 282</div>
+        <div class="location">at line 293</div>
         <code>                    array
     <strong>modules</strong>()
         </code>
@@ -1497,7 +1539,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_reloaded">
-        <div class="location">at line 291</div>
+        <div class="location">at line 302</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>reloaded</strong>()
         </code>
@@ -1529,7 +1571,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sdk">
-        <div class="location">at line 300</div>
+        <div class="location">at line 311</div>
         <code>                    <a href="../Dagger/WorkspaceSDK.html"><abbr title="Dagger\WorkspaceSDK">WorkspaceSDK</abbr></a>
     <strong>sdk</strong>(string $name)
         </code>
@@ -1571,7 +1613,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sdks">
-        <div class="location">at line 310</div>
+        <div class="location">at line 321</div>
         <code>                    array
     <strong>sdks</strong>()
         </code>
@@ -1603,7 +1645,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_search">
-        <div class="location">at line 323</div>
+        <div class="location">at line 334</div>
         <code>                    array
     <strong>search</strong>(string $pattern, array|null $paths = [], array|null $globs = [], bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null)
         </code>
@@ -1696,7 +1738,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_services">
-        <div class="location">at line 374</div>
+        <div class="location">at line 385</div>
         <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
     <strong>services</strong>(array|null $include = null)
         </code>
@@ -1738,7 +1780,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withChanges">
-        <div class="location">at line 386</div>
+        <div class="location">at line 397</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withChanges</strong>(<a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a> $changes)
         </code>
@@ -1780,7 +1822,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withConfigEnv">
-        <div class="location">at line 396</div>
+        <div class="location">at line 407</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withConfigEnv</strong>(string $name, bool|null $here = false)
         </code>
@@ -1827,7 +1869,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withConfigValue">
-        <div class="location">at line 409</div>
+        <div class="location">at line 420</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withConfigValue</strong>(string $key, string $value, array|null $values = null, bool|null $here = false)
         </code>
@@ -1884,7 +1926,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInitClient">
-        <div class="location">at line 428</div>
+        <div class="location">at line 439</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withInitClient</strong>(string $path, string $sdk, string $module, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $args = null, bool|null $here = false, bool|null $noGenerate = false)
         </code>
@@ -1951,7 +1993,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInitModule">
-        <div class="location">at line 457</div>
+        <div class="location">at line 468</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withInitModule</strong>(string $name, string $sdk, string|null $path = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], <abbr title="Dagger\Dagger\Json">Json</abbr>|null $args = null, bool|null $here = false, bool|null $noGenerate = false)
         </code>
@@ -2028,7 +2070,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModule">
-        <div class="location">at line 494</div>
+        <div class="location">at line 505</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withModule</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false)
         </code>
@@ -2080,7 +2122,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withNewDirectory">
-        <div class="location">at line 510</div>
+        <div class="location">at line 521</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withNewDirectory</strong>(string $path, <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> $source)
         </code>
@@ -2127,7 +2169,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withNewFile">
-        <div class="location">at line 521</div>
+        <div class="location">at line 532</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withNewFile</strong>(string $path, string $contents, int|null $permissions = 420)
         </code>
@@ -2179,7 +2221,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSDK">
-        <div class="location">at line 535</div>
+        <div class="location">at line 546</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withSDK</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false, string|null $asSdkName = &#039;&#039;)
         </code>
@@ -2236,7 +2278,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withUpdatedLock">
-        <div class="location">at line 554</div>
+        <div class="location">at line 565</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withUpdatedLock</strong>()
         </code>
@@ -2268,7 +2310,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withWorkdir">
-        <div class="location">at line 563</div>
+        <div class="location">at line 574</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withWorkdir</strong>(string $path)
         </code>
@@ -2310,7 +2352,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutConfigEnv">
-        <div class="location">at line 573</div>
+        <div class="location">at line 584</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withoutConfigEnv</strong>(string $name, bool|null $here = false)
         </code>
@@ -2357,7 +2399,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutConfigValue">
-        <div class="location">at line 588</div>
+        <div class="location">at line 599</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withoutConfigValue</strong>(string $key, bool|null $here = false)
         </code>
@@ -2404,7 +2446,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDirectory">
-        <div class="location">at line 601</div>
+        <div class="location">at line 612</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withoutDirectory</strong>(string $path)
         </code>
@@ -2446,7 +2488,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutFile">
-        <div class="location">at line 611</div>
+        <div class="location">at line 622</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withoutFile</strong>(string $path)
         </code>
@@ -2488,7 +2530,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutModule">
-        <div class="location">at line 621</div>
+        <div class="location">at line 632</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withoutModule</strong>(string $name, bool|null $here = false)
         </code>
@@ -2535,7 +2577,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutSDK">
-        <div class="location">at line 634</div>
+        <div class="location">at line 645</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>withoutSDK</strong>(string $name, bool|null $here = false)
         </code>

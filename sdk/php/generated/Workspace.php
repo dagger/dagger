@@ -200,6 +200,17 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+     *
+     * A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
+     */
+    public function fork(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('fork');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return all generators from modules loaded in the workspace.
      */
     public function generators(?array $include = null): GeneratorGroup

@@ -232,6 +232,22 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+
+  A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
+  """
+  @spec fork(t()) :: Dagger.Workspace.t()
+  def fork(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("fork")
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return all generators from modules loaded in the workspace.
   """
   @spec generators(t(), [{:include, [String.t()]}]) :: Dagger.GeneratorGroup.t()

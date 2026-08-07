@@ -15015,6 +15015,16 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+   *
+   * A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.
+   */
+  fork = (): Workspace => {
+    const ctx = this._ctx.select("fork")
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return all generators from modules loaded in the workspace.
    * @param opts.include Only include generators matching the specified patterns
    */
