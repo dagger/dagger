@@ -757,6 +757,15 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 			public, err := IsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
 			if err != nil {
+				// In frozen lock mode the workspace lockfile may pin every
+				// lookup on this repository, in which case the remote is never
+				// contacted again. Don't fail the whole query just because the
+				// visibility probe couldn't reach it; skip implicit credentials
+				// and let any operation that truly needs the remote surface its
+				// own error.
+				if lockMode, lockErr := currentLookupLockMode(ctx); lockErr == nil && lockMode == workspace.LockModeFrozen {
+					break
+				}
 				return inst, err
 			}
 			if public {
