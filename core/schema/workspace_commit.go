@@ -617,8 +617,8 @@ func (s *workspaceSchema) scopeChangesetToPaths(
 // workspaceCommitBaseRepo returns the repository tree the next staged commit
 // builds on. Once commits are staged, that is the newest staged tree — its .git
 // already holds the whole stack. Otherwise it is the workspace's own repository
-// tree, with any .git pointer file (worktree/submodule checkout) flattened, as
-// Workspace.git.__repository does.
+// tree, with its .git reconstructed canonically from the client's own git pack
+// (worktree/submodule checkouts included), as Workspace.git.__repository does.
 func (s *workspaceSchema) workspaceCommitBaseRepo(
 	ctx context.Context,
 	ws *core.Workspace,
@@ -633,7 +633,7 @@ func (s *workspaceSchema) workspaceCommitBaseRepo(
 	if err != nil {
 		return dir, fmt.Errorf("workspace git directory: %w", err)
 	}
-	dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
+	dir, err = s.materializeWorkspaceGit(ctx, ws, dir)
 	if err != nil {
 		return dir, fmt.Errorf("workspace git directory: %w", err)
 	}
