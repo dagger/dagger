@@ -116,6 +116,16 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.`),
 			),
+		dagql.NodeFunc("findConfigDirs", s.findConfigDirs).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc(`Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.`,
+				`Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.`,
+				`Each returned path is usable as-is with other workspace APIs, e.g. directory(path).`).
+			Args(
+				dagql.Arg("filenames").Doc(`Config file basenames to match (e.g., ["deno.json", "deno.jsonc"] or ["Dockerfile", "Containerfile"]).`),
+				dagql.Arg("exclude").Doc(`Glob patterns pruning the walk below the cwd (e.g., ["**/node_modules/**"]), since vendored trees are full of false positives.`),
+			),
 		dagql.NodeFunc("git", s.git).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
@@ -2225,6 +2235,155 @@ func (s *workspaceSchema) findUp(
 	}
 
 	return none, nil
+}
+
+type workspaceFindConfigDirsArgs struct {
+	Filenames []string
+	Exclude   []string `default:"[]"`
+}
+
+func (s *workspaceSchema) findConfigDirs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceFindConfigDirsArgs,
+) (dagql.Array[dagql.String], error) {
+	if len(args.Filenames) == 0 {
+		return nil, fmt.Errorf("workspace findConfigDirs requires at least one filename")
+	}
+	for _, name := range args.Filenames {
+		if !isWorkspaceBasename(name) {
+			return nil, fmt.Errorf("workspace findConfigDirs filename must be a basename: %q", name)
+		}
+	}
+
+	var dirs []string
+	seen := map[string]bool{}
+	add := func(dir string) {
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+
+	ancestor, err := s.nearestAncestorConfigDir(ctx, parent, args.Filenames)
+	if err != nil {
+		return nil, err
+	}
+	if ancestor != "" {
+		add(ancestor)
+	}
+
+	descendants, err := s.descendantConfigDirs(ctx, parent, args.Filenames, args.Exclude)
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range descendants {
+		add(dir)
+	}
+
+	return dagql.NewStringArray(dirs...), nil
+}
+
+// nearestAncestorConfigDir returns the closest strict ancestor of the cwd
+// holding one of filenames, as a ".."-relative path, or "" when there is none.
+// Every filename is searched and the deepest hit wins, so a farther-up project
+// never shadows a closer one written with a different filename. findUp counts
+// the cwd itself as a hit; that case is dropped here because the walk-down
+// already covers the cwd and below, leaving only strict ancestors.
+func (s *workspaceSchema) nearestAncestorConfigDir(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	filenames []string,
+) (string, error) {
+	bestDir := ""
+	bestDepth := -1
+	for _, name := range filenames {
+		hit, err := s.findUp(ctx, parent, workspaceFindUpArgs{Name: name, From: "."})
+		if err != nil {
+			return "", err
+		}
+		if !hit.Valid {
+			continue
+		}
+		// findUp returns a workspace-absolute path like "/sub/deno.json".
+		dir := strings.TrimPrefix(path.Dir(hit.Value.String()), "/")
+		if dir == "" {
+			dir = "."
+		}
+		if depth := workspaceDirDepth(dir); depth > bestDepth {
+			bestDepth = depth
+			bestDir = dir
+		}
+	}
+	if bestDepth < 0 {
+		return "", nil
+	}
+	cwd := cleanWorkspaceRelPath(parent.Self().Cwd)
+	if bestDir == cwd {
+		return "", nil
+	}
+	// Hits lie on the cwd's own ancestor chain, so the ancestor is a strict
+	// prefix of the cwd and the number of ".." segments is the depth difference.
+	segments := workspaceDirDepth(cwd) - bestDepth
+	return strings.TrimSuffix(strings.Repeat("../", segments), "/"), nil
+}
+
+// workspaceDirDepth returns the depth of a workspace-root-relative directory,
+// 0 at the root.
+func workspaceDirDepth(dir string) int {
+	if dir == "." {
+		return 0
+	}
+	return strings.Count(dir, "/") + 1
+}
+
+// descendantConfigDirs returns every directory at or below the cwd holding one
+// of filenames, as cwd-relative paths.
+func (s *workspaceSchema) descendantConfigDirs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	filenames []string,
+	exclude []string,
+) ([]string, error) {
+	ws := parent.Self()
+	include := make([]string, len(filenames))
+	for i, name := range filenames {
+		include[i] = "**/" + name
+	}
+	dir, err := s.directoryAt(ctx, ws, ws.Cwd, workspaceDirectoryArgs{
+		Path: ".",
+		CopyFilter: core.CopyFilter{
+			Include: include,
+			Exclude: exclude,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var dirs []string
+	for _, name := range filenames {
+		var matches dagql.Array[dagql.String]
+		if err := srv.Select(ctx, dir, &matches, dagql.Selector{
+			Field: "glob",
+			Args: []dagql.NamedInput{
+				{Name: "pattern", Value: dagql.NewString("**/" + name)},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("glob %s: %w", name, err)
+		}
+		for _, match := range matches {
+			dir := path.Dir(match.String())
+			if dir == "/" || dir == "" {
+				dir = "."
+			}
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs, nil
 }
 
 func isWorkspaceBasename(name string) bool {
