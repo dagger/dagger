@@ -379,18 +379,18 @@ type Editor {
   	- Before starting a risky or sweeping change, so it can be reverted
   	- With paths, to split unrelated changes into separate commits
 
-  MESSAGE FORMAT — Conventional Commits (conventionalcommits.org):
+  MESSAGE FORMAT — Scoped Commits (scopedcommits.com):
 
-  	type(scope): short summary limited to 50 chars
+  	scope: short summary limited to 50 chars
 
   	Required descriptive body wrapped at 80 characters. Explain what
   	changed and why without being verbose.
 
-  Types: feat (new feature), fix (bug fix), chore (maintenance: deps, golden
-  files, ...), style (formatting, no logic change), test (adding or updating
-  tests), refactor (restructuring without behavior change). The scope is
-  optional but preferred when the change is localized: use the package or
-  subsystem name, e.g. fmt, lsp, parser.
+  The scope names the subsystem, area, or module the commit touches — e.g.
+  fmt, lsp, net/http — and is the most important part of the message: it is
+  what contributors scan the log for. A commit spanning several areas can
+  use a broader scope that encompasses them or list them comma-separated;
+  a tree-wide change can use a scope like treewide or all.
 
   GRANULARITY: each commit contains exactly one logical change. When a task
   produced several distinct changes, commit each one separately, scoped with
@@ -405,8 +405,9 @@ type Editor {
   commit(
     source: Workspace!,
     """
-    The headline: "type(scope): summary" — imperative mood, lowercase, no
-    trailing period, 50 chars or less.
+    The headline: "scope: summary" — scope names the subsystem, area, or
+    module touched; the summary is imperative mood, lowercase, with no
+    trailing period. 50 chars or less in total.
     """
     subject: String!,
     """
@@ -431,8 +432,8 @@ type Editor {
     if (subject.split("").length > 50) {
       raise "commit subject too long (must be 50 characters or less)"
     }
-    if (!(subject.containsMatch(`^(feat|fix|chore|style|test|refactor)(\([^()]+\))?!?: \S`))) {
-      raise "commit subject must follow Conventional Commits — \"type(scope): summary\", with type one of: feat, fix, chore, style, test, refactor"
+    if (!(subject.containsMatch(`^[^\s:][^:]*: \S`))) {
+      raise "commit subject must follow Scoped Commits — \"scope: summary\", where scope names the subsystem, area, or module touched"
     }
     if (subject.hasSuffix(".")) {
       raise "commit subject must not end with a period"
