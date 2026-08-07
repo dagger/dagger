@@ -19,6 +19,8 @@ type Crasher struct{}
 // StartCrasher starts a service that becomes healthy (listening on :8080),
 // then after delaySeconds prints a FATAL line to stderr and exits nonzero —
 // the "crashed mid-session" scenario.
+//
+// +cache="never"
 func (m *Crasher) StartCrasher(
 	ctx context.Context,
 	// +optional
@@ -51,6 +53,8 @@ exit 7`, delaySeconds)
 
 // StartDoomed starts a service that dies before its healthcheck ever passes,
 // so the start itself fails — the "crashed on boot" scenario.
+//
+// +cache="never"
 func (m *Crasher) StartDoomed(ctx context.Context) (string, error) {
 	svc, err := dag.Container().
 		From("alpine:3.20").
@@ -73,6 +77,8 @@ func (m *Crasher) StartDoomed(ctx context.Context) (string, error) {
 
 // Poke fetches a URL from inside the session's network, to check whether a
 // service is still answering.
+//
+// +cache="never"
 func (m *Crasher) Poke(ctx context.Context, url string) (string, error) {
 	return dag.Container().
 		From("alpine:3.20").
