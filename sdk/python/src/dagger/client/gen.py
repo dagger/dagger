@@ -16224,6 +16224,57 @@ class WorkspaceGit(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    async def push(
+        self,
+        *,
+        remote: str | None = "origin",
+        branch: str | None = "",
+        force: bool | None = False,
+    ) -> str:
+        """Push this workspace's git HEAD - including any staged commits - to a
+        remote, and return the fully qualified remote ref that was updated.
+
+        The push runs through the local checkout's own git, so the checkout's
+        configured remotes, credential helpers and hooks apply, exactly as for
+        `git push` run in the checkout. The checkout itself is never modified:
+        commits staged in the workspace are transferred engine-side and pushed
+        by hash, so they can land on a remote branch without first being saved
+        to the local checkout.
+
+        Parameters
+        ----------
+        remote:
+            Remote to push to: a remote name from the checkout's
+            configuration, or a URL.
+        branch:
+            Remote branch to update. Defaults to the checkout's currently
+            checked-out branch, and is required when its HEAD is detached. A
+            fully qualified ref (refs/...) is used as-is.
+        force:
+            Allow a non-fast-forward update of the remote ref.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("remote", remote, "origin"),
+            Arg("branch", branch, ""),
+            Arg("force", force, False),
+        ]
+        _ctx = self._select("push", _args)
+        return await _ctx.execute(str)
+
     async def staged_commits(self) -> list["WorkspaceStagedCommit"]:
         """Commits staged in this workspace but not yet saved to the local
         checkout.
