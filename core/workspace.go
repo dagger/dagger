@@ -144,6 +144,39 @@ type Workspace struct {
 	// generation fans out exponentially over the dependency DAG. Kept sorted
 	// and deduplicated; carried through Clone so derived workspaces keep it.
 	StagedGeneration []string
+
+	// forkBase, when set, marks this workspace as a fork: a copy used to
+	// stage edits in isolation, whose changes() reports only the edits made
+	// through the fork instead of everything staged on the workspace. It
+	// snapshots the overlay state at fork time. Internal only.
+	forkBase *WorkspaceForkBase
+}
+
+// WorkspaceForkBase snapshots a workspace's overlay state at fork time, so a
+// fork's changes() can report only the edits made through the fork.
+type WorkspaceForkBase struct {
+	// Delta is the overlay state at fork time: the accumulated empty-based
+	// delta root for host-backed workspaces, or the full overlay rootfs for
+	// value/git/rootless workspaces. A zero result means a host-backed
+	// workspace with no overlay yet.
+	Delta dagql.ObjectResult[*Directory]
+	// TouchedPaths is the overlay's touched-path set at fork time.
+	// Host-backed only: it splits paths that diff against the fork-time
+	// delta from paths that diff against the host tree.
+	TouchedPaths []string
+}
+
+// ForkBase returns the fork-time overlay snapshot, or nil when this workspace
+// is not a fork.
+func (ws *Workspace) ForkBase() *WorkspaceForkBase {
+	if ws == nil {
+		return nil
+	}
+	return ws.forkBase
+}
+
+func (ws *Workspace) SetForkBase(base *WorkspaceForkBase) {
+	ws.forkBase = base
 }
 
 // WorkspaceSource is the private backing source for a Workspace.
@@ -512,6 +545,10 @@ type persistedWorkspacePayload struct {
 
 	StagedGeneration []string `json:"stagedGeneration,omitempty"`
 
+	Forked            bool     `json:"forked,omitempty"`
+	ForkDeltaResultID uint64   `json:"forkDeltaResultID,omitempty"`
+	ForkTouchedPaths  []string `json:"forkTouchedPaths,omitempty"`
+
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
 	LegacyConfigPath string `json:"configPath,omitempty"`
@@ -674,6 +711,17 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		}
 		payload.Source = source
 	}
+	if ws.forkBase != nil {
+		payload.Forked = true
+		payload.ForkTouchedPaths = ws.forkBase.TouchedPaths
+		if ws.forkBase.Delta.Self() != nil {
+			deltaID, err := encodePersistedObjectRef(cache, ws.forkBase.Delta, "workspace fork delta")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.ForkDeltaResultID = deltaID
+		}
+	}
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -735,6 +783,17 @@ func (*Workspace) DecodePersistedObject(
 		}
 		ws.source = src
 	}
+	if persisted.Forked {
+		forkBase := &WorkspaceForkBase{TouchedPaths: persisted.ForkTouchedPaths}
+		if persisted.ForkDeltaResultID != 0 {
+			delta, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ForkDeltaResultID, "workspace fork delta")
+			if err != nil {
+				return nil, err
+			}
+			forkBase.Delta = delta
+		}
+		ws.forkBase = forkBase
+	}
 	return ws, nil
 }
 
@@ -744,29 +803,41 @@ func (ws *Workspace) AttachDependencyResults(
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	_ = ctx
-	if ws == nil || ws.rootfs.Self() == nil {
-		if ws != nil && ws.source != nil {
-			return attachWorkspaceSource(attach, ws.source)
-		}
+	if ws == nil {
 		return nil, nil
 	}
 
-	attached, err := attach(ws.rootfs)
-	if err != nil {
-		return nil, fmt.Errorf("attach workspace rootfs: %w", err)
+	var deps []dagql.AnyResult
+	if ws.rootfs.Self() != nil {
+		attached, err := attach(ws.rootfs)
+		if err != nil {
+			return nil, fmt.Errorf("attach workspace rootfs: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach workspace rootfs: unexpected result %T", attached)
+		}
+		ws.rootfs = typed
+		deps = append(deps, typed)
 	}
-	typed, ok := attached.(dagql.ObjectResult[*Directory])
-	if !ok {
-		return nil, fmt.Errorf("attach workspace rootfs: unexpected result %T", attached)
-	}
-	ws.rootfs = typed
-	deps := []dagql.AnyResult{typed}
 	if ws.source != nil {
 		sourceDeps, err := attachWorkspaceSource(attach, ws.source)
 		if err != nil {
 			return nil, err
 		}
 		deps = append(deps, sourceDeps...)
+	}
+	if ws.forkBase != nil && ws.forkBase.Delta.Self() != nil {
+		attached, err := attach(ws.forkBase.Delta)
+		if err != nil {
+			return nil, fmt.Errorf("attach workspace fork delta: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach workspace fork delta: unexpected result %T", attached)
+		}
+		ws.forkBase.Delta = typed
+		deps = append(deps, typed)
 	}
 	return deps, nil
 }

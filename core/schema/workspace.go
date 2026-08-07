@@ -282,6 +282,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("SDK name to look up."),
 			),
+		dagql.NodeFunc("fork", s.fork).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.`),
 		dagql.NodeFunc("changes", s.changes).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace's pending overlay changes."),
@@ -1493,6 +1496,9 @@ func (s *workspaceSchema) changes(
 	if err != nil {
 		return inst, err
 	}
+	if forkBase := parent.Self().ForkBase(); forkBase != nil {
+		return s.forkChanges(ctx, parent, forkBase)
+	}
 	if changes, ok := parent.Self().OverlayChanges(); ok {
 		return changes, nil
 	}
@@ -1501,6 +1507,144 @@ func (s *workspaceSchema) changes(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, changes)
+}
+
+// fork marks a copy of the workspace as a staging area of its own: everything
+// reads and edits the same way, but changes() reports only the edits made
+// through the fork. It snapshots the current overlay state, and forkChanges
+// later diffs against that snapshot instead of the workspace base.
+func (s *workspaceSchema) fork(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	var inst dagql.ObjectResult[*core.Workspace]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ws := parent.Self()
+
+	forkBase := &core.WorkspaceForkBase{}
+	if ws.HostPath() != "" && ws.ClientLocalBase() {
+		// Host-backed: the empty-based delta root is all the fork-time state
+		// that is not just the host tree. Absent when nothing is staged yet.
+		if delta, ok := ws.OverlayDeltaRoot(); ok {
+			forkBase.Delta = delta
+			forkBase.TouchedPaths = ws.OverlayTouchedPaths()
+		}
+	} else {
+		// Value/git/rootless: snapshot the full tree with any staged edits
+		// applied.
+		rootfs, err := s.workspaceOverlayRootfs(ctx, ws)
+		if err != nil {
+			return inst, err
+		}
+		forkBase.Delta = rootfs
+	}
+
+	forked := ws.Clone()
+	forked.SetForkBase(forkBase)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, forked)
+}
+
+// forkChanges computes the edits made through a fork: the diff between the
+// overlay state now and the overlay state the fork snapshotted.
+func (s *workspaceSchema) forkChanges(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	forkBase *core.WorkspaceForkBase,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	ws := parent.Self()
+
+	emptyDir := func() (dagql.ObjectResult[*core.Directory], error) {
+		var dir dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, srv.Root(), &dir, dagql.Selector{Field: "directory"})
+		return dir, err
+	}
+
+	var before, after dagql.ObjectResult[*core.Directory]
+	if ws.HostPath() != "" && ws.ClientLocalBase() {
+		after, _ = ws.OverlayDeltaRoot()
+		if after.Self() == nil {
+			if after, err = emptyDir(); err != nil {
+				return inst, err
+			}
+		}
+		before = forkBase.Delta
+		if before.Self() == nil {
+			if before, err = emptyDir(); err != nil {
+				return inst, err
+			}
+		}
+		// Paths already touched at fork time diff against the fork-time
+		// delta; paths first touched through the fork diff against their
+		// host content, fetched sparsely like the overlay itself does.
+		newTouched := subtractPaths(ws.OverlayTouchedPaths(), forkBase.TouchedPaths)
+		if len(newTouched) > 0 {
+			hostBase, err := s.sparseHostBase(ctx, ws, newTouched)
+			if err != nil {
+				return inst, err
+			}
+			hostBaseID, err := hostBase.ID()
+			if err != nil {
+				return inst, err
+			}
+			var merged dagql.ObjectResult[*core.Directory]
+			if err := srv.Select(ctx, before, &merged, dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString("/")},
+					{Name: "source", Value: dagql.NewID[*core.Directory](hostBaseID)},
+				},
+			}); err != nil {
+				return inst, err
+			}
+			before = merged
+		}
+	} else {
+		if after, err = s.workspaceOverlayRootfs(ctx, ws); err != nil {
+			return inst, err
+		}
+		before = forkBase.Delta
+		if before.Self() == nil {
+			if before, err = emptyDir(); err != nil {
+				return inst, err
+			}
+		}
+	}
+
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, after, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// subtractPaths returns the paths of a that are not in b, preserving order.
+func subtractPaths(a, b []string) []string {
+	drop := make(map[string]struct{}, len(b))
+	for _, p := range b {
+		drop[p] = struct{}{}
+	}
+	var out []string
+	for _, p := range a {
+		if _, ok := drop[p]; !ok {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (s *workspaceSchema) export(
