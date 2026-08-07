@@ -1404,7 +1404,16 @@ type gitMergeWorkspace struct {
 // directories are recreated (the diff snapshot does not carry them). This
 // mirrors Directory.WithChanges' application of the same content.
 func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changesetContent) error {
-	if err := removeChangesetPaths(ws.root, ws.dir, content.paths.Removed); err != nil {
+	// The merge workspace's .git is owned by the merge itself
+	// (mergeBeforeDirectories strips .git from the base for the same reason).
+	// A changeset that carries a .git removal — e.g. a diff against a context
+	// that includes the repository while the generated side does not — must
+	// not delete the scratch repository out from under the merge.
+	removed := slices.DeleteFunc(slices.Clone(content.paths.Removed), func(p string) bool {
+		p = strings.TrimSuffix(p, "/")
+		return p == ".git" || strings.HasPrefix(p, ".git/")
+	})
+	if err := removeChangesetPaths(ws.root, ws.dir, removed); err != nil {
 		return fmt.Errorf("remove paths: %w", err)
 	}
 
@@ -1690,7 +1699,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 		"GIT_COMMITTER_EMAIL=dagger@localhost",
 	}
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git %v: %w: %s", args, err, output)
+		return fmt.Errorf("git %v in %s: %w: %s", args, dir, err, output)
 	}
 	return nil
 }
