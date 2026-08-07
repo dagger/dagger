@@ -51,11 +51,15 @@ mod session;
 #[allow(dead_code)]
 mod archive;
 #[allow(dead_code)]
+mod launch;
+#[allow(dead_code)]
 mod provision;
 #[allow(dead_code)]
 mod provisioning_control;
 #[allow(dead_code)]
 mod provisioning_error;
+#[allow(dead_code)]
+mod session_startup;
 
 pub use config::{ClientConfig, ClientConfigBuilder};
 pub use connection::{EngineConnection, EngineConnectionError, EngineConnectionErrorKind};
@@ -191,6 +195,12 @@ mod preflight_tests;
 
 #[cfg(test)]
 mod provisioning_tests;
+
+#[cfg(test)]
+mod launch_tests;
+
+#[cfg(test)]
+mod session_startup_tests;
 
 #[cfg(test)]
 mod test_support;

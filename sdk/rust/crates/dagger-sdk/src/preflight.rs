@@ -100,6 +100,27 @@ impl ProcessInputs {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_ambient_for_test(
+        mut self,
+        runner_host: Option<OsString>,
+        runner_token: Option<OsString>,
+        traceparent: Option<OsString>,
+        tracestate: Option<OsString>,
+        baggage: Option<OsString>,
+    ) -> Self {
+        self.runner = RunnerInputs {
+            host: runner_host,
+            token: runner_token,
+        };
+        self.propagation = PropagationEnvironment {
+            traceparent,
+            tracestate,
+            baggage,
+        };
+        self
+    }
+
     fn capture() -> Self {
         Self {
             session_port: std::env::var_os(SESSION_PORT_KEY),
@@ -140,6 +161,16 @@ pub(crate) struct RunnerInputs {
     token: Option<OsString>,
 }
 
+impl RunnerInputs {
+    pub(crate) fn host(&self) -> Option<&OsStr> {
+        self.host.as_deref()
+    }
+
+    pub(crate) fn token(&self) -> Option<&OsStr> {
+        self.token.as_deref()
+    }
+}
+
 impl fmt::Debug for RunnerInputs {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -158,6 +189,16 @@ pub(crate) struct PropagationEnvironment {
     baggage: Option<OsString>,
 }
 
+impl PropagationEnvironment {
+    pub(crate) fn values(&self) -> [(&'static str, Option<&OsStr>); 3] {
+        [
+            (TRACEPARENT_KEY, self.traceparent.as_deref()),
+            (TRACESTATE_KEY, self.tracestate.as_deref()),
+            (BAGGAGE_KEY, self.baggage.as_deref()),
+        ]
+    }
+}
+
 impl fmt::Debug for PropagationEnvironment {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -174,6 +215,16 @@ impl fmt::Debug for PropagationEnvironment {
 pub(crate) struct CliAmbientInputs {
     runner: RunnerInputs,
     propagation: PropagationEnvironment,
+}
+
+impl CliAmbientInputs {
+    pub(crate) fn runner(&self) -> &RunnerInputs {
+        &self.runner
+    }
+
+    pub(crate) fn propagation(&self) -> &PropagationEnvironment {
+        &self.propagation
+    }
 }
 
 impl fmt::Debug for CliAmbientInputs {

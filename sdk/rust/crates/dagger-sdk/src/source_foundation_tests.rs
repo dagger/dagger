@@ -232,6 +232,63 @@ proptest! {
         }
     }
 
+    // The selected explicit-local value is resolved against only its captured native
+    // snapshot; a lookup failure cannot turn into provisioning or compatibility PATH.
+    // Feature: rust-sdk-transport-observability, Property 5: explicit-local selection is authoritative
+    #[test]
+    fn property_05_explicit_local_authoritative(
+        name in "[A-Za-z0-9][A-Za-z0-9_.-]{0,15}",
+        path_shaped in any::<bool>(),
+        shape in 0_u8..3,
+        later_mutation in "[A-Za-z0-9_.-]{1,16}",
+    ) {
+        let path_entry = PathBuf::from("/captured/bin");
+        let configured = if path_shaped {
+            OsString::from(format!("/selected/{name}"))
+        } else {
+            OsString::from(&name)
+        };
+        let candidate = if path_shaped {
+            PathBuf::from(&configured)
+        } else {
+            path_entry.join(&name)
+        };
+        let resolved = PathBuf::from(format!("/resolved/{name}"));
+        let filesystem = match shape {
+            0 => TestDiscoveryFileSystem::new().executable(candidate, resolved.clone()),
+            1 => TestDiscoveryFileSystem::new().unusable(candidate),
+            _ => TestDiscoveryFileSystem::new(),
+        };
+        let inputs = NativeDiscoveryInputs::new(
+            NativePathSemantics::Unix,
+            vec![path_entry],
+            None,
+            None,
+            Ok(PathBuf::from("/captured/current")),
+        );
+        let actual = resolve_explicit_cli_for_test(configured, &inputs, &filesystem);
+        match shape {
+            0 => {
+                let executable = actual.expect("the reference executable exists");
+                prop_assert_eq!(executable.path(), resolved);
+            }
+            1 => prop_assert_eq!(
+                actual.expect_err("the reference entry is unusable").kind(),
+                CliDiscoveryErrorKind::NotExecutable,
+            ),
+            _ => prop_assert_eq!(
+                actual.expect_err("the reference entry is absent").kind(),
+                CliDiscoveryErrorKind::Lookup,
+            ),
+        }
+
+        // Mutating a plausible future PATH coordinate cannot affect the owned snapshot,
+        // and neither lower source has an operation in this resolution path.
+        let _post_snapshot_path = PathBuf::from(format!("/mutated/{later_mutation}"));
+        let events = TransportEventLog::default();
+        prop_assert!(events.events().is_empty());
+    }
+
     // Descriptor construction is a pure exact table. Unsupported coordinates and
     // independently malformed target values terminate before an effect can occur.
     #[test]

@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb1907e7d7990649c44e288388096b2a29eb613a3278615b24ac44ea95d965cf";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:e3e8ca4d488d3490fdc571d75861c1a40ba82014bab5bf1c9ee776ddd5763b4f";
+    "sha256:b71e6bc4575f3fe2f02637b7e4cfdcb8ffc5033fc67c7967efb9ce1d8964d567";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {

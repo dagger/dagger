@@ -65,8 +65,17 @@ impl fmt::Debug for ValidatedExistingSession {
 pub(crate) struct SecretString(Arc<str>);
 
 impl SecretString {
+    pub(crate) fn new(value: impl Into<Arc<str>>) -> Option<Self> {
+        let value = value.into();
+        (!value.is_empty()).then_some(Self(value))
+    }
+
     pub(crate) fn expose_for_authentication(&self) -> &str {
         &self.0
+    }
+
+    pub(crate) fn expose_for_redaction(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 

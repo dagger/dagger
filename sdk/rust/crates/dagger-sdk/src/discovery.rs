@@ -172,6 +172,14 @@ impl LaunchExecutable {
         self.lease.clone()
     }
 
+    #[cfg(test)]
+    pub(crate) fn unmanaged(path: PathBuf) -> Self {
+        Self {
+            path,
+            lease: ExecutableLease::Unmanaged,
+        }
+    }
+
     pub(crate) fn cached(path: PathBuf, lock: File) -> Self {
         Self {
             path,

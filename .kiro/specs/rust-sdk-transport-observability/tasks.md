@@ -224,69 +224,69 @@
     cargo-deny; require all archive formats, injected cancellation points, and cache
     schedules to leave no partial or unverified executable.
 
-- [ ] 8. Implement fallback, spawn policy, and complete CLI launch projection
-  - [ ] 8.1 Add the finite provisioning fallback policy
+- [x] 8. Implement fallback, spawn policy, and complete CLI launch projection
+  - [x] 8.1 Add the finite provisioning fallback policy
     - Permit PATH compatibility fallback only when the release manifest returns HTTP
       403 or 404; emit a safe warning, resolve only the canonical Dagger executable,
       and retain both failures in a compound error when fallback discovery fails.
     - Make every other manifest, archive, integrity, cache, cancellation, and spawn
       failure terminal for its selected source.
     - _Requirements: 7.1-7.13_
-  - [ ] 8.2 Add narrow, bounded spawn retry
+  - [x] 8.2 Add narrow, bounded spawn retry
     - Retry only native `ETXTBSY`, at most ten total spawn attempts, with cancellable
       backoff capped at 100 ms; return the final typed spawn failure with safe attempt
       metadata and never retry any other process error.
     - Preserve the `LaunchExecutable` cache lease until the spawn attempt has safely
       transferred executable ownership to the child.
     - _Requirements: 7.14-7.19_
-  - [ ] 8.3 Project the complete CLI launch contract
+  - [x] 8.3 Project the complete CLI launch contract
     - Build arguments/environment from typed values, including the exact runner,
       labels exactly once, W3C child propagation, and collision handling; pipe stdin,
       stdout, and stderr and make ambient inputs explicit.
     - Use statically dispatched concrete production components with generic seams for
       tests; do not introduce trait-object indirection into the connector hot path.
     - _Requirements: 8.1-8.5, 9.10, 14.9_
-  - [ ] 8.4 Property test: Property 5 — explicit-local selection is authoritative
+  - [x] 8.4 Property test: Property 5 — explicit-local selection is authoritative
     - Generate at least 256 explicit-local values, native discovery snapshots, mutations,
       and failure shapes; compare lookup to the native reference model and assert zero
       provisioning/PATH-compatibility events after selection.
     - Test identifier: `property_05_explicit_local_authoritative`.
     - _Requirements: 3.9-3.15_
-  - [ ] 8.5 Property test: Property 13 — fallback follows the finite policy table
+  - [x] 8.5 Property test: Property 13 — fallback follows the finite policy table
     - Generate at least 256 source/stage/status/fallback-result combinations; compare
       events and terminal error composition against the policy table, including the
       exclusive 403/404 manifest transition.
     - Test identifier: `property_13_fallback_finite_policy_table`.
     - _Requirements: 7.1-7.13_
-  - [ ] 8.6 Property test: Property 14 — spawn retry is narrow, bounded, and cancellable
+  - [x] 8.6 Property test: Property 14 — spawn retry is narrow, bounded, and cancellable
     - Generate at least 256 spawn outcome/cancellation sequences using a virtual clock;
       assert retry count, error identity, backoff ceiling, cancellation responsiveness,
       and lease lifetime exactly match the reference state machine.
     - Test identifier: `property_14_spawn_retry_narrow_bounded_cancellable`.
     - _Requirements: 7.14-7.19_
-  - [ ] 8.7 Property test: Property 16 — CLI launch projection is complete and collision-free
+  - [x] 8.7 Property test: Property 16 — CLI launch projection is complete and collision-free
     - Generate at least 256 runner/label/environment/propagation combinations; compare
       exact argv/env/pipe configuration to a reference projection and assert one value
       per reserved input with deterministic collision resolution.
     - Test identifier: `property_16_cli_launch_projection_complete_collision_free`.
     - _Requirements: 8.1-8.5, 9.10, 14.9_
 
-- [ ] 9. Implement session startup, resource ownership, and diagnostic containment
-  - [ ] 9.1 Add typed pending-resource ownership and startup transfer
+- [x] 9. Implement session startup, resource ownership, and diagnostic containment
+  - [x] 9.1 Add typed pending-resource ownership and startup transfer
     - Introduce `PendingResources` as the sole pre-session owner of child, pipe, cache
       lease, and worker handles; make success transfer each resource exactly once and
       make every startup error/cancellation converge through one cleanup path.
     - Use a small Rust helper binary to exercise portable child protocols and ownership
       transitions without shell-specific behavior.
     - _Requirements: 8.6-8.7, 8.14-8.20_
-  - [ ] 9.2 Parse the first stdout control record in isolation
+  - [x] 9.2 Parse the first stdout control record in isolation
     - Read one newline-terminated control record with a 64 KiB limit, validate required
       port/token fields and tolerate unknown fields, then transfer all remaining stdout
       bytes to diagnostics without ever diagnosing control bytes or token values.
     - Return typed EOF, oversize, UTF-8, JSON, field-shape, and range failures through
       `PendingResources` cleanup.
     - _Requirements: 8.8-8.13, 10.1-10.5, 14.7_
-  - [ ] 9.3 Add sealed streaming redaction and bounded diagnostic tails
+  - [x] 9.3 Add sealed streaming redaction and bounded diagnostic tails
     - Build a token-aware redactor with chunk carry so secrets split across arbitrary
       read boundaries cannot escape; feed stdout remainder and stderr independently
       into fixed 1 MiB tails and an optional fallible/panicking sink.
@@ -294,33 +294,33 @@
       panic results, avoid secret-bearing allocations in ordinary errors, and preserve
       background outcomes for later observation.
     - _Requirements: 10.1-10.20, 14.8, 14.11_
-  - [ ] 9.4 Property test: Property 17 — control input is parsed once and never diagnosed
+  - [x] 9.4 Property test: Property 17 — control input is parsed once and never diagnosed
     - Generate at least 128 chunkings of valid and invalid control records, unknown
       fields, boundary lengths, and stdout suffixes; assert one parse, exact suffix
       handoff, no control bytes in any diagnostic sink, and cleanup on rejection.
     - Test identifier: `property_17_control_input_parsed_once_never_diagnosed`.
     - _Requirements: 8.8-8.13, 10.1-10.5, 14.7_
-  - [ ] 9.5 Property test: Property 18 — pending resources have one owner and one transfer
+  - [x] 9.5 Property test: Property 18 — pending resources have one owner and one transfer
     - Generate at least 128 startup/cancellation/failure schedules over every owned
       resource; assert each handle is transferred or cleaned exactly once, never both,
       and no child, task, pipe, or cache lease survives failure.
     - Test identifier: `property_18_pending_resources_one_owner_one_transfer`.
     - _Requirements: 8.6-8.7, 8.14-8.20_
-  - [ ] 9.6 Property test: Property 21 — diagnostics are isolated, redacted, bounded, and contained
+  - [x] 9.6 Property test: Property 21 — diagnostics are isolated, redacted, bounded, and contained
     - Generate at least 128 arbitrary secret placements, chunk boundaries, channel
       interleavings, over-capacity streams, read failures, sink errors, and sink panics;
       assert zero secret/control leakage, channel isolation, exact tail bounds, and
       continued cleanup/progress.
     - Test identifier: `property_21_diagnostics_isolated_redacted_bounded_contained`.
     - _Requirements: 10.1-10.13, 10.18-10.20, 14.8_
-  - [ ] 9.7 Property test: Property 22 — background outcomes remain observable
+  - [x] 9.7 Property test: Property 22 — background outcomes remain observable
     - Generate at least 128 worker completion orders and close/read races; assert every
       `StreamOutcome` is retained, reported at most once in deterministic order, and
       cannot be lost merely because it occurs after startup succeeds.
     - Test identifier: `property_22_background_outcomes_remain_observable`.
     - _Requirements: 10.14-10.17, 14.11_
 
-- [ ] 10. Checkpoint: launch and session startup are green
+- [x] 10. Checkpoint: launch and session startup are green
   - Run formatting, locked SDK tests, helper-process integration tests, clippy, rustdoc,
     and cargo-deny; require secret-scanning assertions over all ordinary output and no
     child/task/lease leak across the complete startup failure matrix.
