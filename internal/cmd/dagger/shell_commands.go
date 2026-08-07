@@ -493,19 +493,27 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 // reasoningEffortOptions builds the option list for the interactive ".effort"
 // picker from the current model's catwalk metadata: the levels the model
 // actually supports, plus "none" to disable reasoning. When the model isn't in
-// the catalog (e.g. a local or custom endpoint), it falls back to the
-// conventional low/medium/high levels.
+// the catalog (e.g. a local or custom endpoint), or is a reasoning-capable
+// model without explicit levels, it falls back to the conventional
+// low/medium/high levels. Known models that can't reason at all get only
+// "none".
 func reasoningEffortOptions(model string) []huh.Option[string] {
 	var levels []string
 	var defaultLevel string
+	canReason := true // unknown models get the conventional fallback below
 	for _, e := range llmconfig.ProviderEntries() {
-		if m, ok := llmconfig.ModelByID(e.ConfigKey, model); ok && m.CanReason {
+		m, ok := llmconfig.ModelByID(e.ConfigKey, model)
+		if !ok {
+			continue
+		}
+		canReason = m.CanReason
+		if m.CanReason {
 			levels = m.ReasoningLevels
 			defaultLevel = m.DefaultReasoningEffort
 			break
 		}
 	}
-	if len(levels) == 0 {
+	if canReason && len(levels) == 0 {
 		levels = []string{"low", "medium", "high"}
 	}
 	if !slices.Contains(levels, "none") {
