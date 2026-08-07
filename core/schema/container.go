@@ -1324,10 +1324,15 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		defer detach()
 
 		if latestRelease {
-			tags, err := rslvr.ListImageTags(ctx, refName.String(), serverresolver.ListImageTagsOpts{
+			// Encapsulate so the tag listing's raw HTTP spans stay out of the
+			// default TUI; they surface if the listing fails.
+			listCtx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("select latest release for %s", refName.String()),
+				telemetry.Internal(), telemetry.Encapsulate())
+			tags, err := rslvr.ListImageTags(listCtx, refName.String(), serverresolver.ListImageTagsOpts{
 				Network:           network,
 				RegistryTransport: registryTransport,
 			})
+			telemetry.EndWithCause(span, &err)
 			if err != nil {
 				return inst, fmt.Errorf("failed to list image tags for %q: %w", refName.String(), err)
 			}

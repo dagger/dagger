@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
 )
@@ -149,9 +150,14 @@ func updateContainerFromLatestLockEntry(ctx context.Context, query *Query, entry
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("failed to get registry resolver: %w", err)
 	}
-	tags, err := rslvr.ListImageTags(ctx, refName.String(), serverresolver.ListImageTagsOpts{
+	// Encapsulate so the tag listing's raw HTTP spans stay out of the default
+	// TUI; they surface if the listing fails.
+	listCtx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("select latest release for %s", refName.String()),
+		telemetry.Internal(), telemetry.Encapsulate())
+	tags, err := rslvr.ListImageTags(listCtx, refName.String(), serverresolver.ListImageTagsOpts{
 		RegistryTransport: inputs.registryTransport,
 	})
+	telemetry.EndWithCause(span, &err)
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("list image tags for %q: %w", refName.String(), err)
 	}
