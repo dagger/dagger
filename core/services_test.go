@@ -10,6 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -401,6 +402,82 @@ func TestServicesRunningServicesListing(t *testing.T) {
 	// that gracefully rather than panic
 	require.False(t, running1.ServiceSpanContext().IsValid())
 	require.Empty(t, running1.InstallSpanContexts())
+}
+
+// ExitedServices backs the exited half of the ListServices builtin: a service
+// that ran and exited — crash included — must stay listed for its session,
+// with its span handles and exit information intact, rather than vanish from
+// the registry exactly when its logs matter most.
+func TestServicesExitedServicesListing(t *testing.T) {
+	t.Parallel()
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		SessionID: "exited-session-a",
+		ClientID:  "client-a",
+	})
+
+	services := core.NewServices()
+
+	stub := newStartable("exited-1")
+	installCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{2},
+	})
+
+	host := stub.Succeed()
+	running, err := services.StartWithOpts(ctx, stub.Digest(), stub, core.ServiceStartOpts{
+		OriginSpanContexts: []trace.SpanContext{installCtx},
+	})
+	require.NoError(t, err)
+	require.Equal(t, host, running.Host)
+
+	// nothing has exited yet
+	require.Empty(t, services.ExitedServices("exited-session-a"))
+
+	// crash the service; the exit is observed asynchronously, so wait for
+	// the registry's watcher to record the tombstone
+	exitErr := errors.New("oh no, crashed")
+	stub.Exit(exitErr)
+	require.Eventually(t, func() bool {
+		return len(services.ExitedServices("exited-session-a")) == 1
+	}, 10*time.Second, 10*time.Millisecond)
+
+	// dropped from the running listing...
+	require.Empty(t, services.RunningServices("exited-session-a"))
+
+	// ...but retained as a tombstone with identity, exit info, and the span
+	// handles needed to read its logs after the fact
+	exited := services.ExitedServices("exited-session-a")[0]
+	require.Equal(t, host, exited.Host)
+	require.Equal(t, stub.Digest(), exited.Key.Digest)
+	require.Equal(t, exitErr, exited.ExitErr)
+	require.Equal(t, -1, exited.ExitCode) // no exit code carried by a plain error
+	require.Equal(t, []trace.SpanContext{installCtx}, exited.InstallSpanContexts())
+	// the fake runtime records no service span; the accessor must degrade
+	// gracefully, mirroring RunningService
+	require.False(t, exited.ServiceSpanContext().IsValid())
+
+	// an ExecError exit surfaces its exit code in the tombstone
+	crasher := newStartable("exited-2")
+	crasherHost := crasher.Succeed()
+	_, err = services.Start(ctx, crasher.Digest(), crasher, false)
+	require.NoError(t, err)
+	crasher.Exit(&core.ExecError{Err: errors.New("exited"), ExitCode: 3})
+	require.Eventually(t, func() bool {
+		return len(services.ExitedServices("exited-session-a")) == 2
+	}, 10*time.Second, 10*time.Millisecond)
+	crashed := services.ExitedServices("exited-session-a")[1]
+	require.Equal(t, crasherHost, crashed.Host)
+	require.Equal(t, 3, crashed.ExitCode)
+
+	// tombstones are scoped to their session: unknown sessions see nothing,
+	// the empty session ID sees everything
+	require.Empty(t, services.ExitedServices("exited-session-b"))
+	require.Len(t, services.ExitedServices(""), 2)
+
+	// closing the session prunes its tombstones
+	require.NoError(t, services.StopSessionServices(ctx, "exited-session-a"))
+	require.Empty(t, services.ExitedServices("exited-session-a"))
 }
 
 // TestServicesDetachRace tests the race condition where:
