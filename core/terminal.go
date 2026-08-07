@@ -121,6 +121,9 @@ type TerminalArgs struct {
 	// Provide dagger access to the executed command
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 
+	// Configure how the executed command may connect back to Dagger
+	DaggerNesting dagql.Optional[DaggerNesting]
+
 	// Grant the process all root capabilities
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
@@ -215,6 +218,7 @@ func (container *Container) terminal(
 		svc, err = container.AsService(ctx, containerRes, ContainerAsServiceArgs{
 			Args:                          args.Cmd,
 			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
+			DaggerNesting:                 args.DaggerNesting,
 			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 		})
 	} else {

@@ -48,6 +48,54 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")
 }
 
+func TestDaggerNestingSchemaViews(t *testing.T) {
+	ctx := context.Background()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID: "schema-client", SessionID: "schema-session",
+	})
+	testServer := &currentTypeDefsTestServer{}
+	base, err := NewCoreSchemaBase(ctx, testServer)
+	require.NoError(t, err)
+
+	preV1, err := base.Fork(ctx, core.NewRoot(testServer), "v0.21.9")
+	require.NoError(t, err)
+	preV1JSON, err := getSchemaJSON(nil, nil, preV1.View, preV1)
+	require.NoError(t, err)
+	preV1Schema := decodeSchemaResponse(t, preV1JSON).Schema
+	require.Nil(t, preV1Schema.Types.Get("DaggerNesting"))
+	for _, field := range []string{"withExec", "asService", "up", "terminal", "withDefaultTerminalCmd"} {
+		spec := schemaField(preV1Schema.Types.Get("Container"), field)
+		require.NotNil(t, spec, field)
+		require.Nil(t, schemaArgument(spec, "daggerNesting"), field)
+	}
+	require.Nil(t, schemaArgument(schemaField(preV1Schema.Types.Get("Directory"), "terminal"), "daggerNesting"))
+
+	v1, err := base.Fork(ctx, core.NewRoot(testServer), "v1.0.0")
+	require.NoError(t, err)
+	v1JSON, err := getSchemaJSON(nil, nil, v1.View, v1)
+	require.NoError(t, err)
+	v1Schema := decodeSchemaResponse(t, v1JSON).Schema
+	nesting := v1Schema.Types.Get("DaggerNesting")
+	require.NotNil(t, nesting)
+	require.Equal(t, []string{"NESTED_CLIENT", "INDEPENDENT_SESSIONS"}, []string{
+		nesting.EnumValues[0].Name,
+		nesting.EnumValues[1].Name,
+	})
+	for _, field := range []string{"withExec", "asService", "up", "terminal", "withDefaultTerminalCmd"} {
+		spec := schemaField(v1Schema.Types.Get("Container"), field)
+		require.NotNil(t, spec, field)
+		require.NotNil(t, schemaArgument(spec, "daggerNesting"), field)
+		legacy := schemaArgument(spec, "experimentalPrivilegedNesting")
+		require.NotNil(t, legacy, field)
+		require.True(t, legacy.IsDeprecated, field)
+		require.Equal(t, "Use daggerNesting: NESTED_CLIENT.", *legacy.DeprecationReason)
+	}
+	require.NotNil(t, schemaArgument(schemaField(v1Schema.Types.Get("Directory"), "terminal"), "daggerNesting"))
+}
+
 func TestSchemaJSONScrubbing(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
@@ -169,6 +217,18 @@ func schemaField(typ *codegenintrospection.Type, name string) *codegenintrospect
 	for _, field := range typ.Fields {
 		if field.Name == name {
 			return field
+		}
+	}
+	return nil
+}
+
+func schemaArgument(field *codegenintrospection.Field, name string) *codegenintrospection.InputValue {
+	if field == nil {
+		return nil
+	}
+	for i := range field.Args {
+		if field.Args[i].Name == name {
+			return &field.Args[i]
 		}
 	}
 	return nil

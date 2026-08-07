@@ -288,9 +288,9 @@ func (r *ContainerRuntime) Call(
 	execCtr.Config.Labels = maps.Clone(execCtr.Config.Labels)
 
 	err = execCtr.WithExec(hideCtx, ctr, ContainerExecOpts{
-		Args:                          []string{},
-		UseEntrypoint:                 true,
-		ExperimentalPrivilegedNesting: true,
+		Args:          []string{},
+		UseEntrypoint: true,
+		DaggerNesting: dagql.Opt(DaggerNestingNestedClient),
 	}, execMD, moduleContext, fnCall)
 	if err != nil {
 		return fmt.Errorf("exec function: %w", err)

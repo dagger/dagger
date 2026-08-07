@@ -53,3 +53,34 @@ func TestClientMetadataForwardsWorkspaceModuleScopeOnlyWithWorkspaceModules(t *t
 	require.False(t, md.LoadWorkspaceModules)
 	require.Empty(t, md.WorkspaceModuleScope)
 }
+
+func TestDaggerNestingEnvironmentValidation(t *testing.T) {
+	t.Run("unknown marker", func(t *testing.T) {
+		t.Setenv("DAGGER_NESTING", "UNKNOWN")
+		_, err := Connect(t.Context(), Params{})
+		require.ErrorContains(t, err, "unknown DAGGER_NESTING")
+	})
+
+	for _, mode := range []string{"NESTED_CLIENT", "INDEPENDENT_SESSIONS"} {
+		t.Run("missing port "+mode, func(t *testing.T) {
+			t.Setenv("DAGGER_NESTING", mode)
+			_, err := Connect(t.Context(), Params{})
+			require.ErrorContains(t, err, "requires DAGGER_SESSION_PORT")
+		})
+		t.Run("invalid port "+mode, func(t *testing.T) {
+			t.Setenv("DAGGER_NESTING", mode)
+			t.Setenv("DAGGER_SESSION_PORT", "0")
+			_, err := Connect(t.Context(), Params{})
+			require.ErrorContains(t, err, "requires a positive DAGGER_SESSION_PORT")
+		})
+	}
+
+	t.Run("independent does not require inherited token", func(t *testing.T) {
+		t.Setenv("DAGGER_NESTING", "INDEPENDENT_SESSIONS")
+		t.Setenv("DAGGER_SESSION_PORT", "1")
+		t.Setenv("DAGGER_SESSION_TOKEN", "")
+		_, err := Connect(t.Context(), Params{})
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "DAGGER_SESSION_TOKEN")
+	})
+}
