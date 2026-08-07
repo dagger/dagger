@@ -109,9 +109,15 @@
       },
       "overrides": {
         "behavior/go-engine-sdk/typed-outside-target-response": {
-          "gap": "Rust lacks a typed error for engines outside the exact supported target",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+          "implementation_evidence": [
+            "implementation/feature-3-transport-observability"
+          ],
           "owner_feature": "feature-3",
-          "status": "Missing"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         }
       },
       "rule_id": "baseline/go-engine-sdk",
@@ -169,28 +175,40 @@
           "decision_evidence": [
             "decision/feature-2-no-closure-helper"
           ],
-          "gap": "Feature 3 CLI source selection, provisioning, and authentication lack target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43oad%2557orkspace%254%44odules": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43og%254%46utput": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2543onn": {
           "decision_evidence": [
@@ -205,68 +223,100 @@
           ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2545nvironment%2556ariable": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2552unner%2548ost": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2553kip%2557orkspace%254%44odules": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556erbosity": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556ersion%254%46verride": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkdir": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkspace": {
-          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2543lose": {
-          "gap": "Feature 3 CLI-owned process and transport shutdown lack target-scoped engine verification",
+          "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
           "implementation_evidence": [
-            "implementation/feature-2-client-lifecycle"
+            "implementation/feature-2-client-lifecycle",
+            "implementation/feature-3-transport-observability"
           ],
           "owner_feature": "feature-2",
-          "status": "Partial"
+          "status": "Partial",
+          "verification_evidence": [
+            "verification/feature-3-transport-deterministic"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2544o": {
           "decision_evidence": [
@@ -399,12 +449,16 @@
     "routing/go-client/engineconn-cli": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+        "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
         "implementation_evidence": [
+          "implementation/feature-3-transport-observability",
           "implementation/go-client-baseline"
         ],
         "owner_feature": "feature-3",
-        "status": "Partial"
+        "status": "Partial",
+        "verification_evidence": [
+          "verification/feature-3-transport-deterministic"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:04dc8ba4e5fba99b94432b4f3215e3a0145a83c42fae4fd5f6cd15c0b0453302"
@@ -419,12 +473,16 @@
     "routing/go-client/engineconn-cli-tests": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 3 CLI selection tests lack target-scoped verification",
+        "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
         "implementation_evidence": [
+          "implementation/feature-3-transport-observability",
           "implementation/go-client-baseline"
         ],
         "owner_feature": "feature-3",
-        "status": "Partial"
+        "status": "Partial",
+        "verification_evidence": [
+          "verification/feature-3-transport-deterministic"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:3247f8ed3ec7e0535b56175b41bd643645c54412f05ec468fbd724150a320142"
@@ -439,12 +497,16 @@
     "routing/go-client/engineconn-core": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 3 connection selection and transport lack target-scoped verification",
+        "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
         "implementation_evidence": [
+          "implementation/feature-3-transport-observability",
           "implementation/go-client-baseline"
         ],
         "owner_feature": "feature-3",
-        "status": "Partial"
+        "status": "Partial",
+        "verification_evidence": [
+          "verification/feature-3-transport-deterministic"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:e483cdd058bf3e71c4cddec80e64d1ca6ce609dfabcd7bc75857a1179651f0c3"
@@ -484,12 +546,16 @@
     "routing/go-client/engineconn-env": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 3 existing-session environment selection lacks target-scoped verification",
+        "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
         "implementation_evidence": [
+          "implementation/feature-3-transport-observability",
           "implementation/go-client-baseline"
         ],
         "owner_feature": "feature-3",
-        "status": "Partial"
+        "status": "Partial",
+        "verification_evidence": [
+          "verification/feature-3-transport-deterministic"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:a1677f66c5a94528b8c78240b549051f202a976770665fabd3862f8480030448"
@@ -504,12 +570,16 @@
     "routing/go-client/engineconn-session-tests": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 3 session-source compatibility tests lack target-scoped verification",
+        "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
         "implementation_evidence": [
+          "implementation/feature-3-transport-observability",
           "implementation/go-client-baseline"
         ],
         "owner_feature": "feature-3",
-        "status": "Partial"
+        "status": "Partial",
+        "verification_evidence": [
+          "verification/feature-3-transport-deterministic"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:a892d5411249cbe2109acf6a2892d409859c4cb523090602292052ec43dca31e"
@@ -524,12 +594,16 @@
     "routing/go-client/engineconn-version": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 3 CLI version selection lacks target-scoped verification",
+        "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
         "implementation_evidence": [
+          "implementation/feature-3-transport-observability",
           "implementation/go-client-baseline"
         ],
         "owner_feature": "feature-3",
-        "status": "Partial"
+        "status": "Partial",
+        "verification_evidence": [
+          "verification/feature-3-transport-deterministic"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:f13ffc6f156124434eb25f925cf172ffc4091ea08e8746f556d166d6a4c5caf6"
@@ -684,9 +758,15 @@
     "routing/rust-policy/transport-observability": {
       "authority_id": "rust-policy",
       "classification": {
-        "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+        "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+        "implementation_evidence": [
+          "implementation/feature-3-transport-observability"
+        ],
         "owner_feature": "feature-3",
-        "status": "Missing"
+        "status": "Partial",
+        "verification_evidence": [
+          "verification/feature-3-transport-deterministic"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:3fe3cb7763950ff47b0b6bf277feb15ac78007063ed705608059fb7ca09752f1"

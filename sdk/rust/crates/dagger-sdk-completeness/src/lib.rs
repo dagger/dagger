@@ -17,6 +17,7 @@ pub mod harness;
 pub mod inventory;
 pub mod io;
 pub mod model;
+pub mod observation;
 pub mod ownership;
 pub mod report;
 pub mod target;
@@ -64,6 +65,10 @@ pub use io::{
     load_source_bundles,
 };
 pub use model::*;
+pub use observation::{
+    ExactTargetRun, TransportAssertion, TransportObservationKind, TransportObservationMode,
+    TransportObservationRecord, TransportObservationRegistry, validate_transport_observations,
+};
 pub use ownership::{BlockingDomain, OwnershipAssignments, validate_blocking_ownership};
 pub use report::{
     Gate, GateProfile, build_report, gate_exit_status, gate_passes, profile_gate,

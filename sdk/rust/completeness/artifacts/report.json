@@ -4679,13 +4679,13 @@
     "Idiomatic_Equivalent": 10,
     "Implemented": 15,
     "Inapplicable": 0,
-    "Missing": 1129,
-    "Partial": 3428
+    "Missing": 1102,
+    "Partial": 3455
   },
   "integrity_errors": [],
   "integrity_verdict": true,
   "inventory_digest": "sha256:e90dfa2a0c383dbbc4003091d05f0e8a8f537fc80fb87672ce82a2d49d3e86a9",
-  "ledger_digest": "sha256:1dd7c47e32ee446326cdcf10c17ea51586f792160836878700618931af0e62c5",
+  "ledger_digest": "sha256:7c637d0b7afe3947c80cf42966be610ab3d11d9912a8a0048aa32a1ff8188e2a",
   "target_descriptor": {
     "contract_format_version": "1.0.0",
     "dagger_repository": "github.com/dagger/dagger",

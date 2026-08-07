@@ -1,4 +1,4 @@
-// Toolchain to develop the Dagger Rust SDK (experimental)
+// Toolchain to develop and verify the Dagger Rust SDK.
 package main
 
 import (
@@ -28,7 +28,7 @@ const (
 	mockCargoRegistryName = "mock"
 )
 
-// Develop the Dagger Rust SDK (experimental)
+// Develop and verify the Dagger Rust SDK.
 type RustSdkDev struct {
 	OriginalWorkspace *dagger.Directory // +private
 	Workspace         *dagger.Directory // +private
@@ -73,6 +73,9 @@ func New(
 			"!.kiro/specs/rust-sdk-client-lifecycle/requirements.md",
 			"!.kiro/specs/rust-sdk-client-lifecycle/design.md",
 			"!.kiro/specs/rust-sdk-client-lifecycle/tasks.md",
+			"!.kiro/specs/rust-sdk-transport-observability/requirements.md",
+			"!.kiro/specs/rust-sdk-transport-observability/design.md",
+			"!.kiro/specs/rust-sdk-transport-observability/tasks.md",
 		},
 	})
 

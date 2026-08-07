@@ -10,6 +10,10 @@ use std::error::Error;
 use std::fmt;
 use std::num::NonZeroU16;
 use std::sync::Arc;
+#[cfg(test)]
+use std::sync::OnceLock;
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -31,6 +35,72 @@ use crate::session::SecretString;
 const CONTROL_LINE_LIMIT: usize = 64 * 1024;
 const STREAM_BUFFER_SIZE: usize = 16 * 1024;
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Test-only witness attached to the real native session owner.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct LiveSessionObservation {
+    compiled_source: AtomicBool,
+    propagation: AtomicBool,
+    diagnostics: AtomicBool,
+    child_started: AtomicBool,
+    child_reaped: AtomicBool,
+}
+
+#[cfg(test)]
+static LIVE_SESSION_OBSERVER: OnceLock<Arc<LiveSessionObservation>> = OnceLock::new();
+
+#[cfg(test)]
+impl LiveSessionObservation {
+    pub(crate) fn observe_connector(
+        &self,
+        compiled_source: bool,
+        propagation: bool,
+        diagnostics: bool,
+    ) {
+        self.compiled_source
+            .store(compiled_source, Ordering::Release);
+        self.propagation.store(propagation, Ordering::Release);
+        self.diagnostics.store(diagnostics, Ordering::Release);
+    }
+
+    pub(crate) fn compiled_source(&self) -> bool {
+        self.compiled_source.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn propagation(&self) -> bool {
+        self.propagation.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn diagnostics(&self) -> bool {
+        self.diagnostics.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn child_started(&self) -> bool {
+        self.child_started.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn child_reaped(&self) -> bool {
+        self.child_reaped.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn install_live_session_observer() -> Arc<LiveSessionObservation> {
+    Arc::clone(LIVE_SESSION_OBSERVER.get_or_init(|| Arc::new(LiveSessionObservation::default())))
+}
+
+#[cfg(test)]
+fn live_session_observer() -> Option<&'static Arc<LiveSessionObservation>> {
+    LIVE_SESSION_OBSERVER.get()
+}
+
+#[cfg(test)]
+pub(crate) fn observe_live_connector(compiled_source: bool, propagation: bool, diagnostics: bool) {
+    if let Some(observer) = live_session_observer() {
+        observer.observe_connector(compiled_source, propagation, diagnostics);
+    }
+}
 
 /// Validated parameters emitted by the CLI session control record.
 #[derive(Clone)]
@@ -459,6 +529,10 @@ impl PendingResources {
             stdout,
             stderr,
         } = output;
+        #[cfg(test)]
+        if let Some(observer) = live_session_observer() {
+            observer.child_started.store(true, Ordering::Release);
+        }
         let router = Arc::new(DiagnosticRouter::sealed(
             Arc::clone(&options.diagnostics),
             initial_secrets,
@@ -658,6 +732,10 @@ impl SessionResources {
         let child_failure = if let Some(mut child) = self.child.take() {
             match tokio::time::timeout(timeout, child.wait()).await {
                 Ok(Ok(status)) => {
+                    #[cfg(test)]
+                    if let Some(observer) = live_session_observer() {
+                        observer.child_reaped.store(true, Ordering::Release);
+                    }
                     if status.success() {
                         None
                     } else {

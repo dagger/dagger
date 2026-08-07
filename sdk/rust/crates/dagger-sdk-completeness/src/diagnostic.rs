@@ -104,6 +104,7 @@ diagnostic_codes! {
     EvidenceOutcomeMissing => "EVIDENCE_OUTCOME_MISSING",
     EvidenceTargetMismatch => "EVIDENCE_TARGET_MISMATCH",
     EvidencePlatformInvalid => "EVIDENCE_PLATFORM_INVALID",
+    EvidenceObservationInvalid => "EVIDENCE_OBSERVATION_INVALID",
     HarnessCheckDuplicate => "HARNESS_CHECK_DUPLICATE",
     HarnessCheckKindInvalid => "HARNESS_CHECK_KIND_INVALID",
     HarnessRevisionMismatch => "HARNESS_REVISION_MISMATCH",

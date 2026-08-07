@@ -163,9 +163,15 @@ pub(crate) struct DefaultCliProvisioner<H, O = NoopProvisioningObserver, R = Sys
 
 impl<H> DefaultCliProvisioner<H, NoopProvisioningObserver> {
     pub(crate) fn native(http: H) -> Result<Self, ProvisionError> {
+        #[cfg(test)]
+        let cache_root = std::env::var_os("DAGGER_RUST_SDK_TEST_CACHE_ROOT")
+            .map(PathBuf::from)
+            .or_else(|| dirs::cache_dir().map(|root| root.join(CACHE_DIRECTORY)))
+            .ok_or_else(|| ProvisionError::new(ProvisionErrorKind::CacheDirectory))?;
+        #[cfg(not(test))]
         let cache_root = dirs::cache_dir()
-            .ok_or_else(|| ProvisionError::new(ProvisionErrorKind::CacheDirectory))?
-            .join(CACHE_DIRECTORY);
+            .map(|root| root.join(CACHE_DIRECTORY))
+            .ok_or_else(|| ProvisionError::new(ProvisionErrorKind::CacheDirectory))?;
         Ok(Self {
             http,
             cache_root,

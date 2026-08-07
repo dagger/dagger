@@ -11,9 +11,9 @@ const GO_REVISION: &str = "1309520660f6a5b35ef97b4fbe151e32a06a8dc5";
 const HARNESS_REVISION: &str = "8c164424b7a8a37b33a77367ef7547490d5b87b5";
 const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d19a9a22ef9e3890a40";
 const GO_CLIENT_FEATURE2_DIGEST: &str =
-    "sha256:bb1907e7d7990649c44e288388096b2a29eb613a3278615b24ac44ea95d965cf";
+    "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:e460816f6b3ceee575181c8666c0cf5ac9110cea06243b448f3f3eabe0654dd9";
+    "sha256:061c3a3e93b5377989475a69dff634075c9ffb3c12b006836208b08817e82f44";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -114,7 +114,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:1dd7c47e32ee446326cdcf10c17ea51586f792160836878700618931af0e62c5"
+        "sha256:7c637d0b7afe3947c80cf42966be610ab3d11d9912a8a0048aa32a1ff8188e2a"
     );
     assert_eq!(derived.report.blocking_capabilities.len(), 4_557);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
@@ -165,8 +165,8 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (Status::IdiomaticEquivalent, 10),
             (Status::Implemented, 15),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_129),
-            (Status::Partial, 3_428),
+            (Status::Missing, 1_102),
+            (Status::Partial, 3_455),
         ])
     );
     assert_eq!(

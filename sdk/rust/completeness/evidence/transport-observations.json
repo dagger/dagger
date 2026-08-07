@@ -1,0 +1,424 @@
+{
+  "observations": {
+    "verification/feature-3-transport-deterministic": {
+      "assertions": [
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-const%2Fengineconn%2F%2543%254%43%2549%2556ersion"
+          ],
+          "check_id": "property_25_compatibility_accepts_exact_declared_target",
+          "kind": "compatibility"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2543onnect"
+          ],
+          "check_id": "property_03_source_precedence_reference_function",
+          "kind": "source"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43oad%2557orkspace%254%44odules"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43og%254%46utput"
+          ],
+          "check_id": "property_21_diagnostics_isolated_redacted_bounded_contained",
+          "kind": "error-mapping"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2545nvironment%2556ariable"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2552unner%2548ost"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2553kip%2557orkspace%254%44odules"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556erbosity"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556ersion%254%46verride"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkdir"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkspace"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%254%43ocal%2543%254%43%2549"
+          ],
+          "check_id": "property_05_explicit_local_authoritative",
+          "kind": "source"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%2544ownloaded%2543%254%43%2549"
+          ],
+          "check_id": "property_07_manifest_parsing_bounded_total",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%2553ession%2545nv"
+          ],
+          "check_id": "property_04_existing_session_total_secret_safe",
+          "kind": "source"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2547et"
+          ],
+          "check_id": "property_03_source_precedence_reference_function",
+          "kind": "source"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2543lose"
+          ],
+          "check_id": "property_26_shutdown_bounded_exhaustive_repeatable",
+          "kind": "shutdown"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fengineconn%2F%2543%254%43%2549%2544ownloader%2F%2544ownload"
+          ],
+          "check_id": "property_07_manifest_parsing_bounded_total",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fengineconn%2F%2552ound%2554ripper%2546unc%2F%2552ound%2554rip"
+          ],
+          "check_id": "property_19_implicit_http_confined_authenticated",
+          "kind": "http"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%254%44issing%2541rchive%2544oes%254%45ot%2546allback"
+          ],
+          "check_id": "property_13_fallback_finite_policy_table",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%254%45o%2546allback%2554o%254%43ocal%2543%254%43%2549%2546or%254%46ther%2545rrors"
+          ],
+          "check_id": "property_13_fallback_finite_policy_table",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543%254%43%2549%2553ession%2541rgs%2549nclude%254%43oad%2557orkspace%254%44odules"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543%254%43%2549%2553ession%2541rgs%2549nclude%2557orkspace"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543hecksum%254%44ap%254%44arks%2555navailable"
+          ],
+          "check_id": "property_13_fallback_finite_policy_table",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2546allback%2554o%254%43ocal%2543%254%43%2549"
+          ],
+          "check_id": "property_13_fallback_finite_policy_table",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2547et%2552ejects%2557orkspace%254%44odule%254%43oading%2546or%2545xisting%2553ession"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2547et%2552ejects%2557orkspace%2546or%2545xisting%2553ession"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543%254%43%2549%2544ownloader"
+          ],
+          "check_id": "property_07_manifest_parsing_bounded_total",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onnect%2550arams"
+          ],
+          "check_id": "property_17_control_input_parsed_once_never_diagnosed",
+          "kind": "protocol"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2552ound%2554ripper%2546unc"
+          ],
+          "check_id": "property_19_implicit_http_confined_authenticated",
+          "kind": "http"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-var%2Fengineconn%2F%254%46verride%2543%254%43%2549%2541rchive%2555%2552%254%43"
+          ],
+          "check_id": "property_07_manifest_parsing_bounded_total",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-client/source%2Fgo-client%2Fgo-var%2Fengineconn%2F%254%46verride%2543hecksums%2555%2552%254%43"
+          ],
+          "check_id": "property_07_manifest_parsing_bounded_total",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "behavior/go-engine-sdk/typed-outside-target-response"
+          ],
+          "check_id": "property_25_compatibility_accepts_exact_declared_target",
+          "kind": "compatibility"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-background-failure-observation"
+          ],
+          "check_id": "property_22_background_outcomes_remain_observable",
+          "kind": "error-mapping"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-cache-atomic-publication"
+          ],
+          "check_id": "property_11_concurrent_publication_one_atomic_result",
+          "kind": "cache"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-cache-permission-safety"
+          ],
+          "check_id": "property_10_cache_validation_no_follow_network_free",
+          "kind": "cache"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-cache-retention"
+          ],
+          "check_id": "property_12_retention_locked_confined_non_destructive",
+          "kind": "cache"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-cli-archive-bounds"
+          ],
+          "check_id": "property_08_archive_integrity_bounded_confined",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-cli-trace-propagation"
+          ],
+          "check_id": "property_20_w3c_propagation_coherent_isolated",
+          "kind": "propagation"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-cli-version-selection"
+          ],
+          "check_id": "property_25_compatibility_accepts_exact_declared_target",
+          "kind": "compatibility"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-control-line-isolation"
+          ],
+          "check_id": "property_17_control_input_parsed_once_never_diagnosed",
+          "kind": "protocol"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-diagnostic-bounds"
+          ],
+          "check_id": "property_21_diagnostics_isolated_redacted_bounded_contained",
+          "kind": "error-mapping"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-diagnostic-failure-containment"
+          ],
+          "check_id": "property_21_diagnostics_isolated_redacted_bounded_contained",
+          "kind": "error-mapping"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-download-fallback-boundary"
+          ],
+          "check_id": "property_13_fallback_finite_policy_table",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-engine-error-extensions"
+          ],
+          "check_id": "property_24_engine_domain_mapping_lossless_conservative",
+          "kind": "error-mapping"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-error-taxonomy"
+          ],
+          "check_id": "property_23_failure_taxonomy_total_stable_panic_free",
+          "kind": "error-mapping"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-existing-session-validation"
+          ],
+          "check_id": "property_04_existing_session_total_secret_safe",
+          "kind": "source"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-http-trace-propagation"
+          ],
+          "check_id": "property_20_w3c_propagation_coherent_isolated",
+          "kind": "propagation"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-local-cli-no-fallback"
+          ],
+          "check_id": "property_05_explicit_local_authoritative",
+          "kind": "source"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-loopback-authentication"
+          ],
+          "check_id": "property_19_implicit_http_confined_authenticated",
+          "kind": "http"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-no-query-retry"
+          ],
+          "check_id": "property_15_request_transmission_at_most_once",
+          "kind": "http"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-platform-archive-selection"
+          ],
+          "check_id": "property_06_platform_descriptors_exact_side_effect_free",
+          "kind": "acquisition"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-session-labels"
+          ],
+          "check_id": "property_16_cli_launch_projection_complete_collision_free",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-session-protocol"
+          ],
+          "check_id": "property_17_control_input_parsed_once_never_diagnosed",
+          "kind": "protocol"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-shutdown-bound"
+          ],
+          "check_id": "property_26_shutdown_bounded_exhaustive_repeatable",
+          "kind": "shutdown"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-source-precedence"
+          ],
+          "check_id": "property_03_source_precedence_reference_function",
+          "kind": "source"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-startup-retry-boundary"
+          ],
+          "check_id": "property_14_spawn_retry_narrow_bounded_cancellable",
+          "kind": "launch"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-unsupported-target-response"
+          ],
+          "check_id": "property_25_compatibility_accepts_exact_declared_target",
+          "kind": "compatibility"
+        },
+        {
+          "capability_ids": [
+            "policy/rust-policy/transport-verified-cli-download"
+          ],
+          "check_id": "property_09_provisioning_cancellation_removes_private_state",
+          "kind": "acquisition"
+        }
+      ],
+      "evidence_id": "verification/feature-3-transport-deterministic",
+      "format_version": "1.0.0",
+      "mode": "deterministic-fixture",
+      "platform_scope": [
+        {
+          "architecture": "amd64",
+          "operating_system": "linux"
+        }
+      ],
+      "target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+    }
+  }
+}

@@ -24,6 +24,60 @@ const LIB_SOURCE: &str = include_str!("lib.rs");
 const CONFIG_SOURCE: &str = include_str!("config.rs");
 const GENERATED_SOURCE: &str = include_str!("gen.rs");
 
+const CONTRACT_MODULES: &[(&str, &str, &[&str])] = &[
+    (
+        "connector",
+        include_str!("connector.rs"),
+        &["remain armed", "Explicit connections never"],
+    ),
+    (
+        "provision",
+        include_str!("provision.rs"),
+        &["hash every compressed byte", "atomically publish", "locked"],
+    ),
+    (
+        "session_startup",
+        include_str!("session_startup.rs"),
+        &["control", "never enter", "cleanup"],
+    ),
+    (
+        "transport",
+        include_str!("transport.rs"),
+        &["loopback", "redirects", "replay"],
+    ),
+    (
+        "propagation",
+        include_str!("propagation.rs"),
+        &["W3C", "global propagator", "concurrent"],
+    ),
+    (
+        "compatibility",
+        include_str!("compatibility.rs"),
+        &["Exact runtime-target", "known mismatch", "unprovable"],
+    ),
+    (
+        "runtime_errors",
+        include_str!("runtime_errors.rs"),
+        &["Public runtime failures", "Display", "Debug"],
+    ),
+    (
+        "lifecycle",
+        include_str!("lifecycle.rs"),
+        &["linearization point", "terminal result", "abort backstop"],
+    ),
+];
+
+const PUBLIC_ITEM_SOURCES: &[(&str, &str)] = &[
+    ("client", include_str!("client.rs")),
+    ("config", include_str!("config.rs")),
+    ("connection", include_str!("connection.rs")),
+    ("diagnostic", include_str!("diagnostic.rs")),
+    ("errors", include_str!("errors.rs")),
+    ("graphql", include_str!("graphql.rs")),
+    ("runtime_errors", include_str!("runtime_errors.rs")),
+    ("query", include_str!("query.rs")),
+];
+
 fn manifest_lines(input: &str) -> Vec<&str> {
     input
         .lines()
@@ -69,6 +123,72 @@ fn production_source_is_panic_free() -> bool {
             .into_iter()
             .all(|forbidden| !production.contains(forbidden))
     })
+}
+
+fn production_prefix(source: &str) -> &str {
+    source.split("#[cfg(test)]").next().unwrap_or(source)
+}
+
+fn public_declarations_have_docs(source: &str) -> bool {
+    let mut documented = false;
+    for line in production_prefix(source).lines() {
+        let line = line.trim_start();
+        if line.starts_with("///") || line.starts_with("#[doc =") {
+            documented = true;
+            continue;
+        }
+        if line.starts_with("#[") || line.is_empty() {
+            continue;
+        }
+        let declaration = line.starts_with("pub struct ")
+            || line.starts_with("pub enum ")
+            || line.starts_with("pub trait ")
+            || line.starts_with("pub type ")
+            || line.starts_with("pub fn ")
+            || line.starts_with("pub const fn ")
+            || line.starts_with("pub async fn ");
+        if declaration && !documented {
+            return false;
+        }
+        if !line.starts_with("//") {
+            documented = false;
+        }
+    }
+    true
+}
+
+fn has_forbidden_spec_metadata(source: &str) -> bool {
+    production_prefix(source)
+        .lines()
+        .filter(|line| line.trim_start().starts_with("//"))
+        .any(|line| {
+            ["Feature:", "Task ", "Property "]
+                .into_iter()
+                .any(|forbidden| line.contains(forbidden))
+        })
+}
+
+fn stable_source_policy_holds() -> bool {
+    CONTRACT_MODULES.iter().all(|(_, source, required)| {
+        source.starts_with("//!") && required.iter().all(|text| source.contains(text))
+    }) && PUBLIC_ITEM_SOURCES
+        .iter()
+        .all(|(_, source)| public_declarations_have_docs(source))
+        && !CONTRACT_MODULES
+            .iter()
+            .any(|(_, source, _)| has_forbidden_spec_metadata(source))
+        && !PUBLIC_ITEM_SOURCES
+            .iter()
+            .any(|(_, source)| has_forbidden_spec_metadata(source))
+        && !LIB_SOURCE.contains("pub mod connector")
+        && !LIB_SOURCE.contains("pub mod provision")
+        && !LIB_SOURCE.contains("pub mod transport")
+        && !LIB_SOURCE.contains("pub mod propagation")
+        && !LIB_SOURCE.contains("pub static mut")
+        && !CONFIG_SOURCE.contains("#[derive(Debug)]\npub struct ClientConfig")
+        && !include_str!("session.rs").contains("#[derive(Debug)]\npub(crate) struct SecretString")
+        && include_str!("session.rs").contains("impl fmt::Debug for SecretString")
+        && include_str!("runtime_errors.rs").contains("impl fmt::Debug for ExecError")
 }
 
 #[derive(Debug)]
@@ -192,9 +312,46 @@ proptest! {
         prop_assert!(!LIB_SOURCE.contains("connect_legacy"));
         prop_assert!(LIB_SOURCE.contains("#![warn(missing_docs)]"));
     }
+
+    // Invariant: the stable namespace and its documentation preserve ownership,
+    // security, and cleanup contracts without exporting implementation seams.
+    // Feature: rust-sdk-transport-observability, Property 28: stable surface and documentation preserve the contract
+    #[test]
+    fn property_28_stable_surface_documentation_preserve_contract(
+        observation in 0_usize..64,
+        mutation in any::<bool>(),
+    ) {
+        let manifest = manifest_lines(PUBLIC_API);
+        let (module, source, required) = CONTRACT_MODULES[observation % CONTRACT_MODULES.len()];
+        let public_source = PUBLIC_ITEM_SOURCES[observation % PUBLIC_ITEM_SOURCES.len()].1;
+        let symbol = if mutation { "DefaultCliProvisioner" } else { manifest[observation % manifest.len()] };
+        let symbol_is_approved = manifest.contains(&symbol);
+        let module_contract = source.starts_with("//!")
+            && required.iter().all(|text| source.contains(text));
+        let accepted = symbol_is_approved
+            && module_contract
+            && public_declarations_have_docs(public_source)
+            && !has_forbidden_spec_metadata(source)
+            && stable_source_policy_holds();
+
+        prop_assert_eq!(accepted, !mutation, "module={}, symbol={}", module, symbol);
+    }
 }
 
 #[test]
 fn production_request_and_shutdown_sources_pass_the_audit() {
     assert!(production_source_is_panic_free());
+    for (module, source, required) in CONTRACT_MODULES {
+        assert!(source.starts_with("//!"), "{module} lacks module docs");
+        for contract in *required {
+            assert!(source.contains(contract), "{module} docs omit {contract}");
+        }
+    }
+    for (module, source) in PUBLIC_ITEM_SOURCES {
+        assert!(
+            public_declarations_have_docs(source),
+            "{module} has an undocumented public declaration"
+        );
+    }
+    assert!(stable_source_policy_holds());
 }

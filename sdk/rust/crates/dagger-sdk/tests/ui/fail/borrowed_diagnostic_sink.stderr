@@ -1,0 +1,54 @@
+error[E0478]: lifetime bound not satisfied
+ --> tests/ui/fail/borrowed_diagnostic_sink.rs:7:6
+  |
+7 | impl DiagnosticSink for BorrowedSink<'_> {
+  |      ^^^^^^^^^^^^^^
+  |
+note: lifetime parameter instantiated with the anonymous lifetime as defined here
+ --> tests/ui/fail/borrowed_diagnostic_sink.rs:7:38
+  |
+7 | impl DiagnosticSink for BorrowedSink<'_> {
+  |                                      ^^
+  = note: but lifetime parameter must outlive the static lifetime
+
+error[E0803]: cannot infer an appropriate lifetime for lifetime parameter `'_` due to conflicting requirements
+ --> tests/ui/fail/borrowed_diagnostic_sink.rs:7:25
+  |
+7 | impl DiagnosticSink for BorrowedSink<'_> {
+  |                         ^^^^^^^^^^^^^^^^
+  |
+note: first, the lifetime cannot outlive the anonymous lifetime as defined here...
+ --> tests/ui/fail/borrowed_diagnostic_sink.rs:7:38
+  |
+7 | impl DiagnosticSink for BorrowedSink<'_> {
+  |                                      ^^
+note: ...so that the types are compatible
+ --> tests/ui/fail/borrowed_diagnostic_sink.rs:7:25
+  |
+7 | impl DiagnosticSink for BorrowedSink<'_> {
+  |                         ^^^^^^^^^^^^^^^^
+  = note: expected `<BorrowedSink<'_> as dagger_sdk::DiagnosticSink>`
+             found `<BorrowedSink<'_> as dagger_sdk::DiagnosticSink>`
+  = note: but, the lifetime must be valid for the static lifetime...
+note: ...so that the declared lifetime parameter bounds are satisfied
+ --> tests/ui/fail/borrowed_diagnostic_sink.rs:7:25
+  |
+7 | impl DiagnosticSink for BorrowedSink<'_> {
+  |                         ^^^^^^^^^^^^^^^^
+
+error[E0597]: `label` does not live long enough
+  --> tests/ui/fail/borrowed_diagnostic_sink.rs:17:48
+   |
+15 |     let label = String::from("short lived");
+   |         ----- binding `label` declared here
+16 |     let _ = dagger_sdk::ClientConfig::builder()
+17 |         .diagnostic_sink(Arc::new(BorrowedSink(&label)))
+   |                          ----------------------^^^^^^--
+   |                          |                     |
+   |                          |                     borrowed value does not live long enough
+   |                          coercion requires that `label` is borrowed for `'static`
+18 |         .build();
+19 | }
+   | - `label` dropped here while still borrowed
+   |
+   = note: due to object lifetime defaults, `Arc<dyn dagger_sdk::DiagnosticSink>` actually means `Arc<(dyn dagger_sdk::DiagnosticSink + 'static)>`

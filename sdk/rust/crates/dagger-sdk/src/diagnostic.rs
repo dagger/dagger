@@ -109,8 +109,10 @@ pub trait DiagnosticSink: Send + Sync + 'static {
 /// payload can contain the session token, so making it impossible to hand those bytes
 /// to the sink is stronger than relying on every caller to remember redaction.
 #[derive(Clone, Copy)]
-#[allow(dead_code)] // The CLI stream reader is not yet wired to this dispatcher.
 pub(crate) enum DiagnosticInput<'a> {
+    // Keeping the control event byte-free lets tests exercise the dispatcher boundary
+    // without ever constructing a value that could carry the session credential.
+    #[allow(dead_code)]
     SessionControl,
     Progress(Diagnostic<'a>),
 }
@@ -131,16 +133,22 @@ pub(crate) enum DiagnosticFailureKind {
 }
 
 /// Serializes optional sink callbacks and permanently contains the first sink failure.
-#[allow(dead_code)] // Connection planning is not yet wired into the public client path.
 pub(crate) struct DiagnosticDispatcher {
     sink: Mutex<Option<Arc<dyn DiagnosticSink>>>,
 }
 
-#[allow(dead_code)]
 impl DiagnosticDispatcher {
     pub(crate) fn new(sink: Option<Arc<dyn DiagnosticSink>>) -> Self {
         Self {
             sink: Mutex::new(sink),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_enabled(&self) -> bool {
+        match self.sink.lock() {
+            Ok(sink) => sink.is_some(),
+            Err(poisoned) => poisoned.into_inner().is_some(),
         }
     }
 

@@ -1,12 +1,17 @@
-//! Public Rust SDK surface and the private adapters which currently back it.
+//! Owned Rust client for Dagger's GraphQL API.
 //!
-//! The 1.0 client foundation keeps configuration, raw GraphQL values, diagnostic
-//! delivery, injected connections, and public failures in separate modules. The
-//! existing beta connection implementation remains available during the staged
-//! migration, but new code should depend on the intentional re-exports below.
+//! [`connect`] and [`connect_with`] return a cloneable [`Client`] backed by one shared
+//! session. Implicit connections select an existing Dagger session before considering
+//! a configured local CLI or the exact compiled CLI release. A downloaded CLI is
+//! checksum-verified before publication, and implicit HTTP is confined to the
+//! authenticated IPv4 loopback session created by Dagger.
 //!
-//! An owned client can serve generated and raw requests concurrently. Explicit close
-//! is repeatable across clones; dropping the final lease starts non-blocking cleanup.
+//! Generated and raw requests use the same lifecycle. Explicit [`Client::close`] is
+//! cancellation-safe and repeatable across clones; dropping the final lease starts a
+//! non-blocking abort backstop, but applications should close explicitly when shutdown
+//! evidence matters.
+//!
+//! # Implicit connection and query execution
 //!
 //! ```no_run
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,6 +24,116 @@
 //! let task = tokio::spawn(async move { cloned.query().default_platform().await });
 //! println!("{version}: {:?}", raw.data());
 //! task.await??;
+//! client.close().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Existing sessions
+//!
+//! Running an application through `dagger run`, for example
+//! `dagger run cargo run`, supplies the existing-session port and token. The same
+//! stable entry point validates those values and never falls through to CLI discovery
+//! when they are malformed.
+//!
+//! ```no_run
+//! # async fn existing_session() -> Result<(), Box<dyn std::error::Error>> {
+//! // This process is assumed to have been started by `dagger run`.
+//! let client = dagger_sdk::connect().await?;
+//! println!("{}", client.query().version().await?);
+//! client.close().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Typed execution failures
+//!
+//! Generated execution preserves the complete GraphQL response while projecting a
+//! conservatively recognized engine `EXEC_ERROR` into [`ExecError`]. Standard output
+//! and standard error remain opt-in inspection fields and are omitted from ordinary
+//! `Display` and `Debug` output.
+//!
+//! ```no_run
+//! # async fn inspect_exec() -> Result<(), Box<dyn std::error::Error>> {
+//! let client = dagger_sdk::connect().await?;
+//! let result = client
+//!     .query()
+//!     .container()
+//!     .from("alpine:3.22")
+//!     .with_exec(vec!["sh", "-c", "exit 17"])
+//!     .stdout()
+//!     .await;
+//! if let Err(dagger_sdk::QueryError::Exec { error, .. }) = result {
+//!     eprintln!("exit={:?}, stderr={:?}", error.exit_code(), error.stderr());
+//! }
+//! client.close().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Diagnostics
+//!
+//! A diagnostic sink receives ordered, already-sanitized CLI progress. The callback
+//! must return promptly; failure disables that sink without failing the connection.
+//!
+//! ```no_run
+//! use std::sync::Arc;
+//! use dagger_sdk::{Diagnostic, DiagnosticSink, DiagnosticSinkError};
+//!
+//! struct Progress;
+//!
+//! impl DiagnosticSink for Progress {
+//!     fn emit(&self, diagnostic: Diagnostic<'_>) -> Result<(), DiagnosticSinkError> {
+//!         eprintln!("{:?}: {} bytes", diagnostic.stream, diagnostic.payload.len());
+//!         Ok(())
+//!     }
+//! }
+//!
+//! # async fn diagnostics() -> Result<(), Box<dyn std::error::Error>> {
+//! let config = dagger_sdk::ClientConfig::builder()
+//!     .diagnostic_sink(Arc::new(Progress))
+//!     .build()?;
+//! let client = dagger_sdk::connect_with(config).await?;
+//! client.close().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Trace propagation
+//!
+//! When the application installs a `tracing` subscriber with an OpenTelemetry layer,
+//! the active span context takes precedence over inherited `TRACEPARENT`, `TRACESTATE`,
+//! and `BAGGAGE` values. The SDK propagates that context to a new CLI and to every
+//! implicit GraphQL request without changing the process-global propagator.
+//!
+//! ```no_run
+//! use tracing::Instrument as _;
+//!
+//! # async fn traced() -> Result<(), Box<dyn std::error::Error>> {
+//! let operation = async {
+//!     let client = dagger_sdk::connect().await?;
+//!     let version = client.query().version().await?;
+//!     client.close().await?;
+//!     Ok::<_, Box<dyn std::error::Error>>(version)
+//! };
+//! let version = operation.instrument(tracing::info_span!("dagger.operation")).await?;
+//! println!("{version}");
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Compatibility escape hatch
+//!
+//! Implicit connections normally require exact version and revision evidence. The
+//! explicit escape hatch accepts only an otherwise compatible engine whose provenance
+//! is unavailable; a known version or revision mismatch is still rejected.
+//!
+//! ```no_run
+//! # async fn compatibility() -> Result<(), Box<dyn std::error::Error>> {
+//! let config = dagger_sdk::ClientConfig::builder()
+//!     .allow_unverified_compatibility(true)
+//!     .build()?;
+//! let client = dagger_sdk::connect_with(config).await?;
 //! client.close().await?;
 //! # Ok(())
 //! # }
@@ -42,8 +157,8 @@ mod target_generated;
 
 mod client;
 mod lifecycle;
-// Keeping the planning module private lets the owned client and concrete connector
-// adopt it without making that staging seam part of the stable API.
+// Plans carry native environment values and owned connection resources. Keeping the
+// type private prevents callers from manufacturing a state which bypasses preflight.
 #[allow(dead_code)]
 mod preflight;
 mod query;

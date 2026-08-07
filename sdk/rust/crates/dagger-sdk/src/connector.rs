@@ -122,6 +122,8 @@ async fn connect_new_cli(
     request: CliLaunchRequest,
 ) -> Result<Box<dyn EngineConnection>, ConnectError> {
     let prepared = PreparedCliSource::from_plan(source)?;
+    #[cfg(test)]
+    let compiled_source = matches!(&prepared, PreparedCliSource::CompiledRelease { .. });
     let cancellation = ProvisioningCancellation::new();
     let selected = match prepared {
         PreparedCliSource::ExplicitLocal(executable) => SelectedCli::explicit(executable),
@@ -149,6 +151,20 @@ async fn connect_new_cli(
     let connect_timeout = request.http_connect_timeout;
     let allow_unverified = request.allow_unverified_compatibility;
     let start = CliSessionStart::new(selected, request);
+    #[cfg(test)]
+    {
+        let projection = start.projection();
+        let propagation = projection.environment().iter().any(|(key, _)| {
+            key.to_str().is_some_and(|key| {
+                key.eq_ignore_ascii_case("TRACEPARENT") || key.eq_ignore_ascii_case("BAGGAGE")
+            })
+        });
+        crate::session_startup::observe_live_connector(
+            compiled_source,
+            propagation,
+            start.options().diagnostics.is_enabled(),
+        );
+    }
     let mut launcher = SessionLauncher::new(TokioProcessSpawner, TokioRetryClock);
     let started = launcher
         .launch(start, &cancellation)

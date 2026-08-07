@@ -3203,8 +3203,9 @@
       "capability_fingerprint": "sha256:6458605f4e5217ba1fb34f0e42315390cf5d822e97f4d50e488a0d5d13a49e6e",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-const%2Fengineconn%2F%2543%254%43%2549%2556ersion",
       "capability_kind": "go-const",
-      "gap": "Feature 3 CLI version selection lacks target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -3235,7 +3236,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-const declared by go-client"
+      "summary": "go-const declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdag%2F%254%41%2553%254%46%254%45": {
       "authority_id": "go-client",
@@ -4688,9 +4692,10 @@
       "decision_evidence": [
         "decision/feature-2-no-closure-helper"
       ],
-      "gap": "Feature 3 CLI source selection, provisioning, and authentication lack target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4720,7 +4725,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2552ef": {
       "authority_id": "go-client",
@@ -4805,9 +4813,10 @@
       "capability_fingerprint": "sha256:3f7f958acaf68982accb223f9a5a7fd73278863057b9e458d05e98900a01489d",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43oad%2557orkspace%254%44odules",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4837,16 +4846,20 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43og%254%46utput": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:603bdcc28faf92dad467844e5da2a3934bba7c429d1556649563e999aa9a31a8",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43og%254%46utput",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4876,7 +4889,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2543onn": {
       "authority_id": "go-client",
@@ -4926,9 +4942,10 @@
       "capability_fingerprint": "sha256:d2e198d1deffbf59c2299d9829be2a7f92f122659b22b5688adefbac605d750e",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2545nvironment%2556ariable",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4958,16 +4975,20 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2552unner%2548ost": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:332eb9e317596485ab5892d21e2247f28a55b87f5544f630c980a48b9ae79372",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2552unner%2548ost",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4997,16 +5018,20 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2553kip%2557orkspace%254%44odules": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:16324513ba5fd415e0fff265c2d0785aefa8a7d6e21be8acec2e9a0b69ecb37b",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2553kip%2557orkspace%254%44odules",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5036,16 +5061,20 @@
       ],
       "stability": "experimental",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556erbosity": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:a0c5d5264f704eb25e4126e62e8d25a8fabbc3a05d5d03fcf4a87abc5c69f3de",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556erbosity",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5075,16 +5104,20 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556ersion%254%46verride": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:c2afcf391d8fbf76c49e7554380e74c60138ba63e5bb2674bf30b9d5b5919749",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556ersion%254%46verride",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5114,16 +5147,20 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkdir": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:81a9e5933acf886726d720514dd918f51362fa9e705a30da2ad0828aa345238c",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkdir",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5153,16 +5190,20 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkspace": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:455daad1ef9f498fe06b6eae28d259061af80b39fda98229dadd37651b5c27af",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkspace",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5192,7 +5233,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger_test%2F%2545xample%2543ontainer": {
       "authority_id": "go-client",
@@ -5550,8 +5594,9 @@
       "capability_fingerprint": "sha256:09f192d21800d72e6d8847eff994793a7ca838de20477bb03a2d4c1e1b0ae755",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%254%43ocal%2543%254%43%2549",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -5582,15 +5627,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%2544ownloaded%2543%254%43%2549": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:b3a2343b00fb8b0a98e034413c4a5d38087b9403a8895b41246e5b41baf26144",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%2544ownloaded%2543%254%43%2549",
       "capability_kind": "go-function",
-      "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -5621,15 +5670,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%2553ession%2545nv": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:a6c469c1004a26428aad80941621e29b77091d015500d9abb4ac1c1030993ab6",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2546rom%2553ession%2545nv",
       "capability_kind": "go-function",
-      "gap": "Feature 3 existing-session environment selection lacks target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -5660,15 +5713,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2547et": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:2748d02c2e244222ecc0e215e0df949c785f25be06fabe7e68864ada319d435c",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fengineconn%2F%2547et",
       "capability_kind": "go-function",
-      "gap": "Feature 3 connection selection and transport lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -5699,7 +5756,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%254%41%2553%254%46%254%45%2556alue%2F%254%44arshal%254%41%2553%254%46%254%45": {
       "authority_id": "go-client",
@@ -19668,9 +19728,10 @@
       "capability_fingerprint": "sha256:61cba181a6a5adee39eabbd98ca4593e0b806a455570005f75c31e2fe1140d2f",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2543lose",
       "capability_kind": "go-method",
-      "gap": "Feature 3 CLI-owned process and transport shutdown lack target-scoped engine verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
-        "implementation/feature-2-client-lifecycle"
+        "implementation/feature-2-client-lifecycle",
+        "implementation/feature-3-transport-observability"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -19700,7 +19761,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-method declared by go-client"
+      "summary": "go-method declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2544o": {
       "authority_id": "go-client",
@@ -57315,8 +57379,9 @@
       "capability_fingerprint": "sha256:7f9d058bd546e59a2364f88d4703766c20cf2dc5f9a082f0310d0b352ac6b8ea",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fengineconn%2F%2543%254%43%2549%2544ownloader%2F%2544ownload",
       "capability_kind": "go-method",
-      "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -57347,15 +57412,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-method declared by go-client"
+      "summary": "go-method declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fengineconn%2F%2552ound%2554ripper%2546unc%2F%2552ound%2554rip": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:60572c16c5b37fc585a387b9e03b64a5e5d8cd6334a264daecc569b6bf7b1482",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fengineconn%2F%2552ound%2554ripper%2546unc%2F%2552ound%2554rip",
       "capability_kind": "go-method",
-      "gap": "Feature 3 connection selection and transport lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -57386,7 +57455,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-method declared by go-client"
+      "summary": "go-method declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-subtest%2Fdagger%2F%2554est%2545xec%2545rror%2Fget%2520output%2520and%2520exit%2520code": {
       "authority_id": "go-client",
@@ -57861,8 +57933,9 @@
       "capability_fingerprint": "sha256:b9213936e14bd8df3071a927aabd1fee057dac0b49af0ba686f71ee4d18083b2",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%254%44issing%2541rchive%2544oes%254%45ot%2546allback",
       "capability_kind": "go-test",
-      "gap": "Feature 3 CLI selection tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -57893,15 +57966,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%254%45o%2546allback%2554o%254%43ocal%2543%254%43%2549%2546or%254%46ther%2545rrors": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:160a81df354069b6c2cf817eacd31d2f06848ae68459075ce22aca9ddb5a9d00",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%254%45o%2546allback%2554o%254%43ocal%2543%254%43%2549%2546or%254%46ther%2545rrors",
       "capability_kind": "go-test",
-      "gap": "Feature 3 CLI selection tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -57932,15 +58009,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543%254%43%2549%2553ession%2541rgs%2549nclude%254%43oad%2557orkspace%254%44odules": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:dcd635a7c01d5da6cb8558d044310423edec2044c49cda3503e312dc5d70d46e",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543%254%43%2549%2553ession%2541rgs%2549nclude%254%43oad%2557orkspace%254%44odules",
       "capability_kind": "go-test",
-      "gap": "Feature 3 session-source compatibility tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -57971,15 +58052,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543%254%43%2549%2553ession%2541rgs%2549nclude%2557orkspace": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:2762cd497b88f0b5f7a9c16bd22d56577f3650ff4bf84568a0f6d7af40e2035c",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543%254%43%2549%2553ession%2541rgs%2549nclude%2557orkspace",
       "capability_kind": "go-test",
-      "gap": "Feature 3 session-source compatibility tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -58010,15 +58095,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543hecksum%254%44ap%254%44arks%2555navailable": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:958c4d790b1627c457bf1257f5992d14bf0e85dbdf5d185fedebaaa5bb5c47ee",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2543hecksum%254%44ap%254%44arks%2555navailable",
       "capability_kind": "go-test",
-      "gap": "Feature 3 CLI selection tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -58049,15 +58138,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2546allback%2554o%254%43ocal%2543%254%43%2549": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:33752c5fe4aedbbabe4b7472ac13f68c880a0f6bcd5883222919eadec6413055",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2546allback%2554o%254%43ocal%2543%254%43%2549",
       "capability_kind": "go-test",
-      "gap": "Feature 3 CLI selection tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -58088,15 +58181,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2547et%2552ejects%2557orkspace%254%44odule%254%43oading%2546or%2545xisting%2553ession": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:1781b2add398e0b1a588e831e8ffc220b653602212466e9cc2bb259d754b7045",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2547et%2552ejects%2557orkspace%254%44odule%254%43oading%2546or%2545xisting%2553ession",
       "capability_kind": "go-test",
-      "gap": "Feature 3 session-source compatibility tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -58127,15 +58224,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2547et%2552ejects%2557orkspace%2546or%2545xisting%2553ession": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:34f570020bd8fdc17d7e654dec8e7eca8a3d40e709f5d6e76a9f27331de7a927",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fengineconn%2F%2554est%2547et%2552ejects%2557orkspace%2546or%2545xisting%2553ession",
       "capability_kind": "go-test",
-      "gap": "Feature 3 session-source compatibility tests lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -58166,7 +58267,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-test declared by go-client"
+      "summary": "go-test declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%254%41%2553%254%46%254%45": {
       "authority_id": "go-client",
@@ -69109,8 +69213,9 @@
       "capability_fingerprint": "sha256:425f83e5c79a856c077b136621d7bb3012a082e70f6183a7f8d2e665ba29667f",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543%254%43%2549%2544ownloader",
       "capability_kind": "go-type",
-      "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -69141,7 +69246,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onfig": {
       "authority_id": "go-client",
@@ -69191,8 +69299,9 @@
       "capability_fingerprint": "sha256:ce1b5cc26bd7afbab513d2566221871e49f21999d1bbe439ce1e9dc9538bf91b",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onnect%2550arams",
       "capability_kind": "go-type",
-      "gap": "Feature 3 connection selection and transport lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -69223,7 +69332,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2545ngine%2543onn": {
       "authority_id": "go-client",
@@ -69273,8 +69385,9 @@
       "capability_fingerprint": "sha256:7e01221434d88a913fab0bd24c2ef89edbf41afc8db6fd86b4167070cb978c89",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2552ound%2554ripper%2546unc",
       "capability_kind": "go-type",
-      "gap": "Feature 3 connection selection and transport lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -69305,7 +69418,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-var%2Fdagger%2F%2545ngine%2543onn": {
       "authority_id": "go-client",
@@ -69507,8 +69623,9 @@
       "capability_fingerprint": "sha256:064b0b3246b193665f4a41196fb214b1cbd65eb29763ba76bca8aa60dac5c257",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-var%2Fengineconn%2F%254%46verride%2543%254%43%2549%2541rchive%2555%2552%254%43",
       "capability_kind": "go-var",
-      "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -69539,15 +69656,19 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-var declared by go-client"
+      "summary": "go-var declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-var%2Fengineconn%2F%254%46verride%2543hecksums%2555%2552%254%43": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:238efbe71c1f05c99978d0546d2e2f6f7805fab58cdbc157443022dda1fba496",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-var%2Fengineconn%2F%254%46verride%2543hecksums%2555%2552%254%43",
       "capability_kind": "go-var",
-      "gap": "Feature 3 CLI discovery and provisioning lack target-scoped verification",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
       "implementation_evidence": [
+        "implementation/feature-3-transport-observability",
         "implementation/go-client-baseline"
       ],
       "owner_feature": "feature-3",
@@ -69578,7 +69699,10 @@
       ],
       "stability": "stable",
       "status": "Partial",
-      "summary": "go-var declared by go-client"
+      "summary": "go-var declared by go-client",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-codegen/source%2Fgo-codegen%2Fgo-const%2Fgenerator%2F%2553%2544%254%42%254%43ang%2547o": {
       "authority_id": "go-codegen",
@@ -73254,7 +73378,10 @@
       "capability_fingerprint": "sha256:574a7b486633276bea5899467188111232f4d2b03f883f407572f5ab230b5e42",
       "capability_id": "behavior/go-engine-sdk/typed-outside-target-response",
       "capability_kind": "compatibility-response",
-      "gap": "Rust lacks a typed error for engines outside the exact supported target",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "response": "typed-outside-target",
@@ -73285,8 +73412,11 @@
         "source/go-engine-sdk/go-type/core/%53%44%4B"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Typed response when the engine target is outside the supported Rust SDK range"
+      "status": "Partial",
+      "summary": "Typed response when the engine target is outside the supported Rust SDK range",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "behavior/go-integration-tests/source%2Fgo-integration-tests%2Fgo-dynamic-subtest%2Fcore%2F%254%44odule%254%43oading%2553uite.%2554est%254%44odule%2553ource%2552esolution%2F%253%43dynamic%253%415ff6bd4766862c82%253%410%253%45": {
       "authority_id": "go-integration-tests",
@@ -113429,7 +113559,10 @@
       "capability_fingerprint": "sha256:6eef20fbce434ab42cccde08d1259587089d9aed5d1cc87f10b0ac80dd61702e",
       "capability_id": "policy/rust-policy/transport-background-failure-observation",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113472,15 +113605,21 @@
         "source/rust-policy/rust-policy/transport-background-failure-observation"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Every owned process and stream task failure is retained for typed startup or shutdown inspection."
+      "status": "Partial",
+      "summary": "Every owned process and stream task failure is retained for typed startup or shutdown inspection.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-cache-atomic-publication": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:1367c0675a7ab23bd79c86c45256d83970be130dbed9e8ffae0d917b74ba4891",
       "capability_id": "policy/rust-policy/transport-cache-atomic-publication",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113523,15 +113662,21 @@
         "source/rust-policy/rust-policy/transport-cache-atomic-publication"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Concurrent provisioners expose either no cache entry or one complete verified executable, never partial bytes."
+      "status": "Partial",
+      "summary": "Concurrent provisioners expose either no cache entry or one complete verified executable, never partial bytes.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-cache-permission-safety": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:f878a7caabcb94cf9995460a473e57151646fda49666e0784a8dd4a0c0be82ef",
       "capability_id": "policy/rust-policy/transport-cache-permission-safety",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113574,15 +113719,21 @@
         "source/rust-policy/rust-policy/unsafe-denied"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "The provisioner rejects symlink or non-regular cache entries and applies private platform-appropriate cache permissions."
+      "status": "Partial",
+      "summary": "The provisioner rejects symlink or non-regular cache entries and applies private platform-appropriate cache permissions.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-cache-retention": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:076f048ad0422c335e9043c91b80c5ac6b6c65da3ef7952043b714abe3ba2b7c",
       "capability_id": "policy/rust-policy/transport-cache-retention",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113625,15 +113776,21 @@
         "source/rust-policy/rust-policy/transport-cache-retention"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Managed retention runs under the Cache_Lock, preserves the selected executable, and treats cleanup failure as a redacted non-fatal diagnostic."
+      "status": "Partial",
+      "summary": "Managed retention runs under the Cache_Lock, preserves the selected executable, and treats cleanup failure as a redacted non-fatal diagnostic.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-cli-archive-bounds": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:0b20d5e38fac2f5bda22c4163288392d839396777867c058fe335413e0775b79",
       "capability_id": "policy/rust-policy/transport-cli-archive-bounds",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113676,15 +113833,21 @@
         "source/rust-policy/rust-policy/transport-cli-archive-bounds"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Checksum manifests, archive input, extracted executable output, and session control input have fixed documented size bounds."
+      "status": "Partial",
+      "summary": "Checksum manifests, archive input, extracted executable output, and session control input have fixed documented size bounds.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-cli-trace-propagation": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:1eef8f1f4167b9250e07ed6a151b67664ed16ac6d8d8870a28f182435ab36c47",
       "capability_id": "policy/rust-policy/transport-cli-trace-propagation",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113727,15 +113890,21 @@
         "source/rust-policy/rust-policy/transport-cli-trace-propagation"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "A new CLI receives W3C trace context and baggage derived from the active context or environment fallback."
+      "status": "Partial",
+      "summary": "A new CLI receives W3C trace context and baggage derived from the active context or environment fallback.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-cli-version-selection": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:3f30522a908c7faf342273077bd0eaaf90955213b314ef125fb8de0cb3780bd0",
       "capability_id": "policy/rust-policy/transport-cli-version-selection",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113778,15 +113947,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "The stable connector selects the CLI version declared by the Exact_Target rather than a stale beta constant."
+      "status": "Partial",
+      "summary": "The stable connector selects the CLI version declared by the Exact_Target rather than a stale beta constant.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-control-line-isolation": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:e83865d15aab360b9b08ba5bb619aadf45923a5155d3c3acfbf76f2423fa77bb",
       "capability_id": "policy/rust-policy/transport-control-line-isolation",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113829,15 +114004,21 @@
         "source/rust-policy/rust-policy/transport-control-line-isolation"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Session control bytes are parsed once and can never enter diagnostics, traces, Debug output, or rendered errors."
+      "status": "Partial",
+      "summary": "Session control bytes are parsed once and can never enter diagnostics, traces, Debug output, or rendered errors.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-diagnostic-bounds": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:e78f0bbaf36e7739d59412ddee1e2ab53fc067063c9971069b79fefc72cedd12",
       "capability_id": "policy/rust-policy/transport-diagnostic-bounds",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113880,15 +114061,21 @@
         "source/rust-policy/rust-policy/transport-diagnostic-bounds"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Startup and shutdown diagnostics retain only a fixed redacted tail while live sink delivery remains streaming."
+      "status": "Partial",
+      "summary": "Startup and shutdown diagnostics retain only a fixed redacted tail while live sink delivery remains streaming.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-diagnostic-failure-containment": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:9f872a111efaadcd1ede843392204da18008207ac6afa79c87e2f032e841f456",
       "capability_id": "policy/rust-policy/transport-diagnostic-failure-containment",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113931,15 +114118,21 @@
         "source/rust-policy/rust-policy/transport-diagnostic-failure-containment"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "A Diagnostic_Sink error or panic disables that sink without failing or panicking the transport operation."
+      "status": "Partial",
+      "summary": "A Diagnostic_Sink error or panic disables that sink without failing or panicking the transport operation.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-download-fallback-boundary": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:16ff5fa75346631efa1efb88eb67bf68dbb0992caacccab0b35d774855edbe3b",
       "capability_id": "policy/rust-policy/transport-download-fallback-boundary",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -113982,15 +114175,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "PATH fallback is permitted only for a typed Release_Unavailable checksum-manifest response."
+      "status": "Partial",
+      "summary": "PATH fallback is permitted only for a typed Release_Unavailable checksum-manifest response.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-engine-error-extensions": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:ccf1a35efa1b8fe44c876bce603f78872b3f5081d6b524bef9e2bfff9fa8a042",
       "capability_id": "policy/rust-policy/transport-engine-error-extensions",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114033,15 +114232,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Known engine error extensions gain typed access without discarding the complete Raw_Response or unknown extension members."
+      "status": "Partial",
+      "summary": "Known engine error extensions gain typed access without discarding the complete Raw_Response or unknown extension members.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-error-taxonomy": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:90310b6cfd44dd3c7e4f77b782b529c951641d9009220fc0e754f82a0b456677",
       "capability_id": "policy/rust-policy/transport-error-taxonomy",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114084,15 +114289,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Configuration, discovery, provisioning, process, protocol, HTTP, GraphQL, engine-domain, compatibility, timeout, background, and shutdown failures remain distinguishable."
+      "status": "Partial",
+      "summary": "Configuration, discovery, provisioning, process, protocol, HTTP, GraphQL, engine-domain, compatibility, timeout, background, and shutdown failures remain distinguishable.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-existing-session-validation": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:fec3d6beeedb8bd36be9d84d61d53c1176aa8c780ab8d163fea9722ec4415c28",
       "capability_id": "policy/rust-policy/transport-existing-session-validation",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114135,15 +114346,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "A present session port selects Existing_Session and malformed port or token input fails without considering any CLI source."
+      "status": "Partial",
+      "summary": "A present session port selects Existing_Session and malformed port or token input fails without considering any CLI source.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-http-trace-propagation": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:01beca70fe7093b0f59dd51489dd7866baff51333714b0119fc15008ed0e7492",
       "capability_id": "policy/rust-policy/transport-http-trace-propagation",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114186,15 +114403,21 @@
         "source/rust-policy/rust-policy/transport-http-trace-propagation"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Every implicit GraphQL HTTP request injects W3C trace context and baggage with active context precedence."
+      "status": "Partial",
+      "summary": "Every implicit GraphQL HTTP request injects W3C trace context and baggage with active context precedence.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-local-cli-no-fallback": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:8f497b8b421e0228d2eedef99bc63f1bdf130db7a251bf7b54be1653ef62246f",
       "capability_id": "policy/rust-policy/transport-local-cli-no-fallback",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114237,15 +114460,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "A present explicit local CLI input is authoritative and any resolution or startup failure is terminal for source selection."
+      "status": "Partial",
+      "summary": "A present explicit local CLI input is authoritative and any resolution or startup failure is terminal for source selection.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-loopback-authentication": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:e8fd2e7421547360797d1c3c4ace240084d8cffb8e94933902993feff2eaca74",
       "capability_id": "policy/rust-policy/transport-loopback-authentication",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114288,15 +114517,21 @@
         "source/rust-policy/rust-policy/transport-loopback-authentication"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Implicit GraphQL HTTP dials loopback and authenticates with the session token as Basic username and an empty password."
+      "status": "Partial",
+      "summary": "Implicit GraphQL HTTP dials loopback and authenticates with the session token as Basic username and an empty password.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-no-query-retry": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:dff8c662c42753afb52c358840b3c265900f39ca9dc43eaf3286999e8bfab1ab",
       "capability_id": "policy/rust-policy/transport-no-query-retry",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114339,15 +114574,21 @@
         "source/rust-policy/rust-policy/transport-no-query-retry"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "The transport never automatically repeats a GraphQL operation after request transmission may have begun."
+      "status": "Partial",
+      "summary": "The transport never automatically repeats a GraphQL operation after request transmission may have begun.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-platform-archive-selection": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:3880ec24c7b9c08d043cd0d91732a5a8abb3c5d64bfd3f1442b00b947f3bbaaa",
       "capability_id": "policy/rust-policy/transport-platform-archive-selection",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114390,15 +114631,21 @@
         "source/rust-policy/rust-policy/transport-platform-archive-selection"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Linux and macOS select tar.gz dagger members while Windows selects ZIP dagger.exe members for amd64 and arm64."
+      "status": "Partial",
+      "summary": "Linux and macOS select tar.gz dagger members while Windows selects ZIP dagger.exe members for amd64 and arm64.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-session-labels": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:e156042b8a5f3efbac1dbe4a39e46f56cf2aee5fba9770d0374614ed49fbac29",
       "capability_id": "policy/rust-policy/transport-session-labels",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114441,15 +114688,21 @@
         "source/rust-policy/rust-policy/transport-session-labels"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Every new CLI session receives stable Rust SDK name and package-version labels."
+      "status": "Partial",
+      "summary": "Every new CLI session receives stable Rust SDK name and package-version labels.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-session-protocol": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:5895396c2be109a8f87e9b6699300ea937513d40e0aab28526274dd24c652295",
       "capability_id": "policy/rust-policy/transport-session-protocol",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114492,15 +114745,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "One bounded first stdout line must contain a valid port and non-empty token before resources transfer to the Client."
+      "status": "Partial",
+      "summary": "One bounded first stdout line must contain a valid port and non-empty token before resources transfer to the Client.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-shutdown-bound": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:bf09e8457efa870a6cc669590881c978e953862a687c10f684ee81b391ffcb94",
       "capability_id": "policy/rust-policy/transport-shutdown-bound",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114543,15 +114802,21 @@
         "source/rust-policy/rust-policy/transport-shutdown-bound"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Graceful CLI shutdown has a fixed bound after which the SDK kills and reaps the owned child."
+      "status": "Partial",
+      "summary": "Graceful CLI shutdown has a fixed bound after which the SDK kills and reaps the owned child.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-source-precedence": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:4c5365690a1c36c01f0484d2b7d90af428becc3b2f7eb5d40151427885d4f2d7",
       "capability_id": "policy/rust-policy/transport-source-precedence",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114594,15 +114859,21 @@
         "source/rust-policy/rust-policy/transport-source-precedence"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "End-to-end source order is Explicit_Connection, Existing_Session, Explicit_Local_CLI, then Verified_Download."
+      "status": "Partial",
+      "summary": "End-to-end source order is Explicit_Connection, Existing_Session, Explicit_Local_CLI, then Verified_Download.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-startup-retry-boundary": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:e80afc834460b61196210f0f92faddf49dd17a03290a3cd80a07e9d05779b4bd",
       "capability_id": "policy/rust-policy/transport-startup-retry-boundary",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114645,15 +114916,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Process startup retries only a recognized executable-busy condition for at most ten attempts with bounded backoff."
+      "status": "Partial",
+      "summary": "Process startup retries only a recognized executable-busy condition for at most ten attempts with bounded backoff.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-unsupported-target-response": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:7472db2236fc03f8db914984002a6e98624bb2c9e244479d358afee447d3fb48",
       "capability_id": "policy/rust-policy/transport-unsupported-target-response",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114696,15 +114973,21 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "An implicit engine outside or unprovable against the Exact_Target fails with a typed compatibility response."
+      "status": "Partial",
+      "summary": "An implicit engine outside or unprovable against the Exact_Target fails with a typed compatibility response.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/transport-verified-cli-download": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:4577634859d367669b2bc5d9c793b987e862dc8247f3a903e558fb97c90327b0",
       "capability_id": "policy/rust-policy/transport-verified-cli-download",
       "capability_kind": "rust-policy",
-      "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+      "gap": "Deterministic Feature 3 verification passes, but the exact beta.10 CLI release is unavailable for live default-connector evidence",
+      "implementation_evidence": [
+        "implementation/feature-3-transport-observability"
+      ],
       "owner_feature": "feature-3",
       "semantic_signature": {
         "requirement": {
@@ -114747,8 +115030,11 @@
         "source/rust-policy/rust-policy/unsafe-denied"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "A downloaded executable is streamed, SHA-256 verified, cancellation-safe, and atomically published before execution."
+      "status": "Partial",
+      "summary": "A downloaded executable is streamed, SHA-256 verified, cancellation-safe, and atomically published before execution.",
+      "verification_evidence": [
+        "verification/feature-3-transport-deterministic"
+      ]
     },
     "policy/rust-policy/workspace-target-verification": {
       "authority_id": "rust-policy",

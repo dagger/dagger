@@ -1,0 +1,9 @@
+error[E0382]: use of moved value: `config`
+ --> tests/ui/fail/owned_config.rs:4:43
+  |
+2 |     let config = dagger_sdk::ClientConfig::builder().build().unwrap();
+  |         ------ move occurs because `config` has type `ClientConfig`, which does not implement the `Copy` trait
+3 |     let first = dagger_sdk::connect_with(config);
+  |                                          ------ value moved here
+4 |     let second = dagger_sdk::connect_with(config);
+  |                                           ^^^^^^ value used here after move

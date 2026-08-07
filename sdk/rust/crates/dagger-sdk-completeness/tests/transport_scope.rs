@@ -4,9 +4,10 @@
 //! mutate one reviewed boundary. This keeps a production parser or routing defect from certifying
 //! itself through shared setup logic.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use dagger_sdk_completeness::extract::policy::{PolicyClauseSelection, extract_policy_clauses};
 use dagger_sdk_completeness::*;
@@ -19,6 +20,18 @@ const REQUIREMENTS: &str =
 const CLIENT_REQUIREMENTS: &str =
     include_str!("../../../../../.kiro/specs/rust-sdk-client-lifecycle/requirements.md");
 const CASES: u32 = 256;
+const TRANSPORT_VERIFICATION_ID: &str = "verification/feature-3-transport-deterministic";
+const EXCLUDED_FEATURE8_ID: &str =
+    "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%2557orkspace";
+
+#[derive(Clone)]
+struct ObservationFixture {
+    observations: TransportObservationRegistry,
+    evidence: EvidenceRegistry,
+    target: TargetDescriptor,
+    target_digest: TargetDigest,
+    ledger: ResolvedLedger,
+}
 
 fn property_config() -> Config {
     Config {
@@ -161,6 +174,51 @@ fn client_lifecycle_descriptor_retains_its_golden_identity() {
     );
 }
 
+#[test]
+fn deterministic_transport_observations_are_canonical_non_live_and_complete() {
+    let root = repository_root();
+    let bytes =
+        fs::read(root.join("sdk/rust/completeness/evidence/transport-observations.json")).unwrap();
+    let registry: TransportObservationRegistry = decode_canonical(&bytes).unwrap();
+    let record = registry
+        .observations
+        .get(&EvidenceId::new("verification/feature-3-transport-deterministic").unwrap())
+        .unwrap();
+    assert_eq!(record.mode, TransportObservationMode::DeterministicFixture);
+    assert!(record.exact_target_run.is_none());
+    assert_eq!(
+        record
+            .assertions
+            .iter()
+            .map(|assertion| assertion.kind.clone())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            TransportObservationKind::Source,
+            TransportObservationKind::Acquisition,
+            TransportObservationKind::Cache,
+            TransportObservationKind::Launch,
+            TransportObservationKind::Protocol,
+            TransportObservationKind::Http,
+            TransportObservationKind::Propagation,
+            TransportObservationKind::Compatibility,
+            TransportObservationKind::ErrorMapping,
+            TransportObservationKind::Shutdown,
+        ])
+    );
+    let observed = CanonicalSet::new(
+        record
+            .assertions
+            .iter()
+            .flat_map(|assertion| assertion.capability_ids.iter().cloned()),
+    );
+    assert_eq!(observed, transport_contract().scope.capability_ids());
+    let rendered = String::from_utf8(bytes).unwrap();
+    assert!(!rendered.contains("/Users/"));
+    assert!(!rendered.contains("localhost:"));
+    assert!(!rendered.contains("timestamp"));
+    assert!(!rendered.contains("credential"));
+}
+
 proptest! {
     #![proptest_config(property_config())]
 
@@ -299,6 +357,160 @@ proptest! {
         );
         prop_assert_eq!(result.is_ok(), mutation == 0);
     }
+
+    // Invariant: fixture observations cannot become live evidence, and an exact-target
+    // status transition remains impossible until the complete live lifecycle is proved.
+    // Feature: rust-sdk-transport-observability, Property 27: evidence declares what it actually observes
+    #[test]
+    fn property_27_evidence_declares_actual_observations(
+        mutation in 0_u8..12,
+        capability_index in 0_usize..58,
+    ) {
+        let fixture = observation_fixture().clone();
+        let mut observations = fixture.observations;
+        let mut evidence = fixture.evidence;
+        let target = fixture.target;
+        let target_digest = fixture.target_digest;
+        let mut ledger = fixture.ledger;
+        let scope = transport_contract().scope.capability_ids();
+        let selected = scope[capability_index].clone();
+        let verification_id = EvidenceId::new(TRANSPORT_VERIFICATION_ID).unwrap();
+        let excluded_id = CapabilityId::new(EXCLUDED_FEATURE8_ID).unwrap();
+        let excluded_before = canonical_bytes(ledger.capabilities.get(&excluded_id).unwrap()).unwrap();
+        let mut unknown_shape_rejected = false;
+
+        match mutation {
+            1 => {
+                let record = observations.observations.get_mut(&verification_id).unwrap();
+                record.exact_target_run = Some(exact_run_fixture(&target));
+            }
+            2 => {
+                observations.observations.get_mut(&verification_id).unwrap().mode =
+                    TransportObservationMode::ExactTargetLive;
+            }
+            3 => {
+                observations.observations.get_mut(&verification_id).unwrap().target =
+                    TargetDigest::new(Digest::sha256("drifted target"));
+            }
+            4 => {
+                let record = observations.observations.get_mut(&verification_id).unwrap();
+                record.assertions.retain(|assertion| !assertion.capability_ids.contains(&selected));
+            }
+            5 => {
+                let outsider = CapabilityId::new("policy/rust-policy/transport-unreviewed").unwrap();
+                observations.observations.get_mut(&verification_id).unwrap().assertions[0]
+                    .capability_ids = CanonicalSet::new([outsider]);
+            }
+            6 => {
+                let reference = evidence.evidence.get_mut(&verification_id).unwrap();
+                reference.proved_capability_ids = CanonicalSet::new(
+                    reference.proved_capability_ids.iter().filter(|id| **id != selected).cloned(),
+                );
+            }
+            7 => {
+                ledger.capabilities.get_mut(&selected).unwrap().status = Status::Implemented;
+            }
+            8 => {
+                evidence.evidence.get_mut(&verification_id).unwrap()
+                    .expected_outcome.as_mut().unwrap().outcome = CheckOutcome::Failed;
+            }
+            9 => {
+                observations.observations.get_mut(&verification_id).unwrap().platform_scope =
+                    CanonicalSet::new([Platform {
+                        operating_system: OperatingSystem::Macos,
+                        architecture: Architecture::Arm64,
+                    }]);
+            }
+            10 => {
+                let mut value = serde_json::to_value(&observations).unwrap();
+                value["observations"][verification_id.as_str()]["unknown_live_claim"] = json!(true);
+                unknown_shape_rejected = serde_json::from_value::<TransportObservationRegistry>(value).is_err();
+            }
+            11 => {
+                evidence.evidence.remove(&verification_id);
+            }
+            _ => {}
+        }
+
+        let accepted = if mutation == 10 {
+            !unknown_shape_rejected
+        } else {
+            validate_transport_observations(
+                &observations,
+                &evidence,
+                &target,
+                &target_digest,
+                &scope,
+                &ledger,
+            ).is_ok()
+        };
+        prop_assert_eq!(accepted, mutation == 0);
+        prop_assert_eq!(
+            canonical_bytes(ledger.capabilities.get(&excluded_id).unwrap()).unwrap(),
+            excluded_before,
+        );
+    }
+}
+
+fn exact_run_fixture(target: &TargetDescriptor) -> ExactTargetRun {
+    ExactTargetRun {
+        rust_sdk_version: target.rust_sdk_version.clone(),
+        cli_version: target.engine_version.clone(),
+        observed_engine_version: DaggerVersion::new(format!(
+            "{}+{}",
+            target.engine_version,
+            &target.dagger_revision.as_str()[..8],
+        ))
+        .unwrap(),
+        dagger_revision: target.dagger_revision.clone(),
+        sdk_started_session: true,
+        authenticated_query: true,
+        propagation_observed: true,
+        diagnostic_boundary_observed: true,
+        explicit_close: true,
+        child_reaped: true,
+    }
+}
+
+fn observation_fixture() -> &'static ObservationFixture {
+    static FIXTURE: OnceLock<ObservationFixture> = OnceLock::new();
+    FIXTURE.get_or_init(|| {
+        let root = repository_root();
+        let observations = decode_canonical(
+            &fs::read(root.join("sdk/rust/completeness/evidence/transport-observations.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        let mut evidence: EvidenceRegistry = decode_canonical(
+            &fs::read(root.join("sdk/rust/completeness/evidence/registry.json")).unwrap(),
+        )
+        .unwrap();
+        let verification_id = EvidenceId::new(TRANSPORT_VERIFICATION_ID).unwrap();
+        evidence
+            .evidence
+            .retain(|evidence_id, _| evidence_id == &verification_id);
+        let target: TargetDescriptor =
+            decode_canonical(&fs::read(root.join("sdk/rust/completeness/target.json")).unwrap())
+                .unwrap();
+        let target_digest =
+            TargetDigest::new(canonical_digest(DigestDomain::Target, &target).unwrap());
+        let mut ledger: ResolvedLedger = decode_canonical(
+            &fs::read(root.join("sdk/rust/completeness/artifacts/ledger.json")).unwrap(),
+        )
+        .unwrap();
+        let scope = transport_contract().scope.capability_ids();
+        let excluded_id = CapabilityId::new(EXCLUDED_FEATURE8_ID).unwrap();
+        ledger.capabilities.retain(|capability_id, _| {
+            scope.contains(capability_id) || capability_id == &excluded_id
+        });
+        ObservationFixture {
+            observations,
+            evidence,
+            target,
+            target_digest,
+            ledger,
+        }
+    })
 }
 
 fn mutate_transport_requirements(

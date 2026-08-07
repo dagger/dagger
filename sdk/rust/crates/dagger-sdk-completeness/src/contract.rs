@@ -41,6 +41,7 @@ use crate::inventory::{
 };
 use crate::io::{RepositoryRoots, SourceLoadError, load_source_bundles};
 use crate::model::*;
+use crate::observation::{TransportObservationRegistry, validate_transport_observations};
 use crate::report::{build_report, render_human_report};
 use crate::target::{TargetObservation, validate_target};
 use crate::traceability::{
@@ -98,6 +99,10 @@ pub fn derive_contract(
     let evidence: EvidenceRegistry = read_canonical(
         &contract.join("evidence/registry.json"),
         "evidence registry",
+    )?;
+    let transport_observations: TransportObservationRegistry = read_canonical(
+        &contract.join("evidence/transport-observations.json"),
+        "transport observations",
     )?;
     let mappings: HarnessMappings =
         read_canonical(&contract.join("harness-mappings.json"), "harness mappings")?;
@@ -230,6 +235,19 @@ pub fn derive_contract(
     validated(
         audit_evidence_registry(evidence.clone(), &ledger, &audit_context),
         "evidence audit",
+    )?;
+    validated(
+        validate_transport_observations(
+            &transport_observations,
+            &evidence,
+            &target,
+            &target_digest,
+            &crate::feature_scope::transport_contract()
+                .scope
+                .capability_ids(),
+            &ledger,
+        ),
+        "transport observations",
     )?;
 
     let checks = validated(

@@ -13,6 +13,7 @@ use proptest::test_runner::{Config, FileFailurePersistence};
 const REQUIREMENTS: &str =
     include_str!("../../../../../.kiro/specs/rust-sdk-client-lifecycle/requirements.md");
 const CASES: u32 = 256;
+const FEATURE_TAG: &str = "// Feature: rust-sdk-client-lifecycle,";
 
 const TAGGED_PROPERTY_SOURCES: [&str; 7] = [
     include_str!("feature_scope.rs"),
@@ -40,6 +41,9 @@ fn tagged_property_manifest_is_exact_and_uses_256_cases() {
     let mut numbers = TAGGED_PROPERTY_SOURCES
         .iter()
         .flat_map(|source| source.lines())
+        // Several features intentionally share test modules. Each manifest owns only its
+        // feature tag so adding a later property cannot silently redefine this contract.
+        .filter(|line| line.contains(FEATURE_TAG))
         .filter_map(|line| line.split("Property ").nth(1))
         .filter_map(|suffix| suffix.split(':').next())
         .filter_map(|number| number.parse::<u8>().ok())

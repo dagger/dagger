@@ -4,7 +4,8 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt;
-use std::sync::{Arc, Barrier};
+use std::fs;
+use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -29,6 +30,7 @@ use crate::runtime_errors::{
     ShutdownFailureKind,
 };
 use crate::session::SecretString;
+use crate::session_startup::install_live_session_observer;
 use crate::test_support::{io_proptest_config, proptest_config};
 use crate::transport::{LoopbackTransportFactory, ReqwestLoopbackFactory};
 
@@ -53,6 +55,137 @@ fn loopback(
     ReqwestLoopbackFactory
         .loopback(port, token, Duration::from_secs(1), inherited, None)
         .expect("fixed loopback client construction succeeds")
+}
+
+#[derive(Default)]
+struct LiveDiagnosticSink {
+    payloads: Mutex<Vec<Vec<u8>>>,
+}
+
+impl crate::DiagnosticSink for LiveDiagnosticSink {
+    fn emit(&self, diagnostic: crate::Diagnostic<'_>) -> Result<(), crate::DiagnosticSinkError> {
+        match self.payloads.lock() {
+            Ok(mut payloads) => payloads.push(diagnostic.payload.to_vec()),
+            Err(poisoned) => poisoned.into_inner().push(diagnostic.payload.to_vec()),
+        }
+        Ok(())
+    }
+}
+
+impl LiveDiagnosticSink {
+    fn payloads(&self) -> Vec<Vec<u8>> {
+        match self.payloads.lock() {
+            Ok(payloads) => payloads.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "downloads and starts the exact Dagger engine target"]
+async fn exact_target_default_connector_evidence() {
+    const HELPER: &str = "DAGGER_RUST_SDK_LIVE_HELPER";
+    const CACHE_ROOT: &str = "DAGGER_RUST_SDK_TEST_CACHE_ROOT";
+    const TEST_NAME: &str = "runtime_connector_tests::exact_target_default_connector_evidence";
+
+    if std::env::var_os(HELPER).is_none() {
+        let cache = tempfile::tempdir().expect("isolated live cache");
+        let mut command =
+            tokio::process::Command::new(std::env::current_exe().expect("current test executable"));
+        command
+            .args([
+                "--exact",
+                TEST_NAME,
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(HELPER, "1")
+            .env(CACHE_ROOT, cache.path())
+            .env(
+                "TRACEPARENT",
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            )
+            .env("BAGGAGE", "rust-sdk-live-evidence=present");
+        for key in [
+            "DAGGER_SESSION_PORT",
+            "DAGGER_SESSION_TOKEN",
+            "_EXPERIMENTAL_DAGGER_CLI_BIN",
+            "_EXPERIMENTAL_DAGGER_RUNNER_HOST",
+            "_EXPERIMENTAL_DAGGER_RUNNER_TOKEN",
+        ] {
+            command.env_remove(key);
+        }
+        let output = command.output().await.expect("isolated helper runs");
+        assert!(
+            output.status.success(),
+            "exact-target helper failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return;
+    }
+
+    let cache_root = std::path::PathBuf::from(
+        std::env::var_os(CACHE_ROOT).expect("parent supplies isolated cache root"),
+    );
+    assert_eq!(
+        fs::read_dir(&cache_root)
+            .expect("isolated cache exists")
+            .count(),
+        0,
+        "live evidence must begin without a reusable CLI",
+    );
+
+    let observer = install_live_session_observer();
+    let diagnostics = Arc::new(LiveDiagnosticSink::default());
+    let config = crate::ClientConfig::builder()
+        .diagnostic_sink(diagnostics.clone())
+        .build()
+        .expect("live configuration is valid");
+    let client = crate::connect_with(config)
+        .await
+        .expect("stable default connector reaches exact target");
+    let version = client
+        .query()
+        .version()
+        .await
+        .expect("generated authenticated Query.version succeeds");
+    CompatibilityValidator::exact()
+        .expect("compiled target is valid")
+        .validate_version(&version)
+        .expect("observed engine version and revision are exact");
+    client.close().await.expect("explicit live close succeeds");
+
+    let downloaded = fs::read_dir(&cache_root)
+        .expect("live cache remains inspectable")
+        .filter_map(Result::ok)
+        .any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("dagger-"))
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+        });
+    assert!(
+        downloaded,
+        "the exact CLI was downloaded into the empty cache"
+    );
+    assert!(observer.compiled_source());
+    assert!(observer.propagation());
+    assert!(observer.diagnostics());
+    assert!(observer.child_started());
+    assert!(observer.child_reaped());
+
+    let payloads = diagnostics.payloads();
+    assert!(payloads.iter().all(|payload| {
+        !payload
+            .windows(b"DAGGER_SESSION_TOKEN".len())
+            .any(|window| window == b"DAGGER_SESSION_TOKEN")
+            && !payload
+                .windows(b"\"session_token\"".len())
+                .any(|window| window == b"\"session_token\"")
+    }));
 }
 
 #[derive(Debug)]

@@ -457,8 +457,8 @@
     connector to provision, launch, validate, query, and shut down without leak, replay,
     global telemetry mutation, or credential disclosure.
 
-- [ ] 16. Stabilize the public API, documentation, and source contract
-  - [ ] 16.1 Document every module and public item at contract depth
+- [x] 16. Stabilize the public API, documentation, and source contract
+  - [x] 16.1 Document every module and public item at contract depth
     - Add `//!` ownership/invariant documentation to each transport module and `///`
       guarantees, caller assumptions, failure behavior, cancellation, ownership, and
       security notes to every public item; use inline comments only for non-obvious WHY,
@@ -469,14 +469,14 @@
       query execution, `ExecError` inspection, diagnostics, tracing propagation,
       compatibility bypass, and explicit shutdown.
     - _Requirements: 4.13-4.15, 14.17-14.24_
-  - [ ] 16.2 Fence the intended stable surface
+  - [x] 16.2 Fence the intended stable surface
     - Add public API snapshots and `trybuild` compile-pass/fail cases for builders,
       error matching, owned resources, non-Send/borrow misuse where relevant, and the
       absence of accidental provisioning/telemetry internals from the public namespace.
     - Add source-policy tests for public docs, forbidden panic shortcuts, secret-bearing
       derives/formatting, and production comments that reference spec task metadata.
     - _Requirements: 14.17-14.24_
-  - [ ] 16.3 Property test: Property 28 — stable surface and documentation preserve the contract
+  - [x] 16.3 Property test: Property 28 — stable surface and documentation preserve the contract
     - Generate at least 256 public-item/source-policy observations and exercise the fixed
       compile matrix; assert snapshots expose only approved symbols, every public item
       has substantive contract docs, examples compile, and forbidden implementation or
@@ -485,7 +485,7 @@
     - _Requirements: 4.13-4.15, 14.17-14.24_
 
 - [ ] 17. Close the completeness ledger with reproducible exact-target evidence
-  - [ ] 17.1 Add deterministic transport observation records
+  - [x] 17.1 Add deterministic transport observation records
     - Define machine-readable evidence for source, acquisition, cache, launch, protocol,
       HTTP, propagation, compatibility, error mapping, and shutdown observations; record
       only values actually asserted by tests and reject stale/unknown evidence shapes.
@@ -499,15 +499,19 @@
     - Assert the observed engine version/revision, ownership, request, propagation,
       diagnostic, and cleanup facts before emitting evidence; keep an explicit offline
       fixture path for deterministic local verification without claiming live provenance.
+    - Release gate: the path is implemented, but the official beta.10 manifest currently
+      returns HTTP 403 and `dagger/dagger` has no beta.10 GitHub release. PATH fallback
+      correctly rejects the installed v0.21.0 CLI, so this subtask remains open until the
+      exact published CLI can be downloaded and observed end to end.
     - _Requirements: 14.1-14.3, 14.12-14.16_
-  - [ ] 17.3 Update Feature 3 completeness candidates truthfully
+  - [x] 17.3 Update Feature 3 completeness candidates truthfully
     - Attach accepted deterministic evidence only to the 58 scoped candidate
       capabilities, derive each status/reason/owner through the policy engine, leave all
       out-of-scope rows—including Feature 8—unchanged, and regenerate committed reports.
     - Add regression fixtures for evidence removal, owner mismatch, partial observation,
       exact observation, target drift, and untouched-ledger identity.
     - _Requirements: 1.1-1.12, 14.1-14.3, 14.12-14.16_
-  - [ ] 17.4 Property test: Property 27 — evidence declares what it actually observes
+  - [x] 17.4 Property test: Property 27 — evidence declares what it actually observes
     - Generate at least 256 evidence/observation/target/status combinations; independently
       recompute claims and assert no record can overstate an observation, drifted or
       partial evidence cannot implement a capability, and every out-of-scope row remains

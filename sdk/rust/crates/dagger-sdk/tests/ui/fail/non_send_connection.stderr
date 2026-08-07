@@ -1,0 +1,63 @@
+error[E0277]: `Rc<()>` cannot be shared between threads safely
+ --> tests/ui/fail/non_send_connection.rs:9:27
+  |
+9 | impl EngineConnection for LocalConnection {
+  |                           ^^^^^^^^^^^^^^^ `Rc<()>` cannot be shared between threads safely
+  |
+  = help: within `LocalConnection`, the trait `Sync` is not implemented for `Rc<()>`
+note: required because it appears within the type `LocalConnection`
+ --> tests/ui/fail/non_send_connection.rs:6:8
+  |
+6 | struct LocalConnection(Rc<()>);
+  |        ^^^^^^^^^^^^^^^
+note: required by a bound in `EngineConnection`
+ --> src/connection.rs
+  |
+  | pub trait EngineConnection: Send + Sync + 'static {
+  |                                    ^^^^ required by this bound in `EngineConnection`
+
+error[E0277]: `Rc<()>` cannot be sent between threads safely
+ --> tests/ui/fail/non_send_connection.rs:9:27
+  |
+9 | impl EngineConnection for LocalConnection {
+  |                           ^^^^^^^^^^^^^^^ `Rc<()>` cannot be sent between threads safely
+  |
+  = help: within `LocalConnection`, the trait `Send` is not implemented for `Rc<()>`
+note: required because it appears within the type `LocalConnection`
+ --> tests/ui/fail/non_send_connection.rs:6:8
+  |
+6 | struct LocalConnection(Rc<()>);
+  |        ^^^^^^^^^^^^^^^
+note: required by a bound in `EngineConnection`
+ --> src/connection.rs
+  |
+  | pub trait EngineConnection: Send + Sync + 'static {
+  |                             ^^^^ required by this bound in `EngineConnection`
+
+error: future cannot be sent between threads safely
+  --> tests/ui/fail/non_send_connection.rs:10:5
+   |
+10 |     async fn execute(&self, _request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
+   |     ^^^^^ future created by async block is not `Send`
+   |
+   = help: within `LocalConnection`, the trait `Sync` is not implemented for `Rc<()>`
+note: captured value is not `Send` because `&` references cannot be sent unless their referent is `Sync`
+  --> tests/ui/fail/non_send_connection.rs:10:23
+   |
+10 |     async fn execute(&self, _request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
+   |                       ^^^^ has type `&LocalConnection` which is not `Send`, because `LocalConnection` is not `Sync`
+   = note: required for the cast from `Pin<Box<{async block@$DIR/tests/ui/fail/non_send_connection.rs:10:5: 10:10}>>` to `Pin<Box<dyn Future<Output = Result<RawResponse, EngineConnectionError>> + Send>>`
+
+error: future cannot be sent between threads safely
+  --> tests/ui/fail/non_send_connection.rs:14:5
+   |
+14 |     async fn close(&self) -> Result<(), EngineConnectionError> {
+   |     ^^^^^ future created by async block is not `Send`
+   |
+   = help: within `LocalConnection`, the trait `Sync` is not implemented for `Rc<()>`
+note: captured value is not `Send` because `&` references cannot be sent unless their referent is `Sync`
+  --> tests/ui/fail/non_send_connection.rs:14:21
+   |
+14 |     async fn close(&self) -> Result<(), EngineConnectionError> {
+   |                     ^^^^ has type `&LocalConnection` which is not `Send`, because `LocalConnection` is not `Sync`
+   = note: required for the cast from `Pin<Box<{async block@$DIR/tests/ui/fail/non_send_connection.rs:14:5: 14:10}>>` to `Pin<Box<dyn Future<Output = Result<(), EngineConnectionError>> + Send>>`
