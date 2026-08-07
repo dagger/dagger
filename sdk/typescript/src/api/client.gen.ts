@@ -3141,6 +3141,13 @@ export type WorkspaceDirectoryOpts = {
   gitignore?: boolean
 }
 
+export type WorkspaceFindConfigDirsOpts = {
+  /**
+   * Glob patterns pruning the walk below the cwd (e.g., ["**\/node_modules/**"]), since vendored trees are full of false positives.
+   */
+  exclude?: string[]
+}
+
 export type WorkspaceFindUpOpts = {
   /**
    * Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
@@ -14959,6 +14966,26 @@ export class Workspace extends BaseClient {
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
     return new File(ctx)
+  }
+
+  /**
+   * Find the directories holding any of the given config filenames, anchored at the workspace cwd rather than the workspace root — so a module run from a subdirectory acts on the project it is in, and the projects beneath it.
+   *
+   * Two searches, both returning cwd-relative directory paths: every directory at or below the cwd holding a config file (".", "sub/dir"), and the nearest enclosing project when the cwd itself holds no config ("..", "../.."), so a ".." prefix marks the one result outside the cwd's cone.
+   *
+   * Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+   * @param filenames Config file basenames to match (e.g., ["deno.json", "deno.jsonc"] or ["Dockerfile", "Containerfile"]).
+   * @param opts.exclude Glob patterns pruning the walk below the cwd (e.g., ["**\/node_modules/**"]), since vendored trees are full of false positives.
+   */
+  findConfigDirs = async (
+    filenames: string[],
+    opts?: WorkspaceFindConfigDirsOpts,
+  ): Promise<string[]> => {
+    const ctx = this._ctx.select("findConfigDirs", { filenames, ...opts })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
   }
 
   /**

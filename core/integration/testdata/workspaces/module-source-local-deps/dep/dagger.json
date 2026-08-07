@@ -1,0 +1,8 @@
+{
+  "name": "dep",
+  "engineVersion": "v1.0.0",
+  "sdk": {
+    "source": "dang"
+  },
+  "source": "."
+}
