@@ -1,4 +1,4 @@
-use dagger_sdk::core::introspection::FullType;
+use dagger_sdk::introspection::FullType;
 use genco::prelude::rust;
 use genco::quote;
 
@@ -9,6 +9,7 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
     let deserialize = rust::import("serde", "Deserialize");
     let serialize = rust::import("serde", "Serialize");
     let into_id = &rust::import("crate::id", "IntoID");
+    let query_error = &rust::import("crate::errors", "QueryError");
 
     let name = t.name.pipe(|n| format_name(n));
     let name = name.as_ref();
@@ -36,8 +37,8 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
                 }
 
                 impl $(into_id)<$(name)> for $(name) {
-                    fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<$(name), DaggerError>> + Send>> {
-                        Box::pin(async move { Ok::<$(name), DaggerError>(self) })
+                    fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<$(name), $query_error>> + Send>> {
+                        Box::pin(async move { Ok::<$(name), $query_error>(self) })
                     }
                 }
 

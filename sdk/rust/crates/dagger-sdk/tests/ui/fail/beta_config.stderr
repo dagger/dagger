@@ -1,0 +1,11 @@
+error[E0433]: cannot find `Config` in `dagger_sdk`
+ --> tests/ui/fail/beta_config.rs:2:25
+  |
+2 |     let _ = dagger_sdk::Config::default();
+  |                         ^^^^^^ could not find `Config` in `dagger_sdk`
+
+error[E0425]: cannot find value `connect_legacy` in crate `dagger_sdk`
+ --> tests/ui/fail/beta_config.rs:3:25
+  |
+3 |     let _ = dagger_sdk::connect_legacy;
+  |                         ^^^^^^^^^^^^^^ not found in `dagger_sdk`

@@ -1,0 +1,23 @@
+error[E0616]: field `session` of struct `Query` is private
+ --> tests/ui/fail/generated_fields.rs:2:19
+  |
+2 |     let _ = query.session;
+  |                   ^^^^^^^ private field
+
+error[E0616]: field `selection` of struct `Query` is private
+ --> tests/ui/fail/generated_fields.rs:3:19
+  |
+3 |     let _ = query.selection;
+  |                   ^^^^^^^^^ private field
+
+error[E0609]: no field `proc` on type `Query`
+ --> tests/ui/fail/generated_fields.rs:4:19
+  |
+4 |     let _ = query.proc;
+  |                   ^^^^ unknown field
+
+error[E0609]: no field `graphql_client` on type `Query`
+ --> tests/ui/fail/generated_fields.rs:5:19
+  |
+5 |     let _ = query.graphql_client;
+  |                   ^^^^^^^^^^^^^^ unknown field

@@ -1,6 +1,6 @@
 use crate::functions::*;
 use convert_case::{Case, Casing};
-use dagger_sdk::core::introspection::{FullTypeFields, TypeRef};
+use dagger_sdk::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
 use genco::quote;
 use genco::tokens::{quoted, static_literal};
@@ -163,12 +163,21 @@ pub(crate) fn render_required_args(
                     }
 
                     if s.input_value.type_.is_id() {
+                        let query_build_error = rust::import("crate::errors", "QueryBuildError");
+                        let query_build_error_kind = rust::import("crate::errors", "QueryBuildErrorKind");
                         return Some(quote!{
                             query = query.arg_lazy(
                                 $(quoted(name)),
                                 Box::new(move || {
                                     let $(&n) = $(&n).clone();
-                                    Box::pin(async move { $(&n).into_id().await.unwrap().quote() })
+                                    Box::pin(async move {
+                                        $(&n).into_id().await
+                                            .map(|id| id.quote())
+                                            .map_err(|error| $query_build_error::with_source(
+                                                $query_build_error_kind::LazyIdentifier,
+                                                error,
+                                            ))
+                                    })
                                 }),
                             );
                         })
@@ -235,10 +244,10 @@ fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Toke
         };
     }
 
-    let dagger_error = rust::import("crate::errors", "DaggerError");
+    let query_error = rust::import("crate::errors", "QueryError");
 
     quote! {
-        Result<$output_type, $dagger_error>
+        Result<$output_type, $query_error>
     }
 }
 
@@ -252,9 +261,9 @@ fn render_field_output_type(funcs: &CommonFunctions, field: &FullTypeFields) -> 
             .and_then(|p| p.name.as_ref())
             .map(|n| format_name(n))
             .unwrap_or_default();
-        let dagger_error = rust::import("crate::errors", "DaggerError");
+        let query_error = rust::import("crate::errors", "QueryError");
         return quote! {
-            Result<$parent_name, $dagger_error>
+            Result<$parent_name, $query_error>
         };
     }
     render_output_type(funcs, &field.type_.as_ref().unwrap().type_ref)
@@ -277,11 +286,10 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
             .and_then(|p| p.name.as_deref())
             .unwrap_or_default();
         return quote! {
-            let id: Id = query.execute(self.graphql_client.clone()).await?;
+            let id: Id = query.execute(&self.session).await?;
             Ok($(&parent_name) {
-                proc: self.proc.clone(),
+                session: self.session.clone(),
                 selection: query.root().select("node").arg("id", &id.0).inline_fragment($(quoted(graphql_name))),
-                graphql_client: self.graphql_client.clone(),
             })
         };
     }
@@ -290,9 +298,8 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
         let output_type = funcs.format_output_type(&field.type_.as_ref().unwrap().type_ref);
         return quote! {
             $(output_type) {
-                proc: self.proc.clone(),
+                session: self.session.clone(),
                 selection: query,
-                graphql_client: self.graphql_client.clone(),
             }
         };
     }
@@ -311,23 +318,22 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
         return quote! {
             let query = query.select("id");
             let ids: Vec<Id> =
-                query.execute(self.graphql_client.clone()).await?;
+                query.execute(&self.session).await?;
             Ok(ids
                 .into_iter()
                 .map(|id| $(&output_type) {
-                    proc: self.proc.clone(),
-                    selection: crate::querybuilder::query()
+                    session: self.session.clone(),
+                    selection: crate::query::query()
                         .select("node")
                         .arg("id", &id.0)
                         .inline_fragment($(quoted(elem_graphql_name))),
-                    graphql_client: self.graphql_client.clone(),
                 })
                 .collect())
         };
     }
 
     quote! {
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
 }
 

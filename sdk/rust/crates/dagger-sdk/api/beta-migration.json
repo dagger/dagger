@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {"old": "connect(callback)", "replacement": "connect() -> Result<Client, ConnectError>"},
+    {"old": "connect_opts(config, callback)", "replacement": "connect_with(ClientConfig) -> Result<Client, ConnectError>"},
+    {"old": "DaggerConn", "replacement": "Client and Client::query()"},
+    {"old": "Config", "replacement": "ClientConfig and ClientConfigBuilder"},
+    {"old": "Config::config_path", "replacement": "ClientConfigBuilder::workspace"},
+    {"old": "Config::timeout_ms", "replacement": "ClientConfigBuilder::session_startup_timeout and http_connect_timeout"},
+    {"old": "Config::execute_timeout_ms", "replacement": "ClientConfigBuilder::graphql_execution_timeout"},
+    {"old": "generated::proc", "replacement": "private shared session lease"},
+    {"old": "generated::selection", "replacement": "private immutable selection"},
+    {"old": "generated::graphql_client", "replacement": "private shared session lease"}
+  ]
+}

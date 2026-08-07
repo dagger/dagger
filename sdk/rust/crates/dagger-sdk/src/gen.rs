@@ -1,14 +1,14 @@
 #![allow(clippy::needless_lifetimes)]
+#![allow(missing_docs)]
+#![allow(unused_mut)]
 
-use crate::core::cli_session::DaggerSessionProc;
-use crate::core::graphql_client::DynGraphQLClient;
-use crate::errors::DaggerError;
+use crate::errors::{QueryBuildError, QueryBuildErrorKind, QueryError};
 use crate::id::IntoID;
-use crate::loadable::Loadable;
-use crate::querybuilder::Selection;
+use crate::lifecycle::SessionHandle;
+use crate::loadable::private::Sealed;
+use crate::query::Selection;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Id(pub String);
@@ -25,8 +25,8 @@ impl From<String> for Id {
 impl IntoID<Id> for Id {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { Ok::<Id, DaggerError>(self) })
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
+        Box::pin(async move { Ok::<Id, QueryError>(self) })
     }
 }
 impl Id {
@@ -117,173 +117,145 @@ pub trait Exportable {
     fn export(
         &self,
         path: impl Into<String>,
-    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send;
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+    ) -> impl core::future::Future<Output = Result<String, QueryError>> + Send;
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send;
 }
 #[derive(Clone)]
 pub struct ExportableClient {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ExportableClient {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
 impl ExportableClient {
-    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
-impl Loadable for ExportableClient {
+impl Sealed for ExportableClient {
     fn graphql_type() -> &'static str {
         "Exportable"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Exportable for ExportableClient {
     fn export(
         &self,
         path: impl Into<String>,
-    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+    ) -> impl core::future::Future<Output = Result<String, QueryError>> + Send {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 /// An object with a globally unique ID.
 pub trait Node {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send;
 }
 #[derive(Clone)]
 pub struct NodeClient {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for NodeClient {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
 impl NodeClient {
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
-impl Loadable for NodeClient {
+impl Sealed for NodeClient {
     fn graphql_type() -> &'static str {
         "Node"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Node for NodeClient {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 /// An object that can be force-evaluated.
 /// Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
 pub trait Syncer {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send;
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send;
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send;
 }
 #[derive(Clone)]
 pub struct SyncerClient {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for SyncerClient {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
 impl SyncerClient {
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
-    pub async fn sync(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("sync");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn sync(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("sync");
+        query.execute(&self.session).await
     }
 }
-impl Loadable for SyncerClient {
+impl Sealed for SyncerClient {
     fn graphql_type() -> &'static str {
         "Syncer"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Syncer for SyncerClient {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Address {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct AddressDirectoryOpts<'a> {
@@ -310,34 +282,25 @@ pub struct AddressFileOpts<'a> {
 impl IntoID<Id> for Address {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Address {
+impl Sealed for Address {
     fn graphql_type() -> &'static str {
         "Address"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Address {
     /// Load a container from the address.
     pub fn container(&self) -> Container {
-        let query = self.selection.select("container");
+        let mut query = self.selection.select("container");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a directory from the address.
@@ -346,11 +309,10 @@ impl Address {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self) -> Directory {
-        let query = self.selection.select("directory");
+        let mut query = self.selection.select("directory");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a directory from the address.
@@ -373,9 +335,8 @@ impl Address {
             query = query.arg("noCache", no_cache);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a file from the address.
@@ -384,11 +345,10 @@ impl Address {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn file(&self) -> File {
-        let query = self.selection.select("file");
+        let mut query = self.selection.select("file");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a file from the address.
@@ -411,131 +371,114 @@ impl Address {
             query = query.arg("noCache", no_cache);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a git ref (branch, tag or commit) from the address.
     pub fn git_ref(&self) -> GitRef {
-        let query = self.selection.select("gitRef");
+        let mut query = self.selection.select("gitRef");
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a git repository from the address.
     pub fn git_repository(&self) -> GitRepository {
-        let query = self.selection.select("gitRepository");
+        let mut query = self.selection.select("gitRepository");
         GitRepository {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this Address.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Load a secret from the address.
     pub fn secret(&self) -> Secret {
-        let query = self.selection.select("secret");
+        let mut query = self.selection.select("secret");
         Secret {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a service from the address.
     pub fn service(&self) -> Service {
-        let query = self.selection.select("service");
+        let mut query = self.selection.select("service");
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a local socket from the address.
     pub fn socket(&self) -> Socket {
-        let query = self.selection.select("socket");
+        let mut query = self.selection.select("socket");
         Socket {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The address value
-    pub async fn value(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn value(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("value");
+        query.execute(&self.session).await
     }
     /// Load a volume from the address.
     pub fn volume(&self) -> Volume {
-        let query = self.selection.select("volume");
+        let mut query = self.selection.select("volume");
         Volume {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Address {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct CacheVolume {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for CacheVolume {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for CacheVolume {
+impl Sealed for CacheVolume {
     fn graphql_type() -> &'static str {
         "CacheVolume"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl CacheVolume {
     /// A unique identifier for this CacheVolume.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for CacheVolume {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Changeset {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ChangesetWithChangesetOpts {
@@ -552,73 +495,61 @@ pub struct ChangesetWithChangesetsOpts {
 impl IntoID<Id> for Changeset {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Changeset {
+impl Sealed for Changeset {
     fn graphql_type() -> &'static str {
         "Changeset"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Changeset {
     /// Files and directories that were added in the newer directory.
-    pub async fn added_paths(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("addedPaths");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn added_paths(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("addedPaths");
+        query.execute(&self.session).await
     }
     /// The newer/upper snapshot.
     pub fn after(&self) -> Directory {
-        let query = self.selection.select("after");
+        let mut query = self.selection.select("after");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a Git-compatible patch of the changes
     pub fn as_patch(&self) -> File {
-        let query = self.selection.select("asPatch");
+        let mut query = self.selection.select("asPatch");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The older/lower snapshot to compare against.
     pub fn before(&self) -> Directory {
-        let query = self.selection.select("before");
+        let mut query = self.selection.select("before");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Structured per-path diff statistics (kind and line counts) for this changeset.
-    pub async fn diff_stats(&self) -> Result<Vec<DiffStat>, DaggerError> {
-        let query = self.selection.select("diffStats");
+    pub async fn diff_stats(&self) -> Result<Vec<DiffStat>, QueryError> {
+        let mut query = self.selection.select("diffStats");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| DiffStat {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("DiffStat"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -627,52 +558,50 @@ impl Changeset {
     /// # Arguments
     ///
     /// * `path` - Location of the copied directory (e.g., "logs/").
-    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Changeset.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Returns true if the changeset is empty (i.e. there are no changes).
-    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("isEmpty");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn is_empty(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("isEmpty");
+        query.execute(&self.session).await
     }
     /// Return a snapshot containing only the created and modified files
     pub fn layer(&self) -> Directory {
-        let query = self.selection.select("layer");
+        let mut query = self.selection.select("layer");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Files and directories that existed before and were updated in the newer directory.
-    pub async fn modified_paths(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("modifiedPaths");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn modified_paths(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("modifiedPaths");
+        query.execute(&self.session).await
     }
     /// Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
-    pub async fn removed_paths(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("removedPaths");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn removed_paths(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("removedPaths");
+        query.execute(&self.session).await
     }
     /// Force evaluation in the engine.
-    pub async fn sync(&self) -> Result<Changeset, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<Changeset, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Changeset"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Add changes to an existing changeset
@@ -688,13 +617,20 @@ impl Changeset {
             "changes",
             Box::new(move || {
                 let changes = changes.clone();
-                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    changes
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Add changes to an existing changeset
@@ -714,16 +650,23 @@ impl Changeset {
             "changes",
             Box::new(move || {
                 let changes = changes.clone();
-                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    changes
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(on_conflict) = opts.on_conflict {
             query = query.arg("onConflict", on_conflict);
         }
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Add changes from multiple changesets using git octopus merge strategy
@@ -738,9 +681,8 @@ impl Changeset {
         let mut query = self.selection.select("withChangesets");
         query = query.arg("changes", changes);
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Add changes from multiple changesets using git octopus merge strategy
@@ -762,9 +704,8 @@ impl Changeset {
             query = query.arg("onConflict", on_conflict);
         }
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
@@ -772,147 +713,134 @@ impl Exportable for Changeset {
     fn export(
         &self,
         path: impl Into<String>,
-    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+    ) -> impl core::future::Future<Output = Result<String, QueryError>> + Send {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Node for Changeset {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for Changeset {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Check {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Check {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Check {
+impl Sealed for Check {
     fn graphql_type() -> &'static str {
         "Check"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Check {
     /// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
-    pub async fn check_type(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("checkType");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn check_type(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("checkType");
+        query.execute(&self.session).await
     }
     /// Whether the check completed
-    pub async fn completed(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("completed");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn completed(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("completed");
+        query.execute(&self.session).await
     }
     /// The description of the check
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// If the check failed, this is the error
     pub fn error(&self) -> Error {
-        let query = self.selection.select("error");
+        let mut query = self.selection.select("error");
         Error {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this Check.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Return the fully qualified name of the check
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The original module in which the check has been defined
     pub fn original_module(&self) -> Module {
-        let query = self.selection.select("originalModule");
+        let mut query = self.selection.select("originalModule");
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Whether the check passed
-    pub async fn passed(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("passed");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn passed(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("passed");
+        query.execute(&self.session).await
     }
     /// The path of the check within its module
-    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn path(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("path");
+        query.execute(&self.session).await
     }
     /// An emoji representing the result of the check
-    pub async fn result_emoji(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("resultEmoji");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn result_emoji(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("resultEmoji");
+        query.execute(&self.session).await
     }
     /// Execute the check
     pub fn run(&self) -> Check {
-        let query = self.selection.select("run");
+        let mut query = self.selection.select("run");
         Check {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Check {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct CheckGroup {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct CheckGroupRunOpts {
@@ -923,56 +851,46 @@ pub struct CheckGroupRunOpts {
 impl IntoID<Id> for CheckGroup {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for CheckGroup {
+impl Sealed for CheckGroup {
     fn graphql_type() -> &'static str {
         "CheckGroup"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl CheckGroup {
     /// A unique identifier for this CheckGroup.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Return a list of individual checks and their details
-    pub async fn list(&self) -> Result<Vec<Check>, DaggerError> {
-        let query = self.selection.select("list");
+    pub async fn list(&self) -> Result<Vec<Check>, QueryError> {
+        let mut query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Check {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Check"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Generate a markdown report
     pub fn report(&self) -> File {
-        let query = self.selection.select("report");
+        let mut query = self.selection.select("report");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Execute all selected checks
@@ -981,11 +899,10 @@ impl CheckGroup {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn run(&self) -> CheckGroup {
-        let query = self.selection.select("run");
+        let mut query = self.selection.select("run");
         CheckGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Execute all selected checks
@@ -999,115 +916,95 @@ impl CheckGroup {
             query = query.arg("failFast", fail_fast);
         }
         CheckGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for CheckGroup {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct ClientFilesyncMirror {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ClientFilesyncMirror {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ClientFilesyncMirror {
+impl Sealed for ClientFilesyncMirror {
     fn graphql_type() -> &'static str {
         "ClientFilesyncMirror"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl ClientFilesyncMirror {
     /// A unique identifier for this ClientFilesyncMirror.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for ClientFilesyncMirror {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Cloud {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Cloud {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Cloud {
+impl Sealed for Cloud {
     fn graphql_type() -> &'static str {
         "Cloud"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Cloud {
     /// A unique identifier for this Cloud.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The trace URL for the current session
-    pub async fn trace_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("traceURL");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn trace_url(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("traceURL");
+        query.execute(&self.session).await
     }
 }
 impl Node for Cloud {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Container {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerAsServiceOpts<'a> {
@@ -1642,24 +1539,16 @@ pub struct ContainerWithoutUnixSocketOpts {
 impl IntoID<Id> for Container {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Container {
+impl Sealed for Container {
     fn graphql_type() -> &'static str {
         "Container"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Container {
@@ -1670,11 +1559,10 @@ impl Container {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_service(&self) -> Service {
-        let query = self.selection.select("asService");
+        let mut query = self.selection.select("asService");
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Turn the container into a Service.
@@ -1707,9 +1595,8 @@ impl Container {
             query = query.arg("noInit", no_init);
         }
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Package the container state as an OCI image, and return it as a tar archive
@@ -1718,11 +1605,10 @@ impl Container {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_tarball(&self) -> File {
-        let query = self.selection.select("asTarball");
+        let mut query = self.selection.select("asTarball");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Package the container state as an OCI image, and return it as a tar archive
@@ -1742,21 +1628,20 @@ impl Container {
             query = query.arg("mediaTypes", media_types);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The combined buffered standard output and standard error stream of the last executed command
     /// Returns an error if no command was executed
-    pub async fn combined_output(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("combinedOutput");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn combined_output(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("combinedOutput");
+        query.execute(&self.session).await
     }
     /// Return the container's default arguments.
-    pub async fn default_args(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("defaultArgs");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn default_args(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("defaultArgs");
+        query.execute(&self.session).await
     }
     /// Retrieve a directory from the container's root filesystem
     /// Mounts are included.
@@ -1769,9 +1654,8 @@ impl Container {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieve a directory from the container's root filesystem
@@ -1792,49 +1676,46 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container's configured docker healthcheck.
     pub fn docker_healthcheck(&self) -> HealthcheckConfig {
-        let query = self.selection.select("dockerHealthcheck");
+        let mut query = self.selection.select("dockerHealthcheck");
         HealthcheckConfig {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return the container's OCI entrypoint.
-    pub async fn entrypoint(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("entrypoint");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn entrypoint(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("entrypoint");
+        query.execute(&self.session).await
     }
     /// Retrieves the value of the specified persistent environment variable.
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the environment variable to retrieve (e.g., "PATH").
-    pub async fn env_variable(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn env_variable(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("envVariable");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Retrieves the list of persistent environment variables configured on the container.
-    pub async fn env_variables(&self) -> Result<Vec<EnvVariable>, DaggerError> {
-        let query = self.selection.select("envVariables");
+    pub async fn env_variables(&self) -> Result<Vec<EnvVariable>, QueryError> {
+        let mut query = self.selection.select("envVariables");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| EnvVariable {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("EnvVariable"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -1844,10 +1725,10 @@ impl Container {
     ///
     /// * `path` - Path to check (e.g., "/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// check if a file or directory exists
     ///
@@ -1859,7 +1740,7 @@ impl Container {
         &self,
         path: impl Into<String>,
         opts: ContainerExistsOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("path", path.into());
         if let Some(expected_type) = opts.expected_type {
@@ -1871,23 +1752,22 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// The exit code of the last executed command
     /// Returns an error if no command was executed
-    pub async fn exit_code(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("exitCode");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn exit_code(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("exitCode");
+        query.execute(&self.session).await
     }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.
     pub fn experimental_with_all_gp_us(&self) -> Container {
-        let query = self.selection.select("experimentalWithAllGPUs");
+        let mut query = self.selection.select("experimentalWithAllGPUs");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
@@ -1907,9 +1787,8 @@ impl Container {
                 .collect::<Vec<String>>(),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Writes the container as an OCI tarball to the destination file path on the host.
@@ -1921,10 +1800,10 @@ impl Container {
     ///
     /// Path can be relative to the engine's workdir or absolute.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Writes the container as an OCI tarball to the destination file path on the host.
     /// It can also export platform variants.
@@ -1939,7 +1818,7 @@ impl Container {
         &self,
         path: impl Into<String>,
         opts: ContainerExportOpts,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(platform_variants) = opts.platform_variants {
@@ -1954,7 +1833,7 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Exports the container as an image to the host's container image store.
     ///
@@ -1962,10 +1841,10 @@ impl Container {
     ///
     /// * `name` - Name of image to export to in the host's store
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export_image(&self, name: impl Into<String>) -> Result<Void, DaggerError> {
+    pub async fn export_image(&self, name: impl Into<String>) -> Result<Void, QueryError> {
         let mut query = self.selection.select("exportImage");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Exports the container as an image to the host's container image store.
     ///
@@ -1977,7 +1856,7 @@ impl Container {
         &self,
         name: impl Into<String>,
         opts: ContainerExportImageOpts,
-    ) -> Result<Void, DaggerError> {
+    ) -> Result<Void, QueryError> {
         let mut query = self.selection.select("exportImage");
         query = query.arg("name", name.into());
         if let Some(platform_variants) = opts.platform_variants {
@@ -1989,23 +1868,22 @@ impl Container {
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Retrieves the list of exposed ports.
     /// This includes ports already exposed by the image, even if not explicitly added with dagger.
-    pub async fn exposed_ports(&self) -> Result<Vec<Port>, DaggerError> {
-        let query = self.selection.select("exposedPorts");
+    pub async fn exposed_ports(&self) -> Result<Vec<Port>, QueryError> {
+        let mut query = self.selection.select("exposedPorts");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Port {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Port"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -2020,9 +1898,8 @@ impl Container {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves a file at the given path.
@@ -2039,9 +1916,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Download a container image, and apply it to the container state. All previous state will be lost.
@@ -2054,9 +1930,8 @@ impl Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Download a container image, and apply it to the container state. All previous state will be lost.
@@ -2078,20 +1953,19 @@ impl Container {
             query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this Container.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
-    pub async fn image_ref(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("imageRef");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn image_ref(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("imageRef");
+        query.execute(&self.session).await
     }
     /// Reads the container from an OCI tarball.
     ///
@@ -2105,13 +1979,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Reads the container from an OCI tarball.
@@ -2130,16 +2011,23 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(tag) = opts.tag {
             query = query.arg("tag", tag);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves the value of the specified label.
@@ -2147,25 +2035,24 @@ impl Container {
     /// # Arguments
     ///
     /// * `name` - The name of the label (e.g., "org.opencontainers.artifact.created").
-    pub async fn label(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn label(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("label");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Retrieves the list of labels passed to container.
-    pub async fn labels(&self) -> Result<Vec<Label>, DaggerError> {
-        let query = self.selection.select("labels");
+    pub async fn labels(&self) -> Result<Vec<Label>, QueryError> {
+        let mut query = self.selection.select("labels");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Label {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Label"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -2179,9 +2066,8 @@ impl Container {
         let mut query = self.selection.select("layer");
         query = query.arg("id", id.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the image layer or configuration blob with the given digest as a File.
@@ -2200,9 +2086,8 @@ impl Container {
             query = query.arg("mediaTypes", media_types);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Computes and returns the manifest for this container as a File.
@@ -2211,11 +2096,10 @@ impl Container {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn manifest(&self) -> File {
-        let query = self.selection.select("manifest");
+        let mut query = self.selection.select("manifest");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Computes and returns the manifest for this container as a File.
@@ -2232,20 +2116,19 @@ impl Container {
             query = query.arg("mediaTypes", media_types);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves the list of paths where a directory is mounted.
-    pub async fn mounts(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("mounts");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn mounts(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("mounts");
+        query.execute(&self.session).await
     }
     /// The platform this container executes and publishes as.
-    pub async fn platform(&self) -> Result<Platform, DaggerError> {
-        let query = self.selection.select("platform");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn platform(&self) -> Result<Platform, QueryError> {
+        let mut query = self.selection.select("platform");
+        query.execute(&self.session).await
     }
     /// Package the container state as an OCI image, and publish it to a registry
     /// Returns the fully qualified address of the published image, with digest
@@ -2256,10 +2139,10 @@ impl Container {
     ///
     /// Same format as "docker push". Example: "registry.example.com/user/repo:tag"
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn publish(&self, address: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn publish(&self, address: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("publish");
         query = query.arg("address", address.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Package the container state as an OCI image, and publish it to a registry
     /// Returns the fully qualified address of the published image, with digest
@@ -2274,7 +2157,7 @@ impl Container {
         &self,
         address: impl Into<String>,
         opts: ContainerPublishOpts,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("publish");
         query = query.arg("address", address.into());
         if let Some(platform_variants) = opts.platform_variants {
@@ -2295,15 +2178,14 @@ impl Container {
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
             query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
     pub fn rootfs(&self) -> Directory {
-        let query = self.selection.select("rootfs");
+        let mut query = self.selection.select("rootfs");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return file status
@@ -2316,9 +2198,8 @@ impl Container {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
         Stat {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return file status
@@ -2334,36 +2215,34 @@ impl Container {
             query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
         Stat {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The buffered standard error stream of the last executed command
     /// Returns an error if no command was executed
-    pub async fn stderr(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("stderr");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn stderr(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("stderr");
+        query.execute(&self.session).await
     }
     /// The buffered standard output stream of the last executed command
     /// Returns an error if no command was executed
-    pub async fn stdout(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("stdout");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn stdout(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("stdout");
+        query.execute(&self.session).await
     }
     /// Forces evaluation of the pipeline in the engine.
     /// It doesn't run the default command if no exec has been set.
-    pub async fn sync(&self) -> Result<Container, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<Container, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Container"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
@@ -2372,11 +2251,10 @@ impl Container {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal(&self) -> Container {
-        let query = self.selection.select("terminal");
+        let mut query = self.selection.select("terminal");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
@@ -2399,9 +2277,8 @@ impl Container {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
@@ -2410,9 +2287,9 @@ impl Container {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up(&self) -> Result<Void, DaggerError> {
-        let query = self.selection.select("up");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn up(&self) -> Result<Void, QueryError> {
+        let mut query = self.selection.select("up");
+        query.execute(&self.session).await
     }
     /// Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
     /// Be sure to set any exposed ports before calling this api.
@@ -2420,7 +2297,7 @@ impl Container {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up_opts<'a>(&self, opts: ContainerUpOpts<'a>) -> Result<Void, DaggerError> {
+    pub async fn up_opts<'a>(&self, opts: ContainerUpOpts<'a>) -> Result<Void, QueryError> {
         let mut query = self.selection.select("up");
         if let Some(random) = opts.random {
             query = query.arg("random", random);
@@ -2449,12 +2326,12 @@ impl Container {
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Retrieves the user to be set for all commands.
-    pub async fn user(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("user");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn user(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("user");
+        query.execute(&self.session).await
     }
     /// Retrieves this container plus the given OCI annotation.
     ///
@@ -2467,9 +2344,8 @@ impl Container {
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Configures default arguments for future commands. Like CMD in Dockerfile.
@@ -2484,9 +2360,8 @@ impl Container {
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set the default command to invoke for the container's terminal API.
@@ -2502,9 +2377,8 @@ impl Container {
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set the default command to invoke for the container's terminal API.
@@ -2533,9 +2407,8 @@ impl Container {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container snapshot, with a directory added to its filesystem
@@ -2552,13 +2425,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container snapshot, with a directory added to its filesystem
@@ -2580,7 +2460,15 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(exclude) = opts.exclude {
@@ -2605,9 +2493,8 @@ impl Container {
             query = query.arg("permissions", permissions);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with the specificed docker healtcheck command set.
@@ -2623,9 +2510,8 @@ impl Container {
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with the specificed docker healtcheck command set.
@@ -2663,9 +2549,8 @@ impl Container {
             query = query.arg("retries", retries);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
@@ -2681,9 +2566,8 @@ impl Container {
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
@@ -2706,9 +2590,8 @@ impl Container {
             query = query.arg("keepDefaultArgs", keep_default_args);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Export environment variables from an env-file to the container.
@@ -2722,13 +2605,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set a new environment variable in the container.
@@ -2747,9 +2637,8 @@ impl Container {
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set a new environment variable in the container.
@@ -2772,9 +2661,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Raise an error.
@@ -2786,9 +2674,8 @@ impl Container {
         let mut query = self.selection.select("withError");
         query = query.arg("err", err.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Execute a command in the container, and return a new snapshot of the container state after execution.
@@ -2808,9 +2695,8 @@ impl Container {
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Execute a command in the container, and return a new snapshot of the container state after execution.
@@ -2867,9 +2753,8 @@ impl Container {
             query = query.arg("noInit", no_init);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
@@ -2885,9 +2770,8 @@ impl Container {
         let mut query = self.selection.select("withExposedPort");
         query = query.arg("port", port);
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
@@ -2916,9 +2800,8 @@ impl Container {
             query = query.arg("experimentalSkipHealthcheck", experimental_skip_healthcheck);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a container snapshot with a file added
@@ -2935,13 +2818,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a container snapshot with a file added
@@ -2963,7 +2853,15 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(permissions) = opts.permissions {
@@ -2979,9 +2877,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus the contents of the given files copied to the given path.
@@ -2996,9 +2893,8 @@ impl Container {
         query = query.arg("path", path.into());
         query = query.arg("sources", sources);
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus the contents of the given files copied to the given path.
@@ -3030,9 +2926,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus the given label.
@@ -3046,9 +2941,8 @@ impl Container {
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a cache volume mounted at the given path.
@@ -3065,13 +2959,16 @@ impl Container {
             "cache",
             Box::new(move || {
                 let cache = cache.clone();
-                Box::pin(async move { cache.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    cache.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a cache volume mounted at the given path.
@@ -3093,7 +2990,11 @@ impl Container {
             "cache",
             Box::new(move || {
                 let cache = cache.clone();
-                Box::pin(async move { cache.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    cache.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         if let Some(source) = opts.source {
@@ -3112,9 +3013,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a directory mounted at the given path.
@@ -3135,13 +3035,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a directory mounted at the given path.
@@ -3163,7 +3070,15 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -3179,9 +3094,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a file mounted at the given path.
@@ -3198,13 +3112,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a file mounted at the given path.
@@ -3226,7 +3147,15 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -3239,9 +3168,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a secret mounted into a file at the given path.
@@ -3262,13 +3190,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a secret mounted into a file at the given path.
@@ -3290,7 +3225,15 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -3306,9 +3249,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
@@ -3321,9 +3263,8 @@ impl Container {
         let mut query = self.selection.select("withMountedTemp");
         query = query.arg("path", path.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
@@ -3346,9 +3287,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a volume mounted at the given path.
@@ -3369,13 +3309,20 @@ impl Container {
             "volume",
             Box::new(move || {
                 let volume = volume.clone();
-                Box::pin(async move { volume.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    volume
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a volume mounted at the given path.
@@ -3397,7 +3344,15 @@ impl Container {
             "volume",
             Box::new(move || {
                 let volume = volume.clone();
-                Box::pin(async move { volume.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    volume
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(read_only) = opts.read_only {
@@ -3407,9 +3362,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container snapshot, with a file added to its filesystem with text content
@@ -3424,9 +3378,8 @@ impl Container {
         query = query.arg("path", path.into());
         query = query.arg("contents", contents.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container snapshot, with a file added to its filesystem with text content
@@ -3458,9 +3411,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Attach credentials for future publishing to a registry. Use in combination with publish
@@ -3483,13 +3435,20 @@ impl Container {
             "secret",
             Box::new(move || {
                 let secret = secret.clone();
-                Box::pin(async move { secret.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    secret
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Change the container's root filesystem. The previous root filesystem will be lost.
@@ -3503,13 +3462,20 @@ impl Container {
             "directory",
             Box::new(move || {
                 let directory = directory.clone();
-                Box::pin(async move { directory.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    directory
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set a new environment variable, using a secret value
@@ -3529,13 +3495,20 @@ impl Container {
             "secret",
             Box::new(move || {
                 let secret = secret.clone();
-                Box::pin(async move { secret.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    secret
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Establish a runtime dependency from a container to a network service.
@@ -3558,13 +3531,20 @@ impl Container {
             "service",
             Box::new(move || {
                 let service = service.clone();
-                Box::pin(async move { service.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    service
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a symlink
@@ -3583,9 +3563,8 @@ impl Container {
         query = query.arg("target", target.into());
         query = query.arg("linkName", link_name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a symlink
@@ -3608,9 +3587,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
@@ -3627,13 +3605,20 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
@@ -3655,7 +3640,15 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -3668,9 +3661,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with a different command user.
@@ -3682,9 +3674,8 @@ impl Container {
         let mut query = self.selection.select("withUser");
         query = query.arg("name", name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
@@ -3703,9 +3694,8 @@ impl Container {
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Change the container's working directory. Like WORKDIR in Dockerfile.
@@ -3718,9 +3708,8 @@ impl Container {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Change the container's working directory. Like WORKDIR in Dockerfile.
@@ -3740,9 +3729,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container minus the given OCI annotation.
@@ -3754,18 +3742,16 @@ impl Container {
         let mut query = self.selection.select("withoutAnnotation");
         query = query.arg("name", name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Remove the container's default arguments.
     pub fn without_default_args(&self) -> Container {
-        let query = self.selection.select("withoutDefaultArgs");
+        let mut query = self.selection.select("withoutDefaultArgs");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container snapshot, with a directory removed from its filesystem
@@ -3778,9 +3764,8 @@ impl Container {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container snapshot, with a directory removed from its filesystem
@@ -3800,18 +3785,16 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container without a configured docker healtcheck command.
     pub fn without_docker_healthcheck(&self) -> Container {
-        let query = self.selection.select("withoutDockerHealthcheck");
+        let mut query = self.selection.select("withoutDockerHealthcheck");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Reset the container's OCI entrypoint.
@@ -3820,11 +3803,10 @@ impl Container {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_entrypoint(&self) -> Container {
-        let query = self.selection.select("withoutEntrypoint");
+        let mut query = self.selection.select("withoutEntrypoint");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Reset the container's OCI entrypoint.
@@ -3838,9 +3820,8 @@ impl Container {
             query = query.arg("keepDefaultArgs", keep_default_args);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container minus the given environment variable.
@@ -3852,9 +3833,8 @@ impl Container {
         let mut query = self.selection.select("withoutEnvVariable");
         query = query.arg("name", name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Unexpose a previously exposed port.
@@ -3867,9 +3847,8 @@ impl Container {
         let mut query = self.selection.select("withoutExposedPort");
         query = query.arg("port", port);
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Unexpose a previously exposed port.
@@ -3889,9 +3868,8 @@ impl Container {
             query = query.arg("protocol", protocol);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with the file at the given path removed.
@@ -3904,9 +3882,8 @@ impl Container {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with the file at the given path removed.
@@ -3926,9 +3903,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container spanshot with specified files removed
@@ -3944,9 +3920,8 @@ impl Container {
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new container spanshot with specified files removed
@@ -3969,9 +3944,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container minus the given environment label.
@@ -3983,9 +3957,8 @@ impl Container {
         let mut query = self.selection.select("withoutLabel");
         query = query.arg("name", name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container after unmounting everything at the given path.
@@ -3998,9 +3971,8 @@ impl Container {
         let mut query = self.selection.select("withoutMount");
         query = query.arg("path", path.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container after unmounting everything at the given path.
@@ -4020,9 +3992,8 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container without the registry authentication of a given address.
@@ -4036,9 +4007,8 @@ impl Container {
         let mut query = self.selection.select("withoutRegistryAuth");
         query = query.arg("address", address.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container minus the given environment variable containing the secret.
@@ -4050,9 +4020,8 @@ impl Container {
         let mut query = self.selection.select("withoutSecretVariable");
         query = query.arg("name", name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with a previously added Unix socket removed.
@@ -4065,9 +4034,8 @@ impl Container {
         let mut query = self.selection.select("withoutUnixSocket");
         query = query.arg("path", path.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with a previously added Unix socket removed.
@@ -4087,19 +4055,17 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container with an unset command user.
     /// Should default to root.
     pub fn without_user(&self) -> Container {
-        let query = self.selection.select("withoutUser");
+        let mut query = self.selection.select("withoutUser");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this container minus the given volatile environment variable.
@@ -4111,67 +4077,64 @@ impl Container {
         let mut query = self.selection.select("withoutVolatileVariable");
         query = query.arg("name", name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Unset the container's working directory.
     /// Should default to "/".
     pub fn without_workdir(&self) -> Container {
-        let query = self.selection.select("withoutWorkdir");
+        let mut query = self.selection.select("withoutWorkdir");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves the working directory for all commands.
-    pub async fn workdir(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("workdir");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn workdir(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("workdir");
+        query.execute(&self.session).await
     }
 }
 impl Exportable for Container {
     fn export(
         &self,
         path: impl Into<String>,
-    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+    ) -> impl core::future::Future<Output = Result<String, QueryError>> + Send {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Node for Container {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for Container {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct CurrentModule {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleAsSdkOpts {
@@ -4200,24 +4163,16 @@ pub struct CurrentModuleWorkdirOpts<'a> {
 impl IntoID<Id> for CurrentModule {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for CurrentModule {
+impl Sealed for CurrentModule {
     fn graphql_type() -> &'static str {
         "CurrentModule"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl CurrentModule {
@@ -4228,11 +4183,10 @@ impl CurrentModule {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_sdk(&self) -> CurrentModuleAsSdk {
-        let query = self.selection.select("asSDK");
+        let mut query = self.selection.select("asSDK");
         CurrentModuleAsSdk {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
@@ -4247,35 +4201,32 @@ impl CurrentModule {
             query = query.arg("workspace", workspace);
         }
         CurrentModuleAsSdk {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The dependencies of the module.
-    pub async fn dependencies(&self) -> Result<Vec<Module>, DaggerError> {
-        let query = self.selection.select("dependencies");
+    pub async fn dependencies(&self) -> Result<Vec<Module>, QueryError> {
+        let mut query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Module {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Module"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
-        let query = self.selection.select("generatedContextDirectory");
+        let mut query = self.selection.select("generatedContextDirectory");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all generators defined by the module
@@ -4284,11 +4235,10 @@ impl CurrentModule {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn generators(&self) -> GeneratorGroup {
-        let query = self.selection.select("generators");
+        let mut query = self.selection.select("generators");
         GeneratorGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all generators defined by the module
@@ -4302,28 +4252,26 @@ impl CurrentModule {
             query = query.arg("include", include);
         }
         GeneratorGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this CurrentModule.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the module being executed in
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
     pub fn source(&self) -> Directory {
-        let query = self.selection.select("source");
+        let mut query = self.selection.select("source");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
@@ -4336,9 +4284,8 @@ impl CurrentModule {
         let mut query = self.selection.select("workdir");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
@@ -4364,9 +4311,8 @@ impl CurrentModule {
             query = query.arg("gitignore", gitignore);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
@@ -4378,289 +4324,248 @@ impl CurrentModule {
         let mut query = self.selection.select("workdirFile");
         query = query.arg("path", path.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for CurrentModule {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct CurrentModuleAsSdk {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for CurrentModuleAsSdk {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for CurrentModuleAsSdk {
+impl Sealed for CurrentModuleAsSdk {
     fn graphql_type() -> &'static str {
         "CurrentModuleAsSDK"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl CurrentModuleAsSdk {
     /// The generated clients this SDK produces in the workspace.
-    pub async fn clients(&self) -> Result<Vec<CurrentModuleAsSdkClient>, DaggerError> {
-        let query = self.selection.select("clients");
+    pub async fn clients(&self) -> Result<Vec<CurrentModuleAsSdkClient>, QueryError> {
+        let mut query = self.selection.select("clients");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| CurrentModuleAsSdkClient {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("CurrentModuleAsSDKClient"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// A unique identifier for this CurrentModuleAsSDK.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The workspace-local modules this SDK authors and manages.
-    pub async fn modules(&self) -> Result<Vec<CurrentModuleAsSdkModule>, DaggerError> {
-        let query = self.selection.select("modules");
+    pub async fn modules(&self) -> Result<Vec<CurrentModuleAsSdkModule>, QueryError> {
+        let mut query = self.selection.select("modules");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| CurrentModuleAsSdkModule {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("CurrentModuleAsSDKModule"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The user-facing name of this SDK in the workspace.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
 }
 impl Node for CurrentModuleAsSdk {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct CurrentModuleAsSdkClient {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for CurrentModuleAsSdkClient {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for CurrentModuleAsSdkClient {
+impl Sealed for CurrentModuleAsSdkClient {
     fn graphql_type() -> &'static str {
         "CurrentModuleAsSDKClient"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl CurrentModuleAsSdkClient {
     /// A unique identifier for this CurrentModuleAsSDKClient.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The module the client is bound to (workspace-relative path or canonical ref).
-    pub async fn module(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("module");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn module(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("module");
+        query.execute(&self.session).await
     }
     /// The resolved module source this client is bound to, including its dependency closure and pinned version.
     pub fn module_source(&self) -> ModuleSource {
-        let query = self.selection.select("moduleSource");
+        let mut query = self.selection.select("moduleSource");
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Workspace-root-relative path of the generated client.
-    pub async fn path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("path");
+        query.execute(&self.session).await
     }
     /// The pinned version of the bound module, if any.
-    pub async fn pin(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("pin");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn pin(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("pin");
+        query.execute(&self.session).await
     }
 }
 impl Node for CurrentModuleAsSdkClient {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct CurrentModuleAsSdkModule {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for CurrentModuleAsSdkModule {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for CurrentModuleAsSdkModule {
+impl Sealed for CurrentModuleAsSdkModule {
     fn graphql_type() -> &'static str {
         "CurrentModuleAsSDKModule"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl CurrentModuleAsSdkModule {
     /// A unique identifier for this CurrentModuleAsSDKModule.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Workspace-root-relative path to the managed module.
-    pub async fn path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("path");
+        query.execute(&self.session).await
     }
 }
 impl Node for CurrentModuleAsSdkModule {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct DiffStat {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for DiffStat {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for DiffStat {
+impl Sealed for DiffStat {
     fn graphql_type() -> &'static str {
         "DiffStat"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl DiffStat {
     /// Number of added lines for this path.
-    pub async fn added_lines(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("addedLines");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn added_lines(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("addedLines");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this DiffStat.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Type of change.
-    pub async fn kind(&self) -> Result<DiffStatKind, DaggerError> {
-        let query = self.selection.select("kind");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn kind(&self) -> Result<DiffStatKind, QueryError> {
+        let mut query = self.selection.select("kind");
+        query.execute(&self.session).await
     }
     /// Previous path of the file, set only for renames.
-    pub async fn old_path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("oldPath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn old_path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("oldPath");
+        query.execute(&self.session).await
     }
     /// Path of the changed file or directory.
-    pub async fn path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("path");
+        query.execute(&self.session).await
     }
     /// Number of removed lines for this path.
-    pub async fn removed_lines(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("removedLines");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn removed_lines(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("removedLines");
+        query.execute(&self.session).await
     }
 }
 impl Node for DiffStat {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Directory {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
@@ -4861,34 +4766,25 @@ pub struct DirectoryWithPatchFileOpts {
 impl IntoID<Id> for Directory {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Directory {
+impl Sealed for Directory {
     fn graphql_type() -> &'static str {
         "Directory"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Directory {
     /// Converts this directory to a local git repository
     pub fn as_git(&self) -> GitRepository {
-        let query = self.selection.select("asGit");
+        let mut query = self.selection.select("asGit");
         GitRepository {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load the directory as a Dagger module source
@@ -4897,11 +4793,10 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_module(&self) -> Module {
-        let query = self.selection.select("asModule");
+        let mut query = self.selection.select("asModule");
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load the directory as a Dagger module source
@@ -4915,9 +4810,8 @@ impl Directory {
             query = query.arg("sourceRootPath", source_root_path);
         }
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load the directory as a Dagger module source
@@ -4926,11 +4820,10 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_module_source(&self) -> ModuleSource {
-        let query = self.selection.select("asModuleSource");
+        let mut query = self.selection.select("asModuleSource");
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load the directory as a Dagger module source
@@ -4944,9 +4837,8 @@ impl Directory {
             query = query.arg("sourceRootPath", source_root_path);
         }
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a synthetic workspace from this directory.
@@ -4955,11 +4847,10 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_workspace(&self) -> Workspace {
-        let query = self.selection.select("asWorkspace");
+        let mut query = self.selection.select("asWorkspace");
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a synthetic workspace from this directory.
@@ -4973,9 +4864,8 @@ impl Directory {
             query = query.arg("cwd", cwd);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return the difference between this directory and another directory, typically an older snapshot.
@@ -4990,13 +4880,16 @@ impl Directory {
             "from",
             Box::new(move || {
                 let from = from.clone();
-                Box::pin(async move { from.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    from.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Change the owner of the directory contents recursively.
@@ -5014,9 +4907,8 @@ impl Directory {
         query = query.arg("path", path.into());
         query = query.arg("owner", owner.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return the difference between this directory and an another directory. The difference is encoded as a directory.
@@ -5030,19 +4922,22 @@ impl Directory {
             "other",
             Box::new(move || {
                 let other = other.clone();
-                Box::pin(async move { other.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    other.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
-    pub async fn digest(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("digest");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn digest(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("digest");
+        query.execute(&self.session).await
     }
     /// Retrieves a directory at the given path.
     ///
@@ -5053,9 +4948,8 @@ impl Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
@@ -5064,11 +4958,10 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn docker_build(&self) -> Container {
-        let query = self.selection.select("dockerBuild");
+        let mut query = self.selection.select("dockerBuild");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
@@ -5100,9 +4993,8 @@ impl Directory {
             query = query.arg("ssh", ssh);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a list of files and directories at the given path.
@@ -5110,9 +5002,9 @@ impl Directory {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn entries(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("entries");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn entries(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("entries");
+        query.execute(&self.session).await
     }
     /// Returns a list of files and directories at the given path.
     ///
@@ -5122,12 +5014,12 @@ impl Directory {
     pub async fn entries_opts<'a>(
         &self,
         opts: DirectoryEntriesOpts<'a>,
-    ) -> Result<Vec<String>, DaggerError> {
+    ) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("entries");
         if let Some(path) = opts.path {
             query = query.arg("path", path);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// check if a file or directory exists
     ///
@@ -5135,10 +5027,10 @@ impl Directory {
     ///
     /// * `path` - Path to check (e.g., "/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// check if a file or directory exists
     ///
@@ -5150,7 +5042,7 @@ impl Directory {
         &self,
         path: impl Into<String>,
         opts: DirectoryExistsOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("path", path.into());
         if let Some(expected_type) = opts.expected_type {
@@ -5159,7 +5051,7 @@ impl Directory {
         if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
             query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Writes the contents of the directory to a path on the host.
     ///
@@ -5167,10 +5059,10 @@ impl Directory {
     ///
     /// * `path` - Location of the copied directory (e.g., "logs/").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Writes the contents of the directory to a path on the host.
     ///
@@ -5182,13 +5074,13 @@ impl Directory {
         &self,
         path: impl Into<String>,
         opts: DirectoryExportOpts,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(wipe) = opts.wipe {
             query = query.arg("wipe", wipe);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Retrieve a file at the given path.
     ///
@@ -5199,9 +5091,8 @@ impl Directory {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with some paths included or excluded
@@ -5210,11 +5101,10 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn filter(&self) -> Directory {
-        let query = self.selection.select("filter");
+        let mut query = self.selection.select("filter");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with some paths included or excluded
@@ -5234,9 +5124,8 @@ impl Directory {
             query = query.arg("gitignore", gitignore);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Search up the directory tree for a file or directory, and return its path. If no match, return null
@@ -5249,31 +5138,31 @@ impl Directory {
         &self,
         name: impl Into<String>,
         start: impl Into<String>,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
         query = query.arg("start", start.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Returns a list of files and directories that matche the given pattern.
     ///
     /// # Arguments
     ///
     /// * `pattern` - Pattern to match (e.g., "*.md").
-    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, DaggerError> {
+    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("glob");
         query = query.arg("pattern", pattern.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Directory.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Returns the name of the directory.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// Searches for content matching the given regular expression or literal string.
     /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
@@ -5285,20 +5174,19 @@ impl Directory {
     pub async fn search(
         &self,
         pattern: impl Into<String>,
-    ) -> Result<Vec<SearchResult>, DaggerError> {
+    ) -> Result<Vec<SearchResult>, QueryError> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| SearchResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("SearchResult"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -5313,7 +5201,7 @@ impl Directory {
         &self,
         pattern: impl Into<String>,
         opts: DirectorySearchOpts<'a>,
-    ) -> Result<Vec<SearchResult>, DaggerError> {
+    ) -> Result<Vec<SearchResult>, QueryError> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         if let Some(paths) = opts.paths {
@@ -5347,16 +5235,15 @@ impl Directory {
             query = query.arg("limit", limit);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| SearchResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("SearchResult"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -5370,9 +5257,8 @@ impl Directory {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
         Stat {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return file status
@@ -5388,23 +5274,21 @@ impl Directory {
             query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
         Stat {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Force evaluation in the engine.
-    pub async fn sync(&self) -> Result<Directory, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<Directory, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Directory"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Opens an interactive terminal in new container with this directory mounted inside.
@@ -5413,11 +5297,10 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal(&self) -> Directory {
-        let query = self.selection.select("terminal");
+        let mut query = self.selection.select("terminal");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Opens an interactive terminal in new container with this directory mounted inside.
@@ -5443,9 +5326,8 @@ impl Directory {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a directory with changes from another directory applied to it.
@@ -5459,13 +5341,20 @@ impl Directory {
             "changes",
             Box::new(move || {
                 let changes = changes.clone();
-                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    changes
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a directory added
@@ -5482,13 +5371,20 @@ impl Directory {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a directory added
@@ -5510,7 +5406,15 @@ impl Directory {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(exclude) = opts.exclude {
@@ -5529,9 +5433,8 @@ impl Directory {
             query = query.arg("permissions", permissions);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Raise an error.
@@ -5543,9 +5446,8 @@ impl Directory {
         let mut query = self.selection.select("withError");
         query = query.arg("err", err.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory plus the contents of the given file copied to the given path.
@@ -5562,13 +5464,20 @@ impl Directory {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory plus the contents of the given file copied to the given path.
@@ -5590,7 +5499,15 @@ impl Directory {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(permissions) = opts.permissions {
@@ -5600,9 +5517,8 @@ impl Directory {
             query = query.arg("owner", owner);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory plus the contents of the given files copied to the given path.
@@ -5617,9 +5533,8 @@ impl Directory {
         query = query.arg("path", path.into());
         query = query.arg("sources", sources);
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory plus the contents of the given files copied to the given path.
@@ -5642,9 +5557,8 @@ impl Directory {
             query = query.arg("permissions", permissions);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory plus a new directory created at the given path.
@@ -5657,9 +5571,8 @@ impl Directory {
         let mut query = self.selection.select("withNewDirectory");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory plus a new directory created at the given path.
@@ -5679,9 +5592,8 @@ impl Directory {
             query = query.arg("permissions", permissions);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a new file added
@@ -5696,9 +5608,8 @@ impl Directory {
         query = query.arg("path", path.into());
         query = query.arg("contents", contents.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a new file added
@@ -5721,9 +5632,8 @@ impl Directory {
             query = query.arg("permissions", permissions);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory with the given Git-compatible patch applied.
@@ -5736,9 +5646,8 @@ impl Directory {
         let mut query = self.selection.select("withPatch");
         query = query.arg("patch", patch.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory with the given Git-compatible patch applied.
@@ -5758,9 +5667,8 @@ impl Directory {
             query = query.arg("onConflict", on_conflict);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory with the given Git-compatible patch file applied.
@@ -5775,13 +5683,16 @@ impl Directory {
             "patch",
             Box::new(move || {
                 let patch = patch.clone();
-                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    patch.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory with the given Git-compatible patch file applied.
@@ -5800,16 +5711,19 @@ impl Directory {
             "patch",
             Box::new(move || {
                 let patch = patch.clone();
-                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    patch.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         if let Some(on_conflict) = opts.on_conflict {
             query = query.arg("onConflict", on_conflict);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a symlink
@@ -5827,9 +5741,8 @@ impl Directory {
         query = query.arg("target", target.into());
         query = query.arg("linkName", link_name.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
@@ -5843,9 +5756,8 @@ impl Directory {
         let mut query = self.selection.select("withTimestamps");
         query = query.arg("timestamp", timestamp);
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a subdirectory removed
@@ -5857,9 +5769,8 @@ impl Directory {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with a file removed
@@ -5871,9 +5782,8 @@ impl Directory {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a snapshot with files removed
@@ -5888,9 +5798,8 @@ impl Directory {
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
@@ -5898,104 +5807,93 @@ impl Exportable for Directory {
     fn export(
         &self,
         path: impl Into<String>,
-    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+    ) -> impl core::future::Future<Output = Result<String, QueryError>> + Send {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Node for Directory {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for Directory {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Engine {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Engine {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Engine {
+impl Sealed for Engine {
     fn graphql_type() -> &'static str {
         "Engine"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Engine {
     /// The list of connected client IDs
-    pub async fn clients(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("clients");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn clients(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("clients");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Engine.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The local engine cache state tracked by dagql
     pub fn local_cache(&self) -> EngineCache {
-        let query = self.selection.select("localCache");
+        let mut query = self.selection.select("localCache");
         EngineCache {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The name of the engine instance.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
 }
 impl Node for Engine {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct EngineCache {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EngineCacheEntrySetOpts<'a> {
@@ -6023,24 +5921,16 @@ pub struct EngineCachePruneOpts<'a> {
 impl IntoID<Id> for EngineCache {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for EngineCache {
+impl Sealed for EngineCache {
     fn graphql_type() -> &'static str {
         "EngineCache"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl EngineCache {
@@ -6050,11 +5940,10 @@ impl EngineCache {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn entry_set(&self) -> EngineCacheEntrySet {
-        let query = self.selection.select("entrySet");
+        let mut query = self.selection.select("entrySet");
         EngineCacheEntrySet {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The current set of entries in the cache
@@ -6068,44 +5957,40 @@ impl EngineCache {
             query = query.arg("key", key);
         }
         EngineCacheEntrySet {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this EngineCache.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The maximum bytes to keep in the cache without pruning.
-    pub async fn max_used_space(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("maxUsedSpace");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn max_used_space(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("maxUsedSpace");
+        query.execute(&self.session).await
     }
     /// The target amount of free disk space the garbage collector will attempt to leave.
-    pub async fn min_free_space(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("minFreeSpace");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn min_free_space(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("minFreeSpace");
+        query.execute(&self.session).await
     }
     /// Prune the cache of releaseable entries
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn prune(&self) -> Result<Void, DaggerError> {
-        let query = self.selection.select("prune");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn prune(&self) -> Result<Void, QueryError> {
+        let mut query = self.selection.select("prune");
+        query.execute(&self.session).await
     }
     /// Prune the cache of releaseable entries
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn prune_opts<'a>(
-        &self,
-        opts: EngineCachePruneOpts<'a>,
-    ) -> Result<Void, DaggerError> {
+    pub async fn prune_opts<'a>(&self, opts: EngineCachePruneOpts<'a>) -> Result<Void, QueryError> {
         let mut query = self.selection.select("prune");
         if let Some(use_default_policy) = opts.use_default_policy {
             query = query.arg("useDefaultPolicy", use_default_policy);
@@ -6122,357 +6007,315 @@ impl EngineCache {
         if let Some(target_space) = opts.target_space {
             query = query.arg("targetSpace", target_space);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// The minimum amount of disk space this policy is guaranteed to retain.
-    pub async fn reserved_space(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("reservedSpace");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn reserved_space(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("reservedSpace");
+        query.execute(&self.session).await
     }
     /// The target number of bytes to keep when pruning.
-    pub async fn target_space(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("targetSpace");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn target_space(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("targetSpace");
+        query.execute(&self.session).await
     }
 }
 impl Node for EngineCache {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct EngineCacheEntry {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for EngineCacheEntry {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for EngineCacheEntry {
+impl Sealed for EngineCacheEntry {
     fn graphql_type() -> &'static str {
         "EngineCacheEntry"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl EngineCacheEntry {
     /// Whether the cache entry is actively being used.
-    pub async fn actively_used(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("activelyUsed");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn actively_used(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("activelyUsed");
+        query.execute(&self.session).await
     }
     /// The time the cache entry was created, in Unix nanoseconds.
-    pub async fn created_time_unix_nano(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("createdTimeUnixNano");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn created_time_unix_nano(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("createdTimeUnixNano");
+        query.execute(&self.session).await
     }
     /// The DagQL call that produced this cache entry.
-    pub async fn dagql_call(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("dagqlCall");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn dagql_call(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("dagqlCall");
+        query.execute(&self.session).await
     }
     /// The description of the cache entry.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// The disk space used by the cache entry.
-    pub async fn disk_space_bytes(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("diskSpaceBytes");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn disk_space_bytes(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("diskSpaceBytes");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this EngineCacheEntry.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The most recent time the cache entry was used, in Unix nanoseconds.
-    pub async fn most_recent_use_time_unix_nano(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("mostRecentUseTimeUnixNano");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn most_recent_use_time_unix_nano(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("mostRecentUseTimeUnixNano");
+        query.execute(&self.session).await
     }
     /// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
-    pub async fn record_type(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("recordType");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn record_type(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("recordType");
+        query.execute(&self.session).await
     }
     /// The storage record types represented by this cache entry.
-    pub async fn record_types(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("recordTypes");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn record_types(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("recordTypes");
+        query.execute(&self.session).await
     }
 }
 impl Node for EngineCacheEntry {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct EngineCacheEntrySet {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for EngineCacheEntrySet {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for EngineCacheEntrySet {
+impl Sealed for EngineCacheEntrySet {
     fn graphql_type() -> &'static str {
         "EngineCacheEntrySet"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl EngineCacheEntrySet {
     /// The total disk space used by the cache entries in this set.
-    pub async fn disk_space_bytes(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("diskSpaceBytes");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn disk_space_bytes(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("diskSpaceBytes");
+        query.execute(&self.session).await
     }
     /// The list of individual cache entries in the set
-    pub async fn entries(&self) -> Result<Vec<EngineCacheEntry>, DaggerError> {
-        let query = self.selection.select("entries");
+    pub async fn entries(&self) -> Result<Vec<EngineCacheEntry>, QueryError> {
+        let mut query = self.selection.select("entries");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| EngineCacheEntry {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("EngineCacheEntry"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The number of cache entries in this set.
-    pub async fn entry_count(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("entryCount");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn entry_count(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("entryCount");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this EngineCacheEntrySet.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for EngineCacheEntrySet {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct EnumTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for EnumTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for EnumTypeDef {
+impl Sealed for EnumTypeDef {
     fn graphql_type() -> &'static str {
         "EnumTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl EnumTypeDef {
     /// A doc string for the enum, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this EnumTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The members of the enum.
-    pub async fn members(&self) -> Result<Vec<EnumValueTypeDef>, DaggerError> {
-        let query = self.selection.select("members");
+    pub async fn members(&self) -> Result<Vec<EnumValueTypeDef>, QueryError> {
+        let mut query = self.selection.select("members");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| EnumValueTypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("EnumValueTypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The name of the enum.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The location of this enum declaration.
     pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
+        let mut query = self.selection.select("sourceMap");
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
-    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceModuleName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source_module_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("sourceModuleName");
+        query.execute(&self.session).await
     }
     /// The members of the enum.
-    pub async fn values(&self) -> Result<Vec<EnumValueTypeDef>, DaggerError> {
-        let query = self.selection.select("values");
+    pub async fn values(&self) -> Result<Vec<EnumValueTypeDef>, QueryError> {
+        let mut query = self.selection.select("values");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| EnumValueTypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("EnumValueTypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
 }
 impl Node for EnumTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct EnumValueTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for EnumValueTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for EnumValueTypeDef {
+impl Sealed for EnumValueTypeDef {
     fn graphql_type() -> &'static str {
         "EnumValueTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl EnumValueTypeDef {
     /// The reason this enum member is deprecated, if any.
-    pub async fn deprecated(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("deprecated");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn deprecated(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("deprecated");
+        query.execute(&self.session).await
     }
     /// A doc string for the enum member, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this EnumValueTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the enum member.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The location of this enum member declaration.
     pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
+        let mut query = self.selection.select("sourceMap");
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The value of the enum member
-    pub async fn value(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn value(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("value");
+        query.execute(&self.session).await
     }
 }
 impl Node for EnumValueTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct EnvFile {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EnvFileGetOpts {
@@ -6489,34 +6332,25 @@ pub struct EnvFileVariablesOpts {
 impl IntoID<Id> for EnvFile {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for EnvFile {
+impl Sealed for EnvFile {
     fn graphql_type() -> &'static str {
         "EnvFile"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl EnvFile {
     /// Return as a file
     pub fn as_file(&self) -> File {
-        let query = self.selection.select("asFile");
+        let mut query = self.selection.select("asFile");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Check if a variable exists
@@ -6524,10 +6358,10 @@ impl EnvFile {
     /// # Arguments
     ///
     /// * `name` - Variable name
-    pub async fn exists(&self, name: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn exists(&self, name: impl Into<String>) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Lookup a variable (last occurrence wins) and return its value, or an empty string
     ///
@@ -6535,10 +6369,10 @@ impl EnvFile {
     ///
     /// * `name` - Variable name
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn get(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn get(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("get");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Lookup a variable (last occurrence wins) and return its value, or an empty string
     ///
@@ -6550,18 +6384,18 @@ impl EnvFile {
         &self,
         name: impl Into<String>,
         opts: EnvFileGetOpts,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("get");
         query = query.arg("name", name.into());
         if let Some(raw) = opts.raw {
             query = query.arg("raw", raw);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// A unique identifier for this EnvFile.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
     ///
@@ -6572,9 +6406,8 @@ impl EnvFile {
         let mut query = self.selection.select("namespace");
         query = query.arg("prefix", prefix.into());
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all variables
@@ -6582,19 +6415,18 @@ impl EnvFile {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn variables(&self) -> Result<Vec<EnvVariable>, DaggerError> {
-        let query = self.selection.select("variables");
+    pub async fn variables(&self) -> Result<Vec<EnvVariable>, QueryError> {
+        let mut query = self.selection.select("variables");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| EnvVariable {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("EnvVariable"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -6606,22 +6438,21 @@ impl EnvFile {
     pub async fn variables_opts(
         &self,
         opts: EnvFileVariablesOpts,
-    ) -> Result<Vec<EnvVariable>, DaggerError> {
+    ) -> Result<Vec<EnvVariable>, QueryError> {
         let mut query = self.selection.select("variables");
         if let Some(raw) = opts.raw {
             query = query.arg("raw", raw);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| EnvVariable {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("EnvVariable"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -6636,9 +6467,8 @@ impl EnvFile {
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Remove all occurrences of the named variable
@@ -6650,126 +6480,106 @@ impl EnvFile {
         let mut query = self.selection.select("withoutVariable");
         query = query.arg("name", name.into());
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for EnvFile {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct EnvVariable {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for EnvVariable {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for EnvVariable {
+impl Sealed for EnvVariable {
     fn graphql_type() -> &'static str {
         "EnvVariable"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl EnvVariable {
     /// A unique identifier for this EnvVariable.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The environment variable name.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The environment variable value.
-    pub async fn value(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn value(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("value");
+        query.execute(&self.session).await
     }
 }
 impl Node for EnvVariable {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Error {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Error {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Error {
+impl Sealed for Error {
     fn graphql_type() -> &'static str {
         "Error"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Error {
     /// A unique identifier for this Error.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// A description of the error.
-    pub async fn message(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("message");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn message(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("message");
+        query.execute(&self.session).await
     }
     /// The extensions of the error.
-    pub async fn values(&self) -> Result<Vec<ErrorValue>, DaggerError> {
-        let query = self.selection.select("values");
+    pub async fn values(&self) -> Result<Vec<ErrorValue>, QueryError> {
+        let mut query = self.selection.select("values");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| ErrorValue {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("ErrorValue"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -6784,153 +6594,131 @@ impl Error {
         query = query.arg("name", name.into());
         query = query.arg("value", value);
         Error {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Error {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct ErrorValue {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ErrorValue {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ErrorValue {
+impl Sealed for ErrorValue {
     fn graphql_type() -> &'static str {
         "ErrorValue"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl ErrorValue {
     /// A unique identifier for this ErrorValue.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the value.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The value.
-    pub async fn value(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn value(&self) -> Result<Json, QueryError> {
+        let mut query = self.selection.select("value");
+        query.execute(&self.session).await
     }
 }
 impl Node for ErrorValue {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct FieldTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for FieldTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for FieldTypeDef {
+impl Sealed for FieldTypeDef {
     fn graphql_type() -> &'static str {
         "FieldTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl FieldTypeDef {
     /// The reason this enum member is deprecated, if any.
-    pub async fn deprecated(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("deprecated");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn deprecated(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("deprecated");
+        query.execute(&self.session).await
     }
     /// A doc string for the field, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this FieldTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the field in lowerCamelCase format.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The location of this field declaration.
     pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
+        let mut query = self.selection.select("sourceMap");
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The type of the field.
     pub fn type_def(&self) -> TypeDef {
-        let query = self.selection.select("typeDef");
+        let mut query = self.selection.select("typeDef");
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for FieldTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct File {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileAsEnvFileOpts {
@@ -7002,24 +6790,16 @@ pub struct FileWithReplacedOpts {
 impl IntoID<Id> for File {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for File {
+impl Sealed for File {
     fn graphql_type() -> &'static str {
         "File"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl File {
@@ -7029,11 +6809,10 @@ impl File {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_env_file(&self) -> EnvFile {
-        let query = self.selection.select("asEnvFile");
+        let mut query = self.selection.select("asEnvFile");
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Parse as an env file
@@ -7047,18 +6826,16 @@ impl File {
             query = query.arg("expand", expand);
         }
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Parse the file contents as JSON.
     pub fn as_json(&self) -> JsonValue {
-        let query = self.selection.select("asJSON");
+        let mut query = self.selection.select("asJSON");
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Change the owner of the file recursively.
@@ -7074,9 +6851,8 @@ impl File {
         let mut query = self.selection.select("chown");
         query = query.arg("owner", owner.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves the contents of the file.
@@ -7084,16 +6860,16 @@ impl File {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn contents(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("contents");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn contents(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("contents");
+        query.execute(&self.session).await
     }
     /// Retrieves the contents of the file.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn contents_opts(&self, opts: FileContentsOpts) -> Result<String, DaggerError> {
+    pub async fn contents_opts(&self, opts: FileContentsOpts) -> Result<String, QueryError> {
         let mut query = self.selection.select("contents");
         if let Some(offset_lines) = opts.offset_lines {
             query = query.arg("offsetLines", offset_lines);
@@ -7101,28 +6877,28 @@ impl File {
         if let Some(limit_lines) = opts.limit_lines {
             query = query.arg("limitLines", limit_lines);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn digest(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("digest");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn digest(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("digest");
+        query.execute(&self.session).await
     }
     /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn digest_opts(&self, opts: FileDigestOpts) -> Result<String, DaggerError> {
+    pub async fn digest_opts(&self, opts: FileDigestOpts) -> Result<String, QueryError> {
         let mut query = self.selection.select("digest");
         if let Some(exclude_metadata) = opts.exclude_metadata {
             query = query.arg("excludeMetadata", exclude_metadata);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Writes the file to a file path on the host.
     ///
@@ -7130,10 +6906,10 @@ impl File {
     ///
     /// * `path` - Location of the written directory (e.g., "output.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Writes the file to a file path on the host.
     ///
@@ -7145,23 +6921,23 @@ impl File {
         &self,
         path: impl Into<String>,
         opts: FileExportOpts,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(allow_parent_dir_path) = opts.allow_parent_dir_path {
             query = query.arg("allowParentDirPath", allow_parent_dir_path);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// A unique identifier for this File.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Retrieves the name of the file.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// Searches for content matching the given regular expression or literal string.
     /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
@@ -7173,20 +6949,19 @@ impl File {
     pub async fn search(
         &self,
         pattern: impl Into<String>,
-    ) -> Result<Vec<SearchResult>, DaggerError> {
+    ) -> Result<Vec<SearchResult>, QueryError> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| SearchResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("SearchResult"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -7201,7 +6976,7 @@ impl File {
         &self,
         pattern: impl Into<String>,
         opts: FileSearchOpts<'a>,
-    ) -> Result<Vec<SearchResult>, DaggerError> {
+    ) -> Result<Vec<SearchResult>, QueryError> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         if let Some(literal) = opts.literal {
@@ -7235,45 +7010,42 @@ impl File {
             query = query.arg("globs", globs);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| SearchResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("SearchResult"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Retrieves the size of the file, in bytes.
-    pub async fn size(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("size");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn size(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("size");
+        query.execute(&self.session).await
     }
     /// Return file status
     pub fn stat(&self) -> Stat {
-        let query = self.selection.select("stat");
+        let mut query = self.selection.select("stat");
         Stat {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Force evaluation in the engine.
-    pub async fn sync(&self) -> Result<File, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<File, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("File"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Retrieves this file with its name set to the given name.
@@ -7285,9 +7057,8 @@ impl File {
         let mut query = self.selection.select("withName");
         query = query.arg("name", name.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves the file with content replaced with the given text.
@@ -7306,9 +7077,8 @@ impl File {
         query = query.arg("search", search.into());
         query = query.arg("replacement", replacement.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves the file with content replaced with the given text.
@@ -7338,9 +7108,8 @@ impl File {
             query = query.arg("firstFrom", first_from);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves this file with its created/modified timestamps set to the given time.
@@ -7354,9 +7123,8 @@ impl File {
         let mut query = self.selection.select("withTimestamps");
         query = query.arg("timestamp", timestamp);
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
@@ -7364,42 +7132,41 @@ impl Exportable for File {
     fn export(
         &self,
         path: impl Into<String>,
-    ) -> impl core::future::Future<Output = Result<String, DaggerError>> + Send {
+    ) -> impl core::future::Future<Output = Result<String, QueryError>> + Send {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Node for File {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for File {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Function {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithArgOpts<'a> {
@@ -7439,86 +7206,75 @@ pub struct FunctionWithDeprecatedOpts<'a> {
 impl IntoID<Id> for Function {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Function {
+impl Sealed for Function {
     fn graphql_type() -> &'static str {
         "Function"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Function {
     /// Arguments accepted by the function, if any.
-    pub async fn args(&self) -> Result<Vec<FunctionArg>, DaggerError> {
-        let query = self.selection.select("args");
+    pub async fn args(&self) -> Result<Vec<FunctionArg>, QueryError> {
+        let mut query = self.selection.select("args");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| FunctionArg {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("FunctionArg"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The reason this function is deprecated, if any.
-    pub async fn deprecated(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("deprecated");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn deprecated(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("deprecated");
+        query.execute(&self.session).await
     }
     /// A doc string for the function, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Function.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the function.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The type returned by the function.
     pub fn return_type(&self) -> TypeDef {
-        let query = self.selection.select("returnType");
+        let mut query = self.selection.select("returnType");
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The location of this function declaration.
     pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
+        let mut query = self.selection.select("sourceMap");
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If this function is provided by a module, the name of the module. Unset otherwise.
-    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceModuleName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source_module_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("sourceModuleName");
+        query.execute(&self.session).await
     }
     /// Returns the function with the provided argument
     ///
@@ -7534,13 +7290,20 @@ impl Function {
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    type_def
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with the provided argument
@@ -7562,7 +7325,15 @@ impl Function {
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    type_def
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(description) = opts.description {
@@ -7587,9 +7358,8 @@ impl Function {
             query = query.arg("defaultAddress", default_address);
         }
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function updated to use the provided cache policy.
@@ -7602,9 +7372,8 @@ impl Function {
         let mut query = self.selection.select("withCachePolicy");
         query = query.arg("policy", policy);
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function updated to use the provided cache policy.
@@ -7624,18 +7393,16 @@ impl Function {
             query = query.arg("timeToLive", time_to_live);
         }
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with a flag indicating it's a check.
     pub fn with_check(&self) -> Function {
-        let query = self.selection.select("withCheck");
+        let mut query = self.selection.select("withCheck");
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with the provided deprecation reason.
@@ -7644,11 +7411,10 @@ impl Function {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_deprecated(&self) -> Function {
-        let query = self.selection.select("withDeprecated");
+        let mut query = self.selection.select("withDeprecated");
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with the provided deprecation reason.
@@ -7662,9 +7428,8 @@ impl Function {
             query = query.arg("reason", reason);
         }
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with the given doc string.
@@ -7676,18 +7441,16 @@ impl Function {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with a flag indicating it's a generator.
     pub fn with_generator(&self) -> Function {
-        let query = self.selection.select("withGenerator");
+        let mut query = self.selection.select("withGenerator");
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with the given source map.
@@ -7701,335 +7464,305 @@ impl Function {
             "sourceMap",
             Box::new(move || {
                 let source_map = source_map.clone();
-                Box::pin(async move { source_map.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source_map
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns the function with a flag indicating it returns a service for dagger up.
     pub fn with_up(&self) -> Function {
-        let query = self.selection.select("withUp");
+        let mut query = self.selection.select("withUp");
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Function {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct FunctionArg {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for FunctionArg {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for FunctionArg {
+impl Sealed for FunctionArg {
     fn graphql_type() -> &'static str {
         "FunctionArg"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl FunctionArg {
     /// Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
-    pub async fn default_address(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("defaultAddress");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn default_address(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("defaultAddress");
+        query.execute(&self.session).await
     }
     /// Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
-    pub async fn default_path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("defaultPath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn default_path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("defaultPath");
+        query.execute(&self.session).await
     }
     /// A default value to use for this argument when not explicitly set by the caller, if any.
-    pub async fn default_value(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("defaultValue");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn default_value(&self) -> Result<Json, QueryError> {
+        let mut query = self.selection.select("defaultValue");
+        query.execute(&self.session).await
     }
     /// The reason this function is deprecated, if any.
-    pub async fn deprecated(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("deprecated");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn deprecated(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("deprecated");
+        query.execute(&self.session).await
     }
     /// A doc string for the argument, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this FunctionArg.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
-    pub async fn ignore(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("ignore");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn ignore(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("ignore");
+        query.execute(&self.session).await
     }
     /// The name of the argument in lowerCamelCase format.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The location of this arg declaration.
     pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
+        let mut query = self.selection.select("sourceMap");
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The type of the argument.
     pub fn type_def(&self) -> TypeDef {
-        let query = self.selection.select("typeDef");
+        let mut query = self.selection.select("typeDef");
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for FunctionArg {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct FunctionCall {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for FunctionCall {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for FunctionCall {
+impl Sealed for FunctionCall {
     fn graphql_type() -> &'static str {
         "FunctionCall"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl FunctionCall {
     /// A unique identifier for this FunctionCall.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The argument values the function is being invoked with.
-    pub async fn input_args(&self) -> Result<Vec<FunctionCallArgValue>, DaggerError> {
-        let query = self.selection.select("inputArgs");
+    pub async fn input_args(&self) -> Result<Vec<FunctionCallArgValue>, QueryError> {
+        let mut query = self.selection.select("inputArgs");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| FunctionCallArgValue {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("FunctionCallArgValue"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The name of the function being called.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
-    pub async fn parent(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("parent");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn parent(&self) -> Result<Json, QueryError> {
+        let mut query = self.selection.select("parent");
+        query.execute(&self.session).await
     }
     /// The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
-    pub async fn parent_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("parentName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn parent_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("parentName");
+        query.execute(&self.session).await
     }
     /// Return an error from the function.
     ///
     /// # Arguments
     ///
     /// * `error` - The error to return.
-    pub async fn return_error(&self, error: impl IntoID<Id>) -> Result<Void, DaggerError> {
+    pub async fn return_error(&self, error: impl IntoID<Id>) -> Result<Void, QueryError> {
         let mut query = self.selection.select("returnError");
         query = query.arg_lazy(
             "error",
             Box::new(move || {
                 let error = error.clone();
-                Box::pin(async move { error.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    error.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Set the return value of the function call to the provided value.
     ///
     /// # Arguments
     ///
     /// * `value` - JSON serialization of the return value.
-    pub async fn return_value(&self, value: Json) -> Result<Void, DaggerError> {
+    pub async fn return_value(&self, value: Json) -> Result<Void, QueryError> {
         let mut query = self.selection.select("returnValue");
         query = query.arg("value", value);
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
 }
 impl Node for FunctionCall {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct FunctionCallArgValue {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for FunctionCallArgValue {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for FunctionCallArgValue {
+impl Sealed for FunctionCallArgValue {
     fn graphql_type() -> &'static str {
         "FunctionCallArgValue"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl FunctionCallArgValue {
     /// A unique identifier for this FunctionCallArgValue.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the argument.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The value of the argument represented as a JSON serialized string.
-    pub async fn value(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn value(&self) -> Result<Json, QueryError> {
+        let mut query = self.selection.select("value");
+        query.execute(&self.session).await
     }
 }
 impl Node for FunctionCallArgValue {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct GeneratedCode {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for GeneratedCode {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for GeneratedCode {
+impl Sealed for GeneratedCode {
     fn graphql_type() -> &'static str {
         "GeneratedCode"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl GeneratedCode {
     /// The directory containing the generated code.
     pub fn code(&self) -> Directory {
-        let query = self.selection.select("code");
+        let mut query = self.selection.select("code");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this GeneratedCode.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// List of paths to mark generated in version control (i.e. .gitattributes).
-    pub async fn vcs_generated_paths(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("vcsGeneratedPaths");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn vcs_generated_paths(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("vcsGeneratedPaths");
+        query.execute(&self.session).await
     }
     /// List of paths to ignore in version control (i.e. .gitignore).
-    pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("vcsIgnoredPaths");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("vcsIgnoredPaths");
+        query.execute(&self.session).await
     }
     /// Set the list of paths to mark generated in version control.
     pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
@@ -8039,9 +7772,8 @@ impl GeneratedCode {
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         GeneratedCode {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set the list of paths to ignore in version control.
@@ -8052,119 +7784,105 @@ impl GeneratedCode {
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         GeneratedCode {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for GeneratedCode {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Generator {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Generator {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Generator {
+impl Sealed for Generator {
     fn graphql_type() -> &'static str {
         "Generator"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Generator {
     /// The generated changeset from the last run
     pub fn changes(&self) -> Changeset {
-        let query = self.selection.select("changes");
+        let mut query = self.selection.select("changes");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Whether the generator complete
-    pub async fn completed(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("completed");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn completed(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("completed");
+        query.execute(&self.session).await
     }
     /// Return the description of the generator
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Generator.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Whether changeset from the last generator run is empty or not
-    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("isEmpty");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn is_empty(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("isEmpty");
+        query.execute(&self.session).await
     }
     /// Return the fully qualified name of the generator
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The original module in which the generator has been defined
     pub fn original_module(&self) -> Module {
-        let query = self.selection.select("originalModule");
+        let mut query = self.selection.select("originalModule");
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The path of the generator within its module
-    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn path(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("path");
+        query.execute(&self.session).await
     }
     /// Execute the generator
     pub fn run(&self) -> Generator {
-        let query = self.selection.select("run");
+        let mut query = self.selection.select("run");
         Generator {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Generator {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct GeneratorGroup {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GeneratorGroupChangesOpts {
@@ -8175,24 +7893,16 @@ pub struct GeneratorGroupChangesOpts {
 impl IntoID<Id> for GeneratorGroup {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for GeneratorGroup {
+impl Sealed for GeneratorGroup {
     fn graphql_type() -> &'static str {
         "GeneratorGroup"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl GeneratorGroup {
@@ -8204,11 +7914,10 @@ impl GeneratorGroup {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn changes(&self) -> Changeset {
-        let query = self.selection.select("changes");
+        let mut query = self.selection.select("changes");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The combined changes from the last run of the generators
@@ -8224,66 +7933,62 @@ impl GeneratorGroup {
             query = query.arg("onConflict", on_conflict);
         }
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this GeneratorGroup.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Whether the generated changeset from the last run is empty or not
-    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("isEmpty");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn is_empty(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("isEmpty");
+        query.execute(&self.session).await
     }
     /// Return a list of individual generators and their details
-    pub async fn list(&self) -> Result<Vec<Generator>, DaggerError> {
-        let query = self.selection.select("list");
+    pub async fn list(&self) -> Result<Vec<Generator>, QueryError> {
+        let mut query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Generator {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Generator"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Load failures tolerated while collecting the generators.
     /// Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
-    pub async fn load_failures(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("loadFailures");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn load_failures(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("loadFailures");
+        query.execute(&self.session).await
     }
     /// Execute all selected generators
     pub fn run(&self) -> GeneratorGroup {
-        let query = self.selection.select("run");
+        let mut query = self.selection.select("run");
         GeneratorGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for GeneratorGroup {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct GitRef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefAsWorkspaceOpts<'a> {
@@ -8306,24 +8011,16 @@ pub struct GitRefTreeOpts {
 impl IntoID<Id> for GitRef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for GitRef {
+impl Sealed for GitRef {
     fn graphql_type() -> &'static str {
         "GitRef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl GitRef {
@@ -8333,11 +8030,10 @@ impl GitRef {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_workspace(&self) -> Workspace {
-        let query = self.selection.select("asWorkspace");
+        let mut query = self.selection.select("asWorkspace");
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a synthetic workspace from this git ref.
@@ -8351,15 +8047,14 @@ impl GitRef {
             query = query.arg("cwd", cwd);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The resolved commit id at this ref.
-    pub async fn commit(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("commit");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn commit(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("commit");
+        query.execute(&self.session).await
     }
     /// Find the best common ancestor between this ref and another ref.
     ///
@@ -8372,24 +8067,27 @@ impl GitRef {
             "other",
             Box::new(move || {
                 let other = other.clone();
-                Box::pin(async move { other.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    other.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this GitRef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The resolved ref name at this ref.
-    pub async fn r#ref(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("ref");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn r#ref(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("ref");
+        query.execute(&self.session).await
     }
     /// The filesystem tree at this ref.
     ///
@@ -8397,11 +8095,10 @@ impl GitRef {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tree(&self) -> Directory {
-        let query = self.selection.select("tree");
+        let mut query = self.selection.select("tree");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The filesystem tree at this ref.
@@ -8421,24 +8118,22 @@ impl GitRef {
             query = query.arg("includeTags", include_tags);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for GitRef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct GitRepository {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryAsWorkspaceOpts<'a> {
@@ -8461,24 +8156,16 @@ pub struct GitRepositoryTagsOpts<'a> {
 impl IntoID<Id> for GitRepository {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for GitRepository {
+impl Sealed for GitRepository {
     fn graphql_type() -> &'static str {
         "GitRepository"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl GitRepository {
@@ -8488,11 +8175,10 @@ impl GitRepository {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_workspace(&self) -> Workspace {
-        let query = self.selection.select("asWorkspace");
+        let mut query = self.selection.select("asWorkspace");
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a synthetic workspace from this git repository.
@@ -8506,9 +8192,8 @@ impl GitRepository {
             query = query.arg("cwd", cwd);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns details of a branch.
@@ -8520,9 +8205,8 @@ impl GitRepository {
         let mut query = self.selection.select("branch");
         query = query.arg("name", name.into());
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// branches that match any of the given glob patterns.
@@ -8530,9 +8214,9 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn branches(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("branches");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn branches(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("branches");
+        query.execute(&self.session).await
     }
     /// branches that match any of the given glob patterns.
     ///
@@ -8542,12 +8226,12 @@ impl GitRepository {
     pub async fn branches_opts<'a>(
         &self,
         opts: GitRepositoryBranchesOpts<'a>,
-    ) -> Result<Vec<String>, DaggerError> {
+    ) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("branches");
         if let Some(patterns) = opts.patterns {
             query = query.arg("patterns", patterns);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Returns details of a commit.
     ///
@@ -8558,32 +8242,29 @@ impl GitRepository {
         let mut query = self.selection.select("commit");
         query = query.arg("id", id.into());
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns details for HEAD.
     pub fn head(&self) -> GitRef {
-        let query = self.selection.select("head");
+        let mut query = self.selection.select("head");
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this GitRepository.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Returns details for the latest semver tag.
     pub fn latest_version(&self) -> GitRef {
-        let query = self.selection.select("latestVersion");
+        let mut query = self.selection.select("latestVersion");
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns details of a ref.
@@ -8595,9 +8276,8 @@ impl GitRepository {
         let mut query = self.selection.select("ref");
         query = query.arg("name", name.into());
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns details of a tag.
@@ -8609,9 +8289,8 @@ impl GitRepository {
         let mut query = self.selection.select("tag");
         query = query.arg("name", name.into());
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// tags that match any of the given glob patterns.
@@ -8619,9 +8298,9 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn tags(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("tags");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn tags(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("tags");
+        query.execute(&self.session).await
     }
     /// tags that match any of the given glob patterns.
     ///
@@ -8631,161 +8310,141 @@ impl GitRepository {
     pub async fn tags_opts<'a>(
         &self,
         opts: GitRepositoryTagsOpts<'a>,
-    ) -> Result<Vec<String>, DaggerError> {
+    ) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("tags");
         if let Some(patterns) = opts.patterns {
             query = query.arg("patterns", patterns);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Returns the changeset of uncommitted changes in the git repository.
     pub fn uncommitted(&self) -> Changeset {
-        let query = self.selection.select("uncommitted");
+        let mut query = self.selection.select("uncommitted");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The URL of the git repository.
-    pub async fn url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("url");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn url(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("url");
+        query.execute(&self.session).await
     }
 }
 impl Node for GitRepository {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct HttpState {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for HttpState {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for HttpState {
+impl Sealed for HttpState {
     fn graphql_type() -> &'static str {
         "HTTPState"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl HttpState {
     /// A unique identifier for this HTTPState.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for HttpState {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct HealthcheckConfig {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for HealthcheckConfig {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for HealthcheckConfig {
+impl Sealed for HealthcheckConfig {
     fn graphql_type() -> &'static str {
         "HealthcheckConfig"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl HealthcheckConfig {
     /// Healthcheck command arguments.
-    pub async fn args(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("args");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn args(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("args");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this HealthcheckConfig.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Interval between running healthcheck. Example:30s
-    pub async fn interval(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("interval");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn interval(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("interval");
+        query.execute(&self.session).await
     }
     /// The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
-    pub async fn retries(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("retries");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn retries(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("retries");
+        query.execute(&self.session).await
     }
     /// Healthcheck command is a shell command.
-    pub async fn shell(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("shell");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn shell(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("shell");
+        query.execute(&self.session).await
     }
     /// StartInterval configures the duration between checks during the startup phase. Example:5s
-    pub async fn start_interval(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("startInterval");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn start_interval(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("startInterval");
+        query.execute(&self.session).await
     }
     /// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
-    pub async fn start_period(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("startPeriod");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn start_period(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("startPeriod");
+        query.execute(&self.session).await
     }
     /// Healthcheck timeout. Example:3s
-    pub async fn timeout(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("timeout");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn timeout(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("timeout");
+        query.execute(&self.session).await
     }
 }
 impl Node for HealthcheckConfig {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Host {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostDirectoryOpts<'a> {
@@ -8835,24 +8494,16 @@ pub struct HostTunnelOpts {
 impl IntoID<Id> for Host {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Host {
+impl Sealed for Host {
     fn graphql_type() -> &'static str {
         "Host"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Host {
@@ -8865,9 +8516,8 @@ impl Host {
         let mut query = self.selection.select("containerImage");
         query = query.arg("name", name.into());
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Accesses a directory on the host.
@@ -8880,9 +8530,8 @@ impl Host {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Accesses a directory on the host.
@@ -8911,9 +8560,8 @@ impl Host {
             query = query.arg("gitignore", gitignore);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Accesses a file on the host.
@@ -8926,9 +8574,8 @@ impl Host {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Accesses a file on the host.
@@ -8944,9 +8591,8 @@ impl Host {
             query = query.arg("noCache", no_cache);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
@@ -8955,10 +8601,10 @@ impl Host {
     ///
     /// * `name` - name of the file or directory to search for
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn find_up(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn find_up(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
     ///
@@ -8970,18 +8616,18 @@ impl Host {
         &self,
         name: impl Into<String>,
         opts: HostFindUpOpts,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Host.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Creates a service that forwards traffic to a specified address via the host.
     ///
@@ -8997,9 +8643,8 @@ impl Host {
         let mut query = self.selection.select("service");
         query = query.arg("ports", ports);
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a service that forwards traffic to a specified address via the host.
@@ -9019,9 +8664,8 @@ impl Host {
             query = query.arg("host", host);
         }
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a tunnel that forwards traffic from the host to a service.
@@ -9036,13 +8680,20 @@ impl Host {
             "service",
             Box::new(move || {
                 let service = service.clone();
-                Box::pin(async move { service.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    service
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a tunnel that forwards traffic from the host to a service.
@@ -9057,7 +8708,15 @@ impl Host {
             "service",
             Box::new(move || {
                 let service = service.clone();
-                Box::pin(async move { service.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    service
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(native) = opts.native {
@@ -9067,9 +8726,8 @@ impl Host {
             query = query.arg("ports", ports);
         }
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Accesses a Unix socket on the host.
@@ -9081,173 +8739,150 @@ impl Host {
         let mut query = self.selection.select("unixSocket");
         query = query.arg("path", path.into());
         Socket {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Host {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct InputTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for InputTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for InputTypeDef {
+impl Sealed for InputTypeDef {
     fn graphql_type() -> &'static str {
         "InputTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl InputTypeDef {
     /// Static fields defined on this input object, if any.
-    pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, DaggerError> {
-        let query = self.selection.select("fields");
+    pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, QueryError> {
+        let mut query = self.selection.select("fields");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| FieldTypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("FieldTypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// A unique identifier for this InputTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the input object.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
 }
 impl Node for InputTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct InterfaceTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for InterfaceTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for InterfaceTypeDef {
+impl Sealed for InterfaceTypeDef {
     fn graphql_type() -> &'static str {
         "InterfaceTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl InterfaceTypeDef {
     /// The doc string for the interface, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// Functions defined on this interface, if any.
-    pub async fn functions(&self) -> Result<Vec<Function>, DaggerError> {
-        let query = self.selection.select("functions");
+    pub async fn functions(&self) -> Result<Vec<Function>, QueryError> {
+        let mut query = self.selection.select("functions");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Function {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Function"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// A unique identifier for this InterfaceTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the interface.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The location of this interface declaration.
     pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
+        let mut query = self.selection.select("sourceMap");
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
-    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceModuleName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source_module_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("sourceModuleName");
+        query.execute(&self.session).await
     }
 }
 impl Node for InterfaceTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct JsonValue {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct JsonValueContentsOpts<'a> {
@@ -9261,67 +8896,58 @@ pub struct JsonValueContentsOpts<'a> {
 impl IntoID<Id> for JsonValue {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for JsonValue {
+impl Sealed for JsonValue {
     fn graphql_type() -> &'static str {
         "JSONValue"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl JsonValue {
     /// Decode an array from json
-    pub async fn as_array(&self) -> Result<Vec<JsonValue>, DaggerError> {
-        let query = self.selection.select("asArray");
+    pub async fn as_array(&self) -> Result<Vec<JsonValue>, QueryError> {
+        let mut query = self.selection.select("asArray");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| JsonValue {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("JSONValue"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Decode a boolean from json
-    pub async fn as_boolean(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("asBoolean");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn as_boolean(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("asBoolean");
+        query.execute(&self.session).await
     }
     /// Decode an integer from json
-    pub async fn as_integer(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("asInteger");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn as_integer(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("asInteger");
+        query.execute(&self.session).await
     }
     /// Decode a string from json
-    pub async fn as_string(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("asString");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn as_string(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("asString");
+        query.execute(&self.session).await
     }
     /// Return the value encoded as json
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn contents(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("contents");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn contents(&self) -> Result<Json, QueryError> {
+        let mut query = self.selection.select("contents");
+        query.execute(&self.session).await
     }
     /// Return the value encoded as json
     ///
@@ -9331,7 +8957,7 @@ impl JsonValue {
     pub async fn contents_opts<'a>(
         &self,
         opts: JsonValueContentsOpts<'a>,
-    ) -> Result<Json, DaggerError> {
+    ) -> Result<Json, QueryError> {
         let mut query = self.selection.select("contents");
         if let Some(pretty) = opts.pretty {
             query = query.arg("pretty", pretty);
@@ -9339,7 +8965,7 @@ impl JsonValue {
         if let Some(indent) = opts.indent {
             query = query.arg("indent", indent);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Lookup the field at the given path, and return its value.
     ///
@@ -9353,20 +8979,19 @@ impl JsonValue {
             path.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// List fields of the encoded object
-    pub async fn fields(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("fields");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn fields(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("fields");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this JSONValue.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Encode a boolean to json
     ///
@@ -9377,9 +9002,8 @@ impl JsonValue {
         let mut query = self.selection.select("newBoolean");
         query = query.arg("value", value);
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Encode an integer to json
@@ -9391,9 +9015,8 @@ impl JsonValue {
         let mut query = self.selection.select("newInteger");
         query = query.arg("value", value);
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Encode a string to json
@@ -9405,9 +9028,8 @@ impl JsonValue {
         let mut query = self.selection.select("newString");
         query = query.arg("value", value.into());
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a new json value, decoded from the given content
@@ -9419,9 +9041,8 @@ impl JsonValue {
         let mut query = self.selection.select("withContents");
         query = query.arg("contents", contents);
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Set a new field at the given path
@@ -9440,28 +9061,30 @@ impl JsonValue {
             "value",
             Box::new(move || {
                 let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    value.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for JsonValue {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Llm {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmLoopOpts {
@@ -9511,36 +9134,28 @@ pub struct LlmWithToolsOpts<'a> {
 impl IntoID<Id> for Llm {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Llm {
+impl Sealed for Llm {
     fn graphql_type() -> &'static str {
         "LLM"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Llm {
     /// estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
-    pub async fn context_tokens(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("contextTokens");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn context_tokens(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("contextTokens");
+        query.execute(&self.session).await
     }
     /// The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
-    pub async fn context_window(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("contextWindow");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn context_window(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("contextWindow");
+        query.execute(&self.session).await
     }
     /// Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
     ///
@@ -9551,25 +9166,24 @@ impl Llm {
         let mut query = self.selection.select("fork");
         query = query.arg("label", label.into());
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
-    pub async fn has_pending(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("hasPending");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn has_pending(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("hasPending");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this LLM.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The text of the model's most recent reply.
-    pub async fn last_reply(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("lastReply");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn last_reply(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("lastReply");
+        query.execute(&self.session).await
     }
     /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
     ///
@@ -9577,11 +9191,10 @@ impl Llm {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#loop(&self) -> Llm {
-        let query = self.selection.select("loop");
+        let mut query = self.selection.select("loop");
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
@@ -9598,55 +9211,52 @@ impl Llm {
             query = query.arg("maxTokens", max_tokens);
         }
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The full message history, as structured messages.
-    pub async fn messages(&self) -> Result<Vec<LlmMessage>, DaggerError> {
-        let query = self.selection.select("messages");
+    pub async fn messages(&self) -> Result<Vec<LlmMessage>, QueryError> {
+        let mut query = self.selection.select("messages");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| LlmMessage {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("LLMMessage"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The model the conversation is running against, after resolving any configured default.
-    pub async fn model(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("model");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn model(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("model");
+        query.execute(&self.session).await
     }
     /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
-    pub async fn portable_id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("portableID");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn portable_id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("portableID");
+        query.execute(&self.session).await
     }
     /// The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
-    pub async fn provider(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("provider");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn provider(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("provider");
+        query.execute(&self.session).await
     }
     /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
-    pub async fn replay(&self) -> Result<Llm, DaggerError> {
-        let query = self.selection.select("replay");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn replay(&self) -> Result<Llm, QueryError> {
+        let mut query = self.selection.select("replay");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("LLM"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
@@ -9655,11 +9265,10 @@ impl Llm {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn step(&self) -> Llm {
-        let query = self.selection.select("step");
+        let mut query = self.selection.select("step");
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
@@ -9673,43 +9282,40 @@ impl Llm {
             query = query.arg("maxTokens", max_tokens);
         }
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
-    pub async fn sync(&self) -> Result<Llm, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<Llm, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("LLM"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// The cumulative token usage, summed across every API call in the conversation.
     pub fn token_usage(&self) -> LlmTokenUsage {
-        let query = self.selection.select("tokenUsage");
+        let mut query = self.selection.select("tokenUsage");
         LlmTokenUsage {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Render documentation for the tools currently exposed to the model.
-    pub async fn tools(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("tools");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn tools(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("tools");
+        query.execute(&self.session).await
     }
     /// The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
-    pub async fn transcript(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("transcript");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn transcript(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("transcript");
+        query.execute(&self.session).await
     }
     /// Add an external MCP server to the LLM
     ///
@@ -9724,13 +9330,20 @@ impl Llm {
             "service",
             Box::new(move || {
                 let service = service.clone();
-                Box::pin(async move { service.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    service
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
@@ -9743,9 +9356,8 @@ impl Llm {
         let mut query = self.selection.select("withModel");
         query = query.arg("model", model.into());
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
@@ -9761,9 +9373,8 @@ impl Llm {
             query = query.arg("provider", provider);
         }
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Queue a user prompt, to be sent to the model on the next step or loop.
@@ -9775,9 +9386,8 @@ impl Llm {
         let mut query = self.selection.select("withPrompt");
         query = query.arg("prompt", prompt.into());
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Queue a file's contents as a user prompt, like withPrompt.
@@ -9791,13 +9401,16 @@ impl Llm {
             "file",
             Box::new(move || {
                 let file = file.clone();
-                Box::pin(async move { file.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    file.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
@@ -9810,9 +9423,8 @@ impl Llm {
         let mut query = self.selection.select("withResponse");
         query = query.arg("content", content);
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
@@ -9844,9 +9456,8 @@ impl Llm {
             query = query.arg("totalTokens", total_tokens);
         }
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Add a system prompt, instructing the model across the whole conversation.
@@ -9858,9 +9469,8 @@ impl Llm {
         let mut query = self.selection.select("withSystemPrompt");
         query = query.arg("prompt", prompt.into());
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Append the result of a tool call to the message history.
@@ -9881,9 +9491,8 @@ impl Llm {
         query = query.arg("content", content.into());
         query = query.arg("errored", errored);
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
@@ -9898,13 +9507,20 @@ impl Llm {
             "object",
             Box::new(move || {
                 let object = object.clone();
-                Box::pin(async move { object.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    object
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
@@ -9919,16 +9535,23 @@ impl Llm {
             "object",
             Box::new(move || {
                 let object = object.clone();
-                Box::pin(async move { object.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    object
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(except) = opts.except {
             query = query.arg("except", except);
         }
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
@@ -9942,401 +9565,355 @@ impl Llm {
             "workspace",
             Box::new(move || {
                 let workspace = workspace.clone();
-                Box::pin(async move { workspace.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    workspace
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Disable the default system prompt
     pub fn without_default_system_prompt(&self) -> Llm {
-        let query = self.selection.select("withoutDefaultSystemPrompt");
+        let mut query = self.selection.select("withoutDefaultSystemPrompt");
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Clear the message history, keeping only the system prompts.
     pub fn without_message_history(&self) -> Llm {
-        let query = self.selection.select("withoutMessageHistory");
+        let mut query = self.selection.select("withoutMessageHistory");
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Clear the user-added system prompts, keeping only the default system prompt.
     pub fn without_system_prompts(&self) -> Llm {
-        let query = self.selection.select("withoutSystemPrompts");
+        let mut query = self.selection.select("withoutSystemPrompts");
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return the workspace the LLM is bound to.
     pub fn workspace(&self) -> Workspace {
-        let query = self.selection.select("workspace");
+        let mut query = self.selection.select("workspace");
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Llm {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for Llm {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct LlmContentBlock {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for LlmContentBlock {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for LlmContentBlock {
+impl Sealed for LlmContentBlock {
     fn graphql_type() -> &'static str {
         "LLMContentBlock"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl LlmContentBlock {
     /// The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
-    pub async fn arguments(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("arguments");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn arguments(&self) -> Result<Json, QueryError> {
+        let mut query = self.selection.select("arguments");
+        query.execute(&self.session).await
     }
     /// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
-    pub async fn call_id(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("callId");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn call_id(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("callId");
+        query.execute(&self.session).await
     }
     /// Whether the tool call resulted in an error (for TOOL_RESULT kind).
-    pub async fn errored(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("errored");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn errored(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("errored");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this LLMContentBlock.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The kind of content block, which determines the other populated fields.
-    pub async fn kind(&self) -> Result<LlmContentBlockKind, DaggerError> {
-        let query = self.selection.select("kind");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn kind(&self) -> Result<LlmContentBlockKind, QueryError> {
+        let mut query = self.selection.select("kind");
+        query.execute(&self.session).await
     }
     /// Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
-    pub async fn signature(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("signature");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn signature(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("signature");
+        query.execute(&self.session).await
     }
     /// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
-    pub async fn text(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("text");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn text(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("text");
+        query.execute(&self.session).await
     }
     /// The name of the tool called (for TOOL_CALL kind).
-    pub async fn tool_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("toolName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn tool_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("toolName");
+        query.execute(&self.session).await
     }
 }
 impl Node for LlmContentBlock {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct LlmMessage {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for LlmMessage {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for LlmMessage {
+impl Sealed for LlmMessage {
     fn graphql_type() -> &'static str {
         "LLMMessage"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl LlmMessage {
     /// The message's content blocks, in the order the model produced them.
-    pub async fn content(&self) -> Result<Vec<LlmContentBlock>, DaggerError> {
-        let query = self.selection.select("content");
+    pub async fn content(&self) -> Result<Vec<LlmContentBlock>, QueryError> {
+        let mut query = self.selection.select("content");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| LlmContentBlock {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("LLMContentBlock"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// A unique identifier for this LLMMessage.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The role that produced this message.
-    pub async fn role(&self) -> Result<LlmMessageRole, DaggerError> {
-        let query = self.selection.select("role");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn role(&self) -> Result<LlmMessageRole, QueryError> {
+        let mut query = self.selection.select("role");
+        query.execute(&self.session).await
     }
     /// Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
     pub fn token_usage(&self) -> LlmTokenUsage {
-        let query = self.selection.select("tokenUsage");
+        let mut query = self.selection.select("tokenUsage");
         LlmTokenUsage {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for LlmMessage {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct LlmTokenUsage {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for LlmTokenUsage {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for LlmTokenUsage {
+impl Sealed for LlmTokenUsage {
     fn graphql_type() -> &'static str {
         "LLMTokenUsage"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl LlmTokenUsage {
     /// Input tokens served from the provider's prompt cache.
-    pub async fn cached_token_reads(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("cachedTokenReads");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn cached_token_reads(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("cachedTokenReads");
+        query.execute(&self.session).await
     }
     /// Input tokens written to the provider's prompt cache.
-    pub async fn cached_token_writes(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("cachedTokenWrites");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn cached_token_writes(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("cachedTokenWrites");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this LLMTokenUsage.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Uncached input tokens sent to the model.
-    pub async fn input_tokens(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("inputTokens");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn input_tokens(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("inputTokens");
+        query.execute(&self.session).await
     }
     /// Tokens received from the model, including text and tool calls.
-    pub async fn output_tokens(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("outputTokens");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn output_tokens(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("outputTokens");
+        query.execute(&self.session).await
     }
     /// Total tokens consumed, as reported by the provider.
-    pub async fn total_tokens(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("totalTokens");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn total_tokens(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("totalTokens");
+        query.execute(&self.session).await
     }
 }
 impl Node for LlmTokenUsage {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Label {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Label {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Label {
+impl Sealed for Label {
     fn graphql_type() -> &'static str {
         "Label"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Label {
     /// A unique identifier for this Label.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The label name.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The label value.
-    pub async fn value(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn value(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("value");
+        query.execute(&self.session).await
     }
 }
 impl Node for Label {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct ListTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ListTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ListTypeDef {
+impl Sealed for ListTypeDef {
     fn graphql_type() -> &'static str {
         "ListTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl ListTypeDef {
     /// The type of the elements in the list.
     pub fn element_type_def(&self) -> TypeDef {
-        let query = self.selection.select("elementTypeDef");
+        let mut query = self.selection.select("elementTypeDef");
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this ListTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for ListTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Module {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleChecksOpts<'a> {
@@ -10371,24 +9948,16 @@ pub struct ModuleServicesOpts<'a> {
 impl IntoID<Id> for Module {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Module {
+impl Sealed for Module {
     fn graphql_type() -> &'static str {
         "Module"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Module {
@@ -10401,9 +9970,8 @@ impl Module {
         let mut query = self.selection.select("check");
         query = query.arg("name", name.into());
         Check {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all checks defined by the module
@@ -10412,11 +9980,10 @@ impl Module {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn checks(&self) -> CheckGroup {
-        let query = self.selection.select("checks");
+        let mut query = self.selection.select("checks");
         CheckGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all checks defined by the module
@@ -10433,57 +10000,53 @@ impl Module {
             query = query.arg("noGenerate", no_generate);
         }
         CheckGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The dependencies of the module.
-    pub async fn dependencies(&self) -> Result<Vec<Module>, DaggerError> {
-        let query = self.selection.select("dependencies");
+    pub async fn dependencies(&self) -> Result<Vec<Module>, QueryError> {
+        let mut query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Module {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Module"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The doc string of the module, if any
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// Enumerations served by this module.
-    pub async fn enums(&self) -> Result<Vec<TypeDef>, DaggerError> {
-        let query = self.selection.select("enums");
+    pub async fn enums(&self) -> Result<Vec<TypeDef>, QueryError> {
+        let mut query = self.selection.select("enums");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| TypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("TypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
-        let query = self.selection.select("generatedContextDirectory");
+        let mut query = self.selection.select("generatedContextDirectory");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return the generator defined by the module with the given name. Must match to exactly one generator.
@@ -10495,9 +10058,8 @@ impl Module {
         let mut query = self.selection.select("generator");
         query = query.arg("name", name.into());
         Generator {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all generators defined by the module
@@ -10506,11 +10068,10 @@ impl Module {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn generators(&self) -> GeneratorGroup {
-        let query = self.selection.select("generators");
+        let mut query = self.selection.select("generators");
         GeneratorGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all generators defined by the module
@@ -10524,30 +10085,28 @@ impl Module {
             query = query.arg("include", include);
         }
         GeneratorGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this Module.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Interfaces served by this module.
-    pub async fn interfaces(&self) -> Result<Vec<TypeDef>, DaggerError> {
-        let query = self.selection.select("interfaces");
+    pub async fn interfaces(&self) -> Result<Vec<TypeDef>, QueryError> {
+        let mut query = self.selection.select("interfaces");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| TypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("TypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -10555,51 +10114,47 @@ impl Module {
     /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
     /// Note: this is in the context of a module, so some core types may be hidden.
     pub fn introspection_schema_json(&self) -> File {
-        let query = self.selection.select("introspectionSchemaJSON");
+        let mut query = self.selection.select("introspectionSchemaJSON");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The name of the module
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// Objects served by this module.
-    pub async fn objects(&self) -> Result<Vec<TypeDef>, DaggerError> {
-        let query = self.selection.select("objects");
+    pub async fn objects(&self) -> Result<Vec<TypeDef>, QueryError> {
+        let mut query = self.selection.select("objects");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| TypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("TypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
     pub fn runtime(&self) -> Container {
-        let query = self.selection.select("runtime");
+        let mut query = self.selection.select("runtime");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The SDK config used by this module.
     pub fn sdk(&self) -> SdkConfig {
-        let query = self.selection.select("sdk");
+        let mut query = self.selection.select("sdk");
         SdkConfig {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Serve a module's API in the current session.
@@ -10608,9 +10163,9 @@ impl Module {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn serve(&self) -> Result<Void, DaggerError> {
-        let query = self.selection.select("serve");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn serve(&self) -> Result<Void, QueryError> {
+        let mut query = self.selection.select("serve");
+        query.execute(&self.session).await
     }
     /// Serve a module's API in the current session.
     /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
@@ -10618,7 +10173,7 @@ impl Module {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<Void, DaggerError> {
+    pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<Void, QueryError> {
         let mut query = self.selection.select("serve");
         if let Some(include_dependencies) = opts.include_dependencies {
             query = query.arg("includeDependencies", include_dependencies);
@@ -10626,7 +10181,7 @@ impl Module {
         if let Some(entrypoint) = opts.entrypoint {
             query = query.arg("entrypoint", entrypoint);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Return all services defined by the module
     ///
@@ -10634,11 +10189,10 @@ impl Module {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn services(&self) -> UpGroup {
-        let query = self.selection.select("services");
+        let mut query = self.selection.select("services");
         UpGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all services defined by the module
@@ -10652,41 +10206,37 @@ impl Module {
             query = query.arg("include", include);
         }
         UpGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The source for the module.
     pub fn source(&self) -> ModuleSource {
-        let query = self.selection.select("source");
+        let mut query = self.selection.select("source");
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Forces evaluation of the module, including any loading into the engine and associated validation.
-    pub async fn sync(&self) -> Result<Module, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<Module, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Module"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// User-defined default values, loaded from local .env files.
     pub fn user_defaults(&self) -> EnvFile {
-        let query = self.selection.select("userDefaults");
+        let mut query = self.selection.select("userDefaults");
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Retrieves the module with the given description
@@ -10698,9 +10248,8 @@ impl Module {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// This module plus the given Enum type and associated values
@@ -10710,13 +10259,20 @@ impl Module {
             "enum",
             Box::new(move || {
                 let r#enum = r#enum.clone();
-                Box::pin(async move { r#enum.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    r#enum
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// This module plus the given Interface type and associated functions
@@ -10726,13 +10282,16 @@ impl Module {
             "iface",
             Box::new(move || {
                 let iface = iface.clone();
-                Box::pin(async move { iface.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    iface.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// This module plus the given Object type and associated functions.
@@ -10742,213 +10301,196 @@ impl Module {
             "object",
             Box::new(move || {
                 let object = object.clone();
-                Box::pin(async move { object.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    object
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Module {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for Module {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct ModuleConfigClient {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ModuleConfigClient {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ModuleConfigClient {
+impl Sealed for ModuleConfigClient {
     fn graphql_type() -> &'static str {
         "ModuleConfigClient"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl ModuleConfigClient {
     /// The directory the client is generated in.
-    pub async fn directory(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("directory");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn directory(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("directory");
+        query.execute(&self.session).await
     }
     /// The generator to use
-    pub async fn generator(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("generator");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn generator(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("generator");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this ModuleConfigClient.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for ModuleConfigClient {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct ModuleSource {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ModuleSource {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ModuleSource {
+impl Sealed for ModuleSource {
     fn graphql_type() -> &'static str {
         "ModuleSource"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl ModuleSource {
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
     pub fn as_module(&self) -> Module {
-        let query = self.selection.select("asModule");
+        let mut query = self.selection.select("asModule");
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A human readable ref string representation of this module source.
-    pub async fn as_string(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("asString");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn as_string(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("asString");
+        query.execute(&self.session).await
     }
     /// The blueprint referenced by the module source.
     pub fn blueprint(&self) -> ModuleSource {
-        let query = self.selection.select("blueprint");
+        let mut query = self.selection.select("blueprint");
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The client-facing introspection schema JSON file for this module source.
     /// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
     pub fn client_schema_introspection_json(&self) -> File {
-        let query = self.selection.select("clientSchemaIntrospectionJSON");
+        let mut query = self.selection.select("clientSchemaIntrospectionJSON");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The ref to clone the root of the git repo from. Only valid for git sources.
-    pub async fn clone_ref(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("cloneRef");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn clone_ref(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("cloneRef");
+        query.execute(&self.session).await
     }
     /// The resolved commit of the git repo this source points to.
-    pub async fn commit(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("commit");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn commit(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("commit");
+        query.execute(&self.session).await
     }
     /// The clients generated for the module.
-    pub async fn config_clients(&self) -> Result<Vec<ModuleConfigClient>, DaggerError> {
-        let query = self.selection.select("configClients");
+    pub async fn config_clients(&self) -> Result<Vec<ModuleConfigClient>, QueryError> {
+        let mut query = self.selection.select("configClients");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| ModuleConfigClient {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("ModuleConfigClient"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Whether an existing module config file was found.
-    pub async fn config_exists(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("configExists");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn config_exists(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("configExists");
+        query.execute(&self.session).await
     }
     /// The full directory loaded for the module source, including the source code as a subdirectory.
     pub fn context_directory(&self) -> Directory {
-        let query = self.selection.select("contextDirectory");
+        let mut query = self.selection.select("contextDirectory");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The dependencies of the module source.
-    pub async fn dependencies(&self) -> Result<Vec<ModuleSource>, DaggerError> {
-        let query = self.selection.select("dependencies");
+    pub async fn dependencies(&self) -> Result<Vec<ModuleSource>, QueryError> {
+        let mut query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| ModuleSource {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("ModuleSource"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
-    pub async fn digest(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("digest");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn digest(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("digest");
+        query.execute(&self.session).await
     }
     /// The directory containing the module configuration and source code (source code may be in a subdir).
     ///
@@ -10959,15 +10501,14 @@ impl ModuleSource {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The engine version of the module.
-    pub async fn engine_version(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("engineVersion");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn engine_version(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("engineVersion");
+        query.execute(&self.session).await
     }
     /// Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.
     /// Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the dependency's own already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
@@ -10981,167 +10522,166 @@ impl ModuleSource {
             "workspace",
             Box::new(move || {
                 let workspace = workspace.clone();
-                Box::pin(async move { workspace.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    workspace
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
     pub fn generated_context_changeset(&self) -> Changeset {
-        let query = self.selection.select("generatedContextChangeset");
+        let mut query = self.selection.select("generatedContextChangeset");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
-        let query = self.selection.select("generatedContextDirectory");
+        let mut query = self.selection.select("generatedContextDirectory");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
-    pub async fn html_repo_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("htmlRepoURL");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn html_repo_url(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("htmlRepoURL");
+        query.execute(&self.session).await
     }
     /// The URL to the source's git repo in a web browser. Only valid for git sources.
-    pub async fn html_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("htmlURL");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn html_url(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("htmlURL");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this ModuleSource.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The introspection schema JSON file for this module source.
     /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
     /// Note: this is in the context of a module, so some core types may be hidden.
     pub fn introspection_schema_json(&self) -> File {
-        let query = self.selection.select("introspectionSchemaJSON");
+        let mut query = self.selection.select("introspectionSchemaJSON");
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The kind of module source (currently local, git or dir).
-    pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
-        let query = self.selection.select("kind");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn kind(&self) -> Result<ModuleSourceKind, QueryError> {
+        let mut query = self.selection.select("kind");
+        query.execute(&self.session).await
     }
     /// The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
-    pub async fn local_context_directory_path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("localContextDirectoryPath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn local_context_directory_path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("localContextDirectoryPath");
+        query.execute(&self.session).await
     }
     /// The name of the module, including any setting via the withName API.
-    pub async fn module_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("moduleName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn module_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("moduleName");
+        query.execute(&self.session).await
     }
     /// The original name of the module as read from the module config file (or set for the first time with the withName API).
-    pub async fn module_original_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("moduleOriginalName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn module_original_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("moduleOriginalName");
+        query.execute(&self.session).await
     }
     /// The original subpath used when instantiating this module source, relative to the context directory.
-    pub async fn original_subpath(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("originalSubpath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn original_subpath(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("originalSubpath");
+        query.execute(&self.session).await
     }
     /// The pinned version of this module source.
-    pub async fn pin(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("pin");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn pin(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("pin");
+        query.execute(&self.session).await
     }
     /// The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
-    pub async fn repo_root_path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("repoRootPath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn repo_root_path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("repoRootPath");
+        query.execute(&self.session).await
     }
     /// The SDK configuration of the module.
     pub fn sdk(&self) -> SdkConfig {
-        let query = self.selection.select("sdk");
+        let mut query = self.selection.select("sdk");
         SdkConfig {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The path, relative to the context directory, that contains the module config.
-    pub async fn source_root_subpath(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceRootSubpath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source_root_subpath(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("sourceRootSubpath");
+        query.execute(&self.session).await
     }
     /// The path to the directory containing the module's source code, relative to the context directory.
-    pub async fn source_subpath(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceSubpath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source_subpath(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("sourceSubpath");
+        query.execute(&self.session).await
     }
     /// Forces evaluation of the module source, including any loading into the engine and associated validation.
-    pub async fn sync(&self) -> Result<ModuleSource, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<ModuleSource, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("ModuleSource"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// The toolchains referenced by the module source.
-    pub async fn toolchains(&self) -> Result<Vec<ModuleSource>, DaggerError> {
-        let query = self.selection.select("toolchains");
+    pub async fn toolchains(&self) -> Result<Vec<ModuleSource>, QueryError> {
+        let mut query = self.selection.select("toolchains");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| ModuleSource {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("ModuleSource"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
     /// Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
     pub fn updated_config_directory(&self) -> Directory {
-        let query = self.selection.select("updatedConfigDirectory");
+        let mut query = self.selection.select("updatedConfigDirectory");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// User-defined defaults read from local .env files
     pub fn user_defaults(&self) -> EnvFile {
-        let query = self.selection.select("userDefaults");
+        let mut query = self.selection.select("userDefaults");
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The specified version of the git repo this source points to.
-    pub async fn version(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("version");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn version(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("version");
+        query.execute(&self.session).await
     }
     /// Set a blueprint for the module source.
     ///
@@ -11154,13 +10694,20 @@ impl ModuleSource {
             "blueprint",
             Box::new(move || {
                 let blueprint = blueprint.clone();
-                Box::pin(async move { blueprint.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    blueprint
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update the module source with a new client to generate.
@@ -11178,9 +10725,8 @@ impl ModuleSource {
         query = query.arg("generator", generator.into());
         query = query.arg("outputDir", output_dir.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Append the provided dependencies to the module source's dependency list.
@@ -11192,9 +10738,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withDependencies");
         query = query.arg("dependencies", dependencies);
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Upgrade the engine version of the module to the given value.
@@ -11206,9 +10751,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withEngineVersion");
         query = query.arg("version", version.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Enable the experimental features for the module source.
@@ -11223,9 +10767,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withExperimentalFeatures");
         query = query.arg("features", features);
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update the module source with additional include patterns for files+directories from its context that are required for building it
@@ -11243,9 +10786,8 @@ impl ModuleSource {
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update the module source with a new name.
@@ -11257,9 +10799,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withName");
         query = query.arg("name", name.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update the module source with a new SDK.
@@ -11271,9 +10812,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withSDK");
         query = query.arg("source", source.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update the module source with a new source subpath.
@@ -11285,9 +10825,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withSourceSubpath");
         query = query.arg("path", path.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Add toolchains to the module source.
@@ -11299,18 +10838,16 @@ impl ModuleSource {
         let mut query = self.selection.select("withToolchains");
         query = query.arg("toolchains", toolchains);
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update the blueprint module to the latest version.
     pub fn with_update_blueprint(&self) -> ModuleSource {
-        let query = self.selection.select("withUpdateBlueprint");
+        let mut query = self.selection.select("withUpdateBlueprint");
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update one or more module dependencies.
@@ -11328,9 +10865,8 @@ impl ModuleSource {
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update one or more toolchains.
@@ -11348,9 +10884,8 @@ impl ModuleSource {
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Update one or more clients.
@@ -11368,18 +10903,16 @@ impl ModuleSource {
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Remove the current blueprint from the module source.
     pub fn without_blueprint(&self) -> ModuleSource {
-        let query = self.selection.select("withoutBlueprint");
+        let mut query = self.selection.select("withoutBlueprint");
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Remove a client from the module source.
@@ -11391,9 +10924,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withoutClient");
         query = query.arg("path", path.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Remove the provided dependencies from the module source's dependency list.
@@ -11411,9 +10943,8 @@ impl ModuleSource {
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Disable experimental features for the module source.
@@ -11428,9 +10959,8 @@ impl ModuleSource {
         let mut query = self.selection.select("withoutExperimentalFeatures");
         query = query.arg("features", features);
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Remove the provided toolchains from the module source.
@@ -11448,214 +10978,190 @@ impl ModuleSource {
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for ModuleSource {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for ModuleSource {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct ObjectTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ObjectTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ObjectTypeDef {
+impl Sealed for ObjectTypeDef {
     fn graphql_type() -> &'static str {
         "ObjectTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl ObjectTypeDef {
     /// The function used to construct new instances of this object, if any.
     pub fn constructor(&self) -> Function {
-        let query = self.selection.select("constructor");
+        let mut query = self.selection.select("constructor");
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The reason this enum member is deprecated, if any.
-    pub async fn deprecated(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("deprecated");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn deprecated(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("deprecated");
+        query.execute(&self.session).await
     }
     /// The doc string for the object, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// Static fields defined on this object, if any.
-    pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, DaggerError> {
-        let query = self.selection.select("fields");
+    pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, QueryError> {
+        let mut query = self.selection.select("fields");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| FieldTypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("FieldTypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Functions defined on this object, if any.
-    pub async fn functions(&self) -> Result<Vec<Function>, DaggerError> {
-        let query = self.selection.select("functions");
+    pub async fn functions(&self) -> Result<Vec<Function>, QueryError> {
+        let mut query = self.selection.select("functions");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Function {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Function"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// A unique identifier for this ObjectTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the object.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The location of this object declaration.
     pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
+        let mut query = self.selection.select("sourceMap");
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
-    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceModuleName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source_module_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("sourceModuleName");
+        query.execute(&self.session).await
     }
 }
 impl Node for ObjectTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Port {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Port {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Port {
+impl Sealed for Port {
     fn graphql_type() -> &'static str {
         "Port"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Port {
     /// The port description.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// Skip the health check when run as a service.
-    pub async fn experimental_skip_healthcheck(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("experimentalSkipHealthcheck");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn experimental_skip_healthcheck(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("experimentalSkipHealthcheck");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Port.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The port number.
-    pub async fn port(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("port");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn port(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("port");
+        query.execute(&self.session).await
     }
     /// The transport layer protocol.
-    pub async fn protocol(&self) -> Result<NetworkProtocol, DaggerError> {
-        let query = self.selection.select("protocol");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn protocol(&self) -> Result<NetworkProtocol, QueryError> {
+        let mut query = self.selection.select("protocol");
+        query.execute(&self.session).await
     }
 }
 impl Node for Port {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Query {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryCacheVolumeOpts<'a> {
@@ -11797,24 +11303,16 @@ pub struct QuerySshfsVolumeOpts<'a> {
 impl IntoID<Id> for Query {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Query {
+impl Sealed for Query {
     fn graphql_type() -> &'static str {
         "Query"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Query {
@@ -11823,9 +11321,8 @@ impl Query {
         let mut query = self.selection.select("address");
         query = query.arg("value", value.into());
         Address {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Constructs a cache volume for a given cache key.
@@ -11838,9 +11335,8 @@ impl Query {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
         CacheVolume {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Constructs a cache volume for a given cache key.
@@ -11866,27 +11362,24 @@ impl Query {
             query = query.arg("owner", owner);
         }
         CacheVolume {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates an empty changeset
     pub fn changeset(&self) -> Changeset {
-        let query = self.selection.select("changeset");
+        let mut query = self.selection.select("changeset");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Dagger Cloud configuration and state
     pub fn cloud(&self) -> Cloud {
-        let query = self.selection.select("cloud");
+        let mut query = self.selection.select("cloud");
         Cloud {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a scratch container, with no image or metadata.
@@ -11896,11 +11389,10 @@ impl Query {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container(&self) -> Container {
-        let query = self.selection.select("container");
+        let mut query = self.selection.select("container");
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a scratch container, with no image or metadata.
@@ -11915,37 +11407,33 @@ impl Query {
             query = query.arg("platform", platform);
         }
         Container {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The FunctionCall context that the SDK caller is currently executing in.
     /// If the caller is not currently executing in a function, this will return an error.
     pub fn current_function_call(&self) -> FunctionCall {
-        let query = self.selection.select("currentFunctionCall");
+        let mut query = self.selection.select("currentFunctionCall");
         FunctionCall {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The module currently being served in the session, if any.
     pub fn current_module(&self) -> CurrentModule {
-        let query = self.selection.select("currentModule");
+        let mut query = self.selection.select("currentModule");
         CurrentModule {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
     pub fn current_node(&self) -> NodeClient {
-        let query = self.selection.select("currentNode");
+        let mut query = self.selection.select("currentNode");
         NodeClient {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The TypeDef representations of the objects currently being served in the session.
@@ -11953,19 +11441,18 @@ impl Query {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn current_type_defs(&self) -> Result<Vec<TypeDef>, DaggerError> {
-        let query = self.selection.select("currentTypeDefs");
+    pub async fn current_type_defs(&self) -> Result<Vec<TypeDef>, QueryError> {
+        let mut query = self.selection.select("currentTypeDefs");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| TypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("TypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -11977,7 +11464,7 @@ impl Query {
     pub async fn current_type_defs_opts(
         &self,
         opts: QueryCurrentTypeDefsOpts,
-    ) -> Result<Vec<TypeDef>, DaggerError> {
+    ) -> Result<Vec<TypeDef>, QueryError> {
         let mut query = self.selection.select("currentTypeDefs");
         if let Some(return_all_types) = opts.return_all_types {
             query = query.arg("returnAllTypes", return_all_types);
@@ -11986,49 +11473,45 @@ impl Query {
             query = query.arg("hideCore", hide_core);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| TypeDef {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("TypeDef"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Detect and return the current workspace.
     pub fn current_workspace(&self) -> Workspace {
-        let query = self.selection.select("currentWorkspace");
+        let mut query = self.selection.select("currentWorkspace");
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The default platform of the engine.
-    pub async fn default_platform(&self) -> Result<Platform, DaggerError> {
-        let query = self.selection.select("defaultPlatform");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn default_platform(&self) -> Result<Platform, QueryError> {
+        let mut query = self.selection.select("defaultPlatform");
+        query.execute(&self.session).await
     }
     /// Creates an empty directory.
     pub fn directory(&self) -> Directory {
-        let query = self.selection.select("directory");
+        let mut query = self.selection.select("directory");
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The Dagger engine container configuration and state
     pub fn engine(&self) -> Engine {
-        let query = self.selection.select("engine");
+        let mut query = self.selection.select("engine");
         Engine {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
@@ -12041,9 +11524,8 @@ impl Query {
         let mut query = self.selection.select("engineVolume");
         query = query.arg("name", name.into());
         Volume {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
@@ -12063,9 +11545,8 @@ impl Query {
             query = query.arg("subdir", subdir);
         }
         Volume {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Initialize an environment file
@@ -12074,11 +11555,10 @@ impl Query {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn env_file(&self) -> EnvFile {
-        let query = self.selection.select("envFile");
+        let mut query = self.selection.select("envFile");
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Initialize an environment file
@@ -12092,9 +11572,8 @@ impl Query {
             query = query.arg("expand", expand);
         }
         EnvFile {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Create a new error.
@@ -12106,9 +11585,8 @@ impl Query {
         let mut query = self.selection.select("error");
         query = query.arg("message", message.into());
         Error {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a file with the specified contents.
@@ -12123,9 +11601,8 @@ impl Query {
         query = query.arg("name", name.into());
         query = query.arg("contents", contents.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a file with the specified contents.
@@ -12148,9 +11625,8 @@ impl Query {
             query = query.arg("permissions", permissions);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a function.
@@ -12166,13 +11642,20 @@ impl Query {
             "returnType",
             Box::new(move || {
                 let return_type = return_type.clone();
-                Box::pin(async move { return_type.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    return_type
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Function {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Create a code generation result, given a directory containing the generated code.
@@ -12182,13 +11665,16 @@ impl Query {
             "code",
             Box::new(move || {
                 let code = code.clone();
-                Box::pin(async move { code.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    code.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         GeneratedCode {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Queries a Git repository.
@@ -12205,9 +11691,8 @@ impl Query {
         let mut query = self.selection.select("git");
         query = query.arg("url", url.into());
         GitRepository {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Queries a Git repository.
@@ -12245,18 +11730,16 @@ impl Query {
             query = query.arg("experimentalServiceHost", experimental_service_host);
         }
         GitRepository {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Queries the host environment.
     pub fn host(&self) -> Host {
-        let query = self.selection.select("host");
+        let mut query = self.selection.select("host");
         Host {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a file containing an http remote url content.
@@ -12269,9 +11752,8 @@ impl Query {
         let mut query = self.selection.select("http");
         query = query.arg("url", url.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a file containing an http remote url content.
@@ -12299,23 +11781,21 @@ impl Query {
             query = query.arg("experimentalServiceHost", experimental_service_host);
         }
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this Query.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Initialize a JSON value
     pub fn json(&self) -> JsonValue {
-        let query = self.selection.select("json");
+        let mut query = self.selection.select("json");
         JsonValue {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Initialize a new LLM conversation.
@@ -12324,11 +11804,10 @@ impl Query {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn llm(&self) -> Llm {
-        let query = self.selection.select("llm");
+        let mut query = self.selection.select("llm");
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Initialize a new LLM conversation.
@@ -12345,18 +11824,16 @@ impl Query {
             query = query.arg("provider", provider);
         }
         Llm {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Create a new module.
     pub fn module(&self) -> Module {
-        let query = self.selection.select("module");
+        let mut query = self.selection.select("module");
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Create a new module source instance from a source ref string
@@ -12369,9 +11846,8 @@ impl Query {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("refString", ref_string.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Create a new module source instance from a source ref string
@@ -12400,9 +11876,8 @@ impl Query {
             query = query.arg("requireKind", require_kind);
         }
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load any object by its ID.
@@ -12412,13 +11887,16 @@ impl Query {
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    id.into_id().await.map(|id| id.quote()).map_err(|error| {
+                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                    })
+                })
             }),
         );
         NodeClient {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a GraphQL introspection schema for merging.
@@ -12430,9 +11908,8 @@ impl Query {
         let mut query = self.selection.select("schema");
         query = query.arg("json", json);
         Schema {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a new secret.
@@ -12445,9 +11922,8 @@ impl Query {
         let mut query = self.selection.select("secret");
         query = query.arg("uri", uri.into());
         Secret {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a new secret.
@@ -12463,9 +11939,8 @@ impl Query {
             query = query.arg("cacheKey", cache_key);
         }
         Secret {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Sets a secret given a user defined name to its plaintext and returns the secret.
@@ -12480,9 +11955,8 @@ impl Query {
         query = query.arg("name", name.into());
         query = query.arg("plaintext", plaintext.into());
         Secret {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates source map metadata.
@@ -12498,9 +11972,8 @@ impl Query {
         query = query.arg("line", line);
         query = query.arg("column", column);
         SourceMap {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Constructs an SSHFS volume.
@@ -12521,13 +11994,20 @@ impl Query {
             "privateKey",
             Box::new(move || {
                 let private_key = private_key.clone();
-                Box::pin(async move { private_key.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    private_key
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Volume {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Constructs an SSHFS volume.
@@ -12549,7 +12029,15 @@ impl Query {
             "privateKey",
             Box::new(move || {
                 let private_key = private_key.clone();
-                Box::pin(async move { private_key.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    private_key
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(known_hosts) = opts.known_hosts {
@@ -12565,226 +12053,188 @@ impl Query {
             query = query.arg("experimentalServiceHost", experimental_service_host);
         }
         Volume {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Create a new TypeDef.
     pub fn type_def(&self) -> TypeDef {
-        let query = self.selection.select("typeDef");
+        let mut query = self.selection.select("typeDef");
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Get the current Dagger Engine version.
-    pub async fn version(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("version");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn version(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("version");
+        query.execute(&self.session).await
     }
 }
 impl Node for Query {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct RemoteGitMirror {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for RemoteGitMirror {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for RemoteGitMirror {
+impl Sealed for RemoteGitMirror {
     fn graphql_type() -> &'static str {
         "RemoteGitMirror"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl RemoteGitMirror {
     /// A unique identifier for this RemoteGitMirror.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for RemoteGitMirror {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct SdkConfig {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for SdkConfig {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for SdkConfig {
+impl Sealed for SdkConfig {
     fn graphql_type() -> &'static str {
         "SDKConfig"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl SdkConfig {
     /// Whether to start the SDK runtime in debug mode with an interactive terminal.
-    pub async fn debug(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("debug");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn debug(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("debug");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this SDKConfig.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
-    pub async fn source(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("source");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("source");
+        query.execute(&self.session).await
     }
 }
 impl Node for SdkConfig {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct ScalarTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for ScalarTypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for ScalarTypeDef {
+impl Sealed for ScalarTypeDef {
     fn graphql_type() -> &'static str {
         "ScalarTypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl ScalarTypeDef {
     /// A doc string for the scalar, if any.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this ScalarTypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of the scalar.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
-    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceModuleName");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source_module_name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("sourceModuleName");
+        query.execute(&self.session).await
     }
 }
 impl Node for ScalarTypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Schema {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Schema {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Schema {
+impl Sealed for Schema {
     fn graphql_type() -> &'static str {
         "Schema"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Schema {
     /// Serialize the schema back to introspection JSON.
-    pub async fn contents(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("contents");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn contents(&self) -> Result<Json, QueryError> {
+        let mut query = self.selection.select("contents");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Schema.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
     ///
@@ -12797,220 +12247,190 @@ impl Schema {
         query = query.arg("moduleTypes", module_types);
         query = query.arg("moduleName", module_name.into());
         Schema {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Schema {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct SearchResult {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for SearchResult {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for SearchResult {
+impl Sealed for SearchResult {
     fn graphql_type() -> &'static str {
         "SearchResult"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl SearchResult {
     /// The byte offset of this line within the file.
-    pub async fn absolute_offset(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("absoluteOffset");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn absolute_offset(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("absoluteOffset");
+        query.execute(&self.session).await
     }
     /// The path to the file that matched.
-    pub async fn file_path(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("filePath");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn file_path(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("filePath");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this SearchResult.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The first line that matched.
-    pub async fn line_number(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("lineNumber");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn line_number(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("lineNumber");
+        query.execute(&self.session).await
     }
     /// The line content that matched.
-    pub async fn matched_lines(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("matchedLines");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn matched_lines(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("matchedLines");
+        query.execute(&self.session).await
     }
     /// Sub-match positions and content within the matched lines.
-    pub async fn submatches(&self) -> Result<Vec<SearchSubmatch>, DaggerError> {
-        let query = self.selection.select("submatches");
+    pub async fn submatches(&self) -> Result<Vec<SearchSubmatch>, QueryError> {
+        let mut query = self.selection.select("submatches");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| SearchSubmatch {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("SearchSubmatch"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
 }
 impl Node for SearchResult {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct SearchSubmatch {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for SearchSubmatch {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for SearchSubmatch {
+impl Sealed for SearchSubmatch {
     fn graphql_type() -> &'static str {
         "SearchSubmatch"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl SearchSubmatch {
     /// The match's end offset within the matched lines.
-    pub async fn end(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("end");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn end(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("end");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this SearchSubmatch.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The match's start offset within the matched lines.
-    pub async fn start(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("start");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn start(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("start");
+        query.execute(&self.session).await
     }
     /// The matched text.
-    pub async fn text(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("text");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn text(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("text");
+        query.execute(&self.session).await
     }
 }
 impl Node for SearchSubmatch {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Secret {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Secret {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Secret {
+impl Sealed for Secret {
     fn graphql_type() -> &'static str {
         "Secret"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Secret {
     /// A unique identifier for this Secret.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The name of this secret.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The value of this secret.
-    pub async fn plaintext(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("plaintext");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn plaintext(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("plaintext");
+        query.execute(&self.session).await
     }
     /// The URI of this secret.
-    pub async fn uri(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("uri");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn uri(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("uri");
+        query.execute(&self.session).await
     }
 }
 impl Node for Secret {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Service {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceEndpointOpts<'a> {
@@ -13045,24 +12465,16 @@ pub struct ServiceUpOpts {
 impl IntoID<Id> for Service {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Service {
+impl Sealed for Service {
     fn graphql_type() -> &'static str {
         "Service"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Service {
@@ -13073,9 +12485,9 @@ impl Service {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn endpoint(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("endpoint");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn endpoint(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("endpoint");
+        query.execute(&self.session).await
     }
     /// Retrieves an endpoint that clients can use to reach this container.
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
@@ -13087,7 +12499,7 @@ impl Service {
     pub async fn endpoint_opts<'a>(
         &self,
         opts: ServiceEndpointOpts<'a>,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("endpoint");
         if let Some(port) = opts.port {
             query = query.arg("port", port);
@@ -13095,48 +12507,46 @@ impl Service {
         if let Some(scheme) = opts.scheme {
             query = query.arg("scheme", scheme);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Retrieves a hostname which can be used by clients to reach this container.
-    pub async fn hostname(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("hostname");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn hostname(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("hostname");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Service.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Retrieves the list of ports provided by the service.
-    pub async fn ports(&self) -> Result<Vec<Port>, DaggerError> {
-        let query = self.selection.select("ports");
+    pub async fn ports(&self) -> Result<Vec<Port>, QueryError> {
+        let mut query = self.selection.select("ports");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Port {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Port"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Start the service and wait for its health checks to succeed.
     /// Services bound to a Container do not need to be manually started.
-    pub async fn start(&self) -> Result<Service, DaggerError> {
-        let query = self.selection.select("start");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn start(&self) -> Result<Service, QueryError> {
+        let mut query = self.selection.select("start");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Service"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Stop the service.
@@ -13144,17 +12554,16 @@ impl Service {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn stop(&self) -> Result<Service, DaggerError> {
-        let query = self.selection.select("stop");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn stop(&self) -> Result<Service, QueryError> {
+        let mut query = self.selection.select("stop");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Service"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Stop the service.
@@ -13162,34 +12571,32 @@ impl Service {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn stop_opts(&self, opts: ServiceStopOpts) -> Result<Service, DaggerError> {
+    pub async fn stop_opts(&self, opts: ServiceStopOpts) -> Result<Service, QueryError> {
         let mut query = self.selection.select("stop");
         if let Some(kill) = opts.kill {
             query = query.arg("kill", kill);
         }
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        let id: Id = query.execute(&self.session).await?;
         Ok(Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Service"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     /// Forces evaluation of the pipeline in the engine.
-    pub async fn sync(&self) -> Result<Service, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<Service, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Service"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
     ///
@@ -13197,11 +12604,10 @@ impl Service {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal(&self) -> Service {
-        let query = self.selection.select("terminal");
+        let mut query = self.selection.select("terminal");
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     ///
@@ -13214,9 +12620,8 @@ impl Service {
             query = query.arg("cmd", cmd);
         }
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Creates a tunnel that forwards traffic from the caller's network to this service.
@@ -13224,16 +12629,16 @@ impl Service {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up(&self) -> Result<Void, DaggerError> {
-        let query = self.selection.select("up");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn up(&self) -> Result<Void, QueryError> {
+        let mut query = self.selection.select("up");
+        query.execute(&self.session).await
     }
     /// Creates a tunnel that forwards traffic from the caller's network to this service.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<Void, DaggerError> {
+    pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<Void, QueryError> {
         let mut query = self.selection.select("up");
         if let Some(ports) = opts.ports {
             query = query.arg("ports", ports);
@@ -13241,7 +12646,7 @@ impl Service {
         if let Some(random) = opts.random {
             query = query.arg("random", random);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Configures a hostname which can be used by clients within the session to reach this container.
     ///
@@ -13252,280 +12657,241 @@ impl Service {
         let mut query = self.selection.select("withHostname");
         query = query.arg("hostname", hostname.into());
         Service {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Service {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for Service {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Socket {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Socket {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Socket {
+impl Sealed for Socket {
     fn graphql_type() -> &'static str {
         "Socket"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Socket {
     /// A unique identifier for this Socket.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for Socket {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct SourceMap {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for SourceMap {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for SourceMap {
+impl Sealed for SourceMap {
     fn graphql_type() -> &'static str {
         "SourceMap"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl SourceMap {
     /// The column number within the line.
-    pub async fn column(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("column");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn column(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("column");
+        query.execute(&self.session).await
     }
     /// The filename from the module source.
-    pub async fn filename(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("filename");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn filename(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("filename");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this SourceMap.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The line number within the filename.
-    pub async fn line(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("line");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn line(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("line");
+        query.execute(&self.session).await
     }
     /// The module dependency this was declared in.
-    pub async fn module(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("module");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn module(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("module");
+        query.execute(&self.session).await
     }
     /// The URL to the file, if any. This can be used to link to the source map in the browser.
-    pub async fn url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("url");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn url(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("url");
+        query.execute(&self.session).await
     }
 }
 impl Node for SourceMap {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Stat {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Stat {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Stat {
+impl Sealed for Stat {
     fn graphql_type() -> &'static str {
         "Stat"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Stat {
     /// file type
-    pub async fn file_type(&self) -> Result<FileType, DaggerError> {
-        let query = self.selection.select("fileType");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn file_type(&self) -> Result<FileType, QueryError> {
+        let mut query = self.selection.select("fileType");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Stat.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// file name
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// permission bits
-    pub async fn permissions(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("permissions");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn permissions(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("permissions");
+        query.execute(&self.session).await
     }
     /// file size
-    pub async fn size(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("size");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn size(&self) -> Result<isize, QueryError> {
+        let mut query = self.selection.select("size");
+        query.execute(&self.session).await
     }
 }
 impl Node for Stat {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Terminal {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Terminal {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Terminal {
+impl Sealed for Terminal {
     fn graphql_type() -> &'static str {
         "Terminal"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Terminal {
     /// A unique identifier for this Terminal.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Forces evaluation of the pipeline in the engine.
     /// It doesn't run the default command if no exec has been set.
-    pub async fn sync(&self) -> Result<Terminal, DaggerError> {
-        let query = self.selection.select("sync");
-        let id: Id = query.execute(self.graphql_client.clone()).await?;
+    pub async fn sync(&self) -> Result<Terminal, QueryError> {
+        let mut query = self.selection.select("sync");
+        let id: Id = query.execute(&self.session).await?;
         Ok(Terminal {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query
                 .root()
                 .select("node")
                 .arg("id", &id.0)
                 .inline_fragment("Terminal"),
-            graphql_client: self.graphql_client.clone(),
         })
     }
 }
 impl Node for Terminal {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 impl Syncer for Terminal {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
-    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("sync");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("sync");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct TypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumOpts<'a> {
@@ -13599,100 +12965,86 @@ pub struct TypeDefWithScalarOpts<'a> {
 impl IntoID<Id> for TypeDef {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for TypeDef {
+impl Sealed for TypeDef {
     fn graphql_type() -> &'static str {
         "TypeDef"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl TypeDef {
     /// If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
     pub fn as_enum(&self) -> EnumTypeDef {
-        let query = self.selection.select("asEnum");
+        let mut query = self.selection.select("asEnum");
         EnumTypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
     pub fn as_input(&self) -> InputTypeDef {
-        let query = self.selection.select("asInput");
+        let mut query = self.selection.select("asInput");
         InputTypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
     pub fn as_interface(&self) -> InterfaceTypeDef {
-        let query = self.selection.select("asInterface");
+        let mut query = self.selection.select("asInterface");
         InterfaceTypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
     pub fn as_list(&self) -> ListTypeDef {
-        let query = self.selection.select("asList");
+        let mut query = self.selection.select("asList");
         ListTypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
     pub fn as_object(&self) -> ObjectTypeDef {
-        let query = self.selection.select("asObject");
+        let mut query = self.selection.select("asObject");
         ObjectTypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
     pub fn as_scalar(&self) -> ScalarTypeDef {
-        let query = self.selection.select("asScalar");
+        let mut query = self.selection.select("asScalar");
         ScalarTypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this TypeDef.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The kind of type this is (e.g. primitive, list, object).
-    pub async fn kind(&self) -> Result<TypeDefKind, DaggerError> {
-        let query = self.selection.select("kind");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn kind(&self) -> Result<TypeDefKind, QueryError> {
+        let mut query = self.selection.select("kind");
+        query.execute(&self.session).await
     }
     /// The canonical non-optional name of the type.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// Whether this type can be set to null. Defaults to false.
-    pub async fn optional(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("optional");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn optional(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("optional");
+        query.execute(&self.session).await
     }
     /// Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
     pub fn with_constructor(&self, function: impl IntoID<Id>) -> TypeDef {
@@ -13701,13 +13053,20 @@ impl TypeDef {
             "function",
             Box::new(move || {
                 let function = function.clone();
-                Box::pin(async move { function.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    function
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Enum with the provided name.
@@ -13721,9 +13080,8 @@ impl TypeDef {
         let mut query = self.selection.select("withEnum");
         query = query.arg("name", name.into());
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Enum with the provided name.
@@ -13747,9 +13105,8 @@ impl TypeDef {
             query = query.arg("sourceMap", source_map);
         }
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
@@ -13762,9 +13119,8 @@ impl TypeDef {
         let mut query = self.selection.select("withEnumMember");
         query = query.arg("name", name.into());
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
@@ -13793,9 +13149,8 @@ impl TypeDef {
             query = query.arg("deprecated", deprecated);
         }
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
@@ -13808,9 +13163,8 @@ impl TypeDef {
         let mut query = self.selection.select("withEnumValue");
         query = query.arg("value", value.into());
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
@@ -13836,9 +13190,8 @@ impl TypeDef {
             query = query.arg("deprecated", deprecated);
         }
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Adds a static field for an Object TypeDef, failing if the type is not an object.
@@ -13855,13 +13208,20 @@ impl TypeDef {
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    type_def
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Adds a static field for an Object TypeDef, failing if the type is not an object.
@@ -13883,7 +13243,15 @@ impl TypeDef {
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    type_def
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         if let Some(description) = opts.description {
@@ -13896,9 +13264,8 @@ impl TypeDef {
             query = query.arg("deprecated", deprecated);
         }
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
@@ -13908,13 +13275,20 @@ impl TypeDef {
             "function",
             Box::new(move || {
                 let function = function.clone();
-                Box::pin(async move { function.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    function
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Interface with the provided name.
@@ -13926,9 +13300,8 @@ impl TypeDef {
         let mut query = self.selection.select("withInterface");
         query = query.arg("name", name.into());
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Interface with the provided name.
@@ -13950,9 +13323,8 @@ impl TypeDef {
             query = query.arg("sourceMap", source_map);
         }
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Sets the kind of the type.
@@ -13960,9 +13332,8 @@ impl TypeDef {
         let mut query = self.selection.select("withKind");
         query = query.arg("kind", kind);
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind List with the provided type for its elements.
@@ -13972,13 +13343,20 @@ impl TypeDef {
             "elementType",
             Box::new(move || {
                 let element_type = element_type.clone();
-                Box::pin(async move { element_type.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    element_type
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Object with the provided name.
@@ -13991,9 +13369,8 @@ impl TypeDef {
         let mut query = self.selection.select("withObject");
         query = query.arg("name", name.into());
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Object with the provided name.
@@ -14019,9 +13396,8 @@ impl TypeDef {
             query = query.arg("deprecated", deprecated);
         }
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Sets whether this type can be set to null.
@@ -14029,9 +13405,8 @@ impl TypeDef {
         let mut query = self.selection.select("withOptional");
         query = query.arg("optional", optional);
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Scalar with the provided name.
@@ -14043,9 +13418,8 @@ impl TypeDef {
         let mut query = self.selection.select("withScalar");
         query = query.arg("name", name.into());
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a TypeDef of kind Scalar with the provided name.
@@ -14064,212 +13438,179 @@ impl TypeDef {
             query = query.arg("description", description);
         }
         TypeDef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for TypeDef {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Up {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Up {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Up {
+impl Sealed for Up {
     fn graphql_type() -> &'static str {
         "Up"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Up {
     /// The description of the service
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Up.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Return the fully qualified name of the service
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The original module in which the service has been defined
     pub fn original_module(&self) -> Module {
-        let query = self.selection.select("originalModule");
+        let mut query = self.selection.select("originalModule");
         Module {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// The path of the service within its module
-    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("path");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn path(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("path");
+        query.execute(&self.session).await
     }
     /// Execute the service function
     pub fn run(&self) -> Up {
-        let query = self.selection.select("run");
+        let mut query = self.selection.select("run");
         Up {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Up {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct UpGroup {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for UpGroup {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for UpGroup {
+impl Sealed for UpGroup {
     fn graphql_type() -> &'static str {
         "UpGroup"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl UpGroup {
     /// A unique identifier for this UpGroup.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Return a list of individual services and their details
-    pub async fn list(&self) -> Result<Vec<Up>, DaggerError> {
-        let query = self.selection.select("list");
+    pub async fn list(&self) -> Result<Vec<Up>, QueryError> {
+        let mut query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| Up {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("Up"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// Execute all selected service functions
     pub fn run(&self) -> UpGroup {
-        let query = self.selection.select("run");
+        let mut query = self.selection.select("run");
         UpGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for UpGroup {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Volume {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for Volume {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Volume {
+impl Sealed for Volume {
     fn graphql_type() -> &'static str {
         "Volume"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Volume {
     /// A unique identifier for this Volume.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
 }
 impl Node for Volume {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct Workspace {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChecksOpts<'a> {
@@ -14457,39 +13798,30 @@ pub struct WorkspaceWithoutSdkOpts {
 impl IntoID<Id> for Workspace {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for Workspace {
+impl Sealed for Workspace {
     fn graphql_type() -> &'static str {
         "Workspace"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl Workspace {
     /// Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
-    pub async fn address(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("address");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn address(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("address");
+        query.execute(&self.session).await
     }
     /// Return this workspace's pending overlay changes.
     pub fn changes(&self) -> Changeset {
-        let query = self.selection.select("changes");
+        let mut query = self.selection.select("changes");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all checks from modules loaded in the workspace.
@@ -14498,11 +13830,10 @@ impl Workspace {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn checks(&self) -> CheckGroup {
-        let query = self.selection.select("checks");
+        let mut query = self.selection.select("checks");
         CheckGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all checks from modules loaded in the workspace.
@@ -14525,15 +13856,14 @@ impl Workspace {
             query = query.arg("onlyGenerate", only_generate);
         }
         CheckGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Selected native workspace config file relative to the workspace cwd, if any.
-    pub async fn config_file(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("configFile");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn config_file(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("configFile");
+        query.execute(&self.session).await
     }
     /// Read a configuration value from dagger.toml.
     /// If key is empty, returns the full config.
@@ -14543,9 +13873,9 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn config_read(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("configRead");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn config_read(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("configRead");
+        query.execute(&self.session).await
     }
     /// Read a configuration value from dagger.toml.
     /// If key is empty, returns the full config.
@@ -14558,19 +13888,19 @@ impl Workspace {
     pub async fn config_read_opts<'a>(
         &self,
         opts: WorkspaceConfigReadOpts<'a>,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("configRead");
         if let Some(key) = opts.key {
             query = query.arg("key", key);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Current location within the workspace root.
     /// The workspace root is returned as "/".
     /// Relative paths in workspace APIs resolve from here.
-    pub async fn cwd(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("cwd");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn cwd(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("cwd");
+        query.execute(&self.session).await
     }
     /// Returns a Directory from the workspace.
     /// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
@@ -14583,9 +13913,8 @@ impl Workspace {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a Directory from the workspace.
@@ -14612,20 +13941,19 @@ impl Workspace {
             query = query.arg("gitignore", gitignore);
         }
         Directory {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// List named environments defined in the workspace configuration.
-    pub async fn env_list(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("envList");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn env_list(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("envList");
+        query.execute(&self.session).await
     }
     /// Write this workspace's pending changes to its local Git workspace.
-    pub async fn export(&self) -> Result<Void, DaggerError> {
-        let query = self.selection.select("export");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn export(&self) -> Result<Void, QueryError> {
+        let mut query = self.selection.select("export");
+        query.execute(&self.session).await
     }
     /// Returns a File from the workspace.
     /// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
@@ -14637,9 +13965,8 @@ impl Workspace {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
         File {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
@@ -14651,10 +13978,10 @@ impl Workspace {
     ///
     /// * `name` - The name of the file or directory to search for.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn find_up(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+    pub async fn find_up(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
     /// Returns the absolute workspace path if found, or null if not found.
@@ -14669,13 +13996,13 @@ impl Workspace {
         &self,
         name: impl Into<String>,
         opts: WorkspaceFindUpOpts<'a>,
-    ) -> Result<String, DaggerError> {
+    ) -> Result<String, QueryError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
         if let Some(from) = opts.from {
             query = query.arg("from", from);
         }
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// Return all generators from modules loaded in the workspace.
     ///
@@ -14683,11 +14010,10 @@ impl Workspace {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn generators(&self) -> GeneratorGroup {
-        let query = self.selection.select("generators");
+        let mut query = self.selection.select("generators");
         GeneratorGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all generators from modules loaded in the workspace.
@@ -14701,18 +14027,16 @@ impl Workspace {
             query = query.arg("include", include);
         }
         GeneratorGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Git state for this workspace. Errors if the workspace is not in a git repository.
     pub fn git(&self) -> WorkspaceGit {
-        let query = self.selection.select("git");
+        let mut query = self.selection.select("git");
         WorkspaceGit {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Returns a list of files and directories that match the given pattern.
@@ -14721,24 +14045,23 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `pattern` - Pattern to match (e.g., "*.md").
-    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, DaggerError> {
+    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("glob");
         query = query.arg("pattern", pattern.into());
-        query.execute(self.graphql_client.clone()).await
+        query.execute(&self.session).await
     }
     /// A unique identifier for this Workspace.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Plan the explicit migration needed for the current workspace.
     /// The returned plan has an empty changeset and no steps when no migration is needed.
     pub fn migrate(&self) -> WorkspaceMigration {
-        let query = self.selection.select("migrate");
+        let mut query = self.selection.select("migrate");
         WorkspaceMigration {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return a module defined in the workspace configuration.
@@ -14750,9 +14073,8 @@ impl Workspace {
         let mut query = self.selection.select("module");
         query = query.arg("name", name.into());
         WorkspaceModule {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Load a module source from a path within the workspace.
@@ -14766,25 +14088,23 @@ impl Workspace {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("path", path.into());
         ModuleSource {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// List modules defined in the workspace configuration.
-    pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
-        let query = self.selection.select("modules");
+    pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, QueryError> {
+        let mut query = self.selection.select("modules");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| WorkspaceModule {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("WorkspaceModule"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -14797,25 +14117,23 @@ impl Workspace {
         let mut query = self.selection.select("sdk");
         query = query.arg("name", name.into());
         WorkspaceSdk {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Installed SDKs.
-    pub async fn sdks(&self) -> Result<Vec<WorkspaceSdk>, DaggerError> {
-        let query = self.selection.select("sdks");
+    pub async fn sdks(&self) -> Result<Vec<WorkspaceSdk>, QueryError> {
+        let mut query = self.selection.select("sdks");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| WorkspaceSdk {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("WorkspaceSDK"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -14830,20 +14148,19 @@ impl Workspace {
     pub async fn search(
         &self,
         pattern: impl Into<String>,
-    ) -> Result<Vec<SearchResult>, DaggerError> {
+    ) -> Result<Vec<SearchResult>, QueryError> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| SearchResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("SearchResult"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -14859,7 +14176,7 @@ impl Workspace {
         &self,
         pattern: impl Into<String>,
         opts: WorkspaceSearchOpts<'a>,
-    ) -> Result<Vec<SearchResult>, DaggerError> {
+    ) -> Result<Vec<SearchResult>, QueryError> {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         if let Some(paths) = opts.paths {
@@ -14893,16 +14210,15 @@ impl Workspace {
             query = query.arg("limit", limit);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| SearchResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("SearchResult"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
@@ -14912,11 +14228,10 @@ impl Workspace {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn services(&self) -> UpGroup {
-        let query = self.selection.select("services");
+        let mut query = self.selection.select("services");
         UpGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return all services from modules loaded in the workspace.
@@ -14930,9 +14245,8 @@ impl Workspace {
             query = query.arg("include", include);
         }
         UpGroup {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a changeset applied, without mutating the source.
@@ -14946,13 +14260,20 @@ impl Workspace {
             "changes",
             Box::new(move || {
                 let changes = changes.clone();
-                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    changes
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a named config environment created.
@@ -14965,9 +14286,8 @@ impl Workspace {
         let mut query = self.selection.select("withConfigEnv");
         query = query.arg("name", name.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a named config environment created.
@@ -14987,9 +14307,8 @@ impl Workspace {
             query = query.arg("here", here);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a configuration value written.
@@ -15004,9 +14323,8 @@ impl Workspace {
         query = query.arg("key", key.into());
         query = query.arg("value", value.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a configuration value written.
@@ -15032,9 +14350,8 @@ impl Workspace {
             query = query.arg("here", here);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a generated API client initialized.
@@ -15057,9 +14374,8 @@ impl Workspace {
         query = query.arg("sdk", sdk.into());
         query = query.arg("module", module.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a generated API client initialized.
@@ -15092,9 +14408,8 @@ impl Workspace {
             query = query.arg("noGenerate", no_generate);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a new module initialized.
@@ -15110,9 +14425,8 @@ impl Workspace {
         query = query.arg("name", name.into());
         query = query.arg("sdk", sdk.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a new module initialized.
@@ -15151,9 +14465,8 @@ impl Workspace {
             query = query.arg("noGenerate", no_generate);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a module installed in its config.
@@ -15166,9 +14479,8 @@ impl Workspace {
         let mut query = self.selection.select("withModule");
         query = query.arg("ref", r#ref.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a module installed in its config.
@@ -15191,9 +14503,8 @@ impl Workspace {
             query = query.arg("here", here);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a directory added, without mutating the source.
@@ -15213,13 +14524,20 @@ impl Workspace {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.into_id().await.unwrap().quote() })
+                Box::pin(async move {
+                    source
+                        .into_id()
+                        .await
+                        .map(|id| id.quote())
+                        .map_err(|error| {
+                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
+                        })
+                })
             }),
         );
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a new or replaced file, without mutating the source.
@@ -15234,9 +14552,8 @@ impl Workspace {
         query = query.arg("path", path.into());
         query = query.arg("contents", contents.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a new or replaced file, without mutating the source.
@@ -15259,9 +14576,8 @@ impl Workspace {
             query = query.arg("permissions", permissions);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with an SDK installed in its config.
@@ -15274,9 +14590,8 @@ impl Workspace {
         let mut query = self.selection.select("withSDK");
         query = query.arg("ref", r#ref.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with an SDK installed in its config.
@@ -15302,18 +14617,16 @@ impl Workspace {
             query = query.arg("asSdkName", as_sdk_name);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with refreshed lockfile state.
     pub fn with_updated_lock(&self) -> Workspace {
-        let query = self.selection.select("withUpdatedLock");
+        let mut query = self.selection.select("withUpdatedLock");
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with its working directory pointed at the given workspace-relative path.
@@ -15325,9 +14638,8 @@ impl Workspace {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a named config environment removed.
@@ -15340,9 +14652,8 @@ impl Workspace {
         let mut query = self.selection.select("withoutConfigEnv");
         query = query.arg("name", name.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a named config environment removed.
@@ -15362,9 +14673,8 @@ impl Workspace {
             query = query.arg("here", here);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a configuration value removed.
@@ -15378,9 +14688,8 @@ impl Workspace {
         let mut query = self.selection.select("withoutConfigValue");
         query = query.arg("key", key.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a configuration value removed.
@@ -15401,9 +14710,8 @@ impl Workspace {
             query = query.arg("here", here);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a directory removed, without mutating the source.
@@ -15415,9 +14723,8 @@ impl Workspace {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a file removed, without mutating the source.
@@ -15429,9 +14736,8 @@ impl Workspace {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a module removed from its config.
@@ -15444,9 +14750,8 @@ impl Workspace {
         let mut query = self.selection.select("withoutModule");
         query = query.arg("name", name.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with a module removed from its config.
@@ -15466,9 +14771,8 @@ impl Workspace {
             query = query.arg("here", here);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with an SDK removed from its config.
@@ -15481,9 +14785,8 @@ impl Workspace {
         let mut query = self.selection.select("withoutSDK");
         query = query.arg("name", name.into());
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Return this workspace with an SDK removed from its config.
@@ -15503,439 +14806,376 @@ impl Workspace {
             query = query.arg("here", here);
         }
         Workspace {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for Workspace {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct WorkspaceGit {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for WorkspaceGit {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for WorkspaceGit {
+impl Sealed for WorkspaceGit {
     fn graphql_type() -> &'static str {
         "WorkspaceGit"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl WorkspaceGit {
     /// The checked-out HEAD of this workspace.
     pub fn head(&self) -> GitRef {
-        let query = self.selection.select("head");
+        let mut query = self.selection.select("head");
         GitRef {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this WorkspaceGit.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
     pub fn uncommitted(&self) -> Changeset {
-        let query = self.selection.select("uncommitted");
+        let mut query = self.selection.select("uncommitted");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
 }
 impl Node for WorkspaceGit {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct WorkspaceMigration {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for WorkspaceMigration {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for WorkspaceMigration {
+impl Sealed for WorkspaceMigration {
     fn graphql_type() -> &'static str {
         "WorkspaceMigration"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl WorkspaceMigration {
     /// Filesystem changes for the full migration plan.
     pub fn changes(&self) -> Changeset {
-        let query = self.selection.select("changes");
+        let mut query = self.selection.select("changes");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// A unique identifier for this WorkspaceMigration.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Logical migration steps, each identified by a stable code.
-    pub async fn steps(&self) -> Result<Vec<WorkspaceMigrationStep>, DaggerError> {
-        let query = self.selection.select("steps");
+    pub async fn steps(&self) -> Result<Vec<WorkspaceMigrationStep>, QueryError> {
+        let mut query = self.selection.select("steps");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| WorkspaceMigrationStep {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("WorkspaceMigrationStep"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
 }
 impl Node for WorkspaceMigration {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct WorkspaceMigrationStep {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for WorkspaceMigrationStep {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for WorkspaceMigrationStep {
+impl Sealed for WorkspaceMigrationStep {
     fn graphql_type() -> &'static str {
         "WorkspaceMigrationStep"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl WorkspaceMigrationStep {
     /// Filesystem changes for this step.
     pub fn changes(&self) -> Changeset {
-        let query = self.selection.select("changes");
+        let mut query = self.selection.select("changes");
         Changeset {
-            proc: self.proc.clone(),
+            session: self.session.clone(),
             selection: query,
-            graphql_client: self.graphql_client.clone(),
         }
     }
     /// Stable code identifying this logical migration step.
-    pub async fn code(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("code");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn code(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("code");
+        query.execute(&self.session).await
     }
     /// Generic summary of this step's purpose and impact.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this WorkspaceMigrationStep.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Non-fatal warnings raised while planning this step.
-    pub async fn warnings(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("warnings");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn warnings(&self) -> Result<Vec<String>, QueryError> {
+        let mut query = self.selection.select("warnings");
+        query.execute(&self.session).await
     }
 }
 impl Node for WorkspaceMigrationStep {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct WorkspaceModule {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for WorkspaceModule {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for WorkspaceModule {
+impl Sealed for WorkspaceModule {
     fn graphql_type() -> &'static str {
         "WorkspaceModule"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl WorkspaceModule {
     /// Whether the module is the workspace entrypoint (functions aliased to Query root).
-    pub async fn entrypoint(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("entrypoint");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn entrypoint(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("entrypoint");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this WorkspaceModule.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// The module name.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// List constructor-backed settings for this module.
-    pub async fn settings(&self) -> Result<Vec<WorkspaceModuleSetting>, DaggerError> {
-        let query = self.selection.select("settings");
+    pub async fn settings(&self) -> Result<Vec<WorkspaceModuleSetting>, QueryError> {
+        let mut query = self.selection.select("settings");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| WorkspaceModuleSetting {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("WorkspaceModuleSetting"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The module source path.
-    pub async fn source(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("source");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn source(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("source");
+        query.execute(&self.session).await
     }
 }
 impl Node for WorkspaceModule {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct WorkspaceModuleSetting {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for WorkspaceModuleSetting {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for WorkspaceModuleSetting {
+impl Sealed for WorkspaceModuleSetting {
     fn graphql_type() -> &'static str {
         "WorkspaceModuleSetting"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl WorkspaceModuleSetting {
     /// The constructor argument description.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn description(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("description");
+        query.execute(&self.session).await
     }
     /// A unique identifier for this WorkspaceModuleSetting.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Whether the setting accepts a list of values.
-    pub async fn is_list(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("isList");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn is_list(&self) -> Result<bool, QueryError> {
+        let mut query = self.selection.select("isList");
+        query.execute(&self.session).await
     }
     /// The setting key.
-    pub async fn key(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("key");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn key(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("key");
+        query.execute(&self.session).await
     }
     /// The configured value after applying the selected workspace environment, or empty when unset.
-    pub async fn value(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn value(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("value");
+        query.execute(&self.session).await
     }
 }
 impl Node for WorkspaceModuleSetting {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Clone)]
 pub struct WorkspaceSdk {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
+    pub(crate) session: SessionHandle,
+    pub(crate) selection: Selection,
 }
 impl IntoID<Id> for WorkspaceSdk {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
     }
 }
-impl Loadable for WorkspaceSdk {
+impl Sealed for WorkspaceSdk {
     fn graphql_type() -> &'static str {
         "WorkspaceSDK"
     }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
+    fn from_query(session: SessionHandle, selection: Selection) -> Self {
+        Self { session, selection }
     }
 }
 impl WorkspaceSdk {
     /// Clients generated with this SDK.
-    pub async fn clients(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
-        let query = self.selection.select("clients");
+    pub async fn clients(&self) -> Result<Vec<WorkspaceModule>, QueryError> {
+        let mut query = self.selection.select("clients");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| WorkspaceModule {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("WorkspaceModule"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// A unique identifier for this WorkspaceSDK.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn id(&self) -> Result<Id, QueryError> {
+        let mut query = self.selection.select("id");
+        query.execute(&self.session).await
     }
     /// Modules authored with this SDK.
-    pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
-        let query = self.selection.select("modules");
+    pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, QueryError> {
+        let mut query = self.selection.select("modules");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        let ids: Vec<Id> = query.execute(&self.session).await?;
         Ok(ids
             .into_iter()
             .map(|id| WorkspaceModule {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
+                session: self.session.clone(),
+                selection: crate::query::query()
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("WorkspaceModule"),
-                graphql_client: self.graphql_client.clone(),
             })
             .collect())
     }
     /// The user-facing SDK name.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn name(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("name");
+        query.execute(&self.session).await
     }
     /// The module reference this SDK was installed from.
-    pub async fn r#ref(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("ref");
-        query.execute(self.graphql_client.clone()).await
+    pub async fn r#ref(&self) -> Result<String, QueryError> {
+        let mut query = self.selection.select("ref");
+        query.execute(&self.session).await
     }
 }
 impl Node for WorkspaceSdk {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
+        let mut query = self.selection.select("id");
+        let session = self.session.clone();
+        async move { query.execute(&session).await }
     }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]

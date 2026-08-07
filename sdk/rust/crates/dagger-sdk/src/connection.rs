@@ -25,6 +25,8 @@ pub enum EngineConnectionErrorKind {
     Unavailable,
     /// The connection has already been closed.
     Closed,
+    /// SDK-owned HTTP connection establishment exceeded its configured bound.
+    ConnectTimeout,
     /// A source-specific failure without a more precise stable category.
     Other,
 }
@@ -36,6 +38,7 @@ impl EngineConnectionErrorKind {
             Self::Protocol => "the engine protocol failed",
             Self::Unavailable => "the engine connection is unavailable",
             Self::Closed => "the engine connection is closed",
+            Self::ConnectTimeout => "the engine HTTP connection timed out",
             Self::Other => "the engine connection failed",
         }
     }
@@ -62,16 +65,6 @@ impl EngineConnectionError {
         Self {
             kind,
             source: Some(Arc::new(source)),
-        }
-    }
-
-    pub(crate) fn with_boxed_source(
-        kind: EngineConnectionErrorKind,
-        source: Box<dyn Error + Send + Sync + 'static>,
-    ) -> Self {
-        Self {
-            kind,
-            source: Some(Arc::from(source)),
         }
     }
 

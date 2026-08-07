@@ -1,4 +1,4 @@
-use dagger_sdk::core::introspection::{FullType, FullTypeFields, FullTypeFieldsArgs};
+use dagger_sdk::introspection::{FullType, FullTypeFields, FullTypeFieldsArgs};
 use genco::prelude::rust;
 use genco::quote;
 
@@ -28,10 +28,8 @@ fn render_object_inner(
     t: &FullType,
     include_loadable: bool,
 ) -> eyre::Result<rust::Tokens> {
-    let selection = rust::import("crate::querybuilder", "Selection");
-    let session_proc = rust::import("crate::core::cli_session", "DaggerSessionProc");
-    let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
-    let arc = rust::import("std::sync", "Arc");
+    let selection = rust::import("crate::query", "Selection");
+    let session_handle = rust::import("crate::lifecycle", "SessionHandle");
 
     let into_id_impl = render_into_id_impl(t);
     let loadable_impl = if include_loadable {
@@ -43,9 +41,8 @@ fn render_object_inner(
     Ok(quote! {
         #[derive(Clone)]
         pub struct $(t.name.pipe(|s| format_name(s))) {
-            pub proc: Option<$arc<$session_proc>>,
-            pub selection: $selection,
-            pub graphql_client: $graphql_client
+            pub(crate) session: $session_handle,
+            pub(crate) selection: $selection,
         }
 
         $(t.fields.pipe(|f| render_optional_args(funcs, f)))
@@ -76,11 +73,9 @@ pub fn render_loadable_impl(
         return None;
     }
 
-    let loadable = rust::import("crate::loadable", "Loadable");
-    let selection = rust::import("crate::querybuilder", "Selection");
-    let session_proc = rust::import("crate::core::cli_session", "DaggerSessionProc");
-    let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
-    let arc = rust::import("std::sync", "Arc");
+    let loadable = rust::import("crate::loadable::private", "Sealed");
+    let selection = rust::import("crate::query", "Selection");
+    let session_handle = rust::import("crate::lifecycle", "SessionHandle");
     let name = t.name.pipe(|s| format_name(s));
     let graphql_name =
         graphql_name_override.unwrap_or_else(|| t.name.as_deref().unwrap_or_default());
@@ -91,15 +86,10 @@ pub fn render_loadable_impl(
                 $(genco::tokens::quoted(graphql_name))
             }
 
-            fn from_query(
-                proc: Option<$arc<$session_proc>>,
-                selection: $selection,
-                graphql_client: $graphql_client,
-            ) -> Self {
+            fn from_query(session: $session_handle, selection: $selection) -> Self {
                 Self {
-                    proc,
+                    session,
                     selection,
-                    graphql_client,
                 }
             }
         }
@@ -117,11 +107,12 @@ fn render_into_id_impl(t: &FullType) -> Option<rust::Tokens> {
     }
 
     let into_id = rust::import("crate::id", "IntoID");
+    let query_error = rust::import("crate::errors", "QueryError");
     let name = t.name.pipe(|s| format_name(s));
 
     Some(quote! {
         impl $into_id<Id> for $name {
-            fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+            fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, $query_error>> + Send>> {
                 Box::pin(async move { self.id().await })
             }
         }

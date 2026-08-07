@@ -1,0 +1,17 @@
+error[E0609]: no field `config_path` on type `ClientConfig`
+ --> tests/ui/fail/config_fields.rs:3:20
+  |
+3 |     let _ = config.config_path;
+  |                    ^^^^^^^^^^^ unknown field
+
+error[E0609]: no field `timeout_ms` on type `ClientConfig`
+ --> tests/ui/fail/config_fields.rs:4:20
+  |
+4 |     let _ = config.timeout_ms;
+  |                    ^^^^^^^^^^ unknown field
+
+error[E0609]: no field `execute_timeout_ms` on type `ClientConfig`
+ --> tests/ui/fail/config_fields.rs:5:20
+  |
+5 |     let _ = config.execute_timeout_ms;
+  |                    ^^^^^^^^^^^^^^^^^^ unknown field

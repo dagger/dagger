@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod cli_session;
 pub mod config;
 pub mod connect_params;
@@ -5,6 +7,7 @@ pub mod downloader;
 pub mod engine;
 pub mod gql_client;
 pub mod graphql_client;
+#[allow(missing_docs)]
 pub mod introspection;
 pub mod logger;
 // These beta introspection adapters remain compiled for the later connector migration,

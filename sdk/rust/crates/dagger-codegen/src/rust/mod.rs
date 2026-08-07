@@ -4,7 +4,7 @@ pub mod templates;
 
 use std::sync::{Arc, Mutex};
 
-use dagger_sdk::core::introspection::Schema;
+use dagger_sdk::introspection::Schema;
 use eyre::Context;
 use genco::prelude::rust;
 

@@ -27,7 +27,7 @@ cargo add dagger-sdk
 ```rust
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    dagger_sdk::connect(|client| async move {
+    dagger_sdk::connect_legacy(|client| async move {
         let version = client
             .container()
             .from("golang:1.19")

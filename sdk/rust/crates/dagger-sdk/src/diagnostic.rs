@@ -62,12 +62,6 @@ impl DiagnosticSinkError {
             source: Some(Arc::new(source)),
         }
     }
-
-    pub(crate) fn with_boxed_source(source: Box<dyn Error + Send + Sync + 'static>) -> Self {
-        Self {
-            source: Some(Arc::from(source)),
-        }
-    }
 }
 
 impl Default for DiagnosticSinkError {

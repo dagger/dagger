@@ -6,7 +6,7 @@
 - Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
 - Rust SDK: 1.0.0-beta.10
 - Inventory digest: `sha256:c0f27c650ab5847a861c599094ecca2ffac00aee35a9a995623dd018a7b38e66`
-- Ledger digest: `sha256:bc4045d355e3a98dd6275905ef730fe73d1b3b118efe01f823a24f9ddd5075b8`
+- Ledger digest: `sha256:17003989b1e531913cad8adb4c86ba31dec4b7cd687c4aa5b8552d6cb65f8b24`
 
 ## Verdicts
 
@@ -50,15 +50,15 @@
 
 ## Counts by status
 
-- Missing: 1117
-- Partial: 3438
-- Implemented: 1
-- Idiomatic_Equivalent: 0
+- Missing: 1103
+- Partial: 3428
+- Implemented: 15
+- Idiomatic_Equivalent: 10
 - Inapplicable: 0
 
 ## Counts by owner
 
-- feature-2: 37
+- feature-2: 13
 - feature-3: 21
 - feature-4: 3329
 - feature-5: 12
@@ -194,7 +194,6 @@
 - `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2554racer`
 - `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43oad%2557orkspace%254%44odules`
 - `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43og%254%46utput`
-- `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2543onn`
 - `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2545nvironment%2556ariable`
 - `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2552unner%2548ost`
 - `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2553kip%2557orkspace%254%44odules`
@@ -574,9 +573,6 @@
 - `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2546ilesync%254%44irror%2F%2558%2558%2558_%2547raph%2551%254%43%2549%2544%2554ype`
 - `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2546ilesync%254%44irror%2F%2558%2558%2558_%2547raph%2551%254%43%2554ype`
 - `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2543lose`
-- `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2544o`
-- `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2547raph%2551%254%43%2543lient`
-- `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2551uery%2542uilder`
 - `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543loud%2F%254%44arshal%254%41%2553%254%46%254%45`
 - `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543loud%2F%2541s%254%45ode`
 - `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543loud%2F%2549%2544`
@@ -1608,8 +1604,6 @@
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543heck`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543heck%2547roup`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543heck%2547roup%2552un%254%46pts`
-- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient`
-- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient%254%46pt`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient%2546ilesync%254%44irror`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543loud`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543ontainer`
@@ -1757,8 +1751,6 @@
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2551uery`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552egistry%2550rotocol`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552emote%2547it%254%44irror`
-- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552equest`
-- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552esponse`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552eturn%2554ype`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2553%2544%254%42%2543onfig`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2553calar%2554ype%2544ef`
@@ -1841,9 +1833,7 @@
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2557orkspace%2557ithout%2543onfig%2556alue%254%46pts`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2557orkspace%2557ithout%2553%2544%254%42%254%46pts`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543%254%43%2549%2544ownloader`
-- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onfig`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onnect%2550arams`
-- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2545ngine%2543onn`
 - `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2552ound%2554ripper%2546unc`
 - `behavior/go-client/source%2Fgo-client%2Fgo-var%2Fdagger%2F%2545ngine%2543onn`
 - `behavior/go-client/source%2Fgo-client%2Fgo-var%2Fdagger%2F%2547o%254%44od`
@@ -3037,20 +3027,6 @@
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Finstall-registers-sdk`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fscaffolded-module-loads`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fsdk-reports-module-options`
-- `policy/rust-policy/client-beta-config-migration`
-- `policy/rust-policy/client-cancelled-connect-cleanup`
-- `policy/rust-policy/client-close-idempotency`
-- `policy/rust-policy/client-closed-operation-rejection`
-- `policy/rust-policy/client-drop-cleanup`
-- `policy/rust-policy/client-http-connect-timeout`
-- `policy/rust-policy/client-owned-lifecycle`
-- `policy/rust-policy/client-preflight-validation`
-- `policy/rust-policy/client-public-surface-encapsulation`
-- `policy/rust-policy/client-query-execution-timeout`
-- `policy/rust-policy/client-reserved-environment`
-- `policy/rust-policy/client-secret-redaction`
-- `policy/rust-policy/client-session-startup-timeout`
-- `policy/rust-policy/client-shared-handle-safety`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fdependency-policy`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust`
@@ -4627,7 +4603,16 @@
 
 ## Complete exceptions
 
-None.
+- `behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2543onn` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2544o` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2547raph%2551%254%43%2543lient` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2551uery%2542uilder` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient%254%46pt` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552equest` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552esponse` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onfig` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
+- `behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2545ngine%2543onn` — Idiomatic_Equivalent — decision evidence: decision/feature-2-idiomatic-client-mappings
 
 ## Integrity diagnostics
 

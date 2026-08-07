@@ -1,5 +1,5 @@
 use convert_case::{Case, Casing};
-use dagger_sdk::core::introspection::FullType;
+use dagger_sdk::introspection::FullType;
 use genco::prelude::rust;
 use genco::quote;
 use itertools::Itertools;

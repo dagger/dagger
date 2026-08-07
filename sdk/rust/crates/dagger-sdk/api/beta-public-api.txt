@@ -1,0 +1,10 @@
+connect(callback)
+connect_opts(config, callback)
+DaggerConn
+Config
+Config::config_path
+Config::timeout_ms
+Config::execute_timeout_ms
+generated::proc
+generated::selection
+generated::graphql_client

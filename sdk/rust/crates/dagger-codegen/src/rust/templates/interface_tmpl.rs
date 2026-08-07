@@ -1,4 +1,4 @@
-use dagger_sdk::core::introspection::{FullType, FullTypeFields};
+use dagger_sdk::introspection::{FullType, FullTypeFields};
 use genco::prelude::rust;
 use genco::quote;
 
@@ -49,15 +49,15 @@ pub fn render_interface(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<r
     })
 }
 
-/// Generate `pub trait Foo { async fn id(&self) -> Result<Id, DaggerError>; ... }`
+/// Generate `pub trait Foo { async fn id(&self) -> Result<Id, QueryError>; ... }`
 fn render_trait(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
     let trait_name = t.name.pipe(|s| format_name(s)).unwrap_or_default();
-    let dagger_error = rust::import("crate::errors", "DaggerError");
+    let query_error = rust::import("crate::errors", "QueryError");
 
     let methods = t
         .fields
         .as_ref()
-        .map(|fields| render_trait_methods(funcs, fields, &dagger_error))
+        .map(|fields| render_trait_methods(funcs, fields, &query_error))
         .unwrap_or_default();
 
     quote! {
@@ -72,11 +72,11 @@ fn render_trait(funcs: &CommonFunctions, t: &FullType) -> rust::Tokens {
 fn render_trait_methods(
     funcs: &CommonFunctions,
     fields: &[FullTypeFields],
-    dagger_error: &rust::Import,
+    query_error: &rust::Import,
 ) -> rust::Tokens {
     let methods: Vec<rust::Tokens> = fields
         .iter()
-        .filter_map(|f| render_trait_method(funcs, f, dagger_error))
+        .filter_map(|f| render_trait_method(funcs, f, query_error))
         .collect();
 
     quote! {
@@ -88,7 +88,7 @@ fn render_trait_methods(
 fn render_trait_method(
     funcs: &CommonFunctions,
     field: &FullTypeFields,
-    dagger_error: &rust::Import,
+    query_error: &rust::Import,
 ) -> Option<rust::Tokens> {
     let name = field.name.as_ref()?;
     let fn_name = format_struct_name(name);
@@ -108,7 +108,7 @@ fn render_trait_method(
     } else {
         Some(quote! {
             $(field.description.pipe(|d| format_struct_comment(d)))
-            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<$output_type, $dagger_error>> + Send;
+            fn $fn_name(&self$(if let Some(a) = &args => , $a)) -> impl core::future::Future<Output = Result<$output_type, $query_error>> + Send;
         })
     }
 }
@@ -186,7 +186,7 @@ fn render_trait_impl_method(
     let fn_name = format_struct_name(name);
     let type_ref = &field.type_.as_ref()?.type_ref;
     let output_type = funcs.format_output_type(type_ref);
-    let dagger_error = rust::import("crate::errors", "DaggerError");
+    let query_error = rust::import("crate::errors", "QueryError");
 
     let is_object = type_ref.is_object() || type_ref.is_list_of_objects();
 
@@ -198,20 +198,19 @@ fn render_trait_impl_method(
                 let mut query = self.selection.select($(genco::tokens::quoted(name)));
                 $(render_required_args(funcs, field))
                 $(&output_type) {
-                    proc: self.proc.clone(),
+                    session: self.session.clone(),
                     selection: query,
-                    graphql_client: self.graphql_client.clone(),
                 }
             }
         })
     } else {
         Some(quote! {
-            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<$output_type, $dagger_error>> + Send {
+            fn $fn_name(&self$(if let Some(a) = &arg_sig => , $a)) -> impl core::future::Future<Output = Result<$output_type, $query_error>> + Send {
                 let mut query = self.selection.select($(genco::tokens::quoted(name)));
                 $(render_required_args(funcs, field))
-                let graphql_client = self.graphql_client.clone();
+                let session = self.session.clone();
                 async move {
-                    query.execute(graphql_client).await
+                    query.execute(&session).await
                 }
             }
         })

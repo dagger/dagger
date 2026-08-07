@@ -5,7 +5,7 @@ use std::sync::Arc;
 use clap::{Arg, ArgMatches};
 use dagger_codegen::generate;
 use dagger_codegen::rust::RustGenerator;
-use dagger_sdk::core::introspection;
+use dagger_sdk::introspection;
 
 #[allow(dead_code)]
 pub struct GenerateCommand;

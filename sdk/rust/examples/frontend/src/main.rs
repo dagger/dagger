@@ -3,14 +3,13 @@ use eyre::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dagger_sdk::connect(|client| async move {
-        let build_directory = build_frontend(&client).await;
-        let image = build_prod_image(&client, build_directory).await;
-        let image_reference = push_image(image).await?;
-        println!("Image published at: {image_reference}");
-        Ok(())
-    })
-    .await?;
+    let owned = dagger_sdk::connect().await?;
+    let client = owned.query();
+    let build_directory = build_frontend(&client).await;
+    let image = build_prod_image(&client, build_directory).await;
+    let image_reference = push_image(image).await?;
+    println!("Image published at: {image_reference}");
+    owned.close().await?;
 
     Ok(())
 }

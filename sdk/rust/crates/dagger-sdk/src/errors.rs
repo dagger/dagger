@@ -383,10 +383,6 @@ pub enum ConnectError {
     },
     /// Provisioning or connection establishment failed.
     Connection(EngineConnectionError),
-    /// A transitional callback-scoped client callback failed.
-    CallbackFailed(EngineConnectionError),
-    /// Transitional callback cleanup failed.
-    Close(CloseError),
 }
 
 impl fmt::Display for ConnectError {
@@ -395,8 +391,6 @@ impl fmt::Display for ConnectError {
             Self::Config(_) => "the client configuration is invalid",
             Self::StartupTimeout { .. } => "the Dagger session did not start in time",
             Self::Connection(_) => "the Dagger connection could not be established",
-            Self::CallbackFailed(_) => "the client callback failed",
-            Self::Close(_) => "the client could not be closed",
         })
     }
 }
@@ -407,11 +401,6 @@ impl fmt::Debug for ConnectError {
             Self::Config(error) => formatter.debug_tuple("Config").field(error).finish(),
             Self::StartupTimeout { .. } => formatter.write_str("StartupTimeout"),
             Self::Connection(error) => formatter.debug_tuple("Connection").field(error).finish(),
-            Self::CallbackFailed(error) => formatter
-                .debug_tuple("CallbackFailed")
-                .field(error)
-                .finish(),
-            Self::Close(error) => formatter.debug_tuple("Close").field(error).finish(),
         }
     }
 }
@@ -421,8 +410,6 @@ impl Error for ConnectError {
         match self {
             Self::Config(error) => Some(error),
             Self::Connection(error) => Some(error),
-            Self::CallbackFailed(error) => Some(error),
-            Self::Close(error) => Some(error),
             Self::StartupTimeout { .. } => None,
         }
     }
@@ -610,7 +597,8 @@ impl Error for CloseError {
 
 /// Transitional generated-binding error retained until query execution moves onto
 /// the shared-session facade.
-pub enum DaggerError {
+#[allow(dead_code)]
+pub(crate) enum DaggerError {
     /// Query construction failed.
     Build(QueryBuildError),
     /// A generated input could not be serialized.
@@ -660,7 +648,8 @@ impl Error for DaggerError {
 }
 
 /// Transitional selected-data decoding error.
-pub enum DaggerUnpackError {
+#[allow(dead_code)]
+pub(crate) enum DaggerUnpackError {
     /// More object layers were present than the beta selector could traverse.
     TooManyNestedObjects,
     /// JSON selected data could not be decoded.
@@ -706,22 +695,6 @@ impl fmt::Display for EyreReportSource {
 impl Error for EyreReportSource {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(self.0.as_ref())
-    }
-}
-
-impl ConnectError {
-    pub(crate) fn from_legacy_connection(error: eyre::Report) -> Self {
-        Self::Connection(EngineConnectionError::with_source(
-            EngineConnectionErrorKind::Other,
-            EyreReportSource(error),
-        ))
-    }
-
-    pub(crate) fn from_legacy_close(error: eyre::Report) -> Self {
-        Self::Close(CloseError::Connection(EngineConnectionError::with_source(
-            EngineConnectionErrorKind::Other,
-            EyreReportSource(error),
-        )))
     }
 }
 

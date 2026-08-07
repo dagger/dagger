@@ -10,8 +10,10 @@ const DAGGER_REVISION: &str = "25300124ca110612edc09c43f89cb5fad6028170";
 const GO_REVISION: &str = "1309520660f6a5b35ef97b4fbe151e32a06a8dc5";
 const HARNESS_REVISION: &str = "8c164424b7a8a37b33a77367ef7547490d5b87b5";
 const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d19a9a22ef9e3890a40";
-const GO_CLIENT_PRESERVATION_DIGEST: &str =
-    "sha256:14495f04a376a9120208f1d17c7290ad35983442a3bad23b659b428747d0258f";
+const GO_CLIENT_FEATURE2_DIGEST: &str =
+    "sha256:bb1907e7d7990649c44e288388096b2a29eb613a3278615b24ac44ea95d965cf";
+const RUST_ARTIFACT_DIGEST: &str =
+    "sha256:6facf22c8fd95eb9bf20c92cc04497116f1d2b9a8bec842f20effd42ee3ec033";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -28,8 +30,12 @@ struct OwnershipProjection<'a> {
 }
 
 #[test]
-fn initial_target_locks_authorities_harness_omissions_and_ownership() {
+fn target_locks_authorities_harness_feature2_status_and_ownership() {
     let root = repository_root();
+    assert_eq!(
+        rust_artifact_digest(&root).unwrap().as_str(),
+        RUST_ARTIFACT_DIGEST
+    );
     let contract = root.join("sdk/rust/completeness");
     let target: TargetDescriptor = read_canonical(&contract.join("target.json"));
     assert_eq!(target.dagger_revision.as_str(), DAGGER_REVISION);
@@ -108,10 +114,17 @@ fn initial_target_locks_authorities_harness_omissions_and_ownership() {
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:bc4045d355e3a98dd6275905ef730fe73d1b3b118efe01f823a24f9ddd5075b8"
+        "sha256:17003989b1e531913cad8adb4c86ba31dec4b7cd687c4aa5b8552d6cb65f8b24"
     );
-    assert_eq!(derived.report.blocking_capabilities.len(), 4_555);
-    assert!(derived.report.complete_exceptions.is_empty());
+    assert_eq!(derived.report.blocking_capabilities.len(), 4_531);
+    assert_eq!(derived.report.complete_exceptions.len(), 10);
+    assert!(
+        derived
+            .report
+            .complete_exceptions
+            .iter()
+            .all(|exception| exception.status == Status::IdiomaticEquivalent)
+    );
     let go_client_projection = derived
         .ledger
         .capabilities
@@ -132,7 +145,7 @@ fn initial_target_locks_authorities_harness_omissions_and_ownership() {
         canonical_digest(DigestDomain::Artifact, &go_client_projection)
             .unwrap()
             .as_str(),
-        GO_CLIENT_PRESERVATION_DIGEST
+        GO_CLIENT_FEATURE2_DIGEST
     );
     assert_eq!(
         derived.report.counts_by_authority,
@@ -149,17 +162,17 @@ fn initial_target_locks_authorities_harness_omissions_and_ownership() {
     assert_eq!(
         derived.report.counts_by_status,
         std::collections::BTreeMap::from([
-            (Status::IdiomaticEquivalent, 0),
-            (Status::Implemented, 1),
+            (Status::IdiomaticEquivalent, 10),
+            (Status::Implemented, 15),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_117),
-            (Status::Partial, 3_438),
+            (Status::Missing, 1_103),
+            (Status::Partial, 3_428),
         ])
     );
     assert_eq!(
         derived.report.counts_by_owner,
         std::collections::BTreeMap::from([
-            (FeatureId::Feature2, 37),
+            (FeatureId::Feature2, 13),
             (FeatureId::Feature3, 21),
             (FeatureId::Feature4, 3_329),
             (FeatureId::Feature5, 12),
@@ -283,6 +296,7 @@ fn materialize_contract_fixture(source: &Path, destination: &Path) {
         "sdk/rust/rust-toolchain.toml",
         "sdk/rust/AGENTS.md",
         "internal/version/VERSION",
+        ".kiro/specs/rust-sdk-client-lifecycle/design.md",
     ] {
         copy_file(&source.join(file), &destination.join(file));
     }

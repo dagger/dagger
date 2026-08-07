@@ -14,6 +14,16 @@ const REQUIREMENTS: &str =
     include_str!("../../../../../.kiro/specs/rust-sdk-client-lifecycle/requirements.md");
 const CASES: u32 = 256;
 
+const TAGGED_PROPERTY_SOURCES: [&str; 7] = [
+    include_str!("feature_scope.rs"),
+    include_str!("../../dagger-sdk/src/connector_tests.rs"),
+    include_str!("../../dagger-sdk/src/foundation_tests.rs"),
+    include_str!("../../dagger-sdk/src/lifecycle_tests.rs"),
+    include_str!("../../dagger-sdk/src/preflight_tests.rs"),
+    include_str!("../../dagger-sdk/src/public_api_tests.rs"),
+    include_str!("../../dagger-sdk/src/query_tests.rs"),
+];
+
 fn property_config() -> Config {
     Config {
         cases: CASES,
@@ -23,6 +33,25 @@ fn property_config() -> Config {
         )))),
         ..Config::default()
     }
+}
+
+#[test]
+fn tagged_property_manifest_is_exact_and_uses_256_cases() {
+    let mut numbers = TAGGED_PROPERTY_SOURCES
+        .iter()
+        .flat_map(|source| source.lines())
+        .filter_map(|line| line.split("Property ").nth(1))
+        .filter_map(|suffix| suffix.split(':').next())
+        .filter_map(|number| number.parse::<u8>().ok())
+        .collect::<Vec<_>>();
+    numbers.sort_unstable();
+    numbers.dedup();
+
+    assert_eq!(numbers, (1..=23).collect::<Vec<_>>());
+    assert_eq!(CASES, 256);
+    assert!(
+        include_str!("../../dagger-sdk/src/test_support.rs").contains("PROPTEST_CASES: u32 = 256")
+    );
 }
 
 // Invariant: accepted scope prose and ownership corrections have exactly one reviewed meaning.

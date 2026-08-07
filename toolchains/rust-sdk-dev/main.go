@@ -22,7 +22,7 @@ const (
 
 	rustSdkCrate     = "dagger-sdk"
 	cargoEditVersion = "0.13.0"
-	cargoChefVersion = "0.1.62"
+	cargoChefVersion = "0.1.77"
 	cargoDenyVersion = "0.19.9"
 
 	mockCargoRegistryName = "mock"
@@ -70,6 +70,9 @@ func New(
 			"!internal/version/VERSION",
 			"!future/sdk-tests.md",
 			"!.kiro/specs/rust-sdk-completeness-contract/requirements.md",
+			"!.kiro/specs/rust-sdk-client-lifecycle/requirements.md",
+			"!.kiro/specs/rust-sdk-client-lifecycle/design.md",
+			"!.kiro/specs/rust-sdk-client-lifecycle/tasks.md",
 		},
 	})
 
@@ -160,6 +163,8 @@ func (t *RustSdkDev) CargoFmt(ctx context.Context) error {
 func (t *RustSdkDev) CargoCheck(ctx context.Context) error {
 	_, err := t.DevContainer(true).
 		WithExec([]string{"cargo", "check", "--workspace", "--all-features", "--release", "--locked"}).
+		WithExec([]string{"cargo", "test", "-p", "dagger-sdk", "--all-features", "--test", "public_api", "--locked"}).
+		WithExec([]string{"cargo", "test", "-p", "dagger-sdk", "--all-features", "--locked", "public_api_tests::production_request_and_shutdown_sources_pass_the_audit"}).
 		Sync(ctx)
 
 	return err
@@ -220,6 +225,7 @@ func (t *RustSdkDev) Test(ctx context.Context) error {
 	_, err := t.DevContainer(true).
 		WithExec([]string{"rustc", "--version"}).
 		WithExec([]string{"cargo", "test", "--workspace", "--all-features", "--release", "--locked"}).
+		WithExec([]string{"cargo", "test", "-p", "dagger-sdk", "--no-default-features", "--test", "raw_only", "--release", "--locked"}).
 		Sync(ctx)
 
 	return err
@@ -299,10 +305,10 @@ func (t *RustSdkDev) ReleaseDryRun(
 	if err != nil {
 		return err
 	}
-	_, err = base.File(fmt.Sprintf("./target/package/dagger-sdk-%s.crate", targetVersion)).Sync(ctx)
-	if err != nil {
-		return err
-	}
+	// Current Cargo verifies the publish archive and retains its expanded package, but
+	// does not promise to retain the intermediate .crate after a successful dry run.
+	// The command outcome plus the expanded manifest below prove both packaging and
+	// versioning without coupling this check to an implementation-detail artifact.
 
 	// check that Cargo.toml got the version
 	dt, err := base.File(fmt.Sprintf("./target/package/dagger-sdk-%s/Cargo.toml", targetVersion)).Contents(ctx)

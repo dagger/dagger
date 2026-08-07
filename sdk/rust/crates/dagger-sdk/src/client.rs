@@ -1,84 +1,148 @@
-use std::sync::Arc;
+//! Owned public client facade over one shared raw/generated query session.
+//!
+//! The stable facade is a cloneable lease on one shared session. Its raw execution and
+//! close behavior remain available with generated bindings disabled. With `gen`, root
+//! query construction clones the same lease and performs no transport work.
 
-use crate::core::config::Config;
-use crate::core::engine::Engine as DaggerEngine;
-use crate::core::graphql_client::DefaultGraphQLClient;
+use crate::config::ClientConfig;
+use crate::connector::{ConnectionRequest, Connector, DefaultConnector};
+use crate::errors::{CloseError, ConnectError, RequestError};
+use crate::graphql::{RawRequest, RawResponse};
+use crate::lifecycle::SessionHandle;
+use crate::preflight::{ConnectionPlan, preflight};
+use crate::query::QueryBuilder;
 
-use crate::errors::{ConnectError, DaggerError};
-use crate::r#gen::{Id, Query};
-use crate::id::IntoID;
-use crate::loadable::Loadable;
-use crate::logging::StdLogger;
-use crate::querybuilder::query;
-
-pub type DaggerConn = Query;
-
-/// Type-erased failure returned by the transitional callback facade.
+/// A cloneable owned lease on one Dagger engine session.
 ///
-/// The callback is removed once the shared-session client becomes the sole public
-/// facade. Keeping its boundary on the standard error trait avoids exposing an
-/// internal report crate while still allowing application errors to use `?`.
-pub type ConnectCallbackError = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-/// Result expected from the transitional [`connect`] callback.
-pub type ConnectCallbackResult = Result<(), ConnectCallbackError>;
-
-pub async fn connect<F, Fut>(dagger: F) -> Result<(), ConnectError>
-where
-    F: FnOnce(DaggerConn) -> Fut + 'static,
-    Fut: futures::Future<Output = ConnectCallbackResult> + 'static,
-{
-    let cfg = Config::builder()
-        .logger(Arc::new(StdLogger::default()))
-        .build();
-
-    connect_opts(cfg, dagger).await
+/// Cloning a client does not open another connection. Explicit [`Client::close`] calls
+/// across all clones share one terminal result; dropping the final clone starts
+/// non-blocking cleanup when close was not called.
+#[derive(Clone)]
+pub struct Client {
+    session: SessionHandle,
 }
 
-pub async fn connect_opts<F, Fut>(cfg: Config, dagger: F) -> Result<(), ConnectError>
-where
-    F: FnOnce(DaggerConn) -> Fut + 'static,
-    Fut: futures::Future<Output = ConnectCallbackResult> + 'static,
-{
-    let (conn, proc) = DaggerEngine::new()
-        .start(&cfg)
-        .await
-        .map_err(ConnectError::from_legacy_connection)?;
-
-    let proc = proc.map(Arc::new);
-
-    let client = Query {
-        proc: proc.clone(),
-        selection: query(),
-        graphql_client: Arc::new(DefaultGraphQLClient::new(&conn, &cfg)),
-    };
-
-    dagger(client).await.map_err(|source| {
-        ConnectError::CallbackFailed(crate::EngineConnectionError::with_boxed_source(
-            crate::EngineConnectionErrorKind::Other,
-            source,
-        ))
-    })?;
-
-    if let Some(proc) = &proc {
-        proc.shutdown()
-            .await
-            .map_err(ConnectError::from_legacy_close)?;
+impl Client {
+    /// Starts an immutable compositional query on this client's shared session.
+    ///
+    /// Construction performs no I/O; the returned builder is an independent session
+    /// lease and remains usable if this `Client` value is dropped.
+    pub fn query_builder(&self) -> QueryBuilder {
+        QueryBuilder::new(self.session.clone())
     }
 
-    Ok(())
+    /// Returns a fresh generated root query on this client's shared session.
+    ///
+    /// Root construction performs no I/O. Generated handles derived from the root own
+    /// independent leases, so dropping either value cannot invalidate the other.
+    #[cfg(feature = "gen")]
+    pub fn query(&self) -> crate::Query {
+        crate::Query {
+            session: self.session.clone(),
+            selection: crate::query::query(),
+        }
+    }
+
+    /// Executes one raw GraphQL request through this client's shared session.
+    ///
+    /// Requests admitted before close may finish or return
+    /// [`RequestError::InterruptedByClose`]. Once close begins, new requests fail with
+    /// [`RequestError::ClientClosed`] without invoking the connection.
+    pub async fn execute(&self, request: RawRequest) -> Result<RawResponse, RequestError> {
+        self.session.execute(request).await
+    }
+
+    /// Gracefully closes the shared session and returns its reusable terminal result.
+    ///
+    /// This method is cancellation-safe: abandoning one waiter does not cancel the
+    /// SDK-owned shutdown attempt, and a later caller observes the same result.
+    pub async fn close(&self) -> Result<(), CloseError> {
+        self.session.close().await
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lifecycle_state(&self) -> &'static str {
+        self.session.lifecycle_state()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn session_identity(&self) -> usize {
+        self.session.identity()
+    }
 }
 
-// Conn will automatically close on drop of proc
+/// Connects with the documented default configuration.
+pub async fn connect() -> Result<Client, ConnectError> {
+    connect_with(ClientConfig::default()).await
+}
 
+/// Consumes a validated configuration and returns one owned client.
+pub async fn connect_with(config: ClientConfig) -> Result<Client, ConnectError> {
+    connect_with_connector(config, &DefaultConnector).await
+}
+
+pub(crate) async fn connect_with_connector(
+    config: ClientConfig,
+    connector: &dyn Connector,
+) -> Result<Client, ConnectError> {
+    let plan = preflight(config)?;
+    if let ConnectionPlan::Explicit {
+        connection,
+        execution_timeout,
+    } = plan
+    {
+        // The explicit path intentionally returns before constructing a connector
+        // request. This preserves caller injection as a complete abstraction and
+        // prevents environment, discovery, process, or network side effects.
+        return Ok(Client {
+            session: SessionHandle::new(connection, None, execution_timeout),
+        });
+    }
+
+    let request = ConnectionRequest::try_from(plan).map_err(|_| internal_connect_error())?;
+    let (startup_timeout, http_connect_timeout, execution_timeout) = request.timeouts();
+    let connection = tokio::time::timeout(startup_timeout, connector.connect(request))
+        .await
+        .map_err(|_| ConnectError::StartupTimeout {
+            duration: startup_timeout,
+        })??;
+
+    Ok(Client {
+        session: SessionHandle::new(connection, Some(http_connect_timeout), execution_timeout),
+    })
+}
+
+fn internal_connect_error() -> ConnectError {
+    ConnectError::Connection(crate::EngineConnectionError::new(
+        crate::EngineConnectionErrorKind::Other,
+    ))
+}
+
+#[cfg(feature = "gen")]
+use crate::errors::{QueryBuildError, QueryBuildErrorKind, QueryError};
+#[cfg(feature = "gen")]
+use crate::r#gen::{Id, Query};
+#[cfg(feature = "gen")]
+use crate::id::IntoID;
+#[cfg(feature = "gen")]
+use crate::loadable::Loadable;
+
+#[cfg(feature = "gen")]
 impl Query {
-    /// Return a lazy reference to a node by its ID without making a
-    /// network call. The returned value can be used to chain further
-    /// queries.
+    /// Returns a lazy reference to a node by its ID without making a network call.
     ///
-    /// ```ignore
-    /// let ctr: Container = client.r#ref(id);
+    /// The returned value can be used to chain further queries.
+    ///
+    /// ```no_run
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let client = dagger_sdk::connect().await?;
+    /// # let query = client.query();
+    /// # let id = query.container().id().await?;
+    /// let ctr: dagger_sdk::Container = query.r#ref(id);
     /// let out = ctr.with_exec(vec!["echo", "hi"]).stdout().await?;
+    /// # client.close().await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn r#ref<T: Loadable>(&self, id: impl IntoID<Id>) -> T {
         let selection = self
@@ -89,28 +153,28 @@ impl Query {
                 Box::new(move || {
                     let id = id.clone();
                     Box::pin(async move {
-                        let resolved = id.into_id().await.unwrap();
-                        format!("\"{}\"", resolved.0)
+                        id.into_id()
+                            .await
+                            .map(|resolved| format!("\"{}\"", resolved.0))
+                            .map_err(|error| {
+                                QueryBuildError::with_source(
+                                    QueryBuildErrorKind::LazyIdentifier,
+                                    error,
+                                )
+                            })
                     })
                 }),
             )
-            .inline_fragment(T::graphql_type());
+            .inline_fragment(<T as crate::loadable::private::Sealed>::graphql_type());
 
-        T::from_query(self.proc.clone(), selection, self.graphql_client.clone())
+        <T as crate::loadable::private::Sealed>::from_query(self.session.clone(), selection)
     }
 
-    /// Load a node by its ID with type safety. Verifies the node
-    /// exists and matches the expected type before returning.
-    ///
-    /// ```ignore
-    /// let ctr: Container = client.load(id).await?;
-    /// ```
-    pub async fn load<T: Loadable>(&self, id: impl IntoID<Id>) -> Result<T, DaggerError> {
-        let type_name = T::graphql_type();
-
-        // Verify the node exists by querying __typename through the
-        // inline fragment. If the concrete type doesn't match the
-        // fragment, the response will be empty.
+    /// Loads a node by ID after verifying that it exists with the expected type.
+    pub async fn load<T: Loadable>(&self, id: impl IntoID<Id>) -> Result<T, QueryError> {
+        let type_name = <T as crate::loadable::private::Sealed>::graphql_type();
+        // Asking for an ID through a concrete inline fragment makes a missing or
+        // mismatched node fail before constructing the caller's typed handle.
         let check_selection = self
             .selection
             .select("node")
@@ -119,40 +183,22 @@ impl Query {
                 Box::new(move || {
                     let id = id.clone();
                     Box::pin(async move {
-                        let resolved = id.into_id().await.unwrap();
-                        format!("\"{}\"", resolved.0)
+                        id.into_id()
+                            .await
+                            .map(|resolved| format!("\"{}\"", resolved.0))
+                            .map_err(|error| {
+                                QueryBuildError::with_source(
+                                    QueryBuildErrorKind::LazyIdentifier,
+                                    error,
+                                )
+                            })
                     })
                 })
             })
             .inline_fragment(type_name)
             .select("id");
 
-        let _: Id = check_selection.execute(self.graphql_client.clone()).await?;
-
+        let _: Id = check_selection.execute(&self.session).await?;
         Ok(self.r#ref(id))
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::connect;
-
-    #[tokio::test]
-    async fn test_connect() -> eyre::Result<()> {
-        tracing_subscriber::fmt::init();
-
-        connect(|client| async move {
-            client
-                .container()
-                .from("alpine:latest")
-                .with_exec(vec!["echo", "1"])
-                .sync()
-                .await?;
-
-            Ok(())
-        })
-        .await?;
-
-        Ok(())
     }
 }

@@ -8,14 +8,13 @@ use configuration::Configuration;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dagger_sdk::connect(|client| async move {
-        let build = build_backend(&client).await;
-        let image = build_prod_image(&client, build).await;
-        let image_reference = push_image(image).await?;
-        println!("Image published at: {image_reference}");
-        Ok(())
-    })
-    .await?;
+    let owned = dagger_sdk::connect().await?;
+    let client = owned.query();
+    let build = build_backend(&client).await;
+    let image = build_prod_image(&client, build).await;
+    let image_reference = push_image(image).await?;
+    println!("Image published at: {image_reference}");
+    owned.close().await?;
 
     Ok(())
 }

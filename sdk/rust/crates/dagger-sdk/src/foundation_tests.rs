@@ -477,7 +477,6 @@ fn public_error_rendering_is_redacted_while_sources_remain_inspectable() {
         QueryBuildError::with_source(QueryBuildErrorKind::ArgumentEncoding, SecretSource(MARKER));
     let diagnostic = DiagnosticSinkError::with_source(SecretSource(MARKER));
     let connect = ConnectError::Connection(connection.clone());
-    let callback = ConnectError::CallbackFailed(connection.clone());
     let request = RequestError::RequestEncoding(request_encoding.clone());
     let query = QueryError::Build(query_build.clone());
     let close = CloseError::Connection(connection.clone());
@@ -495,8 +494,6 @@ fn public_error_rendering_is_redacted_while_sources_remain_inspectable() {
         format!("{diagnostic:?}"),
         connect.to_string(),
         format!("{connect:?}"),
-        callback.to_string(),
-        format!("{callback:?}"),
         request.to_string(),
         format!("{request:?}"),
         query.to_string(),
@@ -512,7 +509,6 @@ fn public_error_rendering_is_redacted_while_sources_remain_inspectable() {
     assert!(Error::source(&query_build).is_some());
     assert!(Error::source(&diagnostic).is_some());
     assert!(Error::source(&connect).is_some());
-    assert!(Error::source(&callback).is_some());
     assert!(Error::source(&request).is_some());
     assert!(Error::source(&query).is_some());
     assert!(matches!(close.clone(), CloseError::Connection(_)));

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dagger_sdk::core::introspection::{__TypeKind, FullType, Schema};
+use dagger_sdk::introspection::{__TypeKind, FullType, Schema};
 use itertools::Itertools;
 
 pub struct Visitor {

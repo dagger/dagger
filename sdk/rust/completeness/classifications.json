@@ -154,9 +154,9 @@
     "routing/go-client/client": {
       "authority_id": "go-client",
       "classification": {
-        "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+        "gap": "Feature 3 live CLI, source, or resource behaviour lacks target-scoped engine verification",
         "implementation_evidence": [
-          "implementation/go-client-baseline"
+          "implementation/feature-2-client-lifecycle"
         ],
         "owner_feature": "feature-2",
         "status": "Partial"
@@ -164,7 +164,195 @@
       "expected_capability_ids": {
         "digest": "sha256:9b10e3550aeffe40080db6b339b6ed84a9c0f47468d35e661195f069debad626"
       },
-      "overrides": {},
+      "overrides": {
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2543onnect": {
+          "decision_evidence": [
+            "decision/feature-2-no-closure-helper"
+          ],
+          "gap": "Feature 3 CLI source selection, provisioning, and authentication lack target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43oad%2557orkspace%254%44odules": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43og%254%46utput": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2543onn": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2545nvironment%2556ariable": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2552unner%2548ost": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2553kip%2557orkspace%254%44odules": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556erbosity": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556ersion%254%46verride": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkdir": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkspace": {
+          "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2543lose": {
+          "gap": "Feature 3 CLI-owned process and transport shutdown lack target-scoped engine verification",
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "owner_feature": "feature-2",
+          "status": "Partial"
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2544o": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2547raph%2551%254%43%2543lient": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2551uery%2542uilder": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient%254%46pt": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552equest": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        },
+        "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552esponse": {
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        }
+      },
       "rule_id": "routing/go-client/client",
       "selector": {
         "authority_id": "go-client",
@@ -186,17 +374,17 @@
       },
       "overrides": {
         "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%254%43oad%2557orkspace%254%44odules": {
-          "gap": "Feature 2 workspace-module configuration lacks target-scoped verification",
+          "gap": "Feature 8 live engine verification of workspace-module loading is not yet present",
           "implementation_evidence": [
-            "implementation/go-client-baseline"
+            "implementation/feature-2-client-lifecycle"
           ],
           "owner_feature": "feature-2",
           "status": "Partial"
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%2557orkspace": {
-          "gap": "Feature 2 workspace configuration lacks target-scoped verification",
+          "gap": "Feature 8 live engine verification of workspace selection is not yet present",
           "implementation_evidence": [
-            "implementation/go-client-baseline"
+            "implementation/feature-2-client-lifecycle"
           ],
           "owner_feature": "feature-2",
           "status": "Partial"
@@ -263,20 +451,28 @@
       },
       "overrides": {
         "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onfig": {
-          "gap": "Feature 2 connection configuration lacks target-scoped verification",
-          "implementation_evidence": [
-            "implementation/go-client-baseline"
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
           ],
-          "owner_feature": "feature-2",
-          "status": "Partial"
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
         },
         "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2545ngine%2543onn": {
-          "gap": "Feature 2 explicit connection abstraction lacks target-scoped verification",
-          "implementation_evidence": [
-            "implementation/go-client-baseline"
+          "decision_evidence": [
+            "decision/feature-2-idiomatic-client-mappings"
           ],
-          "owner_feature": "feature-2",
-          "status": "Partial"
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Idiomatic_Equivalent",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
         }
       },
       "rule_id": "routing/go-client/engineconn-core",
@@ -454,14 +650,31 @@
     "routing/rust-policy/client-lifecycle": {
       "authority_id": "rust-policy",
       "classification": {
-        "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-        "owner_feature": "feature-2",
-        "status": "Missing"
+        "implementation_evidence": [
+          "implementation/feature-2-client-lifecycle"
+        ],
+        "status": "Implemented",
+        "verification_evidence": [
+          "verification/feature-2-client-lifecycle"
+        ]
       },
       "expected_capability_ids": {
         "digest": "sha256:68eab705ee075f3ca1525b6ad21e6f42f80d115a4b183787c30994525b17779f"
       },
-      "overrides": {},
+      "overrides": {
+        "policy/rust-policy/client-owned-lifecycle": {
+          "decision_evidence": [
+            "decision/feature-2-no-closure-helper"
+          ],
+          "implementation_evidence": [
+            "implementation/feature-2-client-lifecycle"
+          ],
+          "status": "Implemented",
+          "verification_evidence": [
+            "verification/feature-2-client-lifecycle"
+          ]
+        }
+      },
       "rule_id": "routing/rust-policy/client-lifecycle",
       "selector": {
         "authority_id": "rust-policy",

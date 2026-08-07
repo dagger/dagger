@@ -163,7 +163,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --lock
 cargo deny check
 ```
 
-The workspace test command executes all 21 tagged correctness-property families with at least
+The workspace test command executes all 23 tagged correctness-property families with at least
 256 cases, plus fixed, integration, exact-target, cross-root, and documentation tests. All four
 `cargo deny` classes—advisories, bans, licenses, and sources—must pass. Configured warnings
 remain visible and must be reviewed rather than hidden.
@@ -184,19 +184,20 @@ go test ./...
 
 The exact result is locked by
 [`initial_baseline.rs`](../crates/dagger-sdk-completeness/tests/initial_baseline.rs) and reproduced
-in [`artifacts/report.json`](artifacts/report.json). Feature 2's scope foundation adds 14
-Rust-policy capabilities and corrects coarse ownership while deliberately leaving the
-`Implemented` count unchanged:
+in [`artifacts/report.json`](artifacts/report.json). Feature 2 completes the stable owned-client
+contract while retaining explicit Feature 3 and Feature 8 blockers for live CLI, resource, and
+workspace behaviour:
 
 | Observation | Expected value |
 | --- | ---: |
 | Capabilities | 4,556 |
-| `Implemented` | 1 |
-| `Partial` | 3,438 |
-| `Missing` | 1,117 |
-| Blocking capabilities | 4,555 |
+| `Implemented` | 15 |
+| `Idiomatic_Equivalent` | 10 |
+| `Partial` | 3,428 |
+| `Missing` | 1,103 |
+| Blocking capabilities | 4,531 |
 | Inventory digest | `sha256:c0f27c650ab5847a861c599094ecca2ffac00aee35a9a995623dd018a7b38e66` |
-| Ledger digest | `sha256:bc4045d355e3a98dd6275905ef730fe73d1b3b118efe01f823a24f9ddd5075b8` |
+| Ledger digest | `sha256:17003989b1e531913cad8adb4c86ba31dec4b7cd687c4aa5b8552d6cb65f8b24` |
 | Harness partition | 17 subject failures, 1 harness-self pass |
 
 Any difference requires an explained authored-input or extractor change. Do not update the

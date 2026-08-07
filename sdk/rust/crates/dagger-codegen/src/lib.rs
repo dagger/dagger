@@ -6,7 +6,7 @@ pub mod rust;
 pub mod utility;
 mod visitor;
 
-use dagger_sdk::core::introspection::Schema;
+use dagger_sdk::introspection::Schema;
 
 use self::generator::DynGenerator;
 
@@ -30,7 +30,7 @@ pub fn generate(schema: Schema, generator: DynGenerator) -> eyre::Result<String>
 mod tests {
     use std::sync::Arc;
 
-    use dagger_sdk::core::introspection::IntrospectionResponse;
+    use dagger_sdk::introspection::IntrospectionResponse;
 
     use super::generate;
     use crate::rust::RustGenerator;
@@ -42,6 +42,13 @@ mod tests {
             Arc::new(RustGenerator {}),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn generated_output_is_deterministic() {
+        let first = generate_from_json(interface_schema());
+        let second = generate_from_json(interface_schema());
+        assert_eq!(first.as_bytes(), second.as_bytes());
     }
 
     /// Minimal schema with an interface, two implementing objects, and a
@@ -266,12 +273,12 @@ mod tests {
     fn loadable_impl_on_objects() {
         let code = generate_from_json(interface_schema());
         assert!(
-            code.contains("impl Loadable for Container"),
-            "expected 'impl Loadable for Container'"
+            code.contains("impl Sealed for Container"),
+            "expected the sealed construction impl for Container"
         );
         assert!(
-            code.contains("impl Loadable for Directory"),
-            "expected 'impl Loadable for Directory'"
+            code.contains("impl Sealed for Directory"),
+            "expected the sealed construction impl for Directory"
         );
     }
 
@@ -279,8 +286,8 @@ mod tests {
     fn loadable_impl_on_interface_client() {
         let code = generate_from_json(interface_schema());
         assert!(
-            code.contains("impl Loadable for NodeClient"),
-            "expected 'impl Loadable for NodeClient'"
+            code.contains("impl Sealed for NodeClient"),
+            "expected the sealed construction impl for NodeClient"
         );
         // The GraphQL name must be the interface name, not the Rust struct name.
         assert!(
@@ -293,9 +300,26 @@ mod tests {
     fn no_loadable_on_query() {
         let code = generate_from_json(interface_schema());
         assert!(
-            !code.contains("impl Loadable for Query"),
+            !code.contains("impl Sealed for Query"),
             "Query should not implement Loadable (no id field)"
         );
+    }
+
+    #[test]
+    fn generated_handles_store_only_private_session_and_selection() {
+        let code = generate_from_json(interface_schema());
+        assert!(code.contains("pub(crate) session: SessionHandle"));
+        assert!(code.contains("pub(crate) selection: Selection"));
+        assert!(!code.contains("graphql_client"));
+        assert!(!code.contains("DaggerSessionProc"));
+    }
+
+    #[test]
+    fn generated_methods_execute_through_the_shared_session() {
+        let code = generate_from_json(interface_schema());
+        assert!(code.contains("query.execute(&self.session).await"));
+        assert!(code.contains("let session = self.session.clone();"));
+        assert!(code.contains("query.execute(&session).await"));
     }
 
     /// Schema with `@expectedType` directives on field returns and arguments.
@@ -416,9 +440,9 @@ mod tests {
     #[test]
     fn convert_id_sync_returns_parent() {
         let code = generate_from_json(expected_type_schema());
-        // sync() should return Result<Container, DaggerError>, not Result<Id, DaggerError>
+        // sync() should return Result<Container, QueryError>, not Result<Id, QueryError>
         assert!(
-            code.contains("fn sync") && code.contains("-> Result<Container, DaggerError>"),
+            code.contains("fn sync") && code.contains("-> Result<Container, QueryError>"),
             "sync() should return Container, got:\n{}",
             code.lines()
                 .filter(|l| l.contains("sync"))
@@ -452,9 +476,9 @@ mod tests {
     #[test]
     fn id_field_not_converted() {
         let code = generate_from_json(expected_type_schema());
-        // id() should still return Result<Id, DaggerError>, not Result<Container, DaggerError>
+        // id() should still return Result<Id, QueryError>, not Result<Container, QueryError>
         assert!(
-            code.contains("fn id") && code.contains("-> Result<Id, DaggerError>"),
+            code.contains("fn id") && code.contains("-> Result<Id, QueryError>"),
             "id() should return Id, got:\n{}",
             code.lines()
                 .filter(|l| l.contains("fn id"))

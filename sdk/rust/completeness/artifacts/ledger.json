@@ -4685,9 +4685,12 @@
       "capability_fingerprint": "sha256:5021662bd9a21c739134daa11991b5ea0cbd0c68c8bfde85663d7881fec5a923",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2543onnect",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "decision_evidence": [
+        "decision/feature-2-no-closure-helper"
+      ],
+      "gap": "Feature 3 CLI source selection, provisioning, and authentication lack target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4802,9 +4805,9 @@
       "capability_fingerprint": "sha256:3f7f958acaf68982accb223f9a5a7fd73278863057b9e458d05e98900a01489d",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43oad%2557orkspace%254%44odules",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4841,9 +4844,9 @@
       "capability_fingerprint": "sha256:603bdcc28faf92dad467844e5da2a3934bba7c429d1556649563e999aa9a31a8",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%254%43og%254%46utput",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4880,11 +4883,12 @@
       "capability_fingerprint": "sha256:2517f70ae15276c9b856aa7266b55d3e005ea81f9c8ee0de5313e1a8f3b69f47",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2543onn",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "function",
         "name": "WithConn",
@@ -4911,17 +4915,20 @@
         "source/go-client/go-function/dagger/%57ith%43onn"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-function declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-function declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2545nvironment%2556ariable": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:d2e198d1deffbf59c2299d9829be2a7f92f122659b22b5688adefbac605d750e",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2545nvironment%2556ariable",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4958,9 +4965,9 @@
       "capability_fingerprint": "sha256:332eb9e317596485ab5892d21e2247f28a55b87f5544f630c980a48b9ae79372",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2552unner%2548ost",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -4997,9 +5004,9 @@
       "capability_fingerprint": "sha256:16324513ba5fd415e0fff265c2d0785aefa8a7d6e21be8acec2e9a0b69ecb37b",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2553kip%2557orkspace%254%44odules",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5036,9 +5043,9 @@
       "capability_fingerprint": "sha256:a0c5d5264f704eb25e4126e62e8d25a8fabbc3a05d5d03fcf4a87abc5c69f3de",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556erbosity",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5075,9 +5082,9 @@
       "capability_fingerprint": "sha256:c2afcf391d8fbf76c49e7554380e74c60138ba63e5bb2674bf30b9d5b5919749",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2556ersion%254%46verride",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5114,9 +5121,9 @@
       "capability_fingerprint": "sha256:81a9e5933acf886726d720514dd918f51362fa9e705a30da2ad0828aa345238c",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkdir",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -5153,9 +5160,9 @@
       "capability_fingerprint": "sha256:455daad1ef9f498fe06b6eae28d259061af80b39fda98229dadd37651b5c27af",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkspace",
       "capability_kind": "go-function",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI application of this configuration option lacks target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -19661,9 +19668,9 @@
       "capability_fingerprint": "sha256:61cba181a6a5adee39eabbd98ca4593e0b806a455570005f75c31e2fe1140d2f",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2543lose",
       "capability_kind": "go-method",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
+      "gap": "Feature 3 CLI-owned process and transport shutdown lack target-scoped engine verification",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -19700,11 +19707,12 @@
       "capability_fingerprint": "sha256:a911d73b25f862547dc015303ef7ef6c8a5dae9781e619580188252ddc6090ca",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2544o",
       "capability_kind": "go-method",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "method",
         "name": "Do",
@@ -19731,19 +19739,23 @@
         "source/go-client/go-method/dagger/%43lient/%44o"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-method declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-method declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2547raph%2551%254%43%2543lient": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:32a5408bd925c8a515bd0f7fffb8ee4a0c4c57de329e614a3599dd8f1be243e0",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2547raph%2551%254%43%2543lient",
       "capability_kind": "go-method",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "method",
         "name": "GraphQLClient",
@@ -19770,19 +19782,23 @@
         "source/go-client/go-method/dagger/%43lient/%47raph%51%4C%43lient"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-method declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-method declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2551uery%2542uilder": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:21ca12c6d46d1ebbffb6b447db579a048b997bd4788972129b8387712f29d512",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2551uery%2542uilder",
       "capability_kind": "go-method",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "method",
         "name": "QueryBuilder",
@@ -19809,8 +19825,11 @@
         "source/go-client/go-method/dagger/%43lient/%51uery%42uilder"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-method declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-method declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543loud%2F%254%44arshal%254%41%2553%254%46%254%45": {
       "authority_id": "go-client",
@@ -57764,9 +57783,9 @@
       "capability_fingerprint": "sha256:4e06b44628c1b714d2f9e037c623948c7ee4bb24a8281e8c4d95e294381f9fa4",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%254%43oad%2557orkspace%254%44odules",
       "capability_kind": "go-test",
-      "gap": "Feature 2 workspace-module configuration lacks target-scoped verification",
+      "gap": "Feature 8 live engine verification of workspace-module loading is not yet present",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -57803,9 +57822,9 @@
       "capability_fingerprint": "sha256:fc4dfdd4c15ece621b89d37f7f6a122972442cdbce94bc960b9e298094b16917",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2557ith%2557orkspace",
       "capability_kind": "go-test",
-      "gap": "Feature 2 workspace configuration lacks target-scoped verification",
+      "gap": "Feature 8 live engine verification of workspace selection is not yet present",
       "implementation_evidence": [
-        "implementation/go-client-baseline"
+        "implementation/feature-2-client-lifecycle"
       ],
       "owner_feature": "feature-2",
       "semantic_signature": {
@@ -60026,11 +60045,12 @@
       "capability_fingerprint": "sha256:d3be8ce09a797bfdc6b0bc9cdedbacbe4f75f98ffe9f3a6b120ad4f5a1f0e98c",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient",
       "capability_kind": "go-type",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "type",
         "name": "Client",
@@ -60057,19 +60077,23 @@
         "source/go-client/go-type/dagger/%43lient"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient%254%46pt": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:32c0e183a962aa37f7329e12932b91ef8b547eb9c285d5014d64612608f093fb",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient%254%46pt",
       "capability_kind": "go-type",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "type",
         "name": "ClientOpt",
@@ -60096,8 +60120,11 @@
         "source/go-client/go-type/dagger/%43lient%4Fpt"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2543lient%2546ilesync%254%44irror": {
       "authority_id": "go-client",
@@ -65837,11 +65864,12 @@
       "capability_fingerprint": "sha256:a933a47e01201d5ddeea13c644e6b86ac6a158ffb9d98a7d34bd80cacc513e7b",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552equest",
       "capability_kind": "go-type",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "type",
         "name": "Request",
@@ -65868,19 +65896,23 @@
         "source/go-client/go-type/dagger/%52equest"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552esponse": {
       "authority_id": "go-client",
       "capability_fingerprint": "sha256:a13849723a436301435a33519946d83f8c59d5d50b8590a898503e39fa5c17cb",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552esponse",
       "capability_kind": "go-type",
-      "gap": "Feature 2 client lifecycle and configuration lack target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "type",
         "name": "Response",
@@ -65907,8 +65939,11 @@
         "source/go-client/go-type/dagger/%52esponse"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fdagger%2F%2552eturn%2554ype": {
       "authority_id": "go-client",
@@ -69113,11 +69148,12 @@
       "capability_fingerprint": "sha256:49e6a7e4299a6d915106c01be2d38a893ff7e57468d15290d5d14a0c449308db",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onfig",
       "capability_kind": "go-type",
-      "gap": "Feature 2 connection configuration lacks target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "type",
         "name": "Config",
@@ -69144,8 +69180,11 @@
         "source/go-client/go-type/engineconn/%43onfig"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2543onnect%2550arams": {
       "authority_id": "go-client",
@@ -69191,11 +69230,12 @@
       "capability_fingerprint": "sha256:860ab55815789d6255d2db4a4596b9dc98b357c11ac2ef209ae820b8305c0a37",
       "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2545ngine%2543onn",
       "capability_kind": "go-type",
-      "gap": "Feature 2 explicit connection abstraction lacks target-scoped verification",
-      "implementation_evidence": [
-        "implementation/go-client-baseline"
+      "decision_evidence": [
+        "decision/feature-2-idiomatic-client-mappings"
       ],
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "kind": "type",
         "name": "EngineConn",
@@ -69222,8 +69262,11 @@
         "source/go-client/go-type/engineconn/%45ngine%43onn"
       ],
       "stability": "stable",
-      "status": "Partial",
-      "summary": "go-type declared by go-client"
+      "status": "Idiomatic_Equivalent",
+      "summary": "go-type declared by go-client",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "behavior/go-client/source%2Fgo-client%2Fgo-type%2Fengineconn%2F%2552ound%2554ripper%2546unc": {
       "authority_id": "go-client",
@@ -112403,8 +112446,9 @@
       "capability_fingerprint": "sha256:b76e1f4e410cbabd04b70cb1a98afa31a4b72631fe4dc941b3c812aebaf6b78b",
       "capability_id": "policy/rust-policy/client-beta-config-migration",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-beta-config-migration",
@@ -112446,16 +112490,20 @@
         "source/rust-policy/rust-policy/idiomatic-rust"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "The stable Client_Config removes beta unit-encoded timeout and project-path fields."
+      "status": "Implemented",
+      "summary": "The stable Client_Config removes beta unit-encoded timeout and project-path fields.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-cancelled-connect-cleanup": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:3fadd3034ddfbd7b50e65ed6987be1ecf521cbbac3ac08dfe0ec4726f57e9d76",
       "capability_id": "policy/rust-policy/client-cancelled-connect-cleanup",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-cancelled-connect-cleanup",
@@ -112497,16 +112545,20 @@
         "source/rust-policy/rust-policy/panic-free-library"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "A cancelled or failed connection attempt cannot leak an owned child process or I/O task."
+      "status": "Implemented",
+      "summary": "A cancelled or failed connection attempt cannot leak an owned child process or I/O task.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-close-idempotency": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:87c4b87c18160031a01248d9a7293d913d243e3b80eb38a1703fe4014ece32ec",
       "capability_id": "policy/rust-policy/client-close-idempotency",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-close-idempotency",
@@ -112548,16 +112600,20 @@
         "source/rust-policy/rust-policy/explicit-ownership"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Every Client_Handle observes one single-flight close attempt and one terminal result."
+      "status": "Implemented",
+      "summary": "Every Client_Handle observes one single-flight close attempt and one terminal result.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-closed-operation-rejection": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:a1993127876544dd352401e817c4a682a85f09b5b8bdf17d2469dee6c936385e",
       "capability_id": "policy/rust-policy/client-closed-operation-rejection",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-closed-operation-rejection",
@@ -112599,16 +112655,20 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Operations admitted after close begins fail without reaching the transport."
+      "status": "Implemented",
+      "summary": "Operations admitted after close begins fail without reaching the transport.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-drop-cleanup": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:4eb82a461a692bd4c59424c48bf1396188b3d3bd5bb959bc4f777d80dd2827be",
       "capability_id": "policy/rust-policy/client-drop-cleanup",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-drop-cleanup",
@@ -112650,16 +112710,20 @@
         "source/rust-policy/rust-policy/panic-free-library"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Dropping the final Client_Handle initiates non-blocking best-effort cleanup with an abort backstop."
+      "status": "Implemented",
+      "summary": "Dropping the final Client_Handle initiates non-blocking best-effort cleanup with an abort backstop.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-http-connect-timeout": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:5a30c69bf3486a2e9de3c6eb71855f9afbee6537ea7b864f22274911eecefa2c",
       "capability_id": "policy/rust-policy/client-http-connect-timeout",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-http-connect-timeout",
@@ -112701,16 +112765,23 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "HTTP connection establishment has its own positive Duration timeout."
+      "status": "Implemented",
+      "summary": "HTTP connection establishment has its own positive Duration timeout.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-owned-lifecycle": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:25d709afea3ccc4efaa1ccd4874d78388e49d8e4a407633b6c03178e16be314d",
       "capability_id": "policy/rust-policy/client-owned-lifecycle",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "decision_evidence": [
+        "decision/feature-2-no-closure-helper"
+      ],
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-owned-lifecycle",
@@ -112752,16 +112823,20 @@
         "source/rust-policy/rust-policy/explicit-ownership"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Successful connection establishment returns an owned Client which is not callback-scoped."
+      "status": "Implemented",
+      "summary": "Successful connection establishment returns an owned Client which is not callback-scoped.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-preflight-validation": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:adccb793cd96516b2c97f41a6d31453d9b0f2b6b2620e7506961b951b5a7f827",
       "capability_id": "policy/rust-policy/client-preflight-validation",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-preflight-validation",
@@ -112803,16 +112878,20 @@
         "source/rust-policy/rust-policy/panic-free-library"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Configuration conflicts and local validation failures precede external work."
+      "status": "Implemented",
+      "summary": "Configuration conflicts and local validation failures precede external work.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-public-surface-encapsulation": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:1c5eb85567ff1869772d3c5fb321e492a8e13b4c32ce5f8ea0753f1e4b8fe91b",
       "capability_id": "policy/rust-policy/client-public-surface-encapsulation",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-public-surface-encapsulation",
@@ -112854,16 +112933,20 @@
         "source/rust-policy/rust-policy/secret-safe-output"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Public client and generated handles hide transports, processes, credentials, and synchronization state."
+      "status": "Implemented",
+      "summary": "Public client and generated handles hide transports, processes, credentials, and synchronization state.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-query-execution-timeout": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:325bbc8fc86b89644c9df2eba5875465284a0d154efcfe75e7fce2249e9605c5",
       "capability_id": "policy/rust-policy/client-query-execution-timeout",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-query-execution-timeout",
@@ -112905,16 +112988,20 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "One optional positive Duration bounds a complete GraphQL request without closing the Client."
+      "status": "Implemented",
+      "summary": "One optional positive Duration bounds a complete GraphQL request without closing the Client.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-reserved-environment": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:edaaf22f1a39f8df3df481b1a35f06669d025ee3c395da163d17ec8738a7122f",
       "capability_id": "policy/rust-policy/client-reserved-environment",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-reserved-environment",
@@ -112956,16 +113043,20 @@
         "source/rust-policy/rust-policy/secret-safe-output"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Additional environment rejects reserved keys using ASCII case-insensitive comparison."
+      "status": "Implemented",
+      "summary": "Additional environment rejects reserved keys using ASCII case-insensitive comparison.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-secret-redaction": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:dbc01ad6f2afb75aa92e705cc3e50466cbb49a52292ac23aa7aa16a05a2e2958",
       "capability_id": "policy/rust-policy/client-secret-redaction",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-secret-redaction",
@@ -113007,16 +113098,20 @@
         "source/rust-policy/rust-policy/secret-safe-output"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Ordinary errors, diagnostics, tracing, and Debug output never disclose session tokens or environment values."
+      "status": "Implemented",
+      "summary": "Ordinary errors, diagnostics, tracing, and Debug output never disclose session tokens or environment values.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-session-startup-timeout": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:c3709712551ec7e353e343152f45e1ba3d9ee4e67be1bc3aac67d0aca11b0fdd",
       "capability_id": "policy/rust-policy/client-session-startup-timeout",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-session-startup-timeout",
@@ -113058,16 +113153,20 @@
         "source/rust-policy/rust-policy/typed-public-errors"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Newly selected connection establishment has its own positive Duration timeout."
+      "status": "Implemented",
+      "summary": "Newly selected connection establishment has its own positive Duration timeout.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/client-shared-handle-safety": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:c71a64b912251b1738bf0b6d4faa46dddaa209c92d934dbeaa4e67f6f1a8cbdb",
       "capability_id": "policy/rust-policy/client-shared-handle-safety",
       "capability_kind": "rust-policy",
-      "gap": "Feature 2 has not yet implemented and target-verified this Rust client policy",
-      "owner_feature": "feature-2",
+      "implementation_evidence": [
+        "implementation/feature-2-client-lifecycle"
+      ],
       "semantic_signature": {
         "requirement": {
           "clause_id": "client-shared-handle-safety",
@@ -113109,8 +113208,11 @@
         "source/rust-policy/rust-policy/unsafe-denied"
       ],
       "stability": "stable",
-      "status": "Missing",
-      "summary": "Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code."
+      "status": "Implemented",
+      "summary": "Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code.",
+      "verification_evidence": [
+        "verification/feature-2-client-lifecycle"
+      ]
     },
     "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny": {
       "authority_id": "rust-policy",
