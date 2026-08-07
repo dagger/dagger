@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
+	"golang.org/x/mod/semver"
 )
 
 type workspaceSchema struct{}
@@ -284,7 +285,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("fork", s.fork).
 			View(AfterVersion("v1.0.0-0")).
-			Doc(`A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.`),
+			Doc(`A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.`,
+				`A fork's changes are measured from the workspace cwd, matching how a returned changeset is applied; a change outside the cwd is an error.`),
 		dagql.NodeFunc("changes", s.changes).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace's pending overlay changes."),
@@ -1497,7 +1499,7 @@ func (s *workspaceSchema) changes(
 		return inst, err
 	}
 	if forkBase := parent.Self().ForkBase(); forkBase != nil {
-		return s.forkChanges(ctx, parent, forkBase)
+		return s.forkChangesRelativeToCwd(ctx, parent, forkBase)
 	}
 	if changes, ok := parent.Self().OverlayChanges(); ok {
 		return changes, nil
@@ -1630,6 +1632,136 @@ func (s *workspaceSchema) forkChanges(
 		return inst, err
 	}
 	return inst, nil
+}
+
+// changesetCwdCutover is the first module engine version whose changesets
+// come back from the engine measured from the workspace cwd instead of the
+// workspace root. Clients apply a returned changeset at their own cwd, so
+// cwd-measured is what lands files in the right place; modules built before
+// the cutover keep the root-measured form and do the translation themselves
+// (via the polyfill, #13769).
+//
+// NOTE: this must be the release that ships the polyfill-removal surface —
+// adjust here if that release ends up with a different number.
+const changesetCwdCutover = "v1.0.0-beta.10"
+
+// callerPastChangesetCwdCutover reports whether the calling module declares
+// an engine version at or past the cwd cutover. The schema view cannot carry
+// this decision — views are base-version granular, so v1.0.0-beta.7 and the
+// cutover both collapse to the v1.0.0 view — hence the exact declared
+// version decides. Callers that are not module code (the CLI, SDK clients,
+// tests) always get the new behavior.
+//
+// Call this at resolver entry: some resolvers swap in another client's
+// metadata mid-flight, which would change the answer.
+func callerPastChangesetCwdCutover(ctx context.Context) bool {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return true
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		return errors.Is(err, core.ErrNoCurrentModule)
+	}
+	return semver.Compare(mod.Self().Source.Value.Self().EngineVersion, changesetCwdCutover) >= 0
+}
+
+// reRootChangesetToCwd re-measures a workspace-root-measured changeset from
+// the workspace cwd, so a client applying it at its own cwd writes the right
+// files. A change outside the cwd cannot be expressed cwd-relative — e.g. a
+// module above the caller — and silently dropping it would leave that module
+// never regenerated, so it fails loudly instead.
+func reRootChangesetToCwd(
+	ctx context.Context,
+	changeset dagql.ObjectResult[*core.Changeset],
+	cwd string,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	cwd = cleanWorkspaceRelPath(cwd)
+	if cwd == "" || cwd == "." {
+		return changeset, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	paths, err := changeset.Self().ComputePaths(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var outside []string
+	for _, group := range [][]string{paths.Added, paths.Modified, paths.Removed} {
+		for _, p := range group {
+			p = strings.TrimSuffix(p, "/")
+			if p != cwd && !strings.HasPrefix(p, cwd+"/") {
+				outside = append(outside, p)
+			}
+		}
+	}
+	if len(outside) > 0 {
+		return inst, fmt.Errorf("changes fall outside the current directory %q: %s", cwd, strings.Join(outside, ", "))
+	}
+	if len(paths.Added)+len(paths.Modified)+len(paths.Removed) == 0 {
+		return changeset, nil
+	}
+
+	// Selecting a subdirectory is metadata only, so this costs nothing. A
+	// side that holds nothing under the cwd (e.g. the before side of a pure
+	// addition, on a sparse fork delta) becomes an empty directory.
+	subdirOrEmpty := func(dir dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var exists bool
+		if err := srv.Select(ctx, dir, &exists, dagql.Selector{
+			Field: "exists",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(cwd)}},
+		}); err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, err
+		}
+		var sub dagql.ObjectResult[*core.Directory]
+		if !exists {
+			err := srv.Select(ctx, srv.Root(), &sub, dagql.Selector{Field: "directory"})
+			return sub, err
+		}
+		err := srv.Select(ctx, dir, &sub, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(cwd)}},
+		})
+		return sub, err
+	}
+	before, err := subdirOrEmpty(changeset.Self().Before)
+	if err != nil {
+		return inst, err
+	}
+	after, err := subdirOrEmpty(changeset.Self().After)
+	if err != nil {
+		return inst, err
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, after, &inst, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)}},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+// forkChangesRelativeToCwd wraps forkChanges so the result is measured from
+// the workspace cwd. fork only exists past the cwd cutover, so unlike the
+// module-source generate fields there is no root-measured variant to keep.
+func (s *workspaceSchema) forkChangesRelativeToCwd(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	forkBase *core.WorkspaceForkBase,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	changes, err := s.forkChanges(ctx, parent, forkBase)
+	if err != nil {
+		return changes, err
+	}
+	return reRootChangesetToCwd(ctx, changes, parent.Self().Cwd)
 }
 
 // subtractPaths returns the paths of a that are not in b, preserving order.

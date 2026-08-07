@@ -126,11 +126,14 @@ func (s *workspaceSchema) moduleSource(
 	}
 
 	// asModuleSource errors if the resolved path holds no module config, so it
-	// doubles as the "path is not an initialized module" check.
+	// doubles as the "path is not an initialized module" check. The workspace
+	// cwd rides along so the source's generate fields can re-root their
+	// changesets to where the caller stands.
 	if err := srv.Select(ctx, root, &inst, dagql.Selector{
 		Field: "asModuleSource",
 		Args: []dagql.NamedInput{
 			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+			{Name: "workspaceCwd", Value: dagql.String(cleanWorkspaceRelPath(ws.Cwd))},
 		},
 	}); err != nil {
 		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)

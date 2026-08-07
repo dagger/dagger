@@ -81,6 +81,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceRootPath").Doc(
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
+				dagql.Arg("workspaceCwd").Internal(),
 			),
 		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
 			WithInput(dagql.PerClientInput).
@@ -89,6 +90,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceRootPath").Doc(
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
+				dagql.Arg("workspaceCwd").Internal(),
 			),
 	}.Install(dag)
 
@@ -927,6 +929,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
+	// WorkspaceCwd is set by Workspace.moduleSource so generate fields can
+	// re-root their changesets to the caller's cwd. Internal — not part of
+	// the public schema.
+	WorkspaceCwd string `default:""`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -978,6 +984,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		SourceRootSubpath: sourceRootSubpath,
 		ContextDirectory:  contextDir,
 		Kind:              core.ModuleSourceKindDir,
+		WorkspaceCwd:      args.WorkspaceCwd,
 		DirSrc: &core.DirModuleSource{
 			OriginalContextDir:        contextDir,
 			OriginalSourceRootSubpath: args.SourceRootPath,
@@ -3029,6 +3036,9 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 	srcInst dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	// Decide the path contract up front, before any client-context swaps.
+	reRoot := callerPastChangesetCwdCutover(ctx)
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get dag server: %w", err)
@@ -3053,6 +3063,14 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 		},
 	); err != nil {
 		return res, fmt.Errorf("failed to compute changeset: %w", err)
+	}
+
+	// The changeset is measured from the workspace root, but clients apply a
+	// returned changeset at their own cwd. Callers past the cutover get it
+	// re-measured from the cwd the source was loaded under; older callers
+	// keep the root-measured form and translate themselves (the polyfill).
+	if reRoot {
+		return reRootChangesetToCwd(ctx, res, srcInst.Self().WorkspaceCwd)
 	}
 
 	return res, nil
@@ -3302,6 +3320,12 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 	}); err != nil {
 		return res, fmt.Errorf("compute staged dependency changeset: %w", err)
 	}
+
+	// Deliberately workspace-root-measured, unlike generatedContextChangeset:
+	// this changeset is intermediate staging data, consumed by
+	// Workspace.withChanges / __withGeneratedLocalDependencies, which overlay
+	// at the workspace root — it is never handed to a client to apply at its
+	// cwd.
 	return res, nil
 }
 
