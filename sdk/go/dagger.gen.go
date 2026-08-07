@@ -16072,6 +16072,15 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	return response, q.Execute(ctx)
 }
 
+// A copy of the workspace for staging edits in isolation: changes() on a fork returns only the edits made through the fork, not everything already staged on the workspace.
+func (r *Workspace) Fork() *Workspace {
+	q := r.query.Select("fork")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceGeneratorsOpts contains options for Workspace.Generators
 type WorkspaceGeneratorsOpts struct {
 	// Only include generators matching the specified patterns
