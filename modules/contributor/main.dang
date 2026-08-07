@@ -1,22 +1,30 @@
-# contributor: let a Dagger coding agent contribute to a DIFFERENT repository.
+# contributor: GitHub operations for a Dagger coding agent.
 #
-# `modules/delegate` spawns a sub-agent in YOUR workspace. This module spawns
-# one in SOMEBODY ELSE'S: it fetches a foreign git repo as a Workspace
-# (GitRef.asWorkspace), binds that workspace to a fresh `llm`, composes the
-# `editor` tools onto it (their `Workspace!` args are auto-filled from the
-# bound workspace, so Read/Write/Edit/Grep/... all operate on the foreign
-# checkout), lets it work the task to completion, and then turns the resulting
-# delta into a pull request against that repo.
+# Two capabilities today:
 #
-# The motivating case: while working on dagger you notice a bug in an upstream
-# dependency (say github.com/dagger/otel-go). Instead of context-switching,
-# hand the fix off — the sub-agent clones, fixes, and opens the PR, and all
-# that comes back to you is the PR URL and a short report.
+# - `reviewComments` reads pull request review threads via the GitHub API,
+#   so an agent can be pointed at review feedback — a PR number, a PR URL,
+#   or a single-comment #discussion_r link — and read the full thread with
+#   its file/line/diff context.
 #
-# Only the publish step needs credentials: `githubToken` is wired through
-# dagger.toml settings (see the module's `new`), and reaches the container as
-# a secret env var (GH_TOKEN) consumed by a git credential helper — never
-# baked into an image layer, never echoed.
+# - `contribute` dispatches a sub-agent into a DIFFERENT repository and
+#   turns its work into a pull request there. `modules/delegate` spawns a
+#   sub-agent in YOUR workspace; this spawns one in SOMEBODY ELSE'S: it
+#   fetches a foreign git repo as a Workspace (GitRef.asWorkspace), binds it
+#   to a fresh `llm` with the `editor` tools composed on (their `Workspace!`
+#   args auto-fill from the bound workspace, so Read/Write/Edit/Grep/... all
+#   operate on the foreign checkout), lets it work the task to completion,
+#   and publishes the resulting delta as a PR. The motivating case: while
+#   working on dagger you notice a bug in an upstream dependency (say
+#   github.com/dagger/otel-go) — hand the fix off instead of
+#   context-switching, and all that comes back is the PR URL and a report.
+#
+# Configuration lives in dagger.toml settings, not per-call arguments:
+# `githubToken` authenticates every GitHub operation, reaching the container
+# only as a secret env var (GH_TOKEN) — never baked into an image layer,
+# never echoed. `remote` names the GitHub repository bare PR numbers resolve
+# against; it's a property of the project rather than of any one task (a
+# permanent fork would simply configure a different value).
 
 # Tail-truncate command output to keep tool results context-friendly (same
 # helper shape as modules/tui-qa and modules/engine-lab).
@@ -47,17 +55,20 @@ let head(s: String!, lines: Int! = patchLines): String! {
 }
 
 """
-Dispatch a sub-agent into another git repository and submit its work as a
-pull request.
+GitHub operations: read pull request review comments, and dispatch a
+sub-agent into another git repository to submit its work as a pull request.
 """
 type Contributor {
   # Private so the secret is never exposed as a field/tool argument.
   let token: Secret = null
+  # The GitHub repository PR numbers resolve against. Private: configured in
+  # settings, not steered per-call.
+  let remote: String! = ""
 
   new(
     """
-    A GitHub token with permission to push branches and open pull requests on
-    the repositories you want to contribute to.
+    A GitHub token used to authenticate API calls, push branches, and open
+    pull requests.
 
     Wire it up in dagger.toml settings rather than passing it around:
 
@@ -67,18 +78,109 @@ type Contributor {
     Without it, only `dryRun: true` contributions work.
     """
     githubToken: Secret = null,
+    """
+    The GitHub repository this project's pull requests live in, as
+    "owner/name" (a github.com URL works too). Like the token, this belongs
+    in dagger.toml settings — it's a property of the project, not of any one
+    task, so it shouldn't vary between contributors or throwaway forks (a
+    permanent fork would simply configure a different value):
+
+        [env.dev.modules.contributor.settings]
+        remote = "dagger/dagger"
+    """
+    remote: String! = "",
   ) {
     self.token = githubToken
+    self.remote = remote
     self
   }
 
   """
-  Compose the contributor tool onto a base LLM.
+  Compose the contributor tools onto a base LLM.
   """
   agent(base: LLM!): LLM! @agent {
     base
       .withTools(currentNode)
       .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Read the review comments on a GitHub pull request, grouped into threads
+  with their file, line, and diff context.
+
+  Accepts a bare PR number (resolved against the configured remote
+  repository) or a full PR URL. A link to a single comment — the
+  `#discussion_r<id>` URLs GitHub hands out — narrows the output to just
+  that comment's thread.
+  """
+  reviewComments(
+    """
+    The pull request to read: a number like "13831", a URL like
+    "https://github.com/dagger/dagger/pull/13831", or a single-comment link
+    like "https://github.com/dagger/dagger/pull/13831#discussion_r3732814956".
+    """
+    pr: String!,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): review threads are live conversations — new replies must
+    # show up on the next read, not be replayed from the session cache.
+    let tok = token
+    if (tok == null) {
+      raise noTokenError
+    }
+
+    let repo = ""
+    let number = ""
+    let discussion = ""
+    let ref = pr.trimPrefix("#")
+    if (ref.containsMatch(`^\d+$`)) {
+      repo = remoteSlug
+      number = ref
+    } else {
+      let m = ref.match(`github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:/files)?(?:#(?:discussion_)?r(\d+))?`)
+      if (m == null) {
+        raise `not a pull request reference: "${pr}" — pass a PR number or a github.com PR URL`
+      }
+      # Indexing is statically nullable; groups always exist on a match, and
+      # the unmatched optional fragment group surfaces as "".
+      repo = (m.captures[0] ?? "") + "/" + (m.captures[1] ?? "")
+      number = m.captures[2] ?? ""
+      discussion = m.captures[3] ?? ""
+    }
+
+    # Fetch every review comment on the PR, then let jq group them into
+    # threads (replies carry in_reply_to_id pointing at the thread root) and
+    # render them — narrowed to one thread when DISCUSSION_ID is set.
+    let script = """
+      set -eu
+      # Secret commands (e.g. `gh auth token`) commonly emit a trailing
+      # newline; HTTP headers reject it.
+      GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+      export GH_TOKEN
+      if [ -n "$DISCUSSION_ID" ]; then
+        printf '## Review thread discussion_r%s on %s#%s\n\n' "$DISCUSSION_ID" "$OWNER_REPO" "$PR_NUMBER"
+      else
+        printf '## Review comments on %s#%s\n\n' "$OWNER_REPO" "$PR_NUMBER"
+      fi
+      comments="$(gh api --paginate "repos/$OWNER_REPO/pulls/$PR_NUMBER/comments?per_page=100")"
+      printf '%s' "$comments" | jq -rs -f /tmp/render.jq
+    """
+
+    let ran = toolbox
+      .withNewFile("/tmp/render.jq", renderJq)
+      .withEnvVariable("OWNER_REPO", repo)
+      .withEnvVariable("PR_NUMBER", number)
+      .withEnvVariable("DISCUSSION_ID", discussion)
+      # live read: never serve replies from the exec cache
+      .withEnvVariable("CONTRIBUTOR_NONCE", Random.string)
+      .withSecretVariable("GH_TOKEN", tok)
+      .withExec(["sh", "-c", script], expect: ReturnType.ANY).{{exitCode, stdout, combinedOutput}}
+
+    if (ran.exitCode != 0) {
+      raise `reading review comments for ${repo}#${number} failed (exit ${toString(ran.exitCode)}):` + "\n\n" + tail(ran.combinedOutput)
+    }
+
+    # Threads read top-down, so head-truncate like a patch.
+    head(ran.stdout)
   }
 
   """
@@ -232,6 +334,77 @@ type Contributor {
 
   # ---- helpers ------------------------------------------------------------
 
+  # Shared toolbox for GitHub operations: git, gh, and jq.
+  let toolbox: Container! {
+    container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "git", "github-cli", "jq"])
+  }
+
+  # The configured remote normalized to "owner/name" (full https/ssh
+  # github.com URLs work too). Raises when no remote is configured.
+  let remoteSlug: String! {
+    if (remote == "") {
+      raise noRemoteError
+    }
+    let m = remote.match(`github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/?$`)
+    if (m == null) {
+      remote
+    } else {
+      (m.captures[0] ?? "") + "/" + (m.captures[1] ?? "")
+    }
+  }
+
+  # jq program rendering a PR's review comments (a JSON array of pages, via
+  # `jq -s` over `gh api --paginate`) as markdown threads. DISCUSSION_ID
+  # narrows the output to the thread containing that comment.
+  let renderJq: String! = """
+    # A comment anchors at the LAST line of its diff hunk, so keep the tail.
+    def trimhunk: split("\n")
+      | if length > 24
+        then ["… (" + ((length - 24) | tostring) + " earlier hunk lines truncated) …"] + .[-24:]
+        else .
+        end
+      | join("\n");
+    (env.DISCUSSION_ID // "") as $did
+    | add
+    | map(. + {thread: (.in_reply_to_id // .id)})
+    | if $did == "" then .
+      else
+        ( map(select(.id == ($did | tonumber)))
+          | if length == 0
+            then error("comment r" + $did + " is not a review comment on this pull request")
+            else .[0].thread
+            end
+        ) as $root
+        | map(select(.thread == $root))
+      end
+    | if length == 0 then "No review comments."
+      else
+        group_by(.thread)
+        | map(
+            .[0] as $top
+            | "### "
+              + ($top.path // "(general)")
+              + (if $top.line != null then ":" + ($top.line | tostring)
+                 elif $top.original_line != null then ":" + ($top.original_line | tostring) + " (outdated)"
+                 else ""
+                 end)
+              + "\n"
+              + (if ($top.diff_hunk // "") != ""
+                 then "\n```diff\n" + ($top.diff_hunk | trimhunk) + "\n```\n"
+                 else ""
+                 end)
+              + (map("\n"
+                     + (.user.login // "ghost")
+                     + " (" + .created_at + ") discussion_r" + (.id | tostring) + ":\n\n"
+                     + .body + "\n")
+                 | join(""))
+          )
+        | join("\n---\n\n")
+      end
+  """
+
   # Clone the repo authenticated, branch off, apply the patch, commit, push,
   # and open the PR. Returns the `gh pr create` output (the PR URL).
   #
@@ -287,9 +460,7 @@ type Contributor {
       fi
     """
 
-    let ctr = container
-      .from("alpine:3.20")
-      .withExec(["apk", "add", "--no-cache", "git", "github-cli"])
+    let ctr = toolbox
       .withFile("/tmp/contribution.patch", patch)
       .withNewFile("/tmp/commit.msg", commitMessage)
       .withNewFile("/tmp/pr.md", prBody)
@@ -336,17 +507,36 @@ type Contributor {
   }
 
   let noTokenError: String! = """
-    No GitHub token is configured, so the pull request cannot be created.
+    No GitHub token is configured, so GitHub API operations are unavailable.
     Wire one up in dagger.toml:
 
         [env.dev.modules.contributor.settings]
         githubToken = "env://GITHUB_TOKEN"
 
-    or re-run this tool with dryRun: true to review the patch instead.
+    (Contributions can still be previewed without one via dryRun: true.)
   """
 
-  # Instructions for the PARENT agent holding this tool.
+  let noRemoteError: String! = """
+    No GitHub remote is configured, so a bare PR number cannot be resolved.
+    Set the repository in dagger.toml (or pass a full PR URL instead):
+
+        [env.dev.modules.contributor.settings]
+        remote = "dagger/dagger"
+  """
+
+  # Instructions for the PARENT agent holding these tools.
   let systemPrompt: String! = """
+    You have GitHub tools: `reviewComments` for reading pull request review
+    feedback, and `contribute` for submitting work to other repositories.
+
+    `reviewComments` reads the review comment threads on a pull request —
+    each with its file, line, and diff context. Pass a PR number (resolved
+    against the project's configured GitHub remote) or a full PR URL; the
+    single-comment links people paste in conversation (ending in
+    #discussion_r<id>) narrow the output to just that comment's thread. When
+    asked to look at or address review feedback, read the thread first and
+    act on what it actually says.
+
     The `contribute` tool sends a fresh sub-agent into ANOTHER git repository
     to do a task there, and submits the result as a pull request to that
     repository.

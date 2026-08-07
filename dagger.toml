@@ -138,6 +138,7 @@ source = "modules/contributor"
 
 [env.dev.modules.contributor.settings]
 githubToken = "cmd://gh auth token"
+remote = "dagger/dagger"
 
 [modules.history]
 source = "modules/history"
