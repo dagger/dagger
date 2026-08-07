@@ -31,6 +31,7 @@ use crate::extract::policy::{
     PolicyClauseSelection, extract_policy_clauses, extract_test_handoff, merge_source_inventories,
 };
 use crate::extract::schema::{SchemaExtractionPolicy, decode_introspection, extract_schema};
+use crate::feature_scope::{FeatureContractPolicy, reviewed_feature_contracts};
 use crate::harness::{
     HarnessMappingContext, build_harness_check_inventory, validate_harness_mappings,
 };
@@ -53,82 +54,8 @@ const SCHEMA_AUTHORITY_ID: &str = "engine-schema";
 const HARNESS_AUTHORITY_ID: &str = "sdk-contract-harness";
 const INTEGRATION_AUTHORITY_ID: &str = "go-integration-tests";
 const POLICY_AUTHORITY_ID: &str = "rust-policy";
-const FEATURE2_REQUIREMENTS: &str = ".kiro/specs/rust-sdk-client-lifecycle/requirements.md";
 const SCHEMA_SNAPSHOT: &str = "sdk/rust/completeness/snapshots/schema.json";
 const HARNESS_SOURCE: &str = "sdk-sdk.dang";
-
-const FEATURE2_POLICIES: [(&str, &str, &str); 14] = [
-    (
-        "client-beta-config-migration",
-        "The stable Client_Config removes beta unit-encoded timeout and project-path fields.",
-        "idiomatic-rust",
-    ),
-    (
-        "client-cancelled-connect-cleanup",
-        "A cancelled or failed connection attempt cannot leak an owned child process or I/O task.",
-        "panic-free-library",
-    ),
-    (
-        "client-close-idempotency",
-        "Every Client_Handle observes one single-flight close attempt and one terminal result.",
-        "explicit-ownership",
-    ),
-    (
-        "client-closed-operation-rejection",
-        "Operations admitted after close begins fail without reaching the transport.",
-        "typed-public-errors",
-    ),
-    (
-        "client-drop-cleanup",
-        "Dropping the final Client_Handle initiates non-blocking best-effort cleanup with an abort backstop.",
-        "panic-free-library",
-    ),
-    (
-        "client-http-connect-timeout",
-        "HTTP connection establishment has its own positive Duration timeout.",
-        "typed-public-errors",
-    ),
-    (
-        "client-owned-lifecycle",
-        "Successful connection establishment returns an owned Client which is not callback-scoped.",
-        "explicit-ownership",
-    ),
-    (
-        "client-preflight-validation",
-        "Configuration conflicts and local validation failures precede external work.",
-        "panic-free-library",
-    ),
-    (
-        "client-public-surface-encapsulation",
-        "Public client and generated handles hide transports, processes, credentials, and synchronization state.",
-        "secret-safe-output",
-    ),
-    (
-        "client-query-execution-timeout",
-        "One optional positive Duration bounds a complete GraphQL request without closing the Client.",
-        "typed-public-errors",
-    ),
-    (
-        "client-reserved-environment",
-        "Additional environment rejects reserved keys using ASCII case-insensitive comparison.",
-        "secret-safe-output",
-    ),
-    (
-        "client-secret-redaction",
-        "Ordinary errors, diagnostics, tracing, and Debug output never disclose session tokens or environment values.",
-        "secret-safe-output",
-    ),
-    (
-        "client-session-startup-timeout",
-        "Newly selected connection establishment has its own positive Duration timeout.",
-        "typed-public-errors",
-    ),
-    (
-        "client-shared-handle-safety",
-        "Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code.",
-        "unsafe-denied",
-    ),
-];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// Complete deterministic products derived from the authored F1 contract inputs.
@@ -143,6 +70,12 @@ pub struct DerivedContract {
     pub report: CompletenessReport,
     /// Release metadata projected from the validated compatibility claim.
     pub release_metadata: ReleaseCompatibilityMetadata,
+}
+
+struct FeatureContractInput {
+    policy: FeatureContractPolicy,
+    requirements: String,
+    declaration: FeatureScopeDeclaration,
 }
 
 /// Rebuilds the complete F1 contract from pinned authored inputs.
@@ -170,14 +103,22 @@ pub fn derive_contract(
         read_canonical(&contract.join("harness-mappings.json"), "harness mappings")?;
     let compatibility: CompatibilityClaim =
         read_canonical(&contract.join("compatibility.json"), "compatibility claim")?;
-    let feature2_requirements = read_text(
-        &repository_root.join(FEATURE2_REQUIREMENTS),
-        "Feature 2 requirements",
-    )?;
-    let feature2_scope = validated(
-        parse_feature_scope_declaration(&feature2_requirements),
-        "Feature 2 scope declaration",
-    )?;
+    let mut feature_inputs = Vec::new();
+    for policy in reviewed_feature_contracts() {
+        let requirements = read_text(
+            &repository_root.join(policy.requirements_path),
+            "feature requirements",
+        )?;
+        let declaration = validated(
+            parse_feature_scope_declaration(&requirements, &policy.scope),
+            "feature scope declaration",
+        )?;
+        feature_inputs.push(FeatureContractInput {
+            policy,
+            requirements,
+            declaration,
+        });
+    }
 
     let schema_bytes = read(&contract.join("snapshots/schema.json"), "schema snapshot")?;
     let schema = decode_introspection(&schema_bytes).map_err(|_| ToolError::Decode {
@@ -220,14 +161,17 @@ pub fn derive_contract(
         &target,
         &schema,
         &harness_source,
-        &feature2_requirements,
+        &feature_inputs,
     )?;
     let mut candidates = capability_candidates(&definitions, &authorities)?;
-    candidates.extend(feature2_policy_candidates(
-        &feature2_scope,
-        &source_items,
-        &authorities,
-    )?);
+    for feature in &feature_inputs {
+        candidates.extend(feature_policy_candidates(
+            &feature.policy,
+            &feature.declaration,
+            &source_items,
+            &authorities,
+        )?);
+    }
     let schema_candidates = validated(
         derive_schema_candidates(&source_items),
         "schema capability candidates",
@@ -251,10 +195,17 @@ pub fn derive_contract(
         validate_status_entries(&ledger, &evidence),
         "status entries",
     )?;
-    validated(
-        validate_feature_scope_routing(&inventory, &ledger, &feature2_scope),
-        "Feature 2 scope routing",
-    )?;
+    for feature in &feature_inputs {
+        validated(
+            validate_feature_scope_routing(
+                &inventory,
+                &ledger,
+                &feature.declaration,
+                &feature.policy.scope,
+            ),
+            "feature scope routing",
+        )?;
+    }
 
     let target_digest = TargetDigest::new(
         canonical_digest(DigestDomain::Target, &target).map_err(|_| ToolError::Decode {
@@ -460,7 +411,7 @@ fn extract_source_items(
     target: &TargetDescriptor,
     schema: &crate::extract::schema::IntrospectionResponse,
     harness_source: &str,
-    feature2_requirements: &str,
+    feature_inputs: &[FeatureContractInput],
 ) -> Result<SourceItemInventory, ToolError> {
     let schema_authority =
         AuthorityId::new(SCHEMA_AUTHORITY_ID).expect("static authority identity is valid");
@@ -580,18 +531,22 @@ fn extract_source_items(
         ),
         "Rust policy extraction",
     )?);
-    inventories.push(validated(
-        extract_policy_clauses(
-            &policy_authority,
-            FEATURE2_REQUIREMENTS,
-            feature2_requirements,
-            &FEATURE2_POLICIES
-                .iter()
-                .map(|(id, text, _)| policy(id, text))
-                .collect::<Vec<_>>(),
-        ),
-        "Feature 2 policy extraction",
-    )?);
+    for feature in feature_inputs {
+        inventories.push(validated(
+            extract_policy_clauses(
+                &policy_authority,
+                feature.policy.requirements_path,
+                &feature.requirements,
+                &feature
+                    .policy
+                    .policy_clauses
+                    .iter()
+                    .map(|clause| policy(clause.clause_id, clause.exact_text))
+                    .collect::<Vec<_>>(),
+            ),
+            "feature policy extraction",
+        )?);
+    }
     validated(
         merge_source_inventories(inventories),
         "merged source inventory",
@@ -640,7 +595,8 @@ fn capability_candidates(
         .collect()
 }
 
-fn feature2_policy_candidates(
+fn feature_policy_candidates(
+    policy: &FeatureContractPolicy,
     declaration: &FeatureScopeDeclaration,
     source_items: &SourceItemInventory,
     authorities: &AuthorityRegistry,
@@ -649,38 +605,40 @@ fn feature2_policy_candidates(
         AuthorityId::new(POLICY_AUTHORITY_ID).expect("static authority identity is valid");
     if !authorities.authorities.contains_key(&authority_id) {
         return Err(ToolError::Decode {
-            artifact: "Feature 2 policy authority",
+            artifact: "feature policy authority",
         });
     }
 
-    FEATURE2_POLICIES
+    policy
+        .policy_clauses
         .iter()
-        .map(|(clause_id, text, guidance_id)| {
+        .map(|clause| {
+            let clause_id = clause.clause_id;
             let capability_id = CapabilityId::new(format!(
                 "policy/{POLICY_AUTHORITY_ID}/{clause_id}"
             ))
             .map_err(|_| ToolError::Decode {
-                artifact: "Feature 2 policy identity",
+                artifact: "feature policy identity",
             })?;
             if !declaration.policy_capability_ids.contains(&capability_id) {
                 return Err(ToolError::Decode {
-                    artifact: "Feature 2 declared policy identity",
+                    artifact: "declared feature policy identity",
                 });
             }
             let spec_source_id = policy_source_item_id(clause_id)?;
-            let guidance_source_id = policy_source_item_id(guidance_id)?;
+            let guidance_source_id = policy_source_item_id(clause.guidance_id)?;
             let spec_source = source_items
                 .items
                 .get(&spec_source_id)
                 .ok_or(ToolError::Decode {
-                    artifact: "Feature 2 policy source",
+                    artifact: "feature policy source",
                 })?;
             let guidance_source =
                 source_items
                     .items
                     .get(&guidance_source_id)
                     .ok_or(ToolError::Decode {
-                        artifact: "Feature 2 guidance source",
+                        artifact: "feature guidance source",
                     })?;
             let semantic_signature = json!({
                 "requirement": spec_source.semantic_signature,
@@ -697,10 +655,11 @@ fn feature2_policy_candidates(
                     // storing copied line numbers in authored JSON would make harmless prose motion
                     // look like a semantic definition change.
                     source_anchors: CanonicalSet::default(),
-                    summary: NonEmptyText::new(*text).expect("reviewed policy text is non-empty"),
+                    summary: NonEmptyText::new(clause.exact_text)
+                        .expect("reviewed policy text is non-empty"),
                     capability_fingerprint: semantic_fingerprint(&semantic_signature).map_err(
                         |_| ToolError::Decode {
-                            artifact: "Feature 2 policy fingerprint",
+                            artifact: "feature policy fingerprint",
                         },
                     )?,
                     semantic_signature,
@@ -720,7 +679,7 @@ fn policy_source_item_id(clause_id: &str) -> Result<SourceItemId, ToolError> {
         encode_identity_segment(clause_id)
     ))
     .map_err(|_| ToolError::Decode {
-        artifact: "Feature 2 policy source identity",
+        artifact: "feature policy source identity",
     })
 }
 

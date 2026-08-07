@@ -921,13 +921,18 @@
         },
         {
           "path": {
+            "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md"
+          }
+        },
+        {
+          "path": {
             "path": "sdk/rust/AGENTS.md"
           }
         }
       ],
       "repository": "github.com/dagger/dagger",
       "revision": "25300124ca110612edc09c43f89cb5fad6028170",
-      "source_digest": "sha256:f2071cac066687bc066a308a79451af2db7bd341eb5122de6d8ed07e38db05da"
+      "source_digest": "sha256:df9a1f30783ea0c062bc548fa9f6ba83475c09a9510973d75410ec8554b126cc"
     },
     "sdk-contract-harness": {
       "authority_class": "sdk-contract-harness",

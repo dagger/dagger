@@ -680,6 +680,23 @@
         "authority_id": "rust-policy",
         "source_path": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md"
       }
+    },
+    "routing/rust-policy/transport-observability": {
+      "authority_id": "rust-policy",
+      "classification": {
+        "gap": "Feature 3 transport implementation and exact-target verification are not yet present",
+        "owner_feature": "feature-3",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:3fe3cb7763950ff47b0b6bf277feb15ac78007063ed705608059fb7ca09752f1"
+      },
+      "overrides": {},
+      "rule_id": "routing/rust-policy/transport-observability",
+      "selector": {
+        "authority_id": "rust-policy",
+        "source_path": ".kiro/specs/rust-sdk-transport-observability/requirements.md"
+      }
     }
   }
 }

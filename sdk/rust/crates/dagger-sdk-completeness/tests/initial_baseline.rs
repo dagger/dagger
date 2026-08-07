@@ -1,4 +1,4 @@
-//! Exact-target and filesystem-boundary regressions for the checked F1 baseline.
+//! Exact-target and filesystem-boundary regressions for the checked completeness baseline.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb1907e7d7990649c44e288388096b2a29eb613a3278615b24ac44ea95d965cf";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:6facf22c8fd95eb9bf20c92cc04497116f1d2b9a8bec842f20effd42ee3ec033";
+    "sha256:d2a2bd7c18dcad4fbe382af45af5b7788cfc0ed70c7dd9712877f36072f8a6a4";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -30,7 +30,7 @@ struct OwnershipProjection<'a> {
 }
 
 #[test]
-fn target_locks_authorities_harness_feature2_status_and_ownership() {
+fn target_locks_authorities_harness_status_and_ownership() {
     let root = repository_root();
     assert_eq!(
         rust_artifact_digest(&root).unwrap().as_str(),
@@ -110,13 +110,13 @@ fn target_locks_authorities_harness_feature2_status_and_ownership() {
     assert!(!derived.report.completeness_verdict);
     assert_eq!(
         derived.report.inventory_digest.as_str(),
-        "sha256:c0f27c650ab5847a861c599094ecca2ffac00aee35a9a995623dd018a7b38e66"
+        "sha256:e90dfa2a0c383dbbc4003091d05f0e8a8f537fc80fb87672ce82a2d49d3e86a9"
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:17003989b1e531913cad8adb4c86ba31dec4b7cd687c4aa5b8552d6cb65f8b24"
+        "sha256:1dd7c47e32ee446326cdcf10c17ea51586f792160836878700618931af0e62c5"
     );
-    assert_eq!(derived.report.blocking_capabilities.len(), 4_531);
+    assert_eq!(derived.report.blocking_capabilities.len(), 4_557);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
     assert!(
         derived
@@ -155,7 +155,7 @@ fn target_locks_authorities_harness_feature2_status_and_ownership() {
             (AuthorityId::new("go-codegen").unwrap(), 83),
             (AuthorityId::new("go-engine-sdk").unwrap(), 13),
             (AuthorityId::new("go-integration-tests").unwrap(), 1_072),
-            (AuthorityId::new("rust-policy").unwrap(), 21),
+            (AuthorityId::new("rust-policy").unwrap(), 47),
             (AuthorityId::new("sdk-contract-harness").unwrap(), 17),
         ])
     );
@@ -165,7 +165,7 @@ fn target_locks_authorities_harness_feature2_status_and_ownership() {
             (Status::IdiomaticEquivalent, 10),
             (Status::Implemented, 15),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_103),
+            (Status::Missing, 1_129),
             (Status::Partial, 3_428),
         ])
     );
@@ -173,7 +173,7 @@ fn target_locks_authorities_harness_feature2_status_and_ownership() {
         derived.report.counts_by_owner,
         std::collections::BTreeMap::from([
             (FeatureId::Feature2, 13),
-            (FeatureId::Feature3, 21),
+            (FeatureId::Feature3, 47),
             (FeatureId::Feature4, 3_329),
             (FeatureId::Feature5, 12),
             (FeatureId::Feature6, 53),

@@ -8,33 +8,11 @@ use std::collections::BTreeMap;
 
 use crate::classification::validate_status_entries;
 use crate::diagnostic::{ContractDiagnostic, DiagnosticCode, DiagnosticCollector, Validation};
+use crate::feature_scope::FeatureScopePolicy;
 use crate::model::{
     CanonicalInventory, CanonicalSet, CapabilityId, CapabilityRecord, ClassificationValues, Digest,
     EvidenceKind, EvidenceRegistry, FeatureId, NonEmptyText, ResolvedLedger, Status, TargetDigest,
 };
-
-const EXISTING_SCOPE_HEADING: &str =
-    "### Existing Capability_IDs Whose Status Feature 2 Intends to Change";
-const POLICY_SCOPE_HEADING: &str = "### Omitted Policy_Capabilities to Add and Complete";
-const EXPECTED_EXISTING_SCOPE_DIGEST: &str =
-    "sha256:81ad1a4f2efe1604b9091468bd6a6006d598a2a8ae54a94a974acf08d74b8b40";
-const EXPECTED_EXISTING_SCOPE_LEN: usize = 23;
-const EXPECTED_POLICY_IDS: [&str; 14] = [
-    "policy/rust-policy/client-beta-config-migration",
-    "policy/rust-policy/client-cancelled-connect-cleanup",
-    "policy/rust-policy/client-close-idempotency",
-    "policy/rust-policy/client-closed-operation-rejection",
-    "policy/rust-policy/client-drop-cleanup",
-    "policy/rust-policy/client-http-connect-timeout",
-    "policy/rust-policy/client-owned-lifecycle",
-    "policy/rust-policy/client-preflight-validation",
-    "policy/rust-policy/client-public-surface-encapsulation",
-    "policy/rust-policy/client-query-execution-timeout",
-    "policy/rust-policy/client-reserved-environment",
-    "policy/rust-policy/client-secret-redaction",
-    "policy/rust-policy/client-session-startup-timeout",
-    "policy/rust-policy/client-shared-handle-safety",
-];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// Exact existing and newly inventoried capabilities declared by one approved feature spec.
@@ -83,25 +61,33 @@ pub struct ResidualBlocker {
     pub gap: NonEmptyText,
 }
 
-/// Parses and validates the exact Feature 2 scope convention in `requirements.md`.
+/// Parses and validates one exact scope convention in an approved `requirements.md`.
 ///
 /// The reader intentionally understands only the two named headings, their `text` fences, and the
 /// one recorded digest. This keeps prose from becoming an accidental second configuration format.
-pub fn parse_feature_scope_declaration(markdown: &str) -> Validation<FeatureScopeDeclaration> {
+pub fn parse_feature_scope_declaration(
+    markdown: &str,
+    policy: &FeatureScopePolicy,
+) -> Validation<FeatureScopeDeclaration> {
     let mut diagnostics = DiagnosticCollector::default();
-    let existing_lines = parse_id_fence(markdown, EXISTING_SCOPE_HEADING, &mut diagnostics);
-    let policy_lines = parse_id_fence(markdown, POLICY_SCOPE_HEADING, &mut diagnostics);
-    let existing = parse_capability_ids(EXISTING_SCOPE_HEADING, &existing_lines, &mut diagnostics);
-    let policies = parse_capability_ids(POLICY_SCOPE_HEADING, &policy_lines, &mut diagnostics);
+    let existing_lines = parse_id_fence(markdown, policy.existing_scope_heading, &mut diagnostics);
+    let policy_lines = parse_id_fence(markdown, policy.policy_scope_heading, &mut diagnostics);
+    let existing = parse_capability_ids(
+        policy.existing_scope_heading,
+        &existing_lines,
+        &mut diagnostics,
+    );
+    let policies =
+        parse_capability_ids(policy.policy_scope_heading, &policy_lines, &mut diagnostics);
 
     validate_order_and_duplicates(
-        EXISTING_SCOPE_HEADING,
+        policy.existing_scope_heading,
         &existing_lines,
         &existing,
         &mut diagnostics,
     );
     validate_order_and_duplicates(
-        POLICY_SCOPE_HEADING,
+        policy.policy_scope_heading,
         &policy_lines,
         &policies,
         &mut diagnostics,
@@ -111,35 +97,30 @@ pub fn parse_feature_scope_declaration(markdown: &str) -> Validation<FeatureScop
         .map(Digest::sha256)
         .unwrap_or_else(|_| Digest::sha256([]));
     let recorded_digest =
-        parse_recorded_digest(markdown, &mut diagnostics).unwrap_or_else(|| Digest::sha256([]));
-    let expected_digest = Digest::new(EXPECTED_EXISTING_SCOPE_DIGEST)
-        .expect("the reviewed Feature 2 scope digest is a valid SHA-256 identity");
-    if existing.len() != EXPECTED_EXISTING_SCOPE_LEN
-        || calculated_digest != expected_digest
-        || recorded_digest != expected_digest
+        parse_recorded_digest(markdown, policy.existing_scope_heading, &mut diagnostics)
+            .unwrap_or_else(|| Digest::sha256([]));
+    let existing = CanonicalSet::new(existing);
+    if existing != policy.existing_capability_ids
+        || calculated_digest != policy.existing_scope_digest
+        || recorded_digest != policy.existing_scope_digest
     {
         diagnostics.push(scope_diagnostic(
-            EXISTING_SCOPE_HEADING,
-            "existing Feature 2 scope must contain the reviewed 23 IDs and recorded digest",
+            policy.existing_scope_heading,
+            "existing scope must contain exactly the reviewed IDs and recorded digest",
         ));
     }
 
-    let expected_policies = CanonicalSet::new(
-        EXPECTED_POLICY_IDS
-            .into_iter()
-            .map(|id| CapabilityId::new(id).expect("reviewed policy identity is valid")),
-    );
     let policies = CanonicalSet::new(policies);
-    if policies != expected_policies {
+    if policies != policy.policy_capability_ids {
         diagnostics.push(scope_diagnostic(
-            POLICY_SCOPE_HEADING,
-            "Feature 2 policy scope differs from the reviewed 14 identities",
+            policy.policy_scope_heading,
+            "policy scope differs from the reviewed identities",
         ));
     }
 
     diagnostics.finish(FeatureScopeDeclaration {
-        feature: FeatureId::Feature2,
-        existing_capability_ids: CanonicalSet::new(existing),
+        feature: policy.feature.clone(),
+        existing_capability_ids: existing,
         existing_scope_digest: recorded_digest,
         policy_capability_ids: policies,
     })
@@ -150,15 +131,20 @@ pub fn validate_feature_scope_routing(
     inventory: &CanonicalInventory,
     ledger: &ResolvedLedger,
     declaration: &FeatureScopeDeclaration,
+    policy: &FeatureScopePolicy,
 ) -> Validation<()> {
     let mut diagnostics = DiagnosticCollector::default();
+    validate_declaration_policy(declaration, policy, &mut diagnostics);
     let scope = declaration.capability_ids();
     for capability_id in declaration.existing_capability_ids.iter() {
+        let expected_authority = capability_authority(capability_id);
         match inventory.capabilities.get(capability_id) {
-            Some(definition) if definition.authority_id.as_str() == "go-client" => {}
+            Some(definition)
+                if expected_authority
+                    .is_some_and(|authority| definition.authority_id.as_str() == authority) => {}
             _ => diagnostics.push(scope_diagnostic(
                 capability_id,
-                "declared existing Feature 2 identity is absent from the Go-client inventory",
+                "declared existing identity is absent from its capability authority inventory",
             )),
         }
     }
@@ -167,20 +153,31 @@ pub fn validate_feature_scope_routing(
             Some(definition) if definition.authority_id.as_str() == "rust-policy" => {}
             _ => diagnostics.push(scope_diagnostic(
                 capability_id,
-                "declared Feature 2 policy identity is absent from the Rust-policy inventory",
+                "declared policy identity is absent from the Rust-policy inventory",
             )),
         }
     }
 
+    let expected_owner_ids =
+        CanonicalSet::new(policy.expected_prior_blocking_owners.keys().cloned());
+    if expected_owner_ids != scope {
+        diagnostics.push(scope_diagnostic(
+            policy.existing_scope_heading,
+            "prior-owner map must cover every scoped capability exactly",
+        ));
+    }
     for row in ledger.capabilities.values() {
         let is_blocking = matches!(row.status, Status::Missing | Status::Partial);
         if scope.contains(&row.capability_id) {
-            if is_blocking && row.owner_feature != Some(declaration.feature.clone()) {
+            let expected_owner = policy
+                .expected_prior_blocking_owners
+                .get(&row.capability_id);
+            if is_blocking && row.owner_feature.as_ref() != expected_owner {
                 diagnostics.push(ContractDiagnostic::new(
                     DiagnosticCode::CapabilityOwnerMissing,
                     row.capability_id.to_string(),
                     None,
-                    "declared blocking Feature 2 capability has a different owner",
+                    "declared blocking capability differs from its reviewed prior owner",
                 ));
             }
         } else if row.owner_feature == Some(declaration.feature.clone()) {
@@ -188,7 +185,7 @@ pub fn validate_feature_scope_routing(
                 DiagnosticCode::CapabilityOwnerMissing,
                 row.capability_id.to_string(),
                 None,
-                "capability outside the declared Feature 2 scope retains Feature 2 ownership",
+                "capability outside the declared scope retains this feature's ownership",
             ));
         }
     }
@@ -234,7 +231,7 @@ pub fn validate_ownership_only_correction(
     diagnostics.finish(())
 }
 
-/// Validates Feature 2 status changes, same-target evidence, and exact sibling blockers.
+/// Validates scoped status changes, same-target evidence, and exact sibling blockers.
 ///
 /// `require_no_blockers` is the final-gate mode: every declared row must be complete and the
 /// sibling-blocker set must be empty. Earlier candidate changes may legitimately retain local or
@@ -243,6 +240,7 @@ pub fn validate_ownership_only_correction(
 pub fn validate_feature_status_changes(
     current: &ResolvedLedger,
     declaration: &FeatureScopeDeclaration,
+    policy: &FeatureScopePolicy,
     candidate: &CandidateStatusChanges,
     candidate_evidence: &EvidenceRegistry,
     target: &TargetDigest,
@@ -250,6 +248,7 @@ pub fn validate_feature_status_changes(
     require_no_blockers: bool,
 ) -> Validation<()> {
     let mut diagnostics = DiagnosticCollector::default();
+    validate_declaration_policy(declaration, policy, &mut diagnostics);
     let child = ChildSpecDeclaration {
         feature: declaration.feature.clone(),
         capability_ids: declaration.capability_ids(),
@@ -261,18 +260,31 @@ pub fn validate_feature_status_changes(
     }
 
     for (capability_id, replacement) in &candidate.changes {
+        let prior_owner_matches = current
+            .capabilities
+            .get(capability_id)
+            .filter(|row| matches!(row.status, Status::Missing | Status::Partial))
+            .and_then(|row| row.owner_feature.as_ref())
+            == policy.expected_prior_blocking_owners.get(capability_id);
+        if !prior_owner_matches {
+            diagnostics.push(scope_diagnostic(
+                capability_id,
+                "candidate transition does not begin at its reviewed prior blocking owner",
+            ));
+        }
         if replacement.status.is_complete() {
             validate_complete_evidence(
                 capability_id,
                 replacement,
                 candidate_evidence,
                 target,
+                policy,
                 &mut diagnostics,
             );
             if residual_blockers.contains_key(capability_id) {
                 diagnostics.push(scope_diagnostic(
                     capability_id,
-                    "complete Feature 2 status cannot erase an unverified sibling dependency",
+                    "complete status cannot erase an unverified sibling dependency",
                 ));
             }
         }
@@ -280,17 +292,11 @@ pub fn validate_feature_status_changes(
 
     for (capability_id, blocker) in residual_blockers {
         if !child.capability_ids.contains(capability_id)
-            || !matches!(
-                blocker.sibling_feature,
-                FeatureId::Feature3
-                    | FeatureId::Feature4
-                    | FeatureId::Feature8
-                    | FeatureId::Feature9
-            )
+            || blocker.sibling_feature == declaration.feature
         {
             diagnostics.push(scope_diagnostic(
                 capability_id,
-                "residual blocker must name a declared capability and Feature 3, 4, 8, or 9",
+                "residual blocker must name a declared capability and a different feature",
             ));
             continue;
         }
@@ -313,7 +319,7 @@ pub fn validate_feature_status_changes(
         {
             diagnostics.push(scope_diagnostic(
                 capability_id,
-                "candidate must retain the exact sibling residual as a Feature 2 blocking row",
+                "candidate must retain the exact sibling residual as a blocking row",
             ));
         }
     }
@@ -321,8 +327,8 @@ pub fn validate_feature_status_changes(
     if require_no_blockers {
         if !residual_blockers.is_empty() {
             diagnostics.push(scope_diagnostic(
-                "feature-2",
-                "final Feature 2 validation cannot retain sibling blockers",
+                feature_subject(&declaration.feature),
+                "final feature validation cannot retain sibling blockers",
             ));
         }
         for capability_id in child.capability_ids.iter() {
@@ -339,7 +345,7 @@ pub fn validate_feature_status_changes(
             if !status.is_some_and(Status::is_complete) {
                 diagnostics.push(scope_diagnostic(
                     capability_id,
-                    "final Feature 2 validation requires every declared capability to be complete",
+                    "final feature validation requires every declared capability to be complete",
                 ));
             }
         }
@@ -466,8 +472,12 @@ fn parse_id_fence(
     body.lines().map(str::to_owned).collect()
 }
 
-fn parse_recorded_digest(markdown: &str, diagnostics: &mut DiagnosticCollector) -> Option<Digest> {
-    let section = markdown.split_once(EXISTING_SCOPE_HEADING)?.1;
+fn parse_recorded_digest(
+    markdown: &str,
+    heading: &str,
+    diagnostics: &mut DiagnosticCollector,
+) -> Option<Digest> {
+    let section = markdown.split_once(heading)?.1;
     let section = section
         .split_once("\n### ")
         .map_or(section, |(section, _)| section);
@@ -477,7 +487,7 @@ fn parse_recorded_digest(markdown: &str, diagnostics: &mut DiagnosticCollector) 
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         diagnostics.push(scope_diagnostic(
-            EXISTING_SCOPE_HEADING,
+            heading,
             "existing scope section must record exactly one SHA-256 digest",
         ));
         return None;
@@ -486,11 +496,45 @@ fn parse_recorded_digest(markdown: &str, diagnostics: &mut DiagnosticCollector) 
         Ok(digest) => Some(digest),
         Err(_) => {
             diagnostics.push(scope_diagnostic(
-                EXISTING_SCOPE_HEADING,
+                heading,
                 "recorded existing scope digest is malformed",
             ));
             None
         }
+    }
+}
+
+fn validate_declaration_policy(
+    declaration: &FeatureScopeDeclaration,
+    policy: &FeatureScopePolicy,
+    diagnostics: &mut DiagnosticCollector,
+) {
+    if declaration.feature != policy.feature
+        || declaration.existing_capability_ids != policy.existing_capability_ids
+        || declaration.existing_scope_digest != policy.existing_scope_digest
+        || declaration.policy_capability_ids != policy.policy_capability_ids
+    {
+        diagnostics.push(scope_diagnostic(
+            policy.existing_scope_heading,
+            "parsed declaration differs from the reviewed feature policy",
+        ));
+    }
+}
+
+fn capability_authority(capability_id: &CapabilityId) -> Option<&str> {
+    capability_id.as_str().split('/').nth(1)
+}
+
+fn feature_subject(feature: &FeatureId) -> &'static str {
+    match feature {
+        FeatureId::Feature2 => "feature-2",
+        FeatureId::Feature3 => "feature-3",
+        FeatureId::Feature4 => "feature-4",
+        FeatureId::Feature5 => "feature-5",
+        FeatureId::Feature6 => "feature-6",
+        FeatureId::Feature7 => "feature-7",
+        FeatureId::Feature8 => "feature-8",
+        FeatureId::Feature9 => "feature-9",
     }
 }
 
@@ -538,6 +582,7 @@ fn validate_complete_evidence(
     replacement: &ClassificationValues,
     evidence: &EvidenceRegistry,
     target: &TargetDigest,
+    policy: &FeatureScopePolicy,
     diagnostics: &mut DiagnosticCollector,
 ) {
     let slots = match replacement.status {
@@ -563,6 +608,7 @@ fn validate_complete_evidence(
                 reference.evidence_kind == expected_kind
                     && reference.execution_target.as_ref() == Some(target)
                     && reference.proved_capability_ids.contains(capability_id)
+                    && reference.repository == policy.evidence_repository
             });
             if !valid {
                 diagnostics.push(ContractDiagnostic::new(
@@ -575,7 +621,7 @@ fn validate_complete_evidence(
                     },
                     capability_id.to_string(),
                     None,
-                    "complete Feature 2 evidence is absent from the candidate target scope",
+                    "complete evidence is absent from the candidate target scope and route",
                 ));
             }
         }

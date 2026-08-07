@@ -66,8 +66,9 @@ proptest! {
         outsider_status in 0_u8..5,
         fingerprint_seed in any::<u64>(),
     ) {
-        let markdown = mutate_scope(REQUIREMENTS, scope_mutation);
-        let declaration = parse_feature_scope_declaration(&markdown);
+        let contract = client_lifecycle_contract();
+        let markdown = mutate_scope(REQUIREMENTS, &contract.scope, scope_mutation);
+        let declaration = parse_feature_scope_declaration(&markdown, &contract.scope);
         prop_assert_eq!(declaration.is_ok(), scope_mutation == 0);
         if scope_mutation != 0 {
             return Ok(());
@@ -113,7 +114,9 @@ proptest! {
 
         let preservation =
             validate_ownership_only_correction(&before, &after, &declaration).is_ok();
-        let routing = validate_feature_scope_routing(&inventory, &after, &declaration).is_ok();
+        let routing =
+            validate_feature_scope_routing(&inventory, &after, &declaration, &contract.scope)
+                .is_ok();
         prop_assert_eq!(preservation && routing, routing_mutation == 0);
     }
 }
@@ -207,6 +210,7 @@ proptest! {
         let result = validate_feature_status_changes(
             &fixture.current,
             &fixture.declaration,
+            &fixture.policy,
             &candidate,
             &evidence,
             &fixture.target,
@@ -220,6 +224,7 @@ proptest! {
 struct StatusFixture {
     capability_id: CapabilityId,
     declaration: FeatureScopeDeclaration,
+    policy: FeatureScopePolicy,
     current: ResolvedLedger,
     candidate: CandidateStatusChanges,
     evidence: EvidenceRegistry,
@@ -228,15 +233,25 @@ struct StatusFixture {
 }
 
 fn status_fixture(destination_index: u8) -> StatusFixture {
-    let capability_id = CapabilityId::new("behavior/go-client/connect").unwrap();
+    let policy = client_lifecycle_contract().scope;
+    let capability_id = policy.existing_capability_ids.first().unwrap().clone();
     let target = TargetDigest::new(Digest::sha256("target"));
-    let definition = definition(&capability_id, "go-client", Digest::sha256("connect"));
-    let current_values = blocking_values(Status::Missing, "Feature 2 client is absent");
+    let current_rows = policy
+        .capability_ids()
+        .iter()
+        .map(|id| {
+            let authority = id.as_str().split('/').nth(1).unwrap();
+            let definition = definition(id, authority, Digest::sha256(id.as_str()));
+            let current_values = if id == &capability_id {
+                blocking_values(Status::Missing, "Client capability is absent")
+            } else {
+                destination_values(Status::Implemented)
+            };
+            (id.clone(), record(&definition, &current_values))
+        })
+        .collect();
     let current = ResolvedLedger {
-        capabilities: BTreeMap::from([(
-            capability_id.clone(),
-            record(&definition, &current_values),
-        )]),
+        capabilities: current_rows,
     };
     let destination = match destination_index {
         0 => Status::Implemented,
@@ -259,11 +274,12 @@ fn status_fixture(destination_index: u8) -> StatusFixture {
     StatusFixture {
         capability_id: capability_id.clone(),
         declaration: FeatureScopeDeclaration {
-            feature: FeatureId::Feature2,
-            existing_capability_ids: CanonicalSet::new([capability_id.clone()]),
-            existing_scope_digest: Digest::sha256("fixture scope"),
-            policy_capability_ids: CanonicalSet::default(),
+            feature: policy.feature.clone(),
+            existing_capability_ids: policy.existing_capability_ids.clone(),
+            existing_scope_digest: policy.existing_scope_digest.clone(),
+            policy_capability_ids: policy.policy_capability_ids.clone(),
         },
+        policy,
         current,
         candidate: CandidateStatusChanges {
             changes: BTreeMap::from([(capability_id.clone(), replacement)]),
@@ -576,8 +592,8 @@ fn status_from_index(index: u8) -> Status {
     .clone()
 }
 
-fn mutate_scope(markdown: &str, mutation: u8) -> String {
-    let valid = parse_feature_scope_declaration(markdown).unwrap();
+fn mutate_scope(markdown: &str, policy: &FeatureScopePolicy, mutation: u8) -> String {
+    let valid = parse_feature_scope_declaration(markdown, policy).unwrap();
     let first = valid.existing_capability_ids[0].as_str();
     let second = valid.existing_capability_ids[1].as_str();
     match mutation {

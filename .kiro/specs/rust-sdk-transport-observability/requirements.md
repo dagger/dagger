@@ -241,7 +241,7 @@ revision is stated. Citations to the Feature 2 foundation use merge commit
 The following 32 IDs are the exact current-ledger status scope. It contains all 21
 currently Feature 3-owned rows and the 11 Feature 2-owned rows whose recorded residual
 gap is Feature 3 live behaviour. The scope digest is
-`sha256:11568be7e981928bba0883527a4a5dd83401c7a226e341321ab9f94a9becb4c7`,
+`sha256:0b4246157f75b8ce179d8fec3476256fa939ccdf69d29d1fcafaf93f160013b3`,
 computed over the compact JSON encoding of this lexicographically sorted list.
 
 ```text

@@ -98745,6 +98745,1254 @@
       "stability": "stable",
       "summary": "rust-policy declared by rust-policy"
     },
+    "policy/rust-policy/transport-background-failure-observation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:6eef20fbce434ab42cccde08d1259587089d9aed5d1cc87f10b0ac80dd61702e",
+      "capability_id": "policy/rust-policy/transport-background-failure-observation",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-background-failure-observation",
+          "text": "Every owned process and stream task failure is retained for typed startup or shutdown inspection."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-background-failure-observation/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-background-failure-observation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-background-failure-observation/source%2Frust-policy%2Frust-policy%2Ftransport-background-failure-observation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:326",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-background-failure-observation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/transport-background-failure-observation"
+      ],
+      "stability": "stable",
+      "summary": "Every owned process and stream task failure is retained for typed startup or shutdown inspection."
+    },
+    "policy/rust-policy/transport-cache-atomic-publication": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:1367c0675a7ab23bd79c86c45256d83970be130dbed9e8ffae0d917b74ba4891",
+      "capability_id": "policy/rust-policy/transport-cache-atomic-publication",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-cache-atomic-publication",
+          "text": "Concurrent provisioners expose either no cache entry or one complete verified executable, never partial bytes."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cache-atomic-publication/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cache-atomic-publication"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cache-atomic-publication/source%2Frust-policy%2Frust-policy%2Ftransport-cache-atomic-publication",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:327",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cache-atomic-publication"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/transport-cache-atomic-publication"
+      ],
+      "stability": "stable",
+      "summary": "Concurrent provisioners expose either no cache entry or one complete verified executable, never partial bytes."
+    },
+    "policy/rust-policy/transport-cache-permission-safety": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:f878a7caabcb94cf9995460a473e57151646fda49666e0784a8dd4a0c0be82ef",
+      "capability_id": "policy/rust-policy/transport-cache-permission-safety",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-cache-permission-safety",
+          "text": "The provisioner rejects symlink or non-regular cache entries and applies private platform-appropriate cache permissions."
+        },
+        "rust_guidance": {
+          "clause_id": "unsafe-denied",
+          "text": "Unsafe Rust is denied at workspace level."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cache-permission-safety/source%2Frust-policy%2Frust-policy%2Ftransport-cache-permission-safety",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:328",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cache-permission-safety"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cache-permission-safety/source%2Frust-policy%2Frust-policy%2Funsafe-denied",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:92",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cache-permission-safety"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-cache-permission-safety",
+        "source/rust-policy/rust-policy/unsafe-denied"
+      ],
+      "stability": "stable",
+      "summary": "The provisioner rejects symlink or non-regular cache entries and applies private platform-appropriate cache permissions."
+    },
+    "policy/rust-policy/transport-cache-retention": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:076f048ad0422c335e9043c91b80c5ac6b6c65da3ef7952043b714abe3ba2b7c",
+      "capability_id": "policy/rust-policy/transport-cache-retention",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-cache-retention",
+          "text": "Managed retention runs under the Cache_Lock, preserves the selected executable, and treats cleanup failure as a redacted non-fatal diagnostic."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cache-retention/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cache-retention"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cache-retention/source%2Frust-policy%2Frust-policy%2Ftransport-cache-retention",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:329",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cache-retention"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/transport-cache-retention"
+      ],
+      "stability": "stable",
+      "summary": "Managed retention runs under the Cache_Lock, preserves the selected executable, and treats cleanup failure as a redacted non-fatal diagnostic."
+    },
+    "policy/rust-policy/transport-cli-archive-bounds": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:0b20d5e38fac2f5bda22c4163288392d839396777867c058fe335413e0775b79",
+      "capability_id": "policy/rust-policy/transport-cli-archive-bounds",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-cli-archive-bounds",
+          "text": "Checksum manifests, archive input, extracted executable output, and session control input have fixed documented size bounds."
+        },
+        "rust_guidance": {
+          "clause_id": "panic-free-library",
+          "text": "Avoid `unwrap` and `panic` in library paths."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cli-archive-bounds/source%2Frust-policy%2Frust-policy%2Fpanic-free-library",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:54",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cli-archive-bounds"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cli-archive-bounds/source%2Frust-policy%2Frust-policy%2Ftransport-cli-archive-bounds",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:330",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cli-archive-bounds"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/panic-free-library",
+        "source/rust-policy/rust-policy/transport-cli-archive-bounds"
+      ],
+      "stability": "stable",
+      "summary": "Checksum manifests, archive input, extracted executable output, and session control input have fixed documented size bounds."
+    },
+    "policy/rust-policy/transport-cli-trace-propagation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:1eef8f1f4167b9250e07ed6a151b67664ed16ac6d8d8870a28f182435ab36c47",
+      "capability_id": "policy/rust-policy/transport-cli-trace-propagation",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-cli-trace-propagation",
+          "text": "A new CLI receives W3C trace context and baggage derived from the active context or environment fallback."
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cli-trace-propagation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:102",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cli-trace-propagation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cli-trace-propagation/source%2Frust-policy%2Frust-policy%2Ftransport-cli-trace-propagation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:331",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cli-trace-propagation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/secret-safe-output",
+        "source/rust-policy/rust-policy/transport-cli-trace-propagation"
+      ],
+      "stability": "stable",
+      "summary": "A new CLI receives W3C trace context and baggage derived from the active context or environment fallback."
+    },
+    "policy/rust-policy/transport-cli-version-selection": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:3f30522a908c7faf342273077bd0eaaf90955213b314ef125fb8de0cb3780bd0",
+      "capability_id": "policy/rust-policy/transport-cli-version-selection",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-cli-version-selection",
+          "text": "The stable connector selects the CLI version declared by the Exact_Target rather than a stale beta constant."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cli-version-selection/source%2Frust-policy%2Frust-policy%2Ftransport-cli-version-selection",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:332",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cli-version-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-cli-version-selection/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-cli-version-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-cli-version-selection",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "The stable connector selects the CLI version declared by the Exact_Target rather than a stale beta constant."
+    },
+    "policy/rust-policy/transport-control-line-isolation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e83865d15aab360b9b08ba5bb619aadf45923a5155d3c3acfbf76f2423fa77bb",
+      "capability_id": "policy/rust-policy/transport-control-line-isolation",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-control-line-isolation",
+          "text": "Session control bytes are parsed once and can never enter diagnostics, traces, Debug output, or rendered errors."
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-control-line-isolation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:102",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-control-line-isolation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-control-line-isolation/source%2Frust-policy%2Frust-policy%2Ftransport-control-line-isolation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:333",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-control-line-isolation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/secret-safe-output",
+        "source/rust-policy/rust-policy/transport-control-line-isolation"
+      ],
+      "stability": "stable",
+      "summary": "Session control bytes are parsed once and can never enter diagnostics, traces, Debug output, or rendered errors."
+    },
+    "policy/rust-policy/transport-diagnostic-bounds": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e78f0bbaf36e7739d59412ddee1e2ab53fc067063c9971069b79fefc72cedd12",
+      "capability_id": "policy/rust-policy/transport-diagnostic-bounds",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-diagnostic-bounds",
+          "text": "Startup and shutdown diagnostics retain only a fixed redacted tail while live sink delivery remains streaming."
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-diagnostic-bounds/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:102",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-diagnostic-bounds"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-diagnostic-bounds/source%2Frust-policy%2Frust-policy%2Ftransport-diagnostic-bounds",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:334",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-diagnostic-bounds"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/secret-safe-output",
+        "source/rust-policy/rust-policy/transport-diagnostic-bounds"
+      ],
+      "stability": "stable",
+      "summary": "Startup and shutdown diagnostics retain only a fixed redacted tail while live sink delivery remains streaming."
+    },
+    "policy/rust-policy/transport-diagnostic-failure-containment": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:9f872a111efaadcd1ede843392204da18008207ac6afa79c87e2f032e841f456",
+      "capability_id": "policy/rust-policy/transport-diagnostic-failure-containment",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-diagnostic-failure-containment",
+          "text": "A Diagnostic_Sink error or panic disables that sink without failing or panicking the transport operation."
+        },
+        "rust_guidance": {
+          "clause_id": "panic-free-library",
+          "text": "Avoid `unwrap` and `panic` in library paths."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-diagnostic-failure-containment/source%2Frust-policy%2Frust-policy%2Fpanic-free-library",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:54",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-diagnostic-failure-containment"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-diagnostic-failure-containment/source%2Frust-policy%2Frust-policy%2Ftransport-diagnostic-failure-containment",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:335",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-diagnostic-failure-containment"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/panic-free-library",
+        "source/rust-policy/rust-policy/transport-diagnostic-failure-containment"
+      ],
+      "stability": "stable",
+      "summary": "A Diagnostic_Sink error or panic disables that sink without failing or panicking the transport operation."
+    },
+    "policy/rust-policy/transport-download-fallback-boundary": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:16ff5fa75346631efa1efb88eb67bf68dbb0992caacccab0b35d774855edbe3b",
+      "capability_id": "policy/rust-policy/transport-download-fallback-boundary",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-download-fallback-boundary",
+          "text": "PATH fallback is permitted only for a typed Release_Unavailable checksum-manifest response."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-download-fallback-boundary/source%2Frust-policy%2Frust-policy%2Ftransport-download-fallback-boundary",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:336",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-download-fallback-boundary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-download-fallback-boundary/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-download-fallback-boundary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-download-fallback-boundary",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "PATH fallback is permitted only for a typed Release_Unavailable checksum-manifest response."
+    },
+    "policy/rust-policy/transport-engine-error-extensions": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:ccf1a35efa1b8fe44c876bce603f78872b3f5081d6b524bef9e2bfff9fa8a042",
+      "capability_id": "policy/rust-policy/transport-engine-error-extensions",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-engine-error-extensions",
+          "text": "Known engine error extensions gain typed access without discarding the complete Raw_Response or unknown extension members."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-engine-error-extensions/source%2Frust-policy%2Frust-policy%2Ftransport-engine-error-extensions",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:337",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-engine-error-extensions"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-engine-error-extensions/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-engine-error-extensions"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-engine-error-extensions",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "Known engine error extensions gain typed access without discarding the complete Raw_Response or unknown extension members."
+    },
+    "policy/rust-policy/transport-error-taxonomy": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:90310b6cfd44dd3c7e4f77b782b529c951641d9009220fc0e754f82a0b456677",
+      "capability_id": "policy/rust-policy/transport-error-taxonomy",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-error-taxonomy",
+          "text": "Configuration, discovery, provisioning, process, protocol, HTTP, GraphQL, engine-domain, compatibility, timeout, background, and shutdown failures remain distinguishable."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-error-taxonomy/source%2Frust-policy%2Frust-policy%2Ftransport-error-taxonomy",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:338",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-error-taxonomy"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-error-taxonomy/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-error-taxonomy"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-error-taxonomy",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "Configuration, discovery, provisioning, process, protocol, HTTP, GraphQL, engine-domain, compatibility, timeout, background, and shutdown failures remain distinguishable."
+    },
+    "policy/rust-policy/transport-existing-session-validation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:fec3d6beeedb8bd36be9d84d61d53c1176aa8c780ab8d163fea9722ec4415c28",
+      "capability_id": "policy/rust-policy/transport-existing-session-validation",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-existing-session-validation",
+          "text": "A present session port selects Existing_Session and malformed port or token input fails without considering any CLI source."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-existing-session-validation/source%2Frust-policy%2Frust-policy%2Ftransport-existing-session-validation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:339",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-existing-session-validation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-existing-session-validation/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-existing-session-validation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-existing-session-validation",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "A present session port selects Existing_Session and malformed port or token input fails without considering any CLI source."
+    },
+    "policy/rust-policy/transport-http-trace-propagation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:01beca70fe7093b0f59dd51489dd7866baff51333714b0119fc15008ed0e7492",
+      "capability_id": "policy/rust-policy/transport-http-trace-propagation",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-http-trace-propagation",
+          "text": "Every implicit GraphQL HTTP request injects W3C trace context and baggage with active context precedence."
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-http-trace-propagation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:102",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-http-trace-propagation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-http-trace-propagation/source%2Frust-policy%2Frust-policy%2Ftransport-http-trace-propagation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:340",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-http-trace-propagation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/secret-safe-output",
+        "source/rust-policy/rust-policy/transport-http-trace-propagation"
+      ],
+      "stability": "stable",
+      "summary": "Every implicit GraphQL HTTP request injects W3C trace context and baggage with active context precedence."
+    },
+    "policy/rust-policy/transport-local-cli-no-fallback": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:8f497b8b421e0228d2eedef99bc63f1bdf130db7a251bf7b54be1653ef62246f",
+      "capability_id": "policy/rust-policy/transport-local-cli-no-fallback",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-local-cli-no-fallback",
+          "text": "A present explicit local CLI input is authoritative and any resolution or startup failure is terminal for source selection."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-local-cli-no-fallback/source%2Frust-policy%2Frust-policy%2Ftransport-local-cli-no-fallback",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:341",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-local-cli-no-fallback"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-local-cli-no-fallback/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-local-cli-no-fallback"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-local-cli-no-fallback",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "A present explicit local CLI input is authoritative and any resolution or startup failure is terminal for source selection."
+    },
+    "policy/rust-policy/transport-loopback-authentication": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e8fd2e7421547360797d1c3c4ace240084d8cffb8e94933902993feff2eaca74",
+      "capability_id": "policy/rust-policy/transport-loopback-authentication",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-loopback-authentication",
+          "text": "Implicit GraphQL HTTP dials loopback and authenticates with the session token as Basic username and an empty password."
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-loopback-authentication/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:102",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-loopback-authentication"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-loopback-authentication/source%2Frust-policy%2Frust-policy%2Ftransport-loopback-authentication",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:342",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-loopback-authentication"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/secret-safe-output",
+        "source/rust-policy/rust-policy/transport-loopback-authentication"
+      ],
+      "stability": "stable",
+      "summary": "Implicit GraphQL HTTP dials loopback and authenticates with the session token as Basic username and an empty password."
+    },
+    "policy/rust-policy/transport-no-query-retry": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:dff8c662c42753afb52c358840b3c265900f39ca9dc43eaf3286999e8bfab1ab",
+      "capability_id": "policy/rust-policy/transport-no-query-retry",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-no-query-retry",
+          "text": "The transport never automatically repeats a GraphQL operation after request transmission may have begun."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-no-query-retry/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-no-query-retry"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-no-query-retry/source%2Frust-policy%2Frust-policy%2Ftransport-no-query-retry",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:343",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-no-query-retry"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/transport-no-query-retry"
+      ],
+      "stability": "stable",
+      "summary": "The transport never automatically repeats a GraphQL operation after request transmission may have begun."
+    },
+    "policy/rust-policy/transport-platform-archive-selection": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:3880ec24c7b9c08d043cd0d91732a5a8abb3c5d64bfd3f1442b00b947f3bbaaa",
+      "capability_id": "policy/rust-policy/transport-platform-archive-selection",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-platform-archive-selection",
+          "text": "Linux and macOS select tar.gz dagger members while Windows selects ZIP dagger.exe members for amd64 and arm64."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-platform-archive-selection/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-platform-archive-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-platform-archive-selection/source%2Frust-policy%2Frust-policy%2Ftransport-platform-archive-selection",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:344",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-platform-archive-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/idiomatic-rust",
+        "source/rust-policy/rust-policy/transport-platform-archive-selection"
+      ],
+      "stability": "stable",
+      "summary": "Linux and macOS select tar.gz dagger members while Windows selects ZIP dagger.exe members for amd64 and arm64."
+    },
+    "policy/rust-policy/transport-session-labels": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e156042b8a5f3efbac1dbe4a39e46f56cf2aee5fba9770d0374614ed49fbac29",
+      "capability_id": "policy/rust-policy/transport-session-labels",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-session-labels",
+          "text": "Every new CLI session receives stable Rust SDK name and package-version labels."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-session-labels/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-session-labels"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-session-labels/source%2Frust-policy%2Frust-policy%2Ftransport-session-labels",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:345",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-session-labels"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/idiomatic-rust",
+        "source/rust-policy/rust-policy/transport-session-labels"
+      ],
+      "stability": "stable",
+      "summary": "Every new CLI session receives stable Rust SDK name and package-version labels."
+    },
+    "policy/rust-policy/transport-session-protocol": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:5895396c2be109a8f87e9b6699300ea937513d40e0aab28526274dd24c652295",
+      "capability_id": "policy/rust-policy/transport-session-protocol",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-session-protocol",
+          "text": "One bounded first stdout line must contain a valid port and non-empty token before resources transfer to the Client."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-session-protocol/source%2Frust-policy%2Frust-policy%2Ftransport-session-protocol",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:346",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-session-protocol"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-session-protocol/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-session-protocol"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-session-protocol",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "One bounded first stdout line must contain a valid port and non-empty token before resources transfer to the Client."
+    },
+    "policy/rust-policy/transport-shutdown-bound": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:bf09e8457efa870a6cc669590881c978e953862a687c10f684ee81b391ffcb94",
+      "capability_id": "policy/rust-policy/transport-shutdown-bound",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-shutdown-bound",
+          "text": "Graceful CLI shutdown has a fixed bound after which the SDK kills and reaps the owned child."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-shutdown-bound/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-shutdown-bound"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-shutdown-bound/source%2Frust-policy%2Frust-policy%2Ftransport-shutdown-bound",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:347",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-shutdown-bound"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/transport-shutdown-bound"
+      ],
+      "stability": "stable",
+      "summary": "Graceful CLI shutdown has a fixed bound after which the SDK kills and reaps the owned child."
+    },
+    "policy/rust-policy/transport-source-precedence": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:4c5365690a1c36c01f0484d2b7d90af428becc3b2f7eb5d40151427885d4f2d7",
+      "capability_id": "policy/rust-policy/transport-source-precedence",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-source-precedence",
+          "text": "End-to-end source order is Explicit_Connection, Existing_Session, Explicit_Local_CLI, then Verified_Download."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-source-precedence/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-source-precedence"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-source-precedence/source%2Frust-policy%2Frust-policy%2Ftransport-source-precedence",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:348",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-source-precedence"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/transport-source-precedence"
+      ],
+      "stability": "stable",
+      "summary": "End-to-end source order is Explicit_Connection, Existing_Session, Explicit_Local_CLI, then Verified_Download."
+    },
+    "policy/rust-policy/transport-startup-retry-boundary": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e80afc834460b61196210f0f92faddf49dd17a03290a3cd80a07e9d05779b4bd",
+      "capability_id": "policy/rust-policy/transport-startup-retry-boundary",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-startup-retry-boundary",
+          "text": "Process startup retries only a recognized executable-busy condition for at most ten attempts with bounded backoff."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-startup-retry-boundary/source%2Frust-policy%2Frust-policy%2Ftransport-startup-retry-boundary",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:349",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-startup-retry-boundary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-startup-retry-boundary/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-startup-retry-boundary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-startup-retry-boundary",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "Process startup retries only a recognized executable-busy condition for at most ten attempts with bounded backoff."
+    },
+    "policy/rust-policy/transport-unsupported-target-response": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:7472db2236fc03f8db914984002a6e98624bb2c9e244479d358afee447d3fb48",
+      "capability_id": "policy/rust-policy/transport-unsupported-target-response",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-unsupported-target-response",
+          "text": "An implicit engine outside or unprovable against the Exact_Target fails with a typed compatibility response."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-unsupported-target-response/source%2Frust-policy%2Frust-policy%2Ftransport-unsupported-target-response",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:350",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-unsupported-target-response"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-unsupported-target-response/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-unsupported-target-response"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-unsupported-target-response",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "An implicit engine outside or unprovable against the Exact_Target fails with a typed compatibility response."
+    },
+    "policy/rust-policy/transport-verified-cli-download": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:4577634859d367669b2bc5d9c793b987e862dc8247f3a903e558fb97c90327b0",
+      "capability_id": "policy/rust-policy/transport-verified-cli-download",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "transport-verified-cli-download",
+          "text": "A downloaded executable is streamed, SHA-256 verified, cancellation-safe, and atomically published before execution."
+        },
+        "rust_guidance": {
+          "clause_id": "unsafe-denied",
+          "text": "Unsafe Rust is denied at workspace level."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-verified-cli-download/source%2Frust-policy%2Frust-policy%2Ftransport-verified-cli-download",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:351",
+          "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-verified-cli-download"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/transport-verified-cli-download/source%2Frust-policy%2Frust-policy%2Funsafe-denied",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:92",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/transport-verified-cli-download"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/transport-verified-cli-download",
+        "source/rust-policy/rust-policy/unsafe-denied"
+      ],
+      "stability": "stable",
+      "summary": "A downloaded executable is streamed, SHA-256 verified, cancellation-safe, and atomically published before execution."
+    },
     "policy/rust-policy/workspace-target-verification": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:bd20792f0927b3cf2e2707db45ed132f7d315ed2c644e24e31dfdad9672cfe47",

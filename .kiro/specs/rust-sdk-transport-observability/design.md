@@ -984,7 +984,7 @@ concurrent schedule, or an external live target.
 For any mutation of the approved status list, scope digest, policy identifier, or
 normalized policy statement, contract validation rejects the declaration; the exact
 32 status IDs, digest
-`sha256:11568be7e981928bba0883527a4a5dd83401c7a226e341321ab9f94a9becb4c7`, and 26
+`sha256:0b4246157f75b8ce179d8fec3476256fa939ccdf69d29d1fcafaf93f160013b3`, and 26
 policies are accepted.
 
 **Validates: Requirements 1.1-1.3**

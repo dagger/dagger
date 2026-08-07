@@ -5,12 +5,15 @@
 
 use proptest::prelude::*;
 use serde_json::{Map, Number, Value, json};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::graphql::{
     GraphQlError, GraphQlLocation, GraphQlPathSegment, RawRequest, RawResponse, ResponseData,
 };
 
 pub(crate) const PROPTEST_CASES: u32 = 256;
+pub(crate) const IO_PROPTEST_CASES: u32 = 128;
 
 pub(crate) fn proptest_config() -> proptest::test_runner::Config {
     proptest::test_runner::Config {
@@ -22,6 +25,300 @@ pub(crate) fn proptest_config() -> proptest::test_runner::Config {
             )),
         )),
         ..proptest::test_runner::Config::default()
+    }
+}
+
+pub(crate) fn io_proptest_config() -> proptest::test_runner::Config {
+    proptest::test_runner::Config {
+        cases: IO_PROPTEST_CASES,
+        failure_persistence: Some(Box::new(
+            proptest::test_runner::FileFailurePersistence::Direct(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/proptest-regressions/transport-observability.txt"
+            )),
+        )),
+        ..proptest::test_runner::Config::default()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TestOperatingSystem {
+    Linux,
+    Macos,
+    Windows,
+    Unsupported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TestArchitecture {
+    Amd64,
+    Arm64,
+    Unsupported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TestArchiveFormat {
+    TarGz,
+    Zip,
+    Unsupported,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ProcessSnapshotCase {
+    pub(crate) session_port: Option<String>,
+    pub(crate) session_token: Option<String>,
+    pub(crate) local_cli: Option<String>,
+    pub(crate) path_entries: Vec<String>,
+    pub(crate) inherited_traceparent: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TargetDescriptorCase {
+    pub(crate) operating_system: TestOperatingSystem,
+    pub(crate) architecture: TestArchitecture,
+    pub(crate) archive_format: TestArchiveFormat,
+    pub(crate) version: String,
+    pub(crate) revision: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ManifestCase {
+    pub(crate) archive_name: String,
+    pub(crate) digest: String,
+    pub(crate) unrelated_lines: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ArchiveEntryCase {
+    pub(crate) path: String,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) regular: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct VersionIdentityCase {
+    pub(crate) version: String,
+    pub(crate) build_metadata: Option<String>,
+    pub(crate) dirty: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DiagnosticCase {
+    pub(crate) chunks: Vec<Vec<u8>>,
+    pub(crate) secret: Vec<u8>,
+    pub(crate) sink_fails_at: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ScheduledFailure {
+    Continue,
+    Cancel,
+    Io,
+    Protocol,
+}
+
+pub(crate) fn native_path() -> impl Strategy<Value = String> {
+    prop_oneof![
+        "[a-zA-Z0-9_.-]{1,16}".prop_map(|name| format!("/tmp/{name}")),
+        "[a-zA-Z0-9_.-]{1,16}".prop_map(|name| format!("C:\\\\tools\\\\{name}.exe")),
+        "[a-zA-Z0-9_.-]{1,16}".prop_map(|name| format!("~/{name}")),
+    ]
+}
+
+pub(crate) fn process_snapshot_case() -> impl Strategy<Value = ProcessSnapshotCase> {
+    (
+        prop::option::of("[0-9]{0,5}"),
+        prop::option::of("[a-zA-Z0-9_-]{0,24}"),
+        prop::option::of(native_path()),
+        proptest::collection::vec(native_path(), 0..6),
+        prop::option::of("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]"),
+    )
+        .prop_map(
+            |(session_port, session_token, local_cli, path_entries, inherited_traceparent)| {
+                ProcessSnapshotCase {
+                    session_port,
+                    session_token,
+                    local_cli,
+                    path_entries,
+                    inherited_traceparent,
+                }
+            },
+        )
+}
+
+pub(crate) fn target_descriptor_case() -> impl Strategy<Value = TargetDescriptorCase> {
+    (
+        0_u8..4,
+        0_u8..3,
+        0_u8..3,
+        (0_u16..3, 0_u16..20, 0_u16..20),
+        "[0-9a-f]{40}",
+    )
+        .prop_map(
+            |(os, architecture, format, version, revision)| TargetDescriptorCase {
+                operating_system: match os {
+                    0 => TestOperatingSystem::Linux,
+                    1 => TestOperatingSystem::Macos,
+                    2 => TestOperatingSystem::Windows,
+                    _ => TestOperatingSystem::Unsupported,
+                },
+                architecture: match architecture {
+                    0 => TestArchitecture::Amd64,
+                    1 => TestArchitecture::Arm64,
+                    _ => TestArchitecture::Unsupported,
+                },
+                archive_format: match format {
+                    0 => TestArchiveFormat::TarGz,
+                    1 => TestArchiveFormat::Zip,
+                    _ => TestArchiveFormat::Unsupported,
+                },
+                version: format!("v{}.{}.{}", version.0, version.1, version.2),
+                revision,
+            },
+        )
+}
+
+pub(crate) fn byte_chunks() -> impl Strategy<Value = Vec<Vec<u8>>> {
+    proptest::collection::vec(proptest::collection::vec(any::<u8>(), 0..64), 0..12)
+}
+
+pub(crate) fn manifest_case() -> impl Strategy<Value = ManifestCase> {
+    (
+        "dagger_v[0-9]+\\.[0-9]+\\.[0-9]+_[a-z]+_[a-z0-9]+\\.(tar\\.gz|zip)",
+        "[0-9a-f]{64}",
+        proptest::collection::vec("[a-zA-Z0-9_. -]{0,48}", 0..8),
+    )
+        .prop_map(|(archive_name, digest, unrelated_lines)| ManifestCase {
+            archive_name,
+            digest,
+            unrelated_lines,
+        })
+}
+
+pub(crate) fn archive_entries() -> impl Strategy<Value = Vec<ArchiveEntryCase>> {
+    proptest::collection::vec(
+        (
+            "[a-zA-Z0-9_./\\\\-]{0,48}",
+            proptest::collection::vec(any::<u8>(), 0..128),
+            any::<bool>(),
+        )
+            .prop_map(|(path, bytes, regular)| ArchiveEntryCase {
+                path,
+                bytes,
+                regular,
+            }),
+        0..8,
+    )
+}
+
+pub(crate) fn version_identity_case() -> impl Strategy<Value = VersionIdentityCase> {
+    (
+        (0_u16..3, 0_u16..20, 0_u16..20),
+        prop::option::of("[0-9a-z.-]{1,16}"),
+        any::<bool>(),
+    )
+        .prop_map(|(version, build_metadata, dirty)| VersionIdentityCase {
+            version: format!("v{}.{}.{}", version.0, version.1, version.2),
+            build_metadata,
+            dirty,
+        })
+}
+
+pub(crate) fn diagnostic_case() -> impl Strategy<Value = DiagnosticCase> {
+    (
+        byte_chunks(),
+        proptest::collection::vec(any::<u8>(), 1..24),
+        prop::option::of(0_usize..12),
+    )
+        .prop_map(|(chunks, secret, sink_fails_at)| DiagnosticCase {
+            chunks,
+            secret,
+            sink_fails_at,
+        })
+}
+
+pub(crate) fn failure_schedule() -> impl Strategy<Value = Vec<ScheduledFailure>> {
+    proptest::collection::vec(
+        prop_oneof![
+            Just(ScheduledFailure::Continue),
+            Just(ScheduledFailure::Cancel),
+            Just(ScheduledFailure::Io),
+            Just(ScheduledFailure::Protocol),
+        ],
+        0..16,
+    )
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum TransportTestEvent {
+    Provision,
+    Launch,
+    Execute,
+    Http,
+    Advance(Duration),
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct TransportEventLog(Arc<Mutex<Vec<TransportTestEvent>>>);
+
+impl TransportEventLog {
+    fn record(&self, event: TransportTestEvent) {
+        self.0
+            .lock()
+            .expect("transport test event log must not be poisoned")
+            .push(event);
+    }
+
+    pub(crate) fn events(&self) -> Vec<TransportTestEvent> {
+        self.0
+            .lock()
+            .expect("transport test event log must not be poisoned")
+            .clone()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RecordingProvisioner(pub(crate) TransportEventLog);
+
+impl RecordingProvisioner {
+    pub(crate) fn provision(&self) {
+        self.0.record(TransportTestEvent::Provision);
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RecordingLauncher(pub(crate) TransportEventLog);
+
+impl RecordingLauncher {
+    pub(crate) fn launch(&self) {
+        self.0.record(TransportTestEvent::Launch);
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RecordingTransport(pub(crate) TransportEventLog);
+
+impl RecordingTransport {
+    pub(crate) fn execute(&self) {
+        self.0.record(TransportTestEvent::Execute);
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RecordingHttp(pub(crate) TransportEventLog);
+
+impl RecordingHttp {
+    pub(crate) fn send(&self) {
+        self.0.record(TransportTestEvent::Http);
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RecordingClock(pub(crate) TransportEventLog);
+
+impl RecordingClock {
+    pub(crate) fn advance(&self, duration: Duration) {
+        self.0.record(TransportTestEvent::Advance(duration));
     }
 }
 

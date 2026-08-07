@@ -89867,6 +89867,318 @@
       "source_item_id": "source/rust-policy/rust-policy/secret-safe-output",
       "state": "active"
     },
+    "source/rust-policy/rust-policy/transport-background-failure-observation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:1d6cb4771c5d002834e5c7b30659627da62067bf4439a9cce8e2d637fab13717",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:326",
+      "semantic_signature": {
+        "clause_id": "transport-background-failure-observation",
+        "text": "Every owned process and stream task failure is retained for typed startup or shutdown inspection."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-background-failure-observation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-cache-atomic-publication": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:b0ec0630169d7af3969481b206f25fddf82d5df4f565773815786faa8910ca5e",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:327",
+      "semantic_signature": {
+        "clause_id": "transport-cache-atomic-publication",
+        "text": "Concurrent provisioners expose either no cache entry or one complete verified executable, never partial bytes."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-cache-atomic-publication",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-cache-permission-safety": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:091ab891c602a445c998b3ed961ad20e60b83f203beca62b06122b3a3cb51b19",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:328",
+      "semantic_signature": {
+        "clause_id": "transport-cache-permission-safety",
+        "text": "The provisioner rejects symlink or non-regular cache entries and applies private platform-appropriate cache permissions."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-cache-permission-safety",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-cache-retention": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:94ae594f7ae8477a49c168ca460be97946320e306f1ef768e8cfc1b73460c317",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:329",
+      "semantic_signature": {
+        "clause_id": "transport-cache-retention",
+        "text": "Managed retention runs under the Cache_Lock, preserves the selected executable, and treats cleanup failure as a redacted non-fatal diagnostic."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-cache-retention",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-cli-archive-bounds": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:c908f5e12ff2c7aad91dfd601bb91ab8d52deefa338b036efa97584b0f9ad69c",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:330",
+      "semantic_signature": {
+        "clause_id": "transport-cli-archive-bounds",
+        "text": "Checksum manifests, archive input, extracted executable output, and session control input have fixed documented size bounds."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-cli-archive-bounds",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-cli-trace-propagation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:f9d172f7c5c3e32e385086c0f2eb258d615111d344be3c0e8cbf537232345379",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:331",
+      "semantic_signature": {
+        "clause_id": "transport-cli-trace-propagation",
+        "text": "A new CLI receives W3C trace context and baggage derived from the active context or environment fallback."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-cli-trace-propagation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-cli-version-selection": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:2394e642f941aafd2e8cbea13460883a38fae4fa4d49d269cea9dabe72ac0a4f",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:332",
+      "semantic_signature": {
+        "clause_id": "transport-cli-version-selection",
+        "text": "The stable connector selects the CLI version declared by the Exact_Target rather than a stale beta constant."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-cli-version-selection",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-control-line-isolation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:618dbd37ede28be3886ee5851839232a740c1ef57157e2be9af47db7f4d2dc31",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:333",
+      "semantic_signature": {
+        "clause_id": "transport-control-line-isolation",
+        "text": "Session control bytes are parsed once and can never enter diagnostics, traces, Debug output, or rendered errors."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-control-line-isolation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-diagnostic-bounds": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:0debcb7b2768f11fcdc58951f0780752bfe31ae03268a33b021b7a3b106d9383",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:334",
+      "semantic_signature": {
+        "clause_id": "transport-diagnostic-bounds",
+        "text": "Startup and shutdown diagnostics retain only a fixed redacted tail while live sink delivery remains streaming."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-diagnostic-bounds",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-diagnostic-failure-containment": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:2e79cea885acfa9bc191a239cc367e7ab0e565dca8c77523474a354d1dc69fc7",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:335",
+      "semantic_signature": {
+        "clause_id": "transport-diagnostic-failure-containment",
+        "text": "A Diagnostic_Sink error or panic disables that sink without failing or panicking the transport operation."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-diagnostic-failure-containment",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-download-fallback-boundary": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:58ffe91b63581ed0c0f0c6af9f59d358dc401792a5896a6ca1268cf3177479f2",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:336",
+      "semantic_signature": {
+        "clause_id": "transport-download-fallback-boundary",
+        "text": "PATH fallback is permitted only for a typed Release_Unavailable checksum-manifest response."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-download-fallback-boundary",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-engine-error-extensions": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:184c958712b016be66df809b253936e65cb7444d41c98e825ff42947f6a2abaa",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:337",
+      "semantic_signature": {
+        "clause_id": "transport-engine-error-extensions",
+        "text": "Known engine error extensions gain typed access without discarding the complete Raw_Response or unknown extension members."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-engine-error-extensions",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-error-taxonomy": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:c5ce78ec4ff61e1269d602cd5d584bec5516654e098fe29f87ad41d84b74667f",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:338",
+      "semantic_signature": {
+        "clause_id": "transport-error-taxonomy",
+        "text": "Configuration, discovery, provisioning, process, protocol, HTTP, GraphQL, engine-domain, compatibility, timeout, background, and shutdown failures remain distinguishable."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-error-taxonomy",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-existing-session-validation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:123b0d6ffa078edfd1325760490d5f0809cf09b82847c05560602ce8c2c8df66",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:339",
+      "semantic_signature": {
+        "clause_id": "transport-existing-session-validation",
+        "text": "A present session port selects Existing_Session and malformed port or token input fails without considering any CLI source."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-existing-session-validation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-http-trace-propagation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:75c4ae4cfd5c323b535b6c702d75c33f68cee3403b11105bccc9b26f345058b1",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:340",
+      "semantic_signature": {
+        "clause_id": "transport-http-trace-propagation",
+        "text": "Every implicit GraphQL HTTP request injects W3C trace context and baggage with active context precedence."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-http-trace-propagation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-local-cli-no-fallback": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:16386aa5afc5c9d0e92aab4f6e75d6c0a6df7edc9a8b6477943c2d340c7b662c",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:341",
+      "semantic_signature": {
+        "clause_id": "transport-local-cli-no-fallback",
+        "text": "A present explicit local CLI input is authoritative and any resolution or startup failure is terminal for source selection."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-local-cli-no-fallback",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-loopback-authentication": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:fdb45349ff2efbe49136e34f930c8cf2b8f60df97a56efaae064438391752f5d",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:342",
+      "semantic_signature": {
+        "clause_id": "transport-loopback-authentication",
+        "text": "Implicit GraphQL HTTP dials loopback and authenticates with the session token as Basic username and an empty password."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-loopback-authentication",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-no-query-retry": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:97139547891980cbc21bb74b183ba2babffb07a7627ab2f5ea97c98bb67b664d",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:343",
+      "semantic_signature": {
+        "clause_id": "transport-no-query-retry",
+        "text": "The transport never automatically repeats a GraphQL operation after request transmission may have begun."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-no-query-retry",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-platform-archive-selection": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:ff787bef989cea9ebfb1519ab3d86cb8631b6410149b7634778b512daf7e39a3",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:344",
+      "semantic_signature": {
+        "clause_id": "transport-platform-archive-selection",
+        "text": "Linux and macOS select tar.gz dagger members while Windows selects ZIP dagger.exe members for amd64 and arm64."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-platform-archive-selection",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-session-labels": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:a8b1a11172a93480942144d7525f851f52f24e201c1efc9d5e29eb517bf3751f",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:345",
+      "semantic_signature": {
+        "clause_id": "transport-session-labels",
+        "text": "Every new CLI session receives stable Rust SDK name and package-version labels."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-session-labels",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-session-protocol": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:60678cadd926e462378aece0fd58f8adc8a503b8afae61c5173e9b8588d0b7b5",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:346",
+      "semantic_signature": {
+        "clause_id": "transport-session-protocol",
+        "text": "One bounded first stdout line must contain a valid port and non-empty token before resources transfer to the Client."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-session-protocol",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-shutdown-bound": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:73c5af581f19b3275c82128a4dc510bd25b04398c530a1fc1e0570b123940120",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:347",
+      "semantic_signature": {
+        "clause_id": "transport-shutdown-bound",
+        "text": "Graceful CLI shutdown has a fixed bound after which the SDK kills and reaps the owned child."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-shutdown-bound",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-source-precedence": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:3b61364f4ea3a4c22d5db234c2f71e85e494d39edfef2f2d2e043794deeddccb",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:348",
+      "semantic_signature": {
+        "clause_id": "transport-source-precedence",
+        "text": "End-to-end source order is Explicit_Connection, Existing_Session, Explicit_Local_CLI, then Verified_Download."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-source-precedence",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-startup-retry-boundary": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:600efb6762e0f7d5cda579019927d7714975e4a95250af654eefc5065e346af1",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:349",
+      "semantic_signature": {
+        "clause_id": "transport-startup-retry-boundary",
+        "text": "Process startup retries only a recognized executable-busy condition for at most ten attempts with bounded backoff."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-startup-retry-boundary",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-unsupported-target-response": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:cd48ea602618262de372ebcb523ac30cbe6cae2cd492dcfc8bdc55a84309a425",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:350",
+      "semantic_signature": {
+        "clause_id": "transport-unsupported-target-response",
+        "text": "An implicit engine outside or unprovable against the Exact_Target fails with a typed compatibility response."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-unsupported-target-response",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/transport-verified-cli-download": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:010b5673a7dd2a035453d7b87316eef726b1ed5c804662b9c662b591442e369c",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-transport-observability/requirements.md:351",
+      "semantic_signature": {
+        "clause_id": "transport-verified-cli-download",
+        "text": "A downloaded executable is streamed, SHA-256 verified, cancellation-safe, and atomically published before execution."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/transport-verified-cli-download",
+      "state": "active"
+    },
     "source/rust-policy/rust-policy/typed-public-errors": {
       "authority_id": "rust-policy",
       "fingerprint": "sha256:11debe1d5f893a6b4ef3b2bc61d400e53646d46b42cffa214249ce768f173ffd",

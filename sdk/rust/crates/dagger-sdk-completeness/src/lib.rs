@@ -12,6 +12,7 @@ pub mod contract;
 pub mod diagnostic;
 pub mod evidence;
 pub mod extract;
+pub mod feature_scope;
 pub mod harness;
 pub mod inventory;
 pub mod io;
@@ -42,6 +43,10 @@ pub use diagnostic::{
 pub use evidence::{
     EvidenceAuditContext, EvidenceEligibility, EvidenceSource, EvidenceSourceRegistry,
     ValidatedEvidenceRegistry, audit_evidence_registry,
+};
+pub use feature_scope::{
+    FeatureContractPolicy, FeatureScopePolicy, ReviewedPolicyClause, client_lifecycle_contract,
+    reviewed_feature_contracts, transport_contract,
 };
 pub use harness::{
     HarnessAdmission, HarnessCheckInventory, HarnessCheckSource, HarnessCommandExecutor,

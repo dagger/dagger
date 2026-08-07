@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Establish the exact transport contract and Rust test foundations
-  - [ ] 1.1 Generalize completeness feature-scope validation
+- [x] 1. Establish the exact transport contract and Rust test foundations
+  - [x] 1.1 Generalize completeness feature-scope validation
     - Replace Feature 2 constants embedded in `contract.rs` and `traceability.rs` with
       a data-driven `FeatureScopePolicy` covering heading, status IDs, scope digest,
       policy IDs, and the expected prior blocking owner of each row.
@@ -9,9 +9,9 @@
       fixtures; reject duplicate, reordered, omitted, extra, malformed, and cross-owner
       declarations without weakening its existing integrity checks.
     - Add Feature 3's exact 32 status IDs and digest
-      `sha256:11568be7e981928bba0883527a4a5dd83401c7a226e341321ab9f94a9becb4c7`.
+      `sha256:0b4246157f75b8ce179d8fec3476256fa939ccdf69d29d1fcafaf93f160013b3`.
     - _Requirements: 1.1, 1.2, 1.4, 1.8, 1.9_
-  - [ ] 1.2 Register the transport authority and policy inventory
+  - [x] 1.2 Register the transport authority and policy inventory
     - Add the approved requirements source to `authorities.json` and extract all 26
       transport policy anchors by exact stable ID and normalized statement.
     - Add the 21 Feature 3-owned and 11 Feature 2-owned prior-blocker expectations;
@@ -21,7 +21,7 @@
     - Add fixtures proving an unrelated `sdk-sdk` result cannot satisfy a transport
       evidence route.
     - _Requirements: 1.2-1.12_
-  - [ ] 1.3 Register minimal production and development dependencies
+  - [x] 1.3 Register minimal production and development dependencies
     - Add workspace-pinned `opentelemetry`, minimally featured `opentelemetry_sdk`,
       `tracing-opentelemetry`, `zip`, and `fs4`; keep the OpenTelemetry family on one
       compatible version line and disable unused SDK signals/runtime/exporters.
@@ -32,7 +32,7 @@
       Apache-2.0 licensing, Rust 1.97.1, edition 2024, publishing boundaries, and
       `unsafe_code = "deny"`.
     - _Requirements: 4.13-4.15, 9.7-9.12, 14.9, 14.20_
-  - [ ] 1.4 Add shared transport strategies and recording components
+  - [x] 1.4 Add shared transport strategies and recording components
     - Add valid-first `proptest` strategies for process snapshots, native paths,
       target descriptors, byte streams/chunking, manifests, archives, GraphQL values,
       version identities, diagnostics, and phase-specific failure schedules.
@@ -42,13 +42,13 @@
     - Persist minimized regressions and centralize the 256-case pure / 128-case I/O
       defaults while keeping every property at or above 100 generated cases.
     - _Requirements: 4.13-4.15, 14.1-14.12_
-  - [ ] 1.5 Property test: Property 1 — exact feature-scope extraction
+  - [x] 1.5 Property test: Property 1 — exact feature-scope extraction
     - Implement a reference-contract `proptest` with at least 256 generated mutations
       of status IDs, order, digest, policy IDs, and normalized statements; accept only
       the exact declaration.
     - Test identifier: `property_01_exact_feature_scope_extraction`.
     - _Requirements: 1.1-1.3_
-  - [ ] 1.6 Property test: Property 2 — evidence-closed and owner-correct transitions
+  - [x] 1.6 Property test: Property 2 — evidence-closed and owner-correct transitions
     - Implement a reference-status `proptest` with at least 256 candidate transitions
       across prior owners, implementation/test/target evidence, residual blockers, and
       out-of-scope rows; require the approved cross-feature owner map and complete
@@ -56,10 +56,11 @@
     - Test identifier: `property_02_evidence_closed_owner_correct_transitions`.
     - _Requirements: 1.4-1.12_
 
-- [ ] 2. Checkpoint: contract, dependencies, and test scaffolding are green
+- [x] 2. Checkpoint: contract, dependencies, and test scaffolding are green
   - Run formatting, locked checking, completeness unit/property tests, clippy, and
     cargo-deny; require Feature 2's accepted scope to remain byte-for-byte equivalent,
-    all 26 policies to extract exactly, and no status count to change at this checkpoint.
+    all 26 policies to extract exactly, and no pre-existing capability status to change at
+    this checkpoint.
 
 - [ ] 3. Implement exact targets, source planning, native discovery, and descriptors
   - [ ] 3.1 Generate and fence the exact runtime target
