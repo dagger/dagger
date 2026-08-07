@@ -1543,8 +1543,8 @@ func toolErrorMessage(err error) string {
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	allTools.Add(LLMTool{
 		Name: "ReadLogs",
-		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines." + "\n" +
-			"When you see traceparent:traceID-spanID in an error, use ReadLogs to read the logs for spanID",
+		Description: "Read the logs beneath a span: exec output, service logs, prints. Can filter with grep pattern or read the last N lines." + "\n" +
+			"Span IDs come from tool results, ListServices, or [traceparent:traceID-spanID] markers in errors (pasting the whole marker works).",
 		ReadOnly: true, // Read-only operation
 		Schema: map[string]any{
 			"type": "object",
@@ -1648,43 +1648,137 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		Limit  int    `default:"100"`
 		Grep   string `default:""`
 	}) (any, error) {
+		spanID := normalizeSpanArg(args.Span)
 		// Include service logs: ReadLogs is the deliberate affordance for
 		// reading them (e.g. via span IDs from ListServices).
-		logs, err := m.captureLogs(ctx, args.Span, false)
+		logs, err := m.captureLogs(ctx, spanID, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
-
-		// Trim the last Offset lines
-		if args.Offset >= len(logs) {
-			return nil, fmt.Errorf("offset %d is beyond log length %d", args.Offset, len(logs))
-		}
-		logs = logs[:len(logs)-args.Offset]
-
-		// Apply grep filter if specified
-		if args.Grep != "" {
-			re, err := regexp.Compile(args.Grep)
+		if len(logs) == 0 {
+			// An empty capture is only an error when the span itself is
+			// unknown: a known span with nothing logged yet is a normal
+			// answer (e.g. tailing a service that hasn't printed).
+			known, err := m.spanKnown(ctx, spanID)
 			if err != nil {
-				return nil, fmt.Errorf("invalid grep pattern %q: %w", args.Grep, err)
+				slog.Warn("failed to check span existence", "span", spanID, "error", err)
+			} else if !known {
+				return nil, fmt.Errorf("span %q not found in this session's telemetry; use a span ID from a tool result, ListServices, or an error's traceparent", spanID)
 			}
-			var filteredLogs []string
-			for i, line := range logs {
-				if re.MatchString(line) {
-					filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
-				}
-			}
-			logs = filteredLogs
-		} else {
-			for i, line := range logs {
-				logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
+			return fmt.Sprintf("(no logs beneath span %s yet)", spanID), nil
+		}
+		return renderReadLogs(spanID, logs, args.Offset, args.Limit, args.Grep)
+	})
+}
+
+// normalizeSpanArg extracts a span ID from the forms agents actually paste:
+// a bare hex ID, the "span=<hex>" rendering from reports, or a traceparent
+// ("[traceparent:<traceID>-<spanID>]" error-origin markers, or the W3C
+// 00-<traceID>-<spanID>-<flags> form). Unrecognized input passes through
+// untouched, to be reported as not found.
+func normalizeSpanArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	arg = strings.Trim(arg, "[]")
+	arg = strings.TrimPrefix(arg, "traceparent:")
+	arg = strings.TrimPrefix(arg, "span=")
+	if isHexID(arg, 16) {
+		return arg
+	}
+	parts := strings.Split(arg, "-")
+	for i, part := range parts {
+		if isHexID(part, 16) && i > 0 && isHexID(parts[i-1], 32) {
+			return part
+		}
+	}
+	return arg
+}
+
+func isHexID(s string, length int) bool {
+	if len(s) != length {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+// spanKnown reports whether the span ID appears in the session's recorded
+// telemetry, so an empty ReadLogs capture can distinguish a quiet span from a
+// mistyped one.
+func (m *MCP) spanKnown(ctx context.Context, spanID string) (bool, error) {
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		// no trace to check against; treat the span as plausible
+		return true, nil
+	}
+	root, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	mainMeta, err := root.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get main client caller metadata: %w", err)
+	}
+	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
+	if err != nil {
+		return false, err
+	}
+	defer q.Close()
+	if _, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+		TraceID: traceID.String(),
+		SpanID:  spanID,
+	}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// renderReadLogs shapes captured log lines into a ReadLogs result: trims the
+// last offset lines, applies the grep filter, numbers the lines, and caps the
+// output. The error and empty cases carry the numbers an agent needs to
+// recover — how many lines exist, how many were searched.
+func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern string) (string, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	// Trim the last offset lines
+	if offset >= len(logs) {
+		return "", fmt.Errorf("offset %d skips all %d available lines; retry with a smaller offset (0 reads the tail)", offset, len(logs))
+	}
+	logs = logs[:len(logs)-offset]
+
+	// Apply grep filter if specified
+	if grepPattern != "" {
+		re, err := regexp.Compile(grepPattern)
+		if err != nil {
+			return "", fmt.Errorf("invalid grep pattern %q: %w", grepPattern, err)
+		}
+		var filteredLogs []string
+		for i, line := range logs {
+			if re.MatchString(line) {
+				filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
 			}
 		}
+		if len(filteredLogs) == 0 {
+			return fmt.Sprintf("(no matches for %q in the %d lines beneath span %s)", grepPattern, len(logs), spanID), nil
+		}
+		logs = filteredLogs
+	} else {
+		for i, line := range logs {
+			logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
+		}
+	}
 
-		// Apply line limit if specified
-		logs = limitLines(args.Span, logs, args.Limit, llmLogsMaxLineLen)
+	// Apply line limit if specified
+	logs = limitLines(spanID, logs, limit, llmLogsMaxLineLen)
 
-		return strings.Join(logs, "\n"), nil
-	})
+	return strings.Join(logs, "\n"), nil
 }
 
 // describeObject renders an object result for the model: its type plus any
