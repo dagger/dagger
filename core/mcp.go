@@ -1255,6 +1255,9 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 		if len(logs) == 0 {
 			break
 		}
+		// The batch was selected against the subtree as of a moment ago; make
+		// sure the filter classifies against a set at least that fresh.
+		internalSpans.refresh()
 
 		for _, log := range logs {
 			lastLogID = log.ID
@@ -1378,10 +1381,39 @@ type internalSpanFilter struct {
 	root         string
 	skipServices bool
 	memo         map[string]bool
+	// subtree is the set of spans beneath the captured root — the same walk
+	// the log selection scopes to. It bounds beneathInternal's ancestor walk:
+	// spans join the capture via cause links (e.g. a service exec span
+	// parented under whatever call triggered the start), so their parent
+	// chains leave the subtree without ever passing through the root, and
+	// internal-ness out there is not between the log and the capture root.
+	subtree map[string]struct{}
 }
 
 func newInternalSpanFilter(db *clientdb.DB, rootSpanID string, skipServices bool) *internalSpanFilter {
-	return &internalSpanFilter{db: db, root: rootSpanID, skipServices: skipServices, memo: map[string]bool{}}
+	return &internalSpanFilter{
+		db:           db,
+		root:         rootSpanID,
+		skipServices: skipServices,
+		memo:         map[string]bool{},
+		subtree:      db.DescendantSpans(rootSpanID),
+	}
+}
+
+// refresh re-snapshots the captured subtree, so spans that arrived since the
+// last batch (the set only grows) are classified against current containment.
+// Call it after each log-batch fetch: the filter's set must be at least as
+// fresh as the selection that produced the batch, or a batch's own log spans
+// could read as outside the capture. Memoized answers survive a refresh that
+// found nothing new; a grown subtree drops them, since a walk that previously
+// stopped at the subtree's edge may now continue further.
+func (f *internalSpanFilter) refresh() {
+	subtree := f.db.DescendantSpans(f.root)
+	if len(subtree) == len(f.subtree) {
+		return
+	}
+	f.subtree = subtree
+	f.memo = map[string]bool{}
 }
 
 // classifyLogSpan locates a log record's span and decides how the capture
@@ -1422,12 +1454,21 @@ func (f *internalSpanFilter) classifyLogSpan(ctx context.Context, traceID, spanI
 	return false, direct, nil
 }
 
-// beneathInternal reports whether the given span, or any ancestor strictly
-// below the captured root span, is marked internal. Internal-ness at or above
-// the root doesn't hide the logs beneath it: explicitly capturing an internal
-// span's subtree still returns its logs.
+// beneathInternal reports whether the given span, or any ancestor within the
+// captured subtree, is marked internal. Internal-ness outside the subtree
+// doesn't hide the logs beneath it — neither at or above the root
+// (explicitly capturing an internal span's subtree still returns its logs)
+// nor on the unrelated ancestors of a cause-linked span (a service exec
+// span's parent chain runs through whatever call triggered the start, never
+// through the capture root; an internal span up there is not between the log
+// and the capture).
 func (f *internalSpanFilter) beneathInternal(ctx context.Context, traceID, spanID string) (bool, error) {
 	if spanID == "" || spanID == f.root {
+		return false, nil
+	}
+	if _, ok := f.subtree[spanID]; !ok {
+		// The walk has left the captured subtree: same rule as reaching the
+		// root, whatever is out here doesn't hide the capture's logs.
 		return false, nil
 	}
 	if internal, ok := f.memo[spanID]; ok {
