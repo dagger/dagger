@@ -16,6 +16,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
+	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/network"
@@ -35,6 +36,10 @@ const (
 	// TerminateGracePeriod is an arbitrary amount of time between when a service is
 	// sent a graceful stop (SIGTERM) and when it is sent an immediate stop (SIGKILL).
 	TerminateGracePeriod = 10 * time.Second
+
+	// MaxExitedServicesPerSession bounds the exited-service tombstones retained
+	// per session; beyond it the oldest tombstones are dropped.
+	MaxExitedServicesPerSession = 100
 )
 
 // Services manages the lifecycle of services, ensuring the same service only
@@ -43,7 +48,13 @@ type Services struct {
 	starting map[ServiceKey]*startingService
 	running  map[ServiceKey]*RunningService
 	bindings map[ServiceKey]int
-	l        sync.Mutex
+	// exited retains tombstones for services that ran and have since exited,
+	// keyed by session ID. They keep a session's exited services listable
+	// (e.g. by the ListServices builtin) so their telemetry handles stay
+	// usable after a crash; entries are dropped when the session's services
+	// are stopped, and capped at MaxExitedServicesPerSession.
+	exited map[string][]*ExitedService
+	l      sync.Mutex
 }
 
 type startingService struct {
@@ -157,7 +168,80 @@ func NewServices() *Services {
 		starting: map[ServiceKey]*startingService{},
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
+		exited:   map[string][]*ExitedService{},
 	}
+}
+
+// ExitedService is a tombstone for a service that ran and has since exited.
+// It snapshots the listing-relevant state of the RunningService at the moment
+// the registry observed its exit — hostname, ports, and telemetry span
+// contexts — so the service stays discoverable and its logs stay reachable
+// after a crash, when they matter most.
+type ExitedService struct {
+	// Key is the unique identifier the service ran under.
+	Key ServiceKey
+
+	// Host is the hostname the service was reachable at.
+	Host string
+
+	// Ports lists the ports the service had bound while running.
+	Ports []Port
+
+	// ExitedAt records when the registry observed the exit.
+	ExitedAt time.Time
+
+	// ExitErr is the error the service's Wait returned, if any. Nil means
+	// the runtime reported a clean exit.
+	ExitErr error
+
+	// ExitCode is the exit code carried by ExitErr when one was cheaply
+	// available, or -1 when unknown.
+	ExitCode int
+
+	serviceSpanCtx  trace.SpanContext
+	installSpanCtxs []trace.SpanContext
+}
+
+// ServiceSpanContext returns the span context the service's long-lived exec
+// span had at exit time, mirroring RunningService.ServiceSpanContext.
+func (svc *ExitedService) ServiceSpanContext() trace.SpanContext {
+	if svc == nil {
+		return trace.SpanContext{}
+	}
+	return svc.serviceSpanCtx
+}
+
+// InstallSpanContexts returns the span contexts of the API spans that
+// returned/owned this service, mirroring RunningService.InstallSpanContexts.
+func (svc *ExitedService) InstallSpanContexts() []trace.SpanContext {
+	if svc == nil {
+		return nil
+	}
+	return slices.Clone(svc.installSpanCtxs)
+}
+
+// exitTombstone snapshots svc for the exited-services listing, capturing
+// whatever exit information waitErr cheaply carries.
+func (svc *RunningService) exitTombstone(waitErr error) *ExitedService {
+	exited := &ExitedService{
+		Key:             svc.Key,
+		Host:            svc.Host,
+		Ports:           slices.Clone(svc.Ports),
+		ExitedAt:        time.Now(),
+		ExitErr:         waitErr,
+		ExitCode:        -1,
+		serviceSpanCtx:  svc.ServiceSpanContext(),
+		installSpanCtxs: svc.originSpanContextsSnapshot(),
+	}
+	var execErr *ExecError
+	var gwErr *gwpb.ExitError
+	switch {
+	case stderrors.As(waitErr, &execErr):
+		exited.ExitCode = execErr.ExitCode
+	case stderrors.As(waitErr, &gwErr):
+		exited.ExitCode = int(gwErr.ExitCode)
+	}
+	return exited
 }
 
 func compareSpanContexts(a, b trace.SpanContext) int {
@@ -332,6 +416,35 @@ func (ss *Services) RunningServices(sessionID string) []*RunningService {
 	}
 	slices.SortFunc(out, func(a, b *RunningService) int {
 		return cmp.Or(
+			cmp.Compare(a.Host, b.Host),
+			cmp.Compare(a.Key.Digest, b.Key.Digest),
+			cmp.Compare(a.Key.SessionID, b.Key.SessionID),
+			cmp.Compare(a.Key.ClientID, b.Key.ClientID),
+			cmp.Compare(a.Key.Kind, b.Key.Kind),
+			cmp.Compare(a.Key.InstanceID, b.Key.InstanceID),
+		)
+	})
+	return out
+}
+
+// ExitedServices returns a snapshot of the exited-service tombstones recorded
+// for the given session, or for every session when sessionID is empty. The
+// listing is ordered by exit time (oldest first), breaking ties with the
+// hostname and the rest of the service key so repeated calls are
+// deterministic.
+func (ss *Services) ExitedServices(sessionID string) []*ExitedService {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+	var out []*ExitedService
+	for exitedSessionID, svcs := range ss.exited {
+		if sessionID != "" && exitedSessionID != sessionID {
+			continue
+		}
+		out = append(out, svcs...)
+	}
+	slices.SortFunc(out, func(a, b *ExitedService) int {
+		return cmp.Or(
+			a.ExitedAt.Compare(b.ExitedAt),
 			cmp.Compare(a.Host, b.Host),
 			cmp.Compare(a.Key.Digest, b.Key.Digest),
 			cmp.Compare(a.Key.SessionID, b.Key.SessionID),
@@ -768,7 +881,17 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 		})
 	}
 
-	return eg.Wait()
+	err := eg.Wait()
+
+	// The session is closing: nothing can list its exited-service tombstones
+	// anymore, so drop them rather than accrete an entry per session for the
+	// life of the engine. An exit observed after this leaves at most a capped
+	// remnant.
+	ss.l.Lock()
+	delete(ss.exited, sessionID)
+	ss.l.Unlock()
+
+	return err
 }
 
 // Detach detaches from the given service. If the service is not running, it is
@@ -990,10 +1113,12 @@ func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, t
 	return err
 }
 
-func (ss *Services) handleExit(running *RunningService, _ error) {
+func (ss *Services) handleExit(running *RunningService, waitErr error) {
 	if running == nil {
 		return
 	}
+
+	exited := running.exitTombstone(waitErr)
 
 	ss.l.Lock()
 	current, found := ss.running[running.Key]
@@ -1001,6 +1126,14 @@ func (ss *Services) handleExit(running *RunningService, _ error) {
 		delete(ss.running, running.Key)
 		delete(ss.bindings, running.Key)
 	}
+	// Record the tombstone even for a replaced entry: the service ran in the
+	// session either way, and its logs remain worth finding.
+	sessionID := running.Key.SessionID
+	tombstones := append(ss.exited[sessionID], exited)
+	if len(tombstones) > MaxExitedServicesPerSession {
+		tombstones = tombstones[len(tombstones)-MaxExitedServicesPerSession:]
+	}
+	ss.exited[sessionID] = tombstones
 	ss.l.Unlock()
 
 	_ = running.releaseAfterExit(context.Background())

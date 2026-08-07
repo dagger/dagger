@@ -2041,8 +2041,9 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 	})
 	allTools.Add(LLMTool{
 		Name: "ListServices",
-		Description: "List the services currently running in this session: hostname, exposed ports, and span IDs." + "\n" +
+		Description: "List the services in this session: hostname, exposed ports, state (running or exited), and span IDs." + "\n" +
 			"Read a service's logs with ReadLogs(span: <spanID>) — useful for tailing a server or engine that runs as a service." + "\n" +
+			"Services that exited — crashes included — stay listed with state \"exited\" and any exit code/error, so their logs remain reachable via ReadLogs." + "\n" +
 			"installSpanIDs are the API calls that produced the service (e.g. Container.asService); they work with ReadLogs too.",
 		ReadOnly: true,
 		Schema: map[string]any{
@@ -2076,12 +2077,19 @@ func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {
 			Ports          []string `json:"ports,omitempty"`
 			SpanID         string   `json:"spanID,omitempty"`
 			InstallSpanIDs []string `json:"installSpanIDs,omitempty"`
+			State          string   `json:"state"`
+			ExitCode       *int     `json:"exitCode,omitempty"`
+			ExitError      string   `json:"exitError,omitempty"`
 		}
-		running := svcs.RunningServices(mainMeta.SessionID)
-		infos := make([]serviceInfo, 0, len(running))
-		for _, svc := range running {
-			info := serviceInfo{Hostname: svc.Host}
-			for _, port := range svc.Ports {
+		// makeInfo renders the fields running and exited services share; both
+		// expose the same span-context accessors.
+		type spannedService interface {
+			ServiceSpanContext() trace.SpanContext
+			InstallSpanContexts() []trace.SpanContext
+		}
+		makeInfo := func(host string, ports []Port, state string, svc spannedService) serviceInfo {
+			info := serviceInfo{Hostname: host, State: state}
+			for _, port := range ports {
 				desc := fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network())
 				if port.Description != nil && *port.Description != "" {
 					desc += " (" + *port.Description + ")"
@@ -2096,6 +2104,25 @@ func (m *MCP) listServicesTool(srv *dagql.Server) LLMToolFunc {
 					continue
 				}
 				info.InstallSpanIDs = append(info.InstallSpanIDs, installCtx.SpanID().String())
+			}
+			return info
+		}
+		running := svcs.RunningServices(mainMeta.SessionID)
+		exited := svcs.ExitedServices(mainMeta.SessionID)
+		infos := make([]serviceInfo, 0, len(running)+len(exited))
+		for _, svc := range running {
+			infos = append(infos, makeInfo(svc.Host, svc.Ports, "running", svc))
+		}
+		// Exited services follow the running ones: they stay listed so their
+		// span handles remain usable (e.g. for ReadLogs) after a crash.
+		for _, svc := range exited {
+			info := makeInfo(svc.Host, svc.Ports, "exited", svc)
+			if svc.ExitErr != nil {
+				info.ExitError = svc.ExitErr.Error()
+			}
+			if svc.ExitCode >= 0 {
+				exitCode := svc.ExitCode
+				info.ExitCode = &exitCode
 			}
 			infos = append(infos, info)
 		}
