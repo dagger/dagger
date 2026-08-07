@@ -126,14 +126,3 @@ func (db *DB) buildSurfacedServices() []*ServiceNode {
 	sortNodes(roots)
 	return roots
 }
-
-// HasServices reports whether the trace contains any service-instance spans,
-// for live affordances that want a cheap existence check (mirrors HasChecks).
-func (db *DB) HasServices() bool {
-	for _, span := range db.Spans.Order {
-		if span.Service {
-			return true
-		}
-	}
-	return false
-}
