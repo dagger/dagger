@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -112,10 +113,10 @@ func TestLimitIndirectLines(t *testing.T) {
 		// truncation evicted the report; now only the build output is cut.
 		var lines []capturedLine
 		for i := 1; i <= 50; i++ {
-			lines = append(lines, capturedLine{text: "NESTED-" + itoa(i)})
+			lines = append(lines, capturedLine{text: fmt.Sprintf("NESTED-%02d", i)})
 		}
 		for i := 1; i <= 12; i++ {
-			lines = append(lines, capturedLine{text: "REPORT-" + itoa(i), direct: true})
+			lines = append(lines, capturedLine{text: fmt.Sprintf("REPORT-%02d", i), direct: true})
 		}
 
 		got := limitIndirectLines("abc123", lines, 3, 1000)
@@ -124,7 +125,7 @@ func TestLimitIndirectLines(t *testing.T) {
 			"NESTED-48", "NESTED-49", "NESTED-50",
 		}
 		for i := 1; i <= 12; i++ {
-			want = append(want, "REPORT-"+itoa(i))
+			want = append(want, fmt.Sprintf("REPORT-%02d", i))
 		}
 		requireLines(t, got, want)
 	})
@@ -177,7 +178,7 @@ func TestLimitIndirectLines(t *testing.T) {
 		// within budget.
 		var lines []capturedLine
 		for i := 1; i <= 40; i++ {
-			lines = append(lines, capturedLine{text: "LINE-" + itoa(i) + "-" + strings.Repeat("x", 995), direct: true})
+			lines = append(lines, capturedLine{text: fmt.Sprintf("LINE-%02d-%s", i, strings.Repeat("x", 995)), direct: true})
 		}
 		got := limitIndirectLines("s", lines, 8, 2000)
 		if len(got) >= 40 {
@@ -219,7 +220,7 @@ func TestCapLinesBytes(t *testing.T) {
 		// keeps 4 lines, tail budget 22 keeps 2, marker counts the 4 dropped.
 		var lines []string
 		for i := 1; i <= 10; i++ {
-			lines = append(lines, "line-"+itoa(i)+"xxx")
+			lines = append(lines, fmt.Sprintf("line-%02dxxx", i))
 		}
 		got := capLinesBytes("s", lines, 66)
 		requireLines(t, got, []string{
@@ -253,15 +254,6 @@ func requireLines(t *testing.T, got, want []string) {
 			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
 		}
 	}
-}
-
-// itoa formats small positive ints with a leading zero, so test fixtures sort
-// and read like the log lines they stand in for.
-func itoa(i int) string {
-	if i < 10 {
-		return "0" + string(rune('0'+i))
-	}
-	return string(rune('0'+i/10)) + string(rune('0'+i%10))
 }
 
 // TestInternalSpanFilterSubtreeBounds covers beneathInternal's containment
