@@ -67,7 +67,7 @@ func listImageTagsFromHost(ctx context.Context, host docker.RegistryHost, domain
 	}
 	query := next.Query()
 	query.Set("n", fmt.Sprint(registryTagsPageSize))
-	if host.Host != domain && !(domain == "docker.io" && host.Host == "registry-1.docker.io") {
+	if host.Host != domain && (domain != "docker.io" || host.Host != "registry-1.docker.io") {
 		query.Set("ns", domain)
 	}
 	next.RawQuery = query.Encode()
@@ -150,7 +150,7 @@ func doRegistryRequest(ctx context.Context, host docker.RegistryHost, target *ur
 			return resp, nil
 		}
 		if err := host.Authorizer.AddResponses(ctx, responses); err != nil {
-			return resp, nil
+			return resp, nil //nolint:nilerr // can't answer the auth challenge; let the caller handle the 401
 		}
 		resp.Body.Close()
 	}
