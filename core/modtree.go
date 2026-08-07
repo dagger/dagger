@@ -651,7 +651,18 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 		if mod == nil {
 			return fmt.Errorf("%q: get value: missing module", node.PathString())
 		}
-		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(mod.Name()), Args: leafArgs})
+		var ctor *Function
+		if objType := node.ObjectType(); objType != nil && objType.Constructor.Valid {
+			ctor = objType.Constructor.Value.Self()
+		}
+		args, err := boundWorkspaceArgs(ctx, srv, ctor)
+		if err != nil {
+			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
+		}
+		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{
+			Field: gqlFieldName(mod.Name()),
+			Args:  append(args, leafArgs...),
+		})
 	}
 	// 2. Is parent an object?
 	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
@@ -659,7 +670,15 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
 			return err
 		}
-		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{Field: node.Name, Args: leafArgs})
+		fn, _ := parentObjType.FunctionByName(node.Name)
+		args, err := boundWorkspaceArgs(ctx, srv, fn)
+		if err != nil {
+			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
+		}
+		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{
+			Field: node.Name,
+			Args:  append(args, leafArgs...),
+		})
 	}
 	return fmt.Errorf("%q: get value: parent is not an object", node.PathString())
 }
@@ -702,6 +721,47 @@ func (node *ModTreeNode) agentBaseArg() string {
 		}
 	}
 	return agentBaseArgName
+}
+
+// boundWorkspaceArgs supplies fn's required Workspace argument. A
+// declared-optional Workspace arg is skipped: dagql's injection hook
+// (GetDynamicInput) still fills those in, but it runs after the non-null check
+// in preselect, so a required one has to be on the selector before the call is
+// made.
+//
+// The value resolves the same way loadWorkspaceArg's does: the workspace the
+// enclosing group threaded into the context, else the session's ambient one.
+// The fallback is what keeps a generator reached outside a group working —
+// Module.generator(name:) sets no BoundWorkspace, which is the shape the
+// scale-out check query builds.
+func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([]dagql.NamedInput, error) {
+	if fn == nil {
+		return nil, nil
+	}
+	var argName string
+	for _, argRes := range fn.Args {
+		arg := argRes.Self()
+		if arg.IsWorkspace() && !arg.TypeDef.Self().Optional {
+			argName = arg.Name
+			break
+		}
+	}
+	if argName == "" {
+		return nil, nil
+	}
+	wsID, err := workspaceArgValue(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	if wsID == nil {
+		// Nothing to inherit: leave the arg off and let dagql report it as
+		// missing, which names both the argument and the field.
+		return nil, nil
+	}
+	return []dagql.NamedInput{{
+		Name:  argName,
+		Value: wsID,
+	}}, nil
 }
 
 func debugTrace(ctx context.Context, msg string, args ...any) {

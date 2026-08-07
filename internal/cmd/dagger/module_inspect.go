@@ -1130,6 +1130,17 @@ type modFunctionArg struct {
 	once         sync.Once
 }
 
+// IsWorkspace reports whether the argument is a core Workspace. The CLI fills
+// these from the session's current workspace rather than exposing a flag, so
+// `dagger call` on a function that declares one stays a plain call.
+func (r *modFunctionArg) IsWorkspace() bool {
+	typeDef := r.TypeDef
+	if typeDef == nil || typeDef.Kind != dagger.TypeDefKindObjectKind || typeDef.AsObject == nil {
+		return false
+	}
+	return typeDef.AsObject.Name == "Workspace" && typeDef.AsObject.SourceModuleName == ""
+}
+
 // FlagName returns the name of the argument using CLI naming conventions.
 func (r *modFunctionArg) FlagName() string {
 	r.once.Do(func() {
