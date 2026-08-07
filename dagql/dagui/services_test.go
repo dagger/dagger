@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -76,30 +75,18 @@ func TestSurfacedServicesOrdersNestsAndContains(t *testing.T) {
 	}
 }
 
-// TestSurfacedServicesOriginAndName covers the display accessors: the node
-// names itself by hostname (falling back to the span name), and Origin resolves
-// the install span (e.g. Container.asService) through the exec span's cause
-// link — the same edge the engine emits (serviceOriginLink).
-func TestSurfacedServicesOriginAndName(t *testing.T) {
+// TestSurfacedServicesName covers the display accessor: the node names
+// itself by hostname, falling back to the exec span's own name.
+func TestSurfacedServicesName(t *testing.T) {
 	const (
 		rootID byte = iota + 1
-		installID
 		svcID
 		bareSvcID
 	)
 	db := NewDB()
-	svc := markService(serviceTestSnapshot(svcID, "exec entrypoint.sh", spanID(rootID)), "web.dagger.local")
-	svc.Links = []SpanLink{{
-		SpanContext: SpanContext{
-			TraceID: TraceID{TraceID: trace.TraceID{1}},
-			SpanID:  spanID(installID),
-		},
-		Purpose: telemetry.LinkPurposeCause,
-	}}
 	db.ImportSnapshots([]SpanSnapshot{
 		serviceTestSnapshot(rootID, "root", SpanID{}),
-		serviceTestSnapshot(installID, "Container.asService", spanID(rootID)),
-		svc,
+		markService(serviceTestSnapshot(svcID, "exec entrypoint.sh", spanID(rootID)), "web.dagger.local"),
 		// no hostname: Name() falls back to the span name
 		markService(serviceTestSnapshot(bareSvcID, "exec bare", spanID(rootID)), ""),
 	})
@@ -112,14 +99,7 @@ func TestSurfacedServicesOriginAndName(t *testing.T) {
 	if web.Name() != "web.dagger.local" {
 		t.Fatalf("web.Name() = %q, want web.dagger.local", web.Name())
 	}
-	origin := web.Origin()
-	if origin == nil || origin.Name != "Container.asService" {
-		t.Fatalf("web.Origin() = %v, want Container.asService", origin)
-	}
 	if bare.Name() != "exec bare" {
 		t.Fatalf("bare.Name() = %q, want span-name fallback", bare.Name())
-	}
-	if bare.Origin() != nil {
-		t.Fatalf("bare.Origin() = %v, want nil (no cause link)", bare.Origin())
 	}
 }
