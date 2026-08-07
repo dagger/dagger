@@ -1229,9 +1229,12 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 	}
 	defer q.Close()
 
-	// segments accumulates log bodies in arrival order, each tagged with its
-	// provenance; lines are assembled from them afterwards, since a single log
-	// record needn't be line-aligned.
+	// segments accumulates log bodies in arrival order — one per record, each
+	// tagged with its provenance; lines are assembled from them afterwards,
+	// since a single log record needn't be line-aligned. Records are NOT
+	// coalesced here: appending onto an accumulated string goes quadratic on
+	// long same-provenance runs, and assembleLines merges across record
+	// boundaries anyway.
 	var segments []capturedLine
 
 	// internalSpans skips subtrees hidden as internal, mirroring the TUI's
@@ -1337,10 +1340,6 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			if text == "" {
 				continue
 			}
-			if n := len(segments); n > 0 && segments[n-1].direct == direct {
-				segments[n-1].text += text
-				continue
-			}
 			segments = append(segments, capturedLine{text: text, direct: direct})
 		}
 	}
@@ -1357,7 +1356,7 @@ func assembleLines(segments []capturedLine) []capturedLine {
 	// claimed by the first segment to contribute actual text, so the empty
 	// chunk that trails a newline-terminated record doesn't hand the next
 	// record's line to the wrong span.
-	var pending string
+	var pending strings.Builder
 	var pendingDirect, pendingSet bool
 	for _, seg := range segments {
 		chunks := strings.Split(seg.text, "\n")
@@ -1367,7 +1366,7 @@ func assembleLines(segments []capturedLine) []capturedLine {
 					pendingDirect = seg.direct
 					pendingSet = true
 				}
-				pending += chunk
+				pending.WriteString(chunk)
 			}
 			if i < len(chunks)-1 {
 				// a "\n" followed this chunk: the line is complete
@@ -1375,13 +1374,14 @@ func assembleLines(segments []capturedLine) []capturedLine {
 				if pendingSet {
 					direct = pendingDirect
 				}
-				lines = append(lines, capturedLine{text: pending, direct: direct})
-				pending, pendingDirect, pendingSet = "", false, false
+				lines = append(lines, capturedLine{text: pending.String(), direct: direct})
+				pending.Reset()
+				pendingDirect, pendingSet = false, false
 			}
 		}
 	}
-	if pending != "" {
-		lines = append(lines, capturedLine{text: pending, direct: pendingDirect})
+	if pending.Len() > 0 {
+		lines = append(lines, capturedLine{text: pending.String(), direct: pendingDirect})
 	}
 	// ensure trailing linebreaks don't contribute to line limits
 	for len(lines) > 0 && lines[len(lines)-1].text == "" {
