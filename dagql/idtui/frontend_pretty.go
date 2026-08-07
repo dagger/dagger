@@ -2591,17 +2591,21 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		renderedRows = len(progressLines) > 0
 	}
 
-	// Services are auxiliary context, not the main event: list every surfaced
-	// service instance (running or exited, with its origin and span handle)
-	// after the main rows, never in place of them -- services are easy to lose
-	// in the raw tree (their exec spans are passthrough-hidden), and their
-	// logs are often the first thing a debugging session needs.
-	if svcLines := fe.servicesReport(ctx, r, zoomed); len(svcLines) > 0 {
-		if renderedRows {
-			ctx.Line("")
+	// List every surfaced service instance (running or exited, with its
+	// command line and span handle) after the main rows, never in place of
+	// them -- services are easy to lose in the raw tree (their exec spans are
+	// passthrough-hidden), and their logs are often the first thing a
+	// debugging session needs. Agent runs only: an agent may see nothing but
+	// this report, while a human already watched the service run in the tree
+	// above, where the install span carries its logs and health checks.
+	if RunningInAgent() {
+		if svcLines := fe.servicesReport(ctx, r, zoomed); len(svcLines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(svcLines...)
+			renderedRows = true
 		}
-		ctx.Lines(svcLines...)
-		renderedRows = true
 	}
 
 	if zoomed && pol.showOwnDescendantLogs {

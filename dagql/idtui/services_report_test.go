@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -16,34 +15,17 @@ import (
 
 // TestServicesReportSurfacesInstances covers the reveal-independent SERVICES
 // section: service-instance spans (running, exited, and failed) surface in the
-// final report with their hostname, the API call that produced them, and their
-// state -- rendered after the main rows, never in place of them.
+// final report with their hostname, their command line (the exec span's own
+// name), their state, and their span handle -- rendered after the main rows,
+// never in place of them.
 func TestServicesReportSurfacesInstances(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)
-	installID := prettyTestSpanID(2)
 	runningID := prettyTestSpanID(3)
 	exitedID := prettyTestSpanID(4)
 	failedID := prettyTestSpanID(5)
 	start := time.Unix(100, 0)
-	running := dagui.SpanSnapshot{
-		ID:          runningID,
-		TraceID:     prettyTestTraceID(),
-		Name:        "exec dagger-entrypoint.sh",
-		Service:     true,
-		ServiceName: "db.dagger.local",
-		ParentID:    rootID,
-		StartTime:   start.Add(time.Second),
-		// no EndTime: still running
-	}
-	running.Links = []dagui.SpanLink{{
-		SpanContext: dagui.SpanContext{
-			TraceID: prettyTestTraceID(),
-			SpanID:  installID,
-		},
-		Purpose: telemetry.LinkPurposeCause,
-	}}
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{
 			ID:        rootID,
@@ -54,15 +36,15 @@ func TestServicesReportSurfacesInstances(t *testing.T) {
 			// import (integrate marks left-running spans canceled)
 		},
 		{
-			ID:        installID,
-			TraceID:   prettyTestTraceID(),
-			Name:      "Container.asService",
-			ParentID:  rootID,
-			StartTime: start,
-			EndTime:   start.Add(time.Second),
-			Final:     true,
+			ID:          runningID,
+			TraceID:     prettyTestTraceID(),
+			Name:        "exec dagger-entrypoint.sh",
+			Service:     true,
+			ServiceName: "db.dagger.local",
+			ParentID:    rootID,
+			StartTime:   start.Add(time.Second),
+			// no EndTime: still running
 		},
-		running,
 		{
 			ID:          exitedID,
 			TraceID:     prettyTestTraceID(),
@@ -116,8 +98,11 @@ func TestServicesReportSurfacesInstances(t *testing.T) {
 	if !strings.Contains(runningLine, "RUNNING") {
 		t.Fatalf("running service line = %q, want RUNNING", runningLine)
 	}
-	if !strings.Contains(runningLine, "via Container.asService") {
-		t.Fatalf("running service line = %q, want its origin (via Container.asService)", runningLine)
+	if !strings.Contains(runningLine, "exec dagger-entrypoint.sh") {
+		t.Fatalf("running service line = %q, want its command line (exec dagger-entrypoint.sh)", runningLine)
+	}
+	if !strings.Contains(runningLine, "span="+runningID.String()) {
+		t.Fatalf("running service line = %q, want its span handle", runningLine)
 	}
 	if line := lineWith("web.dagger.local"); !strings.Contains(line, "EXITED") {
 		t.Fatalf("exited service line = %q, want EXITED", line)
