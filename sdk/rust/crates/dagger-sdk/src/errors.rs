@@ -235,6 +235,266 @@ impl fmt::Debug for ConfigError {
 
 impl Error for ConfigError {}
 
+/// Stable categories for malformed existing-session process inputs.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExistingSessionErrorKind {
+    /// The port cannot be represented as native text.
+    NonNativePort,
+    /// The port is not an integer in `1..=65535`.
+    InvalidPort,
+    /// The selected session has no token value.
+    MissingToken,
+    /// The token cannot be represented as native text.
+    NonNativeToken,
+    /// The selected session token is empty.
+    EmptyToken,
+}
+
+impl ExistingSessionErrorKind {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::NonNativePort => "the existing-session port is not native text",
+            Self::InvalidPort => "the existing-session port is invalid",
+            Self::MissingToken => "the existing-session token is missing",
+            Self::NonNativeToken => "the existing-session token is not native text",
+            Self::EmptyToken => "the existing-session token is empty",
+        }
+    }
+}
+
+/// A credential-safe existing-session input failure.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ExistingSessionError {
+    kind: ExistingSessionErrorKind,
+}
+
+impl ExistingSessionError {
+    /// Creates an existing-session failure in a stable category.
+    pub const fn new(kind: ExistingSessionErrorKind) -> Self {
+        Self { kind }
+    }
+
+    /// Returns the stable failure category.
+    pub const fn kind(&self) -> ExistingSessionErrorKind {
+        self.kind
+    }
+}
+
+impl fmt::Display for ExistingSessionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.kind.description())
+    }
+}
+
+impl fmt::Debug for ExistingSessionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExistingSessionError")
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+impl Error for ExistingSessionError {}
+
+/// Safe coordinate identifying which discovery policy failed.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiscoveryPathRole {
+    /// The caller-selected explicit local CLI.
+    ExplicitLocal,
+    /// The canonical Dagger executable used by compatibility fallback.
+    CompatibilityPath,
+}
+
+/// Stable categories for native executable discovery failures.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CliDiscoveryErrorKind {
+    /// A present explicit-local value is empty.
+    EmptyExplicitLocal,
+    /// Home-directory expansion was required but no native home was captured.
+    HomeUnavailable,
+    /// A required current-directory observation failed.
+    NativeContext,
+    /// Native lookup did not resolve the requested executable.
+    Lookup,
+    /// Native lookup resolved an unusable executable shape.
+    NotExecutable,
+}
+
+impl CliDiscoveryErrorKind {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::EmptyExplicitLocal => "the explicit local CLI value is empty",
+            Self::HomeUnavailable => "the native home directory is unavailable",
+            Self::NativeContext => "the native discovery context is unavailable",
+            Self::Lookup => "the CLI executable could not be resolved",
+            Self::NotExecutable => "the resolved CLI path is not executable",
+        }
+    }
+}
+
+/// A native CLI discovery failure containing only a safe path role.
+#[derive(Clone, Eq, PartialEq)]
+pub struct CliDiscoveryError {
+    kind: CliDiscoveryErrorKind,
+    path_role: DiscoveryPathRole,
+}
+
+impl CliDiscoveryError {
+    /// Creates a native discovery failure.
+    pub const fn new(kind: CliDiscoveryErrorKind, path_role: DiscoveryPathRole) -> Self {
+        Self { kind, path_role }
+    }
+
+    /// Returns the stable failure category.
+    pub const fn kind(&self) -> CliDiscoveryErrorKind {
+        self.kind
+    }
+
+    /// Returns the safe discovery policy coordinate.
+    pub const fn path_role(&self) -> DiscoveryPathRole {
+        self.path_role
+    }
+}
+
+impl fmt::Display for CliDiscoveryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.kind.description())
+    }
+}
+
+impl fmt::Debug for CliDiscoveryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CliDiscoveryError")
+            .field("kind", &self.kind)
+            .field("path_role", &self.path_role)
+            .finish()
+    }
+}
+
+impl Error for CliDiscoveryError {}
+
+/// Stable categories for native release-platform failures.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlatformErrorKind {
+    /// The operating system has no published Dagger CLI descriptor.
+    UnsupportedOperatingSystem,
+    /// The architecture has no published Dagger CLI descriptor.
+    UnsupportedArchitecture,
+    /// A fixed-origin release descriptor could not be constructed.
+    InvalidDescriptor,
+}
+
+impl PlatformErrorKind {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::UnsupportedOperatingSystem => "the native operating system is unsupported",
+            Self::UnsupportedArchitecture => "the native architecture is unsupported",
+            Self::InvalidDescriptor => "the Dagger release descriptor is invalid",
+        }
+    }
+}
+
+/// A safe native release-platform failure.
+#[derive(Clone, Eq, PartialEq)]
+pub struct PlatformError {
+    kind: PlatformErrorKind,
+}
+
+impl PlatformError {
+    /// Creates a platform failure in a stable category.
+    pub const fn new(kind: PlatformErrorKind) -> Self {
+        Self { kind }
+    }
+
+    /// Returns the stable failure category.
+    pub const fn kind(&self) -> PlatformErrorKind {
+        self.kind
+    }
+}
+
+impl fmt::Display for PlatformError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.kind.description())
+    }
+}
+
+impl fmt::Debug for PlatformError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PlatformError")
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+impl Error for PlatformError {}
+
+/// Stable categories for an internally inconsistent compiled target.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TargetErrorKind {
+    /// The generated engine version is malformed.
+    InvalidEngineVersion,
+    /// The generated CLI version is malformed.
+    InvalidCliVersion,
+    /// The generated Dagger revision is malformed.
+    InvalidRevision,
+    /// The generated engine and CLI versions identify different releases.
+    VersionMismatch,
+}
+
+impl TargetErrorKind {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::InvalidEngineVersion => "the compiled engine target is invalid",
+            Self::InvalidCliVersion => "the compiled CLI target is invalid",
+            Self::InvalidRevision => "the compiled Dagger revision is invalid",
+            Self::VersionMismatch => "the compiled Dagger targets do not match",
+        }
+    }
+}
+
+/// A safe compiled-target validation failure.
+#[derive(Clone, Eq, PartialEq)]
+pub struct TargetError {
+    kind: TargetErrorKind,
+}
+
+impl TargetError {
+    /// Creates a target failure in a stable category.
+    pub const fn new(kind: TargetErrorKind) -> Self {
+        Self { kind }
+    }
+
+    /// Returns the stable failure category.
+    pub const fn kind(&self) -> TargetErrorKind {
+        self.kind
+    }
+}
+
+impl fmt::Display for TargetError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.kind.description())
+    }
+}
+
+impl fmt::Debug for TargetError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TargetError")
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+impl Error for TargetError {}
+
 macro_rules! opaque_codec_error {
     ($name:ident, $kind:ident, $description:literal) => {
         #[doc = $description]
@@ -376,6 +636,14 @@ opaque_codec_error!(
 pub enum ConnectError {
     /// Pure configuration or preflight validation failed.
     Config(ConfigError),
+    /// Existing-session process inputs are malformed.
+    ExistingSession(ExistingSessionError),
+    /// A selected native CLI executable could not be resolved safely.
+    CliDiscovery(CliDiscoveryError),
+    /// The native release platform or descriptor is unsupported.
+    Platform(PlatformError),
+    /// The generated exact target is internally inconsistent.
+    Target(TargetError),
     /// The selected connection did not become ready before the startup bound.
     StartupTimeout {
         /// The configured startup bound.
@@ -389,6 +657,10 @@ impl fmt::Display for ConnectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Config(_) => "the client configuration is invalid",
+            Self::ExistingSession(_) => "the existing Dagger session is invalid",
+            Self::CliDiscovery(_) => "the Dagger CLI could not be discovered",
+            Self::Platform(_) => "the Dagger CLI platform is unsupported",
+            Self::Target(_) => "the compiled Dagger target is invalid",
             Self::StartupTimeout { .. } => "the Dagger session did not start in time",
             Self::Connection(_) => "the Dagger connection could not be established",
         })
@@ -399,6 +671,15 @@ impl fmt::Debug for ConnectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Config(error) => formatter.debug_tuple("Config").field(error).finish(),
+            Self::ExistingSession(error) => formatter
+                .debug_tuple("ExistingSession")
+                .field(error)
+                .finish(),
+            Self::CliDiscovery(error) => {
+                formatter.debug_tuple("CliDiscovery").field(error).finish()
+            }
+            Self::Platform(error) => formatter.debug_tuple("Platform").field(error).finish(),
+            Self::Target(error) => formatter.debug_tuple("Target").field(error).finish(),
             Self::StartupTimeout { .. } => formatter.write_str("StartupTimeout"),
             Self::Connection(error) => formatter.debug_tuple("Connection").field(error).finish(),
         }
@@ -409,6 +690,10 @@ impl Error for ConnectError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Config(error) => Some(error),
+            Self::ExistingSession(error) => Some(error),
+            Self::CliDiscovery(error) => Some(error),
+            Self::Platform(error) => Some(error),
+            Self::Target(error) => Some(error),
             Self::Connection(error) => Some(error),
             Self::StartupTimeout { .. } => None,
         }
@@ -418,6 +703,30 @@ impl Error for ConnectError {
 impl From<ConfigError> for ConnectError {
     fn from(error: ConfigError) -> Self {
         Self::Config(error)
+    }
+}
+
+impl From<ExistingSessionError> for ConnectError {
+    fn from(error: ExistingSessionError) -> Self {
+        Self::ExistingSession(error)
+    }
+}
+
+impl From<CliDiscoveryError> for ConnectError {
+    fn from(error: CliDiscoveryError) -> Self {
+        Self::CliDiscovery(error)
+    }
+}
+
+impl From<PlatformError> for ConnectError {
+    fn from(error: PlatformError) -> Self {
+        Self::Platform(error)
+    }
+}
+
+impl From<TargetError> for ConnectError {
+    fn from(error: TargetError) -> Self {
+        Self::Target(error)
     }
 }
 

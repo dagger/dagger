@@ -4,7 +4,6 @@
 //! connector future under the session-startup deadline; any process resources created
 //! by a connector remain armed until a complete connection is ready for transfer.
 
-use std::ffi::OsStr;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -14,18 +13,24 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::task::JoinHandle;
 
 use crate::connection::{EngineConnection, EngineConnectionError, EngineConnectionErrorKind};
+use crate::discovery::{LaunchExecutable, NativeDiscoveryInputs, resolve_explicit_cli};
 use crate::errors::{ConnectError, RequestError};
 use crate::graphql::{RawRequest, RawResponse};
 use crate::preflight::{
-    CliLaunchRequest, ConnectionPlan, ExistingConnectionRequest, ExistingSessionParams,
+    CliLaunchRequest, CliSourcePlan, ConnectionPlan, ExistingConnectionRequest,
 };
+use crate::session::{
+    ExistingSessionInput, ExistingSessionResource, SecretString, validate_existing_session,
+};
+use crate::target::ArchiveDescriptor;
 
 pub(crate) enum ConnectionRequest {
     Existing {
-        params: ExistingSessionParams,
+        input: ExistingSessionInput,
         request: ExistingConnectionRequest,
     },
     NewCli {
+        source: Box<CliSourcePlan>,
         request: CliLaunchRequest,
     },
 }
@@ -38,7 +43,7 @@ impl ConnectionRequest {
                 request.http_connect_timeout,
                 request.graphql_execution_timeout,
             ),
-            Self::NewCli { request } => (
+            Self::NewCli { request, .. } => (
                 request.session_startup_timeout,
                 request.http_connect_timeout,
                 request.graphql_execution_timeout,
@@ -52,8 +57,8 @@ impl TryFrom<ConnectionPlan> for ConnectionRequest {
 
     fn try_from(plan: ConnectionPlan) -> Result<Self, Self::Error> {
         match plan {
-            ConnectionPlan::Existing { params, request } => Ok(Self::Existing { params, request }),
-            ConnectionPlan::NewCli { request } => Ok(Self::NewCli { request }),
+            ConnectionPlan::Existing { input, request } => Ok(Self::Existing { input, request }),
+            ConnectionPlan::NewCli { source, request } => Ok(Self::NewCli { source, request }),
             explicit @ ConnectionPlan::Explicit { .. } => Err(explicit),
         }
     }
@@ -76,11 +81,12 @@ impl Connector for DefaultConnector {
         request: ConnectionRequest,
     ) -> Result<Box<dyn EngineConnection>, ConnectError> {
         match request {
-            ConnectionRequest::Existing { params, request } => {
-                ExistingSessionConnection::connect(params, request.http_connect_timeout)
+            ConnectionRequest::Existing { input, request } => {
+                ExistingSessionConnection::connect(input, request.http_connect_timeout)
                     .map(|connection| Box::new(connection) as Box<dyn EngineConnection>)
             }
-            ConnectionRequest::NewCli { request } => {
+            ConnectionRequest::NewCli { source, request } => {
+                let _prepared = PreparedCliSource::from_plan(source)?;
                 // CLI discovery, download, and launch belong to the concrete connector
                 // milestone. Constructing the guard here keeps the ownership boundary
                 // in place without silently routing the stable facade through the beta
@@ -96,26 +102,48 @@ impl Connector for DefaultConnector {
     }
 }
 
+#[allow(dead_code)]
+enum PreparedCliSource {
+    ExplicitLocal(LaunchExecutable),
+    CompiledRelease {
+        descriptor: Box<ArchiveDescriptor>,
+        discovery: Box<NativeDiscoveryInputs>,
+    },
+}
+
+impl PreparedCliSource {
+    fn from_plan(plan: Box<CliSourcePlan>) -> Result<Self, ConnectError> {
+        match *plan {
+            CliSourcePlan::ExplicitLocal {
+                configured,
+                discovery,
+            } => Ok(Self::ExplicitLocal(resolve_explicit_cli(
+                configured, &discovery,
+            )?)),
+            CliSourcePlan::CompiledRelease {
+                descriptor,
+                discovery,
+            } => Ok(Self::CompiledRelease {
+                descriptor: Box::new(descriptor),
+                discovery: Box::new(discovery),
+            }),
+        }
+    }
+}
+
 struct ExistingSessionConnection {
     client: reqwest::Client,
     endpoint: String,
-    token: String,
+    token: SecretString,
+    resource: ExistingSessionResource,
 }
 
 impl ExistingSessionConnection {
     fn connect(
-        params: ExistingSessionParams,
+        input: ExistingSessionInput,
         http_connect_timeout: Duration,
     ) -> Result<Self, ConnectError> {
-        let port = native_text(&params.port).ok_or_else(protocol_connect_error)?;
-        let port = port.parse::<u16>().map_err(|_| protocol_connect_error())?;
-        let token = params
-            .token
-            .as_deref()
-            .and_then(native_text)
-            .filter(|token| !token.is_empty())
-            .ok_or_else(protocol_connect_error)?
-            .to_owned();
+        let session = validate_existing_session(input)?;
         let client = reqwest::Client::builder()
             .connect_timeout(http_connect_timeout)
             .build()
@@ -128,8 +156,9 @@ impl ExistingSessionConnection {
 
         Ok(Self {
             client,
-            endpoint: format!("http://127.0.0.1:{port}/query"),
-            token,
+            endpoint: format!("http://127.0.0.1:{}/query", session.port()),
+            token: session.token().clone(),
+            resource: session.resource(),
         })
     }
 }
@@ -143,7 +172,7 @@ impl EngineConnection for ExistingSessionConnection {
         let response = self
             .client
             .post(&self.endpoint)
-            .basic_auth(&self.token, Some(""))
+            .basic_auth(self.token.expose_for_authentication(), Some(""))
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body)
             .send()
@@ -169,22 +198,14 @@ impl EngineConnection for ExistingSessionConnection {
         // An environment-selected session is externally owned. Dropping this SDK's
         // transport state is sufficient; signalling the engine would violate the
         // ownership boundary shared with sibling clients.
+        self.resource.close();
         Ok(())
     }
 
     fn abort(&self) {
         // The external engine is deliberately untouched for the same reason as close.
+        self.resource.abort();
     }
-}
-
-fn native_text(value: &OsStr) -> Option<&str> {
-    value.to_str()
-}
-
-fn protocol_connect_error() -> ConnectError {
-    ConnectError::Connection(EngineConnectionError::new(
-        EngineConnectionErrorKind::Protocol,
-    ))
 }
 
 /// Armed owner for process resources created before connection establishment finishes.

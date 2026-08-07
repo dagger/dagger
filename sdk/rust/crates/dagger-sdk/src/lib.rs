@@ -31,8 +31,13 @@ mod connection;
 mod connector;
 mod core;
 mod diagnostic;
+#[allow(dead_code)]
+mod discovery;
 mod errors;
 mod graphql;
+#[allow(dead_code)]
+mod target;
+mod target_generated;
 
 mod client;
 mod lifecycle;
@@ -41,14 +46,17 @@ mod lifecycle;
 #[allow(dead_code)]
 mod preflight;
 mod query;
+mod session;
 
 pub use config::{ClientConfig, ClientConfigBuilder};
 pub use connection::{EngineConnection, EngineConnectionError, EngineConnectionErrorKind};
 pub use diagnostic::{Diagnostic, DiagnosticSink, DiagnosticSinkError, DiagnosticStream};
 pub use errors::{
-    CloseError, ConfigError, ConfigOption, ConnectError, QueryBuildError, QueryBuildErrorKind,
-    QueryError, RequestEncodingError, RequestEncodingErrorKind, RequestError,
-    ResponseDecodingError, ResponseDecodingErrorKind, TimeoutPhase,
+    CliDiscoveryError, CliDiscoveryErrorKind, CloseError, ConfigError, ConfigOption, ConnectError,
+    DiscoveryPathRole, ExistingSessionError, ExistingSessionErrorKind, PlatformError,
+    PlatformErrorKind, QueryBuildError, QueryBuildErrorKind, QueryError, RequestEncodingError,
+    RequestEncodingErrorKind, RequestError, ResponseDecodingError, ResponseDecodingErrorKind,
+    TargetError, TargetErrorKind, TimeoutPhase,
 };
 pub use graphql::{
     GraphQlError, GraphQlLocation, GraphQlPathSegment, RawRequest, RawResponse, ResponseData,
@@ -159,6 +167,9 @@ mod query_tests;
 
 #[cfg(test)]
 mod public_api_tests;
+
+#[cfg(test)]
+mod source_foundation_tests;
 
 #[cfg(test)]
 mod connector_tests;

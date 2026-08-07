@@ -306,8 +306,10 @@ proptest! {
             .expect("equal config and inputs must produce a second plan");
         let (first, second) = match (first, second) {
             (
-                ConnectionPlan::NewCli { request: first },
-                ConnectionPlan::NewCli { request: second },
+                ConnectionPlan::NewCli { request: first, .. },
+                ConnectionPlan::NewCli {
+                    request: second, ..
+                },
             ) => (first, second),
             _ => {
                 prop_assert!(false, "a no-session snapshot must select NewCli");
@@ -712,9 +714,9 @@ proptest! {
                     prop_assert_eq!(counts.filesystem.load(Ordering::Relaxed), 0);
                     prop_assert_eq!(counts.process_inputs.load(Ordering::Relaxed), 0);
                 }
-                (SourceKind::Existing, ConnectionPlan::Existing { params, request }) => {
-                    prop_assert!(!params.port.is_empty());
-                    prop_assert!(params.token.is_some());
+                (SourceKind::Existing, ConnectionPlan::Existing { input, request }) => {
+                    prop_assert!(!input.port.is_empty());
+                    prop_assert!(input.token.is_some());
                     prop_assert_eq!(request.session_startup_timeout, match option {
                         OptionKind::SessionStartupTimeout => Duration::from_secs(301),
                         _ => Duration::from_secs(300),
@@ -729,7 +731,7 @@ proptest! {
                     });
                     request.diagnostics.ingest(DiagnosticInput::SessionControl);
                 }
-                (SourceKind::NewCli, ConnectionPlan::NewCli { request }) => {
+                (SourceKind::NewCli, ConnectionPlan::NewCli { request, .. }) => {
                     request.diagnostics.ingest(DiagnosticInput::SessionControl);
                 }
                 _ => {

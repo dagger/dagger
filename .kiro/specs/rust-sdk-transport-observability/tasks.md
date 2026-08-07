@@ -62,15 +62,15 @@
     all 26 policies to extract exactly, and no pre-existing capability status to change at
     this checkpoint.
 
-- [ ] 3. Implement exact targets, source planning, native discovery, and descriptors
-  - [ ] 3.1 Generate and fence the exact runtime target
+- [x] 3. Implement exact targets, source planning, native discovery, and descriptors
+  - [x] 3.1 Generate and fence the exact runtime target
     - Generate private engine version, CLI version, and Dagger revision constants from
       `completeness/target.json`; fail checking when either generated output or target
       metadata drifts independently.
     - Parse the target once into validated SemVer and revision newtypes and reject an
       internal mismatch before cache, process, or network work.
     - _Requirements: 4.1, 4.2, 12.15_
-  - [ ] 3.2 Extend the single process-input snapshot and source decision
+  - [x] 3.2 Extend the single process-input snapshot and source decision
     - Capture session port/token, explicit-local CLI, runner inputs, propagation inputs,
       native PATH/PATHEXT/home/current-directory observations, and safe observation
       failures once after explicit-connection selection.
@@ -80,7 +80,7 @@
     - Keep irrelevant observations as data so an Existing Session or absolute local
       path cannot fail because an unused discovery input was unavailable.
     - _Requirements: 2.1-2.13_
-  - [ ] 3.3 Implement typed Existing Session validation and ownership
+  - [x] 3.3 Implement typed Existing Session validation and ownership
     - Validate native port text, integer range `1..=65535`, and token presence/non-empty
       shape into secret-bearing session parameters without formatting raw values.
     - Build the externally owned session resource marker and ensure close/abort release
@@ -88,7 +88,7 @@
     - Add fixed tests for token-without-port, non-native text, boundaries, missing/empty
       token, formatting, and external ownership.
     - _Requirements: 3.1-3.8_
-  - [ ] 3.4 Implement pure native explicit-local and PATH discovery
+  - [x] 3.4 Implement pure native explicit-local and PATH discovery
     - Add home-marker expansion, path-shaped validation, and bare-name lookup over the
       captured native snapshot, including Windows PATHEXT and native symlink resolution.
     - Return an owned unmanaged `LaunchExecutable`; make an empty present value and
@@ -96,7 +96,7 @@
     - Keep explicit-local and compatibility PATH functions separate so the former can
       never enter provisioning and the latter can resolve only the canonical Dagger name.
     - _Requirements: 3.9-3.15, 7.3, 7.7, 7.8_
-  - [ ] 3.5 Implement the exact platform/archive descriptor model
+  - [x] 3.5 Implement the exact platform/archive descriptor model
     - Add normalized OS/architecture/archive enums and a total mapping for Linux,
       macOS, and Windows crossed with amd64/arm64.
     - Construct the exact release basename, expected `dagger`/`dagger.exe` member, and
@@ -104,32 +104,32 @@
       before side effects.
     - Add an exhaustive six-target table test and fixed unsupported-target cases.
     - _Requirements: 4.3-4.15, 14.3_
-  - [ ] 3.6 Add the foundational typed discovery and target errors
+  - [x] 3.6 Add the foundational typed discovery and target errors
     - Add non-exhaustive, cloneable safe-kind errors for Existing Session, native
       discovery, unsupported platform, descriptor construction, and target drift.
     - Hand-write credential-safe `Display`/`Debug`; retain only safe sources and path
       roles, never raw environment values.
     - _Requirements: 3.2-3.6, 3.12-3.13, 4.2, 4.9, 11.1-11.2, 11.21-11.22_
-  - [ ] 3.7 Property test: Property 3 — source precedence is a pure reference function
+  - [x] 3.7 Property test: Property 3 — source precedence is a pure reference function
     - Implement a truth-table/reference `proptest` with at least 256 explicit/session/
       local/download presence combinations, selected-source failures, and post-snapshot
       mutations; compare the unique decision and zero lower-source events.
     - Test identifier: `property_03_source_precedence_reference_function`.
     - _Requirements: 2.1-2.13_
-  - [ ] 3.8 Property test: Property 4 — Existing Session validation is total and secret-safe
+  - [x] 3.8 Property test: Property 4 — Existing Session validation is total and secret-safe
     - Generate at least 256 native port/token combinations and external close schedules;
       compare typed validation to a small reference parser and search all ordinary
       formatting while asserting zero engine-shutdown events.
     - Test identifier: `property_04_existing_session_total_secret_safe`.
     - _Requirements: 3.1-3.8_
-  - [ ] 3.9 Property test: Property 6 — platform descriptors are exact and side-effect free
+  - [x] 3.9 Property test: Property 6 — platform descriptors are exact and side-effect free
     - Exhaust the six supported pairs and run at least 256 generated unsupported/drift
       cases against a descriptor reference table; assert exact URLs/names/members and
       zero cache, HTTP, and process events on rejection.
     - Test identifier: `property_06_platform_descriptors_exact_side_effect_free`.
     - _Requirements: 4.1-4.15_
 
-- [ ] 4. Checkpoint: target and source foundations are green
+- [x] 4. Checkpoint: target and source foundations are green
   - Run formatting, locked SDK/completeness unit and property tests, clippy, rustdoc,
     public error formatting tests, and cargo-deny; require deterministic source
     snapshots, exact target generation, and no lower-source work on failure.

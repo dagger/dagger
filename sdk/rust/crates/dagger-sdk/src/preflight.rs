@@ -1,9 +1,9 @@
 //! Side-effect-bounded validation and deterministic connection planning.
 //!
 //! This module is the boundary between the pure [`crate::ClientConfig`] builder and
-//! the concrete connector. It may inspect current filesystem state and snapshot the two
-//! Dagger session environment values needed to select an existing session, but it
-//! cannot discover a CLI, access the network, spawn a process, or open a connection.
+//! the concrete connector. It may inspect current filesystem state and capture one
+//! process snapshot, but it cannot discover a CLI, access the network, spawn a process,
+//! or open a connection.
 //! Every rejected configuration therefore fails before external work is representable.
 
 use std::ffi::{OsStr, OsString};
@@ -15,11 +15,19 @@ use std::time::Duration;
 use crate::config::{ClientConfig, ClientConfigParts, ConfigExplicitness};
 use crate::connection::EngineConnection;
 use crate::diagnostic::{DiagnosticDispatcher, DiagnosticSink};
+use crate::discovery::NativeDiscoveryInputs;
 use crate::errors::{ConfigError, ConfigOption, ConnectError};
+use crate::session::ExistingSessionInput;
+use crate::target::{ArchiveDescriptor, exact_target};
 
 const SESSION_PORT_KEY: &str = "DAGGER_SESSION_PORT";
 const SESSION_TOKEN_KEY: &str = "DAGGER_SESSION_TOKEN";
+const EXPLICIT_CLI_KEY: &str = "_EXPERIMENTAL_DAGGER_CLI_BIN";
 const RUNNER_HOST_KEY: &str = "_EXPERIMENTAL_DAGGER_RUNNER_HOST";
+const RUNNER_TOKEN_KEY: &str = "_EXPERIMENTAL_DAGGER_RUNNER_TOKEN";
+const TRACEPARENT_KEY: &str = "TRACEPARENT";
+const TRACESTATE_KEY: &str = "TRACESTATE";
+const BAGGAGE_KEY: &str = "BAGGAGE";
 
 /// Read-only host observations permitted during preflight.
 ///
@@ -46,32 +54,68 @@ impl PreflightContext for SystemPreflight {
 /// Immutable snapshot used for one source-selection decision.
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct ProcessInputs {
-    existing_session: Option<ExistingSessionParams>,
+    session_port: Option<OsString>,
+    session_token: Option<OsString>,
+    explicit_cli: Option<OsString>,
+    runner: RunnerInputs,
+    discovery: NativeDiscoveryInputs,
+    propagation: PropagationEnvironment,
 }
 
 impl ProcessInputs {
+    #[cfg(test)]
     pub(crate) fn no_existing_session() -> Self {
-        Self {
-            existing_session: None,
-        }
+        Self::for_test(None, None, None)
     }
 
+    #[cfg(test)]
     pub(crate) fn existing_session(port: impl Into<OsString>, token: Option<OsString>) -> Self {
+        Self::for_test(Some(port.into()), token, None)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn explicit_cli(value: impl Into<OsString>) -> Self {
+        Self::for_test(None, None, Some(value.into()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        session_port: Option<OsString>,
+        session_token: Option<OsString>,
+        explicit_cli: Option<OsString>,
+    ) -> Self {
         Self {
-            existing_session: Some(ExistingSessionParams {
-                port: port.into(),
-                token,
-            }),
+            session_port,
+            session_token,
+            explicit_cli,
+            runner: RunnerInputs::default(),
+            discovery: NativeDiscoveryInputs::new(
+                crate::discovery::NativePathSemantics::current(),
+                Vec::new(),
+                None,
+                None,
+                Ok(std::path::PathBuf::from("/virtual/current")),
+            ),
+            propagation: PropagationEnvironment::default(),
         }
     }
 
     fn capture() -> Self {
-        let existing_session =
-            std::env::var_os(SESSION_PORT_KEY).map(|port| ExistingSessionParams {
-                port,
-                token: std::env::var_os(SESSION_TOKEN_KEY),
-            });
-        Self { existing_session }
+        Self {
+            session_port: std::env::var_os(SESSION_PORT_KEY),
+            session_token: std::env::var_os(SESSION_TOKEN_KEY),
+            explicit_cli: std::env::var_os(EXPLICIT_CLI_KEY),
+            runner: RunnerInputs {
+                host: std::env::var_os(RUNNER_HOST_KEY),
+                token: std::env::var_os(RUNNER_TOKEN_KEY),
+            },
+            discovery: NativeDiscoveryInputs::capture(),
+            propagation: PropagationEnvironment {
+                traceparent: std::env::var_os(TRACEPARENT_KEY),
+                tracestate: std::env::var_os(TRACESTATE_KEY),
+                baggage: std::env::var_os(BAGGAGE_KEY),
+            },
+        }
     }
 }
 
@@ -79,24 +123,65 @@ impl fmt::Debug for ProcessInputs {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ProcessInputs")
-            .field("existing_session_present", &self.existing_session.is_some())
+            .field("session_port_present", &self.session_port.is_some())
+            .field("session_token_present", &self.session_token.is_some())
+            .field("explicit_cli_present", &self.explicit_cli.is_some())
+            .field("runner", &self.runner)
+            .field("discovery", &self.discovery)
+            .field("propagation", &self.propagation)
             .finish()
     }
 }
 
-/// Raw existing-session values retained without rendering the credential.
-#[derive(Clone, Eq, PartialEq)]
-pub(crate) struct ExistingSessionParams {
-    pub(crate) port: OsString,
-    pub(crate) token: Option<OsString>,
+/// Captured runner inputs retained for the later launch projection.
+#[derive(Clone, Default, Eq, PartialEq)]
+pub(crate) struct RunnerInputs {
+    host: Option<OsString>,
+    token: Option<OsString>,
 }
 
-impl fmt::Debug for ExistingSessionParams {
+impl fmt::Debug for RunnerInputs {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("ExistingSessionParams")
-            .field("port_present", &!self.port.is_empty())
+            .debug_struct("RunnerInputs")
+            .field("host_present", &self.host.is_some())
             .field("token_present", &self.token.is_some())
+            .finish()
+    }
+}
+
+/// Captured inherited W3C carrier values retained without rendering their content.
+#[derive(Clone, Default, Eq, PartialEq)]
+pub(crate) struct PropagationEnvironment {
+    traceparent: Option<OsString>,
+    tracestate: Option<OsString>,
+    baggage: Option<OsString>,
+}
+
+impl fmt::Debug for PropagationEnvironment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PropagationEnvironment")
+            .field("traceparent_present", &self.traceparent.is_some())
+            .field("tracestate_present", &self.tracestate.is_some())
+            .field("baggage_present", &self.baggage.is_some())
+            .finish()
+    }
+}
+
+/// Captured ambient inputs needed only by a selected CLI source.
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct CliAmbientInputs {
+    runner: RunnerInputs,
+    propagation: PropagationEnvironment,
+}
+
+impl fmt::Debug for CliAmbientInputs {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CliAmbientInputs")
+            .field("runner", &self.runner)
+            .field("propagation", &self.propagation)
             .finish()
     }
 }
@@ -136,18 +221,42 @@ impl ValidatedConfig {
     }
 
     fn into_plan(self, inputs: ProcessInputs) -> Result<ConnectionPlan, ConnectError> {
-        match inputs.existing_session {
-            Some(params) => {
-                self.validate_existing_compatibility()?;
-                Ok(ConnectionPlan::Existing {
-                    params,
-                    request: self.into_existing_request(),
-                })
-            }
-            None => Ok(ConnectionPlan::NewCli {
-                request: self.into_cli_launch_request(),
-            }),
+        let ProcessInputs {
+            session_port,
+            session_token,
+            explicit_cli,
+            runner,
+            discovery,
+            propagation,
+        } = inputs;
+        if let Some(port) = session_port {
+            self.validate_existing_compatibility()?;
+            return Ok(ConnectionPlan::Existing {
+                input: ExistingSessionInput {
+                    port,
+                    token: session_token,
+                },
+                request: self.into_existing_request(),
+            });
         }
+
+        let source = match explicit_cli {
+            Some(configured) => CliSourcePlan::ExplicitLocal {
+                configured,
+                discovery,
+            },
+            None => CliSourcePlan::CompiledRelease {
+                descriptor: ArchiveDescriptor::for_native_target(exact_target()?)?,
+                discovery,
+            },
+        };
+        Ok(ConnectionPlan::NewCli {
+            source: Box::new(source),
+            request: self.into_cli_launch_request(CliAmbientInputs {
+                runner,
+                propagation,
+            }),
+        })
     }
 
     fn validate_existing_compatibility(&self) -> Result<(), ConfigError> {
@@ -191,7 +300,7 @@ impl ValidatedConfig {
         }
     }
 
-    fn into_cli_launch_request(self) -> CliLaunchRequest {
+    fn into_cli_launch_request(self, ambient: CliAmbientInputs) -> CliLaunchRequest {
         let mut arguments = vec![OsString::from("session")];
         if let Some(workdir) = self.workdir {
             arguments.push(OsString::from("--workdir"));
@@ -228,6 +337,7 @@ impl ValidatedConfig {
         CliLaunchRequest {
             arguments,
             environment,
+            ambient,
             diagnostics: Arc::new(DiagnosticDispatcher::new(self.diagnostic_sink)),
             session_startup_timeout: self.session_startup_timeout,
             http_connect_timeout: self.http_connect_timeout,
@@ -243,11 +353,24 @@ pub(crate) enum ConnectionPlan {
         execution_timeout: Option<Duration>,
     },
     Existing {
-        params: ExistingSessionParams,
+        input: ExistingSessionInput,
         request: ExistingConnectionRequest,
     },
     NewCli {
+        source: Box<CliSourcePlan>,
         request: CliLaunchRequest,
+    },
+}
+
+/// The authoritative CLI source retained for the complete connection attempt.
+pub(crate) enum CliSourcePlan {
+    ExplicitLocal {
+        configured: OsString,
+        discovery: NativeDiscoveryInputs,
+    },
+    CompiledRelease {
+        descriptor: ArchiveDescriptor,
+        discovery: NativeDiscoveryInputs,
     },
 }
 
@@ -262,6 +385,7 @@ pub(crate) struct ExistingConnectionRequest {
 pub(crate) struct CliLaunchRequest {
     arguments: Vec<OsString>,
     environment: Vec<(OsString, OsString)>,
+    ambient: CliAmbientInputs,
     pub(crate) diagnostics: Arc<DiagnosticDispatcher>,
     pub(crate) session_startup_timeout: Duration,
     pub(crate) http_connect_timeout: Duration,
@@ -275,6 +399,10 @@ impl CliLaunchRequest {
 
     pub(crate) fn environment(&self) -> &[(OsString, OsString)] {
         &self.environment
+    }
+
+    pub(crate) fn ambient(&self) -> &CliAmbientInputs {
+        &self.ambient
     }
 
     pub(crate) fn encoded_projection(&self) -> Vec<u8> {

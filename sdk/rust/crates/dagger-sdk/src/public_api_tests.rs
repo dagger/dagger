@@ -9,9 +9,11 @@ use crate::config::ClientConfig;
 use crate::connection::{EngineConnectionError, EngineConnectionErrorKind};
 use crate::diagnostic::DiagnosticSinkError;
 use crate::errors::{
-    CloseError, ConfigError, ConnectError, QueryBuildError, QueryBuildErrorKind, QueryError,
-    RequestEncodingError, RequestEncodingErrorKind, RequestError, ResponseDecodingError,
-    ResponseDecodingErrorKind,
+    CliDiscoveryError, CliDiscoveryErrorKind, CloseError, ConfigError, ConnectError,
+    DiscoveryPathRole, ExistingSessionError, ExistingSessionErrorKind, PlatformError,
+    PlatformErrorKind, QueryBuildError, QueryBuildErrorKind, QueryError, RequestEncodingError,
+    RequestEncodingErrorKind, RequestError, ResponseDecodingError, ResponseDecodingErrorKind,
+    TargetError, TargetErrorKind,
 };
 use crate::test_support::proptest_config;
 
@@ -41,8 +43,12 @@ fn production_source_is_panic_free() -> bool {
         include_str!("graphql.rs"),
         include_str!("connection.rs"),
         include_str!("diagnostic.rs"),
+        include_str!("discovery.rs"),
         include_str!("config.rs"),
+        include_str!("errors.rs"),
         include_str!("preflight.rs"),
+        include_str!("session.rs"),
+        include_str!("target.rs"),
     ]
     .into_iter()
     .all(|source| {
@@ -137,14 +143,18 @@ proptest! {
     // Invariant: representative public failures stay in their phase-specific families without unwind.
     // Feature: rust-sdk-client-lifecycle, Property 22: public failure paths are typed and panic-free
     #[test]
-    fn public_failure_paths_are_typed_and_panic_free(case in 0_u8..7) {
+    fn public_failure_paths_are_typed_and_panic_free(case in 0_u8..11) {
         let rendered = std::panic::catch_unwind(|| match case {
             0 => ConfigError::InvalidWorkdir.to_string(),
             1 => ConnectError::Config(ConfigError::InvalidWorkdir).to_string(),
-            2 => RequestError::RequestEncoding(RequestEncodingError::new(RequestEncodingErrorKind::Json)).to_string(),
-            3 => RequestError::ResponseDecoding(ResponseDecodingError::new(ResponseDecodingErrorKind::InvalidShape)).to_string(),
-            4 => QueryError::Build(QueryBuildError::new(QueryBuildErrorKind::InvalidSelection)).to_string(),
-            5 => CloseError::Interrupted.to_string(),
+            2 => ConnectError::ExistingSession(ExistingSessionError::new(ExistingSessionErrorKind::InvalidPort)).to_string(),
+            3 => ConnectError::CliDiscovery(CliDiscoveryError::new(CliDiscoveryErrorKind::Lookup, DiscoveryPathRole::ExplicitLocal)).to_string(),
+            4 => ConnectError::Platform(PlatformError::new(PlatformErrorKind::UnsupportedArchitecture)).to_string(),
+            5 => ConnectError::Target(TargetError::new(TargetErrorKind::VersionMismatch)).to_string(),
+            6 => RequestError::RequestEncoding(RequestEncodingError::new(RequestEncodingErrorKind::Json)).to_string(),
+            7 => RequestError::ResponseDecoding(ResponseDecodingError::new(ResponseDecodingErrorKind::InvalidShape)).to_string(),
+            8 => QueryError::Build(QueryBuildError::new(QueryBuildErrorKind::InvalidSelection)).to_string(),
+            9 => CloseError::Interrupted.to_string(),
             _ => RequestError::ConnectionPanicked.to_string(),
         });
         prop_assert!(rendered.is_ok());
@@ -155,7 +165,7 @@ proptest! {
     // Feature: rust-sdk-client-lifecycle, Property 23: the stable surface is documented and intentionally exported
     #[test]
     fn stable_surface_is_documented_and_intentionally_exported(
-        index in 0_usize..28,
+        index in 0_usize..37,
         mutate in any::<bool>(),
     ) {
         let manifest = manifest_lines(PUBLIC_API);

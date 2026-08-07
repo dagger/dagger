@@ -20,6 +20,15 @@ GraphQlLocation
 GraphQlPathSegment
 ConfigError
 ConnectError
+ExistingSessionError
+ExistingSessionErrorKind
+CliDiscoveryError
+CliDiscoveryErrorKind
+DiscoveryPathRole
+PlatformError
+PlatformErrorKind
+TargetError
+TargetErrorKind
 RequestError
 QueryError
 CloseError

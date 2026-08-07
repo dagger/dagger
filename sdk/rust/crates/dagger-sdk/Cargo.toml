@@ -55,6 +55,9 @@ rand.workspace = true
 tracing-test.workspace = true
 trybuild.workspace = true
 
+[build-dependencies]
+serde_json.workspace = true
+
 [features]
 default = ["gen"]
 gen = []
