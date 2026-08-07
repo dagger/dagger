@@ -31,6 +31,10 @@ func NewOutput(w io.Writer, opts ...termenv.OutputOption) *termenv.Output {
 // Note that color profiles beyond simple ANSI are not used by Progrock. 16
 // colors is all you need. Anything else disrespects the user's color scheme
 // preferences.
+//
+// This is process-level and CLI-oriented, so it stays purely env-based: it has
+// no FrontendOpts to consult. Engine-side report rendering doesn't need an opt
+// here either -- it pins termenv.Ascii explicitly.
 func ColorProfile() termenv.Profile {
 	if termenv.EnvNoColor() || RunningInAgent() {
 		return termenv.Ascii
@@ -77,9 +81,18 @@ var agentEnvVars = []string{
 // than a human at a terminal. Agents consume the output as text, so escape
 // codes are just noise.
 //
+// This is purely environment detection, and thus only meaningful for the CLI.
+// Rendering done INSIDE the engine has no agent env var to sniff (the engine
+// is a daemon) but is always assembled for an LLM; that case is expressed with
+// dagui.FrontendOpts.AgentStyle instead (see agentStyle).
+//
 // Memoized: the render loop consults it per row per frame, the environment
 // can't change mid-process, and each os.Getenv takes the runtime's env lock.
-var RunningInAgent = sync.OnceValue(func() bool {
+func RunningInAgent() bool {
+	return runningInAgentEnv()
+}
+
+var runningInAgentEnv = sync.OnceValue(func() bool {
 	return runningInAgent(os.Getenv)
 })
 

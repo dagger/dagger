@@ -130,25 +130,12 @@ func (c TestCounts) Total() int {
 	return c.Failing + c.Running + c.Passing + c.Skipped
 }
 
-func (c TestCounts) isZero() bool {
-	return c == TestCounts{}
-}
-
 func (c TestCounts) add(other TestCounts) TestCounts {
 	return TestCounts{
 		Failing: c.Failing + other.Failing,
 		Running: c.Running + other.Running,
 		Passing: c.Passing + other.Passing,
 		Skipped: c.Skipped + other.Skipped,
-	}
-}
-
-func (c TestCounts) sub(other TestCounts) TestCounts {
-	return TestCounts{
-		Failing: c.Failing - other.Failing,
-		Running: c.Running - other.Running,
-		Passing: c.Passing - other.Passing,
-		Skipped: c.Skipped - other.Skipped,
 	}
 }
 
@@ -211,6 +198,38 @@ type TestNode struct {
 	Counts       TestCounts
 
 	suiteName string
+}
+
+// SelfCounts returns the counts this node contributes for itself, before its
+// children are rolled up.
+//
+// Only leaf test cases count: the test producer emits a test.case.name span
+// for every `=== RUN`, so a parent test like TestDirectory is a real span even
+// though it is just a grouping around its subtests. Counting it alongside its
+// subtests inflates the totals (one subtest under one parent reported "2
+// passed"). Suites (real or virtual) never counted in the first place.
+//
+// A parent that itself failed is still counted when no descendant recorded a
+// failure -- e.g. a t.Fatal or panic in the parent after its subtests passed.
+// Otherwise its failure would vanish from the tallies entirely and the header
+// could claim everything passed while a FAIL entry is listed below it.
+func (n *TestNode) SelfCounts() TestCounts {
+	if n == nil || n.Kind != TestNodeCase {
+		return TestCounts{}
+	}
+	if len(n.Children) == 0 {
+		return countForCategory(n.SelfCategory)
+	}
+	if n.SelfCategory == TestCategoryFailing {
+		for _, child := range n.Children {
+			if child.Counts.Failing > 0 {
+				// A descendant already accounts for the failure.
+				return TestCounts{}
+			}
+		}
+		return TestCounts{Failing: 1}
+	}
+	return TestCounts{}
 }
 
 type TestView struct {
@@ -694,30 +713,18 @@ func (idx *TestIndex) applyAggregateUpdates() {
 }
 
 func (idx *TestIndex) updateNodeAggregate(node *TestNode) {
-	oldSelfCount := TestCounts{}
-	if node.Kind == TestNodeCase {
-		oldSelfCount = countForCategory(node.SelfCategory)
-	}
-
-	newSelfCategory := node.Span.TestCategory()
-	newSelfCount := TestCounts{}
-	if node.Kind == TestNodeCase {
-		newSelfCount = countForCategory(newSelfCategory)
-	}
-	countDelta := newSelfCount.sub(oldSelfCount)
-
-	node.SelfCategory = newSelfCategory
-	if !countDelta.isZero() {
-		node.Counts = node.Counts.add(countDelta)
-	}
-
-	node.Category = aggregateTestCategory(node.Kind, node.SelfCategory, node.Counts)
-
-	for parent := node.Parent; parent != nil; parent = parent.Parent {
-		if !countDelta.isZero() {
-			parent.Counts = parent.Counts.add(countDelta)
+	node.SelfCategory = node.Span.TestCategory()
+	// Recompute from the children upward rather than propagating a self-count
+	// delta: a node's self-count depends on its children (only leaves count,
+	// plus the failing-parent guard), so an ancestor's own contribution can
+	// change when a descendant's counts change.
+	for current := node; current != nil; current = current.Parent {
+		counts := TestCounts{}
+		for _, child := range current.Children {
+			counts = counts.add(child.Counts)
 		}
-		parent.Category = aggregateTestCategory(parent.Kind, parent.SelfCategory, parent.Counts)
+		current.Counts = counts.add(current.SelfCounts())
+		current.Category = aggregateTestCategory(current.Kind, current.SelfCategory, current.Counts)
 	}
 }
 
@@ -847,14 +854,13 @@ func computeTestAggregates(node *TestNode) {
 
 	node.Counts = TestCounts{}
 	node.SelfCategory = node.Span.TestCategory()
-	if node.Kind == TestNodeCase {
-		node.Counts = node.Counts.add(countForCategory(node.SelfCategory))
-	}
 
 	for _, child := range node.Children {
 		computeTestAggregates(child)
 		node.Counts = node.Counts.add(child.Counts)
 	}
+	// Self-count comes last: it depends on the children's aggregate.
+	node.Counts = node.Counts.add(node.SelfCounts())
 	if node.Kind == TestNodeVirtualSuite && node.RepresentativeSpan == nil {
 		node.RepresentativeSpan = representativeSpan(node)
 	}
@@ -862,6 +868,12 @@ func computeTestAggregates(node *TestNode) {
 }
 
 func aggregateTestCategory(kind TestNodeKind, self TestCategory, counts TestCounts) TestCategory {
+	if kind == TestNodeCase {
+		// A case's own outcome still shapes its category even when it doesn't
+		// contribute to the counts (see SelfCounts): a parent that passed with
+		// a single skipped subtest is mixed, not skipped.
+		counts = counts.add(countForCategory(self))
+	}
 	if self == TestCategoryFailing || counts.Failing > 0 {
 		return TestCategoryFailing
 	}

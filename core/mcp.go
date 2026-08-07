@@ -857,8 +857,10 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
 // grouping calls by destructiveness and server to avoid workspace conflicts
 // toolCallCtx returns the display span context a tool call's arguments streamed
-// into, so the tool's execution nests beneath it. Falls back to ctx when no
-// display span exists (e.g. replay or a provider that doesn't stream).
+// into, so the tool's execution nests beneath it. Every provider — including
+// replay — builds one display span per tool call (see displayPhases), so the
+// fallback to ctx only applies to a provider that returns no display spans at
+// all (none today) or a call ID the provider never announced.
 func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callID string) context.Context {
 	if tc, ok := displays[callID]; ok {
 		return tc.Ctx
@@ -1189,15 +1191,15 @@ const llmLogsBatchSize = 1000
 // long-lived service exec spans are skipped — they enter tool-call subtrees
 // via cause links and would otherwise drown out deliberate print output.
 func (m *MCP) captureLogs(ctx context.Context, spanID string, excludeServiceLogs bool) ([]string, error) {
-	lines, err := m.captureLogLines(ctx, spanID, excludeServiceLogs)
+	captured, err := m.captureLogLines(ctx, spanID, excludeServiceLogs, false)
 	if err != nil {
 		return nil, err
 	}
-	if len(lines) == 0 {
+	if len(captured.lines) == 0 {
 		return nil, nil
 	}
-	texts := make([]string, len(lines))
-	for i, line := range lines {
+	texts := make([]string, len(captured.lines))
+	for i, line := range captured.lines {
 		texts[i] = line.text
 	}
 	return texts, nil
@@ -1212,20 +1214,37 @@ type capturedLine struct {
 	direct bool
 }
 
+// capturedOutput is one capture: the assembled lines, plus the set of spans
+// whose records were classified `direct`.
+//
+// The span set is what lets a rendered trace report and a flat "own output"
+// section coexist without printing the same line twice: the report is told to
+// suppress the inline logs of exactly these spans, because the caller prints
+// them itself, verbatim. Deriving it here — rather than re-deriving "the root
+// and its children" in the renderer against dagui's own (cause-link-folded)
+// parentage — keeps the two halves classified by one rule, so no line can be
+// both hidden and unprinted.
+type capturedOutput struct {
+	lines []capturedLine
+	// directSpans holds hex span IDs; empty when nothing direct was captured.
+	directSpans map[string]bool
+}
+
 // captureLogLines is captureLogs' structured form: the same filtering and
 // line assembly, but each line retains its direct/nested provenance.
-func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs bool) ([]capturedLine, error) {
+func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeServiceLogs, ownOnly bool) (capturedOutput, error) {
+	out := capturedOutput{directSpans: map[string]bool{}}
 	root, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	mainMeta, err := root.MainClientCallerMetadata(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get main client caller metadata: %w", err)
+		return out, fmt.Errorf("get main client caller metadata: %w", err)
 	}
 	q, err := root.ClientTelemetry(ctx, mainMeta.SessionID, mainMeta.ClientID)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	defer q.Close()
 
@@ -1250,7 +1269,7 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			Limit:  llmLogsBatchSize,
 		})
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		if len(logs) == 0 {
 			break
@@ -1288,16 +1307,22 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			var direct bool
 			if log.SpanID.Valid {
 				if !log.TraceID.Valid {
-					return nil, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
+					return out, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
 				}
 				hidden, d, err := internalSpans.classifyLogSpan(ctx, log.TraceID.String, log.SpanID.String)
 				if err != nil {
-					return nil, err
+					return out, err
 				}
 				if hidden {
 					continue
 				}
-				direct = d
+				// ownOnly narrows direct provenance to the captured span
+				// itself; classifyLogSpan's other half (a direct child of the
+				// root) then counts as nested like everything else.
+				direct = d && (!ownOnly || log.SpanID.String == spanID)
+				if direct {
+					out.directSpans[log.SpanID.String] = true
+				}
 			}
 
 			var bodyPb otlpcommonv1.AnyValue
@@ -1321,7 +1346,8 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 			segments = append(segments, capturedLine{text: text, direct: direct})
 		}
 	}
-	return assembleLines(segments), nil
+	out.lines = assembleLines(segments)
+	return out, nil
 }
 
 // assembleLines splits accumulated log segments into lines, carrying a line
@@ -1637,6 +1663,35 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Call:   m.readLogsTool(srv),
 	})
 	allTools.Add(LLMTool{
+		Name: "ReadTrace",
+		Description: "Render the trace report for a span, check, or test: the span tree, plus the CHECKS and TESTS sections, exactly as they appear at the end of a run." + "\n" +
+			"Tool results are abridged; this is how you see the full detail behind one - pass the span ID from a report's footer, or the name of a check or test you saw run." + "\n" +
+			"Prefer ReadTrace when you want the shape of what ran (which steps, which checks/tests, where it failed); use ReadLogs when you want the raw log lines of a span." + "\n" +
+			"When a name matches several spans, the most recent one is rendered.",
+		ReadOnly: true, // Read-only operation
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Span ID (hex) to render the report for, scoped to that span's subtree.",
+				},
+				"check": map[string]any{
+					"type":        "string",
+					"description": "Check name to render the report for, e.g. \"shellcheck:check\".",
+				},
+				"test": map[string]any{
+					"type":        "string",
+					"description": "Test case or suite name to render the report for.",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Strict: false,
+		Call:   m.readTraceTool(srv),
+	})
+	allTools.Add(LLMTool{
 		Name: "ListServices",
 		Description: "List the services currently running in this session: hostname, exposed ports, and span IDs." + "\n" +
 			"Read a service's logs with ReadLogs(span: <spanID>) — useful for tailing a server or engine that runs as a service." + "\n" +
@@ -1840,6 +1895,72 @@ func renderReadLogs(spanID string, logs []string, offset, limit int, grepPattern
 	logs = limitLines(spanID, logs, limit, llmLogsMaxLineLen)
 
 	return strings.Join(logs, "\n"), nil
+}
+
+// readTraceTool renders the pretty trace report for a span, check or test --
+// in the same shape a tool call's own result is rendered as (the target's own
+// output, then the report), so what the reader gets back is in the vocabulary
+// it already sees, just scoped to the target it asked about.
+func (m *MCP) readTraceTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Span  string `default:""`
+		Check string `default:""`
+		Test  string `default:""`
+	}) (any, error) {
+		target := traceTarget{
+			Span:  args.Span,
+			Check: args.Check,
+			Test:  args.Test,
+		}
+		spanID, err := resolveTraceTarget(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		if result := m.spanResult(ctx, spanID, readTraceReportOpts(target)); result != "" {
+			return result, nil
+		}
+		// A subtree can legitimately render to nothing (dagui hides internal,
+		// passthrough and encapsulated spans); say so rather than returning an
+		// empty result, and point at the path that does show raw output.
+		return fmt.Sprintf("(no trace report for span %s; use ReadLogs(span: %s) to read its logs)",
+			spanID, spanID), nil
+	})
+}
+
+// readTraceReportOpts picks the render options that suit the KIND of target
+// ReadTrace was given.
+//
+// A span target keeps the tool-call options: the caller named that subtree, so
+// it wants that subtree unwrapped.
+//
+// A test or check target does not. ExpandAll's unwrap ("descend through
+// wrapper spans to the first real work, then stop") is tuned for a tool-call
+// scope, where the scope root is a roll-up boundary that would otherwise
+// swallow the tool's output. A test or check span is not that: it is the head
+// of a roll-up the report already knows how to summarise, and force-expanding
+// it enumerates every dagql field call beneath -- measured on
+// ReadTrace(test: "TestToolLogsExcludeService") as hundreds of rows of
+// LLMMessage.role / LLMContentBlock.text micro-spans, which are the test's own
+// API traffic, not conversation. Left to the normal IsExpanded rules, those
+// collapse and the TESTS / CHECKS roll-ups (with their failing-case logs) are
+// what the reader gets -- the CLI's end-of-run report for that target. The
+// target's own logs still reach the reader: spanResult prints them as OUTPUT --
+// but only the records on the target span ITSELF (OwnOutputOnly). The depth-1
+// rule that OUTPUT normally uses exists because a module function's print lands
+// one hop below the tool-call span; a named target has no such indirection, and
+// its direct children ARE the nested work -- for a suite, its cases, whose logs
+// belong to the TESTS roll-up rather than hoisted into (and duplicated out of)
+// OUTPUT.
+func readTraceReportOpts(target traceTarget) traceReportOpts {
+	opts := toolCallReportOpts()
+	opts.OwnOutputOnly = true
+	// ReadTrace is the "show me the shape of what ran" tool: it keeps the span
+	// tree the tool-call result drops.
+	opts.HideSpanTree = false
+	if target.Span == "" {
+		opts.ExpandAll = false
+	}
+	return opts
 }
 
 // describeObject renders an object result for the model: its type plus any

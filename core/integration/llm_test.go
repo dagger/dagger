@@ -332,6 +332,15 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithMountedDirectory(".", c.Host().Directory(srcPath))
 
+	// A per-run marker in the program keeps the build exec out of the cache:
+	// a cached withExec emits no logs (and the original session's records
+	// live in another client's store), so on a warmed engine the "creating
+	// new go.mod" output this test asserts on would never appear.
+	content, err := json.Marshal(map[string]string{
+		"content": fmt.Sprintf("// %s\npackage main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n", identity.NewID()),
+	})
+	require.NoError(t, err)
+
 	// Mirrors GoProgrammer.drive's conversation (the first user message must
 	// match its withPrompt byte for byte): write main.go, then build it. Tool
 	// results are placeholders — the real tools run during replay.
@@ -345,7 +354,7 @@ func (LLMSuite) TestToolLogsExcludeInternal(ctx context.Context, t *testctx.T) {
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: "Writing main.go."},
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
-				Arguments: dagger.JSON(`{"content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"}`)},
+				Arguments: dagger.JSON(content)},
 		}).
 		WithToolResult("call_1", "", false).
 		WithResponse([]dagger.LLMContentBlockInput{
@@ -419,8 +428,15 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 	// service's 200 noise lines all land before the healthcheck passes, so
 	// without service filtering they'd swamp the 8-line tail.
 	require.Contains(t, out, "SERVICE-READY")
-	// The service exec span's logs stay out of tool results entirely.
-	require.NotContains(t, out, "SVC-NOISE")
+	// The service exec span's LOG LINES (SVC-NOISE-1..200) stay out of tool
+	// results entirely. The bare "SVC-NOISE-$i" token legitimately appears
+	// once: the SERVICES section names the service by its command line.
+	require.NotContains(t, out, "SVC-NOISE-1")
+	// The start tool surfaced a running service, so its result is the
+	// two-section shape: its own OUTPUT plus the report's SERVICES section,
+	// carrying the command line and the span handle for tailing it.
+	require.Contains(t, out, "== SERVICES ==")
+	require.Contains(t, out, "span=")
 	// stop's print also surfaces — this exercises the late-cause-link route:
 	// stop reloads the started service, re-linking the exec span (and its
 	// full log history) beneath the stop tool call.
@@ -432,8 +448,15 @@ func (LLMSuite) TestToolLogsExcludeService(ctx context.Context, t *testctx.T) {
 // both halves: the Dang runtime routes stdio to the user-facing span (the
 // function call the user sees) rather than the passthrough call_exec
 // profiling span it currently runs under — as containerized SDKs do via the
-// injected traceparent — and captureLogLines then classifies that output as
+// injected traceparent — and the tool result then classifies that output as
 // the tool's own and keeps it verbatim, abridging only nested work.
+//
+// It also locks in the shape of the result for a call that surfaces nothing:
+// tool reports carry only surfaced content (CHECKS, TESTS, SERVICES — the
+// span tree is ReadTrace's job), and this call surfaces none of it, so the
+// result stays on the flat path with its counted ReadLogs marker. The
+// two-section report shape is covered by TestToolLogsExcludeService, whose
+// call surfaces a running service.
 func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -444,7 +467,7 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 		WithMountedDirectory(".", c.Host().Directory(srcPath))
 
 	// Mirrors ReportAgent.drive's conversation (the first user message must
-	// match its withPrompt byte for byte). Tool results are placeholders —
+	// match its withPrompt text byte for byte). Tool results are placeholders —
 	// the real tool runs during replay.
 	model := cannedReplayModel(ctx, t, c, c.LLM().
 		WithPrompt("You are an agent that writes a report.\n"+
@@ -469,9 +492,60 @@ func (LLMSuite) TestToolLogsKeepReport(ctx context.Context, t *testctx.T) {
 	for i := 1; i <= 14; i++ {
 		require.Contains(t, out, fmt.Sprintf("LINE-%02d", i))
 	}
-	// The nested exec's output is still abridged to its trailing lines.
+	// The nested exec's output is still abridged to its trailing lines,
+	// behind a counted marker that keeps the full logs reachable.
 	require.NotContains(t, out, "NESTED-NOISE-01")
 	require.Contains(t, out, "NESTED-NOISE-20")
+	require.Contains(t, out, "lines omitted")
+	require.Contains(t, out, "ReadLogs(span:")
+}
+
+// TestToolReadTrace exercises the ReadTrace builtin end to end: it is
+// registered alongside ReadLogs, it is dispatchable by the model, and it
+// resolves its target against the session's real trace -- an unknown check
+// name comes back as an actionable error rather than an empty result.
+//
+// The happy path (a span/check name that exists) can't be canned: the span IDs
+// of a replayed run aren't known when the conversation is recorded, and no
+// check runs in this fixture. The rendering half is covered by the unit tests
+// in core (resolution) and dagql/idtui (report shape).
+func (LLMSuite) TestToolReadTrace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/report-agent/")
+	require.NoError(t, err)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent that writes a report.\n"+
+			"Use the report tool to do the work and write the report.\n"+
+			"\n"+
+			"Assignment: do the work and write the report\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Doing the work."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "report"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Looking at the trace."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "ReadTrace",
+				Arguments: dagger.JSON(`{"check":"nope:check"}`)},
+		}).
+		WithToolResult("call_2", "", true).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: the report is written."},
+		}))
+
+	out, err := ctr.
+		With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | drive "do the work and write the report" | loop | transcript`, model))).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// The builtin was dispatched and resolved against the real trace, which
+	// has no checks -- and said so in terms the caller can act on.
+	require.Contains(t, out, `no check named "nope:check"`)
 }
 
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {

@@ -163,6 +163,57 @@ func TestSelectLogsBeneathSpanFollowsCausalLinks(t *testing.T) {
 	require.Equal(t, []int64{2, 3}, logIDs(page))
 }
 
+// TestHasDescendants covers the cheap in-memory pre-filter: it must agree
+// with the descendant walk the log queries use (child edges plus
+// cause-purpose links) without materializing the subtree.
+func TestHasDescendants(t *testing.T) {
+	store, err := openStore(t.Context(), t.TempDir(), "client", 256)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.closeStreams()) }()
+
+	const (
+		traceID     = "000102030405060708090a0b0c0d0e0f"
+		installSpan = "00000000000000aa" // reached only via a cause link
+		trigger     = "00000000000000bb"
+		serviceSpan = "00000000000000cc"
+		leaf        = "00000000000000dd"
+		waiter      = "00000000000000ee" // wait-links only: not a containment edge
+		selfParent  = "00000000000000ff" // malformed: parented to itself
+	)
+
+	_, err = store.AppendSpans([]Span{
+		{TraceID: traceID, SpanID: installSpan},
+		{TraceID: traceID, SpanID: trigger},
+		{TraceID: traceID, SpanID: serviceSpan, ParentSpanID: validString(trigger), Links: linksJSON(t,
+			spanLink(t, traceID, installSpan, telemetry.LinkPurposeCause),
+		)},
+		{TraceID: traceID, SpanID: leaf, ParentSpanID: validString(serviceSpan)},
+		{TraceID: traceID, SpanID: waiter, Links: linksJSON(t,
+			spanLink(t, traceID, installSpan, telemetryattrs.LinkPurposeWait),
+		)},
+		{TraceID: traceID, SpanID: selfParent, ParentSpanID: validString(selfParent)},
+	})
+	require.NoError(t, err)
+
+	// Plain child edge.
+	require.True(t, store.HasDescendants(trigger))
+	require.True(t, store.HasDescendants(serviceSpan))
+	// Cause-link edge, same as the descendant walk.
+	require.True(t, store.HasDescendants(installSpan))
+	// Leaves, unknown spans and wait-links have nothing beneath them.
+	require.False(t, store.HasDescendants(leaf))
+	require.False(t, store.HasDescendants(waiter))
+	require.False(t, store.HasDescendants("00000000000000a1"))
+	// A self-parented row is not its own descendant.
+	require.False(t, store.HasDescendants(selfParent))
+
+	// Agreement with the full walk it stands in for.
+	for _, spanID := range []string{installSpan, trigger, serviceSpan, leaf, waiter, selfParent} {
+		require.Equal(t, len(store.lookup.descendants(spanID)) > 0, store.HasDescendants(spanID),
+			"HasDescendants(%s) disagrees with descendants()", spanID)
+	}
+}
+
 func spanLink(t *testing.T, traceID, spanID, purpose string) sdktrace.Link {
 	t.Helper()
 	tid, err := trace.TraceIDFromHex(traceID)

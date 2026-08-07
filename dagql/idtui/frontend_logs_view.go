@@ -111,6 +111,10 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 	if s.fe.claims.hasLog(span.ID) {
 		return nil
 	}
+	if s.fe.reportHideLogSpans[span.ID] {
+		// The report's caller prints this span's output itself, verbatim.
+		return nil
+	}
 	// Size the inline log window to a third of the screen. Read it from
 	// ctx.ScreenHeight() (not the imperatively-cached fe.window.Height) so the
 	// owning SpanTreeView's render is marked height-dependent in tuist's cache --
@@ -122,6 +126,11 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 		if sh := ctx.ScreenHeight(); sh > 0 {
 			limit = sh / 3
 		}
+	}
+	// An embedded report has no screen to divide by: bound nested rows so one
+	// noisy exec can't drown out the output the report is about (depth 0).
+	if s.fe.reportNestedLogLimit > 0 && row.Depth > 0 {
+		limit = s.fe.reportNestedLogLimit
 	}
 	if span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines

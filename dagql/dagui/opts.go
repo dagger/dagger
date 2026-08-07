@@ -60,8 +60,55 @@ type FrontendOpts struct {
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision
 
+	// StrictSubtree confines the walk to the REAL-PARENTAGE descendants of
+	// ZoomedSpan: a span whose ParentSpan chain doesn't reach the zoomed span
+	// is never rendered, no matter how it was attached.
+	//
+	// The DB deliberately blurs containment for the live TUI: a cause-linked
+	// span is added to its cause's ChildSpans (see DB.integrateSpan and
+	// DB.linkResumedOutput), and WalkSpans additionally walks a span's
+	// CausalSpans inline so a chained call shows what produced its input.
+	// Both are the right call when the tree is "everything that happened",
+	// and both are wrong when the tree IS the answer to "what did THIS span
+	// do" -- a scoped report (see idtui.ReportRenderOpts.ScopedSubtree), whose
+	// invariant is that it renders exactly the root span's own subtree.
+	// Without this, a report scoped to one LLM tool call could render an
+	// unrelated (even still-running) subtree from a previous call, reached via
+	// a cause link.
+	StrictSubtree bool
+
 	// UsingCloudEngine indicates whether the connected engine is a Cloud Engine
 	UsingCloudEngine bool
+
+	// RerunSuggestion, when set, replaces the body (and optionally the heading)
+	// of the final report's "RUN LOCALLY" section, which by default suggests
+	// `dagger check "<name>"` commands.
+	//
+	// It exists because the report is not always read in a terminal: when it is
+	// rendered headlessly as the result of an LLM tool call, the reader is an
+	// agent that has *tools* rather than a `dagger` CLI, so a shell command is
+	// useless to it. The renderer keeps owning the layout while the caller owns
+	// the vocabulary -- no knowledge of any particular harness or tool name
+	// belongs in the frontend.
+	//
+	// It is given the re-runnable (outermost, failed) check names in report
+	// order and returns the replacement heading and body lines. An empty heading
+	// means "keep the default heading"; empty body lines mean "omit the section
+	// entirely". When nil, the default `dagger check ...` body is rendered.
+	RerunSuggestion func(checkNames []string) (heading string, body []string)
+
+	// AgentStyle renders for an AI agent rather than a human at a terminal:
+	// section headings become flat, greppable "== TITLE ==" markers instead of
+	// bold TTY text, bodies stay at the margin, purely decorative elements (the
+	// braille roll-up dots) are dropped, and span IDs are surfaced as handles.
+	//
+	// It is an option rather than pure environment detection because rendering
+	// also happens INSIDE the engine, where there is no agent env var to sniff
+	// (the engine is a daemon) but every report is assembled for an LLM: core
+	// sets it on the idtui.ReportRenderOpts it renders trace reports with. For
+	// the CLI it stays false and idtui.RunningInAgent() supplies the answer;
+	// idtui.agentStyle is where the two halves are combined.
+	AgentStyle bool
 }
 
 const (
