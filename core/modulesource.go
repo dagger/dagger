@@ -181,6 +181,12 @@ type ModuleSource struct {
 	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
 	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
 	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
+	// ConfigEngineVersion is the engine version as declared in the module
+	// config — possibly the floating "latest". EngineVersion always holds
+	// the resolved version that drives behavior; this one is what config
+	// edits write back, so a config that says "latest" stays floating
+	// instead of getting silently pinned on the next edit.
+	ConfigEngineVersion           string
 	CodegenConfig                 *modules.ModuleCodegenConfig
 	ModuleConfigUserFields        modules.ModuleConfigUserFields
 	DisableDefaultFunctionCaching bool
@@ -449,6 +455,7 @@ type persistedModuleSourcePayload struct {
 	ModuleName                      string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                   string                                `json:"engineVersion,omitempty"`
+	ConfigEngineVersion             string                                `json:"configEngineVersion,omitempty"`
 	CodegenConfig                   *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
 	ModuleConfigUserFields          modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
 	DisableDefaultFunctionCaching   bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
@@ -771,6 +778,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		ModuleName:                    src.ModuleName,
 		ModuleOriginalName:            src.ModuleOriginalName,
 		EngineVersion:                 src.EngineVersion,
+		ConfigEngineVersion:           src.ConfigEngineVersion,
 		CodegenConfig:                 src.CodegenConfig,
 		ModuleConfigUserFields:        src.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: src.DisableDefaultFunctionCaching,
@@ -919,6 +927,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		ModuleName:                    persisted.ModuleName,
 		ModuleOriginalName:            persisted.ModuleOriginalName,
 		EngineVersion:                 persisted.EngineVersion,
+		ConfigEngineVersion:           persisted.ConfigEngineVersion,
 		CodegenConfig:                 persisted.CodegenConfig,
 		ModuleConfigUserFields:        persisted.ModuleConfigUserFields,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,

@@ -1100,6 +1100,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigToolchains = modCfg.Toolchains
 	src.ConfigClients = modCfg.Clients
 
+	// Keep the version as declared before resolving it: config edits write
+	// the declared form back, so a config that says "latest" stays floating.
+	src.ConfigEngineVersion = modCfg.EngineVersion
 	engineVersion := modCfg.EngineVersion
 	switch engineVersion {
 	case "":
@@ -1585,11 +1588,19 @@ func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	src = src.Clone()
 
 	engineVersion := args.Version
+	// Asking for "latest" keeps the config floating: the file says "latest"
+	// and resolves to the newest engine on every load. Asking for a concrete
+	// version pins the normalized form. Either way EngineVersion holds the
+	// resolved version, which is what drives behavior.
 	switch engineVersion {
 	case "":
 		engineVersion = engine.MinimumModuleVersion
+		src.ConfigEngineVersion = ""
 	case modules.EngineVersionLatest:
 		engineVersion = engine.Version
+		src.ConfigEngineVersion = modules.EngineVersionLatest
+	default:
+		src.ConfigEngineVersion = engine.NormalizeVersion(engineVersion)
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
@@ -2488,12 +2499,14 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		return nil, err
 	}
 
-	// Check version compatibility.
-	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
-		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
+	// Check version compatibility against the resolved version: the built
+	// config carries the version as declared — possibly the floating
+	// "latest" — while EngineVersion always holds what it resolved to.
+	if !engine.CheckVersionCompatibility(src.EngineVersion, engine.MinimumModuleVersion) {
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", src.EngineVersion)
 	}
-	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
-		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
+	if !engine.CheckMaxVersionCompatibility(src.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", src.EngineVersion, engine.Version)
 	}
 
 	return modCfg, nil
@@ -2509,11 +2522,15 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
 	// construct the module config based on any config read during load and any settings changed via with* APIs
+	engineVersion := src.ConfigEngineVersion
+	if engineVersion == "" {
+		engineVersion = src.EngineVersion
+	}
 	modCfg := &modules.ModuleConfigWithUserFields{
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
 		ModuleConfig: modules.ModuleConfig{
 			Name:          src.ModuleOriginalName,
-			EngineVersion: src.EngineVersion,
+			EngineVersion: engineVersion,
 			Include:       src.IncludePaths,
 			Codegen:       src.CodegenConfig,
 			Clients:       src.ConfigClients,
