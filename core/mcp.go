@@ -1287,39 +1287,14 @@ func (m *MCP) captureLogLines(ctx context.Context, spanID string, excludeService
 				if !log.TraceID.Valid {
 					return nil, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
 				}
-				span, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
-					TraceID: log.TraceID.String,
-					SpanID:  log.SpanID.String,
-				})
+				hidden, d, err := internalSpans.classifyLogSpan(ctx, log.TraceID.String, log.SpanID.String)
 				if err != nil {
 					return nil, err
 				}
-				var spanAttrs []*otlpcommonv1.KeyValue
-				if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
-					slog.Warn("failed to unmarshal span attributes", "error", err)
+				if hidden {
 					continue
 				}
-				var isNoise bool
-				for _, attr := range spanAttrs {
-					if attr.Key == telemetry.LLMRoleAttr || attr.Key == telemetry.LLMToolAttr {
-						isNoise = true
-						break
-					}
-				}
-				if isNoise {
-					// don't show logs from the LLM spans themselves
-					continue
-				}
-				internal, err := internalSpans.beneathInternal(ctx, log.TraceID.String, log.SpanID.String)
-				if err != nil {
-					return nil, err
-				}
-				if internal {
-					// don't surface logs from spans hidden as internal
-					continue
-				}
-				direct = log.SpanID.String == spanID ||
-					(span.ParentSpanID.Valid && span.ParentSpanID.String == spanID)
+				direct = d
 			}
 
 			var bodyPb otlpcommonv1.AnyValue
@@ -1390,10 +1365,11 @@ func assembleLines(segments []capturedLine) []capturedLine {
 	return lines
 }
 
-// internalSpanFilter reports whether spans sit within a subtree marked
-// internal (dagger.io/ui.internal) beneath a captured root span, so their
-// logs can be skipped — mirroring how the TUI refuses to roll logs up across
-// an internal span. When skipServices is set, service exec spans
+// internalSpanFilter classifies the spans of a log capture (classifyLogSpan),
+// chiefly by whether they sit within a subtree marked internal
+// (dagger.io/ui.internal) beneath the captured root span, so their logs can
+// be skipped — mirroring how the TUI refuses to roll logs up across an
+// internal span. When skipServices is set, service exec spans
 // (dagger.io/service) are filtered the same way, keeping long-lived service
 // noise out of tool-result captures. Results are memoized per span so
 // captureLogs doesn't re-walk the parent chain for every log line.
@@ -1406,6 +1382,44 @@ type internalSpanFilter struct {
 
 func newInternalSpanFilter(db *clientdb.DB, rootSpanID string, skipServices bool) *internalSpanFilter {
 	return &internalSpanFilter{db: db, root: rootSpanID, skipServices: skipServices, memo: map[string]bool{}}
+}
+
+// classifyLogSpan locates a log record's span and decides how the capture
+// treats its logs: hidden entirely (an LLM span's own prompt/response noise,
+// or a span beneath one hidden as internal), or kept — and, when kept,
+// whether the record counts as the captured root's direct output (the root
+// itself or one of its direct children, where a tool function's own print
+// output lands).
+func (f *internalSpanFilter) classifyLogSpan(ctx context.Context, traceID, spanID string) (hidden, direct bool, err error) {
+	span, err := f.db.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
+		TraceID: traceID,
+		SpanID:  spanID,
+	})
+	if err != nil {
+		return false, false, err
+	}
+	var spanAttrs []*otlpcommonv1.KeyValue
+	if err := clientdb.UnmarshalProtoJSONs(span.Attributes, &otlpcommonv1.KeyValue{}, &spanAttrs); err != nil {
+		slog.Warn("failed to unmarshal span attributes", "error", err)
+		return true, false, nil
+	}
+	for _, attr := range spanAttrs {
+		if attr.Key == telemetry.LLMRoleAttr || attr.Key == telemetry.LLMToolAttr {
+			// don't show logs from the LLM spans themselves
+			return true, false, nil
+		}
+	}
+	internal, err := f.beneathInternal(ctx, traceID, spanID)
+	if err != nil {
+		return false, false, err
+	}
+	if internal {
+		// don't surface logs from spans hidden as internal
+		return true, false, nil
+	}
+	direct = spanID == f.root ||
+		(span.ParentSpanID.Valid && span.ParentSpanID.String == f.root)
+	return false, direct, nil
 }
 
 // beneathInternal reports whether the given span, or any ancestor strictly
