@@ -267,3 +267,36 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 		require.Error(t, err)
 	})
 }
+
+// TestWorkspaceToolMountsSummarizeCompactly locks in that a tool-returned
+// Workspace whose difference is a mount does not flood the model's context.
+func (LLMSuite) TestWorkspaceToolMountsSummarizeCompactly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("mount the vendored deps, then unmount them").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "mountVendored"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "unmountVendored"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	out, err := base.With(daggerShell(fmt.Sprintf(
+		`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "mount the vendored deps, then unmount them" | loop | transcript`,
+		model,
+	))).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Mounted (read-only): mnt/vendored")
+	require.Contains(t, out, "Unmounted: mnt/vendored")
+	require.NotContains(t, out, "vendored-one.txt")
+	require.NotContains(t, out, "vendored-two.txt")
+	require.NotContains(t, out, "vendored-three.txt")
+	require.Contains(t, out, "NOTE.txt")
+}
