@@ -289,6 +289,135 @@ func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *te
 	})
 }
 
+// TestLegacyToolchainGlobCustomizations covers glob patterns in the `function`
+// and `argument` fields of legacy toolchain customizations, plus name matching
+// that ignores case, hyphens, and underscores. Last matching customization
+// wins, so a specific function name overrides an earlier wildcard.
+func (WorkspaceCompatSuite) TestLegacyToolchainGlobCustomizations(ctx context.Context, t *testctx.T) {
+	legacyToolchainConfig := func(customizations string) string {
+		return fmt.Sprintf(`{
+  "name": "app",
+  "engineVersion": "v0.20.6",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "customizations": [%s]
+    }
+  ]
+}`, customizations)
+	}
+
+	t.Run("wildcard function pattern applies to all matching functions", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := legacyBlueprintTestEnv(t, c).
+			WithWorkdir("app").
+			WithNewFile("dagger.json", legacyToolchainConfig(`
+      {
+        "function": ["*"],
+        "argument": "message",
+        "default": "hola"
+      }
+`))
+
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola from blueprint")
+
+		out, err = modGen.
+			With(daggerExec("call", "hello", "shout-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola FROM BLUEPRINT!!!")
+	})
+
+	t.Run("specific function pattern takes precedence over wildcard", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := legacyBlueprintTestEnv(t, c).
+			WithWorkdir("app").
+			WithNewFile("dagger.json", legacyToolchainConfig(`
+      {
+        "function": ["*"],
+        "argument": "message",
+        "default": "hola"
+      },
+      {
+        "function": ["configurableMessage"],
+        "argument": "message",
+        "default": "bonjour"
+      }
+`))
+
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bonjour from blueprint")
+
+		out, err = modGen.
+			With(daggerExec("call", "hello", "shout-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola FROM BLUEPRINT!!!")
+	})
+
+	t.Run("function and argument names match across casing styles", func(ctx context.Context, t *testctx.T) {
+		for _, tc := range []struct {
+			name     string
+			function string
+			argument string
+		}{
+			{"camelCase", "configurableMessage", "message"},
+			{"kebab-case", "configurable-message", "message"},
+			{"snake_case", "configurable_message", "message"},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := legacyBlueprintTestEnv(t, c).
+					WithWorkdir("app").
+					WithNewFile("dagger.json", legacyToolchainConfig(fmt.Sprintf(`
+      {
+        "function": [%q],
+        "argument": %q,
+        "default": "hey"
+      }
+`, tc.function, tc.argument)))
+
+				out, err := modGen.
+					With(daggerExec("call", "hello", "configurable-message")).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "hey from blueprint")
+			})
+		}
+	})
+
+	t.Run("override function default argument in chained function with glob patterns", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := legacyBlueprintTestEnv(t, c).
+			WithWorkdir("app").
+			WithNewFile("dagger.json", legacyToolchainConfig(`
+      {
+        "function": ["gre*", "pla*"],
+        "argument": "planet",
+        "default": "Mars"
+      }
+`))
+
+		out, err := modGen.
+			With(daggerExec("call", "hello", "greet", "planet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Greetings from Mars!")
+	})
+}
+
 // TestCompatEntrypointWithLocalDepsGenerate is a regression test for
 // https://github.com/dagger/dagger/issues/13742: `dagger generate` in a legacy
 // dagger.json project whose root module is the workspace entrypoint and has

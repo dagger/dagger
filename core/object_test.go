@@ -281,6 +281,61 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 	assert.Equal(t, "Choice", decoded.EnumDefs[0].Self().AsEnum.Value.Self().Name)
 }
 
+func TestModulePersistedRoundTripPreservesAsModuleVariantDigest(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	sc := cacheIface
+
+	root := &Query{}
+	testSrv := &moduleObjectTestServer{
+		mockServer: &mockServer{},
+		cache:      sc,
+		root:       root,
+	}
+	root.Server = testSrv
+	dag := newCoreDagqlServerForTest(t, root)
+	testSrv.dag = dag
+	installTypeDefTestClasses(dag)
+	ctx = dagql.ContextWithCache(ctx, sc)
+	ctx = ContextWithQuery(ctx, root)
+
+	// The digest salts the module's content digest (see moduleImplementationScoped
+	// in core/schema/module.go) so two variants of the same module source — e.g.
+	// the same toolchain loaded with different customizations — don't share cached
+	// results. If it didn't survive the persistence round-trip, a reconstructed
+	// Module would emit no salt and collide with freshly-loaded variants.
+	for _, tc := range []struct {
+		name   string
+		digest string
+	}{
+		{"empty digest round-trips as empty", ""},
+		{"non-empty digest round-trips intact", "variant-abc123"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mod := &Module{
+				NameField:             "Test",
+				OriginalName:          "Test",
+				SDKConfig:             &SDKConfig{},
+				Deps:                  NewSchemaBuilder(root, nil),
+				AsModuleVariantDigest: tc.digest,
+			}
+
+			payload, err := mod.EncodePersistedObject(ctx, sc)
+			assert.NilError(t, err)
+
+			decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dag, 0, nil, payload.JSON)
+			assert.NilError(t, err)
+			decoded, ok := decodedTyped.(*Module)
+			assert.Assert(t, ok)
+
+			assert.Equal(t, tc.digest, decoded.AsModuleVariantDigest)
+		})
+	}
+}
+
 func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	t.Parallel()
 

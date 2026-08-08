@@ -1,0 +1,6 @@
+kind: Added
+body: Legacy toolchain customizations now support glob patterns in the `function` and `argument` fields, so one customization can target many functions. The last matching customization wins, letting a specific function name override an earlier wildcard. Function and argument names also match regardless of case, hyphens, and underscores, so `kebab-argument` matches `kebabArgument`.
+time: 2026-08-07T15:06:09.18738442-04:00
+custom:
+    Author: '@suprjinx'
+    PR: "11906"
