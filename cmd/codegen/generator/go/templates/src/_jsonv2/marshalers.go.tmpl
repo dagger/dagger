@@ -1,0 +1,95 @@
+// Marshalers returns a set of json/v2 marshalers that serialize Dagger
+// objects to their IDs, resolving the IDs through the given ctx.
+//
+// Use it to marshal values containing Dagger objects without relying on
+// package-level marshaling state:
+//
+//	data, err := json.Marshal(v, json.WithMarshalers(Marshalers(ctx)))
+//
+// The concrete json/v2 package (encoding/json/v2 or
+// github.com/go-json-experiment/json) follows the goexperiment.jsonv2
+// build tag.
+func Marshalers(ctx context.Context) *json.Marshalers {
+	return json.JoinMarshalers(
+{{- range $t := .Types }}
+{{- if eq $t.Kind "OBJECT" }}
+{{- range $f := $t.Fields }}
+{{- if eq $f.Name "id" }}
+		json.MarshalFunc(func(v {{ $t.Name | FormatName }}) ([]byte, error) {
+			id, err := v.ID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(string(id))
+		}),
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if eq $t.Kind "INTERFACE" }}
+{{- $ifaceName := "" }}
+{{- if and (LegacyGoSDKCompat) (ne $t.Name "Node") }}{{ $ifaceName = $t.Name | FormatName }}{{ else }}{{ $ifaceName = $t.Name | InterfaceClientName }}{{ end }}
+{{- range $f := $t.Fields }}
+{{- if eq $f.Name "id" }}
+		json.MarshalFunc(func(v {{ $ifaceName }}) ([]byte, error) {
+			id, err := v.ID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(string(id))
+		}),
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+	)
+}
+
+// Unmarshalers returns a set of json/v2 unmarshalers that reconstruct
+// Dagger objects from their IDs through the given client.
+//
+// Use it to unmarshal data containing Dagger object IDs without relying on
+// package-level unmarshaling state:
+//
+//	err := json.Unmarshal(data, &v, json.WithUnmarshalers(Unmarshalers(c)))
+//
+// The concrete json/v2 package (encoding/json/v2 or
+// github.com/go-json-experiment/json) follows the goexperiment.jsonv2
+// build tag.
+func Unmarshalers(c IDClient) *json.Unmarshalers {
+	root := c.QueryBuilder()
+	_ = root
+	return json.JoinUnmarshalers(
+{{- range $t := .Types }}
+{{- if eq $t.Kind "OBJECT" }}
+{{- range $f := $t.Fields }}
+{{- if eq $f.Name "id" }}
+		json.UnmarshalFunc(func(data []byte, v *{{ $t.Name | FormatName }}) error {
+			var id string
+			if err := json.Unmarshal(data, &id); err != nil {
+				return err
+			}
+			*v = {{ $t.Name | FormatName }}{query: selectNode(root, id, "{{ $t.Name }}")}
+			return nil
+		}),
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if eq $t.Kind "INTERFACE" }}
+{{- $ifaceName := "" }}
+{{- if and (LegacyGoSDKCompat) (ne $t.Name "Node") }}{{ $ifaceName = $t.Name | FormatName }}{{ else }}{{ $ifaceName = $t.Name | InterfaceClientName }}{{ end }}
+{{- range $f := $t.Fields }}
+{{- if eq $f.Name "id" }}
+		json.UnmarshalFunc(func(data []byte, v *{{ $ifaceName }}) error {
+			var id string
+			if err := json.Unmarshal(data, &id); err != nil {
+				return err
+			}
+			*v = {{ $ifaceName }}{query: selectNode(root, id, "{{ $t.Name }}")}
+			return nil
+		}),
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+	)
+}

@@ -13,6 +13,7 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/adrg/xdg v0.5.3
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
+	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/stretchr/testify v1.11.1
 	github.com/vektah/gqlparser/v2 v2.5.32
