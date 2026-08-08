@@ -37,7 +37,7 @@ func TestStoreRegistryReopenRecoversState(t *testing.T) {
 	require.Equal(t, int64(600), spanStats.LastID)
 
 	logs := make([]Log, 600)
-	logs[0] = Log{SpanID: validString("root"), Body: []byte("root excluded")}
+	logs[0] = Log{SpanID: validString("root"), Body: []byte("root's own log")}
 	logs[1] = Log{SpanID: validString("child"), Body: []byte("child")}
 	logs[2] = Log{SpanID: validString("grandchild"), Body: []byte("grandchild")}
 	for i := 3; i < len(logs); i++ {
@@ -94,7 +94,7 @@ func TestStoreRegistryReopenRecoversState(t *testing.T) {
 		Limit:  10,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []int64{2, 3, 601}, logIDs(beneath))
+	require.Equal(t, []int64{1, 2, 3, 601}, logIDs(beneath))
 
 	// A behind cursor first drains the on-disk prefix and then continues from
 	// the post-reopen in-memory tail without repeating or losing an ID.
