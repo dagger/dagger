@@ -52,8 +52,8 @@
     remain status-identical, and `dagger-codegen` to compile without `dagger-sdk` or
     an I/O/runtime dependency.
 
-- [ ] 3. Implement exact-target input and the canonical schema compiler
-  - [ ] 3.1 Add target identity, bounded schema input, and digest verification
+- [x] 3. Implement exact-target input and the canonical schema compiler
+  - [x] 3.1 Add target identity, bounded schema input, and digest verification
     - Decode `CodegenTarget` exclusively from `completeness/target.json`, including
       Dagger/engine/schema, Go SDK, sdk-sdk, Rust SDK, edition, toolchain, and schema
       digest identities; validate revisions and versions before schema projection.
@@ -63,7 +63,7 @@
     - Reject target, snapshot, and caller disagreement before rendering or any
       publication-capable result exists.
     - _Requirements: 1.11, 2.1, 2.2, 2.11, 2.12_
-  - [ ] 3.2 Build the canonical named-type and recursive-wrapper model
+  - [x] 3.2 Build the canonical named-type and recursive-wrapper model
     - Add ordered canonical values for the query root, scalars, objects, interfaces,
       enums, input objects, fields, arguments, input fields, enum values, interface
       edges, descriptions, deprecations, and exact source coordinates.
@@ -73,7 +73,7 @@
     - Exclude introspection `__*` types from public binding coordinates only after
       validating a structurally sound response.
     - _Requirements: 2.3, 2.4, 2.5, 2.6, 2.9, 2.10, 2.11, 2.12, 3.9-3.13_
-  - [ ] 3.3 Parse defaults and validate directive definitions/applications
+  - [x] 3.3 Parse defaults and validate directive definitions/applications
     - Parse GraphQL constants with `graphql-parser`, typecheck them recursively against
       scalar, enum, list, input-object, and nullability definitions, and retain the
       normalized value for documentation/fingerprints without creating a Rust default.
@@ -83,7 +83,7 @@
       phase.
     - Add fixed fixtures for every stable schema diagnostic and target-specific count.
     - _Requirements: 2.3-2.9, 3.11-3.13, 5.4, 5.11, 7.9-7.13_
-  - [ ] 3.4 Implement stable, safe generator diagnostics
+  - [x] 3.4 Implement stable, safe generator diagnostics
     - Add typed diagnostic codes, schema/path coordinates, related-coordinate context,
       stable sorting, and safe CLI rendering across identity, schema, projection,
       naming, completeness, formatting, drift, and publication boundaries.
@@ -91,14 +91,14 @@
       paths, and schema kinds return errors without panic, `unwrap`, invariant-free
       `expect`, environment disclosure, or partial canonical values.
     - _Requirements: 2.5-2.9, 2.11, 2.12, 4.15, 6.11, 6.12, 7.13, 8.6, 9.14_
-  - [ ] 3.5 Property test: Property 3 — target identity gates all publication
+  - [x] 3.5 Property test: Property 3 — target identity gates all publication
     - Generate at least 256 target/snapshot/scope/source-revision mutations around the
       approved descriptor; compare to a reference identity chain and assert rejection
       produces no candidate publication or repository event.
     - Test identifier: `property_03_target_identity_gates_publication`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 3: Target identity gates all publication`
     - _Requirements: 1.11, 2.1, 2.2, 2.11_
-  - [ ] 3.6 Property test: Property 4 — schema validation is total and coordinate-complete
+  - [x] 3.6 Property test: Property 4 — schema validation is total and coordinate-complete
     - Generate at least 256 malformed schema graphs spanning missing coordinates,
       invalid references, wrapper cycles/depth, defaults, directives, duplicate names,
       and unsupported kinds; compare codes/coordinates to a small reference validator
@@ -106,7 +106,7 @@
     - Test identifier: `property_04_schema_validation_total_coordinate_complete`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 4: Schema validation is total and coordinate-complete`
     - _Requirements: 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.12_
-  - [ ] 3.7 Property test: Property 5 — canonicalization and rendering ignore source order
+  - [x] 3.7 Property test: Property 5 — canonicalization and rendering ignore source order
     - Generate at least 256 independent permutations of types, fields, arguments,
       input fields, enum values, interface edges, directives, and directive arguments;
       require equal canonical models and byte-identical repeated rendered candidates.
@@ -114,7 +114,7 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 5: Canonicalization and rendering ignore source order`
     - _Requirements: 2.10, 9.1, 9.2_
 
-- [ ] 4. Checkpoint: exact-target canonical schema compilation is green
+- [x] 4. Checkpoint: exact-target canonical schema compilation is green
   - Run formatting, locked codegen/completeness tests, schema fixtures, Properties 3-5,
     clippy, rustdoc, and cargo-deny; require the checked target's complete coordinate
     inventory to validate and every malformed fixture to remain rejection-atomic.

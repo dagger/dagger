@@ -11,9 +11,98 @@ pub mod rust;
 pub mod schema;
 pub mod target;
 
+use std::collections::BTreeMap;
+
 use diagnostic::CodegenError;
+use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticCoordinate, DiagnosticSet};
 use rust::RustGenerator;
+use schema::canonical::CanonicalSchema;
 use schema::raw::Schema;
+use target::CodegenTarget;
+
+/// Borrowed inputs for exact-target core schema projection.
+pub struct CoreProjectionRequest<'a> {
+    /// Target identity decoded exclusively from the checked target descriptor.
+    pub target: &'a CodegenTarget,
+    /// Complete checked introspection snapshot bytes.
+    pub schema_json: &'a [u8],
+}
+
+/// An immutable schema plan that is safe to pass to semantic projection and rendering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectionPlan {
+    target: CodegenTarget,
+    schema: CanonicalSchema,
+}
+
+impl ProjectionPlan {
+    /// Returns the exact target identity bound to this plan.
+    #[must_use]
+    pub const fn target(&self) -> &CodegenTarget {
+        &self.target
+    }
+
+    /// Returns the complete validated canonical schema.
+    #[must_use]
+    pub const fn schema(&self) -> &CanonicalSchema {
+        &self.schema
+    }
+}
+
+/// Deterministic in-memory artifacts produced from a complete projection plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RenderedCandidate {
+    artifacts: BTreeMap<String, Vec<u8>>,
+}
+
+impl RenderedCandidate {
+    /// Returns candidate artifacts in stable repository-relative path order.
+    #[must_use]
+    pub const fn artifacts(&self) -> &BTreeMap<String, Vec<u8>> {
+        &self.artifacts
+    }
+}
+
+/// Validates exact target identity and compiles raw introspection into an ordered model.
+pub fn project_core(request: CoreProjectionRequest<'_>) -> Result<ProjectionPlan, DiagnosticSet> {
+    let schema = schema::decode_and_validate(request.target, request.schema_json)?;
+    Ok(ProjectionPlan {
+        target: request.target.clone(),
+        schema,
+    })
+}
+
+/// Renders the current canonical checkpoint artifact without filesystem authority.
+///
+/// Rust client artifacts are added by later projection tasks. This checkpoint output
+/// makes order-independence and repeatability executable without allowing raw schema
+/// values to cross the renderer boundary.
+pub fn render_core(plan: &ProjectionPlan) -> Result<RenderedCandidate, DiagnosticSet> {
+    render_canonical_checkpoint(plan.target(), plan.schema())
+}
+
+pub(crate) fn render_canonical_checkpoint(
+    target: &CodegenTarget,
+    schema: &CanonicalSchema,
+) -> Result<RenderedCandidate, DiagnosticSet> {
+    let payload = (
+        target,
+        schema.query(),
+        schema.types(),
+        schema.directives(),
+        schema.inventory(),
+    );
+    let bytes = serde_json::to_vec(&payload).map_err(|_| {
+        DiagnosticSet::one(Diagnostic::new(
+            DiagnosticCode::GeneratedProvenanceInvalid,
+            Some(DiagnosticCoordinate::new("canonical-schema.json")),
+            "canonical schema checkpoint artifact could not be encoded",
+        ))
+    })?;
+    Ok(RenderedCandidate {
+        artifacts: BTreeMap::from([("canonical-schema.json".to_owned(), bytes)]),
+    })
+}
 
 /// Generates a Rust client candidate from raw introspection schema data.
 ///

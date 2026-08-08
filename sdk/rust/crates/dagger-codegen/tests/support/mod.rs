@@ -52,18 +52,10 @@ pub(crate) fn default_literal_strategy() -> impl Strategy<Value = String> {
 }
 
 pub(crate) fn target_strategy() -> impl Strategy<Value = CodegenTarget> {
-    (
-        "v1\\.[0-9]+\\.[0-9]+",
-        "1\\.[0-9]+\\.[0-9]+",
-        Just("2024".to_owned()),
+    Just(
+        CodegenTarget::decode_exact(include_bytes!("../../../../completeness/target.json"))
+            .expect("checked target must decode"),
     )
-        .prop_map(
-            |(engine_version, sdk_version, rust_edition)| CodegenTarget {
-                engine_version,
-                sdk_version,
-                rust_edition,
-            },
-        )
 }
 
 pub(crate) fn wrapper_strategy() -> impl Strategy<Value = TypeRef> {
@@ -71,6 +63,10 @@ pub(crate) fn wrapper_strategy() -> impl Strategy<Value = TypeRef> {
         kind: Some(TypeKind::Scalar),
         name: Some(name),
         of_type: None,
+        interfaces: None,
+        possible_types: None,
+        directives: None,
+        unknown_fields: BTreeMap::new(),
     });
     leaf.prop_recursive(8, 64, 2, |inner| {
         prop_oneof![
@@ -78,11 +74,19 @@ pub(crate) fn wrapper_strategy() -> impl Strategy<Value = TypeRef> {
                 kind: Some(TypeKind::List),
                 name: None,
                 of_type: Some(Box::new(inner)),
+                interfaces: None,
+                possible_types: None,
+                directives: None,
+                unknown_fields: BTreeMap::new(),
             }),
             inner.prop_map(|inner| TypeRef {
                 kind: Some(TypeKind::NonNull),
                 name: None,
                 of_type: Some(Box::new(inner)),
+                interfaces: None,
+                possible_types: None,
+                directives: None,
+                unknown_fields: BTreeMap::new(),
             }),
         ]
     })
@@ -100,8 +104,10 @@ pub(crate) fn directive_strategy() -> impl Strategy<Value = DirectiveApplication
                 .map(|(name, value)| DirectiveApplicationArgument {
                     name,
                     value: Some(value),
+                    unknown_fields: BTreeMap::new(),
                 })
                 .collect(),
+            unknown_fields: BTreeMap::new(),
         })
 }
 
@@ -120,6 +126,8 @@ pub(crate) fn raw_schema_fragment_strategy() -> impl Strategy<Value = FullType> 
             interfaces: None,
             enum_values: None,
             possible_types: None,
+            directives: None,
+            unknown_fields: BTreeMap::new(),
         })
 }
 

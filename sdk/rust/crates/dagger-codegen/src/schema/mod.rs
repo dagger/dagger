@@ -5,4 +5,8 @@
 //! into projection and rendering.
 
 pub mod canonical;
+pub mod defaults;
 pub mod raw;
+mod validate;
+
+pub use validate::decode_and_validate;

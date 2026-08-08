@@ -4,7 +4,13 @@
 //! not validate names, references, or wrapper structure; canonicalization owns those
 //! decisions and reports diagnostics before projection begins.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+
+/// Unknown wire members retained so schema drift is visible to validation.
+pub type UnknownFields = BTreeMap<String, Value>;
 
 /// A location at which a GraphQL directive may be applied.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -178,23 +184,27 @@ pub struct FullType {
     pub enum_values: Option<Vec<FullTypeEnumValue>>,
     /// Possible concrete types of an abstract type.
     pub possible_types: Option<Vec<FullTypePossibleType>>,
+    /// Directives applied to the named type.
+    #[serde(default)]
+    pub directives: Option<Vec<DirectiveApplication>>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// One argument accepted by a field.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(transparent)]
 pub struct FullTypeFieldArgument {
     /// The input-value wire fields.
-    #[serde(flatten)]
     pub input_value: InputValue,
 }
 
 /// The type reference attached to a field.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(transparent)]
 pub struct FullTypeFieldType {
     /// The referenced type and wrappers.
-    #[serde(flatten)]
     pub type_ref: TypeRef,
 }
 
@@ -221,23 +231,24 @@ pub struct FullTypeField {
     /// Owning type populated after decoding for legacy projection helpers.
     #[serde(skip)]
     pub parent_type: Option<FullType>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// An input-object field definition.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(transparent)]
 pub struct FullTypeInputField {
     /// The input-value wire fields.
-    #[serde(flatten)]
     pub input_value: InputValue,
 }
 
 /// An implemented interface reference.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(transparent)]
 pub struct FullTypeInterface {
     /// The referenced interface type.
-    #[serde(flatten)]
     pub type_ref: TypeRef,
 }
 
@@ -253,14 +264,19 @@ pub struct FullTypeEnumValue {
     pub is_deprecated: Option<bool>,
     /// The schema-provided deprecation reason.
     pub deprecation_reason: Option<String>,
+    /// Directives applied to the enum value.
+    #[serde(default)]
+    pub directives: Option<Vec<DirectiveApplication>>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// A possible concrete type reference.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(transparent)]
 pub struct FullTypePossibleType {
     /// The referenced concrete type.
-    #[serde(flatten)]
     pub type_ref: TypeRef,
 }
 
@@ -277,9 +293,16 @@ pub struct InputValue {
     pub type_: TypeRef,
     /// The GraphQL literal used when the input is omitted.
     pub default_value: Option<String>,
+    /// Whether use of the input is deprecated.
+    pub is_deprecated: Option<bool>,
+    /// The schema-provided deprecation reason.
+    pub deprecation_reason: Option<String>,
     /// Directives applied to the input.
     #[serde(default)]
     pub directives: Option<Vec<DirectiveApplication>>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// A recursively wrapped reference to a GraphQL type.
@@ -292,6 +315,15 @@ pub struct TypeRef {
     pub name: Option<String>,
     /// The wrapped type for list and non-null kinds.
     pub of_type: Option<Box<TypeRef>>,
+    /// Expansion-only interface data, expected to be absent on references.
+    pub interfaces: Option<Value>,
+    /// Expansion-only possible-type data, expected to be absent on references.
+    pub possible_types: Option<Value>,
+    /// Expansion-only directive data, expected to be absent on references.
+    pub directives: Option<Value>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// The named query root.
@@ -300,6 +332,9 @@ pub struct TypeRef {
 pub struct SchemaQueryType {
     /// The root type name.
     pub name: Option<String>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// The named mutation root.
@@ -308,6 +343,9 @@ pub struct SchemaQueryType {
 pub struct SchemaMutationType {
     /// The root type name.
     pub name: Option<String>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// The named subscription root.
@@ -316,23 +354,24 @@ pub struct SchemaMutationType {
 pub struct SchemaSubscriptionType {
     /// The root type name.
     pub name: Option<String>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// A type entry in the introspection response.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(transparent)]
 pub struct SchemaType {
     /// The complete type definition.
-    #[serde(flatten)]
     pub full_type: FullType,
 }
 
 /// One argument declared by a directive definition.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(transparent)]
 pub struct SchemaDirectiveArgument {
     /// The input-value wire fields.
-    #[serde(flatten)]
     pub input_value: InputValue,
 }
 
@@ -348,6 +387,9 @@ pub struct SchemaDirective {
     pub locations: Option<Vec<Option<DirectiveLocation>>>,
     /// Arguments accepted by the directive.
     pub args: Option<Vec<Option<SchemaDirectiveArgument>>>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// The raw schema carried by an introspection response.
@@ -364,6 +406,9 @@ pub struct Schema {
     pub types: Option<Vec<Option<SchemaType>>>,
     /// All directive definitions known to the schema.
     pub directives: Option<Vec<Option<SchemaDirective>>>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// A directive application attached to a schema element.
@@ -375,6 +420,9 @@ pub struct DirectiveApplication {
     /// Arguments supplied to the directive.
     #[serde(default)]
     pub args: Vec<DirectiveApplicationArgument>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// One argument supplied to a directive application.
@@ -385,6 +433,9 @@ pub struct DirectiveApplicationArgument {
     pub name: String,
     /// The encoded argument value.
     pub value: Option<String>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// Accessors for directives consumed by projection.
@@ -408,6 +459,12 @@ pub struct SchemaContainer {
     /// The decoded schema, if the server supplied one.
     #[serde(rename = "__schema")]
     pub schema: Option<Schema>,
+    /// The engine-reported schema version paired with the snapshot.
+    #[serde(rename = "__schemaVersion")]
+    pub schema_version: Option<String>,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// A GraphQL response carrying `data` around the schema envelope.
@@ -415,6 +472,9 @@ pub struct SchemaContainer {
 pub struct FullResponse<T> {
     /// The response payload.
     pub data: T,
+    /// Members not understood by this generator version.
+    #[serde(flatten)]
+    pub unknown_fields: UnknownFields,
 }
 
 /// Either accepted introspection response envelope.

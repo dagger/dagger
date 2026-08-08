@@ -1,8 +1,233 @@
-//! Structured diagnostics produced by pure code-generation stages.
+//! Stable, caller-safe diagnostics produced by code generation.
+//!
+//! Diagnostics are data rather than formatted implementation errors. This keeps bad
+//! schema input from exposing host paths and gives automation a stable code and
+//! coordinate to act on.
 
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// A stable category for a code-generation failure.
+/// A stable machine-readable generator diagnostic code.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DiagnosticCode {
+    /// The exact target descriptor is malformed or differs from the approved target.
+    TargetIdentityInvalid,
+    /// The schema bytes do not match the digest in the target descriptor.
+    SchemaDigestMismatch,
+    /// The schema envelope or operation roots are invalid.
+    SchemaRootInvalid,
+    /// A public schema kind is not supported by the core client.
+    SchemaTypeUnsupported,
+    /// A name, reference, or required schema member is invalid.
+    SchemaReferenceInvalid,
+    /// A recursive type wrapper is malformed or exceeds its bound.
+    SchemaWrapperInvalid,
+    /// A GraphQL default literal is malformed or has the wrong type.
+    SchemaDefaultInvalid,
+    /// A directive definition or application is invalid.
+    SchemaDirectiveArgumentInvalid,
+    /// A schema field was not assigned a projection.
+    SchemaFieldUnmapped,
+    /// A schema argument was not assigned a projection.
+    SchemaArgumentUnmapped,
+    /// An input-object field was not assigned a projection.
+    SchemaInputFieldUnmapped,
+    /// An enum value was not assigned a projection.
+    SchemaEnumValueUnmapped,
+    /// A directive was not assigned an explicit policy.
+    SchemaDirectiveUnmapped,
+    /// An object-handle mapping is invalid.
+    ObjectHandleMappingInvalid,
+    /// A list re-entry type is invalid.
+    ListReentryTypeInvalid,
+    /// An expected-type mapping is invalid.
+    ExpectedTypeInvalid,
+    /// An optional-argument mapping is invalid.
+    OptionArgumentMappingInvalid,
+    /// A projected name no longer matches its wire name.
+    WireNameMismatch,
+    /// Legacy and directive deprecation metadata disagree.
+    DeprecationDirectiveInvalid,
+    /// Experimental directive metadata is invalid.
+    ExperimentalDirectiveInvalid,
+    /// A target-inactive directive changed or became active.
+    TargetInactiveDirectiveChanged,
+    /// A Rust identifier cannot be represented safely.
+    RustNameInvalid,
+    /// Two schema coordinates project to the same Rust identifier.
+    RustNameCollision,
+    /// Generated documentation is invalid.
+    GeneratedDocumentationInvalid,
+    /// Generated provenance is invalid.
+    GeneratedProvenanceInvalid,
+    /// Completeness capability scope changed unexpectedly.
+    CapabilityScopeChanged,
+    /// A capability has no generated binding.
+    CapabilityBindingMissing,
+    /// A capability has more than one generated binding.
+    CapabilityBindingDuplicate,
+    /// A capability implementation fingerprint changed unexpectedly.
+    CapabilityFingerprintMismatch,
+    /// Capability evidence is incomplete.
+    CapabilityEvidenceIncomplete,
+    /// The pinned formatter rejected generated source.
+    GeneratedFormatFailed,
+    /// Checked generated output differs from the candidate.
+    GeneratedOutputDrift,
+    /// Atomic generated-output publication failed.
+    GeneratedPublicationFailed,
+}
+
+impl fmt::Display for DiagnosticCode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let serialized = serde_json::to_string(self).map_err(|_| fmt::Error)?;
+        formatter.write_str(serialized.trim_matches('"'))
+    }
+}
+
+/// A normalized, host-independent location within generator input or output.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct DiagnosticCoordinate(String);
+
+impl DiagnosticCoordinate {
+    /// Creates a coordinate after removing control characters from caller input.
+    #[must_use]
+    pub fn new(value: impl AsRef<str>) -> Self {
+        let normalized = value
+            .as_ref()
+            .chars()
+            .filter(|character| !character.is_control())
+            .collect();
+        Self(normalized)
+    }
+
+    /// Borrows the normalized coordinate.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for DiagnosticCoordinate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Additional coordinate context associated with a diagnostic.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RelatedCoordinate {
+    /// The related normalized coordinate.
+    pub coordinate: DiagnosticCoordinate,
+    /// Why the coordinate is relevant.
+    pub relationship: String,
+}
+
+/// One structured generator diagnostic.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct Diagnostic {
+    /// Stable machine-readable failure code.
+    pub code: DiagnosticCode,
+    /// Primary schema, target, artifact, or capability coordinate.
+    pub coordinate: Option<DiagnosticCoordinate>,
+    /// Caller-actionable explanation without host implementation details.
+    pub message: String,
+    /// Other coordinates needed to understand a conflict.
+    pub related: Vec<RelatedCoordinate>,
+}
+
+impl Diagnostic {
+    /// Creates a diagnostic with no related-coordinate context.
+    #[must_use]
+    pub fn new(
+        code: DiagnosticCode,
+        coordinate: Option<DiagnosticCoordinate>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            coordinate,
+            message: sanitize_message(message.into()),
+            related: Vec::new(),
+        }
+    }
+
+    /// Adds related-coordinate context.
+    #[must_use]
+    pub fn with_related(mut self, related: RelatedCoordinate) -> Self {
+        self.related.push(related);
+        self.related.sort();
+        self.related.dedup();
+        self
+    }
+}
+
+impl fmt::Display for Diagnostic {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.code)?;
+        if let Some(coordinate) = &self.coordinate {
+            write!(formatter, " [{coordinate}]")?;
+        }
+        write!(formatter, ": {}", self.message)
+    }
+}
+
+/// A non-empty, deterministically ordered collection of diagnostics.
+#[derive(Clone, Debug, Eq, PartialEq, Error)]
+#[error("{rendered}")]
+pub struct DiagnosticSet {
+    diagnostics: Vec<Diagnostic>,
+    rendered: String,
+}
+
+impl DiagnosticSet {
+    /// Sorts and de-duplicates a non-empty diagnostic collection.
+    pub fn new(mut diagnostics: Vec<Diagnostic>) -> Option<Self> {
+        diagnostics.sort();
+        diagnostics.dedup();
+        if diagnostics.is_empty() {
+            return None;
+        }
+        let rendered = diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        Some(Self {
+            diagnostics,
+            rendered,
+        })
+    }
+
+    /// Creates a diagnostic set containing exactly one diagnostic.
+    #[must_use]
+    pub fn one(diagnostic: Diagnostic) -> Self {
+        let rendered = diagnostic.to_string();
+        Self {
+            diagnostics: vec![diagnostic],
+            rendered,
+        }
+    }
+
+    /// Borrows diagnostics in stable code/coordinate/message order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Returns whether this set contains a particular stable code.
+    #[must_use]
+    pub fn contains(&self, code: DiagnosticCode) -> bool {
+        self.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code)
+    }
+}
+
+/// A broad compatibility category for the transitional single-file renderer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticKind {
     /// Raw introspection input could not be decoded.
@@ -15,7 +240,7 @@ pub enum DiagnosticKind {
     Render,
 }
 
-/// A caller-actionable code-generation failure.
+/// A compatibility error used only by the transitional renderer.
 #[derive(Debug, Error)]
 #[error("{kind:?}: {message}")]
 pub struct CodegenError {
@@ -24,18 +249,25 @@ pub struct CodegenError {
 }
 
 impl CodegenError {
-    /// Creates a diagnostic with a stable category and human-readable explanation.
+    /// Creates a compatibility diagnostic with a stable category.
     #[must_use]
     pub fn new(kind: DiagnosticKind, message: impl Into<String>) -> Self {
         Self {
             kind,
-            message: message.into(),
+            message: sanitize_message(message.into()),
         }
     }
 
-    /// Returns the stable diagnostic category.
+    /// Returns the broad compatibility category.
     #[must_use]
     pub const fn kind(&self) -> DiagnosticKind {
         self.kind
     }
+}
+
+fn sanitize_message(message: String) -> String {
+    message
+        .chars()
+        .filter(|character| !character.is_control() || *character == '\n')
+        .collect()
 }
