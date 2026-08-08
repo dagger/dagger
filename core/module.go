@@ -669,7 +669,6 @@ func (mod *Module) patchFunctionArg(
 	return updatedFn, !sameAttachedResult(updatedFn, fn), nil
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag *dagql.Server, customizations []*modules.ModuleConfigArgument) error {
 	if len(customizations) == 0 {
 		return nil
@@ -690,129 +689,137 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag 
 				snapshots = append(snapshots, cust.Function)
 			}
 		}
-		for _, snapshot := range snapshots {
-			fresh := mod.customizationTargets(snapshot)
-			if len(fresh) == 0 {
-				continue
-			}
-			target := fresh[0]
-			objDef := target.objDef
-			fn := target.fn
-			constructor := target.constructor
-			if !objDef.Self().AsObject.Valid {
-				continue
-			}
-			updatedFn, changed, err := mod.patchFunctionArg(ctx, dag, fn, cust.Argument, func(arg dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error) {
-				updatedArg := arg
-				argSelf := arg.Self()
-				setOptional := cust.DefaultPath != "" || cust.DefaultAddress != ""
-				if setOptional && !argSelf.TypeDef.Self().Optional {
-					var updatedTypeDef dagql.ObjectResult[*TypeDef]
-					if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
-						Field: "withOptional",
-						Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
-					}); err != nil {
-						return updatedArg, fmt.Errorf("legacy customization arg %q optional type: %w", argSelf.Name, err)
-					}
-					if !sameAttachedResult(updatedTypeDef, argSelf.TypeDef) {
-						typeDefID, err := ResultIDInput(updatedTypeDef)
-						if err != nil {
-							return updatedArg, fmt.Errorf("legacy customization arg %q optional type id: %w", argSelf.Name, err)
-						}
-						if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-							Field: "__withTypeDef",
-							Args:  []dagql.NamedInput{{Name: "typeDef", Value: typeDefID}},
-						}); err != nil {
-							return updatedArg, fmt.Errorf("legacy customization arg %q optional type apply: %w", argSelf.Name, err)
-						}
-					}
-				}
-				if jsonValue, ok := legacyArgDefaultValue(argSelf.TypeDef.Self(), cust.Default); ok {
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withDefaultValue",
-						Args:  []dagql.NamedInput{{Name: "defaultValue", Value: jsonValue}},
-					}); err != nil {
-						return updatedArg, fmt.Errorf("legacy customization arg %q default value: %w", argSelf.Name, err)
-					}
-				}
-				if cust.DefaultPath != "" {
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withDefaultPath",
-						Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String(cust.DefaultPath)}},
-					}); err != nil {
-						return updatedArg, fmt.Errorf("legacy customization arg %q default path: %w", argSelf.Name, err)
-					}
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withDefaultAddress",
-						Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String("")}},
-					}); err != nil {
-						return updatedArg, fmt.Errorf("legacy customization arg %q clear default address: %w", argSelf.Name, err)
-					}
-				}
-				if cust.DefaultAddress != "" {
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withDefaultAddress",
-						Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String(cust.DefaultAddress)}},
-					}); err != nil {
-						return updatedArg, fmt.Errorf("legacy customization arg %q default address: %w", argSelf.Name, err)
-					}
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withDefaultPath",
-						Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String("")}},
-					}); err != nil {
-						return updatedArg, fmt.Errorf("legacy customization arg %q clear default path: %w", argSelf.Name, err)
-					}
-				}
-				if len(cust.Ignore) > 0 {
-					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-						Field: "__withIgnore",
-						Args:  []dagql.NamedInput{{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(cust.Ignore...))}},
-					}); err != nil {
-						return updatedArg, fmt.Errorf("legacy customization arg %q ignore: %w", argSelf.Name, err)
-					}
-				}
-				return updatedArg, nil
-			})
-			if err != nil {
-				return err
-			}
-			if !changed {
-				continue
-			}
-			updatedObjectTypeDef := objDef.Self().AsObject.Value
-			fnID, err := ResultIDInput(updatedFn)
-			if err != nil {
-				return fmt.Errorf("legacy customization function id: %w", err)
-			}
-			if constructor {
-				if err := dag.Select(ctx, updatedObjectTypeDef, &updatedObjectTypeDef, dagql.Selector{
-					Field: "__withConstructor",
-					Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+		if err := mod.applyLegacyCustomizationToTargets(ctx, dag, cust, snapshots); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
+func (mod *Module) applyLegacyCustomizationToTargets(ctx context.Context, dag *dagql.Server, cust *modules.ModuleConfigArgument, snapshots [][]string) error {
+	for _, snapshot := range snapshots {
+		fresh := mod.customizationTargets(snapshot)
+		if len(fresh) == 0 {
+			continue
+		}
+		target := fresh[0]
+		objDef := target.objDef
+		fn := target.fn
+		constructor := target.constructor
+		if !objDef.Self().AsObject.Valid {
+			continue
+		}
+		updatedFn, changed, err := mod.patchFunctionArg(ctx, dag, fn, cust.Argument, func(arg dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error) {
+			updatedArg := arg
+			argSelf := arg.Self()
+			setOptional := cust.DefaultPath != "" || cust.DefaultAddress != ""
+			if setOptional && !argSelf.TypeDef.Self().Optional {
+				var updatedTypeDef dagql.ObjectResult[*TypeDef]
+				if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
+					Field: "withOptional",
+					Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
 				}); err != nil {
-					return fmt.Errorf("legacy customization constructor %v: %w", cust.Function, err)
+					return updatedArg, fmt.Errorf("legacy customization arg %q optional type: %w", argSelf.Name, err)
 				}
-			} else {
-				if err := dag.Select(ctx, updatedObjectTypeDef, &updatedObjectTypeDef, dagql.Selector{
-					Field: "__withFunction",
-					Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
-				}); err != nil {
-					return fmt.Errorf("legacy customization function %v: %w", cust.Function, err)
-				}
-			}
-			objectTypeDefID, err := ResultIDInput(updatedObjectTypeDef)
-			if err != nil {
-				return fmt.Errorf("legacy customization object typedef id: %w", err)
-			}
-			for i, existing := range mod.ObjectDefs {
-				if sameAttachedResult(existing, objDef) {
-					if err := dag.Select(ctx, existing, &mod.ObjectDefs[i], dagql.Selector{
-						Field: "__withObjectTypeDef",
-						Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objectTypeDefID}},
-					}); err != nil {
-						return fmt.Errorf("legacy customization object typedef: %w", err)
+				if !sameAttachedResult(updatedTypeDef, argSelf.TypeDef) {
+					typeDefID, err := ResultIDInput(updatedTypeDef)
+					if err != nil {
+						return updatedArg, fmt.Errorf("legacy customization arg %q optional type id: %w", argSelf.Name, err)
 					}
-					break
+					if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+						Field: "__withTypeDef",
+						Args:  []dagql.NamedInput{{Name: "typeDef", Value: typeDefID}},
+					}); err != nil {
+						return updatedArg, fmt.Errorf("legacy customization arg %q optional type apply: %w", argSelf.Name, err)
+					}
 				}
+			}
+			if jsonValue, ok := legacyArgDefaultValue(argSelf.TypeDef.Self(), cust.Default); ok {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultValue",
+					Args:  []dagql.NamedInput{{Name: "defaultValue", Value: jsonValue}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q default value: %w", argSelf.Name, err)
+				}
+			}
+			if cust.DefaultPath != "" {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultPath",
+					Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String(cust.DefaultPath)}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q default path: %w", argSelf.Name, err)
+				}
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultAddress",
+					Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String("")}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q clear default address: %w", argSelf.Name, err)
+				}
+			}
+			if cust.DefaultAddress != "" {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultAddress",
+					Args:  []dagql.NamedInput{{Name: "defaultAddress", Value: dagql.String(cust.DefaultAddress)}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q default address: %w", argSelf.Name, err)
+				}
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withDefaultPath",
+					Args:  []dagql.NamedInput{{Name: "defaultPath", Value: dagql.String("")}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q clear default path: %w", argSelf.Name, err)
+				}
+			}
+			if len(cust.Ignore) > 0 {
+				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+					Field: "__withIgnore",
+					Args:  []dagql.NamedInput{{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(cust.Ignore...))}},
+				}); err != nil {
+					return updatedArg, fmt.Errorf("legacy customization arg %q ignore: %w", argSelf.Name, err)
+				}
+			}
+			return updatedArg, nil
+		})
+		if err != nil {
+			return err
+		}
+		if !changed {
+			continue
+		}
+		updatedObjectTypeDef := objDef.Self().AsObject.Value
+		fnID, err := ResultIDInput(updatedFn)
+		if err != nil {
+			return fmt.Errorf("legacy customization function id: %w", err)
+		}
+		if constructor {
+			if err := dag.Select(ctx, updatedObjectTypeDef, &updatedObjectTypeDef, dagql.Selector{
+				Field: "__withConstructor",
+				Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			}); err != nil {
+				return fmt.Errorf("legacy customization constructor %v: %w", cust.Function, err)
+			}
+		} else {
+			if err := dag.Select(ctx, updatedObjectTypeDef, &updatedObjectTypeDef, dagql.Selector{
+				Field: "__withFunction",
+				Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+			}); err != nil {
+				return fmt.Errorf("legacy customization function %v: %w", cust.Function, err)
+			}
+		}
+		objectTypeDefID, err := ResultIDInput(updatedObjectTypeDef)
+		if err != nil {
+			return fmt.Errorf("legacy customization object typedef id: %w", err)
+		}
+		for i, existing := range mod.ObjectDefs {
+			if sameAttachedResult(existing, objDef) {
+				if err := dag.Select(ctx, existing, &mod.ObjectDefs[i], dagql.Selector{
+					Field: "__withObjectTypeDef",
+					Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objectTypeDefID}},
+				}); err != nil {
+					return fmt.Errorf("legacy customization object typedef: %w", err)
+				}
+				break
 			}
 		}
 	}
