@@ -1211,8 +1211,25 @@ func (s *workspaceSchema) search(
 ) (dagql.Array[*core.SearchResult], error) {
 	ws := parent.Self()
 
+	// Mounted content lives in the mounts tree, never in the source rootfs or
+	// on the host, and ripgrep hard-errors on path operands that don't exist.
+	// So explicit paths that resolve to mounted content are withheld from the
+	// source-side searches — the mounts-side search below covers them via
+	// post-filter — and when every requested path is mount-covered the source
+	// side is skipped entirely.
+	sourcePaths, searchSource, err := s.searchSourcePaths(ctx, ws, args.Paths)
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+	sourceArgs := args
+	sourceArgs.Paths = sourcePaths
+
 	var results []*core.SearchResult
-	if ws.HostPath() == "" {
+	switch {
+	case !searchSource:
+		// Every requested path is covered by mounts: results come solely from
+		// the mounts tree below.
+	case ws.HostPath() == "":
 		// No host boundary: search the workspace's in-engine root filesystem.
 		// Overlay edits are already visible here: value/git overlays surface
 		// the changeset's after-tree as the source directory.
@@ -1220,13 +1237,12 @@ func (s *workspaceSchema) search(
 		if err != nil {
 			return nil, err
 		}
-		results, err = rootfs.Self().Search(ctx, rootfs, args.SearchOpts, false, args.Paths, args.Globs)
+		results, err = rootfs.Self().Search(ctx, rootfs, sourceArgs.SearchOpts, false, sourceArgs.Paths, sourceArgs.Globs)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
-	} else {
-		var err error
-		results, err = s.searchHost(ctx, ws, args)
+	default:
+		results, err = s.searchHost(ctx, ws, sourceArgs)
 		if err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
@@ -1242,7 +1258,9 @@ func (s *workspaceSchema) search(
 
 	// Mounted content is readable through the normal workspace file tools, so
 	// it is searchable too: the mounts tree's results win at and under mount
-	// points, mirroring resolveReadRootfs's shadowing.
+	// points, mirroring resolveReadRootfs's shadowing, and explicit search
+	// paths under mounts — withheld from the source side above — are honored
+	// here via searchDirectoryTree's post-filter.
 	if mounts, ok := ws.MountsDir(); ok {
 		mountResults, err := searchDirectoryTree(ctx, mounts, args)
 		if err != nil {
@@ -1253,6 +1271,49 @@ func (s *workspaceSchema) search(
 
 	emitSearchResults(ctx, results, args.FilesOnly)
 	return dagql.Array[*core.SearchResult](results), nil
+}
+
+// searchSourcePaths filters explicit search paths down to the operands the
+// source-side search (rootfs or host) can safely receive. Mounted content
+// exists only in the mounts tree, and ripgrep hard-errors on missing path
+// operands, so:
+//
+//   - a path at or under a mount point is always dropped: the mounts-side
+//     search covers it via searchDirectoryTree's post-filter;
+//   - a path that is a strict ancestor of a mount point is dropped when the
+//     source doesn't have it — mounts materialize their own parents, so the
+//     path can exist in the workspace view through the mount alone.
+//
+// Paths uninvolved with mounts pass through untouched, so a genuinely
+// nonexistent path still errors like today. The boolean reports whether the
+// source-side search should run at all: false when the caller scoped the
+// search entirely to mounted content.
+func (s *workspaceSchema) searchSourcePaths(
+	ctx context.Context,
+	ws *core.Workspace,
+	paths []string,
+) ([]string, bool, error) {
+	if len(paths) == 0 {
+		return nil, true, nil
+	}
+	sourcePaths := make([]string, 0, len(paths))
+	for _, p := range paths {
+		scope := cleanSearchScope(p)
+		if ws.MountedPath(scope) {
+			continue
+		}
+		if ws.HasMountsUnder(scope) {
+			exists, err := s.workspaceReadPathExists(ctx, ws, scope)
+			if err != nil {
+				return nil, false, err
+			}
+			if !exists {
+				continue
+			}
+		}
+		sourcePaths = append(sourcePaths, p)
+	}
+	return sourcePaths, len(sourcePaths) > 0, nil
 }
 
 // searchHost runs the search client-side against the workspace's host path
@@ -1389,13 +1450,19 @@ func mergeSearchResults(
 	return merged
 }
 
+// cleanSearchScope normalizes a caller-supplied search path to the
+// workspace-root-relative form used for scope comparisons.
+func cleanSearchScope(scope string) string {
+	return path.Clean(strings.TrimPrefix(filepath.ToSlash(scope), "/"))
+}
+
 // searchPathInScopes reports whether a result path falls under any of the
 // requested search paths (matching a file itself or anything beneath a
 // directory).
 func searchPathInScopes(filePath string, scopes []string) bool {
 	fp := path.Clean(filepath.ToSlash(filePath))
 	for _, scope := range scopes {
-		sc := path.Clean(strings.TrimPrefix(filepath.ToSlash(scope), "/"))
+		sc := cleanSearchScope(scope)
 		if sc == "." || fp == sc || strings.HasPrefix(fp, sc+"/") {
 			return true
 		}
