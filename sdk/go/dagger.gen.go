@@ -418,7 +418,7 @@ func (r *Address) AsNode() Node {
 	}
 }
 
-type Agent struct {
+type AgentMiddleware struct {
 	query *querybuilder.Selection
 
 	description *string
@@ -426,14 +426,14 @@ type Agent struct {
 	name        *string
 }
 
-func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
-	return &Agent{
+func (r *AgentMiddleware) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddleware {
+	return &AgentMiddleware{
 		query: q,
 	}
 }
 
 // The description of the agent
-func (r *Agent) Description(ctx context.Context) (string, error) {
+func (r *AgentMiddleware) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -445,8 +445,8 @@ func (r *Agent) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// A unique identifier for this Agent.
-func (r *Agent) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this AgentMiddleware.
+func (r *AgentMiddleware) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -459,17 +459,17 @@ func (r *Agent) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Agent) XXX_GraphQLType() string {
-	return "Agent"
+func (r *AgentMiddleware) XXX_GraphQLType() string {
+	return "AgentMiddleware"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Agent) XXX_GraphQLIDType() string {
+func (r *AgentMiddleware) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Agent) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *AgentMiddleware) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -477,7 +477,7 @@ func (r *Agent) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *Agent) MarshalJSON() ([]byte, error) {
+func (r *AgentMiddleware) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -486,7 +486,7 @@ func (r *Agent) MarshalJSON() ([]byte, error) {
 }
 
 // Return the fully qualified name of the agent
-func (r *Agent) Name(ctx context.Context) (string, error) {
+func (r *AgentMiddleware) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -499,7 +499,7 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 }
 
 // The original module in which the agent has been defined
-func (r *Agent) OriginalModule() *Module {
+func (r *AgentMiddleware) OriginalModule() *Module {
 	q := r.query.Select("originalModule")
 
 	return &Module{
@@ -508,7 +508,7 @@ func (r *Agent) OriginalModule() *Module {
 }
 
 // The path of the agent within its module
-func (r *Agent) Path(ctx context.Context) ([]string, error) {
+func (r *AgentMiddleware) Path(ctx context.Context) ([]string, error) {
 	q := r.query.Select("path")
 
 	var response []string
@@ -517,34 +517,34 @@ func (r *Agent) Path(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// AsNode returns this Agent as a Node.
+// AsNode returns this AgentMiddleware as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *Agent) AsNode() Node {
+func (r *AgentMiddleware) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
 }
 
-type AgentGroup struct {
+type AgentMiddlewareGroup struct {
 	query *querybuilder.Selection
 
 	id *ID
 }
 
-func (r *AgentGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentGroup {
-	return &AgentGroup{
+func (r *AgentMiddlewareGroup) WithGraphQLQuery(q *querybuilder.Selection) *AgentMiddlewareGroup {
+	return &AgentMiddlewareGroup{
 		query: q,
 	}
 }
 
-// AgentGroupComposeOpts contains options for AgentGroup.Compose
-type AgentGroupComposeOpts struct {
+// AgentMiddlewareGroupComposeOpts contains options for AgentMiddlewareGroup.Compose
+type AgentMiddlewareGroupComposeOpts struct {
 	// The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
 	Base *LLM
 }
 
 // Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
-func (r *AgentGroup) Compose(opts ...AgentGroupComposeOpts) *LLM {
+func (r *AgentMiddlewareGroup) Compose(opts ...AgentMiddlewareGroupComposeOpts) *LLM {
 	q := r.query.Select("compose")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `base` optional argument
@@ -558,8 +558,8 @@ func (r *AgentGroup) Compose(opts ...AgentGroupComposeOpts) *LLM {
 	}
 }
 
-// A unique identifier for this AgentGroup.
-func (r *AgentGroup) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this AgentMiddlewareGroup.
+func (r *AgentMiddlewareGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -572,17 +572,17 @@ func (r *AgentGroup) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *AgentGroup) XXX_GraphQLType() string {
-	return "AgentGroup"
+func (r *AgentMiddlewareGroup) XXX_GraphQLType() string {
+	return "AgentMiddlewareGroup"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *AgentGroup) XXX_GraphQLIDType() string {
+func (r *AgentMiddlewareGroup) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *AgentGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *AgentMiddlewareGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -590,7 +590,7 @@ func (r *AgentGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *AgentGroup) MarshalJSON() ([]byte, error) {
+func (r *AgentMiddlewareGroup) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -599,7 +599,7 @@ func (r *AgentGroup) MarshalJSON() ([]byte, error) {
 }
 
 // Return a list of individual agents and their details
-func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
+func (r *AgentMiddlewareGroup) List(ctx context.Context) ([]AgentMiddleware, error) {
 	q := r.query.Select("list")
 
 	q = q.Select("id")
@@ -608,12 +608,12 @@ func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
 		Id ID
 	}
 
-	convert := func(fields []list) []Agent {
-		out := []Agent{}
+	convert := func(fields []list) []AgentMiddleware {
+		out := []AgentMiddleware{}
 
 		for i := range fields {
-			val := Agent{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Agent")
+			val := AgentMiddleware{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "AgentMiddleware")
 			out = append(out, val)
 		}
 
@@ -631,9 +631,9 @@ func (r *AgentGroup) List(ctx context.Context) ([]Agent, error) {
 	return convert(response), nil
 }
 
-// AsNode returns this AgentGroup as a Node.
+// AsNode returns this AgentMiddlewareGroup as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *AgentGroup) AsNode() Node {
+func (r *AgentMiddlewareGroup) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -15855,7 +15855,7 @@ type WorkspaceAgentsOpts struct {
 }
 
 // Return all agent middlewares from modules loaded in the workspace.
-func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentGroup {
+func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentMiddlewareGroup {
 	q := r.query.Select("agents")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -15864,7 +15864,7 @@ func (r *Workspace) Agents(opts ...WorkspaceAgentsOpts) *AgentGroup {
 		}
 	}
 
-	return &AgentGroup{
+	return &AgentMiddlewareGroup{
 		query: q,
 	}
 }

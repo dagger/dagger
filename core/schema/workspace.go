@@ -3683,10 +3683,10 @@ func (s *workspaceSchema) agents(
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
-) (*core.AgentGroup, error) {
+) (*core.AgentMiddlewareGroup, error) {
 	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
-		return &core.AgentGroup{}, nil
+		return &core.AgentMiddlewareGroup{}, nil
 	}
 
 	include := workspaceIncludePatterns(args.Include)
@@ -3715,9 +3715,9 @@ func (s *workspaceSchema) agents(
 	}
 	mods = mergeOverlayModules(mods, overlayMods)
 
-	var allAgents []*core.Agent
+	var allAgents []*core.AgentMiddleware
 	for _, mod := range mods {
-		agentGroup, err := core.NewAgentGroup(ctx, mod, nil)
+		agentGroup, err := core.NewAgentMiddlewareGroup(ctx, mod, nil)
 		if err != nil {
 			return nil, fmt.Errorf("agents from module %q: %w", mod.Self().Name(), err)
 		}
@@ -3726,8 +3726,8 @@ func (s *workspaceSchema) agents(
 			ctx,
 			agentGroup.Agents,
 			include,
-			func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
-			func(agent *core.Agent) string { return agent.Name() },
+			func(agent *core.AgentMiddleware) *core.ModTreeNode { return agent.Node },
+			func(agent *core.AgentMiddleware) string { return agent.Name() },
 			"agent",
 		)
 		if err != nil {
@@ -3736,7 +3736,7 @@ func (s *workspaceSchema) agents(
 		allAgents = append(allAgents, filtered...)
 	}
 
-	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+	return &core.AgentMiddlewareGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {

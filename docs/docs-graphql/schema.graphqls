@@ -96,11 +96,11 @@ type Address implements Node {
   volume: Volume!
 }
 
-type Agent implements Node {
+type AgentMiddleware implements Node {
   """The description of the agent"""
   description: String!
 
-  """A unique identifier for this Agent."""
+  """A unique identifier for this AgentMiddleware."""
   id: ID!
 
   """Return the fully qualified name of the agent"""
@@ -113,7 +113,7 @@ type Agent implements Node {
   path: [String!]!
 }
 
-type AgentGroup implements Node {
+type AgentMiddlewareGroup implements Node {
   """
   Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
   """
@@ -122,11 +122,11 @@ type AgentGroup implements Node {
     base: ID @expectedType(name: "LLM")
   ): LLM!
 
-  """A unique identifier for this AgentGroup."""
+  """A unique identifier for this AgentMiddlewareGroup."""
   id: ID!
 
   """Return a list of individual agents and their details"""
-  list: [Agent!]!
+  list: [AgentMiddleware!]!
 }
 
 """Key value object that represents a build argument."""
@@ -5561,7 +5561,7 @@ type Workspace implements Node {
   agents(
     """Only include agents matching the specified patterns"""
     include: [String!]
-  ): AgentGroup!
+  ): AgentMiddlewareGroup!
 
   """Return this workspace's pending overlay changes."""
   changes: Changeset!
