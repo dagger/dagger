@@ -154,7 +154,7 @@ type Agent implements Node {
   opens a new one. Never blocks, never drops; concurrent sends queue in
   order.
   """
-  send(message: String!): AgentMessage!
+  send(message: String!): ID! @expectedType(name: "AgentMessage")
 
   """
   Preempt the in-flight step, keeping all completed steps, and pause. To
@@ -499,6 +499,17 @@ core/integration/agent_runtime_test.go), ratified here:
   via a real Select, so the returned handle's ID is an honest, replayable
   chain (`…asAgent!message(id:"…")`) pinned to the generated message ID and
   addressable from any request in the session.
+- **Imperative verbs are ID-returning, sync-style.** `start`, `send`,
+  `interrupt`, `pause`, `resume`, `waitFor`, and `stop` return `ID!` with
+  `@expectedType`, exactly like `Service.start`/`stop` and the `sync`
+  fields. Lazy clients (Dang) force scalar-returning fields at the call
+  site and re-hydrate the ID into an object via the annotation, so the
+  side effect executes exactly once — eliminating the duplicate-send
+  hazard of re-forcing a lazy `DoNotCache` chain. Reads stay
+  object-returning: `asAgent` (pure constructor), `snapshot`,
+  `message(id:)` (pure lookup). For `send` the returned ID is the pinned
+  lookup chain (previous bullet), so re-hydrating it replays the lookup,
+  not the enqueue.
 - **Self-await hazard.** A tool holding its own calling agent's handle (via
   `Agent!` injection) can `send` to it — the message joins the in-flight
   turn as `STEERED` — but awaiting it from inside that same turn's tool call
@@ -537,6 +548,12 @@ What is BUILT (see also §9 for ratified semantics):
   alongside `Services`.
 - **Message identity**: re-exec pinning via `Agent.message(id:)` (§9) —
   handles are honest chains, cancel-and-re-await works across requests.
+- **ID-returning verbs**: the imperative fields (`start`, `send`,
+  `interrupt`, `pause`, `resume`, `waitFor`, `stop`) return `ID!` with
+  `@expectedType`, `Service.start`-style (§9); reads (`asAgent`,
+  `snapshot`, `message(id:)`) stay object-returning. Typed SDKs
+  re-hydrate self-returning verbs natively; `send`'s message ID
+  re-hydrates via `node(id:)` (`dagger.Ref` in the Go SDK).
 - **`Agent!` injection**: `core/agent_context.go` + `core/modfunc.go`
   (`FunctionArg.IsAgentHandle`, distinct from the middleware `IsAgent`
   flag); hidden from tool schemas via `core/llm_object_tools.go`. Works
