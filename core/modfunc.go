@@ -1400,7 +1400,7 @@ func (fn *ModuleFunction) loadLLMArg(ctx context.Context) (dagql.IDType, error) 
 func (fn *ModuleFunction) loadAgentArg(ctx context.Context) (dagql.IDType, error) {
 	boundAgent, ok := AgentFromContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("function requires the calling agent; invoke it from an agent loop (LLM.asAgent) — synchronous loop support is planned")
+		return nil, fmt.Errorf("function requires the calling agent; invoke it from an agent loop (LLM.spawn) — synchronous loop support is planned")
 	}
 	agentID, err := boundAgent.ID()
 	if err != nil {

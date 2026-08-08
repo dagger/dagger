@@ -231,24 +231,20 @@ func (s *LLMSession) Fork() *LLMSession {
 // snapshotting whatever prefix is committed so far.
 const agentInterruptGrace = 15 * time.Second
 
-// currentAgent returns the agent runtime backing prompt turns, packaging the
-// session's LLM as one on first use. The handle is pinned by ID so later
-// verbs re-load a compact reference instead of replaying the whole
-// conversation chain. Each creation gets a unique name: the name is an
-// identity discriminator, so a fresh name guarantees a fresh runtime instance
-// even when the seed conversation's digest collides with an earlier agent's
-// (e.g. two .clear'd sessions), whose runtime may have advanced or been
-// stopped.
+// currentAgent returns the agent runtime backing prompt turns, spawning one
+// from the session's LLM on first use. Spawn mints a unique instance per
+// call — the engine's guarantee that a fresh spawn can never resolve to an
+// earlier agent's runtime (e.g. two .clear'd sessions with identical
+// conversations) — and returns the pinned instance ID, so later verbs
+// re-load a compact reference instead of replaying the whole conversation
+// chain.
 func (s *LLMSession) currentAgent(ctx context.Context) (*dagger.Agent, error) {
 	s.agentL.Lock()
 	defer s.agentL.Unlock()
 	if s.agent != nil {
 		return s.agent, nil
 	}
-	// A compact random suffix keeps the telemetry label readable while still
-	// discriminating instances.
-	name := "interactive-" + uuid.NewString()[:8]
-	agentID, err := s.llm.AsAgent(dagger.LLMAsAgentOpts{Name: name}).ID(ctx)
+	agentID, err := s.llm.Spawn(ctx, dagger.LLMSpawnOpts{Name: "interactive"})
 	if err != nil {
 		return nil, err
 	}
@@ -259,9 +255,9 @@ func (s *LLMSession) currentAgent(ctx context.Context) (*dagger.Agent, error) {
 // dropAgent detaches the session from its agent runtime, stopping it in the
 // background (best-effort; the tombstone stays readable). Called whenever the
 // session's LLM is replaced wholesale -- model change, branch, clear,
-// compact, resume, workspace rebind -- since a different value digest is a
-// different runtime instance by design: the next prompt submit creates a
-// fresh agent from the new value.
+// compact, resume, workspace rebind -- since the old instance's seed no
+// longer matches the session: the next prompt submit spawns a fresh agent
+// from the new value.
 func (s *LLMSession) dropAgent() {
 	s.agentL.Lock()
 	agent := s.agent
@@ -390,7 +386,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 	// Enqueue the prompt on the record. Send executes eagerly (it returns an
 	// ID scalar) and the returned ID is pinned to the replayable
-	// `…asAgent!message(id:…)` chain, so the await below can be canceled
+	// `…agent(id:…)!message(id:…)` chain, so the await below can be canceled
 	// without losing the handle.
 	msgID, err := agent.Send(ctx, input)
 	if err != nil {

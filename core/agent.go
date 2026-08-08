@@ -18,20 +18,30 @@ import (
 // Agent is a conversation loop packaged as an addressable, long-lived entity
 // within the session (hack/designs/async-agents.md §3).
 //
-// Like Service, Agent is a pure, content-addressed dagql value: the seed
-// conversation plus a name. Starting it registers a runtime entry — loop
-// goroutine on a detached context, computed state — in the session's
-// AgentRuntimes table, one running instance per value digest. All runtime
-// state lives in that table, never on the value.
+// An Agent is a spawned instance, not a derivable value: LLM.spawn mints a
+// unique InstanceID per call and pins it into the handle's ID chain (via the
+// pure LLM.agent(id:) lookup — the same re-exec pinning AgentMessage uses),
+// so two spawns of an identical composition are two distinct agents. The
+// value itself stays pure and content-addressed — seed conversation, minted
+// instance ID, display name — and starting it registers a runtime entry
+// (loop goroutine on a detached context, computed state) in the session's
+// AgentRuntimes table, keyed by the value's digest. All runtime state lives
+// in that table, never on the value.
 type Agent struct {
 	// Seed is the conversation the agent's evaluation loop starts from,
 	// including its tools, workspace, and message history.
 	Seed dagql.ObjectResult[*LLM]
 
-	// Name is a display label and identity discriminator — not a
-	// session-wide address. Two otherwise-identical agents with distinct
-	// names are distinct values, and thus distinct running instances (the
-	// fork(label:) role).
+	// InstanceID is the unique identity minted by the spawn that created
+	// this agent. It rides the pinned ID chain, so it participates in the
+	// value's content digest: every spawn yields a fresh runtime registry
+	// key, and a stopped instance's tombstone can never be collided with
+	// by a later spawn of the same composition.
+	InstanceID string
+
+	// Name is a display label — telemetry and error messages — with no
+	// identity role: uniqueness comes from InstanceID, never from the
+	// caller's choice of name.
 	Name string
 }
 
@@ -189,10 +199,14 @@ type agentMessageRecord struct {
 }
 
 // AgentRuntimes manages the lifecycle of agent runtime entries for a single
-// session, following the Services registry model (core/services.go): one
-// running instance per agent value digest, entries persisting as tombstones
-// after their loop ends so state and the last snapshot stay readable for the
-// rest of the session (like ExitedService).
+// session: one entry per spawned agent instance, keyed by the agent value's
+// content digest — which contains the spawn-minted InstanceID, so keys never
+// collide across spawns. Entries persist as tombstones after their loop ends
+// (state and the last snapshot stay readable for the rest of the session,
+// like ExitedService); unlike Services — which free a running entry's key on
+// exit precisely because their keys are reusable composition digests — an
+// agent's key is born unique, so the tombstone can keep the keyed slot
+// harmlessly forever.
 //
 // The registry itself is session-scoped — created alongside Services in the
 // session state (engine/server/session.go) — so keys are just the agent

@@ -9,10 +9,11 @@ import (
 )
 
 // agentSchema installs the Agent type: the async evaluation-loop entity of
-// hack/designs/async-agents.md. The Agent value itself is constructed by
-// LLM.asAgent (core/schema/llm.go); this file installs its lifecycle fields,
-// all of which operate on the session-scoped runtime registry
-// (core.AgentRuntimes) rather than on the value.
+// hack/designs/async-agents.md. Agent instances are minted by LLM.spawn and
+// rehydrated by the pure LLM.agent(id:) lookup (core/schema/llm.go); this
+// file installs the type's lifecycle fields, all of which operate on the
+// session-scoped runtime registry (core.AgentRuntimes) rather than on the
+// value.
 type agentSchema struct{}
 
 var _ SchemaResolvers = &agentSchema{}
@@ -55,7 +56,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 		// the chain is per-session by construction (every Agent descends
 		// from Query.llm's PerSessionInput), so the cached handle can never
 		// leak across sessions. Caching is also what makes send's re-exec
-		// pinning cheap: re-loading a pinned ID replays …asAgent!message(…)
+		// pinning cheap: re-loading a pinned ID replays …agent(id:…)!message(…)
 		// and lands on the same cached instance.
 		dagql.NodeFunc("message", s.message).
 			Doc(`Look up a previously sent message by its message ID, returning its handle.`,
@@ -205,7 +206,7 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 	// trick step() uses to materialize state as selectors): a real Select
 	// through the message lookup field, on the agent receiver instance,
 	// yields an instance whose ID is the honest, replayable chain
-	// `…asAgent!message(id:"…")` — addressable from any request in the
+	// `…agent(id:…)!message(id:"…")` — addressable from any request in the
 	// session. That pinned ID is the result: send is imperative, so like
 	// the other verbs it returns ID! rather than the object, forcing lazy
 	// clients to execute the (unrepeatable) enqueue exactly once and

@@ -10451,6 +10451,7 @@ type LLM struct {
 	provider        *string
 	reasoningEffort *string
 	replay          *ID
+	spawn           *ID
 	sync            *ID
 	tools           *string
 	transcript      *string
@@ -10470,21 +10471,13 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	}
 }
 
-// LLMAsAgentOpts contains options for LLM.AsAgent
-type LLMAsAgentOpts struct {
-	// Display label and identity discriminator for the agent — two otherwise-identical agents with distinct names run as distinct instances. Defaults to a short name derived from the conversation.
-	Name string
-}
-
-// Package the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
-func (r *LLM) AsAgent(opts ...LLMAsAgentOpts) *Agent {
-	q := r.query.Select("asAgent")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `name` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Name) {
-			q = q.Arg("name", opts[i].Name)
-		}
-	}
+// Rehydrate a spawned agent's handle from its instance ID.
+//
+// This is the lookup spawn pins its result's identity through: the returned handle's ID is an honest, replayable chain denoting the one instance the spawn minted. It never creates an instance itself.
+func (r *LLM) Agent(id string, name string) *Agent {
+	q := r.query.Select("agent")
+	q = q.Arg("id", id)
+	q = q.Arg("name", name)
 
 	return &Agent{
 		query: q,
@@ -10749,6 +10742,33 @@ func (r *LLM) Skills(ctx context.Context) ([]LLMSkill, error) {
 	}
 
 	return convert(response), nil
+}
+
+// LLMSpawnOpts contains options for LLM.Spawn
+type LLMSpawnOpts struct {
+	// Display label for the agent — telemetry and error messages; carries no identity. Defaults to a short name derived from the conversation.
+	Name string
+}
+
+// Spawn the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+//
+// Every spawn mints a unique agent instance — two spawns of an identical conversation are two distinct agents, like two calls to a process spawn. The returned ID is pinned to the instance (via the agent lookup field), so re-loading it re-addresses the same agent from any request in the session.
+func (r *LLM) Spawn(ctx context.Context, opts ...LLMSpawnOpts) (ID, error) {
+	if r.spawn != nil {
+		return *r.spawn, nil
+	}
+	q := r.query.Select("spawn")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+	}
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // LLMStepOpts contains options for LLM.Step

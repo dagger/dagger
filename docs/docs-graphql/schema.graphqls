@@ -3812,16 +3812,18 @@ and step the model until it completes its turn.
 """
 type LLM implements Node & Syncer {
   """
-  Package the conversation as an agent: a startable, addressable evaluation loop
-  seeded with this conversation's state, tools, and workspace.
+  Rehydrate a spawned agent's handle from its instance ID.
+
+  This is the lookup spawn pins its result's identity through: the returned
+  handle's ID is an honest, replayable chain denoting the one instance the spawn
+  minted. It never creates an instance itself.
   """
-  asAgent(
-    """
-    Display label and identity discriminator for the agent — two
-    otherwise-identical agents with distinct names run as distinct instances.
-    Defaults to a short name derived from the conversation.
-    """
-    name: String
+  agent(
+    """The agent instance ID, as minted by the spawn that created the agent."""
+    id: String!
+
+    """The agent's display name, as recorded by the spawn."""
+    name: String!
   ): Agent!
 
   """
@@ -3916,6 +3918,23 @@ type LLM implements Node & Syncer {
   discovered in the workspace.
   """
   skills: [LLMSkill!]!
+
+  """
+  Spawn the conversation as an agent: a startable, addressable evaluation loop
+  seeded with this conversation's state, tools, and workspace.
+
+  Every spawn mints a unique agent instance — two spawns of an identical
+  conversation are two distinct agents, like two calls to a process spawn. The
+  returned ID is pinned to the instance (via the agent lookup field), so
+  re-loading it re-addresses the same agent from any request in the session.
+  """
+  spawn(
+    """
+    Display label for the agent — telemetry and error messages; carries no
+    identity. Defaults to a short name derived from the conversation.
+    """
+    name: String
+  ): ID! @expectedType(name: "Agent")
 
   """
   Advance the conversation by a single step: send the queued prompt or tool
