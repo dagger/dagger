@@ -119,6 +119,10 @@ func (s *currentTypeDefsTestServer) Services(context.Context) (*core.Services, e
 
 func (s *currentTypeDefsTestServer) Platform() core.Platform { return s.platform }
 
+func (s *currentTypeDefsTestServer) Agents(context.Context) (*core.AgentRuntimes, error) {
+	return nil, nil
+}
+
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
 
 func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil }

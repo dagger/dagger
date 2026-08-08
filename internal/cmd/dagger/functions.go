@@ -1116,8 +1116,9 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// Remember the composed agent group as the base to reset to on .clear, so
 	// clearing history returns to the initially selected agents rather than a
 	// blank LLM.
-	handler.llmSession.initialLLM = llm
-	if err := handler.llmSession.updateLLM(llm); err != nil {
+	target := handler.llmSession.Target()
+	target.initialLLM = llm
+	if err := target.updateLLM(llm); err != nil {
 		return err
 	}
 
@@ -1125,11 +1126,10 @@ func startInteractivePromptModeWithResume(ctx context.Context, dag *dagger.Clien
 	// as the starting point. With no session id, present the interactive picker.
 	if resume {
 		if sessionID != "" {
-			if err := handler.llmSession.LoadSession(ctx, ctx, sessionID); err != nil {
+			if err := target.LoadSession(ctx, ctx, sessionID); err != nil {
 				return err
 			}
-			handler.initialPrompt = ""
-			handler.sessionUUID = ""
+			handler.resetSaveIdentity()
 		} else if err := handler.resumeSessionInteractive(ctx); err != nil {
 			return err
 		}

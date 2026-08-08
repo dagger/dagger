@@ -1801,11 +1801,31 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 		endRemainingDisplaySpans()
 		return base, nil
 	}
-	if err := srv.Select(ctx, base, &stepped, sels...); err != nil {
-		endRemainingDisplaySpans()
-		return inst, err
+
+	// A canceled tool call still produced protocol-significant history: the
+	// assistant's tool_use above and CallBatch's errored tool_result. Record
+	// those pure selectors on a context detached from cancellation so the next
+	// user prompt sees why the tool ran without sending providers a dangling
+	// tool_use. We still return the cancellation cause below, so the agent loop
+	// commits this state and parks rather than taking another model step.
+	recordCtx := ctx
+	detached := ctx.Err() != nil
+	if detached {
+		recordCtx = context.WithoutCancel(ctx)
+	}
+	err = srv.Select(recordCtx, base, &stepped, sels...)
+	if err != nil && !detached && ctx.Err() != nil {
+		// Cancellation may have raced with the first Select. Its selectors are
+		// immutable history construction, so retrying them is safe.
+		err = srv.Select(context.WithoutCancel(ctx), base, &stepped, sels...)
 	}
 	endRemainingDisplaySpans()
+	if err != nil {
+		return inst, err
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return stepped, cause
+	}
 
 	return stepped, nil
 }

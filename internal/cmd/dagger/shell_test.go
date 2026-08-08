@@ -130,7 +130,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	handler.Handle(ctx, "What do you see in fruit.txt?")
 	sess, err := handler.llm(ctx)
 	require.NoError(t, err)
-	reply, err := sess.llm.LastReply(ctx)
+	reply, err := sess.Target().llm.LastReply(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reply, "potato")
 
@@ -146,7 +146,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt now?")
-	reply, err = sess.llm.LastReply(ctx)
+	reply, err = sess.Target().llm.LastReply(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reply, "potato")
 }
