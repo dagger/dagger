@@ -7,6 +7,11 @@
 #   or a single-comment #discussion_r link — and read the full thread with
 #   its file/line/diff context.
 #
+# - `prComment` leaves feedback on a pull request — on the conversation, or
+#   anchored to a file/line of the diff. Comments are agent-authored by
+#   definition, so the tool enforces a ":robot:" body prefix that tells
+#   readers a machine wrote the comment, not the human operator.
+#
 # - `contribute` dispatches a sub-agent into a DIFFERENT repository and
 #   turns its work into a pull request there. `modules/delegate` spawns a
 #   sub-agent in YOUR workspace; this spawns one in SOMEBODY ELSE'S: it
@@ -248,6 +253,116 @@ type Contributor {
 
     # JSON reads top-down, so head-truncate like a patch.
     head(ran.stdout)
+  }
+
+  """
+  Leave feedback on a GitHub pull request as a comment — on the PR
+  conversation, or anchored to a file (and optionally a line) of the diff.
+
+  Comments posted this way are agent-authored, so `body` MUST start with
+  ":robot:" — the marker that tells readers a machine wrote the comment,
+  not the human operator. Calls without the prefix are rejected.
+  """
+  prComment(
+    """
+    The pull request to comment on: a number like "13831" (resolved against
+    the configured remote) or a URL like
+    "https://github.com/dagger/dagger/pull/13831".
+    """
+    pr: String!,
+    """
+    The comment body (Markdown), starting with ":robot:". Keep it kind,
+    brief, and to-the-point.
+    """
+    body: String!,
+    """
+    File path within the repository to anchor the comment to, as a review
+    comment on that file. Empty posts on the PR conversation instead.
+    """
+    path: String! = "",
+    """
+    Line number to anchor the comment to, in the file's post-PR version.
+    The line must appear in the PR's diff. 0 anchors to the file as a
+    whole. Requires `path`.
+    """
+    line: Int! = 0,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): posting a comment is a side effect, not something to
+    # replay from the session cache.
+    let tok = token
+    if (tok == null) {
+      raise noTokenError
+    }
+    if (!body.trimSpace.hasPrefix(":robot:")) {
+      raise robotPrefixError
+    }
+    if (line != 0 and path == "") {
+      raise "a line anchor needs a file: pass `path` along with `line`"
+    }
+
+    # Same PR-reference forms as reviewComments, minus the discussion links
+    # (replying into a thread is reviewComments territory; this tool opens
+    # new ones).
+    let repo = ""
+    let number = ""
+    let ref = pr.trimPrefix("#")
+    if (ref.containsMatch(`^\d+$`)) {
+      repo = remoteSlug
+      number = ref
+    } else {
+      let m = ref.match(`github\.com/([^/]+)/([^/]+)/pull/(\d+)`)
+      if (m == null) {
+        raise `not a pull request reference: "${pr}" — pass a PR number or a github.com PR URL`
+      }
+      repo = (m.captures[0] ?? "") + "/" + (m.captures[1] ?? "")
+      number = m.captures[2] ?? ""
+    }
+
+    # File-anchored comments go through the review-comments API (which needs
+    # the PR's current head commit); plain feedback is an issue comment on
+    # the PR conversation. The body travels as a file, never spliced into
+    # shell source.
+    let script = """
+      set -eu
+      # Secret commands (e.g. `gh auth token`) commonly emit a trailing
+      # newline; HTTP headers reject it.
+      GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+      export GH_TOKEN
+      if [ -n "$FILE_PATH" ]; then
+        head_sha="$(gh api "repos/$OWNER_REPO/pulls/$PR_NUMBER" --jq .head.sha)"
+        set -- api --method POST "repos/$OWNER_REPO/pulls/$PR_NUMBER/comments" \
+          -F "body=@/tmp/body.md" \
+          -f "commit_id=$head_sha" \
+          -f "path=$FILE_PATH"
+        if [ "$LINE" -gt 0 ]; then
+          set -- "$@" -F "line=$LINE" -f side=RIGHT
+        else
+          set -- "$@" -f subject_type=file
+        fi
+        gh "$@" --jq .html_url
+      else
+        gh api --method POST "repos/$OWNER_REPO/issues/$PR_NUMBER/comments" \
+          -F "body=@/tmp/body.md" --jq .html_url
+      fi
+    """
+
+    let ran = toolbox
+      .withNewFile("/tmp/body.md", body)
+      .withEnvVariable("OWNER_REPO", repo)
+      .withEnvVariable("PR_NUMBER", number)
+      .withEnvVariable("FILE_PATH", path)
+      .withEnvVariable("LINE", toString(line))
+      # posting must actually happen every time, not be served from the
+      # exec cache
+      .withEnvVariable("CONTRIBUTOR_NONCE", Random.string)
+      .withSecretVariable("GH_TOKEN", tok)
+      .withExec(["sh", "-c", script], expect: ReturnType.ANY).{{exitCode, stdout, combinedOutput}}
+
+    if (ran.exitCode != 0) {
+      raise `commenting on ${repo}#${number} failed (exit ${toString(ran.exitCode)}):` + "\n\n" + tail(ran.combinedOutput)
+    }
+
+    `Posted comment: ${ran.stdout.trimSpace}`
   }
 
   """
@@ -583,6 +698,12 @@ type Contributor {
     (Contributions can still be previewed without one via dryRun: true.)
   """
 
+  let robotPrefixError: String! = """
+    Comments posted by this tool are agent-authored and must be marked as
+    such: start the body with ":robot:" so readers can tell the comment was
+    written by a machine, not the human operator.
+  """
+
   let noRemoteError: String! = """
     No GitHub remote is configured, so a bare PR number cannot be resolved.
     Set the repository in dagger.toml (or pass a full PR URL instead):
@@ -610,6 +731,12 @@ type Contributor {
     #discussion_r<id>) narrow the output to just that comment's thread. When
     asked to look at or address review feedback, read the thread first and
     act on what it actually says.
+
+    `prComment` leaves feedback on a pull request: pass the PR and a body,
+    plus optionally a file path (and line within the diff) to anchor it as
+    a review comment. Comments posted this way are agent-authored, so the
+    body must start with ":robot:" — the tool rejects it otherwise. Keep
+    feedback kind, brief, and to-the-point.
 
     The `contribute` tool sends a fresh sub-agent into ANOTHER git repository
     to do a task there, and submits the result as a pull request to that
