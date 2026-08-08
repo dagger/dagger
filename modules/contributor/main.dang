@@ -184,6 +184,73 @@ type Contributor {
   }
 
   """
+  Make an authenticated, read-only GitHub API request (`gh api`) and return
+  the response, optionally filtered through a jq expression.
+
+  Covers everything the REST API exposes: code search
+  ("search/code?q=repo:owner/name+needle"), PR/issue metadata, releases,
+  file listings, and so on. Requests are GET-only — this tool cannot
+  mutate anything on GitHub.
+
+  Raw GitHub payloads are huge; pass `jq` to select just the fields you
+  need (e.g. ".items[].path").
+  """
+  ghApi(
+    """
+    The API path to GET, e.g. "repos/dagger/dagger/releases/latest" or
+    "search/code?q=repo:badlogic/pi-mono+toolSnippets". A leading slash is
+    fine. Placeholders {owner}/{repo} resolve against the configured remote.
+    """
+    path: String!,
+    """
+    jq expression applied to the response (gh's built-in --jq), e.g.
+    ".items[] | {path, repository: .repository.full_name}". Empty returns
+    the raw JSON.
+    """
+    jq: String! = "",
+    """
+    Follow pagination (--paginate) and concatenate all pages. Combine with
+    a jq filter to keep the output manageable.
+    """
+    paginate: Boolean! = false,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): the API is a live read — issues get comments, releases
+    # get published; don't replay stale responses from the session cache.
+    let tok = token
+    if (tok == null) {
+      raise noTokenError
+    }
+
+    let script = """
+      set -eu
+      # Secret commands (e.g. `gh auth token`) commonly emit a trailing
+      # newline; HTTP headers reject it.
+      GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+      export GH_TOKEN
+      set -- api --method GET "${API_PATH#/}"
+      if [ -n "$PAGINATE" ]; then set -- "$@" --paginate; fi
+      if [ -n "$JQ_EXPR" ]; then set -- "$@" --jq "$JQ_EXPR"; fi
+      gh "$@"
+    """
+
+    let ran = toolbox
+      .withEnvVariable("API_PATH", path)
+      .withEnvVariable("JQ_EXPR", jq)
+      .withEnvVariable("PAGINATE", if (paginate) { "1" } else { "" })
+      # live read: never serve API responses from the exec cache
+      .withEnvVariable("CONTRIBUTOR_NONCE", Random.string)
+      .withSecretVariable("GH_TOKEN", tok)
+      .withExec(["sh", "-c", script], expect: ReturnType.ANY).{{exitCode, stdout, combinedOutput}}
+
+    if (ran.exitCode != 0) {
+      raise `GET ${path} failed (exit ${toString(ran.exitCode)}):` + "\n\n" + tail(ran.combinedOutput)
+    }
+
+    # JSON reads top-down, so head-truncate like a patch.
+    head(ran.stdout)
+  }
+
+  """
   Make a change in ANOTHER git repository and submit it as a pull request.
 
   Fetches `repo`, spawns a fresh sub-agent with full editing tools bound to
@@ -527,7 +594,14 @@ type Contributor {
   # Instructions for the PARENT agent holding these tools.
   let systemPrompt: String! = """
     You have GitHub tools: `reviewComments` for reading pull request review
-    feedback, and `contribute` for submitting work to other repositories.
+    feedback, `ghApi` for read-only GitHub API queries, and `contribute` for
+    submitting work to other repositories.
+
+    `ghApi` GETs any GitHub REST API path with authentication — code search
+    ("search/code?q=repo:owner/name+needle"), PR/issue metadata, releases,
+    CI check runs. Reach for it instead of fetching github.com web pages,
+    which render as mostly navigation noise. Always pass a `jq` filter to
+    keep the response small; raw payloads rarely fit in context.
 
     `reviewComments` reads the review comment threads on a pull request —
     each with its file, line, and diff context. Pass a PR number (resolved
