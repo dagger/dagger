@@ -90,17 +90,12 @@ type Staff {
       # isn't installed there).
       .withTools(Dagger.staff, except: orchestrationTools + plumbing)
       # The line home, minted via a real self-call; the boss handle itself
-      # stays out of the tool schema. The nonce uniquifies each spawn's
-      # composition: agent identity is the chain + name, and stop is
-      # terminal per identity — without it, re-spawning a dismissed name
-      # against an unchanged workspace would resolve to the predecessor's
-      # STOPPED tombstone and the opening send would fail.
-      .withTools(
-        Dagger.staff.chiefLine(boss: chief, nonce: Random.string),
-        except: ["boss", "nonce"],
-      )
+      # stays out of the tool schema.
+      .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
       .withSystemPrompt(workerPrompt)
-      .asAgent(name: name)
+      # spawn mints a unique agent instance per call, so a re-hired name can
+      # never collide with a dismissed predecessor's runtime.
+      .spawn(name: name)
     # Fire-and-forget: signal-with-start opens the worker's first turn.
     worker.send(task)
     self.members += [worker]
@@ -260,8 +255,8 @@ type Staff {
   module-call result has the engine identity withTools needs); not part of
   the chief's or the workers' toolset.
   """
-  chiefLine(boss: Agent!, nonce: String!): ChiefLine! {
-    ChiefLine(boss, nonce)
+  chiefLine(boss: Agent!): ChiefLine! {
+    ChiefLine(boss)
   }
 
   # Address a member by name, with a helpful miss.
@@ -346,10 +341,6 @@ type ChiefLine {
   # The chief's live handle; bound with except: ["boss"] so it never shows
   # up as a tool.
   boss: Agent!
-
-  # Per-spawn uniquifier (see spawn); bound with except: ["nonce"], so it
-  # never shows up as a tool either.
-  nonce: String!
 
   """
   Ask your chief a question and wait for the answer.
