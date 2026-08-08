@@ -55,15 +55,18 @@ func newSessionAttachableManager() *sessionAttachableManager {
 
 // Reserve atomically claims the pre-hijack registration slot for clientID. It
 // is deliberately separate from Register so a duplicate can receive a normal
-// machine-readable HTTP 409 before either connection is upgraded.
-func (m *sessionAttachableManager) Reserve(clientID string) error {
+// machine-readable HTTP 409 before either connection is upgraded. Strict
+// reservations also reject an inactive caller that has not finished removal.
+func (m *sessionAttachableManager) Reserve(clientID string, strict bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.reservations[clientID]; ok {
 		return errAttachableConnectionExists
 	}
-	if existing, ok := m.callers[clientID]; ok && existing.active() {
-		return errAttachableConnectionExists
+	if existing, ok := m.callers[clientID]; ok {
+		if strict || existing.active() {
+			return errAttachableConnectionExists
+		}
 	}
 	m.reservations[clientID] = struct{}{}
 	return nil

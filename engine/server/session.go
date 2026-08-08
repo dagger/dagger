@@ -104,6 +104,9 @@ type daggerSession struct {
 
 	attachables *sessionAttachableManager
 
+	sourceClientMu         sync.RWMutex
+	publishedSourceClients map[string]struct{}
+
 	closingCtx       context.Context
 	cancelClosing    context.CancelCauseFunc
 	closeClosingOnce sync.Once
@@ -473,6 +476,22 @@ func (sess *daggerSession) LoadOrStoreTelemetrySeenKey(key string) bool {
 	return seen
 }
 
+func (sess *daggerSession) markSourceClientPublished(clientID string) {
+	sess.sourceClientMu.Lock()
+	if sess.publishedSourceClients == nil {
+		sess.publishedSourceClients = map[string]struct{}{}
+	}
+	sess.publishedSourceClients[clientID] = struct{}{}
+	sess.sourceClientMu.Unlock()
+}
+
+func (sess *daggerSession) sourceClientPublished(clientID string) bool {
+	sess.sourceClientMu.RLock()
+	_, published := sess.publishedSourceClients[clientID]
+	sess.sourceClientMu.RUnlock()
+	return published
+}
+
 func (sess *daggerSession) StoreTelemetrySeenKey(key string) {
 	sess.seenKeys.Store(key, struct{}{})
 }
@@ -575,6 +594,7 @@ func (srv *Server) initializeDaggerSession(
 	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
 	sess.attachables = newSessionAttachableManager()
+	sess.publishedSourceClients = map[string]struct{}{}
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	sess.shutdownCh = make(chan struct{})
@@ -1869,7 +1889,19 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		}()
 	}
 
-	if err := client.daggerSession.attachables.Reserve(client.clientID); err != nil {
+	strictPublication := client.daggerSession.lifetime == sessionLifetimeDetachable && !client.observerClient
+	if strictPublication {
+		if client.daggerSession.sourceClientPublished(client.clientID) {
+			return controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
+				fmt.Errorf("session attachables for client %q already published", client.clientID))
+		}
+		srv.hitSessionHook(sessionTestEvent{
+			Name: sessionHookSourcePublicationRead, SessionID: client.daggerSession.sessionID,
+			ClientID: client.clientID,
+		})
+	}
+
+	if err := client.daggerSession.attachables.Reserve(client.clientID, strictPublication); err != nil {
 		if client.daggerSession.lifetime == sessionLifetimeAttached {
 			return httpErr(fmt.Errorf("session attachables for client %q already exist", client.clientID), http.StatusBadRequest)
 		}
@@ -1877,6 +1909,16 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 			fmt.Errorf("session attachables for client %q already exist", client.clientID))
 	}
 	defer client.daggerSession.attachables.ReleaseReservation(client.clientID)
+	if strictPublication {
+		srv.hitSessionHook(sessionTestEvent{
+			Name: sessionHookSourceReservation, SessionID: client.daggerSession.sessionID,
+			ClientID: client.clientID,
+		})
+		if client.daggerSession.sourceClientPublished(client.clientID) {
+			return controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,
+				fmt.Errorf("session attachables for client %q already published", client.clientID))
+		}
+	}
 
 	// hijack the connection so we can use it for our gRPC client
 	hijacker, ok := w.(http.Hijacker)
@@ -1928,6 +1970,9 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		r.Header.Values(engine.SessionMethodNameMetaKey),
 		sessionAttachableCallbacks{
 			Published: func() {
+				if strictPublication {
+					client.daggerSession.markSourceClientPublished(client.clientID)
+				}
 				if claim == nil {
 					return
 				}

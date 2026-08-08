@@ -8,6 +8,8 @@ const (
 	sessionHookObserverBeforeValidation       = "observer_before_validation"
 	sessionHookObserverAfterValidation        = "observer_after_validation"
 	sessionHookAttachmentPublished            = "attachment_published"
+	sessionHookSourcePublicationRead          = "source_publication_read"
+	sessionHookSourceReservation              = "source_reservation"
 	sessionHookExplicitClose                  = "explicit_close"
 	sessionHookAttachmentDeath                = "attachment_death"
 	sessionHookAttachmentCleared              = "attachment_cleared"
