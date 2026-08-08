@@ -194,6 +194,15 @@ type DB struct {
 	surfacedConversationRoot SpanID
 	surfacedConversationInit bool
 
+	// The agent-scoped conversation gets a memo slot of its own rather than
+	// sharing the one above: both are consulted on the same render (the
+	// roster scopes the live tree while the report stays zoom-scoped), and a
+	// single slot keyed by root would make them evict each other every frame.
+	agentConversation     []*MessageNode
+	agentConversationAt   uint64
+	agentConversationID   string
+	agentConversationInit bool
+
 	surfacedGenerators     []*GeneratorNode
 	surfacedGeneratorsAt   uint64
 	surfacedGeneratorsRoot SpanID
@@ -208,6 +217,14 @@ type DB struct {
 	serviceDisplaysAt   uint64
 	serviceDisplaysRoot SpanID
 	serviceDisplaysInit bool
+
+	// The agent roster is session-wide rather than zoom-relative (see
+	// DB.Agents: an agent born inside a module call is precisely what the
+	// roster exists to surface), so unlike the surfacing memos above it
+	// keys on db.mutations alone.
+	agents     []*AgentNode
+	agentsAt   uint64
+	agentsInit bool
 
 	testIndex *TestIndex
 }

@@ -1,0 +1,7 @@
+{
+  "name": "blocker",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  }
+}

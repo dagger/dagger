@@ -228,7 +228,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				h.llmSession = h.llmSession.Clear()
+				h.llmSession.Target().Clear()
 				return nil
 			},
 		},
@@ -242,11 +242,12 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				compacted, err := h.llmSession.Compact(ctx)
+				target := h.llmSession.Target()
+				compacted, err := target.Compact(ctx)
 				if err != nil {
 					return err
 				}
-				return h.llmSession.updateLLM(compacted)
+				return target.updateLLM(compacted)
 			},
 		},
 		{
@@ -259,8 +260,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				_, err := h.llmSession.History(ctx)
-				return err
+				return h.llmSession.Target().History(ctx)
 			},
 		},
 		{
@@ -277,12 +277,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				newLLM, err := llm.Model(args[0])
-				if err != nil {
+				target := llm.Target()
+				if err := target.Model(args[0]); err != nil {
 					return err
 				}
-				h.llmSession = newLLM
-				h.llmModel = newLLM.model
+				h.noteModel(target.model)
 				return nil
 			},
 		},
@@ -300,12 +299,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				newLLM, err := llm.Effort(args[0])
-				if err != nil {
-					return err
-				}
-				h.llmSession = newLLM
-				return nil
+				return llm.Target().Effort(args[0])
 			},
 		},
 		{
@@ -327,13 +321,12 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 					if replayCtx == nil {
 						replayCtx = ctx
 					}
-					if err := llm.LoadSession(ctx, replayCtx, args[0]); err != nil {
+					if err := llm.Target().LoadSession(ctx, replayCtx, args[0]); err != nil {
 						return err
 					}
 					// Start a fresh save file for subsequent prompts, leaving
 					// the resumed session intact.
-					h.initialPrompt = ""
-					h.sessionUUID = ""
+					h.resetSaveIdentity()
 					return nil
 				}
 				return h.resumeSessionInteractive(ctx)
@@ -399,11 +392,10 @@ func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
 	if replayCtx == nil {
 		replayCtx = ctx
 	}
-	if err := llm.LoadSession(ctx, replayCtx, selected); err != nil {
+	if err := llm.Target().LoadSession(ctx, replayCtx, selected); err != nil {
 		return err
 	}
-	h.initialPrompt = ""
-	h.sessionUUID = ""
+	h.resetSaveIdentity()
 	return nil
 }
 
@@ -442,12 +434,11 @@ func (h *shellCallHandler) selectModelInteractive(ctx context.Context) error {
 		return nil // user aborted
 	}
 
-	newLLM, err := llm.Model(selected)
-	if err != nil {
+	target := llm.Target()
+	if err := target.Model(selected); err != nil {
 		return err
 	}
-	h.llmSession = newLLM
-	h.llmModel = newLLM.model
+	h.noteModel(target.model)
 	return nil
 }
 
@@ -482,12 +473,7 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 		return nil // user aborted
 	}
 
-	newLLM, err := llm.Effort(selected)
-	if err != nil {
-		return err
-	}
-	h.llmSession = newLLM
-	return nil
+	return llm.Target().Effort(selected)
 }
 
 // reasoningEffortOptions builds the option list for the interactive ".effort"
