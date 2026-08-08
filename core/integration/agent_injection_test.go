@@ -78,7 +78,7 @@ func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T
 			{Kind: dagger.LLMContentBlockKindText, Text: pokeReply},
 		}))
 
-	h := &agentHandle{c: c, model: model, name: "poked", ctrID: pokerID}
+	h := &agentHandle{c: c, model: model, name: "poked", toolIDs: []dagger.ID{pokerID}}
 
 	delivery, reply, err := h.sendAndWait(ctx, t, pokePrompt)
 	require.NoError(t, err)

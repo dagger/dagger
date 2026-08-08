@@ -66,9 +66,15 @@ type agentHandle struct {
 	c     *dagger.Client
 	model string
 	name  string
-	// ctrID optionally binds a container's methods as tools
-	// (llm.withTools), for the recordings that contain tool calls.
-	ctrID dagger.ID
+	// toolIDs optionally binds objects' methods as tools (one llm.withTools
+	// per object, in order), for the recordings that contain tool calls.
+	toolIDs []dagger.ID
+	// wsID optionally binds a workspace (llm.withWorkspace) ahead of the
+	// tool bindings, so tools that auto-inject a Workspace! argument resolve
+	// it from the LLM instead of the session's ambient currentWorkspace —
+	// which under the test harness is whatever the session inherited, not
+	// something the test controls.
+	wsID dagger.ID
 }
 
 // run executes a query with the given selection nested under the agent and
@@ -80,19 +86,25 @@ func (h *agentHandle) run(ctx context.Context, t *testctx.T, selection string) (
 		"model": h.model,
 		"name":  h.name,
 	}
-	var query, root string
-	if h.ctrID != "" {
-		vars["ctr"] = string(h.ctrID)
-		query = fmt.Sprintf(`query($model: String!, $name: String!, $ctr: ID!) {
-			llm(model: $model) { withTools(object: $ctr) { asAgent(name: $name) { %s } } }
-		}`, selection)
-		root = "llm.withTools.asAgent"
-	} else {
-		query = fmt.Sprintf(`query($model: String!, $name: String!) {
-			llm(model: $model) { asAgent(name: $name) { %s } }
-		}`, selection)
-		root = "llm.asAgent"
+	decls := []string{"$model: String!", "$name: String!"}
+	inner := fmt.Sprintf(`asAgent(name: $name) { %s }`, selection)
+	path := "asAgent"
+	for i := len(h.toolIDs) - 1; i >= 0; i-- {
+		v := fmt.Sprintf("tool%d", i)
+		inner = fmt.Sprintf(`withTools(object: $%s) { %s }`, v, inner)
+		decls = append(decls, fmt.Sprintf("$%s: ID!", v))
+		vars[v] = string(h.toolIDs[i])
+		path = "withTools." + path
 	}
+	if h.wsID != "" {
+		inner = fmt.Sprintf(`withWorkspace(workspace: $ws) { %s }`, inner)
+		decls = append(decls, "$ws: WorkspaceID!")
+		vars["ws"] = string(h.wsID)
+		path = "withWorkspace." + path
+	}
+	root := "llm." + path
+	query := fmt.Sprintf(`query(%s) { llm(model: $model) { %s } }`,
+		strings.Join(decls, ", "), inner)
 	res := map[string]any{}
 	if err := h.c.Do(ctx,
 		&dagger.Request{Query: query, Variables: vars},
@@ -596,7 +608,7 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, true))
 
-	h := &agentHandle{c: c, model: model, name: "steerable", ctrID: ctrID}
+	h := &agentHandle{c: c, model: model, name: "steerable", toolIDs: []dagger.ID{ctrID}}
 
 	// Open the turn; the await blocks until the whole (steered) turn ends.
 	var goDelivery, goReply string
@@ -647,7 +659,7 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := &agentHandle{c: c, model: model, name: "interruptible", ctrID: ctrID}
+	h := &agentHandle{c: c, model: model, name: "interruptible", toolIDs: []dagger.ID{ctrID}}
 
 	var goDelivery, goReply string
 	eg := errgroup.Group{}
@@ -707,7 +719,7 @@ func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := &agentHandle{c: c, model: model, name: "sharedawait", ctrID: ctrID}
+	h := &agentHandle{c: c, model: model, name: "sharedawait", toolIDs: []dagger.ID{ctrID}}
 
 	msgID, err := h.sendID(ctx, t, slowToolPrompt)
 	require.NoError(t, err)
@@ -733,7 +745,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := &agentHandle{c: c, model: model, name: "readdressable", ctrID: ctrID}
+	h := &agentHandle{c: c, model: model, name: "readdressable", toolIDs: []dagger.ID{ctrID}}
 
 	// Request 1: send returns immediately (it never blocks) with the pinned
 	// message ID — the addressable handle a detached DoNotCache result could
