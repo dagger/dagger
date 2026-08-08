@@ -72,7 +72,9 @@ type Staff {
     Optional model override for the worker; defaults to the session's model.
     """
     model: String = null,
-  ): Staff! {
+  ): Staff! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): composes, starts, and messages a real agent runtime —
+    # side effects that must actually run, never replay from cache.
     if (members.any { m => m.name == name }) {
       raise `staff member "${name}" already exists — dismiss it first or pick another name`
     }
@@ -88,8 +90,15 @@ type Staff {
       # isn't installed there).
       .withTools(Dagger.staff, except: orchestrationTools + plumbing)
       # The line home, minted via a real self-call; the boss handle itself
-      # stays out of the tool schema.
-      .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
+      # stays out of the tool schema. The nonce uniquifies each spawn's
+      # composition: agent identity is the chain + name, and stop is
+      # terminal per identity — without it, re-spawning a dismissed name
+      # against an unchanged workspace would resolve to the predecessor's
+      # STOPPED tombstone and the opening send would fail.
+      .withTools(
+        Dagger.staff.chiefLine(boss: chief, nonce: Random.string),
+        except: ["boss", "nonce"],
+      )
       .withSystemPrompt(workerPrompt)
       .asAgent(name: name)
     # Fire-and-forget: signal-with-start opens the worker's first turn.
@@ -114,7 +123,9 @@ type Staff {
     The message to put on the worker's record.
     """
     message: String!,
-  ): String! {
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): every send must actually enqueue — a cached replay would
+    # silently drop the message and report stale delivery evidence.
     let worker = member(name)
     # Resume-first: un-parks a worker paused by interruptWorker (or retries
     # a failed one); a no-op otherwise — so the send actually drains.
@@ -139,7 +150,9 @@ type Staff {
     The message to put on the worker's record.
     """
     message: String!,
-  ): String! {
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): sends and blocks on live runtime state; a replayed
+    # answer would masquerade as a fresh round-trip.
     let worker = member(name)
     worker.resume
     worker.send(message).await
@@ -149,7 +162,9 @@ type Staff {
   One line per staff member: its name and lifecycle state (IDLE, RUNNING,
   PAUSED, FAILED, STOPPED).
   """
-  status: String! {
+  status: String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): projects live lifecycle state — and with no args, a
+    # cached result would pin this to its first answer forever.
     if (members.isEmpty) {
       "(none)"
     } else {
@@ -171,7 +186,9 @@ type Staff {
     How many entries from the end of the conversation to return.
     """
     last: Int! = 10,
-  ): String! {
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): the snapshot advances as the worker runs; identical
+    # (name, last) args must not replay an old tail.
     let entries: [String!]! = []
     member(name).snapshot.messages.{{role, content.{{kind, text}}}}.each { m =>
       m.content.each { block =>
@@ -199,7 +216,9 @@ type Staff {
     The worker's name.
     """
     name: String!,
-  ): String! {
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): blocks on live runtime state; each collect must wait
+    # for the worker's CURRENT turn, not replay a previous reply.
     member(name).waitFor(state: AgentState.IDLE).snapshot.lastReply
   }
 
@@ -214,7 +233,8 @@ type Staff {
     The worker's name.
     """
     name: String!,
-  ): String! {
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): imperatively mutates runtime state.
     member(name).interrupt
     `${name} interrupted: parked PAUSED with completed steps kept; sendTo or ask resumes it`
   }
@@ -228,7 +248,8 @@ type Staff {
     The worker's name.
     """
     name: String!,
-  ): Staff! {
+  ): Staff! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): stopping the runtime is a side effect that must run.
     member(name).stop
     self.members = members.filter { m => m.name != name }
     self
@@ -239,8 +260,8 @@ type Staff {
   module-call result has the engine identity withTools needs); not part of
   the chief's or the workers' toolset.
   """
-  chiefLine(boss: Agent!): ChiefLine! {
-    ChiefLine(boss)
+  chiefLine(boss: Agent!, nonce: String!): ChiefLine! {
+    ChiefLine(boss, nonce)
   }
 
   # Address a member by name, with a helpful miss.
@@ -326,6 +347,10 @@ type ChiefLine {
   # up as a tool.
   boss: Agent!
 
+  # Per-spawn uniquifier (see spawn); bound with except: ["nonce"], so it
+  # never shows up as a tool either.
+  nonce: String!
+
   """
   Ask your chief a question and wait for the answer.
 
@@ -340,7 +365,9 @@ type ChiefLine {
     The question to put on the chief's record.
     """
     question: String!,
-  ): String! {
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): a worker re-asking the same question must reach the
+    # chief again, not replay the first answer from cache.
     boss.send(question).await
   }
 }
