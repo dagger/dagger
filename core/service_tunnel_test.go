@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/h2c"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +25,9 @@ type fakeTunnelListenerHandle struct {
 	guardEntered chan struct{}
 	guardRelease <-chan struct{}
 	guardOnce    sync.Once
+	waitReturned chan struct{}
+	waitRelease  <-chan struct{}
+	waitOnce     sync.Once
 
 	closeErr   error
 	closeCount int
@@ -69,9 +75,16 @@ func (handle *fakeTunnelListenerHandle) Close() error {
 
 func (handle *fakeTunnelListenerHandle) Wait() error {
 	<-handle.done
+	if handle.waitRelease != nil {
+		<-handle.waitRelease
+	}
 	handle.completionMu.Lock()
-	defer handle.completionMu.Unlock()
-	return handle.result
+	result := handle.result
+	handle.completionMu.Unlock()
+	if handle.waitReturned != nil {
+		handle.waitOnce.Do(func() { close(handle.waitReturned) })
+	}
+	return result
 }
 
 func (handle *fakeTunnelListenerHandle) WithCompletionGuard(commit func() error) (bool, error) {
@@ -369,4 +382,237 @@ func TestTunnelStartupRollbackModes(t *testing.T) {
 	}
 }
 
+type tunnelAssemblyServer struct {
+	*mockServer
+	services *Services
+}
+
+func (server *tunnelAssemblyServer) Services(context.Context) (*Services, error) {
+	return server.services, nil
+}
+
+type tunnelAssemblyFixture struct {
+	ctx                context.Context
+	services           *Services
+	tunnel             *Service
+	tunnelKey          ServiceKey
+	upstream           *RunningService
+	upstreamKey        ServiceKey
+	upstreamWaitExited chan struct{}
+}
+
+func newTunnelAssemblyFixture(
+	t *testing.T,
+	mode string,
+	portCount int,
+	listen tunnelListenHostToContainer,
+) *tunnelAssemblyFixture {
+	t.Helper()
+	services := NewServices()
+	server := &tunnelAssemblyServer{mockServer: &mockServer{}, services: services}
+	query := &Query{Server: server}
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		SessionID:         "assembled-tunnel-" + mode,
+		ClientID:          "assembled-client-" + mode,
+		DetachableSession: mode == "detachable",
+	})
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ctx = ContextWithQuery(ctx, query)
+	dag := newCoreDagqlServerForTest(t, query)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Service]{}))
+	upstreamService := &Service{CustomHostname: "shared-upstream"}
+	upstreamResult, err := dagql.NewObjectResultForCall(upstreamService, dag, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "assembled_tunnel_upstream_" + mode,
+		Type:        dagql.NewResultCallType(upstreamService.Type()),
+	})
+	require.NoError(t, err)
+	upstreamDigest, err := upstreamResult.ContentPreferredDigest(ctx)
+	require.NoError(t, err)
+	upstreamKey := ServiceKey{
+		Digest:    upstreamDigest,
+		SessionID: "assembled-tunnel-" + mode,
+		Kind:      ServiceRuntimeShared,
+	}
+	upstreamWaitExited := make(chan struct{})
+	upstream := &RunningService{
+		Key:  upstreamKey,
+		Host: "shared-upstream",
+		Wait: func(ctx context.Context) error {
+			<-ctx.Done()
+			close(upstreamWaitExited)
+			return context.Cause(ctx)
+		},
+	}
+	services.running[upstreamKey] = upstream
+	services.bindings[upstreamKey] = 1
+
+	ports := make([]PortForward, portCount)
+	for i := range ports {
+		ports[i] = PortForward{Backend: 8000 + i, Protocol: NetworkProtocolTCP}
+	}
+	tunnelDigest := digest.FromString("assembled-tunnel-" + mode)
+	return &tunnelAssemblyFixture{
+		ctx:      ctx,
+		services: services,
+		tunnel: &Service{
+			TunnelUpstream:            upstreamResult,
+			TunnelPorts:               ports,
+			testListenHostToContainer: listen,
+		},
+		tunnelKey: ServiceKey{
+			Digest:    tunnelDigest,
+			SessionID: "assembled-tunnel-" + mode,
+			Kind:      ServiceRuntimeShared,
+		},
+		upstream:           upstream,
+		upstreamKey:        upstreamKey,
+		upstreamWaitExited: upstreamWaitExited,
+	}
+}
+
+func requireTunnelAssemblyClean(t *testing.T, fixture *tunnelAssemblyFixture) {
+	t.Helper()
+	waitCoreTunnelTest(t, fixture.upstreamWaitExited, "assembled upstream monitor exit")
+	fixture.services.l.Lock()
+	defer fixture.services.l.Unlock()
+	require.NotContains(t, fixture.services.starting, fixture.tunnelKey)
+	require.NotContains(t, fixture.services.running, fixture.tunnelKey)
+	require.NotContains(t, fixture.services.bindings, fixture.tunnelKey)
+	require.Same(t, fixture.upstream, fixture.services.running[fixture.upstreamKey])
+	require.Equal(t, 1, fixture.services.bindings[fixture.upstreamKey])
+}
+
+type tunnelAssemblyRef struct {
+	released chan struct{}
+	once     sync.Once
+	count    atomic.Int32
+}
+
+func (*tunnelAssemblyRef) ID() string         { return "assembled-tunnel-ref" }
+func (*tunnelAssemblyRef) SnapshotID() string { return "assembled-tunnel-snapshot" }
+func (*tunnelAssemblyRef) Size(context.Context) (int64, error) {
+	return 0, nil
+}
+func (*tunnelAssemblyRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
+	return nil, nil
+}
+func (ref *tunnelAssemblyRef) Release(context.Context) error {
+	ref.count.Add(1)
+	ref.once.Do(func() { close(ref.released) })
+	return nil
+}
+
+func TestStartTunnelAssembledFailurePoints(t *testing.T) {
+	for _, mode := range []string{"ordinary", "detachable"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Run("first listener setup failure", func(t *testing.T) {
+				listenErr := errors.New("first listener setup failed")
+				var listens atomic.Int32
+				fixture := newTunnelAssemblyFixture(t, mode, 1, func(
+					context.Context, string, string, string,
+				) (*h2c.ListenResponse, tunnelListenerHandle, error) {
+					listens.Add(1)
+					return nil, nil, listenErr
+				})
+
+				_, err := fixture.services.Start(fixture.ctx, fixture.tunnelKey.Digest, fixture.tunnel, false)
+				require.ErrorIs(t, err, listenErr)
+				require.Equal(t, 1, countExactError(err, listenErr))
+				require.Equal(t, int32(1), listens.Load())
+				requireTunnelAssemblyClean(t, fixture)
+			})
+
+			t.Run("later listener setup failure", func(t *testing.T) {
+				first := newFakeTunnelListenerHandle()
+				first.waitReturned = make(chan struct{})
+				listenErr := errors.New("later listener setup failed")
+				var listens atomic.Int32
+				fixture := newTunnelAssemblyFixture(t, mode, 2, func(
+					context.Context, string, string, string,
+				) (*h2c.ListenResponse, tunnelListenerHandle, error) {
+					if listens.Add(1) == 1 {
+						return &h2c.ListenResponse{Addr: "127.0.0.1:31001"}, first, nil
+					}
+					return nil, nil, listenErr
+				})
+
+				_, err := fixture.services.Start(fixture.ctx, fixture.tunnelKey.Digest, fixture.tunnel, false)
+				require.ErrorIs(t, err, listenErr)
+				require.Equal(t, 1, countExactError(err, listenErr))
+				require.Equal(t, int32(2), listens.Load())
+				require.Equal(t, 1, first.closes())
+				waitCoreTunnelTest(t, first.waitReturned, "first assembled listener monitor exit")
+				requireTunnelAssemblyClean(t, fixture)
+			})
+
+			t.Run("completion before publication", func(t *testing.T) {
+				listenerErr := errors.New("listener failed before publication")
+				listener := newFakeTunnelListenerHandle()
+				listener.waitReturned = make(chan struct{})
+				waitRelease := make(chan struct{})
+				listener.waitRelease = waitRelease
+				listener.finish(listenerErr)
+				fixture := newTunnelAssemblyFixture(t, mode, 1, func(
+					context.Context, string, string, string,
+				) (*h2c.ListenResponse, tunnelListenerHandle, error) {
+					return &h2c.ListenResponse{Addr: "127.0.0.1:31002"}, listener, nil
+				})
+
+				_, err := fixture.services.Start(fixture.ctx, fixture.tunnelKey.Digest, fixture.tunnel, false)
+				require.ErrorIs(t, err, listenerErr)
+				require.Equal(t, 1, countExactError(err, listenerErr))
+				require.Equal(t, 1, listener.closes())
+				close(waitRelease)
+				waitCoreTunnelTest(t, listener.waitReturned, "pre-publication listener monitor exit")
+				requireTunnelAssemblyClean(t, fixture)
+			})
+
+			t.Run("completion after publication", func(t *testing.T) {
+				listener := newFakeTunnelListenerHandle()
+				listener.guardEntered = make(chan struct{})
+				guardRelease := make(chan struct{})
+				listener.guardRelease = guardRelease
+				listener.waitReturned = make(chan struct{})
+				fixture := newTunnelAssemblyFixture(t, mode, 1, func(
+					context.Context, string, string, string,
+				) (*h2c.ListenResponse, tunnelListenerHandle, error) {
+					return &h2c.ListenResponse{Addr: "127.0.0.1:31003"}, listener, nil
+				})
+				type startResult struct {
+					running *RunningService
+					err     error
+				}
+				started := make(chan startResult, 1)
+				go func() {
+					running, err := fixture.services.Start(fixture.ctx, fixture.tunnelKey.Digest, fixture.tunnel, false)
+					started <- startResult{running: running, err: err}
+				}()
+				waitCoreTunnelTest(t, listener.guardEntered, "assembled publication guard")
+				close(guardRelease)
+				result := waitCoreTunnelTest(t, started, "assembled tunnel publication")
+				require.NoError(t, result.err)
+				require.NotNil(t, result.running)
+
+				ref := &tunnelAssemblyRef{released: make(chan struct{})}
+				result.running.refsMu.Lock()
+				result.running.refs = append(result.running.refs, ref)
+				result.running.refsMu.Unlock()
+				listenerErr := errors.New("listener failed after publication")
+				listener.finish(listenerErr)
+
+				waitCoreTunnelTest(t, listener.waitReturned, "published listener monitor exit")
+				waitCoreTunnelTest(t, ref.released, "published tunnel tracked resource release")
+				require.ErrorIs(t, result.running.Wait(t.Context()), listenerErr)
+				require.Equal(t, int32(1), ref.count.Load())
+				require.Equal(t, 1, listener.closes())
+				requireTunnelAssemblyClean(t, fixture)
+			})
+		})
+	}
+}
+
 var _ tunnelListenerHandle = (*fakeTunnelListenerHandle)(nil)
+var _ bkcache.Ref = (*tunnelAssemblyRef)(nil)

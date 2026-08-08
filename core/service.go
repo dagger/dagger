@@ -37,6 +37,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
@@ -63,7 +64,8 @@ type Service struct {
 	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream dagql.ObjectResult[*Service]
 	// TunnelPorts configures the port forwarding rules for the tunnel.
-	TunnelPorts []PortForward
+	TunnelPorts               []PortForward
+	testListenHostToContainer tunnelListenHostToContainer
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
@@ -1159,6 +1161,13 @@ type tunnelListenerHandle interface {
 	WithCompletionGuard(func() error) (bool, error)
 }
 
+type tunnelListenHostToContainer func(
+	context.Context,
+	string,
+	string,
+	string,
+) (*h2c.ListenResponse, tunnelListenerHandle, error)
+
 var errTunnelListenerClosed = errors.New("host-to-container listener closed before publication")
 
 type tunnelListenerRegistry struct {
@@ -1323,9 +1332,20 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get engine client: %w", err)
+	listenHostToContainer := svc.testListenHostToContainer
+	if listenHostToContainer == nil {
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get engine client: %w", err)
+		}
+		listenHostToContainer = func(
+			ctx context.Context,
+			hostListenAddr string,
+			proto string,
+			upstream string,
+		) (*h2c.ListenResponse, tunnelListenerHandle, error) {
+			return bk.ListenHostToContainer(ctx, hostListenAddr, proto, upstream)
+		}
 	}
 
 	upstream, err := svcs.StartResult(svcCtx, svc.TunnelUpstream, svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
@@ -1351,7 +1371,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 		} else {
 			frontend = 0 // allow OS to choose
 		}
-		res, listener, err := bk.ListenHostToContainer(
+		res, listener, err := listenHostToContainer(
 			svcCtx,
 			fmt.Sprintf("%s:%d", bindHost, frontend),
 			forward.Protocol.Network(),
