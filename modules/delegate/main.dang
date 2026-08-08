@@ -15,8 +15,8 @@
 # core/llm_object_tools.go), so it has the same tools. It runs to completion via
 # `loop` and we surface its `lastReply`.
 #
-# The sub-agent shares the parent's WORKSPACE, not its session:
-# `source.agents.compose` composes fresh module instances, so none of the
+# The sub-agent shares the parent's WORKSPACE, not its session: composing the
+# workspace's agents builds fresh module instances, so none of the
 # parent's live session state comes along — no running engine-lab engine, no
 # live tui-qa TUI session, no bound-object state (e.g. engine = null). Tools
 # that hold live state start fresh and would have to rebuild.
@@ -73,9 +73,8 @@ type Delegate {
     source: Workspace!,
   ): String! {
     source
-      .agents
+      .agents(exclude: ["delegate"])
       .compose
-      .withTools(Dagger.delegate, except: ["delegate", "delegateEdits"])
       .withSystemPrompt(subAgentPrompt)
       .withPrompt(task)
       .loop
@@ -112,9 +111,8 @@ type Delegate {
     source: Workspace!,
   ): Changeset! {
     let worker = source
-      .agents # TODO: would be nice to just exclude delegate here
+      .agents(exclude: ["delegate"])
       .compose
-      .withTools(Dagger.delegate, except: ["delegate", "delegateEdits"])
       .withSystemPrompt(editorSubAgentPrompt)
       .withPrompt(task)
       .loop

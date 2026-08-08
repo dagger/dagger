@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -219,8 +220,8 @@ func isReferenceSpace(c byte) bool {
 	return false
 }
 
-func (s *LLMSession) hasReference(mount string) bool {
-	for _, r := range s.references {
+func (a *sessionAgent) hasReference(mount string) bool {
+	for _, r := range a.references {
 		if r.mount == mount {
 			return true
 		}
@@ -237,13 +238,13 @@ func (s *LLMSession) hasReference(mount string) bool {
 // and shown in the "References" sidebar, and the prompt is annotated with their
 // workspace locations so the model knows where to read them. Nonexistent paths
 // are left untouched.
-func (s *LLMSession) attachReferences(ctx context.Context, input string) string {
+func (a *sessionAgent) attachReferences(ctx context.Context, input string) string {
 	tokens := parseReferenceTokens(input)
 	if len(tokens) == 0 {
 		return input
 	}
 
-	llm := s.llm
+	llm := a.llm
 	changed := false
 	seen := map[string]bool{}
 	local := map[string]string{}
@@ -261,7 +262,7 @@ func (s *LLMSession) attachReferences(ctx context.Context, input string) string 
 
 		// Already in the workspace: no need to copy it into .refs, just point
 		// the model at it relative to the workspace cwd.
-		if rel, ok := s.workspaceRelativePath(ctx, abs); ok {
+		if rel, ok := a.session.workspaceRelativePath(ctx, abs); ok {
 			local[tok] = rel
 			continue
 		}
@@ -275,24 +276,30 @@ func (s *LLMSession) attachReferences(ctx context.Context, input string) string 
 		info := referenceInfo{original: tok, mount: mount, isDir: fi.IsDir()}
 		mentioned = append(mentioned, info)
 
-		if s.hasReference(mount) {
+		if a.hasReference(mount) {
 			// Already attached earlier this session; just re-mention it.
 			continue
 		}
 		ws := llm.Workspace()
 		if fi.IsDir() {
-			ws = ws.WithMountedDirectory(mount, s.dag.Host().Directory(abs))
+			ws = ws.WithMountedDirectory(mount, a.session.dag.Host().Directory(abs))
 		} else {
-			ws = ws.WithMountedFile(mount, s.dag.Host().File(abs))
+			ws = ws.WithMountedFile(mount, a.session.dag.Host().File(abs))
 		}
 		llm = llm.WithWorkspace(ws)
-		s.references = append(s.references, info)
+		a.references = append(a.references, info)
 		changed = true
 	}
 
 	if changed {
-		s.llm = llm
-		s.updateReferencesPreview()
+		// Mounting references rebinds the workspace: a wholesale change to
+		// the LLM value, so route it through updateLLM -- any live agent
+		// (seeded with the old binding) is dropped, and the submit this call
+		// is part of packages a fresh one from the new value.
+		if err := a.updateLLM(llm); err != nil {
+			slog.Warn("failed to refresh LLM after attaching references", "error", err)
+		}
+		a.updateReferencesPreview()
 	}
 	if len(local) > 0 {
 		input = rewriteReferenceTokens(input, func(tok string) (string, bool) {
@@ -404,15 +411,20 @@ func referenceAnnotation(refs []referenceInfo) string {
 }
 
 // updateReferencesPreview refreshes the "References" sidebar section listing the
-// host paths attached this session. An empty list clears the section.
-func (s *LLMSession) updateReferencesPreview() {
-	if len(s.references) == 0 {
-		s.frontend.SetSidebarContent(idtui.SidebarSection{Title: "References"})
+// host paths attached to this conversation. An empty list clears the section.
+// Like the other conversation-scoped surfaces it follows focus: a background
+// conversation's references are not what the user is typing against.
+func (a *sessionAgent) updateReferencesPreview() {
+	if !a.uiActive() {
 		return
 	}
-	refs := make([]referenceInfo, len(s.references))
-	copy(refs, s.references)
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
+	if len(a.references) == 0 {
+		a.session.frontend.SetSidebarContent(idtui.SidebarSection{Title: "References"})
+		return
+	}
+	refs := make([]referenceInfo, len(a.references))
+	copy(refs, a.references)
+	a.session.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title: "References",
 		ContentFunc: func(width int) string {
 			var buf strings.Builder

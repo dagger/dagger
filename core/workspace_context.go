@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 

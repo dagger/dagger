@@ -512,6 +512,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all agent middlewares from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
+				dagql.Arg("exclude").Doc("Exclude agents matching the specified patterns"),
 			),
 		dagql.NodeFunc("checkpoint", s.checkpoint).
 			View(AfterVersion("v1.0.0-beta.10")).
@@ -5387,14 +5388,16 @@ func (s *workspaceSchema) agents(
 	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Exclude dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
-) (*core.AgentGroup, error) {
+) (*core.AgentMiddlewareGroup, error) {
 	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) && !parent.IsModuleBearingValue() {
 		return &core.AgentGroup{}, nil
 	}
 
 	include := workspaceIncludePatterns(args.Include)
+	exclude := workspaceIncludePatterns(args.Exclude)
 
 	var mods []dagql.ObjectResult[*core.Module]
 	if parent.IsModuleBearingValue() {
@@ -5434,9 +5437,9 @@ func (s *workspaceSchema) agents(
 		mods = mergeOverlayModules(mods, overlayMods)
 	}
 
-	var allAgents []*core.Agent
+	var allAgents []*core.AgentMiddleware
 	for _, mod := range mods {
-		agentGroup, err := core.NewAgentGroup(ctx, mod, nil)
+		agentGroup, err := core.NewAgentMiddlewareGroup(ctx, mod, nil)
 		if err != nil {
 			return nil, fmt.Errorf("agents from module %q: %w", mod.Self().Name(), err)
 		}
@@ -5445,17 +5448,30 @@ func (s *workspaceSchema) agents(
 			ctx,
 			agentGroup.Agents,
 			include,
-			func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
-			func(agent *core.Agent) string { return agent.Name() },
+			func(agent *core.AgentMiddleware) *core.ModTreeNode { return agent.Node },
+			func(agent *core.AgentMiddleware) string { return agent.Name() },
 			"agent",
 		)
 		if err != nil {
 			return nil, err
 		}
+		if len(exclude) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				exclude,
+				func(agent *core.AgentMiddleware) *core.ModTreeNode { return agent.Node },
+				func(agent *core.AgentMiddleware) string { return agent.Name() },
+				"agent",
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 		allAgents = append(allAgents, filtered...)
 	}
 
-	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
+	return &core.AgentMiddlewareGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
 }
 
 // addresses lists module functions loadable as bare "module:function" address

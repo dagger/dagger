@@ -702,6 +702,19 @@ func (arg *FunctionArg) IsLLM() bool {
 	return arg.isCoreObjectType("LLM")
 }
 
+// IsAgentHandle returns true if the argument is of the core Agent type. Such
+// an argument is auto-injected with the CALLING agent when the function is
+// dispatched as a tool from a running agent loop (see [AgentToContext]): the
+// child->parent channel of hack/designs/async-agents.md §3.1, letting a
+// spawned worker's tool message the agent that called it.
+//
+// Named IsAgentHandle rather than IsAgent to avoid confusion with
+// Function.IsAgent, which marks an @agent middleware *function* — an
+// unrelated concept.
+func (arg *FunctionArg) IsAgentHandle() bool {
+	return arg.isCoreObjectType("Agent")
+}
+
 func (arg *FunctionArg) isCoreObjectType(name string) bool {
 	typeDef := arg.TypeDef.Self()
 	if typeDef == nil || typeDef.Kind != TypeDefKindObject || !typeDef.AsObject.Valid {
