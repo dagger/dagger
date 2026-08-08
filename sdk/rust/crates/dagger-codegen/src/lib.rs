@@ -311,11 +311,11 @@ mod tests {
         for expected in [
             "fn sync",
             "-> Result<Container, QueryError>",
-            "select(\"node\")",
-            "inline_fragment(\"Container\")",
+            "crate::query::reenter(&self.session, id, \"Container\")",
             "fn id",
             "-> Result<Id, QueryError>",
             "directory: impl IntoID<Id>",
+            "arg_id_input(\"directory\", IdInput::<Id>::lazy(directory))",
         ] {
             assert!(
                 contains_tokens(&code, expected),

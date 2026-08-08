@@ -15,8 +15,10 @@ use crate::errors::{
     ResponseDecodingErrorKind,
 };
 use crate::graphql::{RawRequest, RawResponse, ResponseData};
+use crate::id_input::ResolveIdInput;
 use crate::lifecycle::SessionHandle;
 use crate::runtime_errors::ExecError;
+use crate::{Id, IdInput, loadable};
 
 type LazyFuture = Pin<Box<dyn Future<Output = Result<String, QueryBuildError>> + Send>>;
 type LazyFunction = dyn Fn() -> LazyFuture + Send + Sync;
@@ -58,11 +60,6 @@ pub(crate) struct Selection {
 }
 
 impl Selection {
-    #[cfg_attr(not(feature = "gen"), allow(dead_code))]
-    pub(crate) fn root(&self) -> Self {
-        Self::default()
-    }
-
     pub(crate) fn select_with_alias(&self, alias: &str, name: &str) -> Self {
         Self {
             name: Some(name.to_owned()),
@@ -93,15 +90,25 @@ impl Selection {
     where
         S: Serialize,
     {
-        let encoded = serde_graphql_input::to_string_pretty(&value).map_err(|error| {
-            QueryBuildError::with_source(QueryBuildErrorKind::ArgumentEncoding, error)
-        });
+        let encoded = encode_argument(&value);
         self.with_argument(name, LazyResolve::from_result(encoded))
     }
 
-    #[cfg_attr(not(feature = "gen"), allow(dead_code))]
-    pub(crate) fn arg_lazy(&self, name: &str, value: Box<LazyFunction>) -> Self {
-        self.with_argument(name, LazyResolve::new(value))
+    pub(crate) fn arg_id_input<T>(&self, name: &str, value: T) -> Self
+    where
+        T: ResolveIdInput,
+    {
+        let value = Arc::new(value);
+        self.with_argument(
+            name,
+            LazyResolve::new(Box::new(move || {
+                let value = Arc::clone(&value);
+                Box::pin(async move {
+                    let resolved = value.resolve().await?;
+                    encode_argument(&resolved)
+                })
+            })),
+        )
     }
 
     fn with_argument(&self, name: &str, value: LazyResolve) -> Self {
@@ -153,7 +160,22 @@ impl Selection {
         self.decode(response)
     }
 
-    fn decode<D>(&self, response: RawResponse) -> Result<D, QueryError>
+    pub(crate) async fn execute_reentry<T, I>(
+        &self,
+        session: &SessionHandle,
+        concrete_type: &'static str,
+    ) -> Result<I::Output, QueryError>
+    where
+        T: loadable::private::Sealed,
+        I: DeserializeOwned + ReentryIds<T>,
+    {
+        // Decode the complete identifier shape before manufacturing any handle. A bad
+        // element therefore cannot leak a partial vector of apparently valid values.
+        let ids: I = self.execute(session).await?;
+        Ok(ids.reenter(session, concrete_type))
+    }
+
+    pub(crate) fn decode<D>(&self, response: RawResponse) -> Result<D, QueryError>
     where
         D: DeserializeOwned,
     {
@@ -187,38 +209,123 @@ impl Selection {
         selections
     }
 
-    fn unpack_value<D>(&self, mut data: Value) -> Result<D, serde_json::Error>
+    pub(crate) fn unpack_value<D>(&self, data: Value) -> Result<D, serde_json::Error>
     where
         D: DeserializeOwned,
     {
-        for selection in self.path() {
-            // Inline fragments affect the document type condition, not the JSON path.
-            if selection.inline_fragment.is_some() {
-                continue;
-            }
-            if let Some(object) = data.as_object() {
-                let key = selection.alias.as_ref().or(selection.name.as_ref());
-                data = key
-                    .and_then(|key| object.get(key))
-                    .cloned()
-                    .unwrap_or(Value::Null);
-            }
-        }
+        let projected = project_selection(data, &self.path())?;
+        serde_json::from_value(projected)
+    }
+}
 
-        if let Value::Array(values) = data {
-            let values = values
-                .into_iter()
-                .map(|value| match value {
-                    Value::Object(object) if object.len() == 1 => object
-                        .into_iter()
-                        .next()
-                        .map_or(Value::Null, |(_, value)| value),
-                    other => other,
-                })
-                .collect();
-            return serde_json::from_value(Value::Array(values));
+fn encode_argument<T>(value: &T) -> Result<String, QueryBuildError>
+where
+    T: Serialize,
+{
+    serde_graphql_input::to_string_pretty(value)
+        .map_err(|error| QueryBuildError::with_source(QueryBuildErrorKind::ArgumentEncoding, error))
+}
+
+fn project_selection(data: Value, path: &[Selection]) -> Result<Value, serde_json::Error> {
+    let Some((selection, remaining)) = path.split_first() else {
+        return Ok(data);
+    };
+
+    // Inline fragments constrain GraphQL execution but do not add a response key.
+    if selection.inline_fragment.is_some() {
+        return project_selection(data, remaining);
+    }
+
+    match data {
+        Value::Array(values) => values
+            .into_iter()
+            .map(|value| project_selection(value, path))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        Value::Object(object) => {
+            let key = selection.alias.as_ref().or(selection.name.as_ref());
+            let value = key
+                .and_then(|key| object.get(key))
+                .cloned()
+                .unwrap_or(Value::Null);
+            project_selection(value, remaining)
         }
-        serde_json::from_value(data)
+        Value::Null => Ok(Value::Null),
+        _ => Err(serde::de::Error::custom(
+            "a selected GraphQL field was not contained in an object",
+        )),
+    }
+}
+
+pub(crate) fn reenter<T>(session: &SessionHandle, id: Id, concrete_type: &'static str) -> T
+where
+    T: loadable::private::Sealed,
+{
+    let selection = query()
+        .select("node")
+        .arg("id", id)
+        .inline_fragment(concrete_type);
+    T::from_query(session.clone(), selection)
+}
+
+pub(crate) fn reenter_lazy<T>(
+    session: &SessionHandle,
+    id: IdInput<T>,
+    concrete_type: &'static str,
+) -> T
+where
+    T: loadable::private::Sealed + 'static,
+{
+    let selection = query()
+        .select("node")
+        .arg_id_input("id", id)
+        .inline_fragment(concrete_type);
+    T::from_query(session.clone(), selection)
+}
+
+pub(crate) trait ReentryIds<T>
+where
+    T: loadable::private::Sealed,
+{
+    type Output;
+
+    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output;
+}
+
+impl<T> ReentryIds<T> for Id
+where
+    T: loadable::private::Sealed,
+{
+    type Output = T;
+
+    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output {
+        reenter(session, self, concrete_type)
+    }
+}
+
+impl<T, I> ReentryIds<T> for Option<I>
+where
+    T: loadable::private::Sealed,
+    I: ReentryIds<T>,
+{
+    type Output = Option<I::Output>;
+
+    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output {
+        self.map(|ids| ids.reenter(session, concrete_type))
+    }
+}
+
+impl<T, I> ReentryIds<T> for Vec<I>
+where
+    T: loadable::private::Sealed,
+    I: ReentryIds<T>,
+{
+    type Output = Vec<I::Output>;
+
+    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output {
+        self.into_iter()
+            .map(|ids| ids.reenter(session, concrete_type))
+            .collect()
     }
 }
 
@@ -301,15 +408,15 @@ impl QueryBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt;
+    use std::{fmt, pin::Pin};
 
-    use futures::future;
     use pretty_assertions::assert_eq;
     use serde::Serialize;
 
     use super::query;
     use crate::errors::{QueryBuildError, QueryBuildErrorKind, QueryError};
     use crate::graphql::{GraphQlError, RawResponse, ResponseData};
+    use crate::{Id, IdInput, IntoID};
 
     #[tokio::test]
     async fn documents_are_immutable_aliased_and_deterministic() {
@@ -379,14 +486,25 @@ mod tests {
 
     #[tokio::test]
     async fn failed_lazy_resolution_is_typed() {
-        let selection = query().select("node").arg_lazy(
-            "id",
-            Box::new(|| {
-                Box::pin(future::ready(Err(QueryBuildError::new(
-                    QueryBuildErrorKind::LazyIdentifier,
-                ))))
-            }),
-        );
+        #[derive(Clone)]
+        struct FailingIdentifier;
+
+        impl IntoID<Id> for FailingIdentifier {
+            fn into_id(
+                self,
+            ) -> Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>>
+            {
+                Box::pin(async {
+                    Err(QueryError::Build(QueryBuildError::new(
+                        QueryBuildErrorKind::LazyIdentifier,
+                    )))
+                })
+            }
+        }
+
+        let selection = query()
+            .select("node")
+            .arg_id_input("id", IdInput::<Id>::lazy(FailingIdentifier));
         let error = selection.build().await.expect_err("resolution must fail");
         assert_eq!(error.kind(), QueryBuildErrorKind::LazyIdentifier);
     }

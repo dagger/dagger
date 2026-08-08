@@ -119,13 +119,13 @@ fn internal_connect_error() -> ConnectError {
 }
 
 #[cfg(feature = "gen")]
-use crate::errors::{QueryBuildError, QueryBuildErrorKind, QueryError};
+use crate::errors::QueryError;
 #[cfg(feature = "gen")]
-use crate::r#gen::{Id, Query};
-#[cfg(feature = "gen")]
-use crate::id::IntoID;
+use crate::r#gen::Query;
 #[cfg(feature = "gen")]
 use crate::loadable::Loadable;
+#[cfg(feature = "gen")]
+use crate::{Id, IdInput};
 
 #[cfg(feature = "gen")]
 impl Query {
@@ -144,61 +144,27 @@ impl Query {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn r#ref<T: Loadable>(&self, id: impl IntoID<Id>) -> T {
-        let selection = self
-            .selection
-            .select("node")
-            .arg_lazy(
-                "id",
-                Box::new(move || {
-                    let id = id.clone();
-                    Box::pin(async move {
-                        id.into_id()
-                            .await
-                            .map(|resolved| format!("\"{}\"", resolved.0))
-                            .map_err(|error| {
-                                QueryBuildError::with_source(
-                                    QueryBuildErrorKind::LazyIdentifier,
-                                    error,
-                                )
-                            })
-                    })
-                }),
-            )
-            .inline_fragment(<T as crate::loadable::private::Sealed>::graphql_type());
-
-        <T as crate::loadable::private::Sealed>::from_query(self.session.clone(), selection)
+    pub fn r#ref<T: Loadable + 'static>(&self, id: impl Into<IdInput<T>>) -> T {
+        let type_name = <T as crate::loadable::private::Sealed>::graphql_type();
+        crate::query::reenter_lazy(&self.session, id.into(), type_name)
     }
 
-    /// Loads a node by ID after verifying that it exists with the expected type.
-    pub async fn load<T: Loadable>(&self, id: impl IntoID<Id>) -> Result<T, QueryError> {
+    /// Loads a compatible node identifier after verifying its existence and type.
+    pub async fn load<T: Loadable + 'static>(
+        &self,
+        id: impl Into<IdInput<T>>,
+    ) -> Result<T, QueryError> {
         let type_name = <T as crate::loadable::private::Sealed>::graphql_type();
         // Asking for an ID through a concrete inline fragment makes a missing or
         // mismatched node fail before constructing the caller's typed handle.
         let check_selection = self
             .selection
             .select("node")
-            .arg_lazy("id", {
-                let id = id.clone();
-                Box::new(move || {
-                    let id = id.clone();
-                    Box::pin(async move {
-                        id.into_id()
-                            .await
-                            .map(|resolved| format!("\"{}\"", resolved.0))
-                            .map_err(|error| {
-                                QueryBuildError::with_source(
-                                    QueryBuildErrorKind::LazyIdentifier,
-                                    error,
-                                )
-                            })
-                    })
-                })
-            })
+            .arg_id_input("id", id.into())
             .inline_fragment(type_name)
             .select("id");
 
-        let _: Id = check_selection.execute(&self.session).await?;
-        Ok(self.r#ref(id))
+        let id: Id = check_selection.execute(&self.session).await?;
+        Ok(crate::query::reenter(&self.session, id, type_name))
     }
 }

@@ -248,22 +248,22 @@
     target coordinate to have one strategy and no Rust source to be rendered from an
     invalid or incomplete plan.
 
-- [ ] 8. Implement handwritten scalar, typed-ID, and handle re-entry support
-  - [ ] 8.1 Add the public scalar newtypes and unit mapping support
+- [x] 8. Implement handwritten scalar, typed-ID, and handle re-entry support
+  - [x] 8.1 Add the public scalar newtypes and unit mapping support
     - Add documented private-storage `Id`, `Json`, and `Platform` newtypes with exact
       transparent serde, owned/string conversions, accessors, display, and value
       semantics; preserve JSON-encoded and platform strings without reinterpretation.
     - Integrate `Id` with the existing identity/Loadable contracts and map successful
       Void execution to `()` while rejecting a represented non-null payload.
     - _Requirements: 3.5, 3.6, 3.7, 3.8, 3.14, 3.15, 6.1, 6.2, 7.14_
-  - [ ] 8.2 Add target-typed replayable `IdInput<T>`
+  - [x] 8.2 Add target-typed replayable `IdInput<T>`
     - Implement the private ready-ID/lazy-resolver representation with cloneable,
       secret-safe `Debug`; accept a raw `Id` for any target without lookup and expose
       generated conversions only for exact objects/interfaces and declared implementors.
     - Resolve each list element once in input order, retain indexed typed failures, and
       complete all required resolutions before the containing document can execute.
     - _Requirements: 6.1-6.7, 6.11, 10.11_
-  - [ ] 8.3 Add one session-preserving identifier re-entry primitive
+  - [x] 8.3 Add one session-preserving identifier re-entry primitive
     - Extend the immutable selection/query support with crate-private typed
       `Query.node(id)` plus exact inline-fragment reconstruction; reuse it for nullable
       probes, object/interface lists, Loadable construction, and expected-type self
@@ -272,28 +272,28 @@
       type Wire_Name, and typed errors without storing a connection/token/process in a
       generated handle.
     - _Requirements: 4.1, 4.7-4.10, 6.2, 6.8-6.12, 10.12_
-  - [ ] 8.4 Property test: Property 9 — lazy handles preserve the originating lease
+  - [x] 8.4 Property test: Property 9 — lazy handles preserve the originating lease
     - Generate at least 256 client/session/selection/field combinations using recording
       executors; assert root and extended handles preserve session identity and perform
       zero I/O until an executing operation is awaited.
     - Test identifier: `property_09_lazy_handles_preserve_originating_lease`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 9: Lazy handles preserve the originating lease`
     - _Requirements: 4.1, 4.7, 6.9_
-  - [ ] 8.5 Property test: Property 10 — nullable handles reflect target presence
+  - [x] 8.5 Property test: Property 10 — nullable handles reflect target presence
     - Generate at least 256 nullable ID-probe responses, selections, and sessions;
       require null to map to `None`, present IDs to correctly rooted same-session
       handles, and invalid responses to typed failures without partial handles.
     - Test identifier: `property_10_nullable_handles_reflect_target_presence`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 10: Nullable handles reflect target presence`
     - _Requirements: 4.8, 4.9_
-  - [ ] 8.6 Property test: Property 11 — object-list re-entry preserves structure
+  - [x] 8.6 Property test: Property 11 — object-list re-entry preserves structure
     - Generate at least 256 ordered ID lists, wrapper plans, concrete types, and session
       identities; compare cardinality/order/selection fragments to a reference re-entry
       model and reject generated schemas without the required ID surface.
     - Test identifier: `property_11_object_list_reentry_preserves_structure`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 11: Object-list re-entry preserves structure`
     - _Requirements: 4.10, 6.9, 6.10, 6.12, 10.12_
-  - [ ] 8.7 Property test: Property 15 — typed ID compatibility is closed and all-or-nothing
+  - [x] 8.7 Property test: Property 15 — typed ID compatibility is closed and all-or-nothing
     - Generate at least 256 object/interface compatibility graphs, raw IDs, handle
       lists, orderings, and resolver failures; compare to a closed reference relation,
       assert zero lookup for raw IDs and zero containing request after any failure, and
@@ -301,7 +301,7 @@
     - Test identifier: `property_15_typed_id_compatibility_closed_all_or_nothing`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 15: Typed ID compatibility is closed and all-or-nothing`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 10.11_
-  - [ ] 8.8 Property test: Property 16 — expected-type self return is type- and selection-safe
+  - [x] 8.8 Property test: Property 16 — expected-type self return is type- and selection-safe
     - Generate at least 256 expected-type applications, parent/interface graphs,
       selections, and invalid targets; require exact same-session parent reconstruction
       and inline fragments for valid cases and `EXPECTED_TYPE_INVALID` otherwise.
@@ -309,15 +309,15 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 16: Expected-type self return is type- and selection-safe`
     - _Requirements: 6.8, 6.9, 6.10, 6.11_
 
-- [ ] 9. Wire generated execution through the existing query runtime
-  - [ ] 9.1 Add reusable wrapper-correct execution helpers
+- [x] 9. Wire generated execution through the existing query runtime
+  - [x] 9.1 Add reusable wrapper-correct execution helpers
     - Extend selection decoding only where required for nullable/list wrapper context,
       enum/custom scalar values, ID probes, and Void; preserve Feature 2/3 error sources
       and request timeout/close fences.
     - Keep non-null object handles lazy, make nullable/list probes perform their one
       documented request, and never return partially decoded values or retry a request.
     - _Requirements: 3.9-3.15, 4.7-4.14, 6.6, 6.7, 10.18_
-  - [ ] 9.2 Preserve argument encoding and failure ordering
+  - [x] 9.2 Preserve argument encoding and failure ordering
     - Route concrete values through the existing encoder and typed IDs through lazy
       arguments; use Wire_Names only, omit only absent options, retain zero-like
       values, and complete document construction before session execution.
@@ -325,7 +325,7 @@
       decoding, argument-encoding, and lazy-identifier failures through representative
       generated-like operations.
     - _Requirements: 4.11-4.14, 5.5-5.15, 6.5-6.7, 10.18_
-  - [ ] 9.3 Property test: Property 12 — executing fields preserve runtime behaviour
+  - [x] 9.3 Property test: Property 12 — executing fields preserve runtime behaviour
     - Generate at least 128 field/output strategies and lifecycle, timeout, transport,
       GraphQL, engine-domain, decode, and cancellation schedules against a recording
       session; compare exact typed results/events to the Feature 2/3 reference path.
@@ -333,7 +333,7 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 12: Executing fields preserve runtime behaviour`
     - _Requirements: 4.11, 4.12, 4.13, 4.14, 10.18_
 
-- [ ] 10. Checkpoint: generated-runtime primitives are green
+- [x] 10. Checkpoint: generated-runtime primitives are green
   - Run formatting, locked SDK/codegen unit and property tests, Properties 9-12/15-16,
     compile-fail ID compatibility tests, rustdoc, clippy, and cargo-deny; require lazy
     paths to remain request-free, executing paths to preserve typed Feature 2/3 errors,

@@ -1,0 +1,21 @@
+error[E0277]: the trait bound `IdInput<dagger_sdk::Directory>: From<Container>` is not satisfied
+ --> tests/ui/fail/incompatible_typed_id.rs:4:36
+  |
+4 |     let _: Directory = query.r#ref(container);
+  |                              ----- ^^^^^^^^^ the trait `From<Container>` is not implemented for `IdInput<dagger_sdk::Directory>`
+  |                              |
+  |                              required by a bound introduced by this call
+  |
+help: the trait `From<Container>` is not implemented for `IdInput<dagger_sdk::Directory>`
+      but trait `From<dagger_sdk::Directory>` is implemented for it
+ --> src/gen.rs
+  |
+  | impl From<Directory> for IdInput<Directory> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `dagger_sdk::Directory`, found `Container`
+  = note: required for `Container` to implement `Into<IdInput<dagger_sdk::Directory>>`
+note: required by a bound in `dagger_sdk::client::<impl Query>::r#ref`
+ --> src/client.rs
+  |
+  |     pub fn r#ref<T: Loadable + 'static>(&self, id: impl Into<IdInput<T>>) -> T {
+  |                                                         ^^^^^^^^^^^^^^^^ required by this bound in `dagger_sdk::client::<impl Query>::r#ref`

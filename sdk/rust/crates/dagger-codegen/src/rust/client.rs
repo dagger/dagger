@@ -85,11 +85,12 @@ impl RustGenerator {
             #![allow(missing_docs)]
             #![allow(unused_mut)]
 
-            use crate::errors::{QueryBuildError, QueryBuildErrorKind, QueryError};
+            use crate::errors::QueryError;
             use crate::id::IntoID;
             use crate::lifecycle::SessionHandle;
             use crate::loadable::private::Sealed;
             use crate::query::Selection;
+            use crate::{Id, IdInput, Json, Platform};
             use derive_builder::Builder;
             use serde::{Deserialize, Serialize};
 
@@ -101,7 +102,15 @@ impl RustGenerator {
         let wire_name = required_name(definition)?;
         if matches!(
             wire_name,
-            "String" | "Float" | "Int" | "Boolean" | "DateTime"
+            "String"
+                | "Float"
+                | "Int"
+                | "Boolean"
+                | "DateTime"
+                | "ID"
+                | "JSON"
+                | "Platform"
+                | "Void"
         ) {
             return Ok(TokenStream::new());
         }
@@ -110,16 +119,6 @@ impl RustGenerator {
         if wire_name.ends_with("ID") && wire_name != "ID" {
             return Ok(quote! { pub type #name = Id; });
         }
-
-        let into_id = (wire_name == "ID").then(|| {
-            quote! {
-                impl IntoID<#name> for #name {
-                    fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<#name, QueryError>> + Send>> {
-                        Box::pin(async move { Ok::<#name, QueryError>(self) })
-                    }
-                }
-            }
-        });
 
         Ok(quote! {
             #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -131,12 +130,6 @@ impl RustGenerator {
 
             impl From<String> for #name {
                 fn from(value: String) -> Self { Self(value) }
-            }
-
-            #into_id
-
-            impl #name {
-                fn quote(&self) -> String { format!(r#"\"{}\""#, self.0.clone()) }
             }
         })
     }
@@ -202,6 +195,10 @@ impl RustGenerator {
                     fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
                         Box::pin(async move { self.id().await })
                     }
+                }
+
+                impl From<#name> for IdInput<#name> {
+                    fn from(value: #name) -> Self { IdInput::lazy(value) }
                 }
             }
         });
@@ -389,6 +386,7 @@ impl RustGenerator {
     ) -> Result<TokenStream, CodegenError> {
         let object_name = type_ident(required_name(object)?);
         let interface_name = type_ident(required_name(interface)?);
+        let interface_client_name = type_ident(&format!("{}Client", required_name(interface)?));
         let methods = interface
             .fields
             .as_deref()
@@ -396,7 +394,17 @@ impl RustGenerator {
             .iter()
             .map(|field| self.render_trait_impl_method(field))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(quote! { impl #interface_name for #object_name { #(#methods)* } })
+        let id_input = has_id_field(object).then(|| {
+            quote! {
+                impl From<#object_name> for IdInput<#interface_client_name> {
+                    fn from(value: #object_name) -> Self { IdInput::lazy(value) }
+                }
+            }
+        });
+        Ok(quote! {
+            impl #interface_name for #object_name { #(#methods)* }
+            #id_input
+        })
     }
 }
 
@@ -440,13 +448,9 @@ fn method_execution(field: &FullTypeField) -> Result<TokenStream, CodegenError> 
             .as_ref()
             .and_then(|value| value.name.as_deref())
             .ok_or_else(|| schema_error("converted ID field is missing its parent"))?;
-        let parent_name = type_ident(parent);
         return Ok(quote! {
             let id: Id = query.execute(&self.session).await?;
-            Ok(#parent_name {
-                session: self.session.clone(),
-                selection: query.root().select("node").arg("id", &id.0).inline_fragment(#parent),
-            })
+            Ok(crate::query::reenter(&self.session, id, #parent))
         });
     }
 
@@ -465,14 +469,7 @@ fn method_execution(field: &FullTypeField) -> Result<TokenStream, CodegenError> 
             .ok_or_else(|| schema_error("object list element is missing its name"))?;
         return Ok(quote! {
             let query = query.select("id");
-            let ids: Vec<Id> = query.execute(&self.session).await?;
-            Ok(ids.into_iter().map(|id| #output {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment(#graphql_name),
-            }).collect())
+            query.execute_reentry::<#output, Vec<Id>>(&self.session, #graphql_name).await
         });
     }
     Ok(quote! { query.execute(&self.session).await })
@@ -510,20 +507,7 @@ fn required_argument_setup(field: &FullTypeField) -> Result<TokenStream, Codegen
             }
             if is_id(&argument.input_value.type_) {
                 return Ok(quote! {
-                    query = query.arg_lazy(
-                        #wire_name,
-                        Box::new(move || {
-                            let #name = #name.clone();
-                            Box::pin(async move {
-                                #name.into_id().await
-                                    .map(|id| id.quote())
-                                    .map_err(|error| QueryBuildError::with_source(
-                                        QueryBuildErrorKind::LazyIdentifier,
-                                        error,
-                                    ))
-                            })
-                        }),
-                    );
+                    query = query.arg_id_input(#wire_name, IdInput::<Id>::lazy(#name));
                 });
             }
             Ok(quote! { query = query.arg(#wire_name, #name); })
@@ -632,6 +616,7 @@ fn rust_type(type_ref: &TypeRef, position: TypePosition) -> Result<TokenStream, 
             Some("String") if position == TypePosition::ImmutableInput => Ok(quote! { &'a str }),
             Some("String") => Ok(quote! { String }),
             Some("Boolean") => Ok(quote! { bool }),
+            Some("Void") if position == TypePosition::Output => Ok(quote! { () }),
             Some(name) => {
                 let name = type_ident(name);
                 Ok(quote! { #name })

@@ -195,7 +195,11 @@ async fn generated_handle_survives_root_and_client_drop_then_cleans_up() {
     drop(client);
 
     assert_eq!(
-        container.id().await.expect("derived handle remains live").0,
+        container
+            .id()
+            .await
+            .expect("derived handle remains live")
+            .into_inner(),
         "ctr-public-fixture"
     );
     assert_eq!(probe.close_calls.load(Ordering::SeqCst), 0);

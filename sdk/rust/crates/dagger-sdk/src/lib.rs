@@ -151,6 +151,7 @@ mod diagnostic;
 mod discovery;
 mod errors;
 mod graphql;
+mod id_input;
 #[allow(dead_code)]
 mod target;
 mod target_generated;
@@ -163,6 +164,7 @@ mod lifecycle;
 mod preflight;
 mod query;
 mod runtime_errors;
+mod scalar;
 mod session;
 mod transport;
 
@@ -194,11 +196,13 @@ pub use errors::{
 pub use graphql::{
     GraphQlError, GraphQlLocation, GraphQlPathSegment, RawRequest, RawResponse, ResponseData,
 };
+pub use id_input::IdInput;
 pub use runtime_errors::{
     CompatibilityError, CompatibilityErrorKind, CompatibilityEvidenceGap, ExecError,
     ProvisioningError, ProvisioningErrorKind, SessionStartupError, SessionStartupErrorKind,
     ShutdownError, ShutdownFailureKind,
 };
+pub use scalar::{Id, Json, Platform};
 
 #[cfg(feature = "gen")]
 #[allow(dead_code)]
@@ -300,6 +304,9 @@ mod source_foundation_tests;
 
 #[cfg(test)]
 mod connector_tests;
+
+#[cfg(test)]
+mod core_codegen_runtime_tests;
 
 #[cfg(test)]
 mod contract_regression_tests;

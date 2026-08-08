@@ -1,90 +1,14 @@
 #![allow(clippy::needless_lifetimes)]
 #![allow(missing_docs)]
 #![allow(unused_mut)]
-
-use crate::errors::{QueryBuildError, QueryBuildErrorKind, QueryError};
+use crate::errors::QueryError;
 use crate::id::IntoID;
 use crate::lifecycle::SessionHandle;
 use crate::loadable::private::Sealed;
 use crate::query::Selection;
+use crate::{Id, IdInput, Json, Platform};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Id(pub String);
-impl From<&str> for Id {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for Id {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<Id> for Id {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
-        Box::pin(async move { Ok::<Id, QueryError>(self) })
-    }
-}
-impl Id {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Json(pub String);
-impl From<&str> for Json {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for Json {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl Json {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Platform(pub String);
-impl From<&str> for Platform {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for Platform {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl Platform {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Void(pub String);
-impl From<&str> for Void {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for Void {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl Void {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
     pub name: String,
@@ -111,8 +35,8 @@ pub struct PortForward {
     pub frontend: isize,
     pub protocol: NetworkProtocol,
 }
-/// An object that can be exported to the host.
-/// Calling export writes the object to a path on the host filesystem and returns the path that was written.
+#[doc = "An object that can be exported to the host."]
+#[doc = "Calling export writes the object to a path on the host filesystem and returns the path that was written."]
 pub trait Exportable {
     fn export(
         &self,
@@ -130,6 +54,11 @@ impl IntoID<Id> for ExportableClient {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<ExportableClient> for IdInput<ExportableClient> {
+    fn from(value: ExportableClient) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl ExportableClient {
@@ -167,7 +96,7 @@ impl Exportable for ExportableClient {
         async move { query.execute(&session).await }
     }
 }
-/// An object with a globally unique ID.
+#[doc = "An object with a globally unique ID."]
 pub trait Node {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send;
 }
@@ -181,6 +110,11 @@ impl IntoID<Id> for NodeClient {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<NodeClient> for IdInput<NodeClient> {
+    fn from(value: NodeClient) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl NodeClient {
@@ -204,8 +138,8 @@ impl Node for NodeClient {
         async move { query.execute(&session).await }
     }
 }
-/// An object that can be force-evaluated.
-/// Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
+#[doc = "An object that can be force-evaluated."]
+#[doc = "Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete."]
 pub trait Syncer {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send;
     fn sync(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send;
@@ -220,6 +154,11 @@ impl IntoID<Id> for SyncerClient {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<SyncerClient> for IdInput<SyncerClient> {
+    fn from(value: SyncerClient) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl SyncerClient {
@@ -286,6 +225,11 @@ impl IntoID<Id> for Address {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Address> for IdInput<Address> {
+    fn from(value: Address) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Address {
     fn graphql_type() -> &'static str {
         "Address"
@@ -295,7 +239,7 @@ impl Sealed for Address {
     }
 }
 impl Address {
-    /// Load a container from the address.
+    #[doc = "Load a container from the address."]
     pub fn container(&self) -> Container {
         let mut query = self.selection.select("container");
         Container {
@@ -303,11 +247,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a directory from the address.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load a directory from the address."]
     pub fn directory(&self) -> Directory {
         let mut query = self.selection.select("directory");
         Directory {
@@ -315,11 +255,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a directory from the address.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load a directory from the address."]
     pub fn directory_opts<'a>(&self, opts: AddressDirectoryOpts<'a>) -> Directory {
         let mut query = self.selection.select("directory");
         if let Some(exclude) = opts.exclude {
@@ -339,11 +275,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a file from the address.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load a file from the address."]
     pub fn file(&self) -> File {
         let mut query = self.selection.select("file");
         File {
@@ -351,11 +283,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a file from the address.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load a file from the address."]
     pub fn file_opts<'a>(&self, opts: AddressFileOpts<'a>) -> File {
         let mut query = self.selection.select("file");
         if let Some(exclude) = opts.exclude {
@@ -375,7 +303,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a git ref (branch, tag or commit) from the address.
+    #[doc = "Load a git ref (branch, tag or commit) from the address."]
     pub fn git_ref(&self) -> GitRef {
         let mut query = self.selection.select("gitRef");
         GitRef {
@@ -383,7 +311,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a git repository from the address.
+    #[doc = "Load a git repository from the address."]
     pub fn git_repository(&self) -> GitRepository {
         let mut query = self.selection.select("gitRepository");
         GitRepository {
@@ -391,12 +319,12 @@ impl Address {
             selection: query,
         }
     }
-    /// A unique identifier for this Address.
+    #[doc = "A unique identifier for this Address."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Load a secret from the address.
+    #[doc = "Load a secret from the address."]
     pub fn secret(&self) -> Secret {
         let mut query = self.selection.select("secret");
         Secret {
@@ -404,7 +332,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a service from the address.
+    #[doc = "Load a service from the address."]
     pub fn service(&self) -> Service {
         let mut query = self.selection.select("service");
         Service {
@@ -412,7 +340,7 @@ impl Address {
             selection: query,
         }
     }
-    /// Load a local socket from the address.
+    #[doc = "Load a local socket from the address."]
     pub fn socket(&self) -> Socket {
         let mut query = self.selection.select("socket");
         Socket {
@@ -420,12 +348,12 @@ impl Address {
             selection: query,
         }
     }
-    /// The address value
+    #[doc = "The address value"]
     pub async fn value(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("value");
         query.execute(&self.session).await
     }
-    /// Load a volume from the address.
+    #[doc = "Load a volume from the address."]
     pub fn volume(&self) -> Volume {
         let mut query = self.selection.select("volume");
         Volume {
@@ -441,6 +369,11 @@ impl Node for Address {
         async move { query.execute(&session).await }
     }
 }
+impl From<Address> for IdInput<NodeClient> {
+    fn from(value: Address) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct CacheVolume {
     pub(crate) session: SessionHandle,
@@ -453,6 +386,11 @@ impl IntoID<Id> for CacheVolume {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<CacheVolume> for IdInput<CacheVolume> {
+    fn from(value: CacheVolume) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for CacheVolume {
     fn graphql_type() -> &'static str {
         "CacheVolume"
@@ -462,7 +400,7 @@ impl Sealed for CacheVolume {
     }
 }
 impl CacheVolume {
-    /// A unique identifier for this CacheVolume.
+    #[doc = "A unique identifier for this CacheVolume."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -475,6 +413,11 @@ impl Node for CacheVolume {
         async move { query.execute(&session).await }
     }
 }
+impl From<CacheVolume> for IdInput<NodeClient> {
+    fn from(value: CacheVolume) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Changeset {
     pub(crate) session: SessionHandle,
@@ -482,13 +425,13 @@ pub struct Changeset {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ChangesetWithChangesetOpts {
-    /// What to do on a merge conflict
+    #[doc = "What to do on a merge conflict"]
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetMergeConflict>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ChangesetWithChangesetsOpts {
-    /// What to do on a merge conflict
+    #[doc = "What to do on a merge conflict"]
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetsMergeConflict>,
 }
@@ -497,6 +440,11 @@ impl IntoID<Id> for Changeset {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Changeset> for IdInput<Changeset> {
+    fn from(value: Changeset) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Changeset {
@@ -508,12 +456,12 @@ impl Sealed for Changeset {
     }
 }
 impl Changeset {
-    /// Files and directories that were added in the newer directory.
+    #[doc = "Files and directories that were added in the newer directory."]
     pub async fn added_paths(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("addedPaths");
         query.execute(&self.session).await
     }
-    /// The newer/upper snapshot.
+    #[doc = "The newer/upper snapshot."]
     pub fn after(&self) -> Directory {
         let mut query = self.selection.select("after");
         Directory {
@@ -521,7 +469,7 @@ impl Changeset {
             selection: query,
         }
     }
-    /// Return a Git-compatible patch of the changes
+    #[doc = "Return a Git-compatible patch of the changes"]
     pub fn as_patch(&self) -> File {
         let mut query = self.selection.select("asPatch");
         File {
@@ -529,7 +477,7 @@ impl Changeset {
             selection: query,
         }
     }
-    /// The older/lower snapshot to compare against.
+    #[doc = "The older/lower snapshot to compare against."]
     pub fn before(&self) -> Directory {
         let mut query = self.selection.select("before");
         Directory {
@@ -537,43 +485,33 @@ impl Changeset {
             selection: query,
         }
     }
-    /// Structured per-path diff statistics (kind and line counts) for this changeset.
+    #[doc = "Structured per-path diff statistics (kind and line counts) for this changeset."]
     pub async fn diff_stats(&self) -> Result<Vec<DiffStat>, QueryError> {
         let mut query = self.selection.select("diffStats");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| DiffStat {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("DiffStat"),
-            })
-            .collect())
+        query
+            .execute_reentry::<DiffStat, Vec<Id>>(&self.session, "DiffStat")
+            .await
     }
-    /// Applies the diff represented by this changeset to a path on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the copied directory (e.g., "logs/").
+    #[doc = "Applies the diff represented by this changeset to a path on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the copied directory (e.g., \"logs/\")."]
     pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Changeset.
+    #[doc = "A unique identifier for this Changeset."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Returns true if the changeset is empty (i.e. there are no changes).
+    #[doc = "Returns true if the changeset is empty (i.e. there are no changes)."]
     pub async fn is_empty(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("isEmpty");
         query.execute(&self.session).await
     }
-    /// Return a snapshot containing only the created and modified files
+    #[doc = "Return a snapshot containing only the created and modified files"]
     pub fn layer(&self) -> Directory {
         let mut query = self.selection.select("layer");
         Directory {
@@ -581,86 +519,45 @@ impl Changeset {
             selection: query,
         }
     }
-    /// Files and directories that existed before and were updated in the newer directory.
+    #[doc = "Files and directories that existed before and were updated in the newer directory."]
     pub async fn modified_paths(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("modifiedPaths");
         query.execute(&self.session).await
     }
-    /// Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+    #[doc = "Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included."]
     pub async fn removed_paths(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("removedPaths");
         query.execute(&self.session).await
     }
-    /// Force evaluation in the engine.
+    #[doc = "Force evaluation in the engine."]
     pub async fn sync(&self) -> Result<Changeset, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Changeset {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Changeset"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Changeset"))
     }
-    /// Add changes to an existing changeset
-    /// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - Changes to merge into the actual changeset
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Add changes to an existing changeset"]
+    #[doc = "By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument"]
+    #[doc = "# Arguments"]
+    #[doc = "* `changes` - Changes to merge into the actual changeset"]
     pub fn with_changeset(&self, changes: impl IntoID<Id>) -> Changeset {
         let mut query = self.selection.select("withChangeset");
-        query = query.arg_lazy(
-            "changes",
-            Box::new(move || {
-                let changes = changes.clone();
-                Box::pin(async move {
-                    changes
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("changes", IdInput::<Id>::lazy(changes));
         Changeset {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Add changes to an existing changeset
-    /// By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - Changes to merge into the actual changeset
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Add changes to an existing changeset"]
+    #[doc = "By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument"]
+    #[doc = "# Arguments"]
+    #[doc = "* `changes` - Changes to merge into the actual changeset"]
     pub fn with_changeset_opts(
         &self,
         changes: impl IntoID<Id>,
         opts: ChangesetWithChangesetOpts,
     ) -> Changeset {
         let mut query = self.selection.select("withChangeset");
-        query = query.arg_lazy(
-            "changes",
-            Box::new(move || {
-                let changes = changes.clone();
-                Box::pin(async move {
-                    changes
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("changes", IdInput::<Id>::lazy(changes));
         if let Some(on_conflict) = opts.on_conflict {
             query = query.arg("onConflict", on_conflict);
         }
@@ -669,14 +566,11 @@ impl Changeset {
             selection: query,
         }
     }
-    /// Add changes from multiple changesets using git octopus merge strategy
-    /// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
-    /// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - List of changesets to merge into the actual changeset
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Add changes from multiple changesets using git octopus merge strategy"]
+    #[doc = "This is more efficient than chaining multiple withChangeset calls when merging many changesets."]
+    #[doc = "Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs)."]
+    #[doc = "# Arguments"]
+    #[doc = "* `changes` - List of changesets to merge into the actual changeset"]
     pub fn with_changesets(&self, changes: Vec<Id>) -> Changeset {
         let mut query = self.selection.select("withChangesets");
         query = query.arg("changes", changes);
@@ -685,14 +579,11 @@ impl Changeset {
             selection: query,
         }
     }
-    /// Add changes from multiple changesets using git octopus merge strategy
-    /// This is more efficient than chaining multiple withChangeset calls when merging many changesets.
-    /// Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - List of changesets to merge into the actual changeset
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Add changes from multiple changesets using git octopus merge strategy"]
+    #[doc = "This is more efficient than chaining multiple withChangeset calls when merging many changesets."]
+    #[doc = "Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs)."]
+    #[doc = "# Arguments"]
+    #[doc = "* `changes` - List of changesets to merge into the actual changeset"]
     pub fn with_changesets_opts(
         &self,
         changes: Vec<Id>,
@@ -725,11 +616,21 @@ impl Exportable for Changeset {
         async move { query.execute(&session).await }
     }
 }
+impl From<Changeset> for IdInput<ExportableClient> {
+    fn from(value: Changeset) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Node for Changeset {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Changeset> for IdInput<NodeClient> {
+    fn from(value: Changeset) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Syncer for Changeset {
@@ -744,6 +645,11 @@ impl Syncer for Changeset {
         async move { query.execute(&session).await }
     }
 }
+impl From<Changeset> for IdInput<SyncerClient> {
+    fn from(value: Changeset) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Check {
     pub(crate) session: SessionHandle,
@@ -756,6 +662,11 @@ impl IntoID<Id> for Check {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Check> for IdInput<Check> {
+    fn from(value: Check) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Check {
     fn graphql_type() -> &'static str {
         "Check"
@@ -765,22 +676,22 @@ impl Sealed for Check {
     }
 }
 impl Check {
-    /// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+    #[doc = "The type of check: 'check' for annotated checks, 'generate' for generate-as-checks"]
     pub async fn check_type(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("checkType");
         query.execute(&self.session).await
     }
-    /// Whether the check completed
+    #[doc = "Whether the check completed"]
     pub async fn completed(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("completed");
         query.execute(&self.session).await
     }
-    /// The description of the check
+    #[doc = "The description of the check"]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// If the check failed, this is the error
+    #[doc = "If the check failed, this is the error"]
     pub fn error(&self) -> Error {
         let mut query = self.selection.select("error");
         Error {
@@ -788,17 +699,17 @@ impl Check {
             selection: query,
         }
     }
-    /// A unique identifier for this Check.
+    #[doc = "A unique identifier for this Check."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Return the fully qualified name of the check
+    #[doc = "Return the fully qualified name of the check"]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The original module in which the check has been defined
+    #[doc = "The original module in which the check has been defined"]
     pub fn original_module(&self) -> Module {
         let mut query = self.selection.select("originalModule");
         Module {
@@ -806,22 +717,22 @@ impl Check {
             selection: query,
         }
     }
-    /// Whether the check passed
+    #[doc = "Whether the check passed"]
     pub async fn passed(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("passed");
         query.execute(&self.session).await
     }
-    /// The path of the check within its module
+    #[doc = "The path of the check within its module"]
     pub async fn path(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("path");
         query.execute(&self.session).await
     }
-    /// An emoji representing the result of the check
+    #[doc = "An emoji representing the result of the check"]
     pub async fn result_emoji(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("resultEmoji");
         query.execute(&self.session).await
     }
-    /// Execute the check
+    #[doc = "Execute the check"]
     pub fn run(&self) -> Check {
         let mut query = self.selection.select("run");
         Check {
@@ -837,6 +748,11 @@ impl Node for Check {
         async move { query.execute(&session).await }
     }
 }
+impl From<Check> for IdInput<NodeClient> {
+    fn from(value: Check) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct CheckGroup {
     pub(crate) session: SessionHandle,
@@ -844,7 +760,7 @@ pub struct CheckGroup {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct CheckGroupRunOpts {
-    /// If true, stop running checks as soon as any check fails.
+    #[doc = "If true, stop running checks as soon as any check fails."]
     #[builder(setter(into, strip_option), default)]
     pub fail_fast: Option<bool>,
 }
@@ -853,6 +769,11 @@ impl IntoID<Id> for CheckGroup {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<CheckGroup> for IdInput<CheckGroup> {
+    fn from(value: CheckGroup) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for CheckGroup {
@@ -864,28 +785,20 @@ impl Sealed for CheckGroup {
     }
 }
 impl CheckGroup {
-    /// A unique identifier for this CheckGroup.
+    #[doc = "A unique identifier for this CheckGroup."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Return a list of individual checks and their details
+    #[doc = "Return a list of individual checks and their details"]
     pub async fn list(&self) -> Result<Vec<Check>, QueryError> {
         let mut query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Check {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Check"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Check, Vec<Id>>(&self.session, "Check")
+            .await
     }
-    /// Generate a markdown report
+    #[doc = "Generate a markdown report"]
     pub fn report(&self) -> File {
         let mut query = self.selection.select("report");
         File {
@@ -893,11 +806,7 @@ impl CheckGroup {
             selection: query,
         }
     }
-    /// Execute all selected checks
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Execute all selected checks"]
     pub fn run(&self) -> CheckGroup {
         let mut query = self.selection.select("run");
         CheckGroup {
@@ -905,11 +814,7 @@ impl CheckGroup {
             selection: query,
         }
     }
-    /// Execute all selected checks
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Execute all selected checks"]
     pub fn run_opts(&self, opts: CheckGroupRunOpts) -> CheckGroup {
         let mut query = self.selection.select("run");
         if let Some(fail_fast) = opts.fail_fast {
@@ -928,6 +833,11 @@ impl Node for CheckGroup {
         async move { query.execute(&session).await }
     }
 }
+impl From<CheckGroup> for IdInput<NodeClient> {
+    fn from(value: CheckGroup) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct ClientFilesyncMirror {
     pub(crate) session: SessionHandle,
@@ -940,6 +850,11 @@ impl IntoID<Id> for ClientFilesyncMirror {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<ClientFilesyncMirror> for IdInput<ClientFilesyncMirror> {
+    fn from(value: ClientFilesyncMirror) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for ClientFilesyncMirror {
     fn graphql_type() -> &'static str {
         "ClientFilesyncMirror"
@@ -949,7 +864,7 @@ impl Sealed for ClientFilesyncMirror {
     }
 }
 impl ClientFilesyncMirror {
-    /// A unique identifier for this ClientFilesyncMirror.
+    #[doc = "A unique identifier for this ClientFilesyncMirror."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -960,6 +875,11 @@ impl Node for ClientFilesyncMirror {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<ClientFilesyncMirror> for IdInput<NodeClient> {
+    fn from(value: ClientFilesyncMirror) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -974,6 +894,11 @@ impl IntoID<Id> for Cloud {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Cloud> for IdInput<Cloud> {
+    fn from(value: Cloud) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Cloud {
     fn graphql_type() -> &'static str {
         "Cloud"
@@ -983,12 +908,12 @@ impl Sealed for Cloud {
     }
 }
 impl Cloud {
-    /// A unique identifier for this Cloud.
+    #[doc = "A unique identifier for this Cloud."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The trace URL for the current session
+    #[doc = "The trace URL for the current session"]
     pub async fn trace_url(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("traceURL");
         query.execute(&self.session).await
@@ -1001,6 +926,11 @@ impl Node for Cloud {
         async move { query.execute(&session).await }
     }
 }
+impl From<Cloud> for IdInput<NodeClient> {
+    fn from(value: Cloud) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Container {
     pub(crate) session: SessionHandle,
@@ -1008,242 +938,242 @@ pub struct Container {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerAsServiceOpts<'a> {
-    /// Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-    /// If empty, the container's default command is used.
+    #[doc = "Command to run instead of the container's default command (e.g., [\"go\", \"run\", \"main.go\"])."]
+    #[doc = "If empty, the container's default command is used."]
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
-    /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the args according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
+    #[doc = "Provides Dagger access to the executed command."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
-    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[doc = "Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
-    /// If set, skip the automatic init process injected into containers by default.
-    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    #[doc = "If set, skip the automatic init process injected into containers by default."]
+    #[doc = "This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior."]
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// If the container has an entrypoint, prepend it to the args.
+    #[doc = "If the container has an entrypoint, prepend it to the args."]
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerAsTarballOpts {
-    /// Force each layer of the image to use the specified compression algorithm.
-    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[doc = "Force each layer of the image to use the specified compression algorithm."]
+    #[doc = "If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip."]
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
-    /// Use the specified media types for the image's layers.
-    /// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+    #[doc = "Use the specified media types for the image's layers."]
+    #[doc = "Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support."]
     #[builder(setter(into, strip_option), default)]
     pub media_types: Option<ImageMediaTypes>,
-    /// Identifiers for other platform specific containers.
-    /// Used for multi-platform images.
+    #[doc = "Identifiers for other platform specific containers."]
+    #[doc = "Used for multi-platform images."]
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerDirectoryOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExistsOpts {
-    /// If specified, do not follow symlinks.
+    #[doc = "If specified, do not follow symlinks."]
     #[builder(setter(into, strip_option), default)]
     pub do_not_follow_symlinks: Option<bool>,
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[doc = "If specified, also validate the type of file (e.g. \"REGULAR_TYPE\", \"DIRECTORY_TYPE\", or \"SYMLINK_TYPE\")."]
     #[builder(setter(into, strip_option), default)]
     pub expected_type: Option<ExistsType>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Force each layer of the exported image to use the specified compression algorithm.
-    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[doc = "Force each layer of the exported image to use the specified compression algorithm."]
+    #[doc = "If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip."]
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
-    /// Use the specified media types for the exported image's layers.
-    /// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+    #[doc = "Use the specified media types for the exported image's layers."]
+    #[doc = "Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support."]
     #[builder(setter(into, strip_option), default)]
     pub media_types: Option<ImageMediaTypes>,
-    /// Identifiers for other platform specific containers.
-    /// Used for multi-platform image.
+    #[doc = "Identifiers for other platform specific containers."]
+    #[doc = "Used for multi-platform image."]
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportImageOpts {
-    /// Force each layer of the exported image to use the specified compression algorithm.
-    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[doc = "Force each layer of the exported image to use the specified compression algorithm."]
+    #[doc = "If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip."]
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
-    /// Use the specified media types for the exported image's layers.
-    /// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+    #[doc = "Use the specified media types for the exported image's layers."]
+    #[doc = "Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support."]
     #[builder(setter(into, strip_option), default)]
     pub media_types: Option<ImageMediaTypes>,
-    /// Identifiers for other platform specific containers.
-    /// Used for multi-platform image.
+    #[doc = "Identifiers for other platform specific containers."]
+    #[doc = "Used for multi-platform image."]
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFromOpts {
-    /// Allow HTTPS registry communication without verifying the server certificate.
+    #[doc = "Allow HTTPS registry communication without verifying the server certificate."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_tls_verify: Option<bool>,
-    /// Protocol to use for registry communication.
-    /// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+    #[doc = "Protocol to use for registry communication."]
+    #[doc = "Defaults to \"HTTPS\". Use \"HTTP\" only for plain HTTP registries."]
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<RegistryProtocol>,
-    /// Service to use as the registry endpoint for the image address.
-    /// The service will be started only for this pull.
+    #[doc = "Service to use as the registry endpoint for the image address."]
+    #[doc = "The service will be started only for this pull."]
     #[builder(setter(into, strip_option), default)]
     pub registry_service: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerImportOpts<'a> {
-    /// Identifies the tag to import from the archive, if the archive bundles multiple tags.
+    #[doc = "Identifies the tag to import from the archive, if the archive bundles multiple tags."]
     #[builder(setter(into, strip_option), default)]
     pub tag: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerLayerOpts {
-    /// Force each layer of the image to use the specified compression algorithm.
-    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[doc = "Force each layer of the image to use the specified compression algorithm."]
+    #[doc = "If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip."]
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
-    /// Media types to use for image layers. Defaults to OCI.
+    #[doc = "Media types to use for image layers. Defaults to OCI."]
     #[builder(setter(into, strip_option), default)]
     pub media_types: Option<ImageMediaTypes>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerManifestOpts {
-    /// Force each layer of the image to use the specified compression algorithm.
-    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[doc = "Force each layer of the image to use the specified compression algorithm."]
+    #[doc = "If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip."]
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
-    /// Media types to use for image layers. Defaults to OCI.
+    #[doc = "Media types to use for image layers. Defaults to OCI."]
     #[builder(setter(into, strip_option), default)]
     pub media_types: Option<ImageMediaTypes>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
-    /// Force each layer of the published image to use the specified compression algorithm.
-    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[doc = "Force each layer of the published image to use the specified compression algorithm."]
+    #[doc = "If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip."]
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
-    /// Allow HTTPS registry communication without verifying the server certificate.
+    #[doc = "Allow HTTPS registry communication without verifying the server certificate."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_tls_verify: Option<bool>,
-    /// Use the specified media types for the published image's layers.
-    /// Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
+    #[doc = "Use the specified media types for the published image's layers."]
+    #[doc = "Defaults to \"OCI\", which is compatible with most recent registries, but \"Docker\" may be needed for older registries without OCI support."]
     #[builder(setter(into, strip_option), default)]
     pub media_types: Option<ImageMediaTypes>,
-    /// Identifiers for other platform specific containers.
-    /// Used for multi-platform image.
+    #[doc = "Identifiers for other platform specific containers."]
+    #[doc = "Used for multi-platform image."]
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
-    /// Protocol to use for registry communication.
-    /// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+    #[doc = "Protocol to use for registry communication."]
+    #[doc = "Defaults to \"HTTPS\". Use \"HTTP\" only for plain HTTP registries."]
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<RegistryProtocol>,
-    /// Service to use as the registry endpoint for the image address.
-    /// The service will be started only for this push.
+    #[doc = "Service to use as the registry endpoint for the image address."]
+    #[doc = "The service will be started only for this push."]
     #[builder(setter(into, strip_option), default)]
     pub registry_service: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerStatOpts {
-    /// If specified, do not follow symlinks.
+    #[doc = "If specified, do not follow symlinks."]
     #[builder(setter(into, strip_option), default)]
     pub do_not_follow_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerTerminalOpts<'a> {
-    /// If set, override the container's default terminal command and invoke these command arguments instead.
+    #[doc = "If set, override the container's default terminal command and invoke these command arguments instead."]
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
-    /// Provides Dagger access to the executed command.
+    #[doc = "Provides Dagger access to the executed command."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
-    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[doc = "Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerUpOpts<'a> {
-    /// Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-    /// If empty, the container's default command is used.
+    #[doc = "Command to run instead of the container's default command (e.g., [\"go\", \"run\", \"main.go\"])."]
+    #[doc = "If empty, the container's default command is used."]
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
-    /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the args according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Provides Dagger access to the executed command.
+    #[doc = "Provides Dagger access to the executed command."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
-    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[doc = "Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
-    /// If set, skip the automatic init process injected into containers by default.
-    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    #[doc = "If set, skip the automatic init process injected into containers by default."]
+    #[doc = "This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior."]
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// List of frontend/backend port mappings to forward.
-    /// Frontend is the port accepting traffic on the host, backend is the service port.
+    #[doc = "List of frontend/backend port mappings to forward."]
+    #[doc = "Frontend is the port accepting traffic on the host, backend is the service port."]
     #[builder(setter(into, strip_option), default)]
     pub ports: Option<Vec<PortForward>>,
-    /// Bind each tunnel port to a random port on the host.
+    #[doc = "Bind each tunnel port to a random port on the host."]
     #[builder(setter(into, strip_option), default)]
     pub random: Option<bool>,
-    /// If the container has an entrypoint, prepend it to the args.
+    #[doc = "If the container has an entrypoint, prepend it to the args."]
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
-    /// Provides Dagger access to the executed command.
+    #[doc = "Provides Dagger access to the executed command."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
-    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[doc = "Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
-    /// Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
+    #[doc = "Patterns to exclude in the written directory (e.g. [\"node_modules/**\", \".gitignore\", \".git/\"])."]
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Apply .gitignore rules when writing the directory.
+    #[doc = "Apply .gitignore rules when writing the directory."]
     #[builder(setter(into, strip_option), default)]
     pub gitignore: Option<bool>,
-    /// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
+    #[doc = "Patterns to include in the written directory (e.g. [\"*.go\", \"go.mod\", \"go.sum\"])."]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user:group to set for the directory and its contents.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the directory and its contents."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
     #[builder(setter(into, strip_option), default)]
@@ -1251,288 +1181,288 @@ pub struct ContainerWithDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDockerHealthcheckOpts<'a> {
-    /// Interval between running healthcheck. Example: "30s"
+    #[doc = "Interval between running healthcheck. Example: \"30s\""]
     #[builder(setter(into, strip_option), default)]
     pub interval: Option<&'a str>,
-    /// The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+    #[doc = "The maximum number of consecutive failures before the container is marked as unhealthy. Example: \"3\""]
     #[builder(setter(into, strip_option), default)]
     pub retries: Option<isize>,
-    /// When true, command must be a single element, which is run using the container's shell
+    #[doc = "When true, command must be a single element, which is run using the container's shell"]
     #[builder(setter(into, strip_option), default)]
     pub shell: Option<bool>,
-    /// StartInterval configures the duration between checks during the startup phase. Example: "5s"
+    #[doc = "StartInterval configures the duration between checks during the startup phase. Example: \"5s\""]
     #[builder(setter(into, strip_option), default)]
     pub start_interval: Option<&'a str>,
-    /// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+    #[doc = "StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: \"0s\""]
     #[builder(setter(into, strip_option), default)]
     pub start_period: Option<&'a str>,
-    /// Healthcheck timeout. Example: "3s"
+    #[doc = "Healthcheck timeout. Example: \"3s\""]
     #[builder(setter(into, strip_option), default)]
     pub timeout: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEntrypointOpts {
-    /// Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
+    #[doc = "Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled."]
     #[builder(setter(into, strip_option), default)]
     pub keep_default_args: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEnvVariableOpts {
-    /// Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value according to the current environment variables defined in the container (e.g. \"/opt/bin:$PATH\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the args according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Exit codes this command is allowed to exit with without error
+    #[doc = "Exit codes this command is allowed to exit with without error"]
     #[builder(setter(into, strip_option), default)]
     pub expect: Option<ReturnType>,
-    /// Provides Dagger access to the executed command.
+    #[doc = "Provides Dagger access to the executed command."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
-    /// Execute the command with all root capabilities. Like --privileged in Docker
-    /// DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access.
+    #[doc = "Execute the command with all root capabilities. Like --privileged in Docker"]
+    #[doc = "DANGER: this grants the command full access to the host system. Only use when 1) you trust the command being executed and 2) you specifically need this level of access."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
-    /// Skip the automatic init process injected into containers by default.
-    /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
+    #[doc = "Skip the automatic init process injected into containers by default."]
+    #[doc = "Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this."]
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    #[doc = "Redirect the command's standard error to a file in the container. Example: \"./stderr.txt\""]
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
-    /// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+    #[doc = "Redirect the command's standard input from a file in the container. Example: \"./stdin.txt\""]
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
+    #[doc = "Redirect the command's standard output to a file in the container. Example: \"./stdout.txt\""]
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
-    /// Content to write to the command's standard input. Example: "Hello world")
+    #[doc = "Content to write to the command's standard input. Example: \"Hello world\")"]
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
-    /// Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
+    #[doc = "Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default."]
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
-    /// Port description. Example: "payment API endpoint"
+    #[doc = "Port description. Example: \"payment API endpoint\""]
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// Skip the health check when run as a service.
+    #[doc = "Skip the health check when run as a service."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_skip_healthcheck: Option<bool>,
-    /// Network protocol. Example: "tcp"
+    #[doc = "Network protocol. Example: \"tcp\""]
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user:group to set for the file.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the file."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Permissions of the new file. Example: 0600
+    #[doc = "Permissions of the new file. Example: 0600"]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFilesOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user:group to set for the files.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the files."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Permission given to the copied files (e.g., 0600).
+    #[doc = "Permission given to the copied files (e.g., 0600)."]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user:group to set for the mounted cache directory.
-    /// Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the mounted cache directory."]
+    #[doc = "Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Sharing mode of the cache volume.
+    #[doc = "Sharing mode of the cache volume."]
     #[builder(setter(into, strip_option), default)]
     pub sharing: Option<CacheSharingMode>,
-    /// Identifier of the directory to use as the cache volume's root.
+    #[doc = "Identifier of the directory to use as the cache volume's root."]
     #[builder(setter(into, strip_option), default)]
     pub source: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedDirectoryOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user:group to set for the mounted directory and its contents.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the mounted directory and its contents."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Mount the directory read-only.
+    #[doc = "Mount the directory read-only."]
     #[builder(setter(into, strip_option), default)]
     pub read_only: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedFileOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user or user:group to set for the mounted file.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user or user:group to set for the mounted file."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedSecretOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// Permission given to the mounted secret (e.g., 0600).
-    /// This option requires an owner to be set to be active.
+    #[doc = "Permission given to the mounted secret (e.g., 0600)."]
+    #[doc = "This option requires an owner to be set to be active."]
     #[builder(setter(into, strip_option), default)]
     pub mode: Option<isize>,
-    /// A user:group to set for the mounted secret.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the mounted secret."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedTempOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Size of the temporary directory in bytes.
+    #[doc = "Size of the temporary directory in bytes."]
     #[builder(setter(into, strip_option), default)]
     pub size: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedVolumeOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Mount the volume read-only.
+    #[doc = "Mount the volume read-only."]
     #[builder(setter(into, strip_option), default)]
     pub read_only: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user:group to set for the file.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the file."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Permissions of the new file. Example: 0600
+    #[doc = "Permissions of the new file. Example: 0600"]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithSymlinkOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithUnixSocketOpts<'a> {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-    /// Set the owner to the container's current user.
+    #[doc = "Set the owner to the container's current user."]
     #[builder(setter(into, strip_option), default)]
     pub inherit_owner: Option<bool>,
-    /// A user:group to set for the mounted socket.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the mounted socket."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithWorkdirOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutDirectoryOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutEntrypointOpts {
-    /// Don't remove the default arguments when unsetting the entrypoint.
+    #[doc = "Don't remove the default arguments when unsetting the entrypoint."]
     #[builder(setter(into, strip_option), default)]
     pub keep_default_args: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutExposedPortOpts {
-    /// Port protocol to unexpose
+    #[doc = "Port protocol to unexpose"]
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutFileOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutFilesOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of paths according to the current environment variables defined in the container (e.g. \"/$VAR/foo.txt\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutMountOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutUnixSocketOpts {
-    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" in the value of path according to the current environment variables defined in the container (e.g. \"/$VAR/foo\")."]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
@@ -1541,6 +1471,11 @@ impl IntoID<Id> for Container {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Container> for IdInput<Container> {
+    fn from(value: Container) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Container {
@@ -1552,12 +1487,8 @@ impl Sealed for Container {
     }
 }
 impl Container {
-    /// Turn the container into a Service.
-    /// Be sure to set any exposed ports before this conversion.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Turn the container into a Service."]
+    #[doc = "Be sure to set any exposed ports before this conversion."]
     pub fn as_service(&self) -> Service {
         let mut query = self.selection.select("asService");
         Service {
@@ -1565,12 +1496,8 @@ impl Container {
             selection: query,
         }
     }
-    /// Turn the container into a Service.
-    /// Be sure to set any exposed ports before this conversion.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Turn the container into a Service."]
+    #[doc = "Be sure to set any exposed ports before this conversion."]
     pub fn as_service_opts<'a>(&self, opts: ContainerAsServiceOpts<'a>) -> Service {
         let mut query = self.selection.select("asService");
         if let Some(args) = opts.args {
@@ -1599,11 +1526,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Package the container state as an OCI image, and return it as a tar archive
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Package the container state as an OCI image, and return it as a tar archive"]
     pub fn as_tarball(&self) -> File {
         let mut query = self.selection.select("asTarball");
         File {
@@ -1611,11 +1534,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Package the container state as an OCI image, and return it as a tar archive
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Package the container state as an OCI image, and return it as a tar archive"]
     pub fn as_tarball_opts(&self, opts: ContainerAsTarballOpts) -> File {
         let mut query = self.selection.select("asTarball");
         if let Some(platform_variants) = opts.platform_variants {
@@ -1632,24 +1551,21 @@ impl Container {
             selection: query,
         }
     }
-    /// The combined buffered standard output and standard error stream of the last executed command
-    /// Returns an error if no command was executed
+    #[doc = "The combined buffered standard output and standard error stream of the last executed command"]
+    #[doc = "Returns an error if no command was executed"]
     pub async fn combined_output(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("combinedOutput");
         query.execute(&self.session).await
     }
-    /// Return the container's default arguments.
+    #[doc = "Return the container's default arguments."]
     pub async fn default_args(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("defaultArgs");
         query.execute(&self.session).await
     }
-    /// Retrieve a directory from the container's root filesystem
-    /// Mounts are included.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path of the directory to retrieve (e.g., "./src").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieve a directory from the container's root filesystem"]
+    #[doc = "Mounts are included."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path of the directory to retrieve (e.g., \"./src\")."]
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
@@ -1658,13 +1574,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieve a directory from the container's root filesystem
-    /// Mounts are included.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path of the directory to retrieve (e.g., "./src").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieve a directory from the container's root filesystem"]
+    #[doc = "Mounts are included."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path of the directory to retrieve (e.g., \"./src\")."]
     pub fn directory_opts(
         &self,
         path: impl Into<String>,
@@ -1680,7 +1593,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container's configured docker healthcheck.
+    #[doc = "Retrieves this container's configured docker healthcheck."]
     pub fn docker_healthcheck(&self) -> HealthcheckConfig {
         let mut query = self.selection.select("dockerHealthcheck");
         HealthcheckConfig {
@@ -1688,54 +1601,38 @@ impl Container {
             selection: query,
         }
     }
-    /// Return the container's OCI entrypoint.
+    #[doc = "Return the container's OCI entrypoint."]
     pub async fn entrypoint(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("entrypoint");
         query.execute(&self.session).await
     }
-    /// Retrieves the value of the specified persistent environment variable.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the environment variable to retrieve (e.g., "PATH").
+    #[doc = "Retrieves the value of the specified persistent environment variable."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the environment variable to retrieve (e.g., \"PATH\")."]
     pub async fn env_variable(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("envVariable");
         query = query.arg("name", name.into());
         query.execute(&self.session).await
     }
-    /// Retrieves the list of persistent environment variables configured on the container.
+    #[doc = "Retrieves the list of persistent environment variables configured on the container."]
     pub async fn env_variables(&self) -> Result<Vec<EnvVariable>, QueryError> {
         let mut query = self.selection.select("envVariables");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| EnvVariable {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("EnvVariable"),
-            })
-            .collect())
+        query
+            .execute_reentry::<EnvVariable, Vec<Id>>(&self.session, "EnvVariable")
+            .await
     }
-    /// check if a file or directory exists
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "check if a file or directory exists"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to check (e.g., \"/file.txt\")."]
     pub async fn exists(&self, path: impl Into<String>) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("path", path.into());
         query.execute(&self.session).await
     }
-    /// check if a file or directory exists
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "check if a file or directory exists"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to check (e.g., \"/file.txt\")."]
     pub async fn exists_opts(
         &self,
         path: impl Into<String>,
@@ -1754,15 +1651,15 @@ impl Container {
         }
         query.execute(&self.session).await
     }
-    /// The exit code of the last executed command
-    /// Returns an error if no command was executed
+    #[doc = "The exit code of the last executed command"]
+    #[doc = "Returns an error if no command was executed"]
     pub async fn exit_code(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("exitCode");
         query.execute(&self.session).await
     }
-    /// EXPERIMENTAL API! Subject to change/removal at any time.
-    /// Configures all available GPUs on the host to be accessible to this container.
-    /// This currently works for Nvidia devices only.
+    #[doc = "EXPERIMENTAL API! Subject to change/removal at any time."]
+    #[doc = "Configures all available GPUs on the host to be accessible to this container."]
+    #[doc = "This currently works for Nvidia devices only."]
     pub fn experimental_with_all_gp_us(&self) -> Container {
         let mut query = self.selection.select("experimentalWithAllGPUs");
         Container {
@@ -1770,20 +1667,18 @@ impl Container {
             selection: query,
         }
     }
-    /// EXPERIMENTAL API! Subject to change/removal at any time.
-    /// Configures the provided list of devices to be accessible to this container.
-    /// This currently works for Nvidia devices only.
-    ///
-    /// # Arguments
-    ///
-    /// * `devices` - List of devices to be accessible to this container.
+    #[doc = "EXPERIMENTAL API! Subject to change/removal at any time."]
+    #[doc = "Configures the provided list of devices to be accessible to this container."]
+    #[doc = "This currently works for Nvidia devices only."]
+    #[doc = "# Arguments"]
+    #[doc = "* `devices` - List of devices to be accessible to this container."]
     pub fn experimental_with_gpu(&self, devices: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("experimentalWithGPU");
         query = query.arg(
             "devices",
             devices
                 .into_iter()
-                .map(|i| i.into())
+                .map(|item| item.into())
                 .collect::<Vec<String>>(),
         );
         Container {
@@ -1791,29 +1686,21 @@ impl Container {
             selection: query,
         }
     }
-    /// Writes the container as an OCI tarball to the destination file path on the host.
-    /// It can also export platform variants.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Host's destination path (e.g., "./tarball").
-    ///
-    /// Path can be relative to the engine's workdir or absolute.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Writes the container as an OCI tarball to the destination file path on the host."]
+    #[doc = "It can also export platform variants."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Host's destination path (e.g., \"./tarball\")."]
+    #[doc = "Path can be relative to the engine's workdir or absolute."]
     pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(&self.session).await
     }
-    /// Writes the container as an OCI tarball to the destination file path on the host.
-    /// It can also export platform variants.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Host's destination path (e.g., "./tarball").
-    ///
-    /// Path can be relative to the engine's workdir or absolute.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Writes the container as an OCI tarball to the destination file path on the host."]
+    #[doc = "It can also export platform variants."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Host's destination path (e.g., \"./tarball\")."]
+    #[doc = "Path can be relative to the engine's workdir or absolute."]
     pub async fn export_opts(
         &self,
         path: impl Into<String>,
@@ -1835,28 +1722,22 @@ impl Container {
         }
         query.execute(&self.session).await
     }
-    /// Exports the container as an image to the host's container image store.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of image to export to in the host's store
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export_image(&self, name: impl Into<String>) -> Result<Void, QueryError> {
+    #[doc = "Exports the container as an image to the host's container image store."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of image to export to in the host's store"]
+    pub async fn export_image(&self, name: impl Into<String>) -> Result<(), QueryError> {
         let mut query = self.selection.select("exportImage");
         query = query.arg("name", name.into());
         query.execute(&self.session).await
     }
-    /// Exports the container as an image to the host's container image store.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of image to export to in the host's store
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Exports the container as an image to the host's container image store."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of image to export to in the host's store"]
     pub async fn export_image_opts(
         &self,
         name: impl Into<String>,
         opts: ContainerExportImageOpts,
-    ) -> Result<Void, QueryError> {
+    ) -> Result<(), QueryError> {
         let mut query = self.selection.select("exportImage");
         query = query.arg("name", name.into());
         if let Some(platform_variants) = opts.platform_variants {
@@ -1870,30 +1751,19 @@ impl Container {
         }
         query.execute(&self.session).await
     }
-    /// Retrieves the list of exposed ports.
-    /// This includes ports already exposed by the image, even if not explicitly added with dagger.
+    #[doc = "Retrieves the list of exposed ports."]
+    #[doc = "This includes ports already exposed by the image, even if not explicitly added with dagger."]
     pub async fn exposed_ports(&self) -> Result<Vec<Port>, QueryError> {
         let mut query = self.selection.select("exposedPorts");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Port {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Port"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Port, Vec<Id>>(&self.session, "Port")
+            .await
     }
-    /// Retrieves a file at the given path.
-    /// Mounts are included.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path of the file to retrieve (e.g., "./README.md").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves a file at the given path."]
+    #[doc = "Mounts are included."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path of the file to retrieve (e.g., \"./README.md\")."]
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -1902,13 +1772,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves a file at the given path.
-    /// Mounts are included.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path of the file to retrieve (e.g., "./README.md").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves a file at the given path."]
+    #[doc = "Mounts are included."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path of the file to retrieve (e.g., \"./README.md\")."]
     pub fn file_opts(&self, path: impl Into<String>, opts: ContainerFileOpts) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -1920,12 +1787,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Download a container image, and apply it to the container state. All previous state will be lost.
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Download a container image, and apply it to the container state. All previous state will be lost."]
+    #[doc = "# Arguments"]
+    #[doc = "* `address` - Address of the container image to download, in standard OCI ref format. Example:\"registry.dagger.io/engine:latest\""]
     pub fn from(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
@@ -1934,12 +1798,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Download a container image, and apply it to the container state. All previous state will be lost.
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Download a container image, and apply it to the container state. All previous state will be lost."]
+    #[doc = "# Arguments"]
+    #[doc = "* `address` - Address of the container image to download, in standard OCI ref format. Example:\"registry.dagger.io/engine:latest\""]
     pub fn from_opts(&self, address: impl Into<String>, opts: ContainerFromOpts) -> Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
@@ -1957,71 +1818,37 @@ impl Container {
             selection: query,
         }
     }
-    /// A unique identifier for this Container.
+    #[doc = "A unique identifier for this Container."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+    #[doc = "The unique image reference which can only be retrieved immediately after the 'Container.From' call."]
     pub async fn image_ref(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("imageRef");
         query.execute(&self.session).await
     }
-    /// Reads the container from an OCI tarball.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - File to read the container from.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Reads the container from an OCI tarball."]
+    #[doc = "# Arguments"]
+    #[doc = "* `source` - File to read the container from."]
     pub fn import(&self, source: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("import");
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Reads the container from an OCI tarball.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - File to read the container from.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Reads the container from an OCI tarball."]
+    #[doc = "# Arguments"]
+    #[doc = "* `source` - File to read the container from."]
     pub fn import_opts<'a>(
         &self,
         source: impl IntoID<Id>,
         opts: ContainerImportOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("import");
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(tag) = opts.tag {
             query = query.arg("tag", tag);
         }
@@ -2030,38 +1857,25 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves the value of the specified label.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the label (e.g., "org.opencontainers.artifact.created").
+    #[doc = "Retrieves the value of the specified label."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the label (e.g., \"org.opencontainers.artifact.created\")."]
     pub async fn label(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("label");
         query = query.arg("name", name.into());
         query.execute(&self.session).await
     }
-    /// Retrieves the list of labels passed to container.
+    #[doc = "Retrieves the list of labels passed to container."]
     pub async fn labels(&self) -> Result<Vec<Label>, QueryError> {
         let mut query = self.selection.select("labels");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Label {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Label"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Label, Vec<Id>>(&self.session, "Label")
+            .await
     }
-    /// Returns the image layer or configuration blob with the given digest as a File.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the image layer or configuration blob with the given digest as a File."]
+    #[doc = "# Arguments"]
+    #[doc = "* `id` - Digest of the layer or configuration blob (e.g. \"sha256:abc123...\")."]
     pub fn layer(&self, id: impl Into<String>) -> File {
         let mut query = self.selection.select("layer");
         query = query.arg("id", id.into());
@@ -2070,12 +1884,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Returns the image layer or configuration blob with the given digest as a File.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - Digest of the layer or configuration blob (e.g. "sha256:abc123...").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the image layer or configuration blob with the given digest as a File."]
+    #[doc = "# Arguments"]
+    #[doc = "* `id` - Digest of the layer or configuration blob (e.g. \"sha256:abc123...\")."]
     pub fn layer_opts(&self, id: impl Into<String>, opts: ContainerLayerOpts) -> File {
         let mut query = self.selection.select("layer");
         query = query.arg("id", id.into());
@@ -2090,11 +1901,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Computes and returns the manifest for this container as a File.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Computes and returns the manifest for this container as a File."]
     pub fn manifest(&self) -> File {
         let mut query = self.selection.select("manifest");
         File {
@@ -2102,11 +1909,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Computes and returns the manifest for this container as a File.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Computes and returns the manifest for this container as a File."]
     pub fn manifest_opts(&self, opts: ContainerManifestOpts) -> File {
         let mut query = self.selection.select("manifest");
         if let Some(forced_compression) = opts.forced_compression {
@@ -2120,39 +1923,31 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves the list of paths where a directory is mounted.
+    #[doc = "Retrieves the list of paths where a directory is mounted."]
     pub async fn mounts(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("mounts");
         query.execute(&self.session).await
     }
-    /// The platform this container executes and publishes as.
+    #[doc = "The platform this container executes and publishes as."]
     pub async fn platform(&self) -> Result<Platform, QueryError> {
         let mut query = self.selection.select("platform");
         query.execute(&self.session).await
     }
-    /// Package the container state as an OCI image, and publish it to a registry
-    /// Returns the fully qualified address of the published image, with digest
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The OCI address to publish to
-    ///
-    /// Same format as "docker push". Example: "registry.example.com/user/repo:tag"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Package the container state as an OCI image, and publish it to a registry"]
+    #[doc = "Returns the fully qualified address of the published image, with digest"]
+    #[doc = "# Arguments"]
+    #[doc = "* `address` - The OCI address to publish to"]
+    #[doc = "Same format as \"docker push\". Example: \"registry.example.com/user/repo:tag\""]
     pub async fn publish(&self, address: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("publish");
         query = query.arg("address", address.into());
         query.execute(&self.session).await
     }
-    /// Package the container state as an OCI image, and publish it to a registry
-    /// Returns the fully qualified address of the published image, with digest
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The OCI address to publish to
-    ///
-    /// Same format as "docker push". Example: "registry.example.com/user/repo:tag"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Package the container state as an OCI image, and publish it to a registry"]
+    #[doc = "Returns the fully qualified address of the published image, with digest"]
+    #[doc = "# Arguments"]
+    #[doc = "* `address` - The OCI address to publish to"]
+    #[doc = "Same format as \"docker push\". Example: \"registry.example.com/user/repo:tag\""]
     pub async fn publish_opts(
         &self,
         address: impl Into<String>,
@@ -2180,7 +1975,7 @@ impl Container {
         }
         query.execute(&self.session).await
     }
-    /// Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications.
+    #[doc = "Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using withRootfs. Use that method for filesystem modifications."]
     pub fn rootfs(&self) -> Directory {
         let mut query = self.selection.select("rootfs");
         Directory {
@@ -2188,12 +1983,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Return file status
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return file status"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to check (e.g., \"/file.txt\")."]
     pub fn stat(&self, path: impl Into<String>) -> Stat {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
@@ -2202,12 +1994,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Return file status
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return file status"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to check (e.g., \"/file.txt\")."]
     pub fn stat_opts(&self, path: impl Into<String>, opts: ContainerStatOpts) -> Stat {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
@@ -2219,37 +2008,26 @@ impl Container {
             selection: query,
         }
     }
-    /// The buffered standard error stream of the last executed command
-    /// Returns an error if no command was executed
+    #[doc = "The buffered standard error stream of the last executed command"]
+    #[doc = "Returns an error if no command was executed"]
     pub async fn stderr(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("stderr");
         query.execute(&self.session).await
     }
-    /// The buffered standard output stream of the last executed command
-    /// Returns an error if no command was executed
+    #[doc = "The buffered standard output stream of the last executed command"]
+    #[doc = "Returns an error if no command was executed"]
     pub async fn stdout(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("stdout");
         query.execute(&self.session).await
     }
-    /// Forces evaluation of the pipeline in the engine.
-    /// It doesn't run the default command if no exec has been set.
+    #[doc = "Forces evaluation of the pipeline in the engine."]
+    #[doc = "It doesn't run the default command if no exec has been set."]
     pub async fn sync(&self) -> Result<Container, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Container {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Container"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Container"))
     }
-    /// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default)."]
     pub fn terminal(&self) -> Container {
         let mut query = self.selection.select("terminal");
         Container {
@@ -2257,11 +2035,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default)."]
     pub fn terminal_opts<'a>(&self, opts: ContainerTerminalOpts<'a>) -> Container {
         let mut query = self.selection.select("terminal");
         if let Some(cmd) = opts.cmd {
@@ -2281,23 +2055,15 @@ impl Container {
             selection: query,
         }
     }
-    /// Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
-    /// Be sure to set any exposed ports before calling this api.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up(&self) -> Result<Void, QueryError> {
+    #[doc = "Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service."]
+    #[doc = "Be sure to set any exposed ports before calling this api."]
+    pub async fn up(&self) -> Result<(), QueryError> {
         let mut query = self.selection.select("up");
         query.execute(&self.session).await
     }
-    /// Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
-    /// Be sure to set any exposed ports before calling this api.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up_opts<'a>(&self, opts: ContainerUpOpts<'a>) -> Result<Void, QueryError> {
+    #[doc = "Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service."]
+    #[doc = "Be sure to set any exposed ports before calling this api."]
+    pub async fn up_opts<'a>(&self, opts: ContainerUpOpts<'a>) -> Result<(), QueryError> {
         let mut query = self.selection.select("up");
         if let Some(random) = opts.random {
             query = query.arg("random", random);
@@ -2328,17 +2094,15 @@ impl Container {
         }
         query.execute(&self.session).await
     }
-    /// Retrieves the user to be set for all commands.
+    #[doc = "Retrieves the user to be set for all commands."]
     pub async fn user(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("user");
         query.execute(&self.session).await
     }
-    /// Retrieves this container plus the given OCI annotation.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the annotation.
-    /// * `value` - The value of the annotation.
+    #[doc = "Retrieves this container plus the given OCI annotation."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the annotation."]
+    #[doc = "* `value` - The value of the annotation."]
     pub fn with_annotation(&self, name: impl Into<String>, value: impl Into<String>) -> Container {
         let mut query = self.selection.select("withAnnotation");
         query = query.arg("name", name.into());
@@ -2348,45 +2112,41 @@ impl Container {
             selection: query,
         }
     }
-    /// Configures default arguments for future commands. Like CMD in Dockerfile.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+    #[doc = "Configures default arguments for future commands. Like CMD in Dockerfile."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - Arguments to prepend to future executions (e.g., [\"-v\", \"--no-cache\"])."]
     pub fn with_default_args(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultArgs");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Set the default command to invoke for the container's terminal API.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - The args of the command.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Set the default command to invoke for the container's terminal API."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - The args of the command."]
     pub fn with_default_terminal_cmd(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultTerminalCmd");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Set the default command to invoke for the container's terminal API.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - The args of the command.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Set the default command to invoke for the container's terminal API."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - The args of the command."]
     pub fn with_default_terminal_cmd_opts(
         &self,
         args: Vec<impl Into<String>>,
@@ -2395,7 +2155,9 @@ impl Container {
         let mut query = self.selection.select("withDefaultTerminalCmd");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -2411,43 +2173,23 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a new container snapshot, with a directory added to its filesystem
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the written directory (e.g., "/tmp/directory").
-    /// * `source` - Identifier of the directory to write
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container snapshot, with a directory added to its filesystem"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the written directory (e.g., \"/tmp/directory\")."]
+    #[doc = "* `source` - Identifier of the directory to write"]
     pub fn with_directory(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return a new container snapshot, with a directory added to its filesystem
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the written directory (e.g., "/tmp/directory").
-    /// * `source` - Identifier of the directory to write
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container snapshot, with a directory added to its filesystem"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the written directory (e.g., \"/tmp/directory\")."]
+    #[doc = "* `source` - Identifier of the directory to write"]
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -2456,21 +2198,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(exclude) = opts.exclude {
             query = query.arg("exclude", exclude);
         }
@@ -2497,29 +2225,25 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container with the specificed docker healtcheck command set.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Healthcheck command to execute. Example: ["go", "run", "main.go"].
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container with the specificed docker healtcheck command set."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - Healthcheck command to execute. Example: [\"go\", \"run\", \"main.go\"]."]
     pub fn with_docker_healthcheck(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDockerHealthcheck");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this container with the specificed docker healtcheck command set.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Healthcheck command to execute. Example: ["go", "run", "main.go"].
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container with the specificed docker healtcheck command set."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - Healthcheck command to execute. Example: [\"go\", \"run\", \"main.go\"]."]
     pub fn with_docker_healthcheck_opts<'a>(
         &self,
         args: Vec<impl Into<String>>,
@@ -2528,7 +2252,9 @@ impl Container {
         let mut query = self.selection.select("withDockerHealthcheck");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         if let Some(shell) = opts.shell {
             query = query.arg("shell", shell);
@@ -2553,29 +2279,25 @@ impl Container {
             selection: query,
         }
     }
-    /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Arguments of the entrypoint. Example: ["go", "run"].
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - Arguments of the entrypoint. Example: [\"go\", \"run\"]."]
     pub fn with_entrypoint(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withEntrypoint");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Arguments of the entrypoint. Example: ["go", "run"].
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - Arguments of the entrypoint. Example: [\"go\", \"run\"]."]
     pub fn with_entrypoint_opts(
         &self,
         args: Vec<impl Into<String>>,
@@ -2584,7 +2306,9 @@ impl Container {
         let mut query = self.selection.select("withEntrypoint");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         if let Some(keep_default_args) = opts.keep_default_args {
             query = query.arg("keepDefaultArgs", keep_default_args);
@@ -2594,40 +2318,21 @@ impl Container {
             selection: query,
         }
     }
-    /// Export environment variables from an env-file to the container.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - Identifier of the envfile
+    #[doc = "Export environment variables from an env-file to the container."]
+    #[doc = "# Arguments"]
+    #[doc = "* `source` - Identifier of the envfile"]
     pub fn with_env_file_variables(&self, source: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("withEnvFileVariables");
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Set a new environment variable in the container.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the environment variable (e.g., "HOST").
-    /// * `value` - Value of the environment variable. (e.g., "localhost").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Set a new environment variable in the container."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the environment variable (e.g., \"HOST\")."]
+    #[doc = "* `value` - Value of the environment variable. (e.g., \"localhost\")."]
     pub fn with_env_variable(
         &self,
         name: impl Into<String>,
@@ -2641,13 +2346,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Set a new environment variable in the container.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the environment variable (e.g., "HOST").
-    /// * `value` - Value of the environment variable. (e.g., "localhost").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Set a new environment variable in the container."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the environment variable (e.g., \"HOST\")."]
+    #[doc = "* `value` - Value of the environment variable. (e.g., \"localhost\")."]
     pub fn with_env_variable_opts(
         &self,
         name: impl Into<String>,
@@ -2665,11 +2367,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Raise an error.
-    ///
-    /// # Arguments
-    ///
-    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    #[doc = "Raise an error."]
+    #[doc = "# Arguments"]
+    #[doc = "* `err` - Message of the error to raise. If empty, the error will be ignored."]
     pub fn with_error(&self, err: impl Into<String>) -> Container {
         let mut query = self.selection.select("withError");
         query = query.arg("err", err.into());
@@ -2678,37 +2378,29 @@ impl Container {
             selection: query,
         }
     }
-    /// Execute a command in the container, and return a new snapshot of the container state after execution.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
-    ///
-    /// To run a shell command, execute the shell and pass the shell command as argument. Example: ["sh", "-c", "ls -l | grep foo"]
-    ///
-    /// Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Execute a command in the container, and return a new snapshot of the container state after execution."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - Command to execute. Must be valid exec() arguments, not a shell command. Example: [\"go\", \"run\", \"main.go\"]."]
+    #[doc = "To run a shell command, execute the shell and pass the shell command as argument. Example: [\"sh\", \"-c\", \"ls -l | grep foo\"]"]
+    #[doc = "Defaults to the container's default arguments (see \"defaultArgs\" and \"withDefaultArgs\")."]
     pub fn with_exec(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withExec");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Execute a command in the container, and return a new snapshot of the container state after execution.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
-    ///
-    /// To run a shell command, execute the shell and pass the shell command as argument. Example: ["sh", "-c", "ls -l | grep foo"]
-    ///
-    /// Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Execute a command in the container, and return a new snapshot of the container state after execution."]
+    #[doc = "# Arguments"]
+    #[doc = "* `args` - Command to execute. Must be valid exec() arguments, not a shell command. Example: [\"go\", \"run\", \"main.go\"]."]
+    #[doc = "To run a shell command, execute the shell and pass the shell command as argument. Example: [\"sh\", \"-c\", \"ls -l | grep foo\"]"]
+    #[doc = "Defaults to the container's default arguments (see \"defaultArgs\" and \"withDefaultArgs\")."]
     pub fn with_exec_opts<'a>(
         &self,
         args: Vec<impl Into<String>>,
@@ -2717,7 +2409,9 @@ impl Container {
         let mut query = self.selection.select("withExec");
         query = query.arg(
             "args",
-            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            args.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         if let Some(use_entrypoint) = opts.use_entrypoint {
             query = query.arg("useEntrypoint", use_entrypoint);
@@ -2757,15 +2451,12 @@ impl Container {
             selection: query,
         }
     }
-    /// Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
-    /// Exposed ports serve two purposes:
-    /// - For health checks and introspection, when running services
-    /// - For setting the EXPOSE OCI field when publishing the container
-    ///
-    /// # Arguments
-    ///
-    /// * `port` - Port number to expose. Example: 8080
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)"]
+    #[doc = "Exposed ports serve two purposes:"]
+    #[doc = "- For health checks and introspection, when running services"]
+    #[doc = "- For setting the EXPOSE OCI field when publishing the container"]
+    #[doc = "# Arguments"]
+    #[doc = "* `port` - Port number to expose. Example: 8080"]
     pub fn with_exposed_port(&self, port: isize) -> Container {
         let mut query = self.selection.select("withExposedPort");
         query = query.arg("port", port);
@@ -2774,15 +2465,12 @@ impl Container {
             selection: query,
         }
     }
-    /// Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
-    /// Exposed ports serve two purposes:
-    /// - For health checks and introspection, when running services
-    /// - For setting the EXPOSE OCI field when publishing the container
-    ///
-    /// # Arguments
-    ///
-    /// * `port` - Port number to expose. Example: 8080
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)"]
+    #[doc = "Exposed ports serve two purposes:"]
+    #[doc = "- For health checks and introspection, when running services"]
+    #[doc = "- For setting the EXPOSE OCI field when publishing the container"]
+    #[doc = "# Arguments"]
+    #[doc = "* `port` - Port number to expose. Example: 8080"]
     pub fn with_exposed_port_opts<'a>(
         &self,
         port: isize,
@@ -2804,43 +2492,23 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a container snapshot with a file added
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. Example: "/path/to/new-file.txt"
-    /// * `source` - File to add
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a container snapshot with a file added"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. Example: \"/path/to/new-file.txt\""]
+    #[doc = "* `source` - File to add"]
     pub fn with_file(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return a container snapshot with a file added
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. Example: "/path/to/new-file.txt"
-    /// * `source` - File to add
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a container snapshot with a file added"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. Example: \"/path/to/new-file.txt\""]
+    #[doc = "* `source` - File to add"]
     pub fn with_file_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -2849,21 +2517,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
@@ -2881,13 +2535,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus the contents of the given files copied to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location where copied files should be placed (e.g., "/src").
-    /// * `sources` - Identifiers of the files to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus the contents of the given files copied to the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location where copied files should be placed (e.g., \"/src\")."]
+    #[doc = "* `sources` - Identifiers of the files to copy."]
     pub fn with_files(&self, path: impl Into<String>, sources: Vec<Id>) -> Container {
         let mut query = self.selection.select("withFiles");
         query = query.arg("path", path.into());
@@ -2897,13 +2548,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus the contents of the given files copied to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location where copied files should be placed (e.g., "/src").
-    /// * `sources` - Identifiers of the files to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus the contents of the given files copied to the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location where copied files should be placed (e.g., \"/src\")."]
+    #[doc = "* `sources` - Identifiers of the files to copy."]
     pub fn with_files_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -2930,12 +2578,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus the given label.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the label (e.g., "org.opencontainers.artifact.created").
-    /// * `value` - The value of the label (e.g., "2023-01-01T00:00:00Z").
+    #[doc = "Retrieves this container plus the given label."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the label (e.g., \"org.opencontainers.artifact.created\")."]
+    #[doc = "* `value` - The value of the label (e.g., \"2023-01-01T00:00:00Z\")."]
     pub fn with_label(&self, name: impl Into<String>, value: impl Into<String>) -> Container {
         let mut query = self.selection.select("withLabel");
         query = query.arg("name", name.into());
@@ -2945,39 +2591,23 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a cache volume mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
-    /// * `cache` - Identifier of the cache volume to mount.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a cache volume mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the cache directory (e.g., \"/root/.npm\")."]
+    #[doc = "* `cache` - Identifier of the cache volume to mount."]
     pub fn with_mounted_cache(&self, path: impl Into<String>, cache: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("withMountedCache");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "cache",
-            Box::new(move || {
-                let cache = cache.clone();
-                Box::pin(async move {
-                    cache.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("cache", IdInput::<Id>::lazy(cache));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this container plus a cache volume mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
-    /// * `cache` - Identifier of the cache volume to mount.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a cache volume mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the cache directory (e.g., \"/root/.npm\")."]
+    #[doc = "* `cache` - Identifier of the cache volume to mount."]
     pub fn with_mounted_cache_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -2986,17 +2616,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedCache");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "cache",
-            Box::new(move || {
-                let cache = cache.clone();
-                Box::pin(async move {
-                    cache.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("cache", IdInput::<Id>::lazy(cache));
         if let Some(source) = opts.source {
             query = query.arg("source", source);
         }
@@ -3017,13 +2637,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a directory mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
-    /// * `source` - Identifier of the mounted directory.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a directory mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the mounted directory (e.g., \"/mnt/directory\")."]
+    #[doc = "* `source` - Identifier of the mounted directory."]
     pub fn with_mounted_directory(
         &self,
         path: impl Into<String>,
@@ -3031,33 +2648,16 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedDirectory");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this container plus a directory mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
-    /// * `source` - Identifier of the mounted directory.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a directory mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the mounted directory (e.g., \"/mnt/directory\")."]
+    #[doc = "* `source` - Identifier of the mounted directory."]
     pub fn with_mounted_directory_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -3066,21 +2666,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedDirectory");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -3098,43 +2684,23 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a file mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
-    /// * `source` - Identifier of the mounted file.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a file mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the mounted file (e.g., \"/tmp/file.txt\")."]
+    #[doc = "* `source` - Identifier of the mounted file."]
     pub fn with_mounted_file(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("withMountedFile");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this container plus a file mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
-    /// * `source` - Identifier of the mounted file.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a file mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the mounted file (e.g., \"/tmp/file.txt\")."]
+    #[doc = "* `source` - Identifier of the mounted file."]
     pub fn with_mounted_file_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -3143,21 +2709,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedFile");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -3172,13 +2724,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a secret mounted into a file at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
-    /// * `source` - Identifier of the secret to mount.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a secret mounted into a file at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\")."]
+    #[doc = "* `source` - Identifier of the secret to mount."]
     pub fn with_mounted_secret(
         &self,
         path: impl Into<String>,
@@ -3186,33 +2735,16 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedSecret");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this container plus a secret mounted into a file at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
-    /// * `source` - Identifier of the secret to mount.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a secret mounted into a file at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\")."]
+    #[doc = "* `source` - Identifier of the secret to mount."]
     pub fn with_mounted_secret_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -3221,21 +2753,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedSecret");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -3253,12 +2771,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the temporary directory (e.g., "/tmp/temp_dir").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the temporary directory (e.g., \"/tmp/temp_dir\")."]
     pub fn with_mounted_temp(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withMountedTemp");
         query = query.arg("path", path.into());
@@ -3267,12 +2782,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the temporary directory (e.g., "/tmp/temp_dir").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the temporary directory (e.g., \"/tmp/temp_dir\")."]
     pub fn with_mounted_temp_opts(
         &self,
         path: impl Into<String>,
@@ -3291,13 +2803,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a volume mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the volume mount (e.g., "/mnt/volume").
-    /// * `volume` - Identifier of the volume to mount.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a volume mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the volume mount (e.g., \"/mnt/volume\")."]
+    #[doc = "* `volume` - Identifier of the volume to mount."]
     pub fn with_mounted_volume(
         &self,
         path: impl Into<String>,
@@ -3305,33 +2814,16 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedVolume");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "volume",
-            Box::new(move || {
-                let volume = volume.clone();
-                Box::pin(async move {
-                    volume
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("volume", IdInput::<Id>::lazy(volume));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this container plus a volume mounted at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the volume mount (e.g., "/mnt/volume").
-    /// * `volume` - Identifier of the volume to mount.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a volume mounted at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the volume mount (e.g., \"/mnt/volume\")."]
+    #[doc = "* `volume` - Identifier of the volume to mount."]
     pub fn with_mounted_volume_opts(
         &self,
         path: impl Into<String>,
@@ -3340,21 +2832,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedVolume");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "volume",
-            Box::new(move || {
-                let volume = volume.clone();
-                Box::pin(async move {
-                    volume
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("volume", IdInput::<Id>::lazy(volume));
         if let Some(read_only) = opts.read_only {
             query = query.arg("readOnly", read_only);
         }
@@ -3366,13 +2844,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a new container snapshot, with a file added to its filesystem with text content
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
-    /// * `contents` - Contents of the new file. Example: "Hello world!"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container snapshot, with a file added to its filesystem with text content"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. May be relative or absolute. Example: \"README.md\" or \"/etc/profile\""]
+    #[doc = "* `contents` - Contents of the new file. Example: \"Hello world!\""]
     pub fn with_new_file(&self, path: impl Into<String>, contents: impl Into<String>) -> Container {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
@@ -3382,13 +2857,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a new container snapshot, with a file added to its filesystem with text content
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
-    /// * `contents` - Contents of the new file. Example: "Hello world!"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container snapshot, with a file added to its filesystem with text content"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. May be relative or absolute. Example: \"README.md\" or \"/etc/profile\""]
+    #[doc = "* `contents` - Contents of the new file. Example: \"Hello world!\""]
     pub fn with_new_file_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -3415,13 +2887,11 @@ impl Container {
             selection: query,
         }
     }
-    /// Attach credentials for future publishing to a registry. Use in combination with publish
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"
-    /// * `username` - The username to authenticate with. Example: "alice"
-    /// * `secret` - The API key, password or token to authenticate to this registry
+    #[doc = "Attach credentials for future publishing to a registry. Use in combination with publish"]
+    #[doc = "# Arguments"]
+    #[doc = "* `address` - The image address that needs authentication. Same format as \"docker push\". Example: \"registry.dagger.io/dagger:latest\""]
+    #[doc = "* `username` - The username to authenticate with. Example: \"alice\""]
+    #[doc = "* `secret` - The API key, password or token to authenticate to this registry"]
     pub fn with_registry_auth(
         &self,
         address: impl Into<String>,
@@ -3431,59 +2901,27 @@ impl Container {
         let mut query = self.selection.select("withRegistryAuth");
         query = query.arg("address", address.into());
         query = query.arg("username", username.into());
-        query = query.arg_lazy(
-            "secret",
-            Box::new(move || {
-                let secret = secret.clone();
-                Box::pin(async move {
-                    secret
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("secret", IdInput::<Id>::lazy(secret));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Change the container's root filesystem. The previous root filesystem will be lost.
-    ///
-    /// # Arguments
-    ///
-    /// * `directory` - The new root filesystem.
+    #[doc = "Change the container's root filesystem. The previous root filesystem will be lost."]
+    #[doc = "# Arguments"]
+    #[doc = "* `directory` - The new root filesystem."]
     pub fn with_rootfs(&self, directory: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("withRootfs");
-        query = query.arg_lazy(
-            "directory",
-            Box::new(move || {
-                let directory = directory.clone();
-                Box::pin(async move {
-                    directory
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("directory", IdInput::<Id>::lazy(directory));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Set a new environment variable, using a secret value
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the secret variable (e.g., "API_SECRET").
-    /// * `secret` - Identifier of the secret value.
+    #[doc = "Set a new environment variable, using a secret value"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the secret variable (e.g., \"API_SECRET\")."]
+    #[doc = "* `secret` - Identifier of the secret value."]
     pub fn with_secret_variable(
         &self,
         name: impl Into<String>,
@@ -3491,35 +2929,19 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withSecretVariable");
         query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "secret",
-            Box::new(move || {
-                let secret = secret.clone();
-                Box::pin(async move {
-                    secret
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("secret", IdInput::<Id>::lazy(secret));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Establish a runtime dependency from a container to a network service.
-    /// The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
-    /// The service will be reachable from the container via the provided hostname alias.
-    /// The service dependency will also convey to any files or directories produced by the container.
-    ///
-    /// # Arguments
-    ///
-    /// * `alias` - Hostname that will resolve to the target service (only accessible from within this container)
-    /// * `service` - The target service
+    #[doc = "Establish a runtime dependency from a container to a network service."]
+    #[doc = "The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set."]
+    #[doc = "The service will be reachable from the container via the provided hostname alias."]
+    #[doc = "The service dependency will also convey to any files or directories produced by the container."]
+    #[doc = "# Arguments"]
+    #[doc = "* `alias` - Hostname that will resolve to the target service (only accessible from within this container)"]
+    #[doc = "* `service` - The target service"]
     pub fn with_service_binding(
         &self,
         alias: impl Into<String>,
@@ -3527,33 +2949,16 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withServiceBinding");
         query = query.arg("alias", alias.into());
-        query = query.arg_lazy(
-            "service",
-            Box::new(move || {
-                let service = service.clone();
-                Box::pin(async move {
-                    service
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("service", IdInput::<Id>::lazy(service));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return a snapshot with a symlink
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
-    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with a symlink"]
+    #[doc = "# Arguments"]
+    #[doc = "* `target` - Location of the file or directory to link to (e.g., \"/existing/file\")."]
+    #[doc = "* `linkName` - Location where the symbolic link will be created (e.g., \"/new-file-link\")."]
     pub fn with_symlink(
         &self,
         target: impl Into<String>,
@@ -3567,13 +2972,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a snapshot with a symlink
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
-    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with a symlink"]
+    #[doc = "# Arguments"]
+    #[doc = "* `target` - Location of the file or directory to link to (e.g., \"/existing/file\")."]
+    #[doc = "* `linkName` - Location where the symbolic link will be created (e.g., \"/new-file-link\")."]
     pub fn with_symlink_opts(
         &self,
         target: impl Into<String>,
@@ -3591,43 +2993,23 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container plus a socket forwarded to the given Unix socket path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
-    /// * `source` - Identifier of the socket to forward.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a socket forwarded to the given Unix socket path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the forwarded Unix socket (e.g., \"/tmp/socket\")."]
+    #[doc = "* `source` - Identifier of the socket to forward."]
     pub fn with_unix_socket(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Container {
         let mut query = self.selection.select("withUnixSocket");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this container plus a socket forwarded to the given Unix socket path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
-    /// * `source` - Identifier of the socket to forward.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container plus a socket forwarded to the given Unix socket path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the forwarded Unix socket (e.g., \"/tmp/socket\")."]
+    #[doc = "* `source` - Identifier of the socket to forward."]
     pub fn with_unix_socket_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -3636,21 +3018,7 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withUnixSocket");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -3665,11 +3033,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container with a different command user.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The user to set (e.g., "root").
+    #[doc = "Retrieves this container with a different command user."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The user to set (e.g., \"root\")."]
     pub fn with_user(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withUser");
         query = query.arg("name", name.into());
@@ -3678,13 +3044,11 @@ impl Container {
             selection: query,
         }
     }
-    /// Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
-    /// This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the volatile variable (e.g., "CI_RUN_ID").
-    /// * `value` - Value of the volatile variable.
+    #[doc = "Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes."]
+    #[doc = "This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the volatile variable (e.g., \"CI_RUN_ID\")."]
+    #[doc = "* `value` - Value of the volatile variable."]
     pub fn with_volatile_variable(
         &self,
         name: impl Into<String>,
@@ -3698,12 +3062,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Change the container's working directory. Like WORKDIR in Dockerfile.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to set as the working directory (e.g., "/app").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Change the container's working directory. Like WORKDIR in Dockerfile."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path to set as the working directory (e.g., \"/app\")."]
     pub fn with_workdir(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
@@ -3712,12 +3073,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Change the container's working directory. Like WORKDIR in Dockerfile.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to set as the working directory (e.g., "/app").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Change the container's working directory. Like WORKDIR in Dockerfile."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path to set as the working directory (e.g., \"/app\")."]
     pub fn with_workdir_opts(
         &self,
         path: impl Into<String>,
@@ -3733,11 +3091,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container minus the given OCI annotation.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the annotation.
+    #[doc = "Retrieves this container minus the given OCI annotation."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the annotation."]
     pub fn without_annotation(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutAnnotation");
         query = query.arg("name", name.into());
@@ -3746,7 +3102,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Remove the container's default arguments.
+    #[doc = "Remove the container's default arguments."]
     pub fn without_default_args(&self) -> Container {
         let mut query = self.selection.select("withoutDefaultArgs");
         Container {
@@ -3754,12 +3110,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a new container snapshot, with a directory removed from its filesystem
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to remove (e.g., ".github/").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container snapshot, with a directory removed from its filesystem"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to remove (e.g., \".github/\")."]
     pub fn without_directory(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
@@ -3768,12 +3121,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a new container snapshot, with a directory removed from its filesystem
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to remove (e.g., ".github/").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container snapshot, with a directory removed from its filesystem"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to remove (e.g., \".github/\")."]
     pub fn without_directory_opts(
         &self,
         path: impl Into<String>,
@@ -3789,7 +3139,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container without a configured docker healtcheck command.
+    #[doc = "Retrieves this container without a configured docker healtcheck command."]
     pub fn without_docker_healthcheck(&self) -> Container {
         let mut query = self.selection.select("withoutDockerHealthcheck");
         Container {
@@ -3797,11 +3147,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Reset the container's OCI entrypoint.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Reset the container's OCI entrypoint."]
     pub fn without_entrypoint(&self) -> Container {
         let mut query = self.selection.select("withoutEntrypoint");
         Container {
@@ -3809,11 +3155,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Reset the container's OCI entrypoint.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Reset the container's OCI entrypoint."]
     pub fn without_entrypoint_opts(&self, opts: ContainerWithoutEntrypointOpts) -> Container {
         let mut query = self.selection.select("withoutEntrypoint");
         if let Some(keep_default_args) = opts.keep_default_args {
@@ -3824,11 +3166,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container minus the given environment variable.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the environment variable (e.g., "HOST").
+    #[doc = "Retrieves this container minus the given environment variable."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the environment variable (e.g., \"HOST\")."]
     pub fn without_env_variable(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutEnvVariable");
         query = query.arg("name", name.into());
@@ -3837,12 +3177,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Unexpose a previously exposed port.
-    ///
-    /// # Arguments
-    ///
-    /// * `port` - Port number to unexpose
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Unexpose a previously exposed port."]
+    #[doc = "# Arguments"]
+    #[doc = "* `port` - Port number to unexpose"]
     pub fn without_exposed_port(&self, port: isize) -> Container {
         let mut query = self.selection.select("withoutExposedPort");
         query = query.arg("port", port);
@@ -3851,12 +3188,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Unexpose a previously exposed port.
-    ///
-    /// # Arguments
-    ///
-    /// * `port` - Port number to unexpose
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Unexpose a previously exposed port."]
+    #[doc = "# Arguments"]
+    #[doc = "* `port` - Port number to unexpose"]
     pub fn without_exposed_port_opts(
         &self,
         port: isize,
@@ -3872,12 +3206,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container with the file at the given path removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the file to remove (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container with the file at the given path removed."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the file to remove (e.g., \"/file.txt\")."]
     pub fn without_file(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
@@ -3886,12 +3217,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container with the file at the given path removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the file to remove (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container with the file at the given path removed."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the file to remove (e.g., \"/file.txt\")."]
     pub fn without_file_opts(
         &self,
         path: impl Into<String>,
@@ -3907,29 +3235,26 @@ impl Container {
             selection: query,
         }
     }
-    /// Return a new container spanshot with specified files removed
-    ///
-    /// # Arguments
-    ///
-    /// * `paths` - Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container spanshot with specified files removed"]
+    #[doc = "# Arguments"]
+    #[doc = "* `paths` - Paths of the files to remove. Example: [\"foo.txt, \"/root/.ssh/config\""]
     pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withoutFiles");
         query = query.arg(
             "paths",
-            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            paths
+                .into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         Container {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return a new container spanshot with specified files removed
-    ///
-    /// # Arguments
-    ///
-    /// * `paths` - Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a new container spanshot with specified files removed"]
+    #[doc = "# Arguments"]
+    #[doc = "* `paths` - Paths of the files to remove. Example: [\"foo.txt, \"/root/.ssh/config\""]
     pub fn without_files_opts(
         &self,
         paths: Vec<impl Into<String>>,
@@ -3938,7 +3263,10 @@ impl Container {
         let mut query = self.selection.select("withoutFiles");
         query = query.arg(
             "paths",
-            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            paths
+                .into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3948,11 +3276,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container minus the given environment label.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the label to remove (e.g., "org.opencontainers.artifact.created").
+    #[doc = "Retrieves this container minus the given environment label."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the label to remove (e.g., \"org.opencontainers.artifact.created\")."]
     pub fn without_label(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutLabel");
         query = query.arg("name", name.into());
@@ -3961,12 +3287,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container after unmounting everything at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container after unmounting everything at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the cache directory (e.g., \"/root/.npm\")."]
     pub fn without_mount(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutMount");
         query = query.arg("path", path.into());
@@ -3975,12 +3298,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container after unmounting everything at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container after unmounting everything at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the cache directory (e.g., \"/root/.npm\")."]
     pub fn without_mount_opts(
         &self,
         path: impl Into<String>,
@@ -3996,13 +3316,10 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container without the registry authentication of a given address.
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - Registry's address to remove the authentication from.
-    ///
-    /// Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    #[doc = "Retrieves this container without the registry authentication of a given address."]
+    #[doc = "# Arguments"]
+    #[doc = "* `address` - Registry's address to remove the authentication from."]
+    #[doc = "Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main)."]
     pub fn without_registry_auth(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutRegistryAuth");
         query = query.arg("address", address.into());
@@ -4011,11 +3328,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container minus the given environment variable containing the secret.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the environment variable (e.g., "HOST").
+    #[doc = "Retrieves this container minus the given environment variable containing the secret."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the environment variable (e.g., \"HOST\")."]
     pub fn without_secret_variable(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutSecretVariable");
         query = query.arg("name", name.into());
@@ -4024,12 +3339,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container with a previously added Unix socket removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the socket to remove (e.g., "/tmp/socket").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container with a previously added Unix socket removed."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the socket to remove (e.g., \"/tmp/socket\")."]
     pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
         query = query.arg("path", path.into());
@@ -4038,12 +3350,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container with a previously added Unix socket removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the socket to remove (e.g., "/tmp/socket").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this container with a previously added Unix socket removed."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the socket to remove (e.g., \"/tmp/socket\")."]
     pub fn without_unix_socket_opts(
         &self,
         path: impl Into<String>,
@@ -4059,8 +3368,8 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container with an unset command user.
-    /// Should default to root.
+    #[doc = "Retrieves this container with an unset command user."]
+    #[doc = "Should default to root."]
     pub fn without_user(&self) -> Container {
         let mut query = self.selection.select("withoutUser");
         Container {
@@ -4068,11 +3377,9 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves this container minus the given volatile environment variable.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the volatile environment variable (e.g., "CI_RUN_ID").
+    #[doc = "Retrieves this container minus the given volatile environment variable."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the volatile environment variable (e.g., \"CI_RUN_ID\")."]
     pub fn without_volatile_variable(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutVolatileVariable");
         query = query.arg("name", name.into());
@@ -4081,8 +3388,8 @@ impl Container {
             selection: query,
         }
     }
-    /// Unset the container's working directory.
-    /// Should default to "/".
+    #[doc = "Unset the container's working directory."]
+    #[doc = "Should default to \"/\"."]
     pub fn without_workdir(&self) -> Container {
         let mut query = self.selection.select("withoutWorkdir");
         Container {
@@ -4090,7 +3397,7 @@ impl Container {
             selection: query,
         }
     }
-    /// Retrieves the working directory for all commands.
+    #[doc = "Retrieves the working directory for all commands."]
     pub async fn workdir(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("workdir");
         query.execute(&self.session).await
@@ -4112,11 +3419,21 @@ impl Exportable for Container {
         async move { query.execute(&session).await }
     }
 }
+impl From<Container> for IdInput<ExportableClient> {
+    fn from(value: Container) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Node for Container {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Container> for IdInput<NodeClient> {
+    fn from(value: Container) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Syncer for Container {
@@ -4131,6 +3448,11 @@ impl Syncer for Container {
         async move { query.execute(&session).await }
     }
 }
+impl From<Container> for IdInput<SyncerClient> {
+    fn from(value: Container) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct CurrentModule {
     pub(crate) session: SessionHandle,
@@ -4138,25 +3460,25 @@ pub struct CurrentModule {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleAsSdkOpts {
-    /// The workspace to resolve SDK-role data against. Defaults to the current workspace.
+    #[doc = "The workspace to resolve SDK-role data against. Defaults to the current workspace."]
     #[builder(setter(into, strip_option), default)]
     pub workspace: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleGeneratorsOpts<'a> {
-    /// Only include generators matching the specified patterns
+    #[doc = "Only include generators matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleWorkdirOpts<'a> {
-    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    #[doc = "Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
-    /// Apply .gitignore filter rules inside the directory
+    #[doc = "Apply .gitignore filter rules inside the directory"]
     #[builder(setter(into, strip_option), default)]
     pub gitignore: Option<bool>,
-    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    #[doc = "Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
@@ -4165,6 +3487,11 @@ impl IntoID<Id> for CurrentModule {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<CurrentModule> for IdInput<CurrentModule> {
+    fn from(value: CurrentModule) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for CurrentModule {
@@ -4176,12 +3503,8 @@ impl Sealed for CurrentModule {
     }
 }
 impl CurrentModule {
-    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
-    /// Errors if the current module is not installed as an SDK in this workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages."]
+    #[doc = "Errors if the current module is not installed as an SDK in this workspace."]
     pub fn as_sdk(&self) -> CurrentModuleAsSdk {
         let mut query = self.selection.select("asSDK");
         CurrentModuleAsSdk {
@@ -4189,12 +3512,8 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
-    /// Errors if the current module is not installed as an SDK in this workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages."]
+    #[doc = "Errors if the current module is not installed as an SDK in this workspace."]
     pub fn as_sdk_opts(&self, opts: CurrentModuleAsSdkOpts) -> CurrentModuleAsSdk {
         let mut query = self.selection.select("asSDK");
         if let Some(workspace) = opts.workspace {
@@ -4205,23 +3524,15 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// The dependencies of the module.
+    #[doc = "The dependencies of the module."]
     pub async fn dependencies(&self) -> Result<Vec<Module>, QueryError> {
         let mut query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Module {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Module"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Module, Vec<Id>>(&self.session, "Module")
+            .await
     }
-    /// The generated files and directories made on top of the module source's context directory.
+    #[doc = "The generated files and directories made on top of the module source's context directory."]
     pub fn generated_context_directory(&self) -> Directory {
         let mut query = self.selection.select("generatedContextDirectory");
         Directory {
@@ -4229,11 +3540,7 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// Return all generators defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all generators defined by the module"]
     pub fn generators(&self) -> GeneratorGroup {
         let mut query = self.selection.select("generators");
         GeneratorGroup {
@@ -4241,11 +3548,7 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// Return all generators defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all generators defined by the module"]
     pub fn generators_opts<'a>(&self, opts: CurrentModuleGeneratorsOpts<'a>) -> GeneratorGroup {
         let mut query = self.selection.select("generators");
         if let Some(include) = opts.include {
@@ -4256,17 +3559,17 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// A unique identifier for this CurrentModule.
+    #[doc = "A unique identifier for this CurrentModule."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the module being executed in
+    #[doc = "The name of the module being executed in"]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
+    #[doc = "The directory containing the module's source code loaded into the engine (plus any generated code that may have been created)."]
     pub fn source(&self) -> Directory {
         let mut query = self.selection.select("source");
         Directory {
@@ -4274,12 +3577,9 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to access (e.g., ".").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to access (e.g., \".\")."]
     pub fn workdir(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("workdir");
         query = query.arg("path", path.into());
@@ -4288,12 +3588,9 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to access (e.g., ".").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to access (e.g., \".\")."]
     pub fn workdir_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -4315,11 +3612,9 @@ impl CurrentModule {
             selection: query,
         }
     }
-    /// Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the file to retrieve (e.g., "README.md").
+    #[doc = "Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the file to retrieve (e.g., \"README.md\")."]
     pub fn workdir_file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("workdirFile");
         query = query.arg("path", path.into());
@@ -4336,6 +3631,11 @@ impl Node for CurrentModule {
         async move { query.execute(&session).await }
     }
 }
+impl From<CurrentModule> for IdInput<NodeClient> {
+    fn from(value: CurrentModule) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct CurrentModuleAsSdk {
     pub(crate) session: SessionHandle,
@@ -4348,6 +3648,11 @@ impl IntoID<Id> for CurrentModuleAsSdk {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<CurrentModuleAsSdk> for IdInput<CurrentModuleAsSdk> {
+    fn from(value: CurrentModuleAsSdk) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for CurrentModuleAsSdk {
     fn graphql_type() -> &'static str {
         "CurrentModuleAsSDK"
@@ -4357,44 +3662,34 @@ impl Sealed for CurrentModuleAsSdk {
     }
 }
 impl CurrentModuleAsSdk {
-    /// The generated clients this SDK produces in the workspace.
+    #[doc = "The generated clients this SDK produces in the workspace."]
     pub async fn clients(&self) -> Result<Vec<CurrentModuleAsSdkClient>, QueryError> {
         let mut query = self.selection.select("clients");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| CurrentModuleAsSdkClient {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("CurrentModuleAsSDKClient"),
-            })
-            .collect())
+        query
+            .execute_reentry::<CurrentModuleAsSdkClient, Vec<Id>>(
+                &self.session,
+                "CurrentModuleAsSDKClient",
+            )
+            .await
     }
-    /// A unique identifier for this CurrentModuleAsSDK.
+    #[doc = "A unique identifier for this CurrentModuleAsSDK."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The workspace-local modules this SDK authors and manages.
+    #[doc = "The workspace-local modules this SDK authors and manages."]
     pub async fn modules(&self) -> Result<Vec<CurrentModuleAsSdkModule>, QueryError> {
         let mut query = self.selection.select("modules");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| CurrentModuleAsSdkModule {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("CurrentModuleAsSDKModule"),
-            })
-            .collect())
+        query
+            .execute_reentry::<CurrentModuleAsSdkModule, Vec<Id>>(
+                &self.session,
+                "CurrentModuleAsSDKModule",
+            )
+            .await
     }
-    /// The user-facing name of this SDK in the workspace.
+    #[doc = "The user-facing name of this SDK in the workspace."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
@@ -4405,6 +3700,11 @@ impl Node for CurrentModuleAsSdk {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<CurrentModuleAsSdk> for IdInput<NodeClient> {
+    fn from(value: CurrentModuleAsSdk) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -4419,6 +3719,11 @@ impl IntoID<Id> for CurrentModuleAsSdkClient {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<CurrentModuleAsSdkClient> for IdInput<CurrentModuleAsSdkClient> {
+    fn from(value: CurrentModuleAsSdkClient) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for CurrentModuleAsSdkClient {
     fn graphql_type() -> &'static str {
         "CurrentModuleAsSDKClient"
@@ -4428,17 +3733,17 @@ impl Sealed for CurrentModuleAsSdkClient {
     }
 }
 impl CurrentModuleAsSdkClient {
-    /// A unique identifier for this CurrentModuleAsSDKClient.
+    #[doc = "A unique identifier for this CurrentModuleAsSDKClient."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The module the client is bound to (workspace-relative path or canonical ref).
+    #[doc = "The module the client is bound to (workspace-relative path or canonical ref)."]
     pub async fn module(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("module");
         query.execute(&self.session).await
     }
-    /// The resolved module source this client is bound to, including its dependency closure and pinned version.
+    #[doc = "The resolved module source this client is bound to, including its dependency closure and pinned version."]
     pub fn module_source(&self) -> ModuleSource {
         let mut query = self.selection.select("moduleSource");
         ModuleSource {
@@ -4446,12 +3751,12 @@ impl CurrentModuleAsSdkClient {
             selection: query,
         }
     }
-    /// Workspace-root-relative path of the generated client.
+    #[doc = "Workspace-root-relative path of the generated client."]
     pub async fn path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("path");
         query.execute(&self.session).await
     }
-    /// The pinned version of the bound module, if any.
+    #[doc = "The pinned version of the bound module, if any."]
     pub async fn pin(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("pin");
         query.execute(&self.session).await
@@ -4462,6 +3767,11 @@ impl Node for CurrentModuleAsSdkClient {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<CurrentModuleAsSdkClient> for IdInput<NodeClient> {
+    fn from(value: CurrentModuleAsSdkClient) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -4476,6 +3786,11 @@ impl IntoID<Id> for CurrentModuleAsSdkModule {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<CurrentModuleAsSdkModule> for IdInput<CurrentModuleAsSdkModule> {
+    fn from(value: CurrentModuleAsSdkModule) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for CurrentModuleAsSdkModule {
     fn graphql_type() -> &'static str {
         "CurrentModuleAsSDKModule"
@@ -4485,12 +3800,12 @@ impl Sealed for CurrentModuleAsSdkModule {
     }
 }
 impl CurrentModuleAsSdkModule {
-    /// A unique identifier for this CurrentModuleAsSDKModule.
+    #[doc = "A unique identifier for this CurrentModuleAsSDKModule."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Workspace-root-relative path to the managed module.
+    #[doc = "Workspace-root-relative path to the managed module."]
     pub async fn path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("path");
         query.execute(&self.session).await
@@ -4501,6 +3816,11 @@ impl Node for CurrentModuleAsSdkModule {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<CurrentModuleAsSdkModule> for IdInput<NodeClient> {
+    fn from(value: CurrentModuleAsSdkModule) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -4515,6 +3835,11 @@ impl IntoID<Id> for DiffStat {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<DiffStat> for IdInput<DiffStat> {
+    fn from(value: DiffStat) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for DiffStat {
     fn graphql_type() -> &'static str {
         "DiffStat"
@@ -4524,32 +3849,32 @@ impl Sealed for DiffStat {
     }
 }
 impl DiffStat {
-    /// Number of added lines for this path.
+    #[doc = "Number of added lines for this path."]
     pub async fn added_lines(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("addedLines");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this DiffStat.
+    #[doc = "A unique identifier for this DiffStat."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Type of change.
+    #[doc = "Type of change."]
     pub async fn kind(&self) -> Result<DiffStatKind, QueryError> {
         let mut query = self.selection.select("kind");
         query.execute(&self.session).await
     }
-    /// Previous path of the file, set only for renames.
+    #[doc = "Previous path of the file, set only for renames."]
     pub async fn old_path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("oldPath");
         query.execute(&self.session).await
     }
-    /// Path of the changed file or directory.
+    #[doc = "Path of the changed file or directory."]
     pub async fn path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("path");
         query.execute(&self.session).await
     }
-    /// Number of removed lines for this path.
+    #[doc = "Number of removed lines for this path."]
     pub async fn removed_lines(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("removedLines");
         query.execute(&self.session).await
@@ -4562,6 +3887,11 @@ impl Node for DiffStat {
         async move { query.execute(&session).await }
     }
 }
+impl From<DiffStat> for IdInput<NodeClient> {
+    fn from(value: DiffStat) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Directory {
     pub(crate) session: SessionHandle,
@@ -4569,197 +3899,197 @@ pub struct Directory {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
-    /// An optional subpath of the directory which contains the module's configuration file.
-    /// If not set, the module source code is loaded from the root of the directory.
+    #[doc = "An optional subpath of the directory which contains the module's configuration file."]
+    #[doc = "If not set, the module source code is loaded from the root of the directory."]
     #[builder(setter(into, strip_option), default)]
     pub source_root_path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleSourceOpts<'a> {
-    /// An optional subpath of the directory which contains the module's configuration file.
-    /// If not set, the module source code is loaded from the root of the directory.
+    #[doc = "An optional subpath of the directory which contains the module's configuration file."]
+    #[doc = "If not set, the module source code is loaded from the root of the directory."]
     #[builder(setter(into, strip_option), default)]
     pub source_root_path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsWorkspaceOpts<'a> {
-    /// Current working directory inside the workspace root. Defaults to the workspace root.
+    #[doc = "Current working directory inside the workspace root. Defaults to the workspace root."]
     #[builder(setter(into, strip_option), default)]
     pub cwd: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryDockerBuildOpts<'a> {
-    /// Build arguments to use in the build.
+    #[doc = "Build arguments to use in the build."]
     #[builder(setter(into, strip_option), default)]
     pub build_args: Option<Vec<BuildArg>>,
-    /// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+    #[doc = "Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\")."]
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
-    /// If set, skip the automatic init process injected into containers created by RUN statements.
-    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    #[doc = "If set, skip the automatic init process injected into containers created by RUN statements."]
+    #[doc = "This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior."]
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// The platform to build.
+    #[doc = "The platform to build."]
     #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
-    /// Secrets to pass to the build.
-    /// They will be mounted at /run/secrets/[secret-name].
+    #[doc = "Secrets to pass to the build."]
+    #[doc = "They will be mounted at /run/secrets/[secret-name]."]
     #[builder(setter(into, strip_option), default)]
     pub secrets: Option<Vec<Id>>,
-    /// A socket to use for SSH authentication during the build
-    /// (e.g., for Dockerfile RUN --mount=type=ssh instructions).
-    /// Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+    #[doc = "A socket to use for SSH authentication during the build"]
+    #[doc = "(e.g., for Dockerfile RUN --mount=type=ssh instructions)."]
+    #[doc = "Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK."]
     #[builder(setter(into, strip_option), default)]
     pub ssh: Option<Id>,
-    /// Target build stage to build.
+    #[doc = "Target build stage to build."]
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryEntriesOpts<'a> {
-    /// Location of the directory to look at (e.g., "/src").
+    #[doc = "Location of the directory to look at (e.g., \"/src\")."]
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryExistsOpts {
-    /// If specified, do not follow symlinks.
+    #[doc = "If specified, do not follow symlinks."]
     #[builder(setter(into, strip_option), default)]
     pub do_not_follow_symlinks: Option<bool>,
-    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[doc = "If specified, also validate the type of file (e.g. \"REGULAR_TYPE\", \"DIRECTORY_TYPE\", or \"SYMLINK_TYPE\")."]
     #[builder(setter(into, strip_option), default)]
     pub expected_type: Option<ExistsType>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryExportOpts {
-    /// If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
+    #[doc = "If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone."]
     #[builder(setter(into, strip_option), default)]
     pub wipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryFilterOpts<'a> {
-    /// If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
+    #[doc = "If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: [\"node_modules/\", \".git*\", \".env\"]"]
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
-    /// If set, apply .gitignore rules when filtering the directory.
+    #[doc = "If set, apply .gitignore rules when filtering the directory."]
     #[builder(setter(into, strip_option), default)]
     pub gitignore: Option<bool>,
-    /// If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
+    #[doc = "If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., [\"app/\", \"package.*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectorySearchOpts<'a> {
-    /// Allow the . pattern to match newlines in multiline mode.
+    #[doc = "Allow the . pattern to match newlines in multiline mode."]
     #[builder(setter(into, strip_option), default)]
     pub dotall: Option<bool>,
-    /// Only return matching files, not lines and content
+    #[doc = "Only return matching files, not lines and content"]
     #[builder(setter(into, strip_option), default)]
     pub files_only: Option<bool>,
-    /// Glob patterns to match (e.g., "*.md")
+    #[doc = "Glob patterns to match (e.g., \"*.md\")"]
     #[builder(setter(into, strip_option), default)]
     pub globs: Option<Vec<&'a str>>,
-    /// Enable case-insensitive matching.
+    #[doc = "Enable case-insensitive matching."]
     #[builder(setter(into, strip_option), default)]
     pub insensitive: Option<bool>,
-    /// Limit the number of results to return
+    #[doc = "Limit the number of results to return"]
     #[builder(setter(into, strip_option), default)]
     pub limit: Option<isize>,
-    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[doc = "Interpret the pattern as a literal string instead of a regular expression."]
     #[builder(setter(into, strip_option), default)]
     pub literal: Option<bool>,
-    /// Enable searching across multiple lines.
+    #[doc = "Enable searching across multiple lines."]
     #[builder(setter(into, strip_option), default)]
     pub multiline: Option<bool>,
-    /// Directory or file paths to search
+    #[doc = "Directory or file paths to search"]
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
-    /// Skip hidden files (files starting with .).
+    #[doc = "Skip hidden files (files starting with .)."]
     #[builder(setter(into, strip_option), default)]
     pub skip_hidden: Option<bool>,
-    /// Honor .gitignore, .ignore, and .rgignore files.
+    #[doc = "Honor .gitignore, .ignore, and .rgignore files."]
     #[builder(setter(into, strip_option), default)]
     pub skip_ignored: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryStatOpts {
-    /// If specified, do not follow symlinks.
+    #[doc = "If specified, do not follow symlinks."]
     #[builder(setter(into, strip_option), default)]
     pub do_not_follow_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryTerminalOpts<'a> {
-    /// If set, override the container's default terminal command and invoke these command arguments instead.
+    #[doc = "If set, override the container's default terminal command and invoke these command arguments instead."]
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
-    /// If set, override the default container used for the terminal.
+    #[doc = "If set, override the default container used for the terminal."]
     #[builder(setter(into, strip_option), default)]
     pub container: Option<Id>,
-    /// Provides Dagger access to the executed command.
+    #[doc = "Provides Dagger access to the executed command."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
-    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[doc = "Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
-    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    #[doc = "Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
-    /// Apply .gitignore filter rules inside the directory
+    #[doc = "Apply .gitignore filter rules inside the directory"]
     #[builder(setter(into, strip_option), default)]
     pub gitignore: Option<bool>,
-    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    #[doc = "Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// A user:group to set for the copied directory and its contents.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the copied directory and its contents."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Permission given to the copied directory and contents (e.g., 0755).
+    #[doc = "Permission given to the copied directory and contents (e.g., 0755)."]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithFileOpts<'a> {
-    /// A user:group to set for the copied directory and its contents.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the copied directory and its contents."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Permission given to the copied file (e.g., 0600).
+    #[doc = "Permission given to the copied file (e.g., 0600)."]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithFilesOpts {
-    /// Permission given to the copied files (e.g., 0600).
+    #[doc = "Permission given to the copied files (e.g., 0600)."]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithNewDirectoryOpts {
-    /// Permission granted to the created directory (e.g., 0777).
+    #[doc = "Permission granted to the created directory (e.g., 0777)."]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithNewFileOpts {
-    /// Permissions of the new file. Example: 0600
+    #[doc = "Permissions of the new file. Example: 0600"]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithPatchOpts {
-    /// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+    #[doc = "How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't."]
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<PatchConflict>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithPatchFileOpts {
-    /// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+    #[doc = "How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't."]
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<PatchConflict>,
 }
@@ -4768,6 +4098,11 @@ impl IntoID<Id> for Directory {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Directory> for IdInput<Directory> {
+    fn from(value: Directory) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Directory {
@@ -4779,7 +4114,7 @@ impl Sealed for Directory {
     }
 }
 impl Directory {
-    /// Converts this directory to a local git repository
+    #[doc = "Converts this directory to a local git repository"]
     pub fn as_git(&self) -> GitRepository {
         let mut query = self.selection.select("asGit");
         GitRepository {
@@ -4787,11 +4122,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Load the directory as a Dagger module source
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load the directory as a Dagger module source"]
     pub fn as_module(&self) -> Module {
         let mut query = self.selection.select("asModule");
         Module {
@@ -4799,11 +4130,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Load the directory as a Dagger module source
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load the directory as a Dagger module source"]
     pub fn as_module_opts<'a>(&self, opts: DirectoryAsModuleOpts<'a>) -> Module {
         let mut query = self.selection.select("asModule");
         if let Some(source_root_path) = opts.source_root_path {
@@ -4814,11 +4141,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Load the directory as a Dagger module source
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load the directory as a Dagger module source"]
     pub fn as_module_source(&self) -> ModuleSource {
         let mut query = self.selection.select("asModuleSource");
         ModuleSource {
@@ -4826,11 +4149,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Load the directory as a Dagger module source
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Load the directory as a Dagger module source"]
     pub fn as_module_source_opts<'a>(&self, opts: DirectoryAsModuleSourceOpts<'a>) -> ModuleSource {
         let mut query = self.selection.select("asModuleSource");
         if let Some(source_root_path) = opts.source_root_path {
@@ -4841,11 +4160,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Creates a synthetic workspace from this directory.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a synthetic workspace from this directory."]
     pub fn as_workspace(&self) -> Workspace {
         let mut query = self.selection.select("asWorkspace");
         Workspace {
@@ -4853,11 +4168,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Creates a synthetic workspace from this directory.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a synthetic workspace from this directory."]
     pub fn as_workspace_opts<'a>(&self, opts: DirectoryAsWorkspaceOpts<'a>) -> Workspace {
         let mut query = self.selection.select("asWorkspace");
         if let Some(cwd) = opts.cwd {
@@ -4868,40 +4179,24 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return the difference between this directory and another directory, typically an older snapshot.
-    /// The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
-    ///
-    /// # Arguments
-    ///
-    /// * `from` - The base directory snapshot to compare against
+    #[doc = "Return the difference between this directory and another directory, typically an older snapshot."]
+    #[doc = "The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories."]
+    #[doc = "# Arguments"]
+    #[doc = "* `from` - The base directory snapshot to compare against"]
     pub fn changes(&self, from: impl IntoID<Id>) -> Changeset {
         let mut query = self.selection.select("changes");
-        query = query.arg_lazy(
-            "from",
-            Box::new(move || {
-                let from = from.clone();
-                Box::pin(async move {
-                    from.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("from", IdInput::<Id>::lazy(from));
         Changeset {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Change the owner of the directory contents recursively.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the directory to change ownership of (e.g., "/").
-    /// * `owner` - A user:group to set for the mounted directory and its contents.
-    ///
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    ///
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "Change the owner of the directory contents recursively."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the directory to change ownership of (e.g., \"/\")."]
+    #[doc = "* `owner` - A user:group to set for the mounted directory and its contents."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     pub fn chown(&self, path: impl Into<String>, owner: impl Into<String>) -> Directory {
         let mut query = self.selection.select("chown");
         query = query.arg("path", path.into());
@@ -4911,39 +4206,25 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return the difference between this directory and an another directory. The difference is encoded as a directory.
-    ///
-    /// # Arguments
-    ///
-    /// * `other` - The directory to compare against
+    #[doc = "Return the difference between this directory and an another directory. The difference is encoded as a directory."]
+    #[doc = "# Arguments"]
+    #[doc = "* `other` - The directory to compare against"]
     pub fn diff(&self, other: impl IntoID<Id>) -> Directory {
         let mut query = self.selection.select("diff");
-        query = query.arg_lazy(
-            "other",
-            Box::new(move || {
-                let other = other.clone();
-                Box::pin(async move {
-                    other.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("other", IdInput::<Id>::lazy(other));
         Directory {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+    #[doc = "Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."]
     pub async fn digest(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("digest");
         query.execute(&self.session).await
     }
-    /// Retrieves a directory at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to retrieve. Example: "/src"
+    #[doc = "Retrieves a directory at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to retrieve. Example: \"/src\""]
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
@@ -4952,11 +4233,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features."]
     pub fn docker_build(&self) -> Container {
         let mut query = self.selection.select("dockerBuild");
         Container {
@@ -4964,11 +4241,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features."]
     pub fn docker_build_opts<'a>(&self, opts: DirectoryDockerBuildOpts<'a>) -> Container {
         let mut query = self.selection.select("dockerBuild");
         if let Some(dockerfile) = opts.dockerfile {
@@ -4997,20 +4270,12 @@ impl Directory {
             selection: query,
         }
     }
-    /// Returns a list of files and directories at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a list of files and directories at the given path."]
     pub async fn entries(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("entries");
         query.execute(&self.session).await
     }
-    /// Returns a list of files and directories at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a list of files and directories at the given path."]
     pub async fn entries_opts<'a>(
         &self,
         opts: DirectoryEntriesOpts<'a>,
@@ -5021,23 +4286,17 @@ impl Directory {
         }
         query.execute(&self.session).await
     }
-    /// check if a file or directory exists
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "check if a file or directory exists"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to check (e.g., \"/file.txt\")."]
     pub async fn exists(&self, path: impl Into<String>) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("path", path.into());
         query.execute(&self.session).await
     }
-    /// check if a file or directory exists
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "check if a file or directory exists"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to check (e.g., \"/file.txt\")."]
     pub async fn exists_opts(
         &self,
         path: impl Into<String>,
@@ -5053,23 +4312,17 @@ impl Directory {
         }
         query.execute(&self.session).await
     }
-    /// Writes the contents of the directory to a path on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the copied directory (e.g., "logs/").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Writes the contents of the directory to a path on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the copied directory (e.g., \"logs/\")."]
     pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(&self.session).await
     }
-    /// Writes the contents of the directory to a path on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the copied directory (e.g., "logs/").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Writes the contents of the directory to a path on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the copied directory (e.g., \"logs/\")."]
     pub async fn export_opts(
         &self,
         path: impl Into<String>,
@@ -5082,11 +4335,9 @@ impl Directory {
         }
         query.execute(&self.session).await
     }
-    /// Retrieve a file at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the file to retrieve (e.g., "README.md").
+    #[doc = "Retrieve a file at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the file to retrieve (e.g., \"README.md\")."]
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -5095,11 +4346,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with some paths included or excluded
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with some paths included or excluded"]
     pub fn filter(&self) -> Directory {
         let mut query = self.selection.select("filter");
         Directory {
@@ -5107,11 +4354,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with some paths included or excluded
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with some paths included or excluded"]
     pub fn filter_opts<'a>(&self, opts: DirectoryFilterOpts<'a>) -> Directory {
         let mut query = self.selection.select("filter");
         if let Some(exclude) = opts.exclude {
@@ -5128,12 +4371,10 @@ impl Directory {
             selection: query,
         }
     }
-    /// Search up the directory tree for a file or directory, and return its path. If no match, return null
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the file or directory to search for
-    /// * `start` - The path to start the search from
+    #[doc = "Search up the directory tree for a file or directory, and return its path. If no match, return null"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the file or directory to search for"]
+    #[doc = "* `start` - The path to start the search from"]
     pub async fn find_up(
         &self,
         name: impl Into<String>,
@@ -5144,33 +4385,28 @@ impl Directory {
         query = query.arg("start", start.into());
         query.execute(&self.session).await
     }
-    /// Returns a list of files and directories that matche the given pattern.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - Pattern to match (e.g., "*.md").
+    #[doc = "Returns a list of files and directories that matche the given pattern."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - Pattern to match (e.g., \"*.md\")."]
     pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("glob");
         query = query.arg("pattern", pattern.into());
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Directory.
+    #[doc = "A unique identifier for this Directory."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Returns the name of the directory.
+    #[doc = "Returns the name of the directory."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Searches for content matching the given regular expression or literal string."]
+    #[doc = "Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - The text to match."]
     pub async fn search(
         &self,
         pattern: impl Into<String>,
@@ -5178,25 +4414,14 @@ impl Directory {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| SearchResult {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("SearchResult"),
-            })
-            .collect())
+        query
+            .execute_reentry::<SearchResult, Vec<Id>>(&self.session, "SearchResult")
+            .await
     }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Searches for content matching the given regular expression or literal string."]
+    #[doc = "Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - The text to match."]
     pub async fn search_opts<'a>(
         &self,
         pattern: impl Into<String>,
@@ -5235,24 +4460,13 @@ impl Directory {
             query = query.arg("limit", limit);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| SearchResult {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("SearchResult"),
-            })
-            .collect())
+        query
+            .execute_reentry::<SearchResult, Vec<Id>>(&self.session, "SearchResult")
+            .await
     }
-    /// Return file status
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to stat (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return file status"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to stat (e.g., \"/file.txt\")."]
     pub fn stat(&self, path: impl Into<String>) -> Stat {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
@@ -5261,12 +4475,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return file status
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to stat (e.g., "/file.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return file status"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path to stat (e.g., \"/file.txt\")."]
     pub fn stat_opts(&self, path: impl Into<String>, opts: DirectoryStatOpts) -> Stat {
         let mut query = self.selection.select("stat");
         query = query.arg("path", path.into());
@@ -5278,24 +4489,13 @@ impl Directory {
             selection: query,
         }
     }
-    /// Force evaluation in the engine.
+    #[doc = "Force evaluation in the engine."]
     pub async fn sync(&self) -> Result<Directory, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Directory {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Directory"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Directory"))
     }
-    /// Opens an interactive terminal in new container with this directory mounted inside.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Opens an interactive terminal in new container with this directory mounted inside."]
     pub fn terminal(&self) -> Directory {
         let mut query = self.selection.select("terminal");
         Directory {
@@ -5303,11 +4503,7 @@ impl Directory {
             selection: query,
         }
     }
-    /// Opens an interactive terminal in new container with this directory mounted inside.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Opens an interactive terminal in new container with this directory mounted inside."]
     pub fn terminal_opts<'a>(&self, opts: DirectoryTerminalOpts<'a>) -> Directory {
         let mut query = self.selection.select("terminal");
         if let Some(container) = opts.container {
@@ -5330,70 +4526,34 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a directory with changes from another directory applied to it.
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - Changes to apply to the directory
+    #[doc = "Return a directory with changes from another directory applied to it."]
+    #[doc = "# Arguments"]
+    #[doc = "* `changes` - Changes to apply to the directory"]
     pub fn with_changes(&self, changes: impl IntoID<Id>) -> Directory {
         let mut query = self.selection.select("withChanges");
-        query = query.arg_lazy(
-            "changes",
-            Box::new(move || {
-                let changes = changes.clone();
-                Box::pin(async move {
-                    changes
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("changes", IdInput::<Id>::lazy(changes));
         Directory {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return a snapshot with a directory added
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the written directory (e.g., "/src/").
-    /// * `source` - Identifier of the directory to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with a directory added"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the written directory (e.g., \"/src/\")."]
+    #[doc = "* `source` - Identifier of the directory to copy."]
     pub fn with_directory(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Directory {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Directory {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return a snapshot with a directory added
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the written directory (e.g., "/src/").
-    /// * `source` - Identifier of the directory to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with a directory added"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the written directory (e.g., \"/src/\")."]
+    #[doc = "* `source` - Identifier of the directory to copy."]
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -5402,21 +4562,7 @@ impl Directory {
     ) -> Directory {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(exclude) = opts.exclude {
             query = query.arg("exclude", exclude);
         }
@@ -5437,11 +4583,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Raise an error.
-    ///
-    /// # Arguments
-    ///
-    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    #[doc = "Raise an error."]
+    #[doc = "# Arguments"]
+    #[doc = "* `err` - Message of the error to raise. If empty, the error will be ignored."]
     pub fn with_error(&self, err: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withError");
         query = query.arg("err", err.into());
@@ -5450,43 +4594,23 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory plus the contents of the given file copied to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the copied file (e.g., "/file.txt").
-    /// * `source` - Identifier of the file to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory plus the contents of the given file copied to the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the copied file (e.g., \"/file.txt\")."]
+    #[doc = "* `source` - Identifier of the file to copy."]
     pub fn with_file(&self, path: impl Into<String>, source: impl IntoID<Id>) -> Directory {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Directory {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this directory plus the contents of the given file copied to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the copied file (e.g., "/file.txt").
-    /// * `source` - Identifier of the file to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory plus the contents of the given file copied to the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the copied file (e.g., \"/file.txt\")."]
+    #[doc = "* `source` - Identifier of the file to copy."]
     pub fn with_file_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -5495,21 +4619,7 @@ impl Directory {
     ) -> Directory {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
@@ -5521,13 +4631,10 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory plus the contents of the given files copied to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location where copied files should be placed (e.g., "/src").
-    /// * `sources` - Identifiers of the files to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory plus the contents of the given files copied to the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location where copied files should be placed (e.g., \"/src\")."]
+    #[doc = "* `sources` - Identifiers of the files to copy."]
     pub fn with_files(&self, path: impl Into<String>, sources: Vec<Id>) -> Directory {
         let mut query = self.selection.select("withFiles");
         query = query.arg("path", path.into());
@@ -5537,13 +4644,10 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory plus the contents of the given files copied to the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location where copied files should be placed (e.g., "/src").
-    /// * `sources` - Identifiers of the files to copy.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory plus the contents of the given files copied to the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location where copied files should be placed (e.g., \"/src\")."]
+    #[doc = "* `sources` - Identifiers of the files to copy."]
     pub fn with_files_opts(
         &self,
         path: impl Into<String>,
@@ -5561,12 +4665,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory plus a new directory created at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory created (e.g., "/logs").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory plus a new directory created at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory created (e.g., \"/logs\")."]
     pub fn with_new_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withNewDirectory");
         query = query.arg("path", path.into());
@@ -5575,12 +4676,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory plus a new directory created at the given path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory created (e.g., "/logs").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory plus a new directory created at the given path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory created (e.g., \"/logs\")."]
     pub fn with_new_directory_opts(
         &self,
         path: impl Into<String>,
@@ -5596,13 +4694,10 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with a new file added
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. Example: "foo/bar.txt"
-    /// * `contents` - Contents of the new file. Example: "Hello world!"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with a new file added"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. Example: \"foo/bar.txt\""]
+    #[doc = "* `contents` - Contents of the new file. Example: \"Hello world!\""]
     pub fn with_new_file(&self, path: impl Into<String>, contents: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
@@ -5612,13 +4707,10 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with a new file added
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. Example: "foo/bar.txt"
-    /// * `contents` - Contents of the new file. Example: "Hello world!"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return a snapshot with a new file added"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. Example: \"foo/bar.txt\""]
+    #[doc = "* `contents` - Contents of the new file. Example: \"Hello world!\""]
     pub fn with_new_file_opts(
         &self,
         path: impl Into<String>,
@@ -5636,12 +4728,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory with the given Git-compatible patch applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `patch` - Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory with the given Git-compatible patch applied."]
+    #[doc = "# Arguments"]
+    #[doc = "* `patch` - Patch to apply (e.g., \"diff --git a/file.txt b/file.txt\\nindex 1234567..abcdef8 100644\\n--- a/file.txt\\n+++ b/file.txt\\n@@ -1,1 +1,1 @@\\n-Hello\\n+World\\n\")."]
     pub fn with_patch(&self, patch: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withPatch");
         query = query.arg("patch", patch.into());
@@ -5650,12 +4739,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory with the given Git-compatible patch applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `patch` - Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory with the given Git-compatible patch applied."]
+    #[doc = "# Arguments"]
+    #[doc = "* `patch` - Patch to apply (e.g., \"diff --git a/file.txt b/file.txt\\nindex 1234567..abcdef8 100644\\n--- a/file.txt\\n+++ b/file.txt\\n@@ -1,1 +1,1 @@\\n-Hello\\n+World\\n\")."]
     pub fn with_patch_opts(
         &self,
         patch: impl Into<String>,
@@ -5671,53 +4757,27 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory with the given Git-compatible patch file applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `patch` - File containing the patch to apply
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory with the given Git-compatible patch file applied."]
+    #[doc = "# Arguments"]
+    #[doc = "* `patch` - File containing the patch to apply"]
     pub fn with_patch_file(&self, patch: impl IntoID<Id>) -> Directory {
         let mut query = self.selection.select("withPatchFile");
-        query = query.arg_lazy(
-            "patch",
-            Box::new(move || {
-                let patch = patch.clone();
-                Box::pin(async move {
-                    patch.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("patch", IdInput::<Id>::lazy(patch));
         Directory {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Retrieves this directory with the given Git-compatible patch file applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `patch` - File containing the patch to apply
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves this directory with the given Git-compatible patch file applied."]
+    #[doc = "# Arguments"]
+    #[doc = "* `patch` - File containing the patch to apply"]
     pub fn with_patch_file_opts(
         &self,
         patch: impl IntoID<Id>,
         opts: DirectoryWithPatchFileOpts,
     ) -> Directory {
         let mut query = self.selection.select("withPatchFile");
-        query = query.arg_lazy(
-            "patch",
-            Box::new(move || {
-                let patch = patch.clone();
-                Box::pin(async move {
-                    patch.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("patch", IdInput::<Id>::lazy(patch));
         if let Some(on_conflict) = opts.on_conflict {
             query = query.arg("onConflict", on_conflict);
         }
@@ -5726,12 +4786,10 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with a symlink
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - Location of the file or directory to link to (e.g., "/existing/file").
-    /// * `link_name` - Location where the symbolic link will be created (e.g., "/new-file-link").
+    #[doc = "Return a snapshot with a symlink"]
+    #[doc = "# Arguments"]
+    #[doc = "* `target` - Location of the file or directory to link to (e.g., \"/existing/file\")."]
+    #[doc = "* `linkName` - Location where the symbolic link will be created (e.g., \"/new-file-link\")."]
     pub fn with_symlink(
         &self,
         target: impl Into<String>,
@@ -5745,13 +4803,10 @@ impl Directory {
             selection: query,
         }
     }
-    /// Retrieves this directory with all file/dir timestamps set to the given time.
-    ///
-    /// # Arguments
-    ///
-    /// * `timestamp` - Timestamp to set dir/files in.
-    ///
-    /// Formatted in seconds following Unix epoch (e.g., 1672531199).
+    #[doc = "Retrieves this directory with all file/dir timestamps set to the given time."]
+    #[doc = "# Arguments"]
+    #[doc = "* `timestamp` - Timestamp to set dir/files in."]
+    #[doc = "Formatted in seconds following Unix epoch (e.g., 1672531199)."]
     pub fn with_timestamps(&self, timestamp: isize) -> Directory {
         let mut query = self.selection.select("withTimestamps");
         query = query.arg("timestamp", timestamp);
@@ -5760,11 +4815,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with a subdirectory removed
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the subdirectory to remove. Example: ".github/workflows"
+    #[doc = "Return a snapshot with a subdirectory removed"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the subdirectory to remove. Example: \".github/workflows\""]
     pub fn without_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
@@ -5773,11 +4826,9 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with a file removed
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the file to remove (e.g., "/file.txt").
+    #[doc = "Return a snapshot with a file removed"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the file to remove (e.g., \"/file.txt\")."]
     pub fn without_file(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
@@ -5786,16 +4837,17 @@ impl Directory {
             selection: query,
         }
     }
-    /// Return a snapshot with files removed
-    ///
-    /// # Arguments
-    ///
-    /// * `paths` - Paths of the files to remove (e.g., ["/file.txt"]).
+    #[doc = "Return a snapshot with files removed"]
+    #[doc = "# Arguments"]
+    #[doc = "* `paths` - Paths of the files to remove (e.g., [\"/file.txt\"])."]
     pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Directory {
         let mut query = self.selection.select("withoutFiles");
         query = query.arg(
             "paths",
-            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            paths
+                .into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         Directory {
             session: self.session.clone(),
@@ -5819,11 +4871,21 @@ impl Exportable for Directory {
         async move { query.execute(&session).await }
     }
 }
+impl From<Directory> for IdInput<ExportableClient> {
+    fn from(value: Directory) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Node for Directory {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Directory> for IdInput<NodeClient> {
+    fn from(value: Directory) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Syncer for Directory {
@@ -5838,6 +4900,11 @@ impl Syncer for Directory {
         async move { query.execute(&session).await }
     }
 }
+impl From<Directory> for IdInput<SyncerClient> {
+    fn from(value: Directory) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Engine {
     pub(crate) session: SessionHandle,
@@ -5850,6 +4917,11 @@ impl IntoID<Id> for Engine {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Engine> for IdInput<Engine> {
+    fn from(value: Engine) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Engine {
     fn graphql_type() -> &'static str {
         "Engine"
@@ -5859,17 +4931,17 @@ impl Sealed for Engine {
     }
 }
 impl Engine {
-    /// The list of connected client IDs
+    #[doc = "The list of connected client IDs"]
     pub async fn clients(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("clients");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Engine.
+    #[doc = "A unique identifier for this Engine."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The local engine cache state tracked by dagql
+    #[doc = "The local engine cache state tracked by dagql"]
     pub fn local_cache(&self) -> EngineCache {
         let mut query = self.selection.select("localCache");
         EngineCache {
@@ -5877,7 +4949,7 @@ impl Engine {
             selection: query,
         }
     }
-    /// The name of the engine instance.
+    #[doc = "The name of the engine instance."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
@@ -5888,6 +4960,11 @@ impl Node for Engine {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Engine> for IdInput<NodeClient> {
+    fn from(value: Engine) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -5902,19 +4979,19 @@ pub struct EngineCacheEntrySetOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EngineCachePruneOpts<'a> {
-    /// Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+    #[doc = "Override the maximum disk space to keep before pruning (e.g. \"200GB\" or \"80%\")."]
     #[builder(setter(into, strip_option), default)]
     pub max_used_space: Option<&'a str>,
-    /// Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+    #[doc = "Override the minimum free disk space target during pruning (e.g. \"20GB\" or \"20%\")."]
     #[builder(setter(into, strip_option), default)]
     pub min_free_space: Option<&'a str>,
-    /// Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+    #[doc = "Override the minimum disk space to retain during pruning (e.g. \"500GB\" or \"10%\")."]
     #[builder(setter(into, strip_option), default)]
     pub reserved_space: Option<&'a str>,
-    /// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+    #[doc = "Override the target disk space to keep after pruning (e.g. \"200GB\" or \"50%\")."]
     #[builder(setter(into, strip_option), default)]
     pub target_space: Option<&'a str>,
-    /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    #[doc = "Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries."]
     #[builder(setter(into, strip_option), default)]
     pub use_default_policy: Option<bool>,
 }
@@ -5923,6 +5000,11 @@ impl IntoID<Id> for EngineCache {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<EngineCache> for IdInput<EngineCache> {
+    fn from(value: EngineCache) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for EngineCache {
@@ -5934,11 +5016,7 @@ impl Sealed for EngineCache {
     }
 }
 impl EngineCache {
-    /// The current set of entries in the cache
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The current set of entries in the cache"]
     pub fn entry_set(&self) -> EngineCacheEntrySet {
         let mut query = self.selection.select("entrySet");
         EngineCacheEntrySet {
@@ -5946,11 +5024,7 @@ impl EngineCache {
             selection: query,
         }
     }
-    /// The current set of entries in the cache
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The current set of entries in the cache"]
     pub fn entry_set_opts<'a>(&self, opts: EngineCacheEntrySetOpts<'a>) -> EngineCacheEntrySet {
         let mut query = self.selection.select("entrySet");
         if let Some(key) = opts.key {
@@ -5961,36 +5035,28 @@ impl EngineCache {
             selection: query,
         }
     }
-    /// A unique identifier for this EngineCache.
+    #[doc = "A unique identifier for this EngineCache."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The maximum bytes to keep in the cache without pruning.
+    #[doc = "The maximum bytes to keep in the cache without pruning."]
     pub async fn max_used_space(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("maxUsedSpace");
         query.execute(&self.session).await
     }
-    /// The target amount of free disk space the garbage collector will attempt to leave.
+    #[doc = "The target amount of free disk space the garbage collector will attempt to leave."]
     pub async fn min_free_space(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("minFreeSpace");
         query.execute(&self.session).await
     }
-    /// Prune the cache of releaseable entries
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn prune(&self) -> Result<Void, QueryError> {
+    #[doc = "Prune the cache of releaseable entries"]
+    pub async fn prune(&self) -> Result<(), QueryError> {
         let mut query = self.selection.select("prune");
         query.execute(&self.session).await
     }
-    /// Prune the cache of releaseable entries
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn prune_opts<'a>(&self, opts: EngineCachePruneOpts<'a>) -> Result<Void, QueryError> {
+    #[doc = "Prune the cache of releaseable entries"]
+    pub async fn prune_opts<'a>(&self, opts: EngineCachePruneOpts<'a>) -> Result<(), QueryError> {
         let mut query = self.selection.select("prune");
         if let Some(use_default_policy) = opts.use_default_policy {
             query = query.arg("useDefaultPolicy", use_default_policy);
@@ -6009,12 +5075,12 @@ impl EngineCache {
         }
         query.execute(&self.session).await
     }
-    /// The minimum amount of disk space this policy is guaranteed to retain.
+    #[doc = "The minimum amount of disk space this policy is guaranteed to retain."]
     pub async fn reserved_space(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("reservedSpace");
         query.execute(&self.session).await
     }
-    /// The target number of bytes to keep when pruning.
+    #[doc = "The target number of bytes to keep when pruning."]
     pub async fn target_space(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("targetSpace");
         query.execute(&self.session).await
@@ -6025,6 +5091,11 @@ impl Node for EngineCache {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<EngineCache> for IdInput<NodeClient> {
+    fn from(value: EngineCache) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -6039,6 +5110,11 @@ impl IntoID<Id> for EngineCacheEntry {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<EngineCacheEntry> for IdInput<EngineCacheEntry> {
+    fn from(value: EngineCacheEntry) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for EngineCacheEntry {
     fn graphql_type() -> &'static str {
         "EngineCacheEntry"
@@ -6048,47 +5124,47 @@ impl Sealed for EngineCacheEntry {
     }
 }
 impl EngineCacheEntry {
-    /// Whether the cache entry is actively being used.
+    #[doc = "Whether the cache entry is actively being used."]
     pub async fn actively_used(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("activelyUsed");
         query.execute(&self.session).await
     }
-    /// The time the cache entry was created, in Unix nanoseconds.
+    #[doc = "The time the cache entry was created, in Unix nanoseconds."]
     pub async fn created_time_unix_nano(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("createdTimeUnixNano");
         query.execute(&self.session).await
     }
-    /// The DagQL call that produced this cache entry.
+    #[doc = "The DagQL call that produced this cache entry."]
     pub async fn dagql_call(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("dagqlCall");
         query.execute(&self.session).await
     }
-    /// The description of the cache entry.
+    #[doc = "The description of the cache entry."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// The disk space used by the cache entry.
+    #[doc = "The disk space used by the cache entry."]
     pub async fn disk_space_bytes(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("diskSpaceBytes");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this EngineCacheEntry.
+    #[doc = "A unique identifier for this EngineCacheEntry."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The most recent time the cache entry was used, in Unix nanoseconds.
+    #[doc = "The most recent time the cache entry was used, in Unix nanoseconds."]
     pub async fn most_recent_use_time_unix_nano(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("mostRecentUseTimeUnixNano");
         query.execute(&self.session).await
     }
-    /// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+    #[doc = "The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount)."]
     pub async fn record_type(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("recordType");
         query.execute(&self.session).await
     }
-    /// The storage record types represented by this cache entry.
+    #[doc = "The storage record types represented by this cache entry."]
     pub async fn record_types(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("recordTypes");
         query.execute(&self.session).await
@@ -6099,6 +5175,11 @@ impl Node for EngineCacheEntry {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<EngineCacheEntry> for IdInput<NodeClient> {
+    fn from(value: EngineCacheEntry) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -6113,6 +5194,11 @@ impl IntoID<Id> for EngineCacheEntrySet {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<EngineCacheEntrySet> for IdInput<EngineCacheEntrySet> {
+    fn from(value: EngineCacheEntrySet) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for EngineCacheEntrySet {
     fn graphql_type() -> &'static str {
         "EngineCacheEntrySet"
@@ -6122,33 +5208,25 @@ impl Sealed for EngineCacheEntrySet {
     }
 }
 impl EngineCacheEntrySet {
-    /// The total disk space used by the cache entries in this set.
+    #[doc = "The total disk space used by the cache entries in this set."]
     pub async fn disk_space_bytes(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("diskSpaceBytes");
         query.execute(&self.session).await
     }
-    /// The list of individual cache entries in the set
+    #[doc = "The list of individual cache entries in the set"]
     pub async fn entries(&self) -> Result<Vec<EngineCacheEntry>, QueryError> {
         let mut query = self.selection.select("entries");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| EngineCacheEntry {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("EngineCacheEntry"),
-            })
-            .collect())
+        query
+            .execute_reentry::<EngineCacheEntry, Vec<Id>>(&self.session, "EngineCacheEntry")
+            .await
     }
-    /// The number of cache entries in this set.
+    #[doc = "The number of cache entries in this set."]
     pub async fn entry_count(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("entryCount");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this EngineCacheEntrySet.
+    #[doc = "A unique identifier for this EngineCacheEntrySet."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -6159,6 +5237,11 @@ impl Node for EngineCacheEntrySet {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<EngineCacheEntrySet> for IdInput<NodeClient> {
+    fn from(value: EngineCacheEntrySet) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -6173,6 +5256,11 @@ impl IntoID<Id> for EnumTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<EnumTypeDef> for IdInput<EnumTypeDef> {
+    fn from(value: EnumTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for EnumTypeDef {
     fn graphql_type() -> &'static str {
         "EnumTypeDef"
@@ -6182,38 +5270,30 @@ impl Sealed for EnumTypeDef {
     }
 }
 impl EnumTypeDef {
-    /// A doc string for the enum, if any.
+    #[doc = "A doc string for the enum, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this EnumTypeDef.
+    #[doc = "A unique identifier for this EnumTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The members of the enum.
+    #[doc = "The members of the enum."]
     pub async fn members(&self) -> Result<Vec<EnumValueTypeDef>, QueryError> {
         let mut query = self.selection.select("members");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| EnumValueTypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("EnumValueTypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<EnumValueTypeDef, Vec<Id>>(&self.session, "EnumValueTypeDef")
+            .await
     }
-    /// The name of the enum.
+    #[doc = "The name of the enum."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The location of this enum declaration.
+    #[doc = "The location of this enum declaration."]
     pub fn source_map(&self) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         SourceMap {
@@ -6221,26 +5301,18 @@ impl EnumTypeDef {
             selection: query,
         }
     }
-    /// If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    #[doc = "If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise."]
     pub async fn source_module_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("sourceModuleName");
         query.execute(&self.session).await
     }
-    /// The members of the enum.
+    #[doc = "The members of the enum."]
     pub async fn values(&self) -> Result<Vec<EnumValueTypeDef>, QueryError> {
         let mut query = self.selection.select("values");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| EnumValueTypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("EnumValueTypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<EnumValueTypeDef, Vec<Id>>(&self.session, "EnumValueTypeDef")
+            .await
     }
 }
 impl Node for EnumTypeDef {
@@ -6248,6 +5320,11 @@ impl Node for EnumTypeDef {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<EnumTypeDef> for IdInput<NodeClient> {
+    fn from(value: EnumTypeDef) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -6262,6 +5339,11 @@ impl IntoID<Id> for EnumValueTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<EnumValueTypeDef> for IdInput<EnumValueTypeDef> {
+    fn from(value: EnumValueTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for EnumValueTypeDef {
     fn graphql_type() -> &'static str {
         "EnumValueTypeDef"
@@ -6271,27 +5353,27 @@ impl Sealed for EnumValueTypeDef {
     }
 }
 impl EnumValueTypeDef {
-    /// The reason this enum member is deprecated, if any.
+    #[doc = "The reason this enum member is deprecated, if any."]
     pub async fn deprecated(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("deprecated");
         query.execute(&self.session).await
     }
-    /// A doc string for the enum member, if any.
+    #[doc = "A doc string for the enum member, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this EnumValueTypeDef.
+    #[doc = "A unique identifier for this EnumValueTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the enum member.
+    #[doc = "The name of the enum member."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The location of this enum member declaration.
+    #[doc = "The location of this enum member declaration."]
     pub fn source_map(&self) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         SourceMap {
@@ -6299,7 +5381,7 @@ impl EnumValueTypeDef {
             selection: query,
         }
     }
-    /// The value of the enum member
+    #[doc = "The value of the enum member"]
     pub async fn value(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("value");
         query.execute(&self.session).await
@@ -6312,6 +5394,11 @@ impl Node for EnumValueTypeDef {
         async move { query.execute(&session).await }
     }
 }
+impl From<EnumValueTypeDef> for IdInput<NodeClient> {
+    fn from(value: EnumValueTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct EnvFile {
     pub(crate) session: SessionHandle,
@@ -6319,13 +5406,13 @@ pub struct EnvFile {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EnvFileGetOpts {
-    /// Return the value exactly as written to the file. No quote removal or variable expansion
+    #[doc = "Return the value exactly as written to the file. No quote removal or variable expansion"]
     #[builder(setter(into, strip_option), default)]
     pub raw: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EnvFileVariablesOpts {
-    /// Return values exactly as written to the file. No quote removal or variable expansion
+    #[doc = "Return values exactly as written to the file. No quote removal or variable expansion"]
     #[builder(setter(into, strip_option), default)]
     pub raw: Option<bool>,
 }
@@ -6334,6 +5421,11 @@ impl IntoID<Id> for EnvFile {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<EnvFile> for IdInput<EnvFile> {
+    fn from(value: EnvFile) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for EnvFile {
@@ -6345,7 +5437,7 @@ impl Sealed for EnvFile {
     }
 }
 impl EnvFile {
-    /// Return as a file
+    #[doc = "Return as a file"]
     pub fn as_file(&self) -> File {
         let mut query = self.selection.select("asFile");
         File {
@@ -6353,33 +5445,25 @@ impl EnvFile {
             selection: query,
         }
     }
-    /// Check if a variable exists
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Variable name
+    #[doc = "Check if a variable exists"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Variable name"]
     pub async fn exists(&self, name: impl Into<String>) -> Result<bool, QueryError> {
         let mut query = self.selection.select("exists");
         query = query.arg("name", name.into());
         query.execute(&self.session).await
     }
-    /// Lookup a variable (last occurrence wins) and return its value, or an empty string
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Variable name
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Lookup a variable (last occurrence wins) and return its value, or an empty string"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Variable name"]
     pub async fn get(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("get");
         query = query.arg("name", name.into());
         query.execute(&self.session).await
     }
-    /// Lookup a variable (last occurrence wins) and return its value, or an empty string
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Variable name
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Lookup a variable (last occurrence wins) and return its value, or an empty string"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Variable name"]
     pub async fn get_opts(
         &self,
         name: impl Into<String>,
@@ -6392,16 +5476,14 @@ impl EnvFile {
         }
         query.execute(&self.session).await
     }
-    /// A unique identifier for this EnvFile.
+    #[doc = "A unique identifier for this EnvFile."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
-    ///
-    /// # Arguments
-    ///
-    /// * `prefix` - The prefix to filter by
+    #[doc = "Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix \"MY_APP_\" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello"]
+    #[doc = "# Arguments"]
+    #[doc = "* `prefix` - The prefix to filter by"]
     pub fn namespace(&self, prefix: impl Into<String>) -> EnvFile {
         let mut query = self.selection.select("namespace");
         query = query.arg("prefix", prefix.into());
@@ -6410,31 +5492,15 @@ impl EnvFile {
             selection: query,
         }
     }
-    /// Return all variables
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all variables"]
     pub async fn variables(&self) -> Result<Vec<EnvVariable>, QueryError> {
         let mut query = self.selection.select("variables");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| EnvVariable {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("EnvVariable"),
-            })
-            .collect())
+        query
+            .execute_reentry::<EnvVariable, Vec<Id>>(&self.session, "EnvVariable")
+            .await
     }
-    /// Return all variables
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all variables"]
     pub async fn variables_opts(
         &self,
         opts: EnvFileVariablesOpts,
@@ -6444,24 +5510,14 @@ impl EnvFile {
             query = query.arg("raw", raw);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| EnvVariable {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("EnvVariable"),
-            })
-            .collect())
+        query
+            .execute_reentry::<EnvVariable, Vec<Id>>(&self.session, "EnvVariable")
+            .await
     }
-    /// Add a variable
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Variable name
-    /// * `value` - Variable value
+    #[doc = "Add a variable"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Variable name"]
+    #[doc = "* `value` - Variable value"]
     pub fn with_variable(&self, name: impl Into<String>, value: impl Into<String>) -> EnvFile {
         let mut query = self.selection.select("withVariable");
         query = query.arg("name", name.into());
@@ -6471,11 +5527,9 @@ impl EnvFile {
             selection: query,
         }
     }
-    /// Remove all occurrences of the named variable
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Variable name
+    #[doc = "Remove all occurrences of the named variable"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Variable name"]
     pub fn without_variable(&self, name: impl Into<String>) -> EnvFile {
         let mut query = self.selection.select("withoutVariable");
         query = query.arg("name", name.into());
@@ -6492,6 +5546,11 @@ impl Node for EnvFile {
         async move { query.execute(&session).await }
     }
 }
+impl From<EnvFile> for IdInput<NodeClient> {
+    fn from(value: EnvFile) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct EnvVariable {
     pub(crate) session: SessionHandle,
@@ -6504,6 +5563,11 @@ impl IntoID<Id> for EnvVariable {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<EnvVariable> for IdInput<EnvVariable> {
+    fn from(value: EnvVariable) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for EnvVariable {
     fn graphql_type() -> &'static str {
         "EnvVariable"
@@ -6513,17 +5577,17 @@ impl Sealed for EnvVariable {
     }
 }
 impl EnvVariable {
-    /// A unique identifier for this EnvVariable.
+    #[doc = "A unique identifier for this EnvVariable."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The environment variable name.
+    #[doc = "The environment variable name."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The environment variable value.
+    #[doc = "The environment variable value."]
     pub async fn value(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("value");
         query.execute(&self.session).await
@@ -6534,6 +5598,11 @@ impl Node for EnvVariable {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<EnvVariable> for IdInput<NodeClient> {
+    fn from(value: EnvVariable) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -6548,6 +5617,11 @@ impl IntoID<Id> for Error {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Error> for IdInput<Error> {
+    fn from(value: Error) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Error {
     fn graphql_type() -> &'static str {
         "Error"
@@ -6557,38 +5631,28 @@ impl Sealed for Error {
     }
 }
 impl Error {
-    /// A unique identifier for this Error.
+    #[doc = "A unique identifier for this Error."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// A description of the error.
+    #[doc = "A description of the error."]
     pub async fn message(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("message");
         query.execute(&self.session).await
     }
-    /// The extensions of the error.
+    #[doc = "The extensions of the error."]
     pub async fn values(&self) -> Result<Vec<ErrorValue>, QueryError> {
         let mut query = self.selection.select("values");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ErrorValue {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ErrorValue"),
-            })
-            .collect())
+        query
+            .execute_reentry::<ErrorValue, Vec<Id>>(&self.session, "ErrorValue")
+            .await
     }
-    /// Add a value to the error.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the value.
-    /// * `value` - The value to store on the error.
+    #[doc = "Add a value to the error."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the value."]
+    #[doc = "* `value` - The value to store on the error."]
     pub fn with_value(&self, name: impl Into<String>, value: Json) -> Error {
         let mut query = self.selection.select("withValue");
         query = query.arg("name", name.into());
@@ -6606,6 +5670,11 @@ impl Node for Error {
         async move { query.execute(&session).await }
     }
 }
+impl From<Error> for IdInput<NodeClient> {
+    fn from(value: Error) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct ErrorValue {
     pub(crate) session: SessionHandle,
@@ -6618,6 +5687,11 @@ impl IntoID<Id> for ErrorValue {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<ErrorValue> for IdInput<ErrorValue> {
+    fn from(value: ErrorValue) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for ErrorValue {
     fn graphql_type() -> &'static str {
         "ErrorValue"
@@ -6627,17 +5701,17 @@ impl Sealed for ErrorValue {
     }
 }
 impl ErrorValue {
-    /// A unique identifier for this ErrorValue.
+    #[doc = "A unique identifier for this ErrorValue."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the value.
+    #[doc = "The name of the value."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The value.
+    #[doc = "The value."]
     pub async fn value(&self) -> Result<Json, QueryError> {
         let mut query = self.selection.select("value");
         query.execute(&self.session).await
@@ -6648,6 +5722,11 @@ impl Node for ErrorValue {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<ErrorValue> for IdInput<NodeClient> {
+    fn from(value: ErrorValue) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -6662,6 +5741,11 @@ impl IntoID<Id> for FieldTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<FieldTypeDef> for IdInput<FieldTypeDef> {
+    fn from(value: FieldTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for FieldTypeDef {
     fn graphql_type() -> &'static str {
         "FieldTypeDef"
@@ -6671,27 +5755,27 @@ impl Sealed for FieldTypeDef {
     }
 }
 impl FieldTypeDef {
-    /// The reason this enum member is deprecated, if any.
+    #[doc = "The reason this enum member is deprecated, if any."]
     pub async fn deprecated(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("deprecated");
         query.execute(&self.session).await
     }
-    /// A doc string for the field, if any.
+    #[doc = "A doc string for the field, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this FieldTypeDef.
+    #[doc = "A unique identifier for this FieldTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the field in lowerCamelCase format.
+    #[doc = "The name of the field in lowerCamelCase format."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The location of this field declaration.
+    #[doc = "The location of this field declaration."]
     pub fn source_map(&self) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         SourceMap {
@@ -6699,7 +5783,7 @@ impl FieldTypeDef {
             selection: query,
         }
     }
-    /// The type of the field.
+    #[doc = "The type of the field."]
     pub fn type_def(&self) -> TypeDef {
         let mut query = self.selection.select("typeDef");
         TypeDef {
@@ -6715,6 +5799,11 @@ impl Node for FieldTypeDef {
         async move { query.execute(&session).await }
     }
 }
+impl From<FieldTypeDef> for IdInput<NodeClient> {
+    fn from(value: FieldTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct File {
     pub(crate) session: SessionHandle,
@@ -6722,68 +5811,68 @@ pub struct File {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileAsEnvFileOpts {
-    /// Replace "${VAR}" or "$VAR" with the value of other vars
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" with the value of other vars"]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileContentsOpts {
-    /// Maximum number of lines to read
+    #[doc = "Maximum number of lines to read"]
     #[builder(setter(into, strip_option), default)]
     pub limit_lines: Option<isize>,
-    /// Start reading after this line
+    #[doc = "Start reading after this line"]
     #[builder(setter(into, strip_option), default)]
     pub offset_lines: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileDigestOpts {
-    /// If true, exclude metadata from the digest.
+    #[doc = "If true, exclude metadata from the digest."]
     #[builder(setter(into, strip_option), default)]
     pub exclude_metadata: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileExportOpts {
-    /// If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
+    #[doc = "If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory."]
     #[builder(setter(into, strip_option), default)]
     pub allow_parent_dir_path: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileSearchOpts<'a> {
-    /// Allow the . pattern to match newlines in multiline mode.
+    #[doc = "Allow the . pattern to match newlines in multiline mode."]
     #[builder(setter(into, strip_option), default)]
     pub dotall: Option<bool>,
-    /// Only return matching files, not lines and content
+    #[doc = "Only return matching files, not lines and content"]
     #[builder(setter(into, strip_option), default)]
     pub files_only: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub globs: Option<Vec<&'a str>>,
-    /// Enable case-insensitive matching.
+    #[doc = "Enable case-insensitive matching."]
     #[builder(setter(into, strip_option), default)]
     pub insensitive: Option<bool>,
-    /// Limit the number of results to return
+    #[doc = "Limit the number of results to return"]
     #[builder(setter(into, strip_option), default)]
     pub limit: Option<isize>,
-    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[doc = "Interpret the pattern as a literal string instead of a regular expression."]
     #[builder(setter(into, strip_option), default)]
     pub literal: Option<bool>,
-    /// Enable searching across multiple lines.
+    #[doc = "Enable searching across multiple lines."]
     #[builder(setter(into, strip_option), default)]
     pub multiline: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
-    /// Skip hidden files (files starting with .).
+    #[doc = "Skip hidden files (files starting with .)."]
     #[builder(setter(into, strip_option), default)]
     pub skip_hidden: Option<bool>,
-    /// Honor .gitignore, .ignore, and .rgignore files.
+    #[doc = "Honor .gitignore, .ignore, and .rgignore files."]
     #[builder(setter(into, strip_option), default)]
     pub skip_ignored: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileWithReplacedOpts {
-    /// Replace all occurrences of the pattern.
+    #[doc = "Replace all occurrences of the pattern."]
     #[builder(setter(into, strip_option), default)]
     pub all: Option<bool>,
-    /// Replace the first match starting from the specified line.
+    #[doc = "Replace the first match starting from the specified line."]
     #[builder(setter(into, strip_option), default)]
     pub first_from: Option<isize>,
 }
@@ -6792,6 +5881,11 @@ impl IntoID<Id> for File {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<File> for IdInput<File> {
+    fn from(value: File) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for File {
@@ -6803,11 +5897,7 @@ impl Sealed for File {
     }
 }
 impl File {
-    /// Parse as an env file
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Parse as an env file"]
     pub fn as_env_file(&self) -> EnvFile {
         let mut query = self.selection.select("asEnvFile");
         EnvFile {
@@ -6815,11 +5905,7 @@ impl File {
             selection: query,
         }
     }
-    /// Parse as an env file
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Parse as an env file"]
     pub fn as_env_file_opts(&self, opts: FileAsEnvFileOpts) -> EnvFile {
         let mut query = self.selection.select("asEnvFile");
         if let Some(expand) = opts.expand {
@@ -6830,7 +5916,7 @@ impl File {
             selection: query,
         }
     }
-    /// Parse the file contents as JSON.
+    #[doc = "Parse the file contents as JSON."]
     pub fn as_json(&self) -> JsonValue {
         let mut query = self.selection.select("asJSON");
         JsonValue {
@@ -6838,15 +5924,11 @@ impl File {
             selection: query,
         }
     }
-    /// Change the owner of the file recursively.
-    ///
-    /// # Arguments
-    ///
-    /// * `owner` - A user:group to set for the file.
-    ///
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    ///
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "Change the owner of the file recursively."]
+    #[doc = "# Arguments"]
+    #[doc = "* `owner` - A user:group to set for the file."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     pub fn chown(&self, owner: impl Into<String>) -> File {
         let mut query = self.selection.select("chown");
         query = query.arg("owner", owner.into());
@@ -6855,20 +5937,12 @@ impl File {
             selection: query,
         }
     }
-    /// Retrieves the contents of the file.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves the contents of the file."]
     pub async fn contents(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("contents");
         query.execute(&self.session).await
     }
-    /// Retrieves the contents of the file.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves the contents of the file."]
     pub async fn contents_opts(&self, opts: FileContentsOpts) -> Result<String, QueryError> {
         let mut query = self.selection.select("contents");
         if let Some(offset_lines) = opts.offset_lines {
@@ -6879,20 +5953,12 @@ impl File {
         }
         query.execute(&self.session).await
     }
-    /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."]
     pub async fn digest(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("digest");
         query.execute(&self.session).await
     }
-    /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."]
     pub async fn digest_opts(&self, opts: FileDigestOpts) -> Result<String, QueryError> {
         let mut query = self.selection.select("digest");
         if let Some(exclude_metadata) = opts.exclude_metadata {
@@ -6900,23 +5966,17 @@ impl File {
         }
         query.execute(&self.session).await
     }
-    /// Writes the file to a file path on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the written directory (e.g., "output.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Writes the file to a file path on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the written directory (e.g., \"output.txt\")."]
     pub async fn export(&self, path: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(&self.session).await
     }
-    /// Writes the file to a file path on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the written directory (e.g., "output.txt").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Writes the file to a file path on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the written directory (e.g., \"output.txt\")."]
     pub async fn export_opts(
         &self,
         path: impl Into<String>,
@@ -6929,23 +5989,20 @@ impl File {
         }
         query.execute(&self.session).await
     }
-    /// A unique identifier for this File.
+    #[doc = "A unique identifier for this File."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Retrieves the name of the file.
+    #[doc = "Retrieves the name of the file."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Searches for content matching the given regular expression or literal string."]
+    #[doc = "Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - The text to match."]
     pub async fn search(
         &self,
         pattern: impl Into<String>,
@@ -6953,25 +6010,14 @@ impl File {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| SearchResult {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("SearchResult"),
-            })
-            .collect())
+        query
+            .execute_reentry::<SearchResult, Vec<Id>>(&self.session, "SearchResult")
+            .await
     }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Searches for content matching the given regular expression or literal string."]
+    #[doc = "Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - The text to match."]
     pub async fn search_opts<'a>(
         &self,
         pattern: impl Into<String>,
@@ -7010,24 +6056,16 @@ impl File {
             query = query.arg("globs", globs);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| SearchResult {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("SearchResult"),
-            })
-            .collect())
+        query
+            .execute_reentry::<SearchResult, Vec<Id>>(&self.session, "SearchResult")
+            .await
     }
-    /// Retrieves the size of the file, in bytes.
+    #[doc = "Retrieves the size of the file, in bytes."]
     pub async fn size(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("size");
         query.execute(&self.session).await
     }
-    /// Return file status
+    #[doc = "Return file status"]
     pub fn stat(&self) -> Stat {
         let mut query = self.selection.select("stat");
         Stat {
@@ -7035,24 +6073,15 @@ impl File {
             selection: query,
         }
     }
-    /// Force evaluation in the engine.
+    #[doc = "Force evaluation in the engine."]
     pub async fn sync(&self) -> Result<File, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(File {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("File"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "File"))
     }
-    /// Retrieves this file with its name set to the given name.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name to set file to.
+    #[doc = "Retrieves this file with its name set to the given name."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name to set file to."]
     pub fn with_name(&self, name: impl Into<String>) -> File {
         let mut query = self.selection.select("withName");
         query = query.arg("name", name.into());
@@ -7061,17 +6090,14 @@ impl File {
             selection: query,
         }
     }
-    /// Retrieves the file with content replaced with the given text.
-    /// If 'all' is true, all occurrences of the pattern will be replaced.
-    /// If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
-    /// If neither are specified, and there are multiple matches for the pattern, this will error.
-    /// If there are no matches for the pattern, this will error.
-    ///
-    /// # Arguments
-    ///
-    /// * `search` - The text to match.
-    /// * `replacement` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves the file with content replaced with the given text."]
+    #[doc = "If 'all' is true, all occurrences of the pattern will be replaced."]
+    #[doc = "If 'firstAfter' is specified, only the first match starting at the specified line will be replaced."]
+    #[doc = "If neither are specified, and there are multiple matches for the pattern, this will error."]
+    #[doc = "If there are no matches for the pattern, this will error."]
+    #[doc = "# Arguments"]
+    #[doc = "* `search` - The text to match."]
+    #[doc = "* `replacement` - The text to match."]
     pub fn with_replaced(&self, search: impl Into<String>, replacement: impl Into<String>) -> File {
         let mut query = self.selection.select("withReplaced");
         query = query.arg("search", search.into());
@@ -7081,17 +6107,14 @@ impl File {
             selection: query,
         }
     }
-    /// Retrieves the file with content replaced with the given text.
-    /// If 'all' is true, all occurrences of the pattern will be replaced.
-    /// If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
-    /// If neither are specified, and there are multiple matches for the pattern, this will error.
-    /// If there are no matches for the pattern, this will error.
-    ///
-    /// # Arguments
-    ///
-    /// * `search` - The text to match.
-    /// * `replacement` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves the file with content replaced with the given text."]
+    #[doc = "If 'all' is true, all occurrences of the pattern will be replaced."]
+    #[doc = "If 'firstAfter' is specified, only the first match starting at the specified line will be replaced."]
+    #[doc = "If neither are specified, and there are multiple matches for the pattern, this will error."]
+    #[doc = "If there are no matches for the pattern, this will error."]
+    #[doc = "# Arguments"]
+    #[doc = "* `search` - The text to match."]
+    #[doc = "* `replacement` - The text to match."]
     pub fn with_replaced_opts(
         &self,
         search: impl Into<String>,
@@ -7112,13 +6135,10 @@ impl File {
             selection: query,
         }
     }
-    /// Retrieves this file with its created/modified timestamps set to the given time.
-    ///
-    /// # Arguments
-    ///
-    /// * `timestamp` - Timestamp to set dir/files in.
-    ///
-    /// Formatted in seconds following Unix epoch (e.g., 1672531199).
+    #[doc = "Retrieves this file with its created/modified timestamps set to the given time."]
+    #[doc = "# Arguments"]
+    #[doc = "* `timestamp` - Timestamp to set dir/files in."]
+    #[doc = "Formatted in seconds following Unix epoch (e.g., 1672531199)."]
     pub fn with_timestamps(&self, timestamp: isize) -> File {
         let mut query = self.selection.select("withTimestamps");
         query = query.arg("timestamp", timestamp);
@@ -7144,11 +6164,21 @@ impl Exportable for File {
         async move { query.execute(&session).await }
     }
 }
+impl From<File> for IdInput<ExportableClient> {
+    fn from(value: File) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Node for File {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<File> for IdInput<NodeClient> {
+    fn from(value: File) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Syncer for File {
@@ -7163,6 +6193,11 @@ impl Syncer for File {
         async move { query.execute(&session).await }
     }
 }
+impl From<File> for IdInput<SyncerClient> {
+    fn from(value: File) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Function {
     pub(crate) session: SessionHandle,
@@ -7172,34 +6207,34 @@ pub struct Function {
 pub struct FunctionWithArgOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub default_address: Option<&'a str>,
-    /// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+    #[doc = "If the argument is a Directory or File type, default to load path from context directory, relative to root directory."]
     #[builder(setter(into, strip_option), default)]
     pub default_path: Option<&'a str>,
-    /// A default value to use for this argument if not explicitly set by the caller, if any
+    #[doc = "A default value to use for this argument if not explicitly set by the caller, if any"]
     #[builder(setter(into, strip_option), default)]
     pub default_value: Option<Json>,
-    /// If deprecated, the reason or migration path.
+    #[doc = "If deprecated, the reason or migration path."]
     #[builder(setter(into, strip_option), default)]
     pub deprecated: Option<&'a str>,
-    /// A doc string for the argument, if any
+    #[doc = "A doc string for the argument, if any"]
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// Patterns to ignore when loading the contextual argument value.
+    #[doc = "Patterns to ignore when loading the contextual argument value."]
     #[builder(setter(into, strip_option), default)]
     pub ignore: Option<Vec<&'a str>>,
-    /// The source map for the argument definition.
+    #[doc = "The source map for the argument definition."]
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithCachePolicyOpts<'a> {
-    /// The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+    #[doc = "The TTL for the cache policy, if applicable. Provided as a duration string, e.g. \"5m\", \"1h30s\"."]
     #[builder(setter(into, strip_option), default)]
     pub time_to_live: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithDeprecatedOpts<'a> {
-    /// Reason or migration path describing the deprecation.
+    #[doc = "Reason or migration path describing the deprecation."]
     #[builder(setter(into, strip_option), default)]
     pub reason: Option<&'a str>,
 }
@@ -7208,6 +6243,11 @@ impl IntoID<Id> for Function {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Function> for IdInput<Function> {
+    fn from(value: Function) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Function {
@@ -7219,43 +6259,35 @@ impl Sealed for Function {
     }
 }
 impl Function {
-    /// Arguments accepted by the function, if any.
+    #[doc = "Arguments accepted by the function, if any."]
     pub async fn args(&self) -> Result<Vec<FunctionArg>, QueryError> {
         let mut query = self.selection.select("args");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| FunctionArg {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("FunctionArg"),
-            })
-            .collect())
+        query
+            .execute_reentry::<FunctionArg, Vec<Id>>(&self.session, "FunctionArg")
+            .await
     }
-    /// The reason this function is deprecated, if any.
+    #[doc = "The reason this function is deprecated, if any."]
     pub async fn deprecated(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("deprecated");
         query.execute(&self.session).await
     }
-    /// A doc string for the function, if any.
+    #[doc = "A doc string for the function, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Function.
+    #[doc = "A unique identifier for this Function."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the function.
+    #[doc = "The name of the function."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The type returned by the function.
+    #[doc = "The type returned by the function."]
     pub fn return_type(&self) -> TypeDef {
         let mut query = self.selection.select("returnType");
         TypeDef {
@@ -7263,7 +6295,7 @@ impl Function {
             selection: query,
         }
     }
-    /// The location of this function declaration.
+    #[doc = "The location of this function declaration."]
     pub fn source_map(&self) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         SourceMap {
@@ -7271,48 +6303,28 @@ impl Function {
             selection: query,
         }
     }
-    /// If this function is provided by a module, the name of the module. Unset otherwise.
+    #[doc = "If this function is provided by a module, the name of the module. Unset otherwise."]
     pub async fn source_module_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("sourceModuleName");
         query.execute(&self.session).await
     }
-    /// Returns the function with the provided argument
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the argument
-    /// * `type_def` - The type of the argument
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the function with the provided argument"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the argument"]
+    #[doc = "* `typeDef` - The type of the argument"]
     pub fn with_arg(&self, name: impl Into<String>, type_def: impl IntoID<Id>) -> Function {
         let mut query = self.selection.select("withArg");
         query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "typeDef",
-            Box::new(move || {
-                let type_def = type_def.clone();
-                Box::pin(async move {
-                    type_def
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("typeDef", IdInput::<Id>::lazy(type_def));
         Function {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Returns the function with the provided argument
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the argument
-    /// * `type_def` - The type of the argument
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the function with the provided argument"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the argument"]
+    #[doc = "* `typeDef` - The type of the argument"]
     pub fn with_arg_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -7321,21 +6333,7 @@ impl Function {
     ) -> Function {
         let mut query = self.selection.select("withArg");
         query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "typeDef",
-            Box::new(move || {
-                let type_def = type_def.clone();
-                Box::pin(async move {
-                    type_def
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("typeDef", IdInput::<Id>::lazy(type_def));
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
@@ -7362,12 +6360,9 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function updated to use the provided cache policy.
-    ///
-    /// # Arguments
-    ///
-    /// * `policy` - The cache policy to use.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the function updated to use the provided cache policy."]
+    #[doc = "# Arguments"]
+    #[doc = "* `policy` - The cache policy to use."]
     pub fn with_cache_policy(&self, policy: FunctionCachePolicy) -> Function {
         let mut query = self.selection.select("withCachePolicy");
         query = query.arg("policy", policy);
@@ -7376,12 +6371,9 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function updated to use the provided cache policy.
-    ///
-    /// # Arguments
-    ///
-    /// * `policy` - The cache policy to use.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the function updated to use the provided cache policy."]
+    #[doc = "# Arguments"]
+    #[doc = "* `policy` - The cache policy to use."]
     pub fn with_cache_policy_opts<'a>(
         &self,
         policy: FunctionCachePolicy,
@@ -7397,7 +6389,7 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function with a flag indicating it's a check.
+    #[doc = "Returns the function with a flag indicating it's a check."]
     pub fn with_check(&self) -> Function {
         let mut query = self.selection.select("withCheck");
         Function {
@@ -7405,11 +6397,7 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function with the provided deprecation reason.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the function with the provided deprecation reason."]
     pub fn with_deprecated(&self) -> Function {
         let mut query = self.selection.select("withDeprecated");
         Function {
@@ -7417,11 +6405,7 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function with the provided deprecation reason.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns the function with the provided deprecation reason."]
     pub fn with_deprecated_opts<'a>(&self, opts: FunctionWithDeprecatedOpts<'a>) -> Function {
         let mut query = self.selection.select("withDeprecated");
         if let Some(reason) = opts.reason {
@@ -7432,11 +6416,9 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function with the given doc string.
-    ///
-    /// # Arguments
-    ///
-    /// * `description` - The doc string to set.
+    #[doc = "Returns the function with the given doc string."]
+    #[doc = "# Arguments"]
+    #[doc = "* `description` - The doc string to set."]
     pub fn with_description(&self, description: impl Into<String>) -> Function {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
@@ -7445,7 +6427,7 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function with a flag indicating it's a generator.
+    #[doc = "Returns the function with a flag indicating it's a generator."]
     pub fn with_generator(&self) -> Function {
         let mut query = self.selection.select("withGenerator");
         Function {
@@ -7453,34 +6435,18 @@ impl Function {
             selection: query,
         }
     }
-    /// Returns the function with the given source map.
-    ///
-    /// # Arguments
-    ///
-    /// * `source_map` - The source map for the function definition.
+    #[doc = "Returns the function with the given source map."]
+    #[doc = "# Arguments"]
+    #[doc = "* `sourceMap` - The source map for the function definition."]
     pub fn with_source_map(&self, source_map: impl IntoID<Id>) -> Function {
         let mut query = self.selection.select("withSourceMap");
-        query = query.arg_lazy(
-            "sourceMap",
-            Box::new(move || {
-                let source_map = source_map.clone();
-                Box::pin(async move {
-                    source_map
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("sourceMap", IdInput::<Id>::lazy(source_map));
         Function {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Returns the function with a flag indicating it returns a service for dagger up.
+    #[doc = "Returns the function with a flag indicating it returns a service for dagger up."]
     pub fn with_up(&self) -> Function {
         let mut query = self.selection.select("withUp");
         Function {
@@ -7496,6 +6462,11 @@ impl Node for Function {
         async move { query.execute(&session).await }
     }
 }
+impl From<Function> for IdInput<NodeClient> {
+    fn from(value: Function) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct FunctionArg {
     pub(crate) session: SessionHandle,
@@ -7508,6 +6479,11 @@ impl IntoID<Id> for FunctionArg {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<FunctionArg> for IdInput<FunctionArg> {
+    fn from(value: FunctionArg) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for FunctionArg {
     fn graphql_type() -> &'static str {
         "FunctionArg"
@@ -7517,47 +6493,47 @@ impl Sealed for FunctionArg {
     }
 }
 impl FunctionArg {
-    /// Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+    #[doc = "Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)"]
     pub async fn default_address(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("defaultAddress");
         query.execute(&self.session).await
     }
-    /// Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
+    #[doc = "Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"]
     pub async fn default_path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("defaultPath");
         query.execute(&self.session).await
     }
-    /// A default value to use for this argument when not explicitly set by the caller, if any.
+    #[doc = "A default value to use for this argument when not explicitly set by the caller, if any."]
     pub async fn default_value(&self) -> Result<Json, QueryError> {
         let mut query = self.selection.select("defaultValue");
         query.execute(&self.session).await
     }
-    /// The reason this function is deprecated, if any.
+    #[doc = "The reason this function is deprecated, if any."]
     pub async fn deprecated(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("deprecated");
         query.execute(&self.session).await
     }
-    /// A doc string for the argument, if any.
+    #[doc = "A doc string for the argument, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this FunctionArg.
+    #[doc = "A unique identifier for this FunctionArg."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
+    #[doc = "Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."]
     pub async fn ignore(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("ignore");
         query.execute(&self.session).await
     }
-    /// The name of the argument in lowerCamelCase format.
+    #[doc = "The name of the argument in lowerCamelCase format."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The location of this arg declaration.
+    #[doc = "The location of this arg declaration."]
     pub fn source_map(&self) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         SourceMap {
@@ -7565,7 +6541,7 @@ impl FunctionArg {
             selection: query,
         }
     }
-    /// The type of the argument.
+    #[doc = "The type of the argument."]
     pub fn type_def(&self) -> TypeDef {
         let mut query = self.selection.select("typeDef");
         TypeDef {
@@ -7581,6 +6557,11 @@ impl Node for FunctionArg {
         async move { query.execute(&session).await }
     }
 }
+impl From<FunctionArg> for IdInput<NodeClient> {
+    fn from(value: FunctionArg) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct FunctionCall {
     pub(crate) session: SessionHandle,
@@ -7593,6 +6574,11 @@ impl IntoID<Id> for FunctionCall {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<FunctionCall> for IdInput<FunctionCall> {
+    fn from(value: FunctionCall) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for FunctionCall {
     fn graphql_type() -> &'static str {
         "FunctionCall"
@@ -7602,68 +6588,46 @@ impl Sealed for FunctionCall {
     }
 }
 impl FunctionCall {
-    /// A unique identifier for this FunctionCall.
+    #[doc = "A unique identifier for this FunctionCall."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The argument values the function is being invoked with.
+    #[doc = "The argument values the function is being invoked with."]
     pub async fn input_args(&self) -> Result<Vec<FunctionCallArgValue>, QueryError> {
         let mut query = self.selection.select("inputArgs");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| FunctionCallArgValue {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("FunctionCallArgValue"),
-            })
-            .collect())
+        query
+            .execute_reentry::<FunctionCallArgValue, Vec<Id>>(&self.session, "FunctionCallArgValue")
+            .await
     }
-    /// The name of the function being called.
+    #[doc = "The name of the function being called."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
+    #[doc = "The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."]
     pub async fn parent(&self) -> Result<Json, QueryError> {
         let mut query = self.selection.select("parent");
         query.execute(&self.session).await
     }
-    /// The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
+    #[doc = "The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."]
     pub async fn parent_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("parentName");
         query.execute(&self.session).await
     }
-    /// Return an error from the function.
-    ///
-    /// # Arguments
-    ///
-    /// * `error` - The error to return.
-    pub async fn return_error(&self, error: impl IntoID<Id>) -> Result<Void, QueryError> {
+    #[doc = "Return an error from the function."]
+    #[doc = "# Arguments"]
+    #[doc = "* `error` - The error to return."]
+    pub async fn return_error(&self, error: impl IntoID<Id>) -> Result<(), QueryError> {
         let mut query = self.selection.select("returnError");
-        query = query.arg_lazy(
-            "error",
-            Box::new(move || {
-                let error = error.clone();
-                Box::pin(async move {
-                    error.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("error", IdInput::<Id>::lazy(error));
         query.execute(&self.session).await
     }
-    /// Set the return value of the function call to the provided value.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - JSON serialization of the return value.
-    pub async fn return_value(&self, value: Json) -> Result<Void, QueryError> {
+    #[doc = "Set the return value of the function call to the provided value."]
+    #[doc = "# Arguments"]
+    #[doc = "* `value` - JSON serialization of the return value."]
+    pub async fn return_value(&self, value: Json) -> Result<(), QueryError> {
         let mut query = self.selection.select("returnValue");
         query = query.arg("value", value);
         query.execute(&self.session).await
@@ -7674,6 +6638,11 @@ impl Node for FunctionCall {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<FunctionCall> for IdInput<NodeClient> {
+    fn from(value: FunctionCall) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -7688,6 +6657,11 @@ impl IntoID<Id> for FunctionCallArgValue {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<FunctionCallArgValue> for IdInput<FunctionCallArgValue> {
+    fn from(value: FunctionCallArgValue) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for FunctionCallArgValue {
     fn graphql_type() -> &'static str {
         "FunctionCallArgValue"
@@ -7697,17 +6671,17 @@ impl Sealed for FunctionCallArgValue {
     }
 }
 impl FunctionCallArgValue {
-    /// A unique identifier for this FunctionCallArgValue.
+    #[doc = "A unique identifier for this FunctionCallArgValue."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the argument.
+    #[doc = "The name of the argument."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The value of the argument represented as a JSON serialized string.
+    #[doc = "The value of the argument represented as a JSON serialized string."]
     pub async fn value(&self) -> Result<Json, QueryError> {
         let mut query = self.selection.select("value");
         query.execute(&self.session).await
@@ -7718,6 +6692,11 @@ impl Node for FunctionCallArgValue {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<FunctionCallArgValue> for IdInput<NodeClient> {
+    fn from(value: FunctionCallArgValue) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -7732,6 +6711,11 @@ impl IntoID<Id> for GeneratedCode {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<GeneratedCode> for IdInput<GeneratedCode> {
+    fn from(value: GeneratedCode) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for GeneratedCode {
     fn graphql_type() -> &'static str {
         "GeneratedCode"
@@ -7741,7 +6725,7 @@ impl Sealed for GeneratedCode {
     }
 }
 impl GeneratedCode {
-    /// The directory containing the generated code.
+    #[doc = "The directory containing the generated code."]
     pub fn code(&self) -> Directory {
         let mut query = self.selection.select("code");
         Directory {
@@ -7749,39 +6733,45 @@ impl GeneratedCode {
             selection: query,
         }
     }
-    /// A unique identifier for this GeneratedCode.
+    #[doc = "A unique identifier for this GeneratedCode."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// List of paths to mark generated in version control (i.e. .gitattributes).
+    #[doc = "List of paths to mark generated in version control (i.e. .gitattributes)."]
     pub async fn vcs_generated_paths(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("vcsGeneratedPaths");
         query.execute(&self.session).await
     }
-    /// List of paths to ignore in version control (i.e. .gitignore).
+    #[doc = "List of paths to ignore in version control (i.e. .gitignore)."]
     pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("vcsIgnoredPaths");
         query.execute(&self.session).await
     }
-    /// Set the list of paths to mark generated in version control.
+    #[doc = "Set the list of paths to mark generated in version control."]
     pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
         let mut query = self.selection.select("withVCSGeneratedPaths");
         query = query.arg(
             "paths",
-            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            paths
+                .into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         GeneratedCode {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Set the list of paths to ignore in version control.
+    #[doc = "Set the list of paths to ignore in version control."]
     pub fn with_vcs_ignored_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
         let mut query = self.selection.select("withVCSIgnoredPaths");
         query = query.arg(
             "paths",
-            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            paths
+                .into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         GeneratedCode {
             session: self.session.clone(),
@@ -7796,6 +6786,11 @@ impl Node for GeneratedCode {
         async move { query.execute(&session).await }
     }
 }
+impl From<GeneratedCode> for IdInput<NodeClient> {
+    fn from(value: GeneratedCode) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Generator {
     pub(crate) session: SessionHandle,
@@ -7808,6 +6803,11 @@ impl IntoID<Id> for Generator {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Generator> for IdInput<Generator> {
+    fn from(value: Generator) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Generator {
     fn graphql_type() -> &'static str {
         "Generator"
@@ -7817,7 +6817,7 @@ impl Sealed for Generator {
     }
 }
 impl Generator {
-    /// The generated changeset from the last run
+    #[doc = "The generated changeset from the last run"]
     pub fn changes(&self) -> Changeset {
         let mut query = self.selection.select("changes");
         Changeset {
@@ -7825,32 +6825,32 @@ impl Generator {
             selection: query,
         }
     }
-    /// Whether the generator complete
+    #[doc = "Whether the generator complete"]
     pub async fn completed(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("completed");
         query.execute(&self.session).await
     }
-    /// Return the description of the generator
+    #[doc = "Return the description of the generator"]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Generator.
+    #[doc = "A unique identifier for this Generator."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Whether changeset from the last generator run is empty or not
+    #[doc = "Whether changeset from the last generator run is empty or not"]
     pub async fn is_empty(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("isEmpty");
         query.execute(&self.session).await
     }
-    /// Return the fully qualified name of the generator
+    #[doc = "Return the fully qualified name of the generator"]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The original module in which the generator has been defined
+    #[doc = "The original module in which the generator has been defined"]
     pub fn original_module(&self) -> Module {
         let mut query = self.selection.select("originalModule");
         Module {
@@ -7858,12 +6858,12 @@ impl Generator {
             selection: query,
         }
     }
-    /// The path of the generator within its module
+    #[doc = "The path of the generator within its module"]
     pub async fn path(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("path");
         query.execute(&self.session).await
     }
-    /// Execute the generator
+    #[doc = "Execute the generator"]
     pub fn run(&self) -> Generator {
         let mut query = self.selection.select("run");
         Generator {
@@ -7879,6 +6879,11 @@ impl Node for Generator {
         async move { query.execute(&session).await }
     }
 }
+impl From<Generator> for IdInput<NodeClient> {
+    fn from(value: Generator) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct GeneratorGroup {
     pub(crate) session: SessionHandle,
@@ -7886,7 +6891,7 @@ pub struct GeneratorGroup {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GeneratorGroupChangesOpts {
-    /// Strategy to apply on conflicts between generators
+    #[doc = "Strategy to apply on conflicts between generators"]
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetsMergeConflict>,
 }
@@ -7895,6 +6900,11 @@ impl IntoID<Id> for GeneratorGroup {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<GeneratorGroup> for IdInput<GeneratorGroup> {
+    fn from(value: GeneratorGroup) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for GeneratorGroup {
@@ -7906,13 +6916,9 @@ impl Sealed for GeneratorGroup {
     }
 }
 impl GeneratorGroup {
-    /// The combined changes from the last run of the generators
-    /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
-    /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The combined changes from the last run of the generators"]
+    #[doc = "If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed."]
+    #[doc = "Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy."]
     pub fn changes(&self) -> Changeset {
         let mut query = self.selection.select("changes");
         Changeset {
@@ -7920,13 +6926,9 @@ impl GeneratorGroup {
             selection: query,
         }
     }
-    /// The combined changes from the last run of the generators
-    /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
-    /// Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The combined changes from the last run of the generators"]
+    #[doc = "If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed."]
+    #[doc = "Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy."]
     pub fn changes_opts(&self, opts: GeneratorGroupChangesOpts) -> Changeset {
         let mut query = self.selection.select("changes");
         if let Some(on_conflict) = opts.on_conflict {
@@ -7937,39 +6939,31 @@ impl GeneratorGroup {
             selection: query,
         }
     }
-    /// A unique identifier for this GeneratorGroup.
+    #[doc = "A unique identifier for this GeneratorGroup."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Whether the generated changeset from the last run is empty or not
+    #[doc = "Whether the generated changeset from the last run is empty or not"]
     pub async fn is_empty(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("isEmpty");
         query.execute(&self.session).await
     }
-    /// Return a list of individual generators and their details
+    #[doc = "Return a list of individual generators and their details"]
     pub async fn list(&self) -> Result<Vec<Generator>, QueryError> {
         let mut query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Generator {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Generator"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Generator, Vec<Id>>(&self.session, "Generator")
+            .await
     }
-    /// Load failures tolerated while collecting the generators.
-    /// Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+    #[doc = "Load failures tolerated while collecting the generators."]
+    #[doc = "Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead."]
     pub async fn load_failures(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("loadFailures");
         query.execute(&self.session).await
     }
-    /// Execute all selected generators
+    #[doc = "Execute all selected generators"]
     pub fn run(&self) -> GeneratorGroup {
         let mut query = self.selection.select("run");
         GeneratorGroup {
@@ -7985,6 +6979,11 @@ impl Node for GeneratorGroup {
         async move { query.execute(&session).await }
     }
 }
+impl From<GeneratorGroup> for IdInput<NodeClient> {
+    fn from(value: GeneratorGroup) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct GitRef {
     pub(crate) session: SessionHandle,
@@ -7992,19 +6991,19 @@ pub struct GitRef {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefAsWorkspaceOpts<'a> {
-    /// Current working directory inside the workspace root. Defaults to the workspace root.
+    #[doc = "Current working directory inside the workspace root. Defaults to the workspace root."]
     #[builder(setter(into, strip_option), default)]
     pub cwd: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
-    /// The depth of the tree to fetch.
+    #[doc = "The depth of the tree to fetch."]
     #[builder(setter(into, strip_option), default)]
     pub depth: Option<isize>,
-    /// Set to true to discard .git directory.
+    #[doc = "Set to true to discard .git directory."]
     #[builder(setter(into, strip_option), default)]
     pub discard_git_dir: Option<bool>,
-    /// Set to true to populate tag refs in the local checkout .git.
+    #[doc = "Set to true to populate tag refs in the local checkout .git."]
     #[builder(setter(into, strip_option), default)]
     pub include_tags: Option<bool>,
 }
@@ -8013,6 +7012,11 @@ impl IntoID<Id> for GitRef {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<GitRef> for IdInput<GitRef> {
+    fn from(value: GitRef) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for GitRef {
@@ -8024,11 +7028,7 @@ impl Sealed for GitRef {
     }
 }
 impl GitRef {
-    /// Creates a synthetic workspace from this git ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a synthetic workspace from this git ref."]
     pub fn as_workspace(&self) -> Workspace {
         let mut query = self.selection.select("asWorkspace");
         Workspace {
@@ -8036,11 +7036,7 @@ impl GitRef {
             selection: query,
         }
     }
-    /// Creates a synthetic workspace from this git ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a synthetic workspace from this git ref."]
     pub fn as_workspace_opts<'a>(&self, opts: GitRefAsWorkspaceOpts<'a>) -> Workspace {
         let mut query = self.selection.select("asWorkspace");
         if let Some(cwd) = opts.cwd {
@@ -8051,49 +7047,33 @@ impl GitRef {
             selection: query,
         }
     }
-    /// The resolved commit id at this ref.
+    #[doc = "The resolved commit id at this ref."]
     pub async fn commit(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("commit");
         query.execute(&self.session).await
     }
-    /// Find the best common ancestor between this ref and another ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `other` - The other ref to compare against.
+    #[doc = "Find the best common ancestor between this ref and another ref."]
+    #[doc = "# Arguments"]
+    #[doc = "* `other` - The other ref to compare against."]
     pub fn common_ancestor(&self, other: impl IntoID<Id>) -> GitRef {
         let mut query = self.selection.select("commonAncestor");
-        query = query.arg_lazy(
-            "other",
-            Box::new(move || {
-                let other = other.clone();
-                Box::pin(async move {
-                    other.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("other", IdInput::<Id>::lazy(other));
         GitRef {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// A unique identifier for this GitRef.
+    #[doc = "A unique identifier for this GitRef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The resolved ref name at this ref.
+    #[doc = "The resolved ref name at this ref."]
     pub async fn r#ref(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("ref");
         query.execute(&self.session).await
     }
-    /// The filesystem tree at this ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The filesystem tree at this ref."]
     pub fn tree(&self) -> Directory {
         let mut query = self.selection.select("tree");
         Directory {
@@ -8101,11 +7081,7 @@ impl GitRef {
             selection: query,
         }
     }
-    /// The filesystem tree at this ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The filesystem tree at this ref."]
     pub fn tree_opts(&self, opts: GitRefTreeOpts) -> Directory {
         let mut query = self.selection.select("tree");
         if let Some(discard_git_dir) = opts.discard_git_dir {
@@ -8130,6 +7106,11 @@ impl Node for GitRef {
         async move { query.execute(&session).await }
     }
 }
+impl From<GitRef> for IdInput<NodeClient> {
+    fn from(value: GitRef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct GitRepository {
     pub(crate) session: SessionHandle,
@@ -8137,19 +7118,19 @@ pub struct GitRepository {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryAsWorkspaceOpts<'a> {
-    /// Current working directory inside the workspace root. Defaults to the workspace root.
+    #[doc = "Current working directory inside the workspace root. Defaults to the workspace root."]
     #[builder(setter(into, strip_option), default)]
     pub cwd: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryBranchesOpts<'a> {
-    /// Glob patterns (e.g., "refs/tags/v*").
+    #[doc = "Glob patterns (e.g., \"refs/tags/v*\")."]
     #[builder(setter(into, strip_option), default)]
     pub patterns: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryTagsOpts<'a> {
-    /// Glob patterns (e.g., "refs/tags/v*").
+    #[doc = "Glob patterns (e.g., \"refs/tags/v*\")."]
     #[builder(setter(into, strip_option), default)]
     pub patterns: Option<Vec<&'a str>>,
 }
@@ -8158,6 +7139,11 @@ impl IntoID<Id> for GitRepository {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<GitRepository> for IdInput<GitRepository> {
+    fn from(value: GitRepository) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for GitRepository {
@@ -8169,11 +7155,7 @@ impl Sealed for GitRepository {
     }
 }
 impl GitRepository {
-    /// Creates a synthetic workspace from this git repository.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a synthetic workspace from this git repository."]
     pub fn as_workspace(&self) -> Workspace {
         let mut query = self.selection.select("asWorkspace");
         Workspace {
@@ -8181,11 +7163,7 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// Creates a synthetic workspace from this git repository.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a synthetic workspace from this git repository."]
     pub fn as_workspace_opts<'a>(&self, opts: GitRepositoryAsWorkspaceOpts<'a>) -> Workspace {
         let mut query = self.selection.select("asWorkspace");
         if let Some(cwd) = opts.cwd {
@@ -8196,11 +7174,9 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// Returns details of a branch.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Branch's name (e.g., "main").
+    #[doc = "Returns details of a branch."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Branch's name (e.g., \"main\")."]
     pub fn branch(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("branch");
         query = query.arg("name", name.into());
@@ -8209,20 +7185,12 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// branches that match any of the given glob patterns.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "branches that match any of the given glob patterns."]
     pub async fn branches(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("branches");
         query.execute(&self.session).await
     }
-    /// branches that match any of the given glob patterns.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "branches that match any of the given glob patterns."]
     pub async fn branches_opts<'a>(
         &self,
         opts: GitRepositoryBranchesOpts<'a>,
@@ -8233,11 +7201,9 @@ impl GitRepository {
         }
         query.execute(&self.session).await
     }
-    /// Returns details of a commit.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+    #[doc = "Returns details of a commit."]
+    #[doc = "# Arguments"]
+    #[doc = "* `id` - Identifier of the commit (e.g., \"b6315d8f2810962c601af73f86831f6866ea798b\")."]
     pub fn commit(&self, id: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("commit");
         query = query.arg("id", id.into());
@@ -8246,7 +7212,7 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// Returns details for HEAD.
+    #[doc = "Returns details for HEAD."]
     pub fn head(&self) -> GitRef {
         let mut query = self.selection.select("head");
         GitRef {
@@ -8254,12 +7220,12 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// A unique identifier for this GitRepository.
+    #[doc = "A unique identifier for this GitRepository."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Returns details for the latest semver tag.
+    #[doc = "Returns details for the latest semver tag."]
     pub fn latest_version(&self) -> GitRef {
         let mut query = self.selection.select("latestVersion");
         GitRef {
@@ -8267,11 +7233,9 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// Returns details of a ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    #[doc = "Returns details of a ref."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref)."]
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
         query = query.arg("name", name.into());
@@ -8280,11 +7244,9 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// Returns details of a tag.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Tag's name (e.g., "v0.3.9").
+    #[doc = "Returns details of a tag."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Tag's name (e.g., \"v0.3.9\")."]
     pub fn tag(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("tag");
         query = query.arg("name", name.into());
@@ -8293,20 +7255,12 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// tags that match any of the given glob patterns.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "tags that match any of the given glob patterns."]
     pub async fn tags(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("tags");
         query.execute(&self.session).await
     }
-    /// tags that match any of the given glob patterns.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "tags that match any of the given glob patterns."]
     pub async fn tags_opts<'a>(
         &self,
         opts: GitRepositoryTagsOpts<'a>,
@@ -8317,7 +7271,7 @@ impl GitRepository {
         }
         query.execute(&self.session).await
     }
-    /// Returns the changeset of uncommitted changes in the git repository.
+    #[doc = "Returns the changeset of uncommitted changes in the git repository."]
     pub fn uncommitted(&self) -> Changeset {
         let mut query = self.selection.select("uncommitted");
         Changeset {
@@ -8325,7 +7279,7 @@ impl GitRepository {
             selection: query,
         }
     }
-    /// The URL of the git repository.
+    #[doc = "The URL of the git repository."]
     pub async fn url(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("url");
         query.execute(&self.session).await
@@ -8336,6 +7290,11 @@ impl Node for GitRepository {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<GitRepository> for IdInput<NodeClient> {
+    fn from(value: GitRepository) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -8350,6 +7309,11 @@ impl IntoID<Id> for HttpState {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<HttpState> for IdInput<HttpState> {
+    fn from(value: HttpState) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for HttpState {
     fn graphql_type() -> &'static str {
         "HTTPState"
@@ -8359,7 +7323,7 @@ impl Sealed for HttpState {
     }
 }
 impl HttpState {
-    /// A unique identifier for this HTTPState.
+    #[doc = "A unique identifier for this HTTPState."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -8370,6 +7334,11 @@ impl Node for HttpState {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<HttpState> for IdInput<NodeClient> {
+    fn from(value: HttpState) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -8384,6 +7353,11 @@ impl IntoID<Id> for HealthcheckConfig {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<HealthcheckConfig> for IdInput<HealthcheckConfig> {
+    fn from(value: HealthcheckConfig) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for HealthcheckConfig {
     fn graphql_type() -> &'static str {
         "HealthcheckConfig"
@@ -8393,42 +7367,42 @@ impl Sealed for HealthcheckConfig {
     }
 }
 impl HealthcheckConfig {
-    /// Healthcheck command arguments.
+    #[doc = "Healthcheck command arguments."]
     pub async fn args(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("args");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this HealthcheckConfig.
+    #[doc = "A unique identifier for this HealthcheckConfig."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Interval between running healthcheck. Example:30s
+    #[doc = "Interval between running healthcheck. Example:30s"]
     pub async fn interval(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("interval");
         query.execute(&self.session).await
     }
-    /// The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+    #[doc = "The maximum number of consecutive failures before the container is marked as unhealthy. Example:3"]
     pub async fn retries(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("retries");
         query.execute(&self.session).await
     }
-    /// Healthcheck command is a shell command.
+    #[doc = "Healthcheck command is a shell command."]
     pub async fn shell(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("shell");
         query.execute(&self.session).await
     }
-    /// StartInterval configures the duration between checks during the startup phase. Example:5s
+    #[doc = "StartInterval configures the duration between checks during the startup phase. Example:5s"]
     pub async fn start_interval(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("startInterval");
         query.execute(&self.session).await
     }
-    /// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+    #[doc = "StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s"]
     pub async fn start_period(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("startPeriod");
         query.execute(&self.session).await
     }
-    /// Healthcheck timeout. Example:3s
+    #[doc = "Healthcheck timeout. Example:3s"]
     pub async fn timeout(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("timeout");
         query.execute(&self.session).await
@@ -8441,6 +7415,11 @@ impl Node for HealthcheckConfig {
         async move { query.execute(&session).await }
     }
 }
+impl From<HealthcheckConfig> for IdInput<NodeClient> {
+    fn from(value: HealthcheckConfig) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Host {
     pub(crate) session: SessionHandle,
@@ -8448,22 +7427,22 @@ pub struct Host {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostDirectoryOpts<'a> {
-    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    #[doc = "Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
-    /// Apply .gitignore filter rules inside the directory
+    #[doc = "Apply .gitignore filter rules inside the directory"]
     #[builder(setter(into, strip_option), default)]
     pub gitignore: Option<bool>,
-    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    #[doc = "Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// If true, the directory will always be reloaded from the host.
+    #[doc = "If true, the directory will always be reloaded from the host."]
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostFileOpts {
-    /// If true, the file will always be reloaded from the host.
+    #[doc = "If true, the file will always be reloaded from the host."]
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
 }
@@ -8474,20 +7453,20 @@ pub struct HostFindUpOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostServiceOpts<'a> {
-    /// Upstream host to forward traffic to.
+    #[doc = "Upstream host to forward traffic to."]
     #[builder(setter(into, strip_option), default)]
     pub host: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostTunnelOpts {
-    /// Map each service port to the same port on the host, as if the service were running natively.
-    /// Note: enabling may result in port conflicts.
+    #[doc = "Map each service port to the same port on the host, as if the service were running natively."]
+    #[doc = "Note: enabling may result in port conflicts."]
     #[builder(setter(into, strip_option), default)]
     pub native: Option<bool>,
-    /// Configure explicit port forwarding rules for the tunnel.
-    /// If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-    /// If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-    /// If ports are given and native is true, the ports are additive.
+    #[doc = "Configure explicit port forwarding rules for the tunnel."]
+    #[doc = "If a port's frontend is unspecified or 0, a random port will be chosen by the host."]
+    #[doc = "If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host."]
+    #[doc = "If ports are given and native is true, the ports are additive."]
     #[builder(setter(into, strip_option), default)]
     pub ports: Option<Vec<PortForward>>,
 }
@@ -8496,6 +7475,11 @@ impl IntoID<Id> for Host {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Host> for IdInput<Host> {
+    fn from(value: Host) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Host {
@@ -8507,11 +7491,9 @@ impl Sealed for Host {
     }
 }
 impl Host {
-    /// Accesses a container image on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the image to access.
+    #[doc = "Accesses a container image on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the image to access."]
     pub fn container_image(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("containerImage");
         query = query.arg("name", name.into());
@@ -8520,12 +7502,9 @@ impl Host {
             selection: query,
         }
     }
-    /// Accesses a directory on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to access (e.g., ".").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Accesses a directory on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to access (e.g., \".\")."]
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
@@ -8534,12 +7513,9 @@ impl Host {
             selection: query,
         }
     }
-    /// Accesses a directory on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to access (e.g., ".").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Accesses a directory on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to access (e.g., \".\")."]
     pub fn directory_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -8564,12 +7540,9 @@ impl Host {
             selection: query,
         }
     }
-    /// Accesses a file on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the file to retrieve (e.g., "README.md").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Accesses a file on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the file to retrieve (e.g., \"README.md\")."]
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -8578,12 +7551,9 @@ impl Host {
             selection: query,
         }
     }
-    /// Accesses a file on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the file to retrieve (e.g., "README.md").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Accesses a file on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the file to retrieve (e.g., \"README.md\")."]
     pub fn file_opts(&self, path: impl Into<String>, opts: HostFileOpts) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -8595,23 +7565,17 @@ impl Host {
             selection: query,
         }
     }
-    /// Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - name of the file or directory to search for
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - name of the file or directory to search for"]
     pub async fn find_up(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
         query.execute(&self.session).await
     }
-    /// Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - name of the file or directory to search for
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - name of the file or directory to search for"]
     pub async fn find_up_opts(
         &self,
         name: impl Into<String>,
@@ -8624,21 +7588,16 @@ impl Host {
         }
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Host.
+    #[doc = "A unique identifier for this Host."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Creates a service that forwards traffic to a specified address via the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `ports` - Ports to expose via the service, forwarding through the host network.
-    ///
-    /// If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-    ///
-    /// An empty set of ports is not valid; an error will be returned.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a service that forwards traffic to a specified address via the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `ports` - Ports to expose via the service, forwarding through the host network."]
+    #[doc = "If a port's frontend is unspecified or 0, it defaults to the same as the backend port."]
+    #[doc = "An empty set of ports is not valid; an error will be returned."]
     pub fn service(&self, ports: Vec<PortForward>) -> Service {
         let mut query = self.selection.select("service");
         query = query.arg("ports", ports);
@@ -8647,16 +7606,11 @@ impl Host {
             selection: query,
         }
     }
-    /// Creates a service that forwards traffic to a specified address via the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `ports` - Ports to expose via the service, forwarding through the host network.
-    ///
-    /// If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-    ///
-    /// An empty set of ports is not valid; an error will be returned.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a service that forwards traffic to a specified address via the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `ports` - Ports to expose via the service, forwarding through the host network."]
+    #[doc = "If a port's frontend is unspecified or 0, it defaults to the same as the backend port."]
+    #[doc = "An empty set of ports is not valid; an error will be returned."]
     pub fn service_opts<'a>(&self, ports: Vec<PortForward>, opts: HostServiceOpts<'a>) -> Service {
         let mut query = self.selection.select("service");
         query = query.arg("ports", ports);
@@ -8668,57 +7622,23 @@ impl Host {
             selection: query,
         }
     }
-    /// Creates a tunnel that forwards traffic from the host to a service.
-    ///
-    /// # Arguments
-    ///
-    /// * `service` - Service to send traffic from the tunnel.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a tunnel that forwards traffic from the host to a service."]
+    #[doc = "# Arguments"]
+    #[doc = "* `service` - Service to send traffic from the tunnel."]
     pub fn tunnel(&self, service: impl IntoID<Id>) -> Service {
         let mut query = self.selection.select("tunnel");
-        query = query.arg_lazy(
-            "service",
-            Box::new(move || {
-                let service = service.clone();
-                Box::pin(async move {
-                    service
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("service", IdInput::<Id>::lazy(service));
         Service {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Creates a tunnel that forwards traffic from the host to a service.
-    ///
-    /// # Arguments
-    ///
-    /// * `service` - Service to send traffic from the tunnel.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a tunnel that forwards traffic from the host to a service."]
+    #[doc = "# Arguments"]
+    #[doc = "* `service` - Service to send traffic from the tunnel."]
     pub fn tunnel_opts(&self, service: impl IntoID<Id>, opts: HostTunnelOpts) -> Service {
         let mut query = self.selection.select("tunnel");
-        query = query.arg_lazy(
-            "service",
-            Box::new(move || {
-                let service = service.clone();
-                Box::pin(async move {
-                    service
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("service", IdInput::<Id>::lazy(service));
         if let Some(native) = opts.native {
             query = query.arg("native", native);
         }
@@ -8730,11 +7650,9 @@ impl Host {
             selection: query,
         }
     }
-    /// Accesses a Unix socket on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the Unix socket (e.g., "/var/run/docker.sock").
+    #[doc = "Accesses a Unix socket on the host."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the Unix socket (e.g., \"/var/run/docker.sock\")."]
     pub fn unix_socket(&self, path: impl Into<String>) -> Socket {
         let mut query = self.selection.select("unixSocket");
         query = query.arg("path", path.into());
@@ -8751,6 +7669,11 @@ impl Node for Host {
         async move { query.execute(&session).await }
     }
 }
+impl From<Host> for IdInput<NodeClient> {
+    fn from(value: Host) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct InputTypeDef {
     pub(crate) session: SessionHandle,
@@ -8763,6 +7686,11 @@ impl IntoID<Id> for InputTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<InputTypeDef> for IdInput<InputTypeDef> {
+    fn from(value: InputTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for InputTypeDef {
     fn graphql_type() -> &'static str {
         "InputTypeDef"
@@ -8772,28 +7700,20 @@ impl Sealed for InputTypeDef {
     }
 }
 impl InputTypeDef {
-    /// Static fields defined on this input object, if any.
+    #[doc = "Static fields defined on this input object, if any."]
     pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, QueryError> {
         let mut query = self.selection.select("fields");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| FieldTypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("FieldTypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<FieldTypeDef, Vec<Id>>(&self.session, "FieldTypeDef")
+            .await
     }
-    /// A unique identifier for this InputTypeDef.
+    #[doc = "A unique identifier for this InputTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the input object.
+    #[doc = "The name of the input object."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
@@ -8804,6 +7724,11 @@ impl Node for InputTypeDef {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<InputTypeDef> for IdInput<NodeClient> {
+    fn from(value: InputTypeDef) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -8818,6 +7743,11 @@ impl IntoID<Id> for InterfaceTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<InterfaceTypeDef> for IdInput<InterfaceTypeDef> {
+    fn from(value: InterfaceTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for InterfaceTypeDef {
     fn graphql_type() -> &'static str {
         "InterfaceTypeDef"
@@ -8827,38 +7757,30 @@ impl Sealed for InterfaceTypeDef {
     }
 }
 impl InterfaceTypeDef {
-    /// The doc string for the interface, if any.
+    #[doc = "The doc string for the interface, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// Functions defined on this interface, if any.
+    #[doc = "Functions defined on this interface, if any."]
     pub async fn functions(&self) -> Result<Vec<Function>, QueryError> {
         let mut query = self.selection.select("functions");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Function {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Function"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Function, Vec<Id>>(&self.session, "Function")
+            .await
     }
-    /// A unique identifier for this InterfaceTypeDef.
+    #[doc = "A unique identifier for this InterfaceTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the interface.
+    #[doc = "The name of the interface."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The location of this interface declaration.
+    #[doc = "The location of this interface declaration."]
     pub fn source_map(&self) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         SourceMap {
@@ -8866,7 +7788,7 @@ impl InterfaceTypeDef {
             selection: query,
         }
     }
-    /// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    #[doc = "If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise."]
     pub async fn source_module_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("sourceModuleName");
         query.execute(&self.session).await
@@ -8879,6 +7801,11 @@ impl Node for InterfaceTypeDef {
         async move { query.execute(&session).await }
     }
 }
+impl From<InterfaceTypeDef> for IdInput<NodeClient> {
+    fn from(value: InterfaceTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct JsonValue {
     pub(crate) session: SessionHandle,
@@ -8886,10 +7813,10 @@ pub struct JsonValue {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct JsonValueContentsOpts<'a> {
-    /// Optional line prefix
+    #[doc = "Optional line prefix"]
     #[builder(setter(into, strip_option), default)]
     pub indent: Option<&'a str>,
-    /// Pretty-print
+    #[doc = "Pretty-print"]
     #[builder(setter(into, strip_option), default)]
     pub pretty: Option<bool>,
 }
@@ -8898,6 +7825,11 @@ impl IntoID<Id> for JsonValue {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<JsonValue> for IdInput<JsonValue> {
+    fn from(value: JsonValue) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for JsonValue {
@@ -8909,51 +7841,35 @@ impl Sealed for JsonValue {
     }
 }
 impl JsonValue {
-    /// Decode an array from json
+    #[doc = "Decode an array from json"]
     pub async fn as_array(&self) -> Result<Vec<JsonValue>, QueryError> {
         let mut query = self.selection.select("asArray");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| JsonValue {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("JSONValue"),
-            })
-            .collect())
+        query
+            .execute_reentry::<JsonValue, Vec<Id>>(&self.session, "JSONValue")
+            .await
     }
-    /// Decode a boolean from json
+    #[doc = "Decode a boolean from json"]
     pub async fn as_boolean(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("asBoolean");
         query.execute(&self.session).await
     }
-    /// Decode an integer from json
+    #[doc = "Decode an integer from json"]
     pub async fn as_integer(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("asInteger");
         query.execute(&self.session).await
     }
-    /// Decode a string from json
+    #[doc = "Decode a string from json"]
     pub async fn as_string(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("asString");
         query.execute(&self.session).await
     }
-    /// Return the value encoded as json
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return the value encoded as json"]
     pub async fn contents(&self) -> Result<Json, QueryError> {
         let mut query = self.selection.select("contents");
         query.execute(&self.session).await
     }
-    /// Return the value encoded as json
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return the value encoded as json"]
     pub async fn contents_opts<'a>(
         &self,
         opts: JsonValueContentsOpts<'a>,
@@ -8967,37 +7883,35 @@ impl JsonValue {
         }
         query.execute(&self.session).await
     }
-    /// Lookup the field at the given path, and return its value.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the field to lookup, encoded as an array of field names
+    #[doc = "Lookup the field at the given path, and return its value."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the field to lookup, encoded as an array of field names"]
     pub fn field(&self, path: Vec<impl Into<String>>) -> JsonValue {
         let mut query = self.selection.select("field");
         query = query.arg(
             "path",
-            path.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            path.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
         JsonValue {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// List fields of the encoded object
+    #[doc = "List fields of the encoded object"]
     pub async fn fields(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("fields");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this JSONValue.
+    #[doc = "A unique identifier for this JSONValue."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Encode a boolean to json
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - New boolean value
+    #[doc = "Encode a boolean to json"]
+    #[doc = "# Arguments"]
+    #[doc = "* `value` - New boolean value"]
     pub fn new_boolean(&self, value: bool) -> JsonValue {
         let mut query = self.selection.select("newBoolean");
         query = query.arg("value", value);
@@ -9006,11 +7920,9 @@ impl JsonValue {
             selection: query,
         }
     }
-    /// Encode an integer to json
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - New integer value
+    #[doc = "Encode an integer to json"]
+    #[doc = "# Arguments"]
+    #[doc = "* `value` - New integer value"]
     pub fn new_integer(&self, value: isize) -> JsonValue {
         let mut query = self.selection.select("newInteger");
         query = query.arg("value", value);
@@ -9019,11 +7931,9 @@ impl JsonValue {
             selection: query,
         }
     }
-    /// Encode a string to json
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - New string value
+    #[doc = "Encode a string to json"]
+    #[doc = "# Arguments"]
+    #[doc = "* `value` - New string value"]
     pub fn new_string(&self, value: impl Into<String>) -> JsonValue {
         let mut query = self.selection.select("newString");
         query = query.arg("value", value.into());
@@ -9032,11 +7942,9 @@ impl JsonValue {
             selection: query,
         }
     }
-    /// Return a new json value, decoded from the given content
-    ///
-    /// # Arguments
-    ///
-    /// * `contents` - New JSON-encoded contents
+    #[doc = "Return a new json value, decoded from the given content"]
+    #[doc = "# Arguments"]
+    #[doc = "* `contents` - New JSON-encoded contents"]
     pub fn with_contents(&self, contents: Json) -> JsonValue {
         let mut query = self.selection.select("withContents");
         query = query.arg("contents", contents);
@@ -9045,29 +7953,19 @@ impl JsonValue {
             selection: query,
         }
     }
-    /// Set a new field at the given path
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the field to set, encoded as an array of field names
-    /// * `value` - The new value of the field
+    #[doc = "Set a new field at the given path"]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the field to set, encoded as an array of field names"]
+    #[doc = "* `value` - The new value of the field"]
     pub fn with_field(&self, path: Vec<impl Into<String>>, value: impl IntoID<Id>) -> JsonValue {
         let mut query = self.selection.select("withField");
         query = query.arg(
             "path",
-            path.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+            path.into_iter()
+                .map(|item| item.into())
+                .collect::<Vec<String>>(),
         );
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move {
-                    value.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("value", IdInput::<Id>::lazy(value));
         JsonValue {
             session: self.session.clone(),
             selection: query,
@@ -9081,6 +7979,11 @@ impl Node for JsonValue {
         async move { query.execute(&session).await }
     }
 }
+impl From<JsonValue> for IdInput<NodeClient> {
+    fn from(value: JsonValue) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Llm {
     pub(crate) session: SessionHandle,
@@ -9088,46 +7991,46 @@ pub struct Llm {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmLoopOpts {
-    /// Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+    #[doc = "Cap the number of steps. The loop fails if the cap is reached before the model ends its turn."]
     #[builder(setter(into, strip_option), default)]
     pub max_steps: Option<isize>,
-    /// Cap the model's output tokens on each step. Defaults to the model's maximum.
+    #[doc = "Cap the model's output tokens on each step. Defaults to the model's maximum."]
     #[builder(setter(into, strip_option), default)]
     pub max_tokens: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmStepOpts {
-    /// Cap the model's output tokens for this step. Defaults to the model's maximum.
+    #[doc = "Cap the model's output tokens for this step. Defaults to the model's maximum."]
     #[builder(setter(into, strip_option), default)]
     pub max_tokens: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithModelOpts<'a> {
-    /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+    #[doc = "The provider serving the model, e.g. \"openai\". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one."]
     #[builder(setter(into, strip_option), default)]
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithResponseOpts {
-    /// Cached input tokens read
+    #[doc = "Cached input tokens read"]
     #[builder(setter(into, strip_option), default)]
     pub cached_token_reads: Option<isize>,
-    /// Cached input tokens written
+    #[doc = "Cached input tokens written"]
     #[builder(setter(into, strip_option), default)]
     pub cached_token_writes: Option<isize>,
-    /// Uncached input tokens sent
+    #[doc = "Uncached input tokens sent"]
     #[builder(setter(into, strip_option), default)]
     pub input_tokens: Option<isize>,
-    /// Tokens received from the model, including text and tool calls
+    #[doc = "Tokens received from the model, including text and tool calls"]
     #[builder(setter(into, strip_option), default)]
     pub output_tokens: Option<isize>,
-    /// Total tokens consumed by this response
+    #[doc = "Total tokens consumed by this response"]
     #[builder(setter(into, strip_option), default)]
     pub total_tokens: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithToolsOpts<'a> {
-    /// Method names to exclude from the toolset (e.g. constructors, entrypoints).
+    #[doc = "Method names to exclude from the toolset (e.g. constructors, entrypoints)."]
     #[builder(setter(into, strip_option), default)]
     pub except: Option<Vec<&'a str>>,
 }
@@ -9136,6 +8039,11 @@ impl IntoID<Id> for Llm {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Llm> for IdInput<Llm> {
+    fn from(value: Llm) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Llm {
@@ -9147,21 +8055,19 @@ impl Sealed for Llm {
     }
 }
 impl Llm {
-    /// estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
+    #[doc = "estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session"]
     pub async fn context_tokens(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("contextTokens");
         query.execute(&self.session).await
     }
-    /// The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
+    #[doc = "The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model)."]
     pub async fn context_window(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("contextWindow");
         query.execute(&self.session).await
     }
-    /// Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
-    ///
-    /// # Arguments
-    ///
-    /// * `label` - A label distinguishing this fork from its siblings, e.g. "attempt-2" when retrying a flaky evaluation.
+    #[doc = "Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result."]
+    #[doc = "# Arguments"]
+    #[doc = "* `label` - A label distinguishing this fork from its siblings, e.g. \"attempt-2\" when retrying a flaky evaluation."]
     pub fn fork(&self, label: impl Into<String>) -> Llm {
         let mut query = self.selection.select("fork");
         query = query.arg("label", label.into());
@@ -9170,26 +8076,22 @@ impl Llm {
             selection: query,
         }
     }
-    /// Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
+    #[doc = "Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete."]
     pub async fn has_pending(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("hasPending");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this LLM.
+    #[doc = "A unique identifier for this LLM."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The text of the model's most recent reply.
+    #[doc = "The text of the model's most recent reply."]
     pub async fn last_reply(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("lastReply");
         query.execute(&self.session).await
     }
-    /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued."]
     pub fn r#loop(&self) -> Llm {
         let mut query = self.selection.select("loop");
         Llm {
@@ -9197,12 +8099,8 @@ impl Llm {
             selection: query,
         }
     }
-    /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn r#loop_opts(&self, opts: LlmLoopOpts) -> Llm {
+    #[doc = "Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued."]
+    pub fn loop_opts(&self, opts: LlmLoopOpts) -> Llm {
         let mut query = self.selection.select("loop");
         if let Some(max_steps) = opts.max_steps {
             query = query.arg("maxSteps", max_steps);
@@ -9215,55 +8113,36 @@ impl Llm {
             selection: query,
         }
     }
-    /// The full message history, as structured messages.
+    #[doc = "The full message history, as structured messages."]
     pub async fn messages(&self) -> Result<Vec<LlmMessage>, QueryError> {
         let mut query = self.selection.select("messages");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| LlmMessage {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("LLMMessage"),
-            })
-            .collect())
+        query
+            .execute_reentry::<LlmMessage, Vec<Id>>(&self.session, "LLMMessage")
+            .await
     }
-    /// The model the conversation is running against, after resolving any configured default.
+    #[doc = "The model the conversation is running against, after resolving any configured default."]
     pub async fn model(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("model");
         query.execute(&self.session).await
     }
-    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+    #[doc = "A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation."]
     pub async fn portable_id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("portableID");
         query.execute(&self.session).await
     }
-    /// The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
+    #[doc = "The provider serving the model, e.g. \"anthropic\", \"openai\", \"google\", or \"local\"."]
     pub async fn provider(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("provider");
         query.execute(&self.session).await
     }
-    /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+    #[doc = "Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI."]
     pub async fn replay(&self) -> Result<Llm, QueryError> {
         let mut query = self.selection.select("replay");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Llm {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("LLM"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "LLM"))
     }
-    /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn."]
     pub fn step(&self) -> Llm {
         let mut query = self.selection.select("step");
         Llm {
@@ -9271,11 +8150,7 @@ impl Llm {
             selection: query,
         }
     }
-    /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn."]
     pub fn step_opts(&self, opts: LlmStepOpts) -> Llm {
         let mut query = self.selection.select("step");
         if let Some(max_tokens) = opts.max_tokens {
@@ -9286,20 +8161,13 @@ impl Llm {
             selection: query,
         }
     }
-    /// Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
+    #[doc = "Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine."]
     pub async fn sync(&self) -> Result<Llm, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Llm {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("LLM"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "LLM"))
     }
-    /// The cumulative token usage, summed across every API call in the conversation.
+    #[doc = "The cumulative token usage, summed across every API call in the conversation."]
     pub fn token_usage(&self) -> LlmTokenUsage {
         let mut query = self.selection.select("tokenUsage");
         LlmTokenUsage {
@@ -9307,51 +8175,32 @@ impl Llm {
             selection: query,
         }
     }
-    /// Render documentation for the tools currently exposed to the model.
+    #[doc = "Render documentation for the tools currently exposed to the model."]
     pub async fn tools(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("tools");
         query.execute(&self.session).await
     }
-    /// The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+    #[doc = "The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization)."]
     pub async fn transcript(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("transcript");
         query.execute(&self.session).await
     }
-    /// Add an external MCP server to the LLM
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the MCP server
-    /// * `service` - The MCP service to run and communicate with over stdio
+    #[doc = "Add an external MCP server to the LLM"]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the MCP server"]
+    #[doc = "* `service` - The MCP service to run and communicate with over stdio"]
     pub fn with_mcp_server(&self, name: impl Into<String>, service: impl IntoID<Id>) -> Llm {
         let mut query = self.selection.select("withMCPServer");
         query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "service",
-            Box::new(move || {
-                let service = service.clone();
-                Box::pin(async move {
-                    service
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("service", IdInput::<Id>::lazy(service));
         Llm {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
-    ///
-    /// # Arguments
-    ///
-    /// * `model` - The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step."]
+    #[doc = "# Arguments"]
+    #[doc = "* `model` - The model to use, e.g. \"claude-sonnet-4-5\" or \"gpt-5.4\"."]
     pub fn with_model(&self, model: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withModel");
         query = query.arg("model", model.into());
@@ -9360,12 +8209,9 @@ impl Llm {
             selection: query,
         }
     }
-    /// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
-    ///
-    /// # Arguments
-    ///
-    /// * `model` - The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step."]
+    #[doc = "# Arguments"]
+    #[doc = "* `model` - The model to use, e.g. \"claude-sonnet-4-5\" or \"gpt-5.4\"."]
     pub fn with_model_opts<'a>(&self, model: impl Into<String>, opts: LlmWithModelOpts<'a>) -> Llm {
         let mut query = self.selection.select("withModel");
         query = query.arg("model", model.into());
@@ -9377,11 +8223,9 @@ impl Llm {
             selection: query,
         }
     }
-    /// Queue a user prompt, to be sent to the model on the next step or loop.
-    ///
-    /// # Arguments
-    ///
-    /// * `prompt` - The prompt to send
+    #[doc = "Queue a user prompt, to be sent to the model on the next step or loop."]
+    #[doc = "# Arguments"]
+    #[doc = "* `prompt` - The prompt to send"]
     pub fn with_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withPrompt");
         query = query.arg("prompt", prompt.into());
@@ -9390,35 +8234,20 @@ impl Llm {
             selection: query,
         }
     }
-    /// Queue a file's contents as a user prompt, like withPrompt.
-    ///
-    /// # Arguments
-    ///
-    /// * `file` - The file to read the prompt from
+    #[doc = "Queue a file's contents as a user prompt, like withPrompt."]
+    #[doc = "# Arguments"]
+    #[doc = "* `file` - The file to read the prompt from"]
     pub fn with_prompt_file(&self, file: impl IntoID<Id>) -> Llm {
         let mut query = self.selection.select("withPromptFile");
-        query = query.arg_lazy(
-            "file",
-            Box::new(move || {
-                let file = file.clone();
-                Box::pin(async move {
-                    file.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("file", IdInput::<Id>::lazy(file));
         Llm {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The response content
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `content` - The response content"]
     pub fn with_response(&self, content: Vec<LlmContentBlockInput>) -> Llm {
         let mut query = self.selection.select("withResponse");
         query = query.arg("content", content);
@@ -9427,12 +8256,9 @@ impl Llm {
             selection: query,
         }
     }
-    /// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The response content
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `content` - The response content"]
     pub fn with_response_opts(
         &self,
         content: Vec<LlmContentBlockInput>,
@@ -9460,11 +8286,9 @@ impl Llm {
             selection: query,
         }
     }
-    /// Add a system prompt, instructing the model across the whole conversation.
-    ///
-    /// # Arguments
-    ///
-    /// * `prompt` - The system prompt to send
+    #[doc = "Add a system prompt, instructing the model across the whole conversation."]
+    #[doc = "# Arguments"]
+    #[doc = "* `prompt` - The system prompt to send"]
     pub fn with_system_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withSystemPrompt");
         query = query.arg("prompt", prompt.into());
@@ -9473,13 +8297,11 @@ impl Llm {
             selection: query,
         }
     }
-    /// Append the result of a tool call to the message history.
-    ///
-    /// # Arguments
-    ///
-    /// * `call_id` - The ID of the tool call this result responds to
-    /// * `content` - The content returned by the tool
-    /// * `errored` - Whether the tool call resulted in an error
+    #[doc = "Append the result of a tool call to the message history."]
+    #[doc = "# Arguments"]
+    #[doc = "* `callId` - The ID of the tool call this result responds to"]
+    #[doc = "* `content` - The content returned by the tool"]
+    #[doc = "* `errored` - Whether the tool call resulted in an error"]
     pub fn with_tool_result(
         &self,
         call_id: impl Into<String>,
@@ -9495,57 +8317,23 @@ impl Llm {
             selection: query,
         }
     }
-    /// Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
-    ///
-    /// # Arguments
-    ///
-    /// * `object` - The object whose methods become tools.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects."]
+    #[doc = "# Arguments"]
+    #[doc = "* `object` - The object whose methods become tools."]
     pub fn with_tools(&self, object: impl IntoID<Id>) -> Llm {
         let mut query = self.selection.select("withTools");
-        query = query.arg_lazy(
-            "object",
-            Box::new(move || {
-                let object = object.clone();
-                Box::pin(async move {
-                    object
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("object", IdInput::<Id>::lazy(object));
         Llm {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
-    ///
-    /// # Arguments
-    ///
-    /// * `object` - The object whose methods become tools.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects."]
+    #[doc = "# Arguments"]
+    #[doc = "* `object` - The object whose methods become tools."]
     pub fn with_tools_opts<'a>(&self, object: impl IntoID<Id>, opts: LlmWithToolsOpts<'a>) -> Llm {
         let mut query = self.selection.select("withTools");
-        query = query.arg_lazy(
-            "object",
-            Box::new(move || {
-                let object = object.clone();
-                Box::pin(async move {
-                    object
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("object", IdInput::<Id>::lazy(object));
         if let Some(except) = opts.except {
             query = query.arg("except", except);
         }
@@ -9554,34 +8342,18 @@ impl Llm {
             selection: query,
         }
     }
-    /// Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `workspace` - The workspace to work in.
+    #[doc = "Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace."]
+    #[doc = "# Arguments"]
+    #[doc = "* `workspace` - The workspace to work in."]
     pub fn with_workspace(&self, workspace: impl IntoID<Id>) -> Llm {
         let mut query = self.selection.select("withWorkspace");
-        query = query.arg_lazy(
-            "workspace",
-            Box::new(move || {
-                let workspace = workspace.clone();
-                Box::pin(async move {
-                    workspace
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("workspace", IdInput::<Id>::lazy(workspace));
         Llm {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Disable the default system prompt
+    #[doc = "Disable the default system prompt"]
     pub fn without_default_system_prompt(&self) -> Llm {
         let mut query = self.selection.select("withoutDefaultSystemPrompt");
         Llm {
@@ -9589,7 +8361,7 @@ impl Llm {
             selection: query,
         }
     }
-    /// Clear the message history, keeping only the system prompts.
+    #[doc = "Clear the message history, keeping only the system prompts."]
     pub fn without_message_history(&self) -> Llm {
         let mut query = self.selection.select("withoutMessageHistory");
         Llm {
@@ -9597,7 +8369,7 @@ impl Llm {
             selection: query,
         }
     }
-    /// Clear the user-added system prompts, keeping only the default system prompt.
+    #[doc = "Clear the user-added system prompts, keeping only the default system prompt."]
     pub fn without_system_prompts(&self) -> Llm {
         let mut query = self.selection.select("withoutSystemPrompts");
         Llm {
@@ -9605,7 +8377,7 @@ impl Llm {
             selection: query,
         }
     }
-    /// Return the workspace the LLM is bound to.
+    #[doc = "Return the workspace the LLM is bound to."]
     pub fn workspace(&self) -> Workspace {
         let mut query = self.selection.select("workspace");
         Workspace {
@@ -9621,6 +8393,11 @@ impl Node for Llm {
         async move { query.execute(&session).await }
     }
 }
+impl From<Llm> for IdInput<NodeClient> {
+    fn from(value: Llm) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Syncer for Llm {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
         let mut query = self.selection.select("id");
@@ -9631,6 +8408,11 @@ impl Syncer for Llm {
         let mut query = self.selection.select("sync");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Llm> for IdInput<SyncerClient> {
+    fn from(value: Llm) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -9645,6 +8427,11 @@ impl IntoID<Id> for LlmContentBlock {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<LlmContentBlock> for IdInput<LlmContentBlock> {
+    fn from(value: LlmContentBlock) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for LlmContentBlock {
     fn graphql_type() -> &'static str {
         "LLMContentBlock"
@@ -9654,42 +8441,42 @@ impl Sealed for LlmContentBlock {
     }
 }
 impl LlmContentBlock {
-    /// The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+    #[doc = "The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind)."]
     pub async fn arguments(&self) -> Result<Json, QueryError> {
         let mut query = self.selection.select("arguments");
         query.execute(&self.session).await
     }
-    /// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+    #[doc = "The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."]
     pub async fn call_id(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("callId");
         query.execute(&self.session).await
     }
-    /// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+    #[doc = "Whether the tool call resulted in an error (for TOOL_RESULT kind)."]
     pub async fn errored(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("errored");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this LLMContentBlock.
+    #[doc = "A unique identifier for this LLMContentBlock."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The kind of content block, which determines the other populated fields.
+    #[doc = "The kind of content block, which determines the other populated fields."]
     pub async fn kind(&self) -> Result<LlmContentBlockKind, QueryError> {
         let mut query = self.selection.select("kind");
         query.execute(&self.session).await
     }
-    /// Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+    #[doc = "Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation."]
     pub async fn signature(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("signature");
         query.execute(&self.session).await
     }
-    /// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+    #[doc = "Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."]
     pub async fn text(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("text");
         query.execute(&self.session).await
     }
-    /// The name of the tool called (for TOOL_CALL kind).
+    #[doc = "The name of the tool called (for TOOL_CALL kind)."]
     pub async fn tool_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("toolName");
         query.execute(&self.session).await
@@ -9700,6 +8487,11 @@ impl Node for LlmContentBlock {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<LlmContentBlock> for IdInput<NodeClient> {
+    fn from(value: LlmContentBlock) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -9714,6 +8506,11 @@ impl IntoID<Id> for LlmMessage {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<LlmMessage> for IdInput<LlmMessage> {
+    fn from(value: LlmMessage) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for LlmMessage {
     fn graphql_type() -> &'static str {
         "LLMMessage"
@@ -9723,33 +8520,25 @@ impl Sealed for LlmMessage {
     }
 }
 impl LlmMessage {
-    /// The message's content blocks, in the order the model produced them.
+    #[doc = "The message's content blocks, in the order the model produced them."]
     pub async fn content(&self) -> Result<Vec<LlmContentBlock>, QueryError> {
         let mut query = self.selection.select("content");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| LlmContentBlock {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("LLMContentBlock"),
-            })
-            .collect())
+        query
+            .execute_reentry::<LlmContentBlock, Vec<Id>>(&self.session, "LLMContentBlock")
+            .await
     }
-    /// A unique identifier for this LLMMessage.
+    #[doc = "A unique identifier for this LLMMessage."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The role that produced this message.
+    #[doc = "The role that produced this message."]
     pub async fn role(&self) -> Result<LlmMessageRole, QueryError> {
         let mut query = self.selection.select("role");
         query.execute(&self.session).await
     }
-    /// Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+    #[doc = "Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses."]
     pub fn token_usage(&self) -> LlmTokenUsage {
         let mut query = self.selection.select("tokenUsage");
         LlmTokenUsage {
@@ -9765,6 +8554,11 @@ impl Node for LlmMessage {
         async move { query.execute(&session).await }
     }
 }
+impl From<LlmMessage> for IdInput<NodeClient> {
+    fn from(value: LlmMessage) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct LlmTokenUsage {
     pub(crate) session: SessionHandle,
@@ -9777,6 +8571,11 @@ impl IntoID<Id> for LlmTokenUsage {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<LlmTokenUsage> for IdInput<LlmTokenUsage> {
+    fn from(value: LlmTokenUsage) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for LlmTokenUsage {
     fn graphql_type() -> &'static str {
         "LLMTokenUsage"
@@ -9786,32 +8585,32 @@ impl Sealed for LlmTokenUsage {
     }
 }
 impl LlmTokenUsage {
-    /// Input tokens served from the provider's prompt cache.
+    #[doc = "Input tokens served from the provider's prompt cache."]
     pub async fn cached_token_reads(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("cachedTokenReads");
         query.execute(&self.session).await
     }
-    /// Input tokens written to the provider's prompt cache.
+    #[doc = "Input tokens written to the provider's prompt cache."]
     pub async fn cached_token_writes(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("cachedTokenWrites");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this LLMTokenUsage.
+    #[doc = "A unique identifier for this LLMTokenUsage."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Uncached input tokens sent to the model.
+    #[doc = "Uncached input tokens sent to the model."]
     pub async fn input_tokens(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("inputTokens");
         query.execute(&self.session).await
     }
-    /// Tokens received from the model, including text and tool calls.
+    #[doc = "Tokens received from the model, including text and tool calls."]
     pub async fn output_tokens(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("outputTokens");
         query.execute(&self.session).await
     }
-    /// Total tokens consumed, as reported by the provider.
+    #[doc = "Total tokens consumed, as reported by the provider."]
     pub async fn total_tokens(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("totalTokens");
         query.execute(&self.session).await
@@ -9822,6 +8621,11 @@ impl Node for LlmTokenUsage {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<LlmTokenUsage> for IdInput<NodeClient> {
+    fn from(value: LlmTokenUsage) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -9836,6 +8640,11 @@ impl IntoID<Id> for Label {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Label> for IdInput<Label> {
+    fn from(value: Label) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Label {
     fn graphql_type() -> &'static str {
         "Label"
@@ -9845,17 +8654,17 @@ impl Sealed for Label {
     }
 }
 impl Label {
-    /// A unique identifier for this Label.
+    #[doc = "A unique identifier for this Label."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The label name.
+    #[doc = "The label name."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The label value.
+    #[doc = "The label value."]
     pub async fn value(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("value");
         query.execute(&self.session).await
@@ -9866,6 +8675,11 @@ impl Node for Label {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Label> for IdInput<NodeClient> {
+    fn from(value: Label) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -9880,6 +8694,11 @@ impl IntoID<Id> for ListTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<ListTypeDef> for IdInput<ListTypeDef> {
+    fn from(value: ListTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for ListTypeDef {
     fn graphql_type() -> &'static str {
         "ListTypeDef"
@@ -9889,7 +8708,7 @@ impl Sealed for ListTypeDef {
     }
 }
 impl ListTypeDef {
-    /// The type of the elements in the list.
+    #[doc = "The type of the elements in the list."]
     pub fn element_type_def(&self) -> TypeDef {
         let mut query = self.selection.select("elementTypeDef");
         TypeDef {
@@ -9897,7 +8716,7 @@ impl ListTypeDef {
             selection: query,
         }
     }
-    /// A unique identifier for this ListTypeDef.
+    #[doc = "A unique identifier for this ListTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -9910,6 +8729,11 @@ impl Node for ListTypeDef {
         async move { query.execute(&session).await }
     }
 }
+impl From<ListTypeDef> for IdInput<NodeClient> {
+    fn from(value: ListTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Module {
     pub(crate) session: SessionHandle,
@@ -9917,31 +8741,31 @@ pub struct Module {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleChecksOpts<'a> {
-    /// Only include checks matching the specified patterns
+    #[doc = "Only include checks matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// When true, only return annotated check functions; exclude generate-as-checks
+    #[doc = "When true, only return annotated check functions; exclude generate-as-checks"]
     #[builder(setter(into, strip_option), default)]
     pub no_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleGeneratorsOpts<'a> {
-    /// Only include generators matching the specified patterns
+    #[doc = "Only include generators matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServeOpts {
-    /// Install the module as the entrypoint, promoting its main-object methods onto the Query root
+    #[doc = "Install the module as the entrypoint, promoting its main-object methods onto the Query root"]
     #[builder(setter(into, strip_option), default)]
     pub entrypoint: Option<bool>,
-    /// Expose the dependencies of this module to the client
+    #[doc = "Expose the dependencies of this module to the client"]
     #[builder(setter(into, strip_option), default)]
     pub include_dependencies: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServicesOpts<'a> {
-    /// Only include services matching the specified patterns
+    #[doc = "Only include services matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
@@ -9950,6 +8774,11 @@ impl IntoID<Id> for Module {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Module> for IdInput<Module> {
+    fn from(value: Module) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Module {
@@ -9961,11 +8790,9 @@ impl Sealed for Module {
     }
 }
 impl Module {
-    /// Return the check defined by the module with the given name. Must match to exactly one check.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the check to retrieve
+    #[doc = "Return the check defined by the module with the given name. Must match to exactly one check."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the check to retrieve"]
     pub fn check(&self, name: impl Into<String>) -> Check {
         let mut query = self.selection.select("check");
         query = query.arg("name", name.into());
@@ -9974,11 +8801,7 @@ impl Module {
             selection: query,
         }
     }
-    /// Return all checks defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all checks defined by the module"]
     pub fn checks(&self) -> CheckGroup {
         let mut query = self.selection.select("checks");
         CheckGroup {
@@ -9986,11 +8809,7 @@ impl Module {
             selection: query,
         }
     }
-    /// Return all checks defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all checks defined by the module"]
     pub fn checks_opts<'a>(&self, opts: ModuleChecksOpts<'a>) -> CheckGroup {
         let mut query = self.selection.select("checks");
         if let Some(include) = opts.include {
@@ -10004,44 +8823,28 @@ impl Module {
             selection: query,
         }
     }
-    /// The dependencies of the module.
+    #[doc = "The dependencies of the module."]
     pub async fn dependencies(&self) -> Result<Vec<Module>, QueryError> {
         let mut query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Module {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Module"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Module, Vec<Id>>(&self.session, "Module")
+            .await
     }
-    /// The doc string of the module, if any
+    #[doc = "The doc string of the module, if any"]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// Enumerations served by this module.
+    #[doc = "Enumerations served by this module."]
     pub async fn enums(&self) -> Result<Vec<TypeDef>, QueryError> {
         let mut query = self.selection.select("enums");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| TypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("TypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<TypeDef, Vec<Id>>(&self.session, "TypeDef")
+            .await
     }
-    /// The generated files and directories made on top of the module source's context directory.
+    #[doc = "The generated files and directories made on top of the module source's context directory."]
     pub fn generated_context_directory(&self) -> Directory {
         let mut query = self.selection.select("generatedContextDirectory");
         Directory {
@@ -10049,11 +8852,9 @@ impl Module {
             selection: query,
         }
     }
-    /// Return the generator defined by the module with the given name. Must match to exactly one generator.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the generator to retrieve
+    #[doc = "Return the generator defined by the module with the given name. Must match to exactly one generator."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the generator to retrieve"]
     pub fn generator(&self, name: impl Into<String>) -> Generator {
         let mut query = self.selection.select("generator");
         query = query.arg("name", name.into());
@@ -10062,11 +8863,7 @@ impl Module {
             selection: query,
         }
     }
-    /// Return all generators defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all generators defined by the module"]
     pub fn generators(&self) -> GeneratorGroup {
         let mut query = self.selection.select("generators");
         GeneratorGroup {
@@ -10074,11 +8871,7 @@ impl Module {
             selection: query,
         }
     }
-    /// Return all generators defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all generators defined by the module"]
     pub fn generators_opts<'a>(&self, opts: ModuleGeneratorsOpts<'a>) -> GeneratorGroup {
         let mut query = self.selection.select("generators");
         if let Some(include) = opts.include {
@@ -10089,30 +8882,22 @@ impl Module {
             selection: query,
         }
     }
-    /// A unique identifier for this Module.
+    #[doc = "A unique identifier for this Module."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Interfaces served by this module.
+    #[doc = "Interfaces served by this module."]
     pub async fn interfaces(&self) -> Result<Vec<TypeDef>, QueryError> {
         let mut query = self.selection.select("interfaces");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| TypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("TypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<TypeDef, Vec<Id>>(&self.session, "TypeDef")
+            .await
     }
-    /// The introspection schema JSON file for this module.
-    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
-    /// Note: this is in the context of a module, so some core types may be hidden.
+    #[doc = "The introspection schema JSON file for this module."]
+    #[doc = "This file represents the schema visible to the module's source code, including all core types and those from the dependencies."]
+    #[doc = "Note: this is in the context of a module, so some core types may be hidden."]
     pub fn introspection_schema_json(&self) -> File {
         let mut query = self.selection.select("introspectionSchemaJSON");
         File {
@@ -10120,28 +8905,20 @@ impl Module {
             selection: query,
         }
     }
-    /// The name of the module
+    #[doc = "The name of the module"]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// Objects served by this module.
+    #[doc = "Objects served by this module."]
     pub async fn objects(&self) -> Result<Vec<TypeDef>, QueryError> {
         let mut query = self.selection.select("objects");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| TypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("TypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<TypeDef, Vec<Id>>(&self.session, "TypeDef")
+            .await
     }
-    /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+    #[doc = "The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."]
     pub fn runtime(&self) -> Container {
         let mut query = self.selection.select("runtime");
         Container {
@@ -10149,7 +8926,7 @@ impl Module {
             selection: query,
         }
     }
-    /// The SDK config used by this module.
+    #[doc = "The SDK config used by this module."]
     pub fn sdk(&self) -> SdkConfig {
         let mut query = self.selection.select("sdk");
         SdkConfig {
@@ -10157,23 +8934,15 @@ impl Module {
             selection: query,
         }
     }
-    /// Serve a module's API in the current session.
-    /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn serve(&self) -> Result<Void, QueryError> {
+    #[doc = "Serve a module's API in the current session."]
+    #[doc = "Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect."]
+    pub async fn serve(&self) -> Result<(), QueryError> {
         let mut query = self.selection.select("serve");
         query.execute(&self.session).await
     }
-    /// Serve a module's API in the current session.
-    /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<Void, QueryError> {
+    #[doc = "Serve a module's API in the current session."]
+    #[doc = "Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect."]
+    pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<(), QueryError> {
         let mut query = self.selection.select("serve");
         if let Some(include_dependencies) = opts.include_dependencies {
             query = query.arg("includeDependencies", include_dependencies);
@@ -10183,11 +8952,7 @@ impl Module {
         }
         query.execute(&self.session).await
     }
-    /// Return all services defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all services defined by the module"]
     pub fn services(&self) -> UpGroup {
         let mut query = self.selection.select("services");
         UpGroup {
@@ -10195,11 +8960,7 @@ impl Module {
             selection: query,
         }
     }
-    /// Return all services defined by the module
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all services defined by the module"]
     pub fn services_opts<'a>(&self, opts: ModuleServicesOpts<'a>) -> UpGroup {
         let mut query = self.selection.select("services");
         if let Some(include) = opts.include {
@@ -10210,7 +8971,7 @@ impl Module {
             selection: query,
         }
     }
-    /// The source for the module.
+    #[doc = "The source for the module."]
     pub fn source(&self) -> ModuleSource {
         let mut query = self.selection.select("source");
         ModuleSource {
@@ -10218,20 +8979,13 @@ impl Module {
             selection: query,
         }
     }
-    /// Forces evaluation of the module, including any loading into the engine and associated validation.
+    #[doc = "Forces evaluation of the module, including any loading into the engine and associated validation."]
     pub async fn sync(&self) -> Result<Module, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Module {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Module"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Module"))
     }
-    /// User-defined default values, loaded from local .env files.
+    #[doc = "User-defined default values, loaded from local .env files."]
     pub fn user_defaults(&self) -> EnvFile {
         let mut query = self.selection.select("userDefaults");
         EnvFile {
@@ -10239,11 +8993,9 @@ impl Module {
             selection: query,
         }
     }
-    /// Retrieves the module with the given description
-    ///
-    /// # Arguments
-    ///
-    /// * `description` - The description to set
+    #[doc = "Retrieves the module with the given description"]
+    #[doc = "# Arguments"]
+    #[doc = "* `description` - The description to set"]
     pub fn with_description(&self, description: impl Into<String>) -> Module {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
@@ -10252,66 +9004,28 @@ impl Module {
             selection: query,
         }
     }
-    /// This module plus the given Enum type and associated values
+    #[doc = "This module plus the given Enum type and associated values"]
     pub fn with_enum(&self, r#enum: impl IntoID<Id>) -> Module {
         let mut query = self.selection.select("withEnum");
-        query = query.arg_lazy(
-            "enum",
-            Box::new(move || {
-                let r#enum = r#enum.clone();
-                Box::pin(async move {
-                    r#enum
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("enum", IdInput::<Id>::lazy(r#enum));
         Module {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// This module plus the given Interface type and associated functions
+    #[doc = "This module plus the given Interface type and associated functions"]
     pub fn with_interface(&self, iface: impl IntoID<Id>) -> Module {
         let mut query = self.selection.select("withInterface");
-        query = query.arg_lazy(
-            "iface",
-            Box::new(move || {
-                let iface = iface.clone();
-                Box::pin(async move {
-                    iface.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("iface", IdInput::<Id>::lazy(iface));
         Module {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// This module plus the given Object type and associated functions.
+    #[doc = "This module plus the given Object type and associated functions."]
     pub fn with_object(&self, object: impl IntoID<Id>) -> Module {
         let mut query = self.selection.select("withObject");
-        query = query.arg_lazy(
-            "object",
-            Box::new(move || {
-                let object = object.clone();
-                Box::pin(async move {
-                    object
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("object", IdInput::<Id>::lazy(object));
         Module {
             session: self.session.clone(),
             selection: query,
@@ -10323,6 +9037,11 @@ impl Node for Module {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Module> for IdInput<NodeClient> {
+    fn from(value: Module) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Syncer for Module {
@@ -10337,6 +9056,11 @@ impl Syncer for Module {
         async move { query.execute(&session).await }
     }
 }
+impl From<Module> for IdInput<SyncerClient> {
+    fn from(value: Module) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct ModuleConfigClient {
     pub(crate) session: SessionHandle,
@@ -10349,6 +9073,11 @@ impl IntoID<Id> for ModuleConfigClient {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<ModuleConfigClient> for IdInput<ModuleConfigClient> {
+    fn from(value: ModuleConfigClient) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for ModuleConfigClient {
     fn graphql_type() -> &'static str {
         "ModuleConfigClient"
@@ -10358,17 +9087,17 @@ impl Sealed for ModuleConfigClient {
     }
 }
 impl ModuleConfigClient {
-    /// The directory the client is generated in.
+    #[doc = "The directory the client is generated in."]
     pub async fn directory(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("directory");
         query.execute(&self.session).await
     }
-    /// The generator to use
+    #[doc = "The generator to use"]
     pub async fn generator(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("generator");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this ModuleConfigClient.
+    #[doc = "A unique identifier for this ModuleConfigClient."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -10379,6 +9108,11 @@ impl Node for ModuleConfigClient {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<ModuleConfigClient> for IdInput<NodeClient> {
+    fn from(value: ModuleConfigClient) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -10393,6 +9127,11 @@ impl IntoID<Id> for ModuleSource {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<ModuleSource> for IdInput<ModuleSource> {
+    fn from(value: ModuleSource) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for ModuleSource {
     fn graphql_type() -> &'static str {
         "ModuleSource"
@@ -10402,7 +9141,7 @@ impl Sealed for ModuleSource {
     }
 }
 impl ModuleSource {
-    /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+    #[doc = "Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation"]
     pub fn as_module(&self) -> Module {
         let mut query = self.selection.select("asModule");
         Module {
@@ -10410,12 +9149,12 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// A human readable ref string representation of this module source.
+    #[doc = "A human readable ref string representation of this module source."]
     pub async fn as_string(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("asString");
         query.execute(&self.session).await
     }
-    /// The blueprint referenced by the module source.
+    #[doc = "The blueprint referenced by the module source."]
     pub fn blueprint(&self) -> ModuleSource {
         let mut query = self.selection.select("blueprint");
         ModuleSource {
@@ -10423,8 +9162,8 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The client-facing introspection schema JSON file for this module source.
-    /// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+    #[doc = "The client-facing introspection schema JSON file for this module source."]
+    #[doc = "This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph."]
     pub fn client_schema_introspection_json(&self) -> File {
         let mut query = self.selection.select("clientSchemaIntrospectionJSON");
         File {
@@ -10432,38 +9171,30 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The ref to clone the root of the git repo from. Only valid for git sources.
+    #[doc = "The ref to clone the root of the git repo from. Only valid for git sources."]
     pub async fn clone_ref(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("cloneRef");
         query.execute(&self.session).await
     }
-    /// The resolved commit of the git repo this source points to.
+    #[doc = "The resolved commit of the git repo this source points to."]
     pub async fn commit(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("commit");
         query.execute(&self.session).await
     }
-    /// The clients generated for the module.
+    #[doc = "The clients generated for the module."]
     pub async fn config_clients(&self) -> Result<Vec<ModuleConfigClient>, QueryError> {
         let mut query = self.selection.select("configClients");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ModuleConfigClient {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ModuleConfigClient"),
-            })
-            .collect())
+        query
+            .execute_reentry::<ModuleConfigClient, Vec<Id>>(&self.session, "ModuleConfigClient")
+            .await
     }
-    /// Whether an existing module config file was found.
+    #[doc = "Whether an existing module config file was found."]
     pub async fn config_exists(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("configExists");
         query.execute(&self.session).await
     }
-    /// The full directory loaded for the module source, including the source code as a subdirectory.
+    #[doc = "The full directory loaded for the module source, including the source code as a subdirectory."]
     pub fn context_directory(&self) -> Directory {
         let mut query = self.selection.select("contextDirectory");
         Directory {
@@ -10471,32 +9202,22 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The dependencies of the module source.
+    #[doc = "The dependencies of the module source."]
     pub async fn dependencies(&self) -> Result<Vec<ModuleSource>, QueryError> {
         let mut query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ModuleSource {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ModuleSource"),
-            })
-            .collect())
+        query
+            .execute_reentry::<ModuleSource, Vec<Id>>(&self.session, "ModuleSource")
+            .await
     }
-    /// A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
+    #[doc = "A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."]
     pub async fn digest(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("digest");
         query.execute(&self.session).await
     }
-    /// The directory containing the module configuration and source code (source code may be in a subdir).
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - A subpath from the source directory to select.
+    #[doc = "The directory containing the module configuration and source code (source code may be in a subdir)."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - A subpath from the source directory to select."]
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
@@ -10505,40 +9226,24 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The engine version of the module.
+    #[doc = "The engine version of the module."]
     pub async fn engine_version(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("engineVersion");
         query.execute(&self.session).await
     }
-    /// Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root.
-    /// Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the dependency's own already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code.
-    ///
-    /// # Arguments
-    ///
-    /// * `workspace` - The workspace to generate the local dependencies against.
+    #[doc = "Generate this module's transitive local dependency closure and return the staged changes as a single changeset against the unstaged workspace root."]
+    #[doc = "Each local dependency is generated by its own SDK against a workspace scoped to it, carrying the dependency's own already-generated dependencies. Remote (git) dependencies are assumed committed and skipped. Overlay the result onto the workspace before generating this module; it is not this module's own generated code."]
+    #[doc = "# Arguments"]
+    #[doc = "* `workspace` - The workspace to generate the local dependencies against."]
     pub fn generate_local_dependencies(&self, workspace: impl IntoID<Id>) -> Changeset {
         let mut query = self.selection.select("generateLocalDependencies");
-        query = query.arg_lazy(
-            "workspace",
-            Box::new(move || {
-                let workspace = workspace.clone();
-                Box::pin(async move {
-                    workspace
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("workspace", IdInput::<Id>::lazy(workspace));
         Changeset {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+    #[doc = "The generated files and directories made on top of the module source's context directory, returned as a Changeset."]
     pub fn generated_context_changeset(&self) -> Changeset {
         let mut query = self.selection.select("generatedContextChangeset");
         Changeset {
@@ -10546,7 +9251,7 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The generated files and directories made on top of the module source's context directory.
+    #[doc = "The generated files and directories made on top of the module source's context directory."]
     pub fn generated_context_directory(&self) -> Directory {
         let mut query = self.selection.select("generatedContextDirectory");
         Directory {
@@ -10554,24 +9259,24 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
+    #[doc = "The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)."]
     pub async fn html_repo_url(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("htmlRepoURL");
         query.execute(&self.session).await
     }
-    /// The URL to the source's git repo in a web browser. Only valid for git sources.
+    #[doc = "The URL to the source's git repo in a web browser. Only valid for git sources."]
     pub async fn html_url(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("htmlURL");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this ModuleSource.
+    #[doc = "A unique identifier for this ModuleSource."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The introspection schema JSON file for this module source.
-    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
-    /// Note: this is in the context of a module, so some core types may be hidden.
+    #[doc = "The introspection schema JSON file for this module source."]
+    #[doc = "This file represents the schema visible to the module's source code, including all core types and those from the dependencies."]
+    #[doc = "Note: this is in the context of a module, so some core types may be hidden."]
     pub fn introspection_schema_json(&self) -> File {
         let mut query = self.selection.select("introspectionSchemaJSON");
         File {
@@ -10579,42 +9284,42 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The kind of module source (currently local, git or dir).
+    #[doc = "The kind of module source (currently local, git or dir)."]
     pub async fn kind(&self) -> Result<ModuleSourceKind, QueryError> {
         let mut query = self.selection.select("kind");
         query.execute(&self.session).await
     }
-    /// The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
+    #[doc = "The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources."]
     pub async fn local_context_directory_path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("localContextDirectoryPath");
         query.execute(&self.session).await
     }
-    /// The name of the module, including any setting via the withName API.
+    #[doc = "The name of the module, including any setting via the withName API."]
     pub async fn module_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("moduleName");
         query.execute(&self.session).await
     }
-    /// The original name of the module as read from the module config file (or set for the first time with the withName API).
+    #[doc = "The original name of the module as read from the module config file (or set for the first time with the withName API)."]
     pub async fn module_original_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("moduleOriginalName");
         query.execute(&self.session).await
     }
-    /// The original subpath used when instantiating this module source, relative to the context directory.
+    #[doc = "The original subpath used when instantiating this module source, relative to the context directory."]
     pub async fn original_subpath(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("originalSubpath");
         query.execute(&self.session).await
     }
-    /// The pinned version of this module source.
+    #[doc = "The pinned version of this module source."]
     pub async fn pin(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("pin");
         query.execute(&self.session).await
     }
-    /// The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
+    #[doc = "The import path corresponding to the root of the git repo this source points to. Only valid for git sources."]
     pub async fn repo_root_path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("repoRootPath");
         query.execute(&self.session).await
     }
-    /// The SDK configuration of the module.
+    #[doc = "The SDK configuration of the module."]
     pub fn sdk(&self) -> SdkConfig {
         let mut query = self.selection.select("sdk");
         SdkConfig {
@@ -10622,47 +9327,32 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The path, relative to the context directory, that contains the module config.
+    #[doc = "The path, relative to the context directory, that contains the module config."]
     pub async fn source_root_subpath(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("sourceRootSubpath");
         query.execute(&self.session).await
     }
-    /// The path to the directory containing the module's source code, relative to the context directory.
+    #[doc = "The path to the directory containing the module's source code, relative to the context directory."]
     pub async fn source_subpath(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("sourceSubpath");
         query.execute(&self.session).await
     }
-    /// Forces evaluation of the module source, including any loading into the engine and associated validation.
+    #[doc = "Forces evaluation of the module source, including any loading into the engine and associated validation."]
     pub async fn sync(&self) -> Result<ModuleSource, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(ModuleSource {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("ModuleSource"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "ModuleSource"))
     }
-    /// The toolchains referenced by the module source.
+    #[doc = "The toolchains referenced by the module source."]
     pub async fn toolchains(&self) -> Result<Vec<ModuleSource>, QueryError> {
         let mut query = self.selection.select("toolchains");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ModuleSource {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ModuleSource"),
-            })
-            .collect())
+        query
+            .execute_reentry::<ModuleSource, Vec<Id>>(&self.session, "ModuleSource")
+            .await
     }
-    /// The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
-    /// Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
+    #[doc = "The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory."]
+    #[doc = "Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule."]
     pub fn updated_config_directory(&self) -> Directory {
         let mut query = self.selection.select("updatedConfigDirectory");
         Directory {
@@ -10670,7 +9360,7 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// User-defined defaults read from local .env files
+    #[doc = "User-defined defaults read from local .env files"]
     pub fn user_defaults(&self) -> EnvFile {
         let mut query = self.selection.select("userDefaults");
         EnvFile {
@@ -10678,44 +9368,26 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// The specified version of the git repo this source points to.
+    #[doc = "The specified version of the git repo this source points to."]
     pub async fn version(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("version");
         query.execute(&self.session).await
     }
-    /// Set a blueprint for the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `blueprint` - The blueprint module to set.
+    #[doc = "Set a blueprint for the module source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `blueprint` - The blueprint module to set."]
     pub fn with_blueprint(&self, blueprint: impl IntoID<Id>) -> ModuleSource {
         let mut query = self.selection.select("withBlueprint");
-        query = query.arg_lazy(
-            "blueprint",
-            Box::new(move || {
-                let blueprint = blueprint.clone();
-                Box::pin(async move {
-                    blueprint
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("blueprint", IdInput::<Id>::lazy(blueprint));
         ModuleSource {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Update the module source with a new client to generate.
-    ///
-    /// # Arguments
-    ///
-    /// * `generator` - The generator to use
-    /// * `output_dir` - The output directory for the generated client.
+    #[doc = "Update the module source with a new client to generate."]
+    #[doc = "# Arguments"]
+    #[doc = "* `generator` - The generator to use"]
+    #[doc = "* `outputDir` - The output directory for the generated client."]
     pub fn with_client(
         &self,
         generator: impl Into<String>,
@@ -10729,11 +9401,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Append the provided dependencies to the module source's dependency list.
-    ///
-    /// # Arguments
-    ///
-    /// * `dependencies` - The dependencies to append.
+    #[doc = "Append the provided dependencies to the module source's dependency list."]
+    #[doc = "# Arguments"]
+    #[doc = "* `dependencies` - The dependencies to append."]
     pub fn with_dependencies(&self, dependencies: Vec<Id>) -> ModuleSource {
         let mut query = self.selection.select("withDependencies");
         query = query.arg("dependencies", dependencies);
@@ -10742,11 +9412,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Upgrade the engine version of the module to the given value.
-    ///
-    /// # Arguments
-    ///
-    /// * `version` - The engine version to upgrade to.
+    #[doc = "Upgrade the engine version of the module to the given value."]
+    #[doc = "# Arguments"]
+    #[doc = "* `version` - The engine version to upgrade to."]
     pub fn with_engine_version(&self, version: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withEngineVersion");
         query = query.arg("version", version.into());
@@ -10755,11 +9423,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Enable the experimental features for the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `features` - The experimental features to enable.
+    #[doc = "Enable the experimental features for the module source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `features` - The experimental features to enable."]
     pub fn with_experimental_features(
         &self,
         features: Vec<ModuleSourceExperimentalFeature>,
@@ -10771,18 +9437,16 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update the module source with additional include patterns for files+directories from its context that are required for building it
-    ///
-    /// # Arguments
-    ///
-    /// * `patterns` - The new additional include patterns.
+    #[doc = "Update the module source with additional include patterns for files+directories from its context that are required for building it"]
+    #[doc = "# Arguments"]
+    #[doc = "* `patterns` - The new additional include patterns."]
     pub fn with_includes(&self, patterns: Vec<impl Into<String>>) -> ModuleSource {
         let mut query = self.selection.select("withIncludes");
         query = query.arg(
             "patterns",
             patterns
                 .into_iter()
-                .map(|i| i.into())
+                .map(|item| item.into())
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
@@ -10790,11 +9454,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update the module source with a new name.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name to set.
+    #[doc = "Update the module source with a new name."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name to set."]
     pub fn with_name(&self, name: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withName");
         query = query.arg("name", name.into());
@@ -10803,11 +9465,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update the module source with a new SDK.
-    ///
-    /// # Arguments
-    ///
-    /// * `source` - The SDK source to set.
+    #[doc = "Update the module source with a new SDK."]
+    #[doc = "# Arguments"]
+    #[doc = "* `source` - The SDK source to set."]
     pub fn with_sdk(&self, source: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSDK");
         query = query.arg("source", source.into());
@@ -10816,11 +9476,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update the module source with a new source subpath.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path to set as the source subpath. Must be relative to the module source's source root directory.
+    #[doc = "Update the module source with a new source subpath."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path to set as the source subpath. Must be relative to the module source's source root directory."]
     pub fn with_source_subpath(&self, path: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSourceSubpath");
         query = query.arg("path", path.into());
@@ -10829,11 +9487,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Add toolchains to the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `toolchains` - The toolchain modules to add.
+    #[doc = "Add toolchains to the module source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `toolchains` - The toolchain modules to add."]
     pub fn with_toolchains(&self, toolchains: Vec<Id>) -> ModuleSource {
         let mut query = self.selection.select("withToolchains");
         query = query.arg("toolchains", toolchains);
@@ -10842,7 +9498,7 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update the blueprint module to the latest version.
+    #[doc = "Update the blueprint module to the latest version."]
     pub fn with_update_blueprint(&self) -> ModuleSource {
         let mut query = self.selection.select("withUpdateBlueprint");
         ModuleSource {
@@ -10850,18 +9506,16 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update one or more module dependencies.
-    ///
-    /// # Arguments
-    ///
-    /// * `dependencies` - The dependencies to update.
+    #[doc = "Update one or more module dependencies."]
+    #[doc = "# Arguments"]
+    #[doc = "* `dependencies` - The dependencies to update."]
     pub fn with_update_dependencies(&self, dependencies: Vec<impl Into<String>>) -> ModuleSource {
         let mut query = self.selection.select("withUpdateDependencies");
         query = query.arg(
             "dependencies",
             dependencies
                 .into_iter()
-                .map(|i| i.into())
+                .map(|item| item.into())
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
@@ -10869,18 +9523,16 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update one or more toolchains.
-    ///
-    /// # Arguments
-    ///
-    /// * `toolchains` - The toolchains to update.
+    #[doc = "Update one or more toolchains."]
+    #[doc = "# Arguments"]
+    #[doc = "* `toolchains` - The toolchains to update."]
     pub fn with_update_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
         let mut query = self.selection.select("withUpdateToolchains");
         query = query.arg(
             "toolchains",
             toolchains
                 .into_iter()
-                .map(|i| i.into())
+                .map(|item| item.into())
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
@@ -10888,18 +9540,16 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Update one or more clients.
-    ///
-    /// # Arguments
-    ///
-    /// * `clients` - The clients to update
+    #[doc = "Update one or more clients."]
+    #[doc = "# Arguments"]
+    #[doc = "* `clients` - The clients to update"]
     pub fn with_updated_clients(&self, clients: Vec<impl Into<String>>) -> ModuleSource {
         let mut query = self.selection.select("withUpdatedClients");
         query = query.arg(
             "clients",
             clients
                 .into_iter()
-                .map(|i| i.into())
+                .map(|item| item.into())
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
@@ -10907,7 +9557,7 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Remove the current blueprint from the module source.
+    #[doc = "Remove the current blueprint from the module source."]
     pub fn without_blueprint(&self) -> ModuleSource {
         let mut query = self.selection.select("withoutBlueprint");
         ModuleSource {
@@ -10915,11 +9565,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Remove a client from the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The path of the client to remove.
+    #[doc = "Remove a client from the module source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - The path of the client to remove."]
     pub fn without_client(&self, path: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withoutClient");
         query = query.arg("path", path.into());
@@ -10928,18 +9576,16 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Remove the provided dependencies from the module source's dependency list.
-    ///
-    /// # Arguments
-    ///
-    /// * `dependencies` - The dependencies to remove.
+    #[doc = "Remove the provided dependencies from the module source's dependency list."]
+    #[doc = "# Arguments"]
+    #[doc = "* `dependencies` - The dependencies to remove."]
     pub fn without_dependencies(&self, dependencies: Vec<impl Into<String>>) -> ModuleSource {
         let mut query = self.selection.select("withoutDependencies");
         query = query.arg(
             "dependencies",
             dependencies
                 .into_iter()
-                .map(|i| i.into())
+                .map(|item| item.into())
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
@@ -10947,11 +9593,9 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Disable experimental features for the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `features` - The experimental features to disable.
+    #[doc = "Disable experimental features for the module source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `features` - The experimental features to disable."]
     pub fn without_experimental_features(
         &self,
         features: Vec<ModuleSourceExperimentalFeature>,
@@ -10963,18 +9607,16 @@ impl ModuleSource {
             selection: query,
         }
     }
-    /// Remove the provided toolchains from the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `toolchains` - The toolchains to remove.
+    #[doc = "Remove the provided toolchains from the module source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `toolchains` - The toolchains to remove."]
     pub fn without_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
         let mut query = self.selection.select("withoutToolchains");
         query = query.arg(
             "toolchains",
             toolchains
                 .into_iter()
-                .map(|i| i.into())
+                .map(|item| item.into())
                 .collect::<Vec<String>>(),
         );
         ModuleSource {
@@ -10990,6 +9632,11 @@ impl Node for ModuleSource {
         async move { query.execute(&session).await }
     }
 }
+impl From<ModuleSource> for IdInput<NodeClient> {
+    fn from(value: ModuleSource) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Syncer for ModuleSource {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
         let mut query = self.selection.select("id");
@@ -11000,6 +9647,11 @@ impl Syncer for ModuleSource {
         let mut query = self.selection.select("sync");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<ModuleSource> for IdInput<SyncerClient> {
+    fn from(value: ModuleSource) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -11014,6 +9666,11 @@ impl IntoID<Id> for ObjectTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<ObjectTypeDef> for IdInput<ObjectTypeDef> {
+    fn from(value: ObjectTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for ObjectTypeDef {
     fn graphql_type() -> &'static str {
         "ObjectTypeDef"
@@ -11023,7 +9680,7 @@ impl Sealed for ObjectTypeDef {
     }
 }
 impl ObjectTypeDef {
-    /// The function used to construct new instances of this object, if any.
+    #[doc = "The function used to construct new instances of this object, if any."]
     pub fn constructor(&self) -> Function {
         let mut query = self.selection.select("constructor");
         Function {
@@ -11031,59 +9688,43 @@ impl ObjectTypeDef {
             selection: query,
         }
     }
-    /// The reason this enum member is deprecated, if any.
+    #[doc = "The reason this enum member is deprecated, if any."]
     pub async fn deprecated(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("deprecated");
         query.execute(&self.session).await
     }
-    /// The doc string for the object, if any.
+    #[doc = "The doc string for the object, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// Static fields defined on this object, if any.
+    #[doc = "Static fields defined on this object, if any."]
     pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, QueryError> {
         let mut query = self.selection.select("fields");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| FieldTypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("FieldTypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<FieldTypeDef, Vec<Id>>(&self.session, "FieldTypeDef")
+            .await
     }
-    /// Functions defined on this object, if any.
+    #[doc = "Functions defined on this object, if any."]
     pub async fn functions(&self) -> Result<Vec<Function>, QueryError> {
         let mut query = self.selection.select("functions");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Function {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Function"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Function, Vec<Id>>(&self.session, "Function")
+            .await
     }
-    /// A unique identifier for this ObjectTypeDef.
+    #[doc = "A unique identifier for this ObjectTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the object.
+    #[doc = "The name of the object."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The location of this object declaration.
+    #[doc = "The location of this object declaration."]
     pub fn source_map(&self) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         SourceMap {
@@ -11091,7 +9732,7 @@ impl ObjectTypeDef {
             selection: query,
         }
     }
-    /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    #[doc = "If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."]
     pub async fn source_module_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("sourceModuleName");
         query.execute(&self.session).await
@@ -11102,6 +9743,11 @@ impl Node for ObjectTypeDef {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<ObjectTypeDef> for IdInput<NodeClient> {
+    fn from(value: ObjectTypeDef) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -11116,6 +9762,11 @@ impl IntoID<Id> for Port {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Port> for IdInput<Port> {
+    fn from(value: Port) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Port {
     fn graphql_type() -> &'static str {
         "Port"
@@ -11125,27 +9776,27 @@ impl Sealed for Port {
     }
 }
 impl Port {
-    /// The port description.
+    #[doc = "The port description."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// Skip the health check when run as a service.
+    #[doc = "Skip the health check when run as a service."]
     pub async fn experimental_skip_healthcheck(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("experimentalSkipHealthcheck");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Port.
+    #[doc = "A unique identifier for this Port."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The port number.
+    #[doc = "The port number."]
     pub async fn port(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("port");
         query.execute(&self.session).await
     }
-    /// The transport layer protocol.
+    #[doc = "The transport layer protocol."]
     pub async fn protocol(&self) -> Result<NetworkProtocol, QueryError> {
         let mut query = self.selection.select("protocol");
         query.execute(&self.session).await
@@ -11158,6 +9809,11 @@ impl Node for Port {
         async move { query.execute(&session).await }
     }
 }
+impl From<Port> for IdInput<NodeClient> {
+    fn from(value: Port) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Query {
     pub(crate) session: SessionHandle,
@@ -11165,138 +9821,138 @@ pub struct Query {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryCacheVolumeOpts<'a> {
-    /// A user:group to set for the cache volume root.
-    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    /// If the group is omitted, it defaults to the same as the user.
+    #[doc = "A user:group to set for the cache volume root."]
+    #[doc = "The user and group can either be an ID (1000:1000) or a name (foo:bar)."]
+    #[doc = "If the group is omitted, it defaults to the same as the user."]
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Sharing mode of the cache volume.
+    #[doc = "Sharing mode of the cache volume."]
     #[builder(setter(into, strip_option), default)]
     pub sharing: Option<CacheSharingMode>,
-    /// Identifier of the directory to use as the cache volume's root.
+    #[doc = "Identifier of the directory to use as the cache volume's root."]
     #[builder(setter(into, strip_option), default)]
     pub source: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
-    /// Platform to initialize the container with. Defaults to the native platform of the current engine
+    #[doc = "Platform to initialize the container with. Defaults to the native platform of the current engine"]
     #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryCurrentTypeDefsOpts {
-    /// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
-    /// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+    #[doc = "Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.)."]
+    #[doc = "Core types (Container, Directory, etc.) are kept so return types and method chaining still work."]
     #[builder(setter(into, strip_option), default)]
     pub hide_core: Option<bool>,
-    /// Return the full referenced typedef closure instead of only top-level served typedefs.
+    #[doc = "Return the full referenced typedef closure instead of only top-level served typedefs."]
     #[builder(setter(into, strip_option), default)]
     pub return_all_types: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryEngineVolumeOpts<'a> {
-    /// Optional existing subdirectory within the volume payload to mount.
+    #[doc = "Optional existing subdirectory within the volume payload to mount."]
     #[builder(setter(into, strip_option), default)]
     pub subdir: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvFileOpts {
-    /// Replace "${VAR}" or "$VAR" with the value of other vars
+    #[doc = "Replace \"${VAR}\" or \"$VAR\" with the value of other vars"]
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryFileOpts {
-    /// Permissions of the new file. Example: 0600
+    #[doc = "Permissions of the new file. Example: 0600"]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
-    /// A service which must be started before the repo is fetched.
+    #[doc = "A service which must be started before the repo is fetched."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<Id>,
-    /// Secret used to populate the Authorization HTTP header
+    #[doc = "Secret used to populate the Authorization HTTP header"]
     #[builder(setter(into, strip_option), default)]
     pub http_auth_header: Option<Id>,
-    /// Secret used to populate the password during basic HTTP Authorization
+    #[doc = "Secret used to populate the password during basic HTTP Authorization"]
     #[builder(setter(into, strip_option), default)]
     pub http_auth_token: Option<Id>,
-    /// Username used to populate the password during basic HTTP Authorization
+    #[doc = "Username used to populate the password during basic HTTP Authorization"]
     #[builder(setter(into, strip_option), default)]
     pub http_auth_username: Option<&'a str>,
-    /// DEPRECATED: Set to true to keep .git directory.
+    #[doc = "DEPRECATED: Set to true to keep .git directory."]
     #[builder(setter(into, strip_option), default)]
     pub keep_git_dir: Option<bool>,
-    /// Set SSH auth socket
+    #[doc = "Set SSH auth socket"]
     #[builder(setter(into, strip_option), default)]
     pub ssh_auth_socket: Option<Id>,
-    /// Set SSH known hosts
+    #[doc = "Set SSH known hosts"]
     #[builder(setter(into, strip_option), default)]
     pub ssh_known_hosts: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryHttpOpts<'a> {
-    /// Secret used to populate the Authorization HTTP header
+    #[doc = "Secret used to populate the Authorization HTTP header"]
     #[builder(setter(into, strip_option), default)]
     pub auth_header: Option<Id>,
-    /// Expected digest of the downloaded content (e.g., "sha256:...").
+    #[doc = "Expected digest of the downloaded content (e.g., \"sha256:...\")."]
     #[builder(setter(into, strip_option), default)]
     pub checksum: Option<&'a str>,
-    /// A service which must be started before the URL is fetched.
+    #[doc = "A service which must be started before the URL is fetched."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<Id>,
-    /// File name to use for the file. Defaults to the last part of the URL.
+    #[doc = "File name to use for the file. Defaults to the last part of the URL."]
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
-    /// Permissions to set on the file.
+    #[doc = "Permissions to set on the file."]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryLlmOpts<'a> {
-    /// The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
+    #[doc = "The model to converse with, e.g. \"claude-sonnet-4-5\" or \"gpt-5.4\". Defaults to the configured default model."]
     #[builder(setter(into, strip_option), default)]
     pub model: Option<&'a str>,
-    /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+    #[doc = "The provider serving the model, e.g. \"openai\". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one."]
     #[builder(setter(into, strip_option), default)]
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
-    /// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
+    #[doc = "If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet."]
     #[builder(setter(into, strip_option), default)]
     pub allow_not_exists: Option<bool>,
-    /// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
+    #[doc = "If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources."]
     #[builder(setter(into, strip_option), default)]
     pub disable_find_up: Option<bool>,
-    /// The pinned version of the module source
+    #[doc = "The pinned version of the module source"]
     #[builder(setter(into, strip_option), default)]
     pub ref_pin: Option<&'a str>,
-    /// If set, error out if the ref string is not of the provided requireKind.
+    #[doc = "If set, error out if the ref string is not of the provided requireKind."]
     #[builder(setter(into, strip_option), default)]
     pub require_kind: Option<ModuleSourceKind>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QuerySecretOpts<'a> {
-    /// If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
-    /// For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other.
-    /// If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
+    #[doc = "If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values."]
+    #[doc = "For example, two secrets with the same cache key provided as secret env vars to other wise equivalent containers will result in the container withExecs hitting the cache for each other."]
+    #[doc = "If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed."]
     #[builder(setter(into, strip_option), default)]
     pub cache_key: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QuerySshfsVolumeOpts<'a> {
-    /// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+    #[doc = "Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies."]
     #[builder(setter(into, strip_option), default)]
     pub cache_key: Option<&'a str>,
-    /// Service to use as the SSHFS network endpoint while verifying the original host key.
+    #[doc = "Service to use as the SSHFS network endpoint while verifying the original host key."]
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<Id>,
-    /// Disable SSH host key verification. This is insecure and must be explicitly opted into.
+    #[doc = "Disable SSH host key verification. This is insecure and must be explicitly opted into."]
     #[builder(setter(into, strip_option), default)]
     pub insecure_skip_host_key_check: Option<bool>,
-    /// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+    #[doc = "known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true."]
     #[builder(setter(into, strip_option), default)]
     pub known_hosts: Option<Id>,
 }
@@ -11305,6 +9961,11 @@ impl IntoID<Id> for Query {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Query> for IdInput<Query> {
+    fn from(value: Query) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Query {
@@ -11316,7 +9977,7 @@ impl Sealed for Query {
     }
 }
 impl Query {
-    /// initialize an address to load directories, containers, secrets or other object types.
+    #[doc = "initialize an address to load directories, containers, secrets or other object types."]
     pub fn address(&self, value: impl Into<String>) -> Address {
         let mut query = self.selection.select("address");
         query = query.arg("value", value.into());
@@ -11325,12 +9986,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Constructs a cache volume for a given cache key.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Constructs a cache volume for a given cache key."]
+    #[doc = "# Arguments"]
+    #[doc = "* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\")."]
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
@@ -11339,12 +9997,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Constructs a cache volume for a given cache key.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Constructs a cache volume for a given cache key."]
+    #[doc = "# Arguments"]
+    #[doc = "* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\")."]
     pub fn cache_volume_opts<'a>(
         &self,
         key: impl Into<String>,
@@ -11366,7 +10021,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates an empty changeset
+    #[doc = "Creates an empty changeset"]
     pub fn changeset(&self) -> Changeset {
         let mut query = self.selection.select("changeset");
         Changeset {
@@ -11374,7 +10029,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Dagger Cloud configuration and state
+    #[doc = "Dagger Cloud configuration and state"]
     pub fn cloud(&self) -> Cloud {
         let mut query = self.selection.select("cloud");
         Cloud {
@@ -11382,12 +10037,8 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates a scratch container, with no image or metadata.
-    /// To pull an image, follow up with the "from" function.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a scratch container, with no image or metadata."]
+    #[doc = "To pull an image, follow up with the \"from\" function."]
     pub fn container(&self) -> Container {
         let mut query = self.selection.select("container");
         Container {
@@ -11395,12 +10046,8 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates a scratch container, with no image or metadata.
-    /// To pull an image, follow up with the "from" function.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a scratch container, with no image or metadata."]
+    #[doc = "To pull an image, follow up with the \"from\" function."]
     pub fn container_opts(&self, opts: QueryContainerOpts) -> Container {
         let mut query = self.selection.select("container");
         if let Some(platform) = opts.platform {
@@ -11411,8 +10058,8 @@ impl Query {
             selection: query,
         }
     }
-    /// The FunctionCall context that the SDK caller is currently executing in.
-    /// If the caller is not currently executing in a function, this will return an error.
+    #[doc = "The FunctionCall context that the SDK caller is currently executing in."]
+    #[doc = "If the caller is not currently executing in a function, this will return an error."]
     pub fn current_function_call(&self) -> FunctionCall {
         let mut query = self.selection.select("currentFunctionCall");
         FunctionCall {
@@ -11420,7 +10067,7 @@ impl Query {
             selection: query,
         }
     }
-    /// The module currently being served in the session, if any.
+    #[doc = "The module currently being served in the session, if any."]
     pub fn current_module(&self) -> CurrentModule {
         let mut query = self.selection.select("currentModule");
         CurrentModule {
@@ -11428,7 +10075,7 @@ impl Query {
             selection: query,
         }
     }
-    /// The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+    #[doc = "The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor)."]
     pub fn current_node(&self) -> NodeClient {
         let mut query = self.selection.select("currentNode");
         NodeClient {
@@ -11436,31 +10083,15 @@ impl Query {
             selection: query,
         }
     }
-    /// The TypeDef representations of the objects currently being served in the session.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The TypeDef representations of the objects currently being served in the session."]
     pub async fn current_type_defs(&self) -> Result<Vec<TypeDef>, QueryError> {
         let mut query = self.selection.select("currentTypeDefs");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| TypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("TypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<TypeDef, Vec<Id>>(&self.session, "TypeDef")
+            .await
     }
-    /// The TypeDef representations of the objects currently being served in the session.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "The TypeDef representations of the objects currently being served in the session."]
     pub async fn current_type_defs_opts(
         &self,
         opts: QueryCurrentTypeDefsOpts,
@@ -11473,19 +10104,11 @@ impl Query {
             query = query.arg("hideCore", hide_core);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| TypeDef {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("TypeDef"),
-            })
-            .collect())
+        query
+            .execute_reentry::<TypeDef, Vec<Id>>(&self.session, "TypeDef")
+            .await
     }
-    /// Detect and return the current workspace.
+    #[doc = "Detect and return the current workspace."]
     pub fn current_workspace(&self) -> Workspace {
         let mut query = self.selection.select("currentWorkspace");
         Workspace {
@@ -11493,12 +10116,12 @@ impl Query {
             selection: query,
         }
     }
-    /// The default platform of the engine.
+    #[doc = "The default platform of the engine."]
     pub async fn default_platform(&self) -> Result<Platform, QueryError> {
         let mut query = self.selection.select("defaultPlatform");
         query.execute(&self.session).await
     }
-    /// Creates an empty directory.
+    #[doc = "Creates an empty directory."]
     pub fn directory(&self) -> Directory {
         let mut query = self.selection.select("directory");
         Directory {
@@ -11506,7 +10129,7 @@ impl Query {
             selection: query,
         }
     }
-    /// The Dagger engine container configuration and state
+    #[doc = "The Dagger engine container configuration and state"]
     pub fn engine(&self) -> Engine {
         let mut query = self.selection.select("engine");
         Engine {
@@ -11514,12 +10137,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Canonical slash-separated volume name beneath the engine volume namespace.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Canonical slash-separated volume name beneath the engine volume namespace."]
     pub fn engine_volume(&self, name: impl Into<String>) -> Volume {
         let mut query = self.selection.select("engineVolume");
         query = query.arg("name", name.into());
@@ -11528,12 +10148,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Canonical slash-separated volume name beneath the engine volume namespace.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Canonical slash-separated volume name beneath the engine volume namespace."]
     pub fn engine_volume_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -11549,11 +10166,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Initialize an environment file
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Initialize an environment file"]
     pub fn env_file(&self) -> EnvFile {
         let mut query = self.selection.select("envFile");
         EnvFile {
@@ -11561,11 +10174,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Initialize an environment file
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Initialize an environment file"]
     pub fn env_file_opts(&self, opts: QueryEnvFileOpts) -> EnvFile {
         let mut query = self.selection.select("envFile");
         if let Some(expand) = opts.expand {
@@ -11576,11 +10185,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Create a new error.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - A brief description of the error.
+    #[doc = "Create a new error."]
+    #[doc = "# Arguments"]
+    #[doc = "* `message` - A brief description of the error."]
     pub fn error(&self, message: impl Into<String>) -> Error {
         let mut query = self.selection.select("error");
         query = query.arg("message", message.into());
@@ -11589,13 +10196,10 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates a file with the specified contents.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the new file. Example: "foo.txt"
-    /// * `contents` - Contents of the new file. Example: "Hello world!"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a file with the specified contents."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the new file. Example: \"foo.txt\""]
+    #[doc = "* `contents` - Contents of the new file. Example: \"Hello world!\""]
     pub fn file(&self, name: impl Into<String>, contents: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("name", name.into());
@@ -11605,13 +10209,10 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates a file with the specified contents.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the new file. Example: "foo.txt"
-    /// * `contents` - Contents of the new file. Example: "Hello world!"
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a file with the specified contents."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the new file. Example: \"foo.txt\""]
+    #[doc = "* `contents` - Contents of the new file. Example: \"Hello world!\""]
     pub fn file_opts(
         &self,
         name: impl Into<String>,
@@ -11629,64 +10230,33 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates a function.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the function, in its original format from the implementation language.
-    /// * `return_type` - Return type of the function.
+    #[doc = "Creates a function."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the function, in its original format from the implementation language."]
+    #[doc = "* `returnType` - Return type of the function."]
     pub fn function(&self, name: impl Into<String>, return_type: impl IntoID<Id>) -> Function {
         let mut query = self.selection.select("function");
         query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "returnType",
-            Box::new(move || {
-                let return_type = return_type.clone();
-                Box::pin(async move {
-                    return_type
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("returnType", IdInput::<Id>::lazy(return_type));
         Function {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Create a code generation result, given a directory containing the generated code.
+    #[doc = "Create a code generation result, given a directory containing the generated code."]
     pub fn generated_code(&self, code: impl IntoID<Id>) -> GeneratedCode {
         let mut query = self.selection.select("generatedCode");
-        query = query.arg_lazy(
-            "code",
-            Box::new(move || {
-                let code = code.clone();
-                Box::pin(async move {
-                    code.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("code", IdInput::<Id>::lazy(code));
         GeneratedCode {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Queries a Git repository.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - URL of the git repository.
-    ///
-    /// Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
-    ///
-    /// Suffix ".git" is optional.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Queries a Git repository."]
+    #[doc = "# Arguments"]
+    #[doc = "* `url` - URL of the git repository."]
+    #[doc = "Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`."]
+    #[doc = "Suffix \".git\" is optional."]
     pub fn git(&self, url: impl Into<String>) -> GitRepository {
         let mut query = self.selection.select("git");
         query = query.arg("url", url.into());
@@ -11695,16 +10265,11 @@ impl Query {
             selection: query,
         }
     }
-    /// Queries a Git repository.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - URL of the git repository.
-    ///
-    /// Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
-    ///
-    /// Suffix ".git" is optional.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Queries a Git repository."]
+    #[doc = "# Arguments"]
+    #[doc = "* `url` - URL of the git repository."]
+    #[doc = "Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`."]
+    #[doc = "Suffix \".git\" is optional."]
     pub fn git_opts<'a>(&self, url: impl Into<String>, opts: QueryGitOpts<'a>) -> GitRepository {
         let mut query = self.selection.select("git");
         query = query.arg("url", url.into());
@@ -11734,7 +10299,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Queries the host environment.
+    #[doc = "Queries the host environment."]
     pub fn host(&self) -> Host {
         let mut query = self.selection.select("host");
         Host {
@@ -11742,12 +10307,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Returns a file containing an http remote url content.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - HTTP url to get the content from (e.g., "https://docs.dagger.io").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a file containing an http remote url content."]
+    #[doc = "# Arguments"]
+    #[doc = "* `url` - HTTP url to get the content from (e.g., \"https://docs.dagger.io\")."]
     pub fn http(&self, url: impl Into<String>) -> File {
         let mut query = self.selection.select("http");
         query = query.arg("url", url.into());
@@ -11756,12 +10318,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Returns a file containing an http remote url content.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - HTTP url to get the content from (e.g., "https://docs.dagger.io").
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a file containing an http remote url content."]
+    #[doc = "# Arguments"]
+    #[doc = "* `url` - HTTP url to get the content from (e.g., \"https://docs.dagger.io\")."]
     pub fn http_opts<'a>(&self, url: impl Into<String>, opts: QueryHttpOpts<'a>) -> File {
         let mut query = self.selection.select("http");
         query = query.arg("url", url.into());
@@ -11785,12 +10344,12 @@ impl Query {
             selection: query,
         }
     }
-    /// A unique identifier for this Query.
+    #[doc = "A unique identifier for this Query."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Initialize a JSON value
+    #[doc = "Initialize a JSON value"]
     pub fn json(&self) -> JsonValue {
         let mut query = self.selection.select("json");
         JsonValue {
@@ -11798,11 +10357,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Initialize a new LLM conversation.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Initialize a new LLM conversation."]
     pub fn llm(&self) -> Llm {
         let mut query = self.selection.select("llm");
         Llm {
@@ -11810,11 +10365,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Initialize a new LLM conversation.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Initialize a new LLM conversation."]
     pub fn llm_opts<'a>(&self, opts: QueryLlmOpts<'a>) -> Llm {
         let mut query = self.selection.select("llm");
         if let Some(model) = opts.model {
@@ -11828,7 +10379,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Create a new module.
+    #[doc = "Create a new module."]
     pub fn module(&self) -> Module {
         let mut query = self.selection.select("module");
         Module {
@@ -11836,12 +10387,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Create a new module source instance from a source ref string
-    ///
-    /// # Arguments
-    ///
-    /// * `ref_string` - The string ref representation of the module source
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Create a new module source instance from a source ref string"]
+    #[doc = "# Arguments"]
+    #[doc = "* `refString` - The string ref representation of the module source"]
     pub fn module_source(&self, ref_string: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("refString", ref_string.into());
@@ -11850,12 +10398,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Create a new module source instance from a source ref string
-    ///
-    /// # Arguments
-    ///
-    /// * `ref_string` - The string ref representation of the module source
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Create a new module source instance from a source ref string"]
+    #[doc = "# Arguments"]
+    #[doc = "* `refString` - The string ref representation of the module source"]
     pub fn module_source_opts<'a>(
         &self,
         ref_string: impl Into<String>,
@@ -11880,30 +10425,18 @@ impl Query {
             selection: query,
         }
     }
-    /// Load any object by its ID.
+    #[doc = "Load any object by its ID."]
     pub fn node(&self, id: impl IntoID<Id>) -> NodeClient {
         let mut query = self.selection.select("node");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move {
-                    id.into_id().await.map(|id| id.quote()).map_err(|error| {
-                        QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                    })
-                })
-            }),
-        );
+        query = query.arg_id_input("id", IdInput::<Id>::lazy(id));
         NodeClient {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Load a GraphQL introspection schema for merging.
-    ///
-    /// # Arguments
-    ///
-    /// * `json` - The introspection schema JSON to load.
+    #[doc = "Load a GraphQL introspection schema for merging."]
+    #[doc = "# Arguments"]
+    #[doc = "* `json` - The introspection schema JSON to load."]
     pub fn schema(&self, json: Json) -> Schema {
         let mut query = self.selection.select("schema");
         query = query.arg("json", json);
@@ -11912,12 +10445,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates a new secret.
-    ///
-    /// # Arguments
-    ///
-    /// * `uri` - The URI of the secret store
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a new secret."]
+    #[doc = "# Arguments"]
+    #[doc = "* `uri` - The URI of the secret store"]
     pub fn secret(&self, uri: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
         query = query.arg("uri", uri.into());
@@ -11926,12 +10456,9 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates a new secret.
-    ///
-    /// # Arguments
-    ///
-    /// * `uri` - The URI of the secret store
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Creates a new secret."]
+    #[doc = "# Arguments"]
+    #[doc = "* `uri` - The URI of the secret store"]
     pub fn secret_opts<'a>(&self, uri: impl Into<String>, opts: QuerySecretOpts<'a>) -> Secret {
         let mut query = self.selection.select("secret");
         query = query.arg("uri", uri.into());
@@ -11943,13 +10470,11 @@ impl Query {
             selection: query,
         }
     }
-    /// Sets a secret given a user defined name to its plaintext and returns the secret.
-    /// The plaintext value is limited to a size of 128000 bytes.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The user defined name for this secret
-    /// * `plaintext` - The plaintext of the secret
+    #[doc = "Sets a secret given a user defined name to its plaintext and returns the secret."]
+    #[doc = "The plaintext value is limited to a size of 128000 bytes."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The user defined name for this secret"]
+    #[doc = "* `plaintext` - The plaintext of the secret"]
     pub fn set_secret(&self, name: impl Into<String>, plaintext: impl Into<String>) -> Secret {
         let mut query = self.selection.select("setSecret");
         query = query.arg("name", name.into());
@@ -11959,13 +10484,11 @@ impl Query {
             selection: query,
         }
     }
-    /// Creates source map metadata.
-    ///
-    /// # Arguments
-    ///
-    /// * `filename` - The filename from the module source.
-    /// * `line` - The line number within the filename.
-    /// * `column` - The column number within the line.
+    #[doc = "Creates source map metadata."]
+    #[doc = "# Arguments"]
+    #[doc = "* `filename` - The filename from the module source."]
+    #[doc = "* `line` - The line number within the filename."]
+    #[doc = "* `column` - The column number within the line."]
     pub fn source_map(&self, filename: impl Into<String>, line: isize, column: isize) -> SourceMap {
         let mut query = self.selection.select("sourceMap");
         query = query.arg("filename", filename.into());
@@ -11976,13 +10499,10 @@ impl Query {
             selection: query,
         }
     }
-    /// Constructs an SSHFS volume.
-    ///
-    /// # Arguments
-    ///
-    /// * `endpoint` - SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path.
-    /// * `private_key` - Private key secret used to authenticate to the remote host.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Constructs an SSHFS volume."]
+    #[doc = "# Arguments"]
+    #[doc = "* `endpoint` - SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path."]
+    #[doc = "* `privateKey` - Private key secret used to authenticate to the remote host."]
     pub fn sshfs_volume(
         &self,
         endpoint: impl Into<String>,
@@ -11990,33 +10510,16 @@ impl Query {
     ) -> Volume {
         let mut query = self.selection.select("sshfsVolume");
         query = query.arg("endpoint", endpoint.into());
-        query = query.arg_lazy(
-            "privateKey",
-            Box::new(move || {
-                let private_key = private_key.clone();
-                Box::pin(async move {
-                    private_key
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("privateKey", IdInput::<Id>::lazy(private_key));
         Volume {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Constructs an SSHFS volume.
-    ///
-    /// # Arguments
-    ///
-    /// * `endpoint` - SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path.
-    /// * `private_key` - Private key secret used to authenticate to the remote host.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Constructs an SSHFS volume."]
+    #[doc = "# Arguments"]
+    #[doc = "* `endpoint` - SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path."]
+    #[doc = "* `privateKey` - Private key secret used to authenticate to the remote host."]
     pub fn sshfs_volume_opts<'a>(
         &self,
         endpoint: impl Into<String>,
@@ -12025,21 +10528,7 @@ impl Query {
     ) -> Volume {
         let mut query = self.selection.select("sshfsVolume");
         query = query.arg("endpoint", endpoint.into());
-        query = query.arg_lazy(
-            "privateKey",
-            Box::new(move || {
-                let private_key = private_key.clone();
-                Box::pin(async move {
-                    private_key
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("privateKey", IdInput::<Id>::lazy(private_key));
         if let Some(known_hosts) = opts.known_hosts {
             query = query.arg("knownHosts", known_hosts);
         }
@@ -12057,7 +10546,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Create a new TypeDef.
+    #[doc = "Create a new TypeDef."]
     pub fn type_def(&self) -> TypeDef {
         let mut query = self.selection.select("typeDef");
         TypeDef {
@@ -12065,7 +10554,7 @@ impl Query {
             selection: query,
         }
     }
-    /// Get the current Dagger Engine version.
+    #[doc = "Get the current Dagger Engine version."]
     pub async fn version(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("version");
         query.execute(&self.session).await
@@ -12076,6 +10565,11 @@ impl Node for Query {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Query> for IdInput<NodeClient> {
+    fn from(value: Query) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12090,6 +10584,11 @@ impl IntoID<Id> for RemoteGitMirror {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<RemoteGitMirror> for IdInput<RemoteGitMirror> {
+    fn from(value: RemoteGitMirror) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for RemoteGitMirror {
     fn graphql_type() -> &'static str {
         "RemoteGitMirror"
@@ -12099,7 +10598,7 @@ impl Sealed for RemoteGitMirror {
     }
 }
 impl RemoteGitMirror {
-    /// A unique identifier for this RemoteGitMirror.
+    #[doc = "A unique identifier for this RemoteGitMirror."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -12110,6 +10609,11 @@ impl Node for RemoteGitMirror {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<RemoteGitMirror> for IdInput<NodeClient> {
+    fn from(value: RemoteGitMirror) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12124,6 +10628,11 @@ impl IntoID<Id> for SdkConfig {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<SdkConfig> for IdInput<SdkConfig> {
+    fn from(value: SdkConfig) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for SdkConfig {
     fn graphql_type() -> &'static str {
         "SDKConfig"
@@ -12133,17 +10642,17 @@ impl Sealed for SdkConfig {
     }
 }
 impl SdkConfig {
-    /// Whether to start the SDK runtime in debug mode with an interactive terminal.
+    #[doc = "Whether to start the SDK runtime in debug mode with an interactive terminal."]
     pub async fn debug(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("debug");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this SDKConfig.
+    #[doc = "A unique identifier for this SDKConfig."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+    #[doc = "Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."]
     pub async fn source(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("source");
         query.execute(&self.session).await
@@ -12154,6 +10663,11 @@ impl Node for SdkConfig {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<SdkConfig> for IdInput<NodeClient> {
+    fn from(value: SdkConfig) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12168,6 +10682,11 @@ impl IntoID<Id> for ScalarTypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<ScalarTypeDef> for IdInput<ScalarTypeDef> {
+    fn from(value: ScalarTypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for ScalarTypeDef {
     fn graphql_type() -> &'static str {
         "ScalarTypeDef"
@@ -12177,22 +10696,22 @@ impl Sealed for ScalarTypeDef {
     }
 }
 impl ScalarTypeDef {
-    /// A doc string for the scalar, if any.
+    #[doc = "A doc string for the scalar, if any."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this ScalarTypeDef.
+    #[doc = "A unique identifier for this ScalarTypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of the scalar.
+    #[doc = "The name of the scalar."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    #[doc = "If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise."]
     pub async fn source_module_name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("sourceModuleName");
         query.execute(&self.session).await
@@ -12203,6 +10722,11 @@ impl Node for ScalarTypeDef {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<ScalarTypeDef> for IdInput<NodeClient> {
+    fn from(value: ScalarTypeDef) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12217,6 +10741,11 @@ impl IntoID<Id> for Schema {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Schema> for IdInput<Schema> {
+    fn from(value: Schema) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Schema {
     fn graphql_type() -> &'static str {
         "Schema"
@@ -12226,22 +10755,20 @@ impl Sealed for Schema {
     }
 }
 impl Schema {
-    /// Serialize the schema back to introspection JSON.
+    #[doc = "Serialize the schema back to introspection JSON."]
     pub async fn contents(&self) -> Result<Json, QueryError> {
         let mut query = self.selection.select("contents");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Schema.
+    #[doc = "A unique identifier for this Schema."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
-    ///
-    /// # Arguments
-    ///
-    /// * `module_types` - Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type.
-    /// * `module_name` - The name of the module whose types are being merged. Used to stamp the @sourceMap directive and to derive the module's constructor field.
+    #[doc = "Merge a module's introspection-shaped type definitions into the schema, returning the combined schema."]
+    #[doc = "# Arguments"]
+    #[doc = "* `moduleTypes` - Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type."]
+    #[doc = "* `moduleName` - The name of the module whose types are being merged. Used to stamp the @sourceMap directive and to derive the module's constructor field."]
     pub fn merge(&self, module_types: Json, module_name: impl Into<String>) -> Schema {
         let mut query = self.selection.select("merge");
         query = query.arg("moduleTypes", module_types);
@@ -12259,6 +10786,11 @@ impl Node for Schema {
         async move { query.execute(&session).await }
     }
 }
+impl From<Schema> for IdInput<NodeClient> {
+    fn from(value: Schema) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct SearchResult {
     pub(crate) session: SessionHandle,
@@ -12271,6 +10803,11 @@ impl IntoID<Id> for SearchResult {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<SearchResult> for IdInput<SearchResult> {
+    fn from(value: SearchResult) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for SearchResult {
     fn graphql_type() -> &'static str {
         "SearchResult"
@@ -12280,46 +10817,38 @@ impl Sealed for SearchResult {
     }
 }
 impl SearchResult {
-    /// The byte offset of this line within the file.
+    #[doc = "The byte offset of this line within the file."]
     pub async fn absolute_offset(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("absoluteOffset");
         query.execute(&self.session).await
     }
-    /// The path to the file that matched.
+    #[doc = "The path to the file that matched."]
     pub async fn file_path(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("filePath");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this SearchResult.
+    #[doc = "A unique identifier for this SearchResult."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The first line that matched.
+    #[doc = "The first line that matched."]
     pub async fn line_number(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("lineNumber");
         query.execute(&self.session).await
     }
-    /// The line content that matched.
+    #[doc = "The line content that matched."]
     pub async fn matched_lines(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("matchedLines");
         query.execute(&self.session).await
     }
-    /// Sub-match positions and content within the matched lines.
+    #[doc = "Sub-match positions and content within the matched lines."]
     pub async fn submatches(&self) -> Result<Vec<SearchSubmatch>, QueryError> {
         let mut query = self.selection.select("submatches");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| SearchSubmatch {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("SearchSubmatch"),
-            })
-            .collect())
+        query
+            .execute_reentry::<SearchSubmatch, Vec<Id>>(&self.session, "SearchSubmatch")
+            .await
     }
 }
 impl Node for SearchResult {
@@ -12327,6 +10856,11 @@ impl Node for SearchResult {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<SearchResult> for IdInput<NodeClient> {
+    fn from(value: SearchResult) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12341,6 +10875,11 @@ impl IntoID<Id> for SearchSubmatch {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<SearchSubmatch> for IdInput<SearchSubmatch> {
+    fn from(value: SearchSubmatch) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for SearchSubmatch {
     fn graphql_type() -> &'static str {
         "SearchSubmatch"
@@ -12350,22 +10889,22 @@ impl Sealed for SearchSubmatch {
     }
 }
 impl SearchSubmatch {
-    /// The match's end offset within the matched lines.
+    #[doc = "The match's end offset within the matched lines."]
     pub async fn end(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("end");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this SearchSubmatch.
+    #[doc = "A unique identifier for this SearchSubmatch."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The match's start offset within the matched lines.
+    #[doc = "The match's start offset within the matched lines."]
     pub async fn start(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("start");
         query.execute(&self.session).await
     }
-    /// The matched text.
+    #[doc = "The matched text."]
     pub async fn text(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("text");
         query.execute(&self.session).await
@@ -12376,6 +10915,11 @@ impl Node for SearchSubmatch {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<SearchSubmatch> for IdInput<NodeClient> {
+    fn from(value: SearchSubmatch) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12390,6 +10934,11 @@ impl IntoID<Id> for Secret {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Secret> for IdInput<Secret> {
+    fn from(value: Secret) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Secret {
     fn graphql_type() -> &'static str {
         "Secret"
@@ -12399,22 +10948,22 @@ impl Sealed for Secret {
     }
 }
 impl Secret {
-    /// A unique identifier for this Secret.
+    #[doc = "A unique identifier for this Secret."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The name of this secret.
+    #[doc = "The name of this secret."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The value of this secret.
+    #[doc = "The value of this secret."]
     pub async fn plaintext(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("plaintext");
         query.execute(&self.session).await
     }
-    /// The URI of this secret.
+    #[doc = "The URI of this secret."]
     pub async fn uri(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("uri");
         query.execute(&self.session).await
@@ -12427,6 +10976,11 @@ impl Node for Secret {
         async move { query.execute(&session).await }
     }
 }
+impl From<Secret> for IdInput<NodeClient> {
+    fn from(value: Secret) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Service {
     pub(crate) session: SessionHandle,
@@ -12434,16 +10988,16 @@ pub struct Service {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceEndpointOpts<'a> {
-    /// The exposed port number for the endpoint
+    #[doc = "The exposed port number for the endpoint"]
     #[builder(setter(into, strip_option), default)]
     pub port: Option<isize>,
-    /// Return a URL with the given scheme, eg. http for http://
+    #[doc = "Return a URL with the given scheme, eg. http for http://"]
     #[builder(setter(into, strip_option), default)]
     pub scheme: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceStopOpts {
-    /// Immediately kill the service without waiting for a graceful exit
+    #[doc = "Immediately kill the service without waiting for a graceful exit"]
     #[builder(setter(into, strip_option), default)]
     pub kill: Option<bool>,
 }
@@ -12454,11 +11008,11 @@ pub struct ServiceTerminalOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceUpOpts {
-    /// List of frontend/backend port mappings to forward.
-    /// Frontend is the port accepting traffic on the host, backend is the service port.
+    #[doc = "List of frontend/backend port mappings to forward."]
+    #[doc = "Frontend is the port accepting traffic on the host, backend is the service port."]
     #[builder(setter(into, strip_option), default)]
     pub ports: Option<Vec<PortForward>>,
-    /// Bind each tunnel port to a random port on the host.
+    #[doc = "Bind each tunnel port to a random port on the host."]
     #[builder(setter(into, strip_option), default)]
     pub random: Option<bool>,
 }
@@ -12467,6 +11021,11 @@ impl IntoID<Id> for Service {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Service> for IdInput<Service> {
+    fn from(value: Service) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Service {
@@ -12478,24 +11037,16 @@ impl Sealed for Service {
     }
 }
 impl Service {
-    /// Retrieves an endpoint that clients can use to reach this container.
-    /// If no port is specified, the first exposed port is used. If none exist an error is returned.
-    /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves an endpoint that clients can use to reach this container."]
+    #[doc = "If no port is specified, the first exposed port is used. If none exist an error is returned."]
+    #[doc = "If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned."]
     pub async fn endpoint(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("endpoint");
         query.execute(&self.session).await
     }
-    /// Retrieves an endpoint that clients can use to reach this container.
-    /// If no port is specified, the first exposed port is used. If none exist an error is returned.
-    /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Retrieves an endpoint that clients can use to reach this container."]
+    #[doc = "If no port is specified, the first exposed port is used. If none exist an error is returned."]
+    #[doc = "If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned."]
     pub async fn endpoint_opts<'a>(
         &self,
         opts: ServiceEndpointOpts<'a>,
@@ -12509,100 +11060,52 @@ impl Service {
         }
         query.execute(&self.session).await
     }
-    /// Retrieves a hostname which can be used by clients to reach this container.
+    #[doc = "Retrieves a hostname which can be used by clients to reach this container."]
     pub async fn hostname(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("hostname");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Service.
+    #[doc = "A unique identifier for this Service."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Retrieves the list of ports provided by the service.
+    #[doc = "Retrieves the list of ports provided by the service."]
     pub async fn ports(&self) -> Result<Vec<Port>, QueryError> {
         let mut query = self.selection.select("ports");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Port {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Port"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Port, Vec<Id>>(&self.session, "Port")
+            .await
     }
-    /// Start the service and wait for its health checks to succeed.
-    /// Services bound to a Container do not need to be manually started.
+    #[doc = "Start the service and wait for its health checks to succeed."]
+    #[doc = "Services bound to a Container do not need to be manually started."]
     pub async fn start(&self) -> Result<Service, QueryError> {
         let mut query = self.selection.select("start");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Service {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Service"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Service"))
     }
-    /// Stop the service.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Stop the service."]
     pub async fn stop(&self) -> Result<Service, QueryError> {
         let mut query = self.selection.select("stop");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Service {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Service"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Service"))
     }
-    /// Stop the service.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Stop the service."]
     pub async fn stop_opts(&self, opts: ServiceStopOpts) -> Result<Service, QueryError> {
         let mut query = self.selection.select("stop");
         if let Some(kill) = opts.kill {
             query = query.arg("kill", kill);
         }
         let id: Id = query.execute(&self.session).await?;
-        Ok(Service {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Service"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Service"))
     }
-    /// Forces evaluation of the pipeline in the engine.
+    #[doc = "Forces evaluation of the pipeline in the engine."]
     pub async fn sync(&self) -> Result<Service, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Service {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Service"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Service"))
     }
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal(&self) -> Service {
         let mut query = self.selection.select("terminal");
         Service {
@@ -12610,10 +11113,6 @@ impl Service {
             selection: query,
         }
     }
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal_opts<'a>(&self, opts: ServiceTerminalOpts<'a>) -> Service {
         let mut query = self.selection.select("terminal");
         if let Some(cmd) = opts.cmd {
@@ -12624,21 +11123,13 @@ impl Service {
             selection: query,
         }
     }
-    /// Creates a tunnel that forwards traffic from the caller's network to this service.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up(&self) -> Result<Void, QueryError> {
+    #[doc = "Creates a tunnel that forwards traffic from the caller's network to this service."]
+    pub async fn up(&self) -> Result<(), QueryError> {
         let mut query = self.selection.select("up");
         query.execute(&self.session).await
     }
-    /// Creates a tunnel that forwards traffic from the caller's network to this service.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<Void, QueryError> {
+    #[doc = "Creates a tunnel that forwards traffic from the caller's network to this service."]
+    pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<(), QueryError> {
         let mut query = self.selection.select("up");
         if let Some(ports) = opts.ports {
             query = query.arg("ports", ports);
@@ -12648,11 +11139,9 @@ impl Service {
         }
         query.execute(&self.session).await
     }
-    /// Configures a hostname which can be used by clients within the session to reach this container.
-    ///
-    /// # Arguments
-    ///
-    /// * `hostname` - The hostname to use.
+    #[doc = "Configures a hostname which can be used by clients within the session to reach this container."]
+    #[doc = "# Arguments"]
+    #[doc = "* `hostname` - The hostname to use."]
     pub fn with_hostname(&self, hostname: impl Into<String>) -> Service {
         let mut query = self.selection.select("withHostname");
         query = query.arg("hostname", hostname.into());
@@ -12669,6 +11158,11 @@ impl Node for Service {
         async move { query.execute(&session).await }
     }
 }
+impl From<Service> for IdInput<NodeClient> {
+    fn from(value: Service) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Syncer for Service {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, QueryError>> + Send {
         let mut query = self.selection.select("id");
@@ -12679,6 +11173,11 @@ impl Syncer for Service {
         let mut query = self.selection.select("sync");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Service> for IdInput<SyncerClient> {
+    fn from(value: Service) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12693,6 +11192,11 @@ impl IntoID<Id> for Socket {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Socket> for IdInput<Socket> {
+    fn from(value: Socket) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Socket {
     fn graphql_type() -> &'static str {
         "Socket"
@@ -12702,7 +11206,7 @@ impl Sealed for Socket {
     }
 }
 impl Socket {
-    /// A unique identifier for this Socket.
+    #[doc = "A unique identifier for this Socket."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -12713,6 +11217,11 @@ impl Node for Socket {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Socket> for IdInput<NodeClient> {
+    fn from(value: Socket) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12727,6 +11236,11 @@ impl IntoID<Id> for SourceMap {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<SourceMap> for IdInput<SourceMap> {
+    fn from(value: SourceMap) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for SourceMap {
     fn graphql_type() -> &'static str {
         "SourceMap"
@@ -12736,32 +11250,32 @@ impl Sealed for SourceMap {
     }
 }
 impl SourceMap {
-    /// The column number within the line.
+    #[doc = "The column number within the line."]
     pub async fn column(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("column");
         query.execute(&self.session).await
     }
-    /// The filename from the module source.
+    #[doc = "The filename from the module source."]
     pub async fn filename(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("filename");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this SourceMap.
+    #[doc = "A unique identifier for this SourceMap."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The line number within the filename.
+    #[doc = "The line number within the filename."]
     pub async fn line(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("line");
         query.execute(&self.session).await
     }
-    /// The module dependency this was declared in.
+    #[doc = "The module dependency this was declared in."]
     pub async fn module(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("module");
         query.execute(&self.session).await
     }
-    /// The URL to the file, if any. This can be used to link to the source map in the browser.
+    #[doc = "The URL to the file, if any. This can be used to link to the source map in the browser."]
     pub async fn url(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("url");
         query.execute(&self.session).await
@@ -12772,6 +11286,11 @@ impl Node for SourceMap {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<SourceMap> for IdInput<NodeClient> {
+    fn from(value: SourceMap) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12786,6 +11305,11 @@ impl IntoID<Id> for Stat {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Stat> for IdInput<Stat> {
+    fn from(value: Stat) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Stat {
     fn graphql_type() -> &'static str {
         "Stat"
@@ -12795,27 +11319,27 @@ impl Sealed for Stat {
     }
 }
 impl Stat {
-    /// file type
+    #[doc = "file type"]
     pub async fn file_type(&self) -> Result<FileType, QueryError> {
         let mut query = self.selection.select("fileType");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Stat.
+    #[doc = "A unique identifier for this Stat."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// file name
+    #[doc = "file name"]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// permission bits
+    #[doc = "permission bits"]
     pub async fn permissions(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("permissions");
         query.execute(&self.session).await
     }
-    /// file size
+    #[doc = "file size"]
     pub async fn size(&self) -> Result<isize, QueryError> {
         let mut query = self.selection.select("size");
         query.execute(&self.session).await
@@ -12826,6 +11350,11 @@ impl Node for Stat {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Stat> for IdInput<NodeClient> {
+    fn from(value: Stat) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -12840,6 +11369,11 @@ impl IntoID<Id> for Terminal {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Terminal> for IdInput<Terminal> {
+    fn from(value: Terminal) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Terminal {
     fn graphql_type() -> &'static str {
         "Terminal"
@@ -12849,24 +11383,17 @@ impl Sealed for Terminal {
     }
 }
 impl Terminal {
-    /// A unique identifier for this Terminal.
+    #[doc = "A unique identifier for this Terminal."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Forces evaluation of the pipeline in the engine.
-    /// It doesn't run the default command if no exec has been set.
+    #[doc = "Forces evaluation of the pipeline in the engine."]
+    #[doc = "It doesn't run the default command if no exec has been set."]
     pub async fn sync(&self) -> Result<Terminal, QueryError> {
         let mut query = self.selection.select("sync");
         let id: Id = query.execute(&self.session).await?;
-        Ok(Terminal {
-            session: self.session.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Terminal"),
-        })
+        Ok(crate::query::reenter(&self.session, id, "Terminal"))
     }
 }
 impl Node for Terminal {
@@ -12874,6 +11401,11 @@ impl Node for Terminal {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<Terminal> for IdInput<NodeClient> {
+    fn from(value: Terminal) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Syncer for Terminal {
@@ -12888,6 +11420,11 @@ impl Syncer for Terminal {
         async move { query.execute(&session).await }
     }
 }
+impl From<Terminal> for IdInput<SyncerClient> {
+    fn from(value: Terminal) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct TypeDef {
     pub(crate) session: SessionHandle,
@@ -12895,49 +11432,49 @@ pub struct TypeDef {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumOpts<'a> {
-    /// A doc string for the enum, if any
+    #[doc = "A doc string for the enum, if any"]
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// The source map for the enum definition.
+    #[doc = "The source map for the enum definition."]
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumMemberOpts<'a> {
-    /// If deprecated, the reason or migration path.
+    #[doc = "If deprecated, the reason or migration path."]
     #[builder(setter(into, strip_option), default)]
     pub deprecated: Option<&'a str>,
-    /// A doc string for the member, if any
+    #[doc = "A doc string for the member, if any"]
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// The source map for the enum member definition.
+    #[doc = "The source map for the enum member definition."]
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<Id>,
-    /// The value of the member in the enum
+    #[doc = "The value of the member in the enum"]
     #[builder(setter(into, strip_option), default)]
     pub value: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumValueOpts<'a> {
-    /// If deprecated, the reason or migration path.
+    #[doc = "If deprecated, the reason or migration path."]
     #[builder(setter(into, strip_option), default)]
     pub deprecated: Option<&'a str>,
-    /// A doc string for the value, if any
+    #[doc = "A doc string for the value, if any"]
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// The source map for the enum value definition.
+    #[doc = "The source map for the enum value definition."]
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithFieldOpts<'a> {
-    /// If deprecated, the reason or migration path.
+    #[doc = "If deprecated, the reason or migration path."]
     #[builder(setter(into, strip_option), default)]
     pub deprecated: Option<&'a str>,
-    /// A doc string for the field, if any
+    #[doc = "A doc string for the field, if any"]
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
-    /// The source map for the field definition.
+    #[doc = "The source map for the field definition."]
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<Id>,
 }
@@ -12969,6 +11506,11 @@ impl IntoID<Id> for TypeDef {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<TypeDef> for IdInput<TypeDef> {
+    fn from(value: TypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for TypeDef {
     fn graphql_type() -> &'static str {
         "TypeDef"
@@ -12978,7 +11520,7 @@ impl Sealed for TypeDef {
     }
 }
 impl TypeDef {
-    /// If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+    #[doc = "If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."]
     pub fn as_enum(&self) -> EnumTypeDef {
         let mut query = self.selection.select("asEnum");
         EnumTypeDef {
@@ -12986,7 +11528,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
+    #[doc = "If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."]
     pub fn as_input(&self) -> InputTypeDef {
         let mut query = self.selection.select("asInput");
         InputTypeDef {
@@ -12994,7 +11536,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
+    #[doc = "If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."]
     pub fn as_interface(&self) -> InterfaceTypeDef {
         let mut query = self.selection.select("asInterface");
         InterfaceTypeDef {
@@ -13002,7 +11544,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
+    #[doc = "If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."]
     pub fn as_list(&self) -> ListTypeDef {
         let mut query = self.selection.select("asList");
         ListTypeDef {
@@ -13010,7 +11552,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
+    #[doc = "If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."]
     pub fn as_object(&self) -> ObjectTypeDef {
         let mut query = self.selection.select("asObject");
         ObjectTypeDef {
@@ -13018,7 +11560,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+    #[doc = "If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."]
     pub fn as_scalar(&self) -> ScalarTypeDef {
         let mut query = self.selection.select("asScalar");
         ScalarTypeDef {
@@ -13026,56 +11568,39 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// A unique identifier for this TypeDef.
+    #[doc = "A unique identifier for this TypeDef."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The kind of type this is (e.g. primitive, list, object).
+    #[doc = "The kind of type this is (e.g. primitive, list, object)."]
     pub async fn kind(&self) -> Result<TypeDefKind, QueryError> {
         let mut query = self.selection.select("kind");
         query.execute(&self.session).await
     }
-    /// The canonical non-optional name of the type.
+    #[doc = "The canonical non-optional name of the type."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// Whether this type can be set to null. Defaults to false.
+    #[doc = "Whether this type can be set to null. Defaults to false."]
     pub async fn optional(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("optional");
         query.execute(&self.session).await
     }
-    /// Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
+    #[doc = "Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object."]
     pub fn with_constructor(&self, function: impl IntoID<Id>) -> TypeDef {
         let mut query = self.selection.select("withConstructor");
-        query = query.arg_lazy(
-            "function",
-            Box::new(move || {
-                let function = function.clone();
-                Box::pin(async move {
-                    function
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("function", IdInput::<Id>::lazy(function));
         TypeDef {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Enum with the provided name.
-    /// Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the enum
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Enum with the provided name."]
+    #[doc = "Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the enum"]
     pub fn with_enum(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withEnum");
         query = query.arg("name", name.into());
@@ -13084,13 +11609,10 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Enum with the provided name.
-    /// Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the enum
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Enum with the provided name."]
+    #[doc = "Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the enum"]
     pub fn with_enum_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -13109,12 +11631,9 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the member in the enum
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Adds a static value for an Enum TypeDef, failing if the type is not an enum."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the member in the enum"]
     pub fn with_enum_member(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withEnumMember");
         query = query.arg("name", name.into());
@@ -13123,12 +11642,9 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the member in the enum
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Adds a static value for an Enum TypeDef, failing if the type is not an enum."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the member in the enum"]
     pub fn with_enum_member_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -13153,12 +11669,9 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The name of the value in the enum
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Adds a static value for an Enum TypeDef, failing if the type is not an enum."]
+    #[doc = "# Arguments"]
+    #[doc = "* `value` - The name of the value in the enum"]
     pub fn with_enum_value(&self, value: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withEnumValue");
         query = query.arg("value", value.into());
@@ -13167,12 +11680,9 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The name of the value in the enum
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Adds a static value for an Enum TypeDef, failing if the type is not an enum."]
+    #[doc = "# Arguments"]
+    #[doc = "* `value` - The name of the value in the enum"]
     pub fn with_enum_value_opts<'a>(
         &self,
         value: impl Into<String>,
@@ -13194,43 +11704,23 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Adds a static field for an Object TypeDef, failing if the type is not an object.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the field in the object
-    /// * `type_def` - The type of the field
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Adds a static field for an Object TypeDef, failing if the type is not an object."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the field in the object"]
+    #[doc = "* `typeDef` - The type of the field"]
     pub fn with_field(&self, name: impl Into<String>, type_def: impl IntoID<Id>) -> TypeDef {
         let mut query = self.selection.select("withField");
         query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "typeDef",
-            Box::new(move || {
-                let type_def = type_def.clone();
-                Box::pin(async move {
-                    type_def
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("typeDef", IdInput::<Id>::lazy(type_def));
         TypeDef {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Adds a static field for an Object TypeDef, failing if the type is not an object.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the field in the object
-    /// * `type_def` - The type of the field
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Adds a static field for an Object TypeDef, failing if the type is not an object."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the field in the object"]
+    #[doc = "* `typeDef` - The type of the field"]
     pub fn with_field_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -13239,21 +11729,7 @@ impl TypeDef {
     ) -> TypeDef {
         let mut query = self.selection.select("withField");
         query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "typeDef",
-            Box::new(move || {
-                let type_def = type_def.clone();
-                Box::pin(async move {
-                    type_def
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("typeDef", IdInput::<Id>::lazy(type_def));
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
@@ -13268,34 +11744,16 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
+    #[doc = "Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds."]
     pub fn with_function(&self, function: impl IntoID<Id>) -> TypeDef {
         let mut query = self.selection.select("withFunction");
-        query = query.arg_lazy(
-            "function",
-            Box::new(move || {
-                let function = function.clone();
-                Box::pin(async move {
-                    function
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("function", IdInput::<Id>::lazy(function));
         TypeDef {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Interface with the provided name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Interface with the provided name."]
     pub fn with_interface(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withInterface");
         query = query.arg("name", name.into());
@@ -13304,11 +11762,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Interface with the provided name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Interface with the provided name."]
     pub fn with_interface_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -13327,7 +11781,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Sets the kind of the type.
+    #[doc = "Sets the kind of the type."]
     pub fn with_kind(&self, kind: TypeDefKind) -> TypeDef {
         let mut query = self.selection.select("withKind");
         query = query.arg("kind", kind);
@@ -13336,35 +11790,17 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind List with the provided type for its elements.
+    #[doc = "Returns a TypeDef of kind List with the provided type for its elements."]
     pub fn with_list_of(&self, element_type: impl IntoID<Id>) -> TypeDef {
         let mut query = self.selection.select("withListOf");
-        query = query.arg_lazy(
-            "elementType",
-            Box::new(move || {
-                let element_type = element_type.clone();
-                Box::pin(async move {
-                    element_type
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("elementType", IdInput::<Id>::lazy(element_type));
         TypeDef {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Object with the provided name.
-    /// Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Object with the provided name."]
+    #[doc = "Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference."]
     pub fn with_object(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withObject");
         query = query.arg("name", name.into());
@@ -13373,12 +11809,8 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Object with the provided name.
-    /// Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Object with the provided name."]
+    #[doc = "Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference."]
     pub fn with_object_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -13400,7 +11832,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Sets whether this type can be set to null.
+    #[doc = "Sets whether this type can be set to null."]
     pub fn with_optional(&self, optional: bool) -> TypeDef {
         let mut query = self.selection.select("withOptional");
         query = query.arg("optional", optional);
@@ -13409,11 +11841,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Scalar with the provided name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Scalar with the provided name."]
     pub fn with_scalar(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withScalar");
         query = query.arg("name", name.into());
@@ -13422,11 +11850,7 @@ impl TypeDef {
             selection: query,
         }
     }
-    /// Returns a TypeDef of kind Scalar with the provided name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a TypeDef of kind Scalar with the provided name."]
     pub fn with_scalar_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -13450,6 +11874,11 @@ impl Node for TypeDef {
         async move { query.execute(&session).await }
     }
 }
+impl From<TypeDef> for IdInput<NodeClient> {
+    fn from(value: TypeDef) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Up {
     pub(crate) session: SessionHandle,
@@ -13462,6 +11891,11 @@ impl IntoID<Id> for Up {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Up> for IdInput<Up> {
+    fn from(value: Up) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Up {
     fn graphql_type() -> &'static str {
         "Up"
@@ -13471,22 +11905,22 @@ impl Sealed for Up {
     }
 }
 impl Up {
-    /// The description of the service
+    #[doc = "The description of the service"]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Up.
+    #[doc = "A unique identifier for this Up."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Return the fully qualified name of the service
+    #[doc = "Return the fully qualified name of the service"]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The original module in which the service has been defined
+    #[doc = "The original module in which the service has been defined"]
     pub fn original_module(&self) -> Module {
         let mut query = self.selection.select("originalModule");
         Module {
@@ -13494,12 +11928,12 @@ impl Up {
             selection: query,
         }
     }
-    /// The path of the service within its module
+    #[doc = "The path of the service within its module"]
     pub async fn path(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("path");
         query.execute(&self.session).await
     }
-    /// Execute the service function
+    #[doc = "Execute the service function"]
     pub fn run(&self) -> Up {
         let mut query = self.selection.select("run");
         Up {
@@ -13515,6 +11949,11 @@ impl Node for Up {
         async move { query.execute(&session).await }
     }
 }
+impl From<Up> for IdInput<NodeClient> {
+    fn from(value: Up) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct UpGroup {
     pub(crate) session: SessionHandle,
@@ -13527,6 +11966,11 @@ impl IntoID<Id> for UpGroup {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<UpGroup> for IdInput<UpGroup> {
+    fn from(value: UpGroup) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for UpGroup {
     fn graphql_type() -> &'static str {
         "UpGroup"
@@ -13536,28 +11980,20 @@ impl Sealed for UpGroup {
     }
 }
 impl UpGroup {
-    /// A unique identifier for this UpGroup.
+    #[doc = "A unique identifier for this UpGroup."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Return a list of individual services and their details
+    #[doc = "Return a list of individual services and their details"]
     pub async fn list(&self) -> Result<Vec<Up>, QueryError> {
         let mut query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| Up {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("Up"),
-            })
-            .collect())
+        query
+            .execute_reentry::<Up, Vec<Id>>(&self.session, "Up")
+            .await
     }
-    /// Execute all selected service functions
+    #[doc = "Execute all selected service functions"]
     pub fn run(&self) -> UpGroup {
         let mut query = self.selection.select("run");
         UpGroup {
@@ -13573,6 +12009,11 @@ impl Node for UpGroup {
         async move { query.execute(&session).await }
     }
 }
+impl From<UpGroup> for IdInput<NodeClient> {
+    fn from(value: UpGroup) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Volume {
     pub(crate) session: SessionHandle,
@@ -13585,6 +12026,11 @@ impl IntoID<Id> for Volume {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<Volume> for IdInput<Volume> {
+    fn from(value: Volume) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for Volume {
     fn graphql_type() -> &'static str {
         "Volume"
@@ -13594,7 +12040,7 @@ impl Sealed for Volume {
     }
 }
 impl Volume {
-    /// A unique identifier for this Volume.
+    #[doc = "A unique identifier for this Volume."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
@@ -13607,6 +12053,11 @@ impl Node for Volume {
         async move { query.execute(&session).await }
     }
 }
+impl From<Volume> for IdInput<NodeClient> {
+    fn from(value: Volume) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct Workspace {
     pub(crate) session: SessionHandle,
@@ -13614,184 +12065,184 @@ pub struct Workspace {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChecksOpts<'a> {
-    /// Only include checks matching the specified patterns
+    #[doc = "Only include checks matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// When true, only return annotated check functions; exclude generate-as-checks
+    #[doc = "When true, only return annotated check functions; exclude generate-as-checks"]
     #[builder(setter(into, strip_option), default)]
     pub no_generate: Option<bool>,
-    /// When true, only return generate-as-checks; exclude annotated check functions
+    #[doc = "When true, only return generate-as-checks; exclude annotated check functions"]
     #[builder(setter(into, strip_option), default)]
     pub only_generate: Option<bool>,
-    /// Skip checks matching the specified patterns
+    #[doc = "Skip checks matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub skip: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceConfigReadOpts<'a> {
-    /// Dotted key path (e.g. modules.greeter.source). Empty for full config.
+    #[doc = "Dotted key path (e.g. modules.greeter.source). Empty for full config."]
     #[builder(setter(into, strip_option), default)]
     pub key: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceDirectoryOpts<'a> {
-    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    #[doc = "Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
-    /// Apply .gitignore filter rules inside the directory.
+    #[doc = "Apply .gitignore filter rules inside the directory."]
     #[builder(setter(into, strip_option), default)]
     pub gitignore: Option<bool>,
-    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    #[doc = "Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindUpOpts<'a> {
-    /// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
+    #[doc = "Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root."]
     #[builder(setter(into, strip_option), default)]
     pub from: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceGeneratorsOpts<'a> {
-    /// Only include generators matching the specified patterns
+    #[doc = "Only include generators matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceSearchOpts<'a> {
-    /// Allow the . pattern to match newlines in multiline mode.
+    #[doc = "Allow the . pattern to match newlines in multiline mode."]
     #[builder(setter(into, strip_option), default)]
     pub dotall: Option<bool>,
-    /// Only return matching files, not lines and content
+    #[doc = "Only return matching files, not lines and content"]
     #[builder(setter(into, strip_option), default)]
     pub files_only: Option<bool>,
-    /// Glob patterns to match (e.g., "*.md")
+    #[doc = "Glob patterns to match (e.g., \"*.md\")"]
     #[builder(setter(into, strip_option), default)]
     pub globs: Option<Vec<&'a str>>,
-    /// Enable case-insensitive matching.
+    #[doc = "Enable case-insensitive matching."]
     #[builder(setter(into, strip_option), default)]
     pub insensitive: Option<bool>,
-    /// Limit the number of results to return
+    #[doc = "Limit the number of results to return"]
     #[builder(setter(into, strip_option), default)]
     pub limit: Option<isize>,
-    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[doc = "Interpret the pattern as a literal string instead of a regular expression."]
     #[builder(setter(into, strip_option), default)]
     pub literal: Option<bool>,
-    /// Enable searching across multiple lines.
+    #[doc = "Enable searching across multiple lines."]
     #[builder(setter(into, strip_option), default)]
     pub multiline: Option<bool>,
-    /// Directory or file paths to search
+    #[doc = "Directory or file paths to search"]
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
-    /// Skip hidden files (files starting with .).
+    #[doc = "Skip hidden files (files starting with .)."]
     #[builder(setter(into, strip_option), default)]
     pub skip_hidden: Option<bool>,
-    /// Honor .gitignore, .ignore, and .rgignore files.
+    #[doc = "Honor .gitignore, .ignore, and .rgignore files."]
     #[builder(setter(into, strip_option), default)]
     pub skip_ignored: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceServicesOpts<'a> {
-    /// Only include services matching the specified patterns
+    #[doc = "Only include services matching the specified patterns"]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithConfigEnvOpts {
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithConfigValueOpts<'a> {
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
-    /// List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+    #[doc = "List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value."]
     #[builder(setter(into, strip_option), default)]
     pub values: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitClientOpts {
-    /// SDK-specific init arguments.
+    #[doc = "SDK-specific init arguments."]
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Json>,
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
-    /// Skip running the SDK's generators for the new client.
+    #[doc = "Skip running the SDK's generators for the new client."]
     #[builder(setter(into, strip_option), default)]
     pub no_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitModuleOpts<'a> {
-    /// SDK-specific init arguments.
+    #[doc = "SDK-specific init arguments."]
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Json>,
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
-    /// Additional include patterns for the module.
+    #[doc = "Additional include patterns for the module."]
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// Skip running the SDK's generators for the new module.
+    #[doc = "Skip running the SDK's generators for the new module."]
     #[builder(setter(into, strip_option), default)]
     pub no_generate: Option<bool>,
-    /// Workspace-relative path for the new module.
+    #[doc = "Workspace-relative path for the new module."]
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
-    /// Source subpath within the new module.
+    #[doc = "Source subpath within the new module."]
     #[builder(setter(into, strip_option), default)]
     pub source: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithModuleOpts<'a> {
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
-    /// Override name for the installed module entry.
+    #[doc = "Override name for the installed module entry."]
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithNewFileOpts {
-    /// Permissions of the new file.
+    #[doc = "Permissions of the new file."]
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithSdkOpts<'a> {
-    /// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    #[doc = "User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`."]
     #[builder(setter(into, strip_option), default)]
     pub as_sdk_name: Option<&'a str>,
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
-    /// Override name for the installed SDK entry.
+    #[doc = "Override name for the installed SDK entry."]
     #[builder(setter(into, strip_option), default)]
     pub name: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithoutConfigEnvOpts {
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithoutConfigValueOpts {
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithoutModuleOpts {
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithoutSdkOpts {
-    /// Write to the workspace config directory at the workspace cwd.
+    #[doc = "Write to the workspace config directory at the workspace cwd."]
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
 }
@@ -13800,6 +12251,11 @@ impl IntoID<Id> for Workspace {
         self,
     ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, QueryError>> + Send>> {
         Box::pin(async move { self.id().await })
+    }
+}
+impl From<Workspace> for IdInput<Workspace> {
+    fn from(value: Workspace) -> Self {
+        IdInput::lazy(value)
     }
 }
 impl Sealed for Workspace {
@@ -13811,12 +12267,12 @@ impl Sealed for Workspace {
     }
 }
 impl Workspace {
-    /// Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
+    #[doc = "Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."]
     pub async fn address(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("address");
         query.execute(&self.session).await
     }
-    /// Return this workspace's pending overlay changes.
+    #[doc = "Return this workspace's pending overlay changes."]
     pub fn changes(&self) -> Changeset {
         let mut query = self.selection.select("changes");
         Changeset {
@@ -13824,11 +12280,7 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return all checks from modules loaded in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all checks from modules loaded in the workspace."]
     pub fn checks(&self) -> CheckGroup {
         let mut query = self.selection.select("checks");
         CheckGroup {
@@ -13836,11 +12288,7 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return all checks from modules loaded in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all checks from modules loaded in the workspace."]
     pub fn checks_opts<'a>(&self, opts: WorkspaceChecksOpts<'a>) -> CheckGroup {
         let mut query = self.selection.select("checks");
         if let Some(include) = opts.include {
@@ -13860,31 +12308,23 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Selected native workspace config file relative to the workspace cwd, if any.
+    #[doc = "Selected native workspace config file relative to the workspace cwd, if any."]
     pub async fn config_file(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("configFile");
         query.execute(&self.session).await
     }
-    /// Read a configuration value from dagger.toml.
-    /// If key is empty, returns the full config.
-    /// If key points to a scalar, returns the value.
-    /// If key points to a table, returns flattened dotted-key output.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Read a configuration value from dagger.toml."]
+    #[doc = "If key is empty, returns the full config."]
+    #[doc = "If key points to a scalar, returns the value."]
+    #[doc = "If key points to a table, returns flattened dotted-key output."]
     pub async fn config_read(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("configRead");
         query.execute(&self.session).await
     }
-    /// Read a configuration value from dagger.toml.
-    /// If key is empty, returns the full config.
-    /// If key points to a scalar, returns the value.
-    /// If key points to a table, returns flattened dotted-key output.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Read a configuration value from dagger.toml."]
+    #[doc = "If key is empty, returns the full config."]
+    #[doc = "If key points to a scalar, returns the value."]
+    #[doc = "If key points to a table, returns flattened dotted-key output."]
     pub async fn config_read_opts<'a>(
         &self,
         opts: WorkspaceConfigReadOpts<'a>,
@@ -13895,20 +12335,17 @@ impl Workspace {
         }
         query.execute(&self.session).await
     }
-    /// Current location within the workspace root.
-    /// The workspace root is returned as "/".
-    /// Relative paths in workspace APIs resolve from here.
+    #[doc = "Current location within the workspace root."]
+    #[doc = "The workspace root is returned as \"/\"."]
+    #[doc = "Relative paths in workspace APIs resolve from here."]
     pub async fn cwd(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("cwd");
         query.execute(&self.session).await
     }
-    /// Returns a Directory from the workspace.
-    /// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace cwd; absolute paths (e.g., "/src") resolve from the workspace root.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a Directory from the workspace."]
+    #[doc = "Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to retrieve. Relative paths (e.g., \"src\") resolve from the workspace cwd; absolute paths (e.g., \"/src\") resolve from the workspace root."]
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
@@ -13917,13 +12354,10 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Returns a Directory from the workspace.
-    /// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace cwd; absolute paths (e.g., "/src") resolve from the workspace root.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Returns a Directory from the workspace."]
+    #[doc = "Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the directory to retrieve. Relative paths (e.g., \"src\") resolve from the workspace cwd; absolute paths (e.g., \"/src\") resolve from the workspace root."]
     pub fn directory_opts<'a>(
         &self,
         path: impl Into<String>,
@@ -13945,22 +12379,20 @@ impl Workspace {
             selection: query,
         }
     }
-    /// List named environments defined in the workspace configuration.
+    #[doc = "List named environments defined in the workspace configuration."]
     pub async fn env_list(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("envList");
         query.execute(&self.session).await
     }
-    /// Write this workspace's pending changes to its local Git workspace.
-    pub async fn export(&self) -> Result<Void, QueryError> {
+    #[doc = "Write this workspace's pending changes to its local Git workspace."]
+    pub async fn export(&self) -> Result<(), QueryError> {
         let mut query = self.selection.select("export");
         query.execute(&self.session).await
     }
-    /// Returns a File from the workspace.
-    /// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the workspace root.
+    #[doc = "Returns a File from the workspace."]
+    #[doc = "Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the file to retrieve. Relative paths (e.g., \"go.mod\") resolve from the workspace cwd; absolute paths (e.g., \"/go.mod\") resolve from the workspace root."]
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -13969,29 +12401,23 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the absolute workspace path if found, or null if not found.
-    /// Relative start paths resolve from the workspace cwd.
-    /// The search stops at the workspace root and will not traverse above it.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the file or directory to search for.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Search for a file or directory by walking up from the start path within the workspace."]
+    #[doc = "Returns the absolute workspace path if found, or null if not found."]
+    #[doc = "Relative start paths resolve from the workspace cwd."]
+    #[doc = "The search stops at the workspace root and will not traverse above it."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the file or directory to search for."]
     pub async fn find_up(&self, name: impl Into<String>) -> Result<String, QueryError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
         query.execute(&self.session).await
     }
-    /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the absolute workspace path if found, or null if not found.
-    /// Relative start paths resolve from the workspace cwd.
-    /// The search stops at the workspace root and will not traverse above it.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the file or directory to search for.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Search for a file or directory by walking up from the start path within the workspace."]
+    #[doc = "Returns the absolute workspace path if found, or null if not found."]
+    #[doc = "Relative start paths resolve from the workspace cwd."]
+    #[doc = "The search stops at the workspace root and will not traverse above it."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - The name of the file or directory to search for."]
     pub async fn find_up_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -14004,11 +12430,7 @@ impl Workspace {
         }
         query.execute(&self.session).await
     }
-    /// Return all generators from modules loaded in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all generators from modules loaded in the workspace."]
     pub fn generators(&self) -> GeneratorGroup {
         let mut query = self.selection.select("generators");
         GeneratorGroup {
@@ -14016,11 +12438,7 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return all generators from modules loaded in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all generators from modules loaded in the workspace."]
     pub fn generators_opts<'a>(&self, opts: WorkspaceGeneratorsOpts<'a>) -> GeneratorGroup {
         let mut query = self.selection.select("generators");
         if let Some(include) = opts.include {
@@ -14031,7 +12449,7 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Git state for this workspace. Errors if the workspace is not in a git repository.
+    #[doc = "Git state for this workspace. Errors if the workspace is not in a git repository."]
     pub fn git(&self) -> WorkspaceGit {
         let mut query = self.selection.select("git");
         WorkspaceGit {
@@ -14039,24 +12457,22 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Returns a list of files and directories that match the given pattern.
-    /// Patterns match paths relative to the workspace root.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - Pattern to match (e.g., "*.md").
+    #[doc = "Returns a list of files and directories that match the given pattern."]
+    #[doc = "Patterns match paths relative to the workspace root."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - Pattern to match (e.g., \"*.md\")."]
     pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("glob");
         query = query.arg("pattern", pattern.into());
         query.execute(&self.session).await
     }
-    /// A unique identifier for this Workspace.
+    #[doc = "A unique identifier for this Workspace."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Plan the explicit migration needed for the current workspace.
-    /// The returned plan has an empty changeset and no steps when no migration is needed.
+    #[doc = "Plan the explicit migration needed for the current workspace."]
+    #[doc = "The returned plan has an empty changeset and no steps when no migration is needed."]
     pub fn migrate(&self) -> WorkspaceMigration {
         let mut query = self.selection.select("migrate");
         WorkspaceMigration {
@@ -14064,11 +12480,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return a module defined in the workspace configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Module name to inspect.
+    #[doc = "Return a module defined in the workspace configuration."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Module name to inspect."]
     pub fn module(&self, name: impl Into<String>) -> WorkspaceModule {
         let mut query = self.selection.select("module");
         query = query.arg("name", name.into());
@@ -14077,13 +12491,11 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Load a module source from a path within the workspace.
-    /// Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.
-    /// Fails if the path does not point to an initialized module.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.
+    #[doc = "Load a module source from a path within the workspace."]
+    #[doc = "Relative paths (e.g., \"foo\") resolve from the workspace cwd; absolute paths (e.g., \"/foo\") resolve from the workspace root."]
+    #[doc = "Fails if the path does not point to an initialized module."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Location of the module source to load, relative to the workspace cwd or absolute from the workspace root."]
     pub fn module_source(&self, path: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("path", path.into());
@@ -14092,27 +12504,17 @@ impl Workspace {
             selection: query,
         }
     }
-    /// List modules defined in the workspace configuration.
+    #[doc = "List modules defined in the workspace configuration."]
     pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, QueryError> {
         let mut query = self.selection.select("modules");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| WorkspaceModule {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("WorkspaceModule"),
-            })
-            .collect())
+        query
+            .execute_reentry::<WorkspaceModule, Vec<Id>>(&self.session, "WorkspaceModule")
+            .await
     }
-    /// An installed SDK, by name.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - SDK name to look up.
+    #[doc = "An installed SDK, by name."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - SDK name to look up."]
     pub fn sdk(&self, name: impl Into<String>) -> WorkspaceSdk {
         let mut query = self.selection.select("sdk");
         query = query.arg("name", name.into());
@@ -14121,30 +12523,19 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Installed SDKs.
+    #[doc = "Installed SDKs."]
     pub async fn sdks(&self) -> Result<Vec<WorkspaceSdk>, QueryError> {
         let mut query = self.selection.select("sdks");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| WorkspaceSdk {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("WorkspaceSDK"),
-            })
-            .collect())
+        query
+            .execute_reentry::<WorkspaceSdk, Vec<Id>>(&self.session, "WorkspaceSDK")
+            .await
     }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    /// Runs ripgrep on the client host, falling back to grep if unavailable.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Searches for content matching the given regular expression or literal string."]
+    #[doc = "Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes."]
+    #[doc = "Runs ripgrep on the client host, falling back to grep if unavailable."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - The text to match."]
     pub async fn search(
         &self,
         pattern: impl Into<String>,
@@ -14152,26 +12543,15 @@ impl Workspace {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| SearchResult {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("SearchResult"),
-            })
-            .collect())
+        query
+            .execute_reentry::<SearchResult, Vec<Id>>(&self.session, "SearchResult")
+            .await
     }
-    /// Searches for content matching the given regular expression or literal string.
-    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
-    /// Runs ripgrep on the client host, falling back to grep if unavailable.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - The text to match.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Searches for content matching the given regular expression or literal string."]
+    #[doc = "Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes."]
+    #[doc = "Runs ripgrep on the client host, falling back to grep if unavailable."]
+    #[doc = "# Arguments"]
+    #[doc = "* `pattern` - The text to match."]
     pub async fn search_opts<'a>(
         &self,
         pattern: impl Into<String>,
@@ -14210,23 +12590,11 @@ impl Workspace {
             query = query.arg("limit", limit);
         }
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| SearchResult {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("SearchResult"),
-            })
-            .collect())
+        query
+            .execute_reentry::<SearchResult, Vec<Id>>(&self.session, "SearchResult")
+            .await
     }
-    /// Return all services from modules loaded in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all services from modules loaded in the workspace."]
     pub fn services(&self) -> UpGroup {
         let mut query = self.selection.select("services");
         UpGroup {
@@ -14234,11 +12602,7 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return all services from modules loaded in the workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return all services from modules loaded in the workspace."]
     pub fn services_opts<'a>(&self, opts: WorkspaceServicesOpts<'a>) -> UpGroup {
         let mut query = self.selection.select("services");
         if let Some(include) = opts.include {
@@ -14249,39 +12613,20 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a changeset applied, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `changes` - Changes to apply.
+    #[doc = "Return this workspace with a changeset applied, without mutating the source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `changes` - Changes to apply."]
     pub fn with_changes(&self, changes: impl IntoID<Id>) -> Workspace {
         let mut query = self.selection.select("withChanges");
-        query = query.arg_lazy(
-            "changes",
-            Box::new(move || {
-                let changes = changes.clone();
-                Box::pin(async move {
-                    changes
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("changes", IdInput::<Id>::lazy(changes));
         Workspace {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return this workspace with a named config environment created.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a named config environment created."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Environment name."]
     pub fn with_config_env(&self, name: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withConfigEnv");
         query = query.arg("name", name.into());
@@ -14290,12 +12635,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a named config environment created.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a named config environment created."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Environment name."]
     pub fn with_config_env_opts(
         &self,
         name: impl Into<String>,
@@ -14311,13 +12653,10 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a configuration value written.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Dotted key path.
-    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a configuration value written."]
+    #[doc = "# Arguments"]
+    #[doc = "* `key` - Dotted key path."]
+    #[doc = "* `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected."]
     pub fn with_config_value(&self, key: impl Into<String>, value: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withConfigValue");
         query = query.arg("key", key.into());
@@ -14327,13 +12666,10 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a configuration value written.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Dotted key path.
-    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a configuration value written."]
+    #[doc = "# Arguments"]
+    #[doc = "* `key` - Dotted key path."]
+    #[doc = "* `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected."]
     pub fn with_config_value_opts<'a>(
         &self,
         key: impl Into<String>,
@@ -14354,15 +12690,12 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a generated API client initialized.
-    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Workspace-relative output directory for the generated client.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a generated API client initialized."]
+    #[doc = "The SDK's generators run for the new client, so the returned workspace carries its generated bindings."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Workspace-relative output directory for the generated client."]
+    #[doc = "* `sdk` - Workspace SDK name or module entry name to use."]
+    #[doc = "* `module` - Workspace-relative path or canonical ref for the module the client binds to."]
     pub fn with_init_client(
         &self,
         path: impl Into<String>,
@@ -14378,15 +12711,12 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a generated API client initialized.
-    /// The SDK's generators run for the new client, so the returned workspace carries its generated bindings.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Workspace-relative output directory for the generated client.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a generated API client initialized."]
+    #[doc = "The SDK's generators run for the new client, so the returned workspace carries its generated bindings."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Workspace-relative output directory for the generated client."]
+    #[doc = "* `sdk` - Workspace SDK name or module entry name to use."]
+    #[doc = "* `module` - Workspace-relative path or canonical ref for the module the client binds to."]
     pub fn with_init_client_opts(
         &self,
         path: impl Into<String>,
@@ -14412,14 +12742,11 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a new module initialized.
-    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the new module.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a new module initialized."]
+    #[doc = "The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the new module."]
+    #[doc = "* `sdk` - Workspace SDK name or module entry name to use."]
     pub fn with_init_module(&self, name: impl Into<String>, sdk: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withInitModule");
         query = query.arg("name", name.into());
@@ -14429,14 +12756,11 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a new module initialized.
-    /// The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the new module.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a new module initialized."]
+    #[doc = "The SDK's generators run for the new module, so the returned workspace carries the generated code it needs to be loadable."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the new module."]
+    #[doc = "* `sdk` - Workspace SDK name or module entry name to use."]
     pub fn with_init_module_opts<'a>(
         &self,
         name: impl Into<String>,
@@ -14469,12 +12793,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a module installed in its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `r#ref` - Module reference to install.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a module installed in its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `ref` - Module reference to install."]
     pub fn with_module(&self, r#ref: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withModule");
         query = query.arg("ref", r#ref.into());
@@ -14483,12 +12804,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a module installed in its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `r#ref` - Module reference to install.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a module installed in its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `ref` - Module reference to install."]
     pub fn with_module_opts<'a>(
         &self,
         r#ref: impl Into<String>,
@@ -14507,12 +12825,10 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a directory added, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the added directory. Relative paths resolve from the workspace cwd.
-    /// * `source` - Directory to add.
+    #[doc = "Return this workspace with a directory added, without mutating the source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the added directory. Relative paths resolve from the workspace cwd."]
+    #[doc = "* `source` - Directory to add."]
     pub fn with_new_directory(
         &self,
         path: impl Into<String>,
@@ -14520,33 +12836,16 @@ impl Workspace {
     ) -> Workspace {
         let mut query = self.selection.select("withNewDirectory");
         query = query.arg("path", path.into());
-        query = query.arg_lazy(
-            "source",
-            Box::new(move || {
-                let source = source.clone();
-                Box::pin(async move {
-                    source
-                        .into_id()
-                        .await
-                        .map(|id| id.quote())
-                        .map_err(|error| {
-                            QueryBuildError::with_source(QueryBuildErrorKind::LazyIdentifier, error)
-                        })
-                })
-            }),
-        );
+        query = query.arg_id_input("source", IdInput::<Id>::lazy(source));
         Workspace {
             session: self.session.clone(),
             selection: query,
         }
     }
-    /// Return this workspace with a new or replaced file, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. Relative paths resolve from the workspace cwd.
-    /// * `contents` - Contents of the new file.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a new or replaced file, without mutating the source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. Relative paths resolve from the workspace cwd."]
+    #[doc = "* `contents` - Contents of the new file."]
     pub fn with_new_file(&self, path: impl Into<String>, contents: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
@@ -14556,13 +12855,10 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a new or replaced file, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the new file. Relative paths resolve from the workspace cwd.
-    /// * `contents` - Contents of the new file.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a new or replaced file, without mutating the source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the new file. Relative paths resolve from the workspace cwd."]
+    #[doc = "* `contents` - Contents of the new file."]
     pub fn with_new_file_opts(
         &self,
         path: impl Into<String>,
@@ -14580,12 +12876,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with an SDK installed in its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `r#ref` - SDK module reference to install.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with an SDK installed in its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `ref` - SDK module reference to install."]
     pub fn with_sdk(&self, r#ref: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withSDK");
         query = query.arg("ref", r#ref.into());
@@ -14594,12 +12887,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with an SDK installed in its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `r#ref` - SDK module reference to install.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with an SDK installed in its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `ref` - SDK module reference to install."]
     pub fn with_sdk_opts<'a>(
         &self,
         r#ref: impl Into<String>,
@@ -14621,7 +12911,7 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with refreshed lockfile state.
+    #[doc = "Return this workspace with refreshed lockfile state."]
     pub fn with_updated_lock(&self) -> Workspace {
         let mut query = self.selection.select("withUpdatedLock");
         Workspace {
@@ -14629,11 +12919,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with its working directory pointed at the given workspace-relative path.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Workspace-relative path to use as the working directory.
+    #[doc = "Return this workspace with its working directory pointed at the given workspace-relative path."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Workspace-relative path to use as the working directory."]
     pub fn with_workdir(&self, path: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
@@ -14642,12 +12930,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a named config environment removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a named config environment removed."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Environment name."]
     pub fn without_config_env(&self, name: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutConfigEnv");
         query = query.arg("name", name.into());
@@ -14656,12 +12941,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a named config environment removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a named config environment removed."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Environment name."]
     pub fn without_config_env_opts(
         &self,
         name: impl Into<String>,
@@ -14677,13 +12959,10 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a configuration value removed.
-    /// Errors when the key is not currently set.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Dotted key path (e.g. modules.greeter.settings.greeting).
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a configuration value removed."]
+    #[doc = "Errors when the key is not currently set."]
+    #[doc = "# Arguments"]
+    #[doc = "* `key` - Dotted key path (e.g. modules.greeter.settings.greeting)."]
     pub fn without_config_value(&self, key: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutConfigValue");
         query = query.arg("key", key.into());
@@ -14692,13 +12971,10 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a configuration value removed.
-    /// Errors when the key is not currently set.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Dotted key path (e.g. modules.greeter.settings.greeting).
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a configuration value removed."]
+    #[doc = "Errors when the key is not currently set."]
+    #[doc = "# Arguments"]
+    #[doc = "* `key` - Dotted key path (e.g. modules.greeter.settings.greeting)."]
     pub fn without_config_value_opts(
         &self,
         key: impl Into<String>,
@@ -14714,11 +12990,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a directory removed, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the directory to remove. Relative paths resolve from the workspace cwd.
+    #[doc = "Return this workspace with a directory removed, without mutating the source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the directory to remove. Relative paths resolve from the workspace cwd."]
     pub fn without_directory(&self, path: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
@@ -14727,11 +13001,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a file removed, without mutating the source.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path of the file to remove. Relative paths resolve from the workspace cwd.
+    #[doc = "Return this workspace with a file removed, without mutating the source."]
+    #[doc = "# Arguments"]
+    #[doc = "* `path` - Path of the file to remove. Relative paths resolve from the workspace cwd."]
     pub fn without_file(&self, path: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
@@ -14740,12 +13012,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a module removed from its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the installed module entry to remove.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a module removed from its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the installed module entry to remove."]
     pub fn without_module(&self, name: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutModule");
         query = query.arg("name", name.into());
@@ -14754,12 +13023,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with a module removed from its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the installed module entry to remove.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with a module removed from its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the installed module entry to remove."]
     pub fn without_module_opts(
         &self,
         name: impl Into<String>,
@@ -14775,12 +13041,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with an SDK removed from its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the installed SDK entry to remove.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with an SDK removed from its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the installed SDK entry to remove."]
     pub fn without_sdk(&self, name: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withoutSDK");
         query = query.arg("name", name.into());
@@ -14789,12 +13052,9 @@ impl Workspace {
             selection: query,
         }
     }
-    /// Return this workspace with an SDK removed from its config.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the installed SDK entry to remove.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    #[doc = "Return this workspace with an SDK removed from its config."]
+    #[doc = "# Arguments"]
+    #[doc = "* `name` - Name of the installed SDK entry to remove."]
     pub fn without_sdk_opts(
         &self,
         name: impl Into<String>,
@@ -14818,6 +13078,11 @@ impl Node for Workspace {
         async move { query.execute(&session).await }
     }
 }
+impl From<Workspace> for IdInput<NodeClient> {
+    fn from(value: Workspace) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct WorkspaceGit {
     pub(crate) session: SessionHandle,
@@ -14830,6 +13095,11 @@ impl IntoID<Id> for WorkspaceGit {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<WorkspaceGit> for IdInput<WorkspaceGit> {
+    fn from(value: WorkspaceGit) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for WorkspaceGit {
     fn graphql_type() -> &'static str {
         "WorkspaceGit"
@@ -14839,7 +13109,7 @@ impl Sealed for WorkspaceGit {
     }
 }
 impl WorkspaceGit {
-    /// The checked-out HEAD of this workspace.
+    #[doc = "The checked-out HEAD of this workspace."]
     pub fn head(&self) -> GitRef {
         let mut query = self.selection.select("head");
         GitRef {
@@ -14847,12 +13117,12 @@ impl WorkspaceGit {
             selection: query,
         }
     }
-    /// A unique identifier for this WorkspaceGit.
+    #[doc = "A unique identifier for this WorkspaceGit."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+    #[doc = "Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."]
     pub fn uncommitted(&self) -> Changeset {
         let mut query = self.selection.select("uncommitted");
         Changeset {
@@ -14868,6 +13138,11 @@ impl Node for WorkspaceGit {
         async move { query.execute(&session).await }
     }
 }
+impl From<WorkspaceGit> for IdInput<NodeClient> {
+    fn from(value: WorkspaceGit) -> Self {
+        IdInput::lazy(value)
+    }
+}
 #[derive(Clone)]
 pub struct WorkspaceMigration {
     pub(crate) session: SessionHandle,
@@ -14880,6 +13155,11 @@ impl IntoID<Id> for WorkspaceMigration {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<WorkspaceMigration> for IdInput<WorkspaceMigration> {
+    fn from(value: WorkspaceMigration) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for WorkspaceMigration {
     fn graphql_type() -> &'static str {
         "WorkspaceMigration"
@@ -14889,7 +13169,7 @@ impl Sealed for WorkspaceMigration {
     }
 }
 impl WorkspaceMigration {
-    /// Filesystem changes for the full migration plan.
+    #[doc = "Filesystem changes for the full migration plan."]
     pub fn changes(&self) -> Changeset {
         let mut query = self.selection.select("changes");
         Changeset {
@@ -14897,26 +13177,21 @@ impl WorkspaceMigration {
             selection: query,
         }
     }
-    /// A unique identifier for this WorkspaceMigration.
+    #[doc = "A unique identifier for this WorkspaceMigration."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Logical migration steps, each identified by a stable code.
+    #[doc = "Logical migration steps, each identified by a stable code."]
     pub async fn steps(&self) -> Result<Vec<WorkspaceMigrationStep>, QueryError> {
         let mut query = self.selection.select("steps");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| WorkspaceMigrationStep {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("WorkspaceMigrationStep"),
-            })
-            .collect())
+        query
+            .execute_reentry::<WorkspaceMigrationStep, Vec<Id>>(
+                &self.session,
+                "WorkspaceMigrationStep",
+            )
+            .await
     }
 }
 impl Node for WorkspaceMigration {
@@ -14924,6 +13199,11 @@ impl Node for WorkspaceMigration {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<WorkspaceMigration> for IdInput<NodeClient> {
+    fn from(value: WorkspaceMigration) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -14938,6 +13218,11 @@ impl IntoID<Id> for WorkspaceMigrationStep {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<WorkspaceMigrationStep> for IdInput<WorkspaceMigrationStep> {
+    fn from(value: WorkspaceMigrationStep) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for WorkspaceMigrationStep {
     fn graphql_type() -> &'static str {
         "WorkspaceMigrationStep"
@@ -14947,7 +13232,7 @@ impl Sealed for WorkspaceMigrationStep {
     }
 }
 impl WorkspaceMigrationStep {
-    /// Filesystem changes for this step.
+    #[doc = "Filesystem changes for this step."]
     pub fn changes(&self) -> Changeset {
         let mut query = self.selection.select("changes");
         Changeset {
@@ -14955,22 +13240,22 @@ impl WorkspaceMigrationStep {
             selection: query,
         }
     }
-    /// Stable code identifying this logical migration step.
+    #[doc = "Stable code identifying this logical migration step."]
     pub async fn code(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("code");
         query.execute(&self.session).await
     }
-    /// Generic summary of this step's purpose and impact.
+    #[doc = "Generic summary of this step's purpose and impact."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this WorkspaceMigrationStep.
+    #[doc = "A unique identifier for this WorkspaceMigrationStep."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Non-fatal warnings raised while planning this step.
+    #[doc = "Non-fatal warnings raised while planning this step."]
     pub async fn warnings(&self) -> Result<Vec<String>, QueryError> {
         let mut query = self.selection.select("warnings");
         query.execute(&self.session).await
@@ -14981,6 +13266,11 @@ impl Node for WorkspaceMigrationStep {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<WorkspaceMigrationStep> for IdInput<NodeClient> {
+    fn from(value: WorkspaceMigrationStep) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -14995,6 +13285,11 @@ impl IntoID<Id> for WorkspaceModule {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<WorkspaceModule> for IdInput<WorkspaceModule> {
+    fn from(value: WorkspaceModule) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for WorkspaceModule {
     fn graphql_type() -> &'static str {
         "WorkspaceModule"
@@ -15004,38 +13299,33 @@ impl Sealed for WorkspaceModule {
     }
 }
 impl WorkspaceModule {
-    /// Whether the module is the workspace entrypoint (functions aliased to Query root).
+    #[doc = "Whether the module is the workspace entrypoint (functions aliased to Query root)."]
     pub async fn entrypoint(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("entrypoint");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this WorkspaceModule.
+    #[doc = "A unique identifier for this WorkspaceModule."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// The module name.
+    #[doc = "The module name."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// List constructor-backed settings for this module.
+    #[doc = "List constructor-backed settings for this module."]
     pub async fn settings(&self) -> Result<Vec<WorkspaceModuleSetting>, QueryError> {
         let mut query = self.selection.select("settings");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| WorkspaceModuleSetting {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("WorkspaceModuleSetting"),
-            })
-            .collect())
+        query
+            .execute_reentry::<WorkspaceModuleSetting, Vec<Id>>(
+                &self.session,
+                "WorkspaceModuleSetting",
+            )
+            .await
     }
-    /// The module source path.
+    #[doc = "The module source path."]
     pub async fn source(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("source");
         query.execute(&self.session).await
@@ -15046,6 +13336,11 @@ impl Node for WorkspaceModule {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<WorkspaceModule> for IdInput<NodeClient> {
+    fn from(value: WorkspaceModule) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -15060,6 +13355,11 @@ impl IntoID<Id> for WorkspaceModuleSetting {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<WorkspaceModuleSetting> for IdInput<WorkspaceModuleSetting> {
+    fn from(value: WorkspaceModuleSetting) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for WorkspaceModuleSetting {
     fn graphql_type() -> &'static str {
         "WorkspaceModuleSetting"
@@ -15069,27 +13369,27 @@ impl Sealed for WorkspaceModuleSetting {
     }
 }
 impl WorkspaceModuleSetting {
-    /// The constructor argument description.
+    #[doc = "The constructor argument description."]
     pub async fn description(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("description");
         query.execute(&self.session).await
     }
-    /// A unique identifier for this WorkspaceModuleSetting.
+    #[doc = "A unique identifier for this WorkspaceModuleSetting."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Whether the setting accepts a list of values.
+    #[doc = "Whether the setting accepts a list of values."]
     pub async fn is_list(&self) -> Result<bool, QueryError> {
         let mut query = self.selection.select("isList");
         query.execute(&self.session).await
     }
-    /// The setting key.
+    #[doc = "The setting key."]
     pub async fn key(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("key");
         query.execute(&self.session).await
     }
-    /// The configured value after applying the selected workspace environment, or empty when unset.
+    #[doc = "The configured value after applying the selected workspace environment, or empty when unset."]
     pub async fn value(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("value");
         query.execute(&self.session).await
@@ -15100,6 +13400,11 @@ impl Node for WorkspaceModuleSetting {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<WorkspaceModuleSetting> for IdInput<NodeClient> {
+    fn from(value: WorkspaceModuleSetting) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Clone)]
@@ -15114,6 +13419,11 @@ impl IntoID<Id> for WorkspaceSdk {
         Box::pin(async move { self.id().await })
     }
 }
+impl From<WorkspaceSdk> for IdInput<WorkspaceSdk> {
+    fn from(value: WorkspaceSdk) -> Self {
+        IdInput::lazy(value)
+    }
+}
 impl Sealed for WorkspaceSdk {
     fn graphql_type() -> &'static str {
         "WorkspaceSDK"
@@ -15123,49 +13433,33 @@ impl Sealed for WorkspaceSdk {
     }
 }
 impl WorkspaceSdk {
-    /// Clients generated with this SDK.
+    #[doc = "Clients generated with this SDK."]
     pub async fn clients(&self) -> Result<Vec<WorkspaceModule>, QueryError> {
         let mut query = self.selection.select("clients");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| WorkspaceModule {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("WorkspaceModule"),
-            })
-            .collect())
+        query
+            .execute_reentry::<WorkspaceModule, Vec<Id>>(&self.session, "WorkspaceModule")
+            .await
     }
-    /// A unique identifier for this WorkspaceSDK.
+    #[doc = "A unique identifier for this WorkspaceSDK."]
     pub async fn id(&self) -> Result<Id, QueryError> {
         let mut query = self.selection.select("id");
         query.execute(&self.session).await
     }
-    /// Modules authored with this SDK.
+    #[doc = "Modules authored with this SDK."]
     pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, QueryError> {
         let mut query = self.selection.select("modules");
         let query = query.select("id");
-        let ids: Vec<Id> = query.execute(&self.session).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| WorkspaceModule {
-                session: self.session.clone(),
-                selection: crate::query::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("WorkspaceModule"),
-            })
-            .collect())
+        query
+            .execute_reentry::<WorkspaceModule, Vec<Id>>(&self.session, "WorkspaceModule")
+            .await
     }
-    /// The user-facing SDK name.
+    #[doc = "The user-facing SDK name."]
     pub async fn name(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("name");
         query.execute(&self.session).await
     }
-    /// The module reference this SDK was installed from.
+    #[doc = "The module reference this SDK was installed from."]
     pub async fn r#ref(&self) -> Result<String, QueryError> {
         let mut query = self.selection.select("ref");
         query.execute(&self.session).await
@@ -15176,6 +13470,11 @@ impl Node for WorkspaceSdk {
         let mut query = self.selection.select("id");
         let session = self.session.clone();
         async move { query.execute(&session).await }
+    }
+}
+impl From<WorkspaceSdk> for IdInput<NodeClient> {
+    fn from(value: WorkspaceSdk) -> Self {
+        IdInput::lazy(value)
     }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
