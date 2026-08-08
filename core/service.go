@@ -1195,7 +1195,7 @@ func (registry *tunnelListenerRegistry) AddOrClose(handle tunnelListenerHandle) 
 	return firstCause
 }
 
-func (registry *tunnelListenerRegistry) BeginClose(cause error) (error, []tunnelListenerHandle) {
+func (registry *tunnelListenerRegistry) BeginClose(cause error) ([]tunnelListenerHandle, error) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	if registry.firstCause == nil {
@@ -1205,7 +1205,7 @@ func (registry *tunnelListenerRegistry) BeginClose(cause error) (error, []tunnel
 		registry.firstCause = cause
 	}
 	registry.closed = true
-	return registry.firstCause, slices.Clone(registry.handles)
+	return slices.Clone(registry.handles), registry.firstCause
 }
 
 func (registry *tunnelListenerRegistry) RecordCleanup(err error) {
@@ -1265,7 +1265,7 @@ func newTunnelShutdown(
 	var shutdownOnce sync.Once
 	return func(cause error) error {
 		shutdownOnce.Do(func() {
-			firstCause, handles := registry.BeginClose(cause)
+			handles, firstCause := registry.BeginClose(cause)
 			stop(firstCause)
 			detach()
 			var cleanupErr error

@@ -161,7 +161,7 @@ func TestTunnelListenerRegistryClosesLateHandleAndPreservesFirstCause(t *testing
 	first := newFakeTunnelListenerHandle()
 	require.NoError(t, registry.AddOrClose(first))
 	firstCause := errors.New("first listener failed")
-	gotCause, handles := registry.BeginClose(firstCause)
+	handles, gotCause := registry.BeginClose(firstCause)
 	require.ErrorIs(t, gotCause, firstCause)
 	require.Equal(t, []tunnelListenerHandle{first}, handles)
 
@@ -230,7 +230,7 @@ func TestTunnelListenerRegistryPreservesCreationOrder(t *testing.T) {
 	require.NoError(t, registry.AddOrClose(first))
 	require.NoError(t, registry.AddOrClose(second))
 
-	_, handles := registry.BeginClose(errors.New("stop"))
+	handles, _ := registry.BeginClose(errors.New("stop"))
 	require.Equal(t, []tunnelListenerHandle{first, second}, handles)
 }
 
@@ -360,7 +360,7 @@ func TestTunnelStartupRollbackModes(t *testing.T) {
 				require.NoError(t, shutdown(setupErr))
 				require.Equal(t, setupErr, context.Cause(shutdownCtx))
 				require.Equal(t, int32(1), detaches.Load())
-				_, handles := registry.BeginClose(errors.New("later"))
+				handles, _ := registry.BeginClose(errors.New("later"))
 				require.Empty(t, handles)
 			})
 
