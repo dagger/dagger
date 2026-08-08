@@ -47,6 +47,7 @@ reqwest = { version = "0.12.23", features = [
   "json",
   "rustls-tls",
 ], default-features = false }
+rustix = { version = "1.1.4", features = ["fs"] }
 sha2 = "0.10.8"
 graphql-parser = "0.4.1"
 proc-macro2 = "1.0.106"

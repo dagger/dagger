@@ -1,17 +1,22 @@
-use cli::Cli;
+//! `dagger-rust` process entry point.
 
-pub mod cli;
-mod cli_generate;
+use std::io::{self, Write as _};
+use std::process::ExitCode;
 
-#[tokio::main]
-async fn main() -> eyre::Result<()> {
-    color_eyre::install().unwrap();
-
-    let args = std::env::args();
-    let args = args.collect::<Vec<String>>();
-    let args = args.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-
-    Cli::new()?.execute(args.as_slice()).await?;
-
-    Ok(())
+fn main() -> ExitCode {
+    match dagger_bootstrap::cli::run(std::env::args_os()) {
+        Ok(outcome) => {
+            let mut stdout = io::stdout().lock();
+            for path in outcome.changed_paths() {
+                if writeln!(stdout, "{path}").is_err() {
+                    return ExitCode::FAILURE;
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(diagnostics) => {
+            let _ = writeln!(io::stderr().lock(), "{diagnostics}");
+            ExitCode::FAILURE
+        }
+    }
 }

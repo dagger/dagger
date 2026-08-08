@@ -437,8 +437,8 @@
     cases, no-default-features checking, rustdoc with warnings denied, clippy, and
     cargo-deny; require no module-wide lint suppression or handwritten generated fix.
 
-- [ ] 14. Implement deterministic check/update orchestration and confined publication
-  - [ ] 14.1 Add the typed bootstrap generation command
+- [x] 14. Implement deterministic check/update orchestration and confined publication
+  - [x] 14.1 Add the typed bootstrap generation command
     - Implement mutually exclusive `dagger-rust generate --workspace ... --check` and
       `--update` modes with repository-relative checked defaults and narrow fixture
       overrides that cannot widen ownership outside an explicit temporary test root.
@@ -446,14 +446,14 @@
       sorted stable diagnostics for bad paths/UTF-8/JSON/schema/mappings, print nothing
       on successful check, and report changed paths without contents/secrets on update.
     - _Requirements: 2.11, 2.12, 9.4-9.6, 9.12-9.15_
-  - [ ] 14.2 Format and finalize the complete candidate in private state
+  - [x] 14.2 Format and finalize the complete candidate in private state
     - Use a unique per-process temporary directory, resolve `rustfmt` through the pinned
       toolchain, validate its version, format every Rust candidate, reparse output, and
       compute final artifact/provenance digests before manifest assembly.
     - Prohibit `cargo fix` and any semantic compiler rewrite; ensure formatting failure
       cannot touch the checkout or committed manifest.
     - _Requirements: 9.1-9.4, 9.8, 9.10, 9.11, 9.15_
-  - [ ] 14.3 Compare the exhaustive owned output set in check mode
+  - [x] 14.3 Compare the exhaustive owned output set in check mode
     - Validate normalized repository-relative artifact paths and define ownership only
       from candidate manifest paths, prior manifest paths, and the explicit legacy
       predecessor; reject unknown generated-looking files, symlinks, non-regular paths,
@@ -461,7 +461,7 @@
     - Report the complete sorted added/removed/changed set without mutation and fail on
       any generated source, test, or manifest drift.
     - _Requirements: 9.3, 9.4, 9.5, 9.6, 9.9, 9.12, 9.13_
-  - [ ] 14.4 Add transactional update, rollback, and recovery
+  - [x] 14.4 Add transactional update, rollback, and recovery
     - Acquire the update-only publication lock, revalidate planning inputs, stage and
       flush all candidates beside their destinations, atomically replace each changed
       file, and retire only previously declared obsolete paths.
@@ -469,7 +469,7 @@
       failure, diagnose incomplete rollback, recover or reject stale transactions, and
       never broad-delete a generated directory.
     - _Requirements: 9.6, 9.7, 9.8, 9.9, 9.15_
-  - [ ] 14.5 Property test: Property 23 — provenance and output ownership are exhaustive
+  - [x] 14.5 Property test: Property 23 — provenance and output ownership are exhaustive
     - Generate at least 256 prior/candidate manifest and artifact-tree combinations,
       including unknown files, traversal, symlinks, legacy predecessor, target drift,
       and obsolete files; compare the admitted change set to a no-wildcard ownership
@@ -477,21 +477,21 @@
     - Test identifier: `property_23_provenance_output_ownership_exhaustive`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 23: Provenance and output ownership are exhaustive`
     - _Requirements: 9.3, 9.6, 9.9, 9.12_
-  - [ ] 14.6 Property test: Property 24 — verification is pure, complete, and concurrency-safe
+  - [x] 14.6 Property test: Property 24 — verification is pure, complete, and concurrency-safe
     - Run at least 128 generated concurrent check schedules and artifact differences
       with deterministic barriers/private temporary roots; assert zero worktree writes,
       complete sorted drift, independent state, and failure for every changed artifact.
     - Test identifier: `property_24_verification_pure_complete_concurrency_safe`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 24: Verification is pure, complete, and concurrency-safe`
     - _Requirements: 9.4, 9.5, 9.13, 9.15_
-  - [ ] 14.7 Property test: Property 25 — publication is atomic and failure-preserving
+  - [x] 14.7 Property test: Property 25 — publication is atomic and failure-preserving
     - Inject at least 128 generated validation, format, flush, rename, retirement, and
       rollback failures across artifact sets; assert each visible file is complete,
       failures restore prior bytes, and no undeclared path changes.
     - Test identifier: `property_25_publication_atomic_failure_preserving`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 25: Publication is atomic and failure-preserving`
     - _Requirements: 9.7, 9.8_
-  - [ ] 14.8 Property test: Property 26 — semantic source and formatting have single owners
+  - [x] 14.8 Property test: Property 26 — semantic source and formatting have single owners
     - Generate at least 256 projection/token/format combinations; require semantic
       changes to alter the pre-format generator output, formatting-only changes to
       retain the semantic fingerprint, and final bytes to match the pinned formatter
@@ -499,7 +499,7 @@
     - Test identifier: `property_26_semantic_source_formatting_single_owners`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 26: Semantic source and formatting have single owners`
     - _Requirements: 9.10, 9.11_
-  - [ ] 14.9 Property test: Property 27 — bootstrap input failure is diagnostic
+  - [x] 14.9 Property test: Property 27 — bootstrap input failure is diagnostic
     - Generate at least 128 invalid path, symlink, file-type, UTF-8, JSON, target, schema,
       formatter, and permission cases; assert stable non-zero diagnostics, no panic,
       no secret/environment disclosure, and byte-identical owned outputs.
@@ -507,7 +507,7 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 27: Bootstrap input failure is diagnostic`
     - _Requirements: 9.14_
 
-- [ ] 15. Checkpoint: repository generation is deterministic and failure-atomic
+- [x] 15. Checkpoint: repository generation is deterministic and failure-atomic
   - Run formatting, locked bootstrap/codegen/completeness tests, Properties 23-27,
     concurrent check/update integration cases, rustdoc, clippy, and cargo-deny; require
     two identical private generations to be byte-identical, check mode to produce no

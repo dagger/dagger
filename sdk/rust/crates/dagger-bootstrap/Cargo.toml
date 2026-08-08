@@ -14,14 +14,26 @@ license.workspace = true
 [lints]
 workspace = true
 
+[[bin]]
+name = "dagger-rust"
+path = "src/main.rs"
+
 [dependencies]
 dagger-codegen = { workspace = true }
 dagger-sdk-completeness = { workspace = true }
 
-eyre = { workspace = true }
-color-eyre = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
 tempfile.workspace = true
 clap.workspace = true
+fs4.workspace = true
+sha2.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
