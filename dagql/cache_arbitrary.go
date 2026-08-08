@@ -2,7 +2,10 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func ArbitraryValueFunc(v any) func(context.Context) (any, error) {
@@ -80,12 +83,12 @@ func (c *Cache) GetOrInitArbitrary(
 	}
 
 	if res := c.completedArbitraryCalls[callKey]; res != nil {
-		c.callsMu.Unlock()
 		ret := arbitraryResult{
 			shared:   res,
 			hitCache: true,
 		}
-		c.trackSessionArbitrary(sessionID, ret)
+		c.trackSessionArbitraryLocked(sessionID, res)
+		c.callsMu.Unlock()
 		return ret, nil
 	}
 
@@ -109,11 +112,22 @@ func (c *Cache) GetOrInitArbitrary(
 	go func() {
 		defer close(res.waitCh)
 		val, err := fn(callCtx)
+
+		var onRelease OnReleaseFunc
+		c.callsMu.Lock()
 		res.err = err
 		if err == nil {
 			res.value = val
 			if onReleaser, ok := val.(OnReleaser); ok {
 				res.onRelease = onReleaser.OnRelease
+			}
+		}
+		onRelease = c.detachUnownedArbitraryLocked(res)
+		c.callsMu.Unlock()
+
+		if onRelease != nil {
+			if err := onRelease(context.WithoutCancel(ctx)); err != nil {
+				slog.Error("failed to release abandoned arbitrary cache result", "callKey", callKey, "err", err)
 			}
 		}
 	}()
@@ -146,13 +160,14 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 	}
 
 	if err == nil {
-		delete(c.ongoingArbitraryCalls, res.callKey)
+		if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
+			delete(c.ongoingArbitraryCalls, res.callKey)
+		}
 		if existing := c.completedArbitraryCalls[res.callKey]; existing != nil {
 			res = existing
 		} else {
 			c.completedArbitraryCalls[res.callKey] = res
 		}
-		c.callsMu.Unlock()
 
 		if isFirstCaller {
 			hitCache = false
@@ -161,19 +176,35 @@ func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *shared
 			shared:   res,
 			hitCache: hitCache,
 		}
-		c.trackSessionArbitrary(sessionID, ret)
+		c.trackSessionArbitraryLocked(sessionID, res)
+		c.callsMu.Unlock()
 		return ret, nil
 	}
 
-	if res.ownerSessionCount == 0 && res.waiters == 0 {
-		if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
-			delete(c.ongoingArbitraryCalls, res.callKey)
-		}
-		if existing := c.completedArbitraryCalls[res.callKey]; existing == res {
-			delete(c.completedArbitraryCalls, res.callKey)
-		}
-	}
-
+	onRelease := c.detachUnownedArbitraryLocked(res)
 	c.callsMu.Unlock()
+	if onRelease != nil {
+		err = errors.Join(err, onRelease(context.WithoutCancel(ctx)))
+	}
 	return nil, err
+}
+
+// detachUnownedArbitraryLocked removes res from the cache once it has no
+// waiters or session owners and transfers its cleanup callback to the caller.
+// The transfer clears res.onRelease so concurrent abandonment and session
+// release paths cannot invoke it twice. The caller must hold c.callsMu and run
+// the returned callback only after unlocking it.
+func (c *Cache) detachUnownedArbitraryLocked(res *sharedArbitraryResult) OnReleaseFunc {
+	if res == nil || res.ownerSessionCount != 0 || res.waiters != 0 {
+		return nil
+	}
+	if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
+		delete(c.ongoingArbitraryCalls, res.callKey)
+	}
+	if existing := c.completedArbitraryCalls[res.callKey]; existing == res {
+		delete(c.completedArbitraryCalls, res.callKey)
+	}
+	onRelease := res.onRelease
+	res.onRelease = nil
+	return onRelease
 }
