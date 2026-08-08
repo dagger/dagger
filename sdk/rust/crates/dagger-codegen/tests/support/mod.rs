@@ -143,7 +143,7 @@ pub(crate) fn catalog_strategy() -> impl Strategy<Value = Vec<CatalogEntry>> {
         prop_oneof![
             Just(CatalogDisposition::Emitted),
             Just(CatalogDisposition::RuntimeProvided),
-            Just(CatalogDisposition::PolicyExcluded),
+            Just(CatalogDisposition::PolicyRecorded),
         ],
         0..24,
     )

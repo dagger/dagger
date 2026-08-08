@@ -53,6 +53,11 @@ impl fmt::Display for SchemaName {
 pub struct SchemaCoordinate(String);
 
 impl SchemaCoordinate {
+    /// Creates an internal semantic coordinate that cannot be confused with a field.
+    pub(crate) fn semantic(value: impl Into<String>) -> Self {
+        Self(format!("semantic:{}", value.into()))
+    }
+
     /// Creates the query-root coordinate.
     #[must_use]
     pub fn query_root() -> Self {

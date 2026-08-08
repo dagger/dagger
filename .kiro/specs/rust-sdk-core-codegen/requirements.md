@@ -137,6 +137,12 @@ metadata remain visible. Rust-safe identifiers never change Wire_Names. The gene
 module does not suppress `missing_docs`, broken links, malformed HTML, or compiler
 warnings at module scope to make external text pass.
 
+The two single-underscore engine metadata objects and their four fields remain active
+manifest coordinates but receive reviewed no-symbol policies. This matches the
+Definitive_Go_SDK visitor's `strings.HasPrefix(t.Name, "_")` exclusion in
+`cmd/codegen/introspection/visitor.go` without letting those coordinates disappear
+from completeness accounting.
+
 Generation is fallible, order-independent, byte-stable after the pinned formatter,
 and side-effect-free until explicit publication. Malformed or unsupported schema
 input returns a coordinate-bearing diagnostic rather than panicking or emitting a
@@ -337,8 +343,8 @@ prose. Every coordinate appears individually in the Generated_Binding_Manifest.
 | Coordinate kind | Exact count | Target policy | Error if invalid or unaccounted | Side-effect impact |
 |---|---:|---|---|---|
 | Query root | 1 | Emit the typed root handle reached from the owned Client | `SCHEMA_ROOT_INVALID` | None during projection |
-| Named types | 111 | Account for 78 public objects, 3 interfaces, 18 enums, 8 scalars, and 4 input objects | `SCHEMA_TYPE_UNSUPPORTED` | Adds a generated symbol or reviewed scalar policy |
-| Fields | 720 | Emit one reachable Rust method with exact output and argument semantics | `SCHEMA_FIELD_UNMAPPED` | Builds a Selection; execution follows field policy |
+| Named types | 111 | Account for 76 generated objects, 2 target-private metadata objects, 3 interfaces, 18 enums, 8 scalars, and 4 input objects | `SCHEMA_TYPE_UNSUPPORTED` | Adds a generated symbol, reviewed scalar policy, or target-private no-symbol policy |
+| Fields | 720 | Emit 716 reachable Rust methods with exact output and argument semantics and retain 4 target-private metadata fields as no-symbol policies | `SCHEMA_FIELD_UNMAPPED` | Builds a Selection only for emitted methods |
 | Arguments | 611 | Preserve requiredness, default omission, Wire_Name, type, directives, and documentation | `SCHEMA_ARGUMENT_UNMAPPED` | Adds a query argument only when required or explicitly supplied |
 | Input fields | 14 | Preserve wrapper shape, default omission, Wire_Name, and serialization | `SCHEMA_INPUT_FIELD_UNMAPPED` | Affects serialization only |
 | Enum values | 84 | Emit one unambiguous Rust variant with exact wire serialization | `SCHEMA_ENUM_VALUE_UNMAPPED` | None until serialized or decoded |
@@ -365,6 +371,7 @@ is authority drift and must receive an explicit mapping before generation can pa
 | `INPUT_OBJECT` | Owned serializable Rust value with exact field names and wrapper shape | Reject missing required fields or invalid nested values | Argument serialization only |
 | `OBJECT` | Generated_Handle | Reject an object lacking the ID required by an eager nullable/list probe | Lazy or ID-probing selection |
 | `INTERFACE` | Rust trait plus concrete interface client handle | Reject an inconsistent possible-type declaration | Lazy or ID-probing selection |
+| Single-underscore target metadata object | Validated no-symbol policy matching the definitive Go generator | Reject a new kind, reference, or public reachability without review | None |
 | `NON_NULL(T)` | Represent `T` directly | Reject a `null` response as typed decoding failure | No generated runtime unwrap |
 | Nullable `T` | Represent response or input absence explicitly | Reject a non-`T` concrete value | Returns or stores `Option<T>` except Void |
 | `LIST(T)` | `Vec<T>` with wrapper recursion at list and element levels | Reject an invalid element with its typed decode context | Preserves order and cardinality |
@@ -393,7 +400,8 @@ is authority drift and must receive an explicit mapping before generation can pa
 | `expectedType(name:)` | 90 | Validate the referenced object/interface and drive typed ID input or self-return conversion | `EXPECTED_TYPE_INVALID` | Type mapping only |
 | `deprecated(reason:)` | 13 | Emit deprecation metadata and caller-visible rustdoc at the nearest representable Rust item | `DEPRECATION_DIRECTIVE_INVALID` | Documentation/compiler warning only |
 | `experimental(reason:)` | 10 | Emit a prominent rustdoc stability note without inventing a Rust feature gate | `EXPERIMENTAL_DIRECTIVE_INVALID` | Documentation only |
-| `cache`, `check`, `defaultAddress`, `defaultPath`, `enumValue`, `generate`, `ignorePatterns`, `sourceMap`, `up` | 0 | Validate their 9 definitions and 11 arguments as target-contained inactive core-client metadata | `TARGET_INACTIVE_DIRECTIVE_CHANGED` | None |
+| `enumValue(value:)` | 23 | Treat the decorated enum Wire_Name as an input alias of the named canonical sibling value, matching the pinned Go SDK's `Name`/`MarshalJSON` behaviour | `SCHEMA_DIRECTIVE_ARGUMENT_INVALID` | Enum decoding accepts the alias; encoding uses the canonical value |
+| `cache`, `check`, `defaultAddress`, `defaultPath`, `generate`, `ignorePatterns`, `sourceMap`, `up` | 0 | Validate their 8 definitions and 10 arguments as target-contained inactive core-client metadata | `TARGET_INACTIVE_DIRECTIVE_CHANGED` | None |
 
 If a currently inactive directive gains a Core_Schema application, generation fails as
 target drift until its client projection is reviewed. Feature 4 does not silently
@@ -657,6 +665,9 @@ engine contract.
     fail until a reviewed projection policy is registered.
 14. WHEN a custom scalar round-trips through generated serialization, THE generated
     scalar SHALL preserve its exact public value.
+15. WHEN `enumValue` names a canonical sibling value, THE Core_Generator SHALL account
+    for the decorated Wire_Name as a decoding alias and SHALL serialize the canonical
+    value, matching `sdk/go/dagger.gen.go` at the Target_Revision.
 
 ### Requirement 8: Rust Names, Deprecation, and Public Documentation
 

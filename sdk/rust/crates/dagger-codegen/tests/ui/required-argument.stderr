@@ -1,0 +1,15 @@
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+  --> tests/ui/required-argument.rs:10:11
+   |
+10 |     Query.load();
+   |           ^^^^-- argument #1 of type `String` is missing
+   |
+note: method defined here
+  --> tests/ui/required-argument.rs:4:8
+   |
+ 4 |     fn load(&self, address: String) {
+   |        ^^^^        ---------------
+help: provide the argument
+   |
+10 |     Query.load(/* String */);
+   |                ++++++++++++

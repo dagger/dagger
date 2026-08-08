@@ -14,6 +14,12 @@ The crate owns the pure part of generation:
 - compiling raw introspection into an ordered canonical schema with exact GraphQL
   wire names, recursive nullability, defaults, directives, documentation, and source
   coordinates;
+- projecting that schema into collision-checked Rust 2024 names, wrapper-correct
+  types, required/omittable argument plans, typed directive and enum-alias policies,
+  and one total field execution strategy per coordinate;
+- cataloging 1,661 exact-target semantic bindings, including explicit no-symbol
+  containment for target-private metadata, with domain-separated implementation
+  fingerprints;
 - producing deterministic in-memory candidate artifacts and structured diagnostics.
 
 It deliberately has no filesystem, process, network, engine-session, publication, or

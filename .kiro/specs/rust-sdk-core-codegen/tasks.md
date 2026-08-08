@@ -119,8 +119,8 @@
     clippy, rustdoc, and cargo-deny; require the checked target's complete coordinate
     inventory to validate and every malformed fixture to remain rejection-atomic.
 
-- [ ] 5. Implement recursive type, naming, scalar, and directive projection
-  - [ ] 5.1 Add recursive Rust type and scalar policies
+- [x] 5. Implement recursive type, naming, scalar, and directive projection
+  - [x] 5.1 Add recursive Rust type and scalar policies
     - Project Boolean/bool, Float/f64, target Int/i64, String/owned `String`, ID/`Id`,
       JSON/`Json`, Platform/`Platform`, Void/unit, enum, input-object, object, and
       interface leaves through the recursive wrapper graph.
@@ -128,7 +128,7 @@
       and attach typed decode strategies for non-null violations, invalid scalar wire
       values, unknown enum values, and invalid list elements.
     - _Requirements: 3.1-3.17, 7.14, 10.8_
-  - [ ] 5.2 Implement the complete Rust 2024 name map
+  - [x] 5.2 Implement the complete Rust 2024 name map
     - Tokenize underscores, case transitions, acronym boundaries, and digits; produce
       deterministic UpperCamelCase and snake_case identifiers, raw identifiers where
       legal, and stable suffix forms for `self`, `Self`, `super`, and `crate`.
@@ -137,14 +137,16 @@
       crate-root exports before rendering; report both coordinates for every collision.
     - Retain the exact Wire_Name independently from every Rust identifier.
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 10.13_
-  - [ ] 5.3 Project active and target-inactive directives
-    - Apply registered `expectedType`, `deprecated`, and `experimental` policies only
-      after definition/application validation; fingerprint every inactive target
-      directive definition and reject its change or first application until reviewed.
-    - Carry typed-ID targets, deprecation reasons, and stability notes into projection
-      records without inventing feature gates or silently dropping directive metadata.
-    - _Requirements: 6.8, 6.11, 7.9-7.13, 8.10, 8.11, 10.14_
-  - [ ] 5.4 Build the semantic projection catalog and fingerprints
+  - [x] 5.3 Project active and target-inactive directives
+    - Apply registered `expectedType`, `deprecated`, `experimental`, and `enumValue`
+      policies only after definition/application validation; fingerprint every
+      inactive target directive definition and reject its change or first application
+      until reviewed.
+    - Carry typed-ID targets, deprecation reasons, stability notes, and validated enum
+      aliases into projection records without inventing feature gates, duplicate Rust
+      variants, or silently dropped directive metadata.
+    - _Requirements: 6.8, 6.11, 7.9-7.13, 7.15, 8.10, 8.11, 10.14_
+  - [x] 5.4 Build the semantic projection catalog and fingerprints
     - Produce exact binding keys and implementation fingerprints from canonical wire
       coordinates, Rust signatures, wrappers, arguments, directives, execution
       strategies, symbol paths, and evidence domains; exclude formatting from semantic
@@ -152,28 +154,28 @@
     - Require one projection or diagnostic for every public coordinate and forbid
       catch-all/name-only compatibility mapping.
     - _Requirements: 1.7-1.10, 4.15, 10.1-10.3, 10.7_
-  - [ ] 5.5 Property test: Property 6 — recursive wrappers preserve independent absence
+  - [x] 5.5 Property test: Property 6 — recursive wrappers preserve independent absence
     - Generate at least 256 bounded named/list/nullability trees and compare projected
       Rust types and required construction paths to a recursive reference model;
       combine with compile-fail fixtures for required method/input positions.
     - Test identifier: `property_06_recursive_wrappers_preserve_independent_absence`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 6: Recursive wrappers preserve independent absence`
     - _Requirements: 3.9, 3.10, 3.11, 3.12, 3.13, 3.16, 3.17, 10.5, 10.8_
-  - [ ] 5.6 Property test: Property 7 — scalar projection and decoding are exact
+  - [x] 5.6 Property test: Property 7 — scalar projection and decoding are exact
     - Generate at least 256 supported/invalid scalar wire values and wrapper positions;
       compare projection and round-trip behaviour to the explicit scalar table and
       require typed failures for invalid or non-null-null responses.
     - Test identifier: `property_07_scalar_projection_decoding_exact`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 7: Scalar projection and decoding are exact`
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.14, 3.15, 7.14_
-  - [ ] 5.7 Property test: Property 19 — directive projection is explicit and drift-sensitive
+  - [x] 5.7 Property test: Property 19 — directive projection is explicit and drift-sensitive
     - Exhaust every active application and inactive target definition, then run at
       least 256 generated definition, argument, reason, target-name, fingerprint, and
       first-application mutations; compare to the closed directive-policy model.
     - Test identifier: `property_19_directive_projection_explicit_drift_sensitive`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 19: Directive projection is explicit and drift-sensitive`
     - _Requirements: 7.9, 7.10, 7.11, 7.12, 7.13, 10.14_
-  - [ ] 5.8 Property test: Property 20 — Rust naming is valid, exact, and collision-free
+  - [x] 5.8 Property test: Property 20 — Rust naming is valid, exact, and collision-free
     - Generate at least 1,024 GraphQL names, acronyms, digits, Rust 2024 keywords,
       forbidden raw identifiers, case contexts, and collision pairs; parse emitted
       tokens with `syn`, compare case conversion to the reference tokenizer, and assert
@@ -182,50 +184,57 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 20: Rust naming is valid, exact, and collision-free`
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 10.13_
 
-- [ ] 6. Implement object, interface, argument, enum, and input-object projection
-  - [ ] 6.1 Project every object, interface, edge, and field strategy
+- [x] 6. Implement object, interface, argument, enum, and input-object projection
+  - [x] 6.1 Project every object, interface, edge, and field strategy
     - Produce one object handle, interface trait, interface client, declared object
-      implementation, and reachable field operation for every Exact_Target coordinate.
+      implementation, and reachable field operation for every public Exact_Target
+      coordinate; retain the two single-underscore metadata objects and their four
+      fields as exact, fingerprinted no-symbol policies matching the definitive Go
+      generator.
     - Select lazy non-null handle, nullable ID probe, ordered list re-entry, executing
       value, or expected-type self-return as one total field strategy; validate the ID
       and concrete-type surface required by each strategy.
     - _Requirements: 4.2-4.10, 4.15, 6.8-6.12, 10.7, 10.12_
-  - [ ] 6.2 Project required and omittable argument APIs
+  - [x] 6.2 Project required and omittable argument APIs
     - Place every non-null/no-default argument directly in method signatures and every
       nullable/defaulted argument in an owned field-specific options value; retain
       parsed defaults only for docs/fingerprints.
     - Generate ordinary and `_opts` method plans, exact Wire_Names, `Option<T>` omission,
       typed-ID/list encoders, and all-or-nothing serialization/lazy-resolution plans.
     - _Requirements: 5.1-5.15, 6.3-6.7, 10.5, 10.6, 10.11_
-  - [ ] 6.3 Project closed enums and owned input objects
-    - Emit one exact-wire enum variant plan for every target value with typed unknown
-      decode failure; emit owned, non-exhaustive input objects whose constructors
-      require required fields and whose setters/serialization omit only absent fields.
+  - [x] 6.3 Project closed enums and owned input objects
+    - Emit one exact-wire enum variant plan for every canonical target value, attach
+      every validated `enumValue` Wire_Name as a decode alias without creating a
+      colliding Rust variant, and retain typed unknown decode failure; emit owned,
+      non-exhaustive input objects whose constructors require required fields and whose
+      setters/serialization omit only absent fields.
     - Preserve optional zero-like values, recursive wrappers, documentation, and exact
       serde Wire_Names.
     - _Requirements: 3.17, 7.1-7.8, 8.3-8.5, 10.9, 10.10_
-  - [ ] 6.4 Property test: Property 8 — named-type and field projection is exhaustive
+  - [x] 6.4 Property test: Property 8 — named-type and field projection is exhaustive
     - Exhaust all target named types, interface edges, and fields and run at least 256
-      generated mini-schema variations; assert exactly one applicable projection per
-      coordinate and a diagnostic rather than omission for every lossy case.
+      generated mini-schema variations; assert exactly one applicable public or
+      target-private projection per coordinate and a diagnostic rather than omission
+      for every lossy case.
     - Test identifier: `property_08_named_type_field_projection_exhaustive`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 8: Named-type and field projection is exhaustive`
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6, 4.15_
-  - [ ] 6.5 Property test: Property 13 — argument omission is distinct from zero-like values
+  - [x] 6.5 Property test: Property 13 — argument omission is distinct from zero-like values
     - Generate at least 256 required/nullable/defaulted argument plans and Boolean,
       numeric, string, list, enum, and input values; compare emitted structured
       arguments to a reference omission model and require defaults to remain absent.
     - Test identifier: `property_13_argument_omission_distinct_zero_like_values`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 13: Argument omission is distinct from zero-like values`
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11, 10.6_
-  - [ ] 6.6 Property test: Property 17 — enum mapping is a wire-name bijection
+  - [x] 6.6 Property test: Property 17 — enum mapping preserves canonical wire values and aliases
     - Exhaust all 84 target enum values and run at least 256 generated enum/name/value
-      variations; require one-to-one exact-case encode/decode and typed rejection of
+      variations; require exact-case canonical encode/decode, alias decode to the
+      canonical variant, exhaustive coordinate accounting, and typed rejection of
       every value outside the generated closed set.
-    - Test identifier: `property_17_enum_mapping_wire_name_bijection`.
-    - Tag: `// Feature: rust-sdk-core-codegen, Property 17: Enum mapping is a wire-name bijection`
-    - _Requirements: 7.1, 7.2, 7.3, 7.4, 10.9_
-  - [ ] 6.7 Property test: Property 18 — input objects preserve requiredness and concrete values
+    - Test identifier: `property_17_enum_mapping_preserves_canonical_values_aliases`.
+    - Tag: `// Feature: rust-sdk-core-codegen, Property 17: Enum mapping preserves canonical wire values and aliases`
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.15, 10.9_
+  - [x] 6.7 Property test: Property 18 — input objects preserve requiredness and concrete values
     - Exhaust all target input fields and run at least 256 generated required/optional
       wrapper/value combinations; compare serialization to a reference object model,
       retain zero-like values, and pair with required-field compile failures.
@@ -233,7 +242,7 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 18: Input objects preserve requiredness and concrete values`
     - _Requirements: 7.5, 7.6, 7.7, 7.8, 10.10_
 
-- [ ] 7. Checkpoint: the complete pure projection plan is green
+- [x] 7. Checkpoint: the complete pure projection plan is green
   - Run formatting, locked codegen tests, exact-target inventory tests, Properties
     6-8/13/17-20, compile fixtures, clippy, rustdoc, and cargo-deny; require every
     target coordinate to have one strategy and no Rust source to be rendered from an

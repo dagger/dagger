@@ -1,0 +1,15 @@
+error[E0061]: this function takes 1 argument but 0 arguments were supplied
+  --> tests/ui/required-input-field.rs:12:13
+   |
+12 |     let _ = Input::new();
+   |             ^^^^^^^^^^-- argument #1 of type `String` is missing
+   |
+note: associated function defined here
+  --> tests/ui/required-input-field.rs:6:8
+   |
+ 6 |     fn new(required: String) -> Self {
+   |        ^^^ ----------------
+help: provide the argument
+   |
+12 |     let _ = Input::new(/* String */);
+   |                        ++++++++++++

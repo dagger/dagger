@@ -649,7 +649,7 @@ Cargo can resolve every supported feature from crates.io at matching versions.
 
 ### Requirement 9.2: Stable Documentation and Adoption Readiness
 
-**User Story:** As a Tokeira developer, I want trustworthy Rust SDK and module guides,
+**User Story:** As a Rust SDK adopter, I want trustworthy Rust SDK and module guides,
 so that I can adopt Dagger without reverse-engineering Go examples or experimental
 internals.
 
@@ -667,8 +667,9 @@ internals.
    describe the Rust Idiomatic_Equivalence rather than presenting it as an omission.
 6. WHEN a user upgrades between supported Rust SDK versions, THE changelog SHALL
    identify breaking changes, deprecations, engine requirements, and migration steps.
-7. WHEN the release candidate is evaluated for Tokeira, THE acceptance suite SHALL run
-   a representative Tokeira workflow through the published-package installation path.
+7. WHEN the release candidate is evaluated by a downstream consumer, THE acceptance
+   suite SHALL run a representative external workflow through the published-package
+   installation path.
 8. WHEN every Release_Gate passes, THE project documentation SHALL identify the Rust
    SDK as Go-level complete for the declared Target_Revision.
 

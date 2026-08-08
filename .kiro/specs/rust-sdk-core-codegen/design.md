@@ -495,6 +495,10 @@ Validation is multi-pass and rejection-atomic:
 Mutation, subscription, union, or unknown public kinds are retained as diagnostics and
 prevent a canonical value. Introspection types whose names begin with `__` are parsed
 for a valid response but are not public Core_Schema bindings or manifest coordinates.
+The two exact-target single-underscore metadata objects are retained as active
+manifest coordinates but receive explicit no-symbol projections, matching
+`cmd/codegen/introspection/visitor.go` at the Target_Revision. Their names
+and four fields therefore cannot disappear silently or leak into the public Rust API.
 
 ### Default literal validation (`schema/defaults.rs`)
 
@@ -582,6 +586,15 @@ pub enum RustType {
     Vec(Box<RustType>),
 }
 
+pub enum TypeProjection {
+    Scalar(ScalarProjection),
+    Object(ObjectProjection),
+    Interface(InterfaceProjection),
+    Enum(EnumProjection),
+    InputObject(InputObjectProjection),
+    TargetPrivate(TargetPrivateTypeProjection),
+}
+
 pub enum FieldStrategy {
     LazyHandle { target: TypeName },
     NullableHandle {
@@ -619,17 +632,21 @@ pub enum DirectivePolicy {
     ExpectedType(ExpectedTypePolicy),
     Deprecated(DeprecationPolicy),
     Experimental(ExperimentalPolicy),
+    EnumValueAlias(EnumValueAliasPolicy),
     TargetInactive { definition_fingerprint: Sha256Digest },
 }
 ```
 
 Every definition and argument is validated against the target snapshot. Active
-`expectedType`, `deprecated`, and `experimental` applications must have exactly the
-defined arguments and parseable values. `isDeprecated` and `deprecationReason` must
-agree with the directive application when both representations exist. Inactive
-directives receive a manifest policy record containing their definition fingerprint.
-An application of one of those definitions is `TARGET_INACTIVE_DIRECTIVE_CHANGED`,
-not ignored metadata.
+`expectedType`, `deprecated`, `experimental`, and `enumValue` applications must have
+exactly the defined arguments and parseable values. An `enumValue` target must be a
+sibling Wire_Name whose public value is canonical; the decorated value becomes a
+decode alias and never a second colliding Rust variant. This matches the pinned Go
+SDK's `Name`, `MarshalJSON`, and `UnmarshalJSON` behaviour while keeping the Rust enum
+idiomatic. `isDeprecated` and `deprecationReason` must agree with the directive
+application when both representations exist. Inactive directives receive a manifest
+policy record containing their definition fingerprint. An application of one of those
+definitions is `TARGET_INACTIVE_DIRECTIVE_CHANGED`, not ignored metadata.
 
 ### Projection catalog and compatibility closure
 
@@ -1257,10 +1274,11 @@ failure.
 
 ### Property 8: Named-type and field projection is exhaustive
 
-*For any* validated public object, interface, implementation edge, or field in the
+*For any* validated object, interface, implementation edge, or field in the
 Exact_Target, the plan contains exactly one reachable handle, trait, implementation,
-or operation as applicable; a projection unable to retain wrapper or Wire_Name fails
-instead of disappearing.
+or operation when public and one explicit no-symbol policy when target-private; a
+projection unable to retain wrapper, Wire_Name, or containment reason fails instead of
+disappearing.
 
 **Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6, 4.15**
 
@@ -1334,13 +1352,14 @@ an unknown or incompatible expected type returns `EXPECTED_TYPE_INVALID`.
 
 **Validates: Requirements 6.8, 6.9, 6.10, 6.11**
 
-### Property 17: Enum mapping is a wire-name bijection
+### Property 17: Enum mapping preserves canonical wire values and aliases
 
-*For any* active enum and value, one unambiguous Rust variant encodes and decodes its
-exact case-sensitive Wire_Name; every public enum/value is present, and any unknown
-wire value returns a typed decoding failure.
+*For any* active enum coordinate, one unambiguous Rust variant encodes and decodes its
+canonical case-sensitive Wire_Name, every valid `enumValue` alias decodes to that same
+variant without creating a colliding variant, every public enum coordinate is
+accounted for, and any unknown wire value returns a typed decoding failure.
 
-**Validates: Requirements 7.1, 7.2, 7.3, 7.4, 10.9**
+**Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.15, 10.9**
 
 ### Property 18: Input objects preserve requiredness and concrete values
 
@@ -1353,11 +1372,12 @@ present zero-like values are retained under their exact Wire_Name.
 ### Property 19: Directive projection is explicit and drift-sensitive
 
 *For any* target directive application, `expectedType`, `deprecated`, and
-`experimental` invoke their registered typed-ID, deprecation, or stability policy;
-each inactive definition has a fingerprinted inactive record, and a new application
-or changed definition fails until its projection policy is reviewed.
+`experimental` invoke their registered typed-ID, deprecation, or stability policy,
+and `enumValue` invokes its validated alias policy; each inactive definition has a
+fingerprinted inactive record, and a new application or changed definition fails until
+its projection policy is reviewed.
 
-**Validates: Requirements 7.9, 7.10, 7.11, 7.12, 7.13, 10.14**
+**Validates: Requirements 7.9, 7.10, 7.11, 7.12, 7.13, 7.15, 10.14**
 
 ### Property 20: Rust naming is valid, exact, and collision-free
 

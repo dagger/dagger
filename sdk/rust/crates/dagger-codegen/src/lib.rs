@@ -5,6 +5,8 @@
 //! no filesystem, process, network, engine-session, or completeness-ledger authority.
 
 pub mod diagnostic;
+pub mod directive;
+pub mod naming;
 pub mod projection;
 pub mod render;
 pub mod rust;
@@ -15,6 +17,11 @@ use std::collections::BTreeMap;
 
 use diagnostic::CodegenError;
 use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticCoordinate, DiagnosticSet};
+use directive::DirectiveProjection;
+use naming::RustNameMap;
+use projection::catalog::ProjectionCatalog;
+use projection::fields::FieldProjection;
+use projection::types::{InterfaceImplementationProjection, TypeProjection};
 use rust::RustGenerator;
 use schema::canonical::CanonicalSchema;
 use schema::raw::Schema;
@@ -33,6 +40,12 @@ pub struct CoreProjectionRequest<'a> {
 pub struct ProjectionPlan {
     target: CodegenTarget,
     schema: CanonicalSchema,
+    names: RustNameMap,
+    named_types: BTreeMap<schema::canonical::SchemaName, TypeProjection>,
+    fields: BTreeMap<schema::canonical::SchemaCoordinate, FieldProjection>,
+    directives: DirectiveProjection,
+    implementations: Vec<InterfaceImplementationProjection>,
+    catalog: ProjectionCatalog,
 }
 
 impl ProjectionPlan {
@@ -46,6 +59,42 @@ impl ProjectionPlan {
     #[must_use]
     pub const fn schema(&self) -> &CanonicalSchema {
         &self.schema
+    }
+
+    /// Returns the complete collision-checked Rust name map.
+    #[must_use]
+    pub const fn names(&self) -> &RustNameMap {
+        &self.names
+    }
+
+    /// Returns one total projection for every public named type.
+    #[must_use]
+    pub const fn named_types(&self) -> &BTreeMap<schema::canonical::SchemaName, TypeProjection> {
+        &self.named_types
+    }
+
+    /// Returns one total operation projection for every public field.
+    #[must_use]
+    pub const fn fields(&self) -> &BTreeMap<schema::canonical::SchemaCoordinate, FieldProjection> {
+        &self.fields
+    }
+
+    /// Returns all registered directive definitions and active applications.
+    #[must_use]
+    pub const fn directives(&self) -> &DirectiveProjection {
+        &self.directives
+    }
+
+    /// Returns every declared object/interface implementation edge.
+    #[must_use]
+    pub fn implementations(&self) -> &[InterfaceImplementationProjection] {
+        &self.implementations
+    }
+
+    /// Returns the exhaustive semantic binding catalog.
+    #[must_use]
+    pub const fn catalog(&self) -> &ProjectionCatalog {
+        &self.catalog
     }
 }
 
@@ -66,9 +115,16 @@ impl RenderedCandidate {
 /// Validates exact target identity and compiles raw introspection into an ordered model.
 pub fn project_core(request: CoreProjectionRequest<'_>) -> Result<ProjectionPlan, DiagnosticSet> {
     let schema = schema::decode_and_validate(request.target, request.schema_json)?;
+    let projection = projection::project(&schema)?;
     Ok(ProjectionPlan {
         target: request.target.clone(),
         schema,
+        names: projection.names,
+        named_types: projection.named_types,
+        fields: projection.fields,
+        directives: projection.directives,
+        implementations: projection.implementations,
+        catalog: projection.catalog,
     })
 }
 
@@ -78,13 +134,54 @@ pub fn project_core(request: CoreProjectionRequest<'_>) -> Result<ProjectionPlan
 /// makes order-independence and repeatability executable without allowing raw schema
 /// values to cross the renderer boundary.
 pub fn render_core(plan: &ProjectionPlan) -> Result<RenderedCandidate, DiagnosticSet> {
-    render_canonical_checkpoint(plan.target(), plan.schema())
+    render_projection_checkpoint(plan)
 }
 
+pub(crate) fn render_projection_checkpoint(
+    plan: &ProjectionPlan,
+) -> Result<RenderedCandidate, DiagnosticSet> {
+    let canonical = encode_canonical_checkpoint(plan.target(), plan.schema())?;
+    // JSON object keys can only be strings. Emitting the semantic-keyed registries as
+    // ordered sequences preserves their full structured keys without a lossy display
+    // conversion that could later become an accidental compatibility join.
+    let semantic = serde_json::to_vec(&(
+        plan.names().entries().iter().collect::<Vec<_>>(),
+        plan.named_types().values().collect::<Vec<_>>(),
+        plan.fields().values().collect::<Vec<_>>(),
+        plan.directives().records().values().collect::<Vec<_>>(),
+        plan.implementations(),
+        plan.catalog().bindings().values().collect::<Vec<_>>(),
+    ))
+    .map_err(|_| {
+        DiagnosticSet::one(Diagnostic::new(
+            DiagnosticCode::GeneratedProvenanceInvalid,
+            Some(DiagnosticCoordinate::new("semantic-projection.json")),
+            "semantic projection checkpoint artifact could not be encoded",
+        ))
+    })?;
+    Ok(RenderedCandidate {
+        artifacts: BTreeMap::from([
+            ("canonical-schema.json".to_owned(), canonical),
+            ("semantic-projection.json".to_owned(), semantic),
+        ]),
+    })
+}
+
+#[cfg(test)]
 pub(crate) fn render_canonical_checkpoint(
     target: &CodegenTarget,
     schema: &CanonicalSchema,
 ) -> Result<RenderedCandidate, DiagnosticSet> {
+    let canonical = encode_canonical_checkpoint(target, schema)?;
+    Ok(RenderedCandidate {
+        artifacts: BTreeMap::from([("canonical-schema.json".to_owned(), canonical)]),
+    })
+}
+
+fn encode_canonical_checkpoint(
+    target: &CodegenTarget,
+    schema: &CanonicalSchema,
+) -> Result<Vec<u8>, DiagnosticSet> {
     let payload = (
         target,
         schema.query(),
@@ -92,15 +189,12 @@ pub(crate) fn render_canonical_checkpoint(
         schema.directives(),
         schema.inventory(),
     );
-    let bytes = serde_json::to_vec(&payload).map_err(|_| {
+    serde_json::to_vec(&payload).map_err(|_| {
         DiagnosticSet::one(Diagnostic::new(
             DiagnosticCode::GeneratedProvenanceInvalid,
             Some(DiagnosticCoordinate::new("canonical-schema.json")),
             "canonical schema checkpoint artifact could not be encoded",
         ))
-    })?;
-    Ok(RenderedCandidate {
-        artifacts: BTreeMap::from([("canonical-schema.json".to_owned(), bytes)]),
     })
 }
 
