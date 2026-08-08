@@ -453,7 +453,60 @@ Middlewares *define* agents; `compose(...).asAgent(name)` *instantiates* one.
   than raw `LLM`s; whether the engine should also guard this centrally is
   open.
 
-## 8. Alternatives considered
+## 9. As-built ratifications
+
+Semantics settled during implementation (core/agent.go, core/schema/agent.go,
+core/integration/agent_runtime_test.go), ratified here:
+
+- **State projection order.** `state` is a pure ordering of runtime facts:
+  done-with-error and not sealed → `FAILED`; done → `STOPPED`; stepping →
+  `RUNNING` (a pause/interrupt requested mid-step shows `RUNNING` until the
+  step lands); paused → `PAUSED` (even with a suspended turn or non-empty
+  mailbox); turn-open or mail pending → `RUNNING`; else `IDLE`. The
+  turn-open-or-mail-pending clause means `send + waitFor(IDLE)` can never
+  observe a lying `IDLE` in the enqueue→drain window.
+- **Pause freezes the turn frontier.** Turn-end resolution re-checks the
+  mailbox before resolving, so a message racing in during the final step
+  joins that turn — keeping its `STEERED` evidence truthful. Under pause the
+  mailbox must not drain, so resolution is deferred too: a turn that finishes
+  its last step just as pause lands stays open, and awaiters get the reply on
+  resume. `PAUSED` is a full freeze of the observable frontier.
+- **Delivery evidence is computed at enqueue**, serialized (under the entry
+  mutex) with the turn-end path, which is what makes it truthful: idle/new
+  turn → `STARTED`; turn open or stepping → `STEERED` (the boundary drain
+  guarantees absorption); paused → `QUEUED`.
+- **`send` to `FAILED` enqueues (`QUEUED`)** rather than erroring — send's
+  one promise is never to drop; a later `resume` drains it, and awaiting such
+  a message meanwhile projects the failure error without resolving the
+  record. `send` to `STOPPED` errors.
+- **`stop` on a `FAILED` tombstone seals it**: once stop forecloses the
+  retry, queued mail is settled with stop errors in the same transition that
+  flips the projection to `STOPPED` — no awaiter ever observes `STOPPED`
+  with mail apparently in flight. The loop error is preserved as a fact; the
+  seal overrides it in the projection.
+- **Interrupt is a per-step context cancel with a sentinel cause**,
+  distinguishing it from stop/session-teardown cancellation: interrupted →
+  commit the returned prefix, keep the turn and its consumed messages
+  pending, park as `PAUSED`; loop-context cancel → `STOPPED`; anything else
+  → `FAILED`. Resume after an interrupt continues the suspended turn (the
+  pending input is still on the snapshot), so awaits resolve normally.
+- **Message identity by re-exec pinning.** `send` is `DoNotCache`, and
+  detached results have no addressable ID — which would break the
+  cancel-and-re-await contract across requests. The fix follows the schema's
+  established pattern for delicate runtime identity (the same trick `step()`
+  uses to materialize state as selectors): after enqueueing, `send` re-execs
+  through a lookup field — `Agent.message(id: String!): AgentMessage!` —
+  via a real Select, so the returned handle's ID is an honest, replayable
+  chain (`…asAgent!message(id:"…")`) pinned to the generated message ID and
+  addressable from any request in the session.
+- **Self-await hazard.** A tool holding its own calling agent's handle (via
+  `Agent!` injection) can `send` to it — the message joins the in-flight
+  turn as `STEERED` — but awaiting it from inside that same turn's tool call
+  is a deadlock (the turn cannot end until the tool returns). Fire-and-forget
+  sends to self are legal steering; awaits belong on *other* agents.
+
+## 10. Alternatives considered
+
 
 - **Task ledger (A2A-style)**: no resident runtime; immutable `AgentTask`
   objects under a shared context, `INPUT_REQUIRED` as a stored state.
