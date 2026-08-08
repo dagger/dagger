@@ -4323,10 +4323,13 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.syncPrompt()
 		return true
 	case "alt+up":
-		// Pull a queued interject message back into the input for editing.
-		// Inherently racy: if the prompt loop already consumed the message
-		// mid-turn, the shell's dequeue returns empty, so fall back to the
-		// text the label was showing.
+		// Pull a queued message (one submitted while a non-prompt turn was
+		// running; see handleInputComplete) back into the input for editing.
+		// Slightly racy: if the turn just finished, handleShellDone already
+		// consumed the message to start it as a new turn, so the dequeue
+		// returns empty and we fall back to the text the label was showing.
+		// Prompt-turn interjections never land here: they are sent to the
+		// agent immediately, with nothing left client-side to recall.
 		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
 			shown := fe.queuedMsgLabel.Message()
 			if msg := fe.clearQueuedMessage(); msg != "" {
@@ -4626,10 +4629,18 @@ func (fe *frontendPretty) handleInputComplete() {
 	// reset now that we've accepted input
 	fe.textInput.SetValue("")
 
-	// If a turn is already running, queue this as an interject message for the
-	// current turn (picked up by the prompt loop) instead of blocking on a new
-	// one.
+	// If a turn is already running, hand the message to it rather than
+	// blocking on a new one. A prompt turn accepts it immediately: the shell
+	// sends it to the agent runtime driving the turn (fire-and-forget -- the
+	// engine records it and its reply arrives within the same turn), so there
+	// is nothing left pending client-side. Any other running turn (a shell
+	// command, a prompt-mode /command) can't absorb input, so the message is
+	// queued and replayed as a new turn when the current one finishes (see
+	// handleShellDone).
 	if fe.shellRunning {
+		if ij, ok := fe.shell.(interface{ Interject(string) bool }); ok && ij.Interject(value) {
+			return
+		}
 		if _, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
 			fe.setQueuedMessage(value)
 			return
@@ -4639,8 +4650,9 @@ func (fe *frontendPretty) handleInputComplete() {
 	fe.startShellHandle(value)
 }
 
-// setQueuedMessage stores an interject message on the shell handler and shows
-// the pending indicator above the prompt.
+// setQueuedMessage stores a message on the shell handler to be run as a new
+// turn once the current (non-prompt) one finishes, and shows the pending
+// indicator above the prompt.
 func (fe *frontendPretty) setQueuedMessage(msg string) {
 	if qh, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
 		qh.QueueMessage(msg)
@@ -4650,8 +4662,8 @@ func (fe *frontendPretty) setQueuedMessage(msg string) {
 	}
 }
 
-// clearQueuedMessage removes the queued interject message from the shell
-// handler and the indicator, returning whatever was still pending.
+// clearQueuedMessage removes the queued message from the shell handler and
+// the indicator, returning whatever was still pending.
 func (fe *frontendPretty) clearQueuedMessage() string {
 	var msg string
 	if qh, ok := fe.shell.(interface{ DequeueMessage() string }); ok {
@@ -4705,9 +4717,8 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	fe.syncPrompt()
 	fe.shellRunning = false
 
-	// The turn is done: clear the pending indicator (the message was either
-	// consumed mid-turn by the prompt loop, or is still queued). If one is
-	// still queued, run it now as a new turn so it is not left stale.
+	// The turn is done: if a message was queued behind it (submitted while a
+	// non-prompt turn ran), run it now as a new turn so it is not left stale.
 	if queued := fe.clearQueuedMessage(); queued != "" {
 		fe.startShellHandle(queued)
 	}

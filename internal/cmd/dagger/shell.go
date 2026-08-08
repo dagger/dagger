@@ -139,8 +139,11 @@ type shellCallHandler struct {
 	initialPrompt string
 	sessionUUID   string
 
-	// queuedMsg carries a message the user submitted while the LLM was running,
-	// to be interjected as the next prompt.
+	// queuedMsg carries a message the user submitted while a non-prompt turn
+	// (e.g. a shell command or a prompt-mode /command) was running, to be run
+	// as a new turn once the current one finishes. Messages submitted while a
+	// PROMPT turn runs bypass this entirely: they are sent straight to the
+	// agent runtime (see Interject).
 	queuedMsg   string
 	queuedMsgMu sync.Mutex
 
@@ -156,15 +159,30 @@ type shellCallHandler struct {
 	cmdParentCtx context.Context
 }
 
-// QueueMessage stores a message submitted while the LLM is running, to be
-// interjected as the next prompt once the current turn finishes.
+// Interject hands a message submitted while a prompt turn is running straight
+// to the agent driving that turn. The send is fire-and-forget: the engine
+// records it immediately (joining the in-flight turn at the next step boundary
+// or queuing behind a pause) and its reply arrives within the same turn's
+// await. It reports whether such a turn was actually running; when false the
+// caller falls back to the queued-message path below.
+func (h *shellCallHandler) Interject(msg string) bool {
+	s, err := h.llmMaybe()
+	if err != nil || s == nil {
+		return false
+	}
+	return s.Interject(msg)
+}
+
+// QueueMessage stores a message submitted while a non-prompt turn was running,
+// to be run as a new turn once the current one finishes (see
+// frontendPretty.handleShellDone).
 func (h *shellCallHandler) QueueMessage(msg string) {
 	h.queuedMsgMu.Lock()
 	defer h.queuedMsgMu.Unlock()
 	h.queuedMsg = msg
 }
 
-// DequeueMessage returns and clears any queued interject message.
+// DequeueMessage returns and clears any queued message.
 func (h *shellCallHandler) DequeueMessage() string {
 	h.queuedMsgMu.Lock()
 	defer h.queuedMsgMu.Unlock()

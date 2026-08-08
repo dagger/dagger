@@ -67,9 +67,24 @@ type LLMSession struct {
 	model string
 	shell *shellCallHandler
 
-	// onStep, if set, is invoked after every step of a prompt turn. It is used
-	// to auto-save the session so it is preserved even if the process is
-	// interrupted mid-turn.
+	// agent is the runtime handle backing prompt turns: an Agent packaged
+	// from the session's LLM, created lazily on the first prompt submit and
+	// kept across turns (the session's LLM tracks its snapshot). It is
+	// dropped -- with the runtime stopped -- whenever the session's LLM is
+	// replaced wholesale (see updateLLM): a different value digest is a
+	// different runtime instance by design.
+	agent  *dagger.Agent
+	agentL *sync.Mutex
+
+	// turnAgent is the agent driving the in-flight prompt turn, non-nil only
+	// while WithPrompt blocks awaiting the turn's reply. Interject targets it
+	// with fire-and-forget sends.
+	turnAgent *dagger.Agent
+	turnL     *sync.Mutex
+
+	// onStep, if set, is invoked after every prompt turn (including an
+	// interrupted one). It is used to auto-save the session so it is
+	// preserved across interruptions.
 	onStep func(*LLMSession)
 
 	plumbingCtx  context.Context
@@ -88,8 +103,8 @@ type LLMSession struct {
 	subscriptionLabelCache string
 
 	// prevContextTokens is the cumulative prompt-token total (input + cache
-	// reads + cache writes) observed after the previous step, and prevStepContext
-	// is that step's own prompt size. Together they drive the per-step context
+	// reads + cache writes) observed after the previous turn, and prevStepContext
+	// is that turn's own prompt size. Together they drive the per-turn context
 	// growth shown in --debug mode (see reportContextUsage).
 	prevContextTokens int
 	prevStepContext   int
@@ -125,6 +140,8 @@ func NewLLMSession(
 		frontend:     frontend,
 		autoCompact:  true,
 		autoCompactL: new(sync.Mutex),
+		agentL:       new(sync.Mutex),
+		turnL:        new(sync.Mutex),
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
@@ -196,16 +213,142 @@ func (s *LLMSession) reset() {
 }
 
 func (s *LLMSession) Fork() *LLMSession {
-	// FIXME: this was a half-baked feature, currently does more harm than good
-	// because we lose partial progress on interrupt
-	//
-	// see https://github.com/dagger/dagger/pull/10765
+	// Undo remains disabled, but not for the original reason: interrupts used
+	// to be client-side context cancels that threw away a turn's partial
+	// progress (see https://github.com/dagger/dagger/pull/10765), which made a
+	// forked-session undo stack do more harm than good. Interrupts now happen
+	// server-side (Agent.interrupt) and preserve the completed prefix, so that
+	// rationale is gone -- re-enabling undo is a deliberate follow-up, not
+	// blocked on interrupt semantics anymore.
 	return s
 	// cp := *s
 	// cp.undo = s
 	// return &cp
 }
 
+// agentInterruptGrace bounds how long an interrupt waits for the preempted
+// step to land (the agent parks PAUSED once it does) before giving up and
+// snapshotting whatever prefix is committed so far.
+const agentInterruptGrace = 15 * time.Second
+
+// currentAgent returns the agent runtime backing prompt turns, packaging the
+// session's LLM as one on first use. The handle is pinned by ID so later
+// verbs re-load a compact reference instead of replaying the whole
+// conversation chain. Each creation gets a unique name: the name is an
+// identity discriminator, so a fresh name guarantees a fresh runtime instance
+// even when the seed conversation's digest collides with an earlier agent's
+// (e.g. two .clear'd sessions), whose runtime may have advanced or been
+// stopped.
+func (s *LLMSession) currentAgent(ctx context.Context) (*dagger.Agent, error) {
+	s.agentL.Lock()
+	defer s.agentL.Unlock()
+	if s.agent != nil {
+		return s.agent, nil
+	}
+	// A compact random suffix keeps the telemetry label readable while still
+	// discriminating instances.
+	name := "interactive-" + uuid.NewString()[:8]
+	agentID, err := s.llm.AsAgent(dagger.LLMAsAgentOpts{Name: name}).ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.agent = dagger.Ref[*dagger.Agent](s.dag, agentID)
+	return s.agent, nil
+}
+
+// dropAgent detaches the session from its agent runtime, stopping it in the
+// background (best-effort; the tombstone stays readable). Called whenever the
+// session's LLM is replaced wholesale -- model change, branch, clear,
+// compact, resume, workspace rebind -- since a different value digest is a
+// different runtime instance by design: the next prompt submit creates a
+// fresh agent from the new value.
+func (s *LLMSession) dropAgent() {
+	s.agentL.Lock()
+	agent := s.agent
+	s.agent = nil
+	s.agentL.Unlock()
+	if agent == nil {
+		return
+	}
+	go func() {
+		if _, err := agent.Stop().State(s.plumbingCtx); err != nil {
+			slog.Debug("failed to stop replaced agent", "error", err)
+		}
+	}()
+}
+
+// setTurnAgent publishes (or clears) the agent driving the in-flight prompt
+// turn, making it the target for Interject.
+func (s *LLMSession) setTurnAgent(agent *dagger.Agent) {
+	s.turnL.Lock()
+	s.turnAgent = agent
+	s.turnL.Unlock()
+}
+
+// Interject enqueues a message into the prompt turn currently in flight,
+// reporting whether there was one. The send is fire-and-forget: the engine
+// records it immediately (absorbing it into the running turn at the next step
+// boundary -- STEERED -- or queuing it behind a pause), and its reply arrives
+// within the same turn's await, so there is nothing further to wait on here.
+func (s *LLMSession) Interject(msg string) bool {
+	s.turnL.Lock()
+	agent := s.turnAgent
+	s.turnL.Unlock()
+	if agent == nil {
+		return false
+	}
+	go func() {
+		delivery, err := agent.Send(msg).Delivery(s.plumbingCtx)
+		if err != nil {
+			slog.Error("failed to interject message", "error", err)
+			return
+		}
+		slog.Debug("interjected mid-turn message", "delivery", delivery)
+	}()
+	return true
+}
+
+// interruptAgent preempts the agent's in-flight step server-side. It runs on
+// a fresh context (the turn's own context is already canceled by the time
+// this is called): Interrupt keeps every completed step and parks the agent
+// PAUSED with the turn suspended -- the next prompt submit resumes it. The
+// wait for PAUSED lets the canceled step land so the caller's snapshot
+// reflects the final kept prefix (state projects RUNNING until then).
+func (s *LLMSession) interruptAgent(agent *dagger.Agent) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.plumbingCtx), agentInterruptGrace)
+	defer cancel()
+	if _, err := agent.Interrupt().State(ctx); err != nil {
+		slog.Warn("failed to interrupt agent", "error", err)
+		return
+	}
+	if _, err := agent.WaitFor(dagger.AgentWaitForOpts{
+		State: dagger.AgentStatePaused,
+	}).State(ctx); err != nil {
+		slog.Debug("interrupted agent did not park in time", "error", err)
+	}
+}
+
+// syncFromAgent re-roots the session's LLM on the agent's last committed
+// snapshot -- the honest, immutable conversation chain -- pinned by ID so
+// the value stays put as the runtime advances. Unlike updateLLM this keeps
+// the agent handle: the snapshot is the agent's own progression, not a
+// wholesale replacement.
+func (s *LLMSession) syncFromAgent(agent *dagger.Agent) error {
+	snapID, err := agent.Snapshot().ID(s.plumbingCtx)
+	if err != nil {
+		return err
+	}
+	return s.setLLM(dagger.Ref[*dagger.LLM](s.dag, snapID))
+}
+
+// WithPrompt submits one prompt-mode message and blocks until the turn it
+// opens (or joins) ends. The turn itself runs server-side in the Agent
+// runtime: submit = send the message, resume the agent (a no-op unless a
+// prior Ctrl-C parked it), then await the message's reply. Mid-turn
+// interjections (Interject) and interrupts (context cancellation, mapped to
+// Agent.interrupt) act on that same runtime; when the turn ends the session's
+// LLM is re-rooted on the agent's committed snapshot so history, /commands,
+// and session saving keep operating on the honest chain.
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
@@ -221,68 +364,91 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 	s.model = resolvedModel
 
-	// Check if we need to compact before adding the prompt
+	// Check if we need to compact before adding the prompt.
 	compacted, err := s.maybeAutoCompact(ctx)
 	if err != nil {
 		return s, fmt.Errorf("auto-compact: %w", err)
 	}
-
-	prompted := compacted.WithPrompt(input)
-
-	for {
-		// update the sidebar after every step, not after the entire loop; step
-		// is lazy, so sync to force it and re-root on the materialized state
-		prompted, err = prompted.Step().Sync(ctx)
-		if err != nil {
+	if compacted != s.llm {
+		// Compaction rebuilt the conversation: that is a wholesale
+		// replacement (different value digest), so rebase the session --
+		// dropping any existing agent -- before packaging it as one below.
+		if err := s.updateLLM(compacted); err != nil {
 			return s, err
-		}
-
-		if err := s.updateLLM(prompted); err != nil {
-			return s, err
-		}
-
-		// In --debug, surface how much this step grew the context, so spikes
-		// (e.g. a tool dumping a huge result) are visible between steps.
-		s.reportContextUsage(ctx, prompted)
-
-		// Auto-save after every step so sessions are preserved even if the
-		// process is interrupted mid-turn.
-		if s.onStep != nil {
-			s.onStep(s)
-		}
-
-		hasMore, err := prompted.HasPending(s.plumbingCtx)
-		if err != nil {
-			return s, err
-		}
-		var queued string
-		if !hasMore {
-			// Check if the user queued a message while the LLM was running. If
-			// nothing is queued and no prompt is pending, the turn is complete.
-			queued = s.shell.DequeueMessage()
-			if queued == "" {
-				break
-			}
-		}
-
-		// Check if we need to compact in-between steps
-		prompted, err = s.maybeAutoCompact(ctx)
-		if err != nil {
-			return s, fmt.Errorf("auto-compact: %w", err)
-		}
-
-		// Inject any queued message as the next prompt. This must happen after
-		// maybeAutoCompact, which returns the session's LLM rather than
-		// prompted, and would otherwise discard the injected prompt.
-		if queued != "" {
-			prompted = prompted.WithPrompt(queued)
 		}
 	}
 
-	return s, nil
+	agent, err := s.currentAgent(ctx)
+	if err != nil {
+		return s, err
+	}
+
+	// Enqueue the prompt on the record. Resolving the ID performs the send
+	// (once) and pins the message's identity to the replayable
+	// `…asAgent!message(id:…)` chain, so the await below can be canceled
+	// without losing the handle.
+	msgID, err := agent.Send(input).ID(ctx)
+	if err != nil {
+		return s, err
+	}
+	msg := dagger.Ref[*dagger.AgentMessage](s.dag, msgID)
+
+	// Un-park the agent: a no-op unless it is paused (a prior Ctrl-C
+	// interrupt) or failed (resume retries), in which case the suspended turn
+	// continues from its last committed step and the just-sent prompt drains
+	// into it.
+	if _, err := agent.Resume().State(s.plumbingCtx); err != nil {
+		return s, err
+	}
+
+	// The turn is now running server-side; expose the agent so messages
+	// submitted before it ends interject into it.
+	s.setTurnAgent(agent)
+	defer s.setTurnAgent(nil)
+
+	// Block until the turn that consumed the prompt ends.
+	_, awaitErr := msg.Await(ctx)
+
+	if awaitErr != nil && ctx.Err() != nil {
+		// Ctrl-C canceled the await: interrupt the agent server-side, keeping
+		// the completed prefix. The turn stays open with the prompt pending;
+		// the next submit's Resume continues it.
+		s.interruptAgent(agent)
+	}
+
+	// Whether the turn ended with a reply, failed (the snapshot holds the
+	// completed prefix; the next submit's Resume retries), or was
+	// interrupted, re-root the session on the agent's committed snapshot so
+	// the rest of the session reflects everything that actually happened.
+	if err := s.syncFromAgent(agent); err != nil {
+		if awaitErr != nil {
+			slog.Warn("failed to sync LLM from agent snapshot", "error", err)
+			return s, awaitErr
+		}
+		return s, err
+	}
+
+	// In --debug, surface how much this turn grew the context.
+	s.reportContextUsage(ctx, s.llm)
+
+	// Auto-save so the session is preserved even across interrupted turns.
+	if s.onStep != nil {
+		s.onStep(s)
+	}
+
+	return s, awaitErr
 }
 
+// updateLLM replaces the session's LLM wholesale -- prompt-turn snapshots go
+// through setLLM instead. Since a different value digest is a different agent
+// runtime instance by design, any live agent is dropped (and stopped) here;
+// the next prompt submit packages the new value as a fresh agent.
 func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
+	s.dropAgent()
+	return s.setLLM(llm)
+}
+
+func (s *LLMSession) setLLM(llm *dagger.LLM) error {
 	s.llm = llm
 
 	// figure out what the model resolved to
@@ -293,7 +459,7 @@ func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
 	s.model = model
 
 	// Refresh the status line (and changes preview) so its token/cost/context
-	// stats stay in sync with the LLM. Routing this through updateLLM means
+	// stats stay in sync with the LLM. Routing this through setLLM means
 	// every operation that swaps the session's LLM -- prompt turns, .clear,
 	// .compact, .model, branching, resuming -- keeps the status line current
 	// without each call site having to remember to refresh it.
@@ -323,14 +489,13 @@ func (s *LLMSession) subscriptionLabel() string {
 	return s.subscriptionLabelCache
 }
 
-// reportContextUsage emits a --debug span showing this step's context size (the
-// full prompt sent to the model) and how much it grew since the previous step,
+// reportContextUsage emits a --debug span showing this turn's context size (the
+// full prompt sent to the model) and how much it grew since the previous turn,
 // so context spikes (e.g. a tool dumping a huge result) are visible between
-// steps. LLM.TokenUsage is cumulative over the message history, so its change
-// since the previous step is this step's own prompt (each step adds one
-// assistant message). Compaction resets the history (WithoutMessageHistory),
-// dropping the cumulative total; a drop is treated as a fresh baseline rather
-// than negative growth.
+// turns. LLM.TokenUsage is cumulative over the message history, so its change
+// since the previous turn is this turn's own prompt growth. Compaction resets
+// the history (WithoutMessageHistory), dropping the cumulative total; a drop is
+// treated as a fresh baseline rather than negative growth.
 func (s *LLMSession) reportContextUsage(ctx context.Context, llm *dagger.LLM) {
 	if !debugFlag {
 		return

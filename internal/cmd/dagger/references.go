@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -291,7 +292,13 @@ func (s *LLMSession) attachReferences(ctx context.Context, input string) string 
 	}
 
 	if changed {
-		s.llm = llm
+		// Mounting references rebinds the workspace: a wholesale change to
+		// the LLM value, so route it through updateLLM -- any live agent
+		// (seeded with the old binding) is dropped, and the submit this call
+		// is part of packages a fresh one from the new value.
+		if err := s.updateLLM(llm); err != nil {
+			slog.Warn("failed to refresh LLM after attaching references", "error", err)
+		}
 		s.updateReferencesPreview()
 	}
 	if len(local) > 0 {
