@@ -144,6 +144,50 @@ func (db *DB) buildSurfacedConversation(root *Span) []*MessageNode {
 	return roots
 }
 
+// SurfacedConversationForAgent returns ONE agent's conversation: the messages
+// beneath each of the loop spans the engine published for it, merged in
+// start-time order.
+//
+// Scoping by AGENT rather than by span is what makes it whole. A resume after
+// a failure relaunches the loop under a fresh span
+// (hack/designs/async-agents.md §9), which is why AgentNode keys on the
+// spawn-minted instance ID and keeps a list; a caller that scoped to
+// AgentNode.Span() alone would silently drop everything said before the last
+// relaunch.
+//
+// Nil, or an agent with no loop spans, means no conversation -- not the whole
+// trace. The distinction matters: callers use the empty result to decide the
+// scope is not worth applying, and collapsing it to the whole trace here would
+// take that choice away from them.
+//
+// Cached per DB mutation and per agent, in a memo slot of its own. It
+// deliberately does NOT share the whole-trace slot: that one is single-entry
+// and keyed by root, so the roster's per-agent view and the report's
+// zoom-scoped view would evict each other on every render.
+func (db *DB) SurfacedConversationForAgent(node *AgentNode) []*MessageNode {
+	if node == nil || len(node.Spans) == 0 {
+		return nil
+	}
+	if db.agentConversationInit && db.agentConversationAt == db.mutations && db.agentConversationID == node.ID {
+		return db.agentConversation
+	}
+	var roots []*MessageNode
+	for _, span := range node.Spans {
+		// buildSurfacedConversation directly, not SurfacedConversationForSpan:
+		// the latter would write each loop span through the shared single-slot
+		// memo, leaving it holding whichever span happened to be last.
+		roots = append(roots, db.buildSurfacedConversation(span)...)
+	}
+	sort.SliceStable(roots, func(i, j int) bool {
+		return roots[i].Span.Before(roots[j].Span)
+	})
+	db.agentConversation = roots
+	db.agentConversationAt = db.mutations
+	db.agentConversationID = node.ID
+	db.agentConversationInit = true
+	return db.agentConversation
+}
+
 // HasConversation reports whether the trace contains any LLM message spans, so
 // the live view can promote the conversation to the top level (mirrors
 // HasChecks).
@@ -175,6 +219,13 @@ func (db *DB) HasConversationForSpan(root *Span) bool {
 // promoteConversationLocked) so RowsView iterates these revealed spans instead
 // of host's raw children.
 func (db *DB) PromoteConversationTo(host *Span) {
+	db.PromoteConversationNodesTo(host, db.SurfacedConversation())
+}
+
+// PromoteConversationNodesTo is PromoteConversationTo for an explicit subset of
+// the surfaced conversation -- the roster's focused-agent view, which promotes
+// one agent's turns rather than every turn in the trace.
+func (db *DB) PromoteConversationNodesTo(host *Span, nodes []*MessageNode) {
 	if host == nil {
 		return
 	}
@@ -185,5 +236,28 @@ func (db *DB) PromoteConversationTo(host *Span) {
 			wire(node.Span, node.Children)
 		}
 	}
-	wire(host, db.SurfacedConversation())
+	wire(host, nodes)
+}
+
+// DemoteConversationNodesFrom withdraws a promotion, removing each node's span
+// from the RevealedSpans of whatever it was wired under.
+//
+// Promotion is an ADD into a set that outlives the render -- it mutates the
+// cached, reused DB's spans, which recalculateViewLocked already warns about --
+// so it is idempotent for a fixed scope but cannot express a CHANGE of scope.
+// Focusing another agent therefore has to withdraw the previous scope
+// explicitly; without this the host accumulates every transcript it was ever
+// pointed at and the switcher only ever adds.
+func (db *DB) DemoteConversationNodesFrom(host *Span, nodes []*MessageNode) {
+	if host == nil {
+		return
+	}
+	var unwire func(parent *Span, nodes []*MessageNode)
+	unwire = func(parent *Span, nodes []*MessageNode) {
+		for _, node := range nodes {
+			parent.RevealedSpans.Remove(node.Span)
+			unwire(node.Span, node.Children)
+		}
+	}
+	unwire(host, nodes)
 }

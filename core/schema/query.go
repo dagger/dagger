@@ -103,6 +103,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			Doc(`Get the current Dagger Engine version.`),
 
 		dagql.Func("currentTimestamp", s.currentTimestamp).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Returns the live current time").
 			Doc(`The current UTC time in RFC3339 format. Never cached.`),
 

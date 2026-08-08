@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type workspaceContextKey struct{}
@@ -130,7 +131,10 @@ const overlayDepsCacheLimit = 64
 
 // workspaceOverlayServedDeps layers the workspace overlay's re-resolved modules
 // onto the served deps, replacing same-named entries. No overlay influence
-// returns deps unchanged.
+// returns deps unchanged. If the overlay cannot load, the whole overlay is
+// discarded for schema serving and the client's last known-good served deps are
+// retained. Explicit Workspace.agents recomposition remains strict; this
+// fallback only keeps an already-composed LLM's repair tools callable.
 func workspaceOverlayServedDeps(ctx context.Context, ws dagql.ObjectResult[*Workspace], deps *SchemaBuilder) (*SchemaBuilder, error) {
 	if _, ok := ws.Self().OverlayChanges(); !ok {
 		return deps, nil
@@ -160,7 +164,15 @@ func workspaceOverlayServedDeps(ctx context.Context, ws dagql.ObjectResult[*Work
 
 	overlayMods, err := WorkspaceOverlayModules(ctx, ws)
 	if err != nil {
-		return nil, err
+		// Keep the last-known-good served schema usable when a staged edit makes
+		// one of the agent's own tool modules invalid. The workspace ID keys this
+		// fallback in the cache below, so repairing the file produces a new ID and
+		// retries overlay loading instead of poisoning the rest of the session.
+		slog.SpanLogger(ctx, InstrumentationLibrary).Warn(
+			"failed to load workspace overlay modules; using served modules for recovery",
+			"error", err,
+		)
+		overlayMods = nil
 	}
 	layered := deps
 	if len(overlayMods) > 0 {

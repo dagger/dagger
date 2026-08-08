@@ -203,6 +203,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
 			),
 		dagql.NodeFunc("withoutDirectories", s.withoutDirectories).
+			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
 			Doc(`Return a snapshot with subdirectories removed`).
 			Args(

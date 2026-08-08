@@ -88,6 +88,72 @@ const (
 	DagCallPayloadAttr = "dagger.io/dag.call.payload"
 )
 
+// Agent directory (dagger.io/agent.*).
+//
+// Async agents (hack/designs/async-agents.md) are long-lived, addressable
+// evaluation loops. The design deliberately renounces a session-wide agent
+// namespace — you can only message an agent whose ID you hold — and makes
+// TELEMETRY the discovery plane instead: the loop span is the authoritative
+// "an agent runtime lives here" marker, and a client builds its roster by
+// folding these attributes out of the trace it already ingests.
+//
+// The vocabulary is split across the two telemetry record types on purpose,
+// because they have different mutability:
+//
+//   - IMMUTABLE identity facts (AgentAttr, AgentIDAttr, AgentNameAttr,
+//     AgentCallDigestAttr) ride SPAN attributes on the loop span. They are
+//     known when the span starts and never change, which is the only thing
+//     span attributes can express: a live span is exported as a snapshot
+//     taken at start (LiveSpanProcessor.OnStart), and heartbeats re-export
+//     that same frozen snapshot, so an attribute written later would never
+//     reach a client.
+//
+//   - MUTABLE state (AgentStateAttr, AgentWaitingOnAttr) rides LOG RECORDS
+//     attributed to the loop span, exactly like streaming progress above and
+//     for exactly the same reason. Each transition emits a fresh record;
+//     latest record wins. Records are emitted only when the PROJECTED state
+//     changes, not on every internal fact change.
+//
+// A record carrying AgentStateAttr is agent state, not log text: consumers
+// fold it into the agent's roster entry and must not render it as output.
+const (
+	// AgentAttr marks the long-lived loop span of a started agent runtime.
+	// The span exists iff the loop actually started, runs exactly as long as
+	// the loop does, and its subtree carries the agent's turns. (bool)
+	AgentAttr = "dagger.io/agent"
+
+	// AgentIDAttr is the agent's spawn-minted instance ID — the identity that
+	// makes two spawns of an identical composition two different agents. It
+	// is the roster's grouping key, NOT the span ID: a resume-retry relaunches
+	// the loop, so one agent can own several loop spans over its life. (string)
+	AgentIDAttr = "dagger.io/agent.id"
+
+	// AgentNameAttr is the agent's display label, for showing in a roster
+	// alongside AgentIDAttr. It carries no identity: two agents may share a
+	// name. (string)
+	AgentNameAttr = "dagger.io/agent.name"
+
+	// AgentCallDigestAttr is the DAG digest of the call that produced the
+	// agent value, letting a client reconstruct a real, sendable handle from
+	// the trace — the same trick LLMCallDigestAttr plays for branching from a
+	// message. This is what turns the directory from a readout into an
+	// address book; a client that cannot resolve the digest (e.g. one that
+	// attached late and lacks the call payload) must degrade to a read-only
+	// roster entry rather than fail. (string)
+	AgentCallDigestAttr = "dagger.io/agent.call.digest"
+
+	// AgentStateAttr carries the agent's projected lifecycle state at the
+	// moment the record was emitted: one of the AgentState enum tokens
+	// ("IDLE", "RUNNING", "WAITING_INPUT", "PAUSED", "STOPPED", "FAILED").
+	// Emitted on a log record attributed to the loop span. (string)
+	AgentStateAttr = "dagger.io/agent.state"
+
+	// AgentWaitingOnAttr carries what the agent is blocked on when its state
+	// is WAITING_INPUT — the parked question's text. Absent otherwise, and an
+	// empty value clears a previously reported one. (string)
+	AgentWaitingOnAttr = "dagger.io/agent.waiting_on"
+)
+
 // wcprof × OTel vocabulary.
 //
 // These attributes let the engine emit, on its ordinary OTel spans, the

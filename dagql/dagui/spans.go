@@ -311,6 +311,27 @@ type SpanSnapshot struct {
 	// Service name
 	ServiceName string `json:",omitempty"`
 
+	// Agent marks the long-lived loop span of a started agent runtime
+	// (running exactly while the loop does; its subtree carries the agent's
+	// turns). AgentID is the spawn-minted instance ID that identifies the
+	// agent ACROSS loop spans — a resume-retry relaunches the loop, so one
+	// agent can own several. AgentCallDigest is the digest of the call that
+	// produced the agent value, from which a client can reconstruct a
+	// sendable handle.
+	Agent           bool   `json:",omitempty"`
+	AgentID         string `json:",omitempty"`
+	AgentName       string `json:",omitempty"`
+	AgentCallDigest string `json:",omitempty"`
+
+	// AgentState is the agent's lifecycle state as of the most recent state
+	// record folded into this span, and AgentWaitingOn what it is parked on
+	// when that state is WAITING_INPUT. Unlike the fields above these arrive
+	// on log records rather than span attributes, because they change over
+	// the span's life and a live span's attributes are frozen at start (see
+	// the dagger.io/agent.* block in engine/telemetryattrs).
+	AgentState     string `json:",omitempty"`
+	AgentWaitingOn string `json:",omitempty"`
+
 	ActorEmoji  string `json:",omitempty"`
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
@@ -470,6 +491,18 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.ServiceNameAttr:
 		snapshot.ServiceName = val.(string)
+
+	case telemetryattrs.AgentAttr:
+		snapshot.Agent = val.(bool)
+
+	case telemetryattrs.AgentIDAttr:
+		snapshot.AgentID = val.(string)
+
+	case telemetryattrs.AgentNameAttr:
+		snapshot.AgentName = val.(string)
+
+	case telemetryattrs.AgentCallDigestAttr:
+		snapshot.AgentCallDigest = val.(string)
 
 	case telemetry.LLMRoleAttr:
 		snapshot.LLMRole = val.(string)

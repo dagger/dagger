@@ -38,6 +38,13 @@ const workspaceTypeName = "Workspace"
 // resumes from the returned conversation (MCP.adoptLLM).
 const llmTypeName = "LLM"
 
+// agentTypeName is the object type the engine auto-injects into a module
+// function's arguments from the calling agent, when the tool call is
+// dispatched from a running agent loop (see core/agent_context.go). Like
+// Workspace and LLM, such arguments are hidden from the generated tool
+// schema — the model never sees or supplies them.
+const agentTypeName = "Agent"
+
 // boundTool is one object bound into the LLM's toolset via withTools. It carries
 // enough to build the toolset (the object's type, via objType) and to dispatch a
 // tool call (the object itself, as the receiver). The object may be held lazily
@@ -489,11 +496,14 @@ func isObjectArg(arg *ast.ArgumentDefinition) bool {
 
 // isAutoInjectedArg reports whether an argument is filled in by the engine
 // rather than by the model: the bound Workspace (@expectedType(name:
-// "Workspace")), or the conversation making the call (an `LLM!` arg — see
-// core/llm_context.go). Both are hidden from the generated tool schema and
+// "Workspace")), the conversation making the call (an `LLM!` arg — see
+// core/llm_context.go), or the calling agent (an `Agent!` arg — see
+// core/agent_context.go). All are hidden from the generated tool schema and
 // never disqualify a method from being a tool.
 func isAutoInjectedArg(arg *ast.ArgumentDefinition) bool {
-	return isExpectedTypeArg(arg, workspaceTypeName) || isExpectedTypeArg(arg, llmTypeName)
+	return isExpectedTypeArg(arg, workspaceTypeName) ||
+		isExpectedTypeArg(arg, llmTypeName) ||
+		isExpectedTypeArg(arg, agentTypeName)
 }
 
 func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
