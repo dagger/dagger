@@ -305,6 +305,36 @@ func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Ag
 	}, nil
 }
 
+// LookupMessage returns the handle for a message already enqueued into the
+// given agent's runtime entry, populated from the entry's message record.
+// This is the runtime side of Agent.message — the lookup field send re-execs
+// through to pin its result's identity (design §9): the record is immutable
+// after enqueue (delivery evidence is computed once), so the same (agent,
+// message ID) pair always denotes the same handle. An agent with no runtime
+// entry, or an entry with no record of the ID, is a clear error: message
+// never creates anything.
+func (ars *AgentRuntimes) LookupMessage(ctx context.Context, agent dagql.ObjectResult[*Agent], msgID string) (*AgentMessage, error) {
+	rt, found, err := ars.Get(ctx, agent)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("agent %q has no runtime entry in this session", agent.Self().Name)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rec, found := rt.messages[msgID]
+	if !found {
+		return nil, fmt.Errorf("agent %q has no record of message %q", rt.name, msgID)
+	}
+	return &AgentMessage{
+		AgentKey:  rt.key,
+		AgentName: rt.name,
+		MessageID: msgID,
+		Delivery:  rec.delivery,
+	}, nil
+}
+
 // AwaitMessage blocks until the turn that consumed the given message ends,
 // returning that turn's reply (or the error the message resolved with).
 func (ars *AgentRuntimes) AwaitMessage(ctx context.Context, msg *AgentMessage) (string, error) {

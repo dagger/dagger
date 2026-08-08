@@ -16,11 +16,13 @@ package core
 //
 // One deliberate infrastructure note: Agent.send is DoNotCache (every send
 // must enqueue a distinct message), and DoNotCache results are detached in
-// dagql — reading `id` off an AgentMessage fails with "result
-// *core.AgentMessage is detached". So the same message can't be re-addressed
-// across queries; instead each test selects everything it needs off a single
-// send in one query ({ delivery await }), which is also what makes the
-// await-idempotency test possible (two aliased awaits on one send).
+// dagql — which would make the handle unaddressable. send therefore pins its
+// result's identity by re-exec (design §9): after enqueueing it Selects
+// through the Agent.message(id:) lookup field, so the returned handle's ID
+// is the honest, replayable chain `…asAgent!message(id:"…")` — selectable as
+// `{ send { id } }` and re-addressable from any later request in the session
+// via node(id:), which is what makes the cancel-and-re-await contract hold
+// across requests (TestMessageIdentity).
 
 import (
 	"context"
@@ -51,12 +53,12 @@ func TestAgentRuntime(t *testing.T) {
 var emptyReplayModel = "replay/" + base64.StdEncoding.EncodeToString([]byte("[]"))
 
 // agentHandle drives one agent through raw GraphQL queries. Raw queries are
-// used (rather than the typed SDK) because the interesting operations hang
-// off `send`, whose result cannot be re-addressed across queries (see the
-// package comment): delivery and await must be selected off the same send in
-// a single query. Every query rebuilds the same llm[.withTools].asAgent
-// chain, which resolves to the same runtime entry by content digest — the
-// dedupe contract TestDedupe locks in explicitly.
+// used (rather than the typed SDK) because the interesting assertions select
+// several fields off a single send in one query — e.g. { delivery await },
+// or the two aliased awaits of the idempotency test. Every query rebuilds
+// the same llm[.withTools].asAgent chain, which resolves to the same runtime
+// entry by content digest — the dedupe contract TestDedupe locks in
+// explicitly.
 type agentHandle struct {
 	c     *dagger.Client
 	model string
@@ -648,4 +650,86 @@ func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T)
 	require.Equal(t, "STARTED", out.Get("send.delivery").String())
 	require.Equal(t, slowToolReply, out.Get("send.first").String())
 	require.Equal(t, slowToolReply, out.Get("send.second").String())
+}
+
+// TestMessageIdentity covers re-exec pinning of message handles (design §9):
+// send returns a handle whose ID is the honest chain …asAgent!message(id:…),
+// so `{ send { id } }` works, and the captured ID re-addresses the SAME
+// message record from a later request. That is the cancel-and-re-await
+// contract: an await canceled mid-turn loses nothing — a fresh request
+// re-loads the handle via node(id:) and awaits the reply. Also locks in the
+// lookup's clean failure modes: unknown message IDs, and agents with no
+// runtime entry.
+func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	vol := c.CacheVolume("agent-msgid-" + identity.NewID())
+	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
+	require.NoError(t, err)
+	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
+
+	h := &agentHandle{c: c, model: model, name: "readdressable", ctrID: ctrID}
+
+	// Request 1: send returns immediately (it never blocks) with an
+	// addressable handle — id is selectable, which the detached DoNotCache
+	// result could not do.
+	out := h.mustRun(ctx, t, fmt.Sprintf(`send(message: %q) { id delivery }`, slowToolPrompt))
+	msgID := out.Get("send.id").String()
+	require.NotEmpty(t, msgID)
+	require.Equal(t, "STARTED", out.Get("send.delivery").String())
+
+	// awaitByID re-addresses the pinned handle in a fresh request —
+	// node(id:) replays the …asAgent!message(id:…) chain — and awaits it.
+	awaitByID := func(ctx context.Context) (delivery, reply string, _ error) {
+		res := map[string]any{}
+		err := c.Do(ctx, &dagger.Request{
+			Query:     `query($id: ID!) { node(id: $id) { ... on AgentMessage { delivery await } } }`,
+			Variables: map[string]any{"id": msgID},
+		}, &dagger.Response{Data: &res})
+		if err != nil {
+			return "", "", err
+		}
+		raw, err := json.Marshal(res)
+		if err != nil {
+			return "", "", err
+		}
+		node := gjson.Get(string(raw), "node")
+		return node.Get("delivery").String(), node.Get("await").String(), nil
+	}
+
+	// Cancel-and-re-await, first half: an await issued while the turn
+	// provably dwells in the slow tool call, then canceled while blocked.
+	// The await fails with the cancellation, whatever the exact
+	// interleaving of issue and cancel.
+	awaitCtx, cancelAwait := context.WithCancel(ctx)
+	defer cancelAwait()
+	awaitErr := make(chan error, 1)
+	go func() {
+		_, _, err := awaitByID(awaitCtx)
+		awaitErr <- err
+	}()
+	waitForSlowTool(ctx, t, c, vol)
+	require.Equal(t, "RUNNING", h.state(ctx, t))
+	cancelAwait()
+	require.ErrorContains(t, <-awaitErr, "context canceled")
+
+	// Second half: a fresh request re-awaits the same handle and gets the
+	// turn's reply — the canceled await lost nothing. The turn is still
+	// mid-tool when this await is issued (the tool dwells for seconds past
+	// the marker), so the await genuinely blocks before resolving; the
+	// delivery evidence rides the record, unchanged.
+	delivery, reply, err := awaitByID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "STARTED", delivery)
+	require.Equal(t, slowToolReply, reply)
+
+	// Unknown message ID on an agent WITH a runtime entry: clear error.
+	_, err = h.run(ctx, t, `message(id: "bogus") { delivery }`)
+	require.ErrorContains(t, err, "no record of message")
+
+	// Lookup on an agent with NO runtime entry: clear error — message is a
+	// pure lookup and never creates one.
+	fresh := &agentHandle{c: c, model: emptyReplayModel, name: "never-ran"}
+	_, err = fresh.run(ctx, t, `message(id: "bogus") { delivery }`)
+	require.ErrorContains(t, err, "no runtime entry")
 }

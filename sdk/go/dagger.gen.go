@@ -494,6 +494,20 @@ func (r *Agent) Interrupt() *Agent {
 	}
 }
 
+// Look up a previously sent message by its message ID, returning its handle.
+//
+// This is the lookup send pins its result's identity through: the returned handle's ID is an honest, replayable chain, addressable from any request in the session (the cancel-and-re-await contract).
+//
+// Fails if the agent has no runtime entry in this session, or no record of the given ID.
+func (r *Agent) Message(id string) *AgentMessage {
+	q := r.query.Select("message")
+	q = q.Arg("id", id)
+
+	return &AgentMessage{
+		query: q,
+	}
+}
+
 // Display label and identity discriminator — not a session-wide address.
 func (r *Agent) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -536,6 +550,8 @@ func (r *Agent) Resume() *Agent {
 // Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
 //
 // Never blocks, never drops; concurrent sends queue in order.
+//
+// The returned handle's identity is pinned through the message lookup field, so it can be re-addressed from any request in the session: cancel an await and re-await freely.
 //
 // Sending to a never-started agent starts it (signal-with-start). Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume. Sending to a stopped agent fails: nothing would ever consume the message.
 func (r *Agent) Send(message string) *AgentMessage {
