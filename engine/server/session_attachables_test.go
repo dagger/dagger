@@ -146,3 +146,26 @@ func TestSpecificClientAttachableConnIfAvailableIgnoresPublishedAbsence(t *testi
 	default:
 	}
 }
+
+func TestSpecificClientAttachableConnBlockingPublishedSourceIsUnavailable(t *testing.T) {
+	t.Parallel()
+	srv, sess, creator := newDetachableLifecycleTestSession(t, 0)
+	sess.markSourceClientPublished(creator.clientID)
+	creator.getClientCaller = sess.waitForClientCaller
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		SessionID: sess.sessionID,
+		ClientID:  creator.clientID,
+	})
+
+	conn, available, err := srv.SpecificClientAttachableConn(ctx, creator.clientID, core.SpecificClientAttachableConnOpts{})
+	require.Nil(t, conn)
+	require.False(t, available)
+	var unavailable *engine.SourceClientUnavailableError
+	require.ErrorAs(t, err, &unavailable)
+	require.Equal(t, creator.clientID, unavailable.ClientID)
+	select {
+	case <-sess.closingCtx.Done():
+		t.Fatal("blocking source lookup canceled the detachable session")
+	default:
+	}
+}

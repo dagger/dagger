@@ -118,8 +118,9 @@ func (DetachableSessionSuite) TestHostCallbackRemainsBoundToCreator(ctx context.
 	_, err := hostDaggerExec(ctx, t, modDir, "-m", ".", "api", "functions")
 	require.NoError(t, err, "warm detachable test module")
 
-	sessionID, queryID := startDetachedCall(
-		ctx, t, modDir, "delayed-socket-read", "--socket", socketPath, "--delay", "5",
+	sessionID, queryID := startDetachedCallWithOptions(
+		ctx, t, modDir, "detachable-source-"+identity.NewID(),
+		"delayed-socket-read", "--socket", socketPath, "--delay", "5",
 	)
 	requireValidDetachedIDs(t, sessionID, queryID)
 	closeCreatorSocket()
@@ -137,6 +138,30 @@ func (DetachableSessionSuite) TestHostCallbackRemainsBoundToCreator(ctx context.
 	require.NotNil(t, descriptor.Query)
 	require.Equal(t, engine.SessionQueryStateFailed, descriptor.Query.Status)
 	requireSessionPresent(ctx, t, modDir, sessionID)
+	terminateDetachedSession(ctx, t, modDir, sessionID)
+}
+
+func (DetachableSessionSuite) TestCopiedHostValuesSurviveCreatorDetach(ctx context.Context, t *testctx.T) {
+	modDir := writeDetachableSessionModule(t)
+	copiedDir := filepath.Join(modDir, "copied-source")
+	require.NoError(t, os.Mkdir(copiedDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(copiedDir, "value.txt"), []byte("directory-bytes"), 0o644))
+	_, err := hostDaggerExec(ctx, t, modDir, "-m", ".", "api", "functions")
+	require.NoError(t, err, "warm detachable test module")
+
+	sessionID, queryID := startDetachedCallWithOptions(
+		ctx, t, modDir, "detachable-copied-source-"+identity.NewID(),
+		"copied-source-values", "--directory", copiedDir,
+		"--secret-value", "secret-bytes", "--delay", "3",
+	)
+	requireValidDetachedIDs(t, sessionID, queryID)
+
+	attachOutput, attachErr := hostDaggerOutput(ctx, t, modDir, "sessions", "attach", sessionID)
+	require.NoError(t, attachErr, string(attachOutput))
+	require.Equal(t, "directory-bytes|secret-bytes", strings.TrimSpace(string(attachOutput)))
+	descriptor := inspectDetachedSession(ctx, t, modDir, sessionID)
+	require.NotNil(t, descriptor.Query)
+	require.Equal(t, engine.SessionQueryStateSucceeded, descriptor.Query.Status)
 	terminateDetachedSession(ctx, t, modDir, sessionID)
 }
 
@@ -593,11 +618,27 @@ func inspectNestedDetachedSession(ctx context.Context, t testing.TB, client *dag
 var detachedIDsPattern = regexp.MustCompile(`(?m)^Session:\s+(sess_[a-z2-7]{26})\nQuery:\s+(qry_[a-z2-7]{26})$`)
 
 func startDetachedCall(ctx context.Context, t testing.TB, modDir string, args ...string) (string, string) {
+	return startDetachedCallWithOptions(ctx, t, modDir, "", args...)
+}
+
+func startDetachedCallWithOptions(
+	ctx context.Context,
+	t testing.TB,
+	modDir string,
+	clientID string,
+	args ...string,
+) (string, string) {
 	t.Helper()
 	command := []string{"-m", ".", "call", "--detach"}
 	command = append(command, args...)
-	output, err := hostDaggerOutput(ctx, t, modDir, command...)
-	require.NoError(t, err, string(output))
+	cmd := hostDaggerCommand(ctx, t, modDir, command...)
+	if clientID != "" {
+		setCommandEnv(cmd, "DAGGER_SESSION_CLIENT_ID", clientID)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	require.NoError(t, err, "stdout: %s\nstderr: %s", output, stderr.String())
 	matches := detachedIDsPattern.FindSubmatch(output)
 	require.Len(t, matches, 3, "detached acknowledgment output: %q", string(output))
 	return string(matches[1]), string(matches[2])
@@ -839,6 +880,20 @@ func (m *Detachable) DelayedSocketRead(ctx context.Context, socket *dagger.Socke
 		return "", fmt.Errorf("unexpected creator socket bytes: %%q", out)
 	}
 	return out, nil
+}
+
+func (m *Detachable) CopiedSourceValues(ctx context.Context, directory *dagger.Directory, secretValue string, delay int) (string, error) {
+	secret := dag.SetSecret("detachable-copied-secret", secretValue)
+	time.Sleep(time.Duration(delay) * time.Second)
+	directoryValue, err := directory.File("value.txt").Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	plaintext, err := secret.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return directoryValue + "|" + plaintext, nil
 }
 
 func (m *Detachable) Containers() []*dagger.Container {

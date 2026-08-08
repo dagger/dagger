@@ -298,36 +298,64 @@ func monitorAttachableHealth(ctx context.Context, cc *grpc.ClientConn, cancelCon
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	healthClient := grpc_health_v1.NewHealthClient(cc)
+	runAttachableHealthMonitor(ctx, attachableHealthMonitorConfig{
+		ticks: ticker.C,
+		now:   time.Now,
+		withTimeout: func(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+			return context.WithTimeoutCause(ctx, timeout, context.DeadlineExceeded)
+		},
+		check: func(ctx context.Context) error {
+			_, err := healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+			return err
+		},
+	})
+}
 
+type attachableHealthMonitorConfig struct {
+	ticks       <-chan time.Time
+	now         func() time.Time
+	withTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+	check       func(context.Context) error
+	testChecked func()
+}
+
+func runAttachableHealthMonitor(ctx context.Context, config attachableHealthMonitorConfig) {
 	failedBefore := false
 	consecutiveSuccessful := 0
-	defaultHealthcheckDuration := 30 * time.Second
+	const defaultHealthcheckDuration = 30 * time.Second
 	lastHealthcheckDuration := time.Duration(0)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			healthcheckStart := time.Now()
+		case <-config.ticks:
+			healthcheckStart := config.now()
 			timeout := time.Duration(math.Max(float64(defaultHealthcheckDuration), float64(lastHealthcheckDuration)*1.5))
 
 			checkCtx, cancel := context.WithCancelCause(ctx)
-			checkCtx, _ = context.WithTimeoutCause(checkCtx, timeout, context.DeadlineExceeded)
-			_, err := healthClient.Check(checkCtx, &grpc_health_v1.HealthCheckRequest{})
+			checkCtx, cancelTimeout := config.withTimeout(checkCtx, timeout)
+			err := config.check(checkCtx)
+			cancelTimeout()
 			cancel(context.Canceled)
 
-			lastHealthcheckDuration = time.Since(healthcheckStart)
+			lastHealthcheckDuration = config.now().Sub(healthcheckStart)
 
 			if err != nil {
 				select {
 				case <-ctx.Done():
 					slog.DebugContext(ctx, "context done, skipping healthcheck error")
+					if config.testChecked != nil {
+						config.testChecked()
+					}
 					return
 				default:
 				}
 				if failedBefore {
 					slog.DebugContext(ctx, "healthcheck failed fatally")
+					if config.testChecked != nil {
+						config.testChecked()
+					}
 					return
 				}
 
@@ -353,6 +381,9 @@ func monitorAttachableHealth(ctx context.Context, cc *grpc.ClientConn, cancelCon
 				"timeout", timeout,
 				"actualDuration", lastHealthcheckDuration,
 			)
+			if config.testChecked != nil {
+				config.testChecked()
+			}
 		}
 	}
 }
