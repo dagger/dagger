@@ -98,7 +98,7 @@ func (h *agentHandle) run(ctx context.Context, t *testctx.T, selection string) (
 	}
 	if h.wsID != "" {
 		inner = fmt.Sprintf(`withWorkspace(workspace: $ws) { %s }`, inner)
-		decls = append(decls, "$ws: WorkspaceID!")
+		decls = append(decls, "$ws: ID!")
 		vars["ws"] = string(h.wsID)
 		path = "withWorkspace." + path
 	}

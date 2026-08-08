@@ -25,10 +25,6 @@ implemented or written into the design doc).
   - Name reuse after dismiss hit the STOPPED tombstone (see pivot below);
     worked around with a `Random.string` nonce threaded through the
     `chiefLine(boss:, nonce:)` self-call. The pivot deletes this.
-- **Uncommitted local changes that are NOT this work** (do not fold into
-  commits): `dagger.toml` registers staff in env.dev (how the QA session
-  bound it); `core/integration/agent_runtime_test.go` `$ws: WorkspaceID!` →
-  `$ws: ID!`. Both are the user's.
 
 ## THE PIVOT: `LLM.asAgent(name)` → `LLM.spawn` (DO THIS FIRST)
 
