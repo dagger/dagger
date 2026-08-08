@@ -268,6 +268,56 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 	})
 }
 
+// TestWorkspaceToolMountsSummarizeCompactly locks in that a tool-returned
+// Workspace whose difference is a mount does not flood the model's context.
+// Mounted content is a read-only attachment deliberately kept out of the
+// pending changeset (Workspace.withMountedDirectory), so rebindWorkspace's
+// tool-result summary must not itemize the mounted files either — before this
+// was mount-aware, mounting a repository rendered as thousands of added files
+// (and unmounting as the same removals). The mount topology change is reported
+// as one compact line per mount point, while an ordinary file edit alongside
+// still summarizes as a patch.
+func (LLMSuite) TestWorkspaceToolMountsSummarizeCompactly(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-tool-return")
+
+	// mountVendored returns ws + NOTE.txt + a three-file directory mounted at
+	// mnt/vendored; unmountVendored then drops the mount from the rebound
+	// workspace.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("mount the vendored deps, then unmount them").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "mountVendored"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "unmountVendored"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
+
+	out, err := base.With(daggerShell(fmt.Sprintf(
+		`llm --model="%s" | with-workspace --workspace $(current-workspace) | with-tools $(swapper) | with-prompt "mount the vendored deps, then unmount them" | loop | transcript`,
+		model,
+	))).Stdout(ctx)
+	require.NoError(t, err)
+
+	// The mount and the unmount each surface as one compact line.
+	require.Contains(t, out, "Mounted (read-only): mnt/vendored")
+	require.Contains(t, out, "Unmounted: mnt/vendored")
+
+	// The mounted files are itemized in neither direction (as additions on
+	// mount, nor as removals on unmount).
+	require.NotContains(t, out, "vendored-one.txt")
+	require.NotContains(t, out, "vendored-two.txt")
+	require.NotContains(t, out, "vendored-three.txt")
+
+	// The ordinary edit beside the mount still summarizes as usual.
+	require.Contains(t, out, "NOTE.txt")
+}
+
 // TestToolReturningLLMContinues locks in the continuation ring of the state-return
 // convention: a tool that returns an LLM replaces the conversation, and the loop
 // resumes from the returned one (routeObjectMethodResult -> applyStateReturn ->
@@ -347,7 +397,7 @@ func (LLMSuite) TestToolReturningLLMContinues(ctx context.Context, t *testctx.T)
 		continued := strings.Join([]string{
 			"[continued via tool startFresh]",
 			"Continuing from the returned conversation.",
-			"Toolset unchanged (12 tools).",
+			"Toolset unchanged (15 tools).",
 			"Conversation history replaced: 2 messages -> 0 messages.",
 		}, "\n")
 		continuationModel := cannedReplayModel(ctx, t, c, c.LLM().

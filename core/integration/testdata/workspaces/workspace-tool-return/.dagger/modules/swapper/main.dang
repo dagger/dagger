@@ -43,6 +43,30 @@ type Swapper {
     llm.withoutMessageHistory.withModel(llm.workspace.file("continuation-model.txt").contents)
   }
 
+  """
+  Mount a vendored directory read-only, alongside an ordinary file edit.
+
+  Mounted content stays out of the pending changeset, so the tool-result
+  summary must not itemize the mounted files: the model should see one compact
+  "Mounted" line for the mount point plus the normal patch summary for the
+  file edit (rebindWorkspace's mount-aware diff).
+  """
+  mountVendored(ws: Workspace!): Workspace! {
+    let deps = Dagger.directory
+      .withNewFile("vendored-one.txt", "vendored one\n")
+      .withNewFile("vendored-two.txt", "vendored two\n")
+      .withNewFile("vendored-three.txt", "vendored three\n")
+    ws.withNewFile("NOTE.txt", "vendored deps mounted\n").withMountedDirectory("mnt/vendored", deps)
+  }
+
+  """
+  Drop the mount added by mountVendored. The unmount must summarize as a
+  compact "Unmounted" line, not as per-file removals of the mounted content.
+  """
+  unmountVendored(ws: Workspace!): Workspace! {
+    ws.withoutMount("mnt/vendored")
+  }
+
   addFirst(ws: Workspace!): Changeset! {
     let root = ws.directory("/")
     root.withNewFile("FIRST.txt", "first parallel change").changes(root)
