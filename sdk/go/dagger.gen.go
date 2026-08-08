@@ -418,6 +418,175 @@ func (r *Address) AsNode() Node {
 	}
 }
 
+// A conversation loop running as an addressable, long-lived entity within the session. The conversation itself remains observable at any time as an immutable LLM value.
+type Agent struct {
+	query *querybuilder.Selection
+
+	id    *ID
+	name  *string
+	state *AgentState
+}
+type WithAgentFunc func(r *Agent) *Agent
+
+// With calls the provided function with current Agent.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Agent) With(f WithAgentFunc) *Agent {
+	return f(r)
+}
+
+func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
+	return &Agent{
+		query: q,
+	}
+}
+
+// A unique identifier for this Agent.
+func (r *Agent) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Agent) XXX_GraphQLType() string {
+	return "Agent"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Agent) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Agent) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Agent) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Display label and identity discriminator — not a session-wide address.
+func (r *Agent) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The conversation as of the last committed step: immutable, branchable, persistable.
+//
+// The seed conversation if the agent never stepped.
+//
+// Branching from it does not affect the agent.
+func (r *Agent) Snapshot() *LLM {
+	q := r.query.Select("snapshot")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Start the agent's evaluation loop. No-op if it is already running.
+//
+// The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
+func (r *Agent) Start() *Agent {
+	q := r.query.Select("start")
+
+	return &Agent{
+		query: q,
+	}
+}
+
+// Computed lifecycle state; never stored.
+//
+// An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+func (r *Agent) State(ctx context.Context) (AgentState, error) {
+	if r.state != nil {
+		return *r.state, nil
+	}
+	q := r.query.Select("state")
+
+	var response AgentState
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AgentStopOpts contains options for Agent.Stop
+type AgentStopOpts struct {
+	// Cancel the loop immediately instead of letting an in-flight step finish. Either way the completed steps are preserved in the snapshot.
+	Kill bool
+}
+
+// Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+func (r *Agent) Stop(opts ...AgentStopOpts) *Agent {
+	q := r.query.Select("stop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kill` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kill) {
+			q = q.Arg("kill", opts[i].Kill)
+		}
+	}
+
+	return &Agent{
+		query: q,
+	}
+}
+
+// AgentWaitForOpts contains options for Agent.WaitFor
+type AgentWaitForOpts struct {
+	// The lifecycle state to wait for.
+	//
+	// Default: IDLE
+	State AgentState
+}
+
+// Block until the agent reaches the given state, returning immediately if it is already there.
+//
+// Fails if the state becomes unreachable, e.g. waiting for RUNNING on a stopped agent.
+func (r *Agent) WaitFor(opts ...AgentWaitForOpts) *Agent {
+	q := r.query.Select("waitFor")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `state` optional argument
+		if !querybuilder.IsZeroValue(opts[i].State) {
+			q = q.Arg("state", opts[i].State)
+		}
+	}
+
+	return &Agent{
+		query: q,
+	}
+}
+
+// AsNode returns this Agent as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Agent) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type AgentMiddleware struct {
 	query *querybuilder.Selection
 
@@ -10110,6 +10279,27 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	}
 }
 
+// LLMAsAgentOpts contains options for LLM.AsAgent
+type LLMAsAgentOpts struct {
+	// Display label and identity discriminator for the agent — two otherwise-identical agents with distinct names run as distinct instances. Defaults to a short name derived from the conversation.
+	Name string
+}
+
+// Package the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.
+func (r *LLM) AsAgent(opts ...LLMAsAgentOpts) *Agent {
+	q := r.query.Select("asAgent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+	}
+
+	return &Agent{
+		query: q,
+	}
+}
+
 // estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
 func (r *LLM) ContextTokens(ctx context.Context) (int, error) {
 	if r.contextTokens != nil {
@@ -18103,6 +18293,91 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 		return nil, fmt.Errorf("unknown Syncer implementation: %s", typeName)
 	}
 }
+
+// Computed lifecycle state of an agent.
+type AgentState string
+
+func (AgentState) IsEnum() {}
+
+func (v AgentState) Name() string {
+	switch v {
+	case AgentStateIdle:
+		return "IDLE"
+	case AgentStateRunning:
+		return "RUNNING"
+	case AgentStateWaitingInput:
+		return "WAITING_INPUT"
+	case AgentStatePaused:
+		return "PAUSED"
+	case AgentStateStopped:
+		return "STOPPED"
+	case AgentStateFailed:
+		return "FAILED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentState) Value() string {
+	return string(v)
+}
+
+func (v *AgentState) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentState) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAILED":
+		*v = AgentStateFailed
+	case "IDLE":
+		*v = AgentStateIdle
+	case "PAUSED":
+		*v = AgentStatePaused
+	case "RUNNING":
+		*v = AgentStateRunning
+	case "STOPPED":
+		*v = AgentStateStopped
+	case "WAITING_INPUT":
+		*v = AgentStateWaitingInput
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Mailbox empty, turn complete; blocked in receive.
+	AgentStateIdle AgentState = "IDLE"
+
+	// A model request or tool evaluation is in flight.
+	AgentStateRunning AgentState = "RUNNING"
+
+	// Blocked on input from the user (derived; see waitingOn).
+	AgentStateWaitingInput AgentState = "WAITING_INPUT"
+
+	// Mailbox accepting but not draining, until resume.
+	AgentStatePaused AgentState = "PAUSED"
+
+	// Runtime released; snapshot remains readable.
+	AgentStateStopped AgentState = "STOPPED"
+
+	// The loop failed; snapshot holds the completed prefix.
+	AgentStateFailed AgentState = "FAILED"
+)
 
 // Sharing mode of the cache volume.
 type CacheSharingMode string

@@ -201,6 +201,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("maxTokens").Doc("Cap the model's output tokens for this step. Defaults to the model's maximum.").
 					View(AfterVersion("v1.0.0-0")),
 			),
+		dagql.NodeFunc("asAgent", s.asAgent).
+			Doc("Package the conversation as an agent: a startable, addressable evaluation loop seeded with this conversation's state, tools, and workspace.").
+			Args(
+				dagql.Arg("name").Doc("Display label and identity discriminator for the agent — two otherwise-identical agents with distinct names run as distinct instances. Defaults to a short name derived from the conversation."),
+			),
 		dagql.Func("hasPending", s.hasPending).
 			Doc("Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete."),
 		dagql.Func("fork", s.fork).
@@ -461,6 +466,33 @@ func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LL
 	MaxTokens dagql.Optional[dagql.Int] `name:"maxTokens"`
 }) (dagql.ObjectResult[*core.LLM], error) {
 	return parent.Self().Step(ctx, parent, int(args.MaxTokens.Value))
+}
+
+func (s *llmSchema) asAgent(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
+	Name dagql.Optional[dagql.String]
+}) (*core.Agent, error) {
+	name := args.Name.Value.String()
+	if name == "" {
+		// Derive a short, deterministic name from the seed conversation's
+		// recipe digest. Determinism keeps this constructor cacheable: the
+		// same unnamed asAgent chain always denotes the same agent value.
+		// (parent.ID().Digest() would panic here: a post-evaluation LLM
+		// carries a handle-form ID with no digest — see core/llm.go's
+		// llmCallDigest derivation for the same dance.)
+		dig, err := parent.RecipeDigest(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("llm recipe digest: %w", err)
+		}
+		enc := dig.Encoded()
+		if len(enc) > 8 {
+			enc = enc[:8]
+		}
+		name = "agent-" + enc
+	}
+	return &core.Agent{
+		Seed: parent,
+		Name: name,
+	}, nil
 }
 
 func (s *llmSchema) replay(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {

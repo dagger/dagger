@@ -96,6 +96,66 @@ type Address implements Node {
   volume: Volume!
 }
 
+"""
+A conversation loop running as an addressable, long-lived entity within the
+session. The conversation itself remains observable at any time as an immutable
+LLM value.
+"""
+type Agent implements Node {
+  """A unique identifier for this Agent."""
+  id: ID!
+
+  """
+  Display label and identity discriminator — not a session-wide address.
+  """
+  name: String!
+
+  """
+  The conversation as of the last committed step: immutable, branchable, persistable.
+
+  The seed conversation if the agent never stepped.
+
+  Branching from it does not affect the agent.
+  """
+  snapshot: LLM!
+
+  """
+  Start the agent's evaluation loop. No-op if it is already running.
+
+  The loop runs detached from the calling request: it steps the conversation
+  while input is pending, then idles awaiting further lifecycle operations.
+  """
+  start: Agent!
+
+  """
+  Computed lifecycle state; never stored.
+
+  An agent that was never started reports IDLE: its mailbox is empty and no turn is open.
+  """
+  state: AgentState!
+
+  """
+  Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
+  """
+  stop(
+    """
+    Cancel the loop immediately instead of letting an in-flight step finish.
+    Either way the completed steps are preserved in the snapshot.
+    """
+    kill: Boolean = false
+  ): Agent!
+
+  """
+  Block until the agent reaches the given state, returning immediately if it is already there.
+
+  Fails if the state becomes unreachable, e.g. waiting for RUNNING on a stopped agent.
+  """
+  waitFor(
+    """The lifecycle state to wait for."""
+    state: AgentState = IDLE
+  ): Agent!
+}
+
 type AgentMiddleware implements Node {
   """The description of the agent"""
   description: String!
@@ -127,6 +187,27 @@ type AgentMiddlewareGroup implements Node {
 
   """Return a list of individual agents and their details"""
   list: [AgentMiddleware!]!
+}
+
+"""Computed lifecycle state of an agent."""
+enum AgentState {
+  """Mailbox empty, turn complete; blocked in receive."""
+  IDLE
+
+  """A model request or tool evaluation is in flight."""
+  RUNNING
+
+  """Blocked on input from the user (derived; see waitingOn)."""
+  WAITING_INPUT
+
+  """Mailbox accepting but not draining, until resume."""
+  PAUSED
+
+  """Runtime released; snapshot remains readable."""
+  STOPPED
+
+  """The loop failed; snapshot holds the completed prefix."""
+  FAILED
 }
 
 """Key value object that represents a build argument."""
@@ -3617,6 +3698,19 @@ A conversation with a large language model (LLM): queue prompts, expose tools,
 and step the model until it completes its turn.
 """
 type LLM implements Node & Syncer {
+  """
+  Package the conversation as an agent: a startable, addressable evaluation loop
+  seeded with this conversation's state, tools, and workspace.
+  """
+  asAgent(
+    """
+    Display label and identity discriminator for the agent — two
+    otherwise-identical agents with distinct names run as distinct instances.
+    Defaults to a short name derived from the conversation.
+    """
+    name: String
+  ): Agent!
+
   """
   estimated number of tokens currently occupying the context window; unlike
   tokenUsage this is not cumulative over the session
