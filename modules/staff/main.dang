@@ -30,15 +30,20 @@ type Staff {
   # they do not direct other workers.
   let orchestrationTools = [
     "spawn", "sendTo", "ask", "status", "read",
-    "collect", "interruptWorker", "dismiss", "chiefLine",
+    "collect", "interruptWorker", "dismiss",
   ]
+
+  # Not really tools: chiefLine is spawn's plumbing, and workerPrompt is a
+  # public constant (tests build worker recordings against its exact text).
+  # Excluded from every model-facing binding.
+  let plumbing = ["chiefLine", "workerPrompt"]
 
   """
   Compose the staff-chief tools onto a base LLM.
   """
   agent(base: LLM!): LLM! @agent {
     base
-      .withTools(currentNode, except: ["chiefLine"])
+      .withTools(currentNode, except: plumbing)
       .withSystemPrompt(chiefPrompt)
   }
 
@@ -81,7 +86,7 @@ type Staff {
       # every orchestration tool excluded, neutering any staff binding the
       # workspace composition may have picked up (harmless when the module
       # isn't installed there).
-      .withTools(Dagger.staff, except: orchestrationTools)
+      .withTools(Dagger.staff, except: orchestrationTools + plumbing)
       # The line home, minted via a real self-call; the boss handle itself
       # stays out of the tool schema.
       .withTools(Dagger.staff.chiefLine(boss: chief), except: ["boss"])
@@ -290,8 +295,10 @@ type Staff {
     dismiss.
   """
 
-  # Instructions for each WORKER.
-  let workerPrompt: String! = """
+  # Instructions for each WORKER. Public so tests (and the curious) can read
+  # the exact text spawn composes into every worker — recordings that replay
+  # a worker's conversation must match it byte for byte.
+  workerPrompt: String! = """
     You are a worker agent on a staff, reporting to a chief agent. Work your
     task autonomously to completion with the available tools. The chief
     reads results from your conversation and collects your final reply, so
