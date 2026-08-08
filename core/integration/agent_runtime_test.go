@@ -14,18 +14,21 @@ package core
 // in a step, and a shared cache volume gives the test a deterministic signal
 // that the tool is in flight (no sleeps as synchronization).
 //
-// One deliberate infrastructure note: Agent.send is DoNotCache (every send
-// must enqueue a distinct message), and DoNotCache results are detached in
-// dagql — which would make the handle unaddressable. send therefore pins its
-// result by re-exec (design §9): after enqueueing it Selects through the
-// Agent.message(id:) lookup field and returns THAT handle's ID — the honest,
-// replayable chain `…asAgent!message(id:"…")` — re-addressable from any later
-// request in the session via node(id:), which is what makes the
+// One deliberate infrastructure note: agents are spawned instances —
+// LLM.spawn is DoNotCache and mints a unique instance ID per call, pinning
+// it by re-exec through the pure LLM.agent(id:) lookup (design §9), so the
+// returned ID is an honest, replayable chain `…llm!agent(id:"…")` denoting
+// exactly one instance. The helpers here spawn once and re-address the
+// handle via node(id:) for every subsequent query; two spawns of an
+// identical composition are two distinct agents (TestSpawnInstances).
+// Agent.send follows the same pattern one level down: it pins each
+// enqueued message through Agent.message(id:) — the chain
+// `…agent(id:…)!message(id:"…")` — which is what makes the
 // cancel-and-re-await contract hold across requests (TestMessageIdentity).
 // Like every imperative verb (start, pause, resume, interrupt, waitFor,
-// stop), send is ID-returning, sync-style: lazy clients force the side
-// effect at the call site, and re-hydrating the returned ID replays the
-// lookup, not the send.
+// stop), spawn and send are ID-returning, sync-style: lazy clients force
+// the side effect at the call site, and re-hydrating the returned ID
+// replays the lookup, not the spawn/send.
 
 import (
 	"context"
@@ -55,17 +58,24 @@ func TestAgentRuntime(t *testing.T) {
 // call the model at all.
 var emptyReplayModel = "replay/" + base64.StdEncoding.EncodeToString([]byte("[]"))
 
-// agentHandle drives one agent through raw GraphQL queries. Raw queries are
-// used (rather than the typed SDK) because the interesting assertions select
-// several fields off a single loaded message in one query — e.g.
-// { delivery await }, or the two aliased awaits of the idempotency test.
-// Every query rebuilds the same llm[.withTools].asAgent chain, which
-// resolves to the same runtime entry by content digest — the dedupe contract
-// TestDedupe locks in explicitly.
+// agentHandle drives one spawned agent instance through raw GraphQL queries.
+// Raw queries are used (rather than the typed SDK) because the interesting
+// assertions select several fields off a single loaded node in one query —
+// e.g. { delivery await }, or the two aliased awaits of the idempotency
+// test. The handle holds the pinned agent ID a spawn returned; every query
+// re-addresses the same instance via node(id:), which replays the pure
+// …llm!agent(id:…) lookup — never the spawn.
 type agentHandle struct {
-	c     *dagger.Client
+	c *dagger.Client
+	// agentID is the pinned instance ID returned by spawn.
+	agentID string
+}
+
+// spawnOpts configures the composition an agent is spawned from.
+type spawnOpts struct {
 	model string
-	name  string
+	// name is the display label passed to spawn (optional).
+	name string
 	// toolIDs optionally binds objects' methods as tools (one llm.withTools
 	// per object, in order), for the recordings that contain tool calls.
 	toolIDs []dagger.ID
@@ -77,37 +87,77 @@ type agentHandle struct {
 	wsID dagger.ID
 }
 
-// run executes a query with the given selection nested under the agent and
-// returns the JSON subtree rooted at the asAgent result. Error-returning (no
-// require) so it is safe to call from helper goroutines.
-func (h *agentHandle) run(ctx context.Context, t *testctx.T, selection string) (gjson.Result, error) {
-	t.Helper()
+// trySpawnAgent evaluates llm[.withWorkspace][.withTools…].spawn(name:) once
+// and returns the pinned instance ID. Error-returning so tests can spawn
+// from helper goroutines; most call spawnAgent.
+func trySpawnAgent(ctx context.Context, c *dagger.Client, opts spawnOpts) (string, error) {
 	vars := map[string]any{
-		"model": h.model,
-		"name":  h.name,
+		"model": opts.model,
 	}
-	decls := []string{"$model: String!", "$name: String!"}
-	inner := fmt.Sprintf(`asAgent(name: $name) { %s }`, selection)
-	path := "asAgent"
-	for i := len(h.toolIDs) - 1; i >= 0; i-- {
+	decls := []string{"$model: String!"}
+	inner := `spawn`
+	if opts.name != "" {
+		inner = `spawn(name: $name)`
+		decls = append(decls, "$name: String!")
+		vars["name"] = opts.name
+	}
+	path := "spawn"
+	for i := len(opts.toolIDs) - 1; i >= 0; i-- {
 		v := fmt.Sprintf("tool%d", i)
 		inner = fmt.Sprintf(`withTools(object: $%s) { %s }`, v, inner)
 		decls = append(decls, fmt.Sprintf("$%s: ID!", v))
-		vars[v] = string(h.toolIDs[i])
+		vars[v] = string(opts.toolIDs[i])
 		path = "withTools." + path
 	}
-	if h.wsID != "" {
+	if opts.wsID != "" {
 		inner = fmt.Sprintf(`withWorkspace(workspace: $ws) { %s }`, inner)
 		decls = append(decls, "$ws: ID!")
-		vars["ws"] = string(h.wsID)
+		vars["ws"] = string(opts.wsID)
 		path = "withWorkspace." + path
 	}
 	root := "llm." + path
 	query := fmt.Sprintf(`query(%s) { llm(model: $model) { %s } }`,
 		strings.Join(decls, ", "), inner)
 	res := map[string]any{}
-	if err := h.c.Do(ctx,
+	if err := c.Do(ctx,
 		&dagger.Request{Query: query, Variables: vars},
+		&dagger.Response{Data: &res},
+	); err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return "", err
+	}
+	out := gjson.Get(string(raw), root)
+	if !out.Exists() || out.String() == "" {
+		return "", fmt.Errorf("spawned agent ID missing in response: %s", raw)
+	}
+	return out.String(), nil
+}
+
+// spawnAgent spawns one agent instance and returns its handle.
+func spawnAgent(ctx context.Context, t *testctx.T, c *dagger.Client, opts spawnOpts) *agentHandle {
+	t.Helper()
+	id, err := trySpawnAgent(ctx, c, opts)
+	require.NoError(t, err)
+	return &agentHandle{c: c, agentID: id}
+}
+
+// run executes a query with the given selection on the spawned agent —
+// re-addressed via node(id:) — and returns the JSON subtree rooted at the
+// node. Error-returning (no require) so it is safe to call from helper
+// goroutines.
+func (h *agentHandle) run(ctx context.Context, t *testctx.T, selection string) (gjson.Result, error) {
+	t.Helper()
+	res := map[string]any{}
+	if err := h.c.Do(ctx,
+		&dagger.Request{
+			Query: fmt.Sprintf(
+				`query($id: ID!) { node(id: $id) { ... on Agent { %s } } }`,
+				selection),
+			Variables: map[string]any{"id": h.agentID},
+		},
 		&dagger.Response{Data: &res},
 	); err != nil {
 		return gjson.Result{}, err
@@ -116,7 +166,7 @@ func (h *agentHandle) run(ctx context.Context, t *testctx.T, selection string) (
 	if err != nil {
 		return gjson.Result{}, err
 	}
-	out := gjson.Get(string(raw), root)
+	out := gjson.Get(string(raw), "node")
 	if !out.Exists() {
 		return gjson.Result{}, fmt.Errorf("agent selection missing in response: %s", raw)
 	}
@@ -131,7 +181,7 @@ func (h *agentHandle) mustRun(ctx context.Context, t *testctx.T, selection strin
 }
 
 // msgRun loads a pinned message handle by its ID — node(id:) replays the
-// …asAgent!message(id:…) chain — and runs the given selection on it,
+// …agent(id:…)!message(id:…) chain — and runs the given selection on it,
 // returning the JSON subtree rooted at the node.
 func (h *agentHandle) msgRun(ctx context.Context, t *testctx.T, msgID, selection string) (gjson.Result, error) {
 	t.Helper()
@@ -313,25 +363,31 @@ func slowToolConversation(c *dagger.Client, withSteer bool) *dagger.LLM {
 	})
 }
 
-// TestLifecycle covers the value/runtime split: asAgent naming, idempotent
+// TestLifecycle covers the value/runtime split: spawn naming, idempotent
 // start, an empty seed idling without any model call, stop tombstones, and
 // waitFor erroring (rather than hanging) once the wanted state is
 // unreachable.
 func (AgentRuntimeSuite) TestLifecycle(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// asAgent with an explicit name, and with the name derived from the
-	// seed conversation's recipe digest.
-	name, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).
-		AsAgent(dagger.LLMAsAgentOpts{Name: "bob"}).Name(ctx)
+	// spawn with an explicit display name, and with the name derived from
+	// the seed conversation's recipe digest. The typed SDK path: spawn
+	// executes eagerly (ID-returning), and the ID re-hydrates into the
+	// agent handle.
+	namedID, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).
+		Spawn(ctx, dagger.LLMSpawnOpts{Name: "bob"})
+	require.NoError(t, err)
+	name, err := dagger.Ref[*dagger.Agent](c, namedID).Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bob", name)
 
-	derived, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).AsAgent().Name(ctx)
+	derivedID, err := c.LLM(dagger.LLMOpts{Model: emptyReplayModel}).Spawn(ctx)
+	require.NoError(t, err)
+	derived, err := dagger.Ref[*dagger.Agent](c, derivedID).Name(ctx)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(derived, "agent-"), "derived name %q", derived)
 
-	h := &agentHandle{c: c, model: emptyReplayModel, name: "lifecycle"}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: emptyReplayModel, name: "lifecycle"})
 
 	// start is idempotent, and an empty seed (no pending prompt) idles.
 	require.Equal(t, "IDLE", h.mustVerb(ctx, t, "start"))
@@ -394,7 +450,7 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 			{Kind: dagger.LLMContentBlockKindText, Text: secondReply},
 		}))
 
-	h := &agentHandle{c: c, model: model, name: "conversationalist"}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "conversationalist"})
 
 	// First turn: signal-with-start (no explicit start call), STARTED
 	// delivery, and the recorded reply.
@@ -425,44 +481,131 @@ func (AgentRuntimeSuite) TestSendAwait(ctx context.Context, t *testctx.T) {
 	require.Equal(t, secondReply, lastReply)
 }
 
-// TestDedupe locks in the services-style dedupe contract: two evaluations of
-// the same asAgent chain in one session (here even via different clients of
-// the API — a raw query and the typed SDK) resolve to the same value digest
-// and thus the same running instance.
-func (AgentRuntimeSuite) TestDedupe(ctx context.Context, t *testctx.T) {
+// TestSpawnInstances locks in the instance semantics of spawn — the
+// deliberate inversion of the old value-dedupe contract: two spawns of an
+// IDENTICAL composition (same seed, same display name) are two distinct
+// agents, with distinct pinned IDs and independent runtimes. Both dwell in
+// the same recorded slow tool call concurrently — two RUNNING instances
+// under one display name — and each turn resolves against its own runtime.
+func (AgentRuntimeSuite) TestSpawnInstances(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	vol := c.CacheVolume("agent-spawn-" + identity.NewID())
+	ctrID, err := slowToolContainer(c, vol, 6).ID(ctx)
+	require.NoError(t, err)
+	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
+
+	// Two spawns of the exact same composition: same model, same tool
+	// binding, same display name. Under the old identity model these
+	// resolved to one runtime entry by content digest; spawn mints a
+	// unique instance ID into each pinned chain, so they are two agents.
+	opts := spawnOpts{model: model, name: "twin", toolIDs: []dagger.ID{ctrID}}
+	first := spawnAgent(ctx, t, c, opts)
+	second := spawnAgent(ctx, t, c, opts)
+	require.NotEqual(t, first.agentID, second.agentID,
+		"two spawns of an identical composition must mint distinct instances")
+
+	// Same display name — a label, not an identity.
+	require.Equal(t, "twin", first.mustRun(ctx, t, `name`).Get("name").String())
+	require.Equal(t, "twin", second.mustRun(ctx, t, `name`).Get("name").String())
+
+	// Open a turn on the first instance only. The second's runtime is
+	// independent: it stays IDLE on the bare seed while the first dwells
+	// in the tool call.
+	var firstDelivery, firstReply string
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		var err error
+		firstDelivery, firstReply, err = first.sendAndWait(ctx, t, slowToolPrompt)
+		return err
+	})
+	waitForSlowTool(ctx, t, c, vol)
+	require.Equal(t, "RUNNING", first.state(ctx, t))
+	require.Equal(t, "IDLE", second.state(ctx, t))
+	_, secondLastReply := second.snapshot(ctx, t)
+	require.Equal(t, "(no reply)", secondLastReply)
+
+	// Now open the second instance's own turn: both dwell in the (shared,
+	// deduped) exec concurrently — two RUNNING agents under one display
+	// name — and each await resolves against its own runtime.
+	var secondDelivery, secondReply string
+	eg.Go(func() error {
+		var err error
+		secondDelivery, secondReply, err = second.sendAndWait(ctx, t, slowToolPrompt)
+		return err
+	})
+	require.Eventually(t, func() bool {
+		return second.state(ctx, t) == "RUNNING"
+	}, 10*time.Second, 100*time.Millisecond)
+	require.Equal(t, "RUNNING", first.state(ctx, t))
+
+	require.NoError(t, eg.Wait())
+	require.Equal(t, "STARTED", firstDelivery)
+	require.Equal(t, slowToolReply, firstReply)
+	// The second message opened its OWN turn (STARTED, not STEERED): it
+	// enqueued into a distinct runtime, not the first's in-flight turn.
+	require.Equal(t, "STARTED", secondDelivery)
+	require.Equal(t, slowToolReply, secondReply)
+
+	// Both histories carry their own consumed prompt.
+	firstTranscript, _ := first.snapshot(ctx, t)
+	secondTranscript, _ := second.snapshot(ctx, t)
+	require.Contains(t, firstTranscript, slowToolPrompt)
+	require.Contains(t, secondTranscript, slowToolPrompt)
+}
+
+// TestSpawnAfterStop covers the dismiss-and-rehire flow that motivated the
+// spawn pivot: stop an instance, spawn the same composition (same display
+// name) again, and the successor works — under identity-by-composition the
+// second spawn resolved to the predecessor's STOPPED tombstone and the
+// opening send failed. The predecessor's tombstone stays readable via its
+// held ID, and its resolved message IDs still await idempotently.
+func (AgentRuntimeSuite) TestSpawnAfterStop(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	const (
-		prompt = "prompt for the deduped agent"
-		reply  = "the deduped recorded reply"
+		prompt = "prompt for the phoenix"
+		reply  = "the recorded phoenix reply"
 	)
 	model := cannedReplayModel(ctx, t, c, c.LLM().
 		WithPrompt(prompt).
 		WithResponse([]dagger.LLMContentBlockInput{
 			{Kind: dagger.LLMContentBlockKindText, Text: reply},
 		}))
+	opts := spawnOpts{model: model, name: "phoenix"}
 
-	// Drive a turn through one evaluation of the chain...
-	h := &agentHandle{c: c, model: model, name: "twin"}
-	delivery, got, err := h.sendAndWait(ctx, t, prompt)
+	// First incarnation: run a turn, keep the message ID, stop.
+	first := spawnAgent(ctx, t, c, opts)
+	firstMsgID, err := first.sendID(ctx, t, prompt)
+	require.NoError(t, err)
+	out, err := first.msgRun(ctx, t, firstMsgID, `await`)
+	require.NoError(t, err)
+	require.Equal(t, reply, out.Get("await").String())
+	require.Equal(t, "STOPPED", first.mustVerb(ctx, t, "stop"))
+
+	// Second incarnation of the identical composition: a fresh instance
+	// with a fresh runtime — its opening send works. (The recording
+	// replays from the top for the new runtime's bare seed.)
+	second := spawnAgent(ctx, t, c, opts)
+	require.NotEqual(t, first.agentID, second.agentID)
+	delivery, gotReply, err := second.sendAndWait(ctx, t, prompt)
 	require.NoError(t, err)
 	require.Equal(t, "STARTED", delivery)
-	require.Equal(t, reply, got)
+	require.Equal(t, reply, gotReply)
 
-	// ...and observe the appended history through a separately-evaluated
-	// but identical chain: same seed, same name, same runtime entry. A
-	// distinct runtime would still be sitting on the bare seed.
-	twin := c.LLM(dagger.LLMOpts{Model: model}).
-		AsAgent(dagger.LLMAsAgentOpts{Name: "twin"})
-	lastReply, err := twin.Snapshot().LastReply(ctx)
-	require.NoError(t, err)
-	require.Equal(t, reply, lastReply)
-	transcript, err := twin.Snapshot().Transcript(ctx)
-	require.NoError(t, err)
+	// The predecessor is untouched by its successor: still a readable
+	// STOPPED tombstone via the held ID, snapshot intact...
+	require.Equal(t, "STOPPED", first.state(ctx, t))
+	transcript, lastReply := first.snapshot(ctx, t)
 	require.Contains(t, transcript, prompt)
-	twinState, err := twin.State(ctx)
+	require.Equal(t, reply, lastReply)
+	// ...its old message IDs still awaiting idempotently...
+	out, err = first.msgRun(ctx, t, firstMsgID, `await`)
 	require.NoError(t, err)
-	require.Equal(t, dagger.AgentStateIdle, twinState)
+	require.Equal(t, reply, out.Get("await").String())
+	// ...and still terminally stopped: sends keep failing.
+	_, err = first.sendNoWait(ctx, t, "mail for a corpse")
+	require.ErrorContains(t, err, "stopped")
 }
 
 // TestPauseQueueResume covers the mailbox behind a pause: QUEUED delivery
@@ -485,7 +628,7 @@ func (AgentRuntimeSuite) TestPauseQueueResume(ctx context.Context, t *testctx.T)
 	}
 
 	t.Run("started agent", func(ctx context.Context, t *testctx.T) {
-		h := &agentHandle{c: c, model: newModel(), name: "pausable"}
+		h := spawnAgent(ctx, t, c, spawnOpts{model: newModel(), name: "pausable"})
 
 		require.Equal(t, "IDLE", h.mustVerb(ctx, t, "start"))
 		require.Equal(t, "PAUSED", h.mustVerb(ctx, t, "pause"))
@@ -509,7 +652,7 @@ func (AgentRuntimeSuite) TestPauseQueueResume(ctx context.Context, t *testctx.T)
 	})
 
 	t.Run("never-started agent", func(ctx context.Context, t *testctx.T) {
-		h := &agentHandle{c: c, model: newModel(), name: "parked"}
+		h := spawnAgent(ctx, t, c, spawnOpts{model: newModel(), name: "parked"})
 
 		// Pausing a never-started agent creates its entry paused; the
 		// send's signal-with-start parks immediately instead of draining.
@@ -546,7 +689,7 @@ func (AgentRuntimeSuite) TestFailedAndRetry(ctx context.Context, t *testctx.T) {
 			{Kind: dagger.LLMContentBlockKindText, Text: "the recorded reply"},
 		}))
 
-	h := &agentHandle{c: c, model: model, name: "failer"}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "failer"})
 
 	// The turn consumes the message and fails; await surfaces the turn's
 	// failure.
@@ -608,7 +751,7 @@ func (AgentRuntimeSuite) TestSteering(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, true))
 
-	h := &agentHandle{c: c, model: model, name: "steerable", toolIDs: []dagger.ID{ctrID}}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "steerable", toolIDs: []dagger.ID{ctrID}})
 
 	// Open the turn; the await blocks until the whole (steered) turn ends.
 	var goDelivery, goReply string
@@ -659,7 +802,7 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := &agentHandle{c: c, model: model, name: "interruptible", toolIDs: []dagger.ID{ctrID}}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "interruptible", toolIDs: []dagger.ID{ctrID}})
 
 	var goDelivery, goReply string
 	eg := errgroup.Group{}
@@ -719,7 +862,7 @@ func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T)
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := &agentHandle{c: c, model: model, name: "sharedawait", toolIDs: []dagger.ID{ctrID}}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "sharedawait", toolIDs: []dagger.ID{ctrID}})
 
 	msgID, err := h.sendID(ctx, t, slowToolPrompt)
 	require.NoError(t, err)
@@ -732,7 +875,7 @@ func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T)
 
 // TestMessageIdentity covers re-exec pinning of message handles (design §9):
 // send returns the ID of the pinned handle — the honest chain
-// …asAgent!message(id:…) — and that ID re-addresses the SAME message record
+// …agent(id:…)!message(id:…) — and that ID re-addresses the SAME message record
 // from a later request. That is the cancel-and-re-await contract: an await
 // canceled mid-turn loses nothing — a fresh request re-loads the handle via
 // node(id:) and awaits the reply. Also locks in the lookup's clean failure
@@ -745,7 +888,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	model := cannedReplayModel(ctx, t, c, slowToolConversation(c, false))
 
-	h := &agentHandle{c: c, model: model, name: "readdressable", toolIDs: []dagger.ID{ctrID}}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "readdressable", toolIDs: []dagger.ID{ctrID}})
 
 	// Request 1: send returns immediately (it never blocks) with the pinned
 	// message ID — the addressable handle a detached DoNotCache result could
@@ -759,7 +902,7 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	require.Equal(t, "STARTED", out.Get("delivery").String())
 
 	// awaitByID re-addresses the pinned handle in a fresh request —
-	// node(id:) replays the …asAgent!message(id:…) chain — and awaits it.
+	// node(id:) replays the …agent(id:…)!message(id:…) chain — and awaits it.
 	awaitByID := func(ctx context.Context) (delivery, reply string, _ error) {
 		res := map[string]any{}
 		err := c.Do(ctx, &dagger.Request{
@@ -808,8 +951,9 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 	require.ErrorContains(t, err, "no record of message")
 
 	// Lookup on an agent with NO runtime entry: clear error — message is a
-	// pure lookup and never creates one.
-	fresh := &agentHandle{c: c, model: emptyReplayModel, name: "never-ran"}
+	// pure lookup and never creates one. (Spawning mints only the value;
+	// the runtime entry appears at first start/send.)
+	fresh := spawnAgent(ctx, t, c, spawnOpts{model: emptyReplayModel, name: "never-ran"})
 	_, err = fresh.run(ctx, t, `message(id: "bogus") { delivery }`)
 	require.ErrorContains(t, err, "no runtime entry")
 }

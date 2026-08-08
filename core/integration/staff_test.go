@@ -163,8 +163,8 @@ func (StaffSuite) TestAskChiefAndCollect(ctx context.Context, t *testctx.T) {
 			{Kind: dagger.LLMContentBlockKindText, Text: chiefReply2},
 		}))
 
-	h := &agentHandle{c: c, model: chiefModel, name: "chief",
-		toolIDs: []dagger.ID{staffID, ctrID}, wsID: wsID}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: chiefModel, name: "chief",
+		toolIDs: []dagger.ID{staffID, ctrID}, wsID: wsID})
 
 	// Turn 1: the whole spawn/ask/answer exchange. The await resolving with
 	// the recorded closing reply proves the worker's question made it onto

@@ -78,7 +78,7 @@ func (AgentRuntimeSuite) TestAgentArgInjection(ctx context.Context, t *testctx.T
 			{Kind: dagger.LLMContentBlockKindText, Text: pokeReply},
 		}))
 
-	h := &agentHandle{c: c, model: model, name: "poked", toolIDs: []dagger.ID{pokerID}}
+	h := spawnAgent(ctx, t, c, spawnOpts{model: model, name: "poked", toolIDs: []dagger.ID{pokerID}})
 
 	delivery, reply, err := h.sendAndWait(ctx, t, pokePrompt)
 	require.NoError(t, err)
@@ -137,7 +137,7 @@ func (AgentRuntimeSuite) TestAgentArgRequiresAgentLoop(ctx context.Context, t *t
 			}
 		}](c, t, `{ poker { poke(note: "hello") } }`, nil)
 		require.ErrorContains(t, err,
-			"function requires the calling agent; invoke it from an agent loop (LLM.asAgent)")
+			"function requires the calling agent; invoke it from an agent loop (LLM.spawn)")
 	})
 
 	t.Run("synchronous loop", func(ctx context.Context, t *testctx.T) {
