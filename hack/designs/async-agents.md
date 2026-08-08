@@ -523,3 +523,72 @@ core/integration/agent_runtime_test.go), ratified here:
   minimal kernel, but it leaves the loop occupying a request, offers no
   state machine for UIs, and punts the actual pause/enqueue/resume ask; it
   is subsumed by the agent runtime entry.
+
+## 11. Implementation status
+
+What is BUILT (see also §9 for ratified semantics):
+
+- **Core runtime**: `core/agent.go` (Agent value, `AgentRuntimes` session
+  registry keyed by content digest, loop with mailbox drained at step
+  boundaries, tombstones), `core/schema/agent.go` (fields: `name`, `state`,
+  `snapshot`, `start`, `send`, `message`, `waitFor`, `pause`, `resume`,
+  `interrupt`, `stop`; `AgentMessage.{delivery,await}`; `AgentState`,
+  `AgentMessageDelivery`). Registry wiring in `engine/server/session.go`
+  alongside `Services`.
+- **Message identity**: re-exec pinning via `Agent.message(id:)` (§9) —
+  handles are honest chains, cancel-and-re-await works across requests.
+- **`Agent!` injection**: `core/agent_context.go` + `core/modfunc.go`
+  (`FunctionArg.IsAgentHandle`, distinct from the middleware `IsAgent`
+  flag); hidden from tool schemas via `core/llm_object_tools.go`. Works
+  from agent loops; a sync `loop` errors ("synchronous loop support is
+  planned").
+- **Namespace**: descriptor types renamed `AgentMiddleware` /
+  `AgentMiddlewareGroup` (§6).
+- **CLI prompt mode** (`internal/cmd/dagger/llm.go`, `shell.go`,
+  `dagql/idtui/frontend_pretty.go`): submit = send + resume + await,
+  re-rooting on `snapshot` at turn end; interjections send immediately
+  (STEERED); Ctrl-C → `interrupt` (PAUSED, prefix kept), next submit
+  resumes; wholesale LLM replacement stops the stale runtime. The session
+  names agents uniquely (`interactive-<hex>`) — name-as-discriminator per
+  §3.3.
+- **Tests**: `core/integration/agent_runtime_test.go` +
+  `agent_injection_test.go` (fixture
+  `testdata/modules/go/agent-poker`), all against the keyless `replay/`
+  provider, including genuinely mid-turn STEERED and mid-step interrupt
+  via a slow-tool recording synchronized on a cache-volume marker.
+
+What is NOT built — threads to pull, each self-contained:
+
+1. **Telemetry directory** (§3.3, §5): the loop span carries no agent-ID
+   attribute yet, so the TUI cannot offer "send to this agent" for agents
+   it renders; generalize the `llmCallDigest` branch-from-message
+   machinery. Start at the loop span in `core/agent.go` and
+   `dagql/dagui/spans.go`.
+2. **Enqueue guards** (§3.3): depth limiting, self-send rejection, cycle
+   detection — none exist. Central point: the enqueue path in
+   `AgentRuntimes` (`Send`).
+3. **Provenance stamping** (§3.3): drained messages record plain
+   `withPrompt` selectors with no sender identity; no "via X" in history
+   or telemetry.
+4. **`WAITING_INPUT` / `waitingOn`** (§3.4): enum value exists but is
+   unreachable; needs the user-ask parking path (the non-modal
+   resurrection of the dead `LLM.Interject`).
+5. **Loop-as-sugar** (§7): `LLM.loop`/`step` remain an independent code
+   path; consequently sync loops cannot satisfy `Agent!` args.
+6. **`awaitAny`/`awaitAll`** (§7): absent; orchestrators poll
+   `state`/`waitFor` per agent.
+7. **Async orchestration module** (§3.3 Team sketch): not built;
+   `modules/delegate` remains synchronous. Buildable today on `asAgent` /
+   `send` / `message.await` / `snapshot` with module-held `[Agent!]` state
+   (the `modules/editor` pattern); windowed reads (`read_agent`-style) are
+   a module-side projection over `snapshot.messages` — no core work
+   needed. Note guards (thread 2) do not exist yet: the module should
+   avoid self-ask cycles by construction.
+8. **CLI follow-ups**: re-enabling undo/fork in prompt mode (the
+   "interrupts lose progress" rationale is retired — server-side
+   interrupt is prefix-preserving); `startInteractivePromptMode`
+   pre-initializes a default LLM that demands provider config even when
+   the entrypoint supplies its own (pre-existing wart); confirm the
+   `TestGolden` TUI snapshots in CI (they replay non-prompt traces and
+   should be unaffected by the prompt-flow rewire).
+
