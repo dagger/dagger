@@ -1153,15 +1153,145 @@ func (mwc multiWriteCloser) Close() error {
 	return errs
 }
 
+type tunnelListenerHandle interface {
+	Close() error
+	Wait() error
+	WithCompletionGuard(func() error) (bool, error)
+}
+
+var errTunnelListenerClosed = errors.New("host-to-container listener closed before publication")
+
+type tunnelListenerRegistry struct {
+	mu         sync.Mutex
+	closed     bool
+	firstCause error
+	cleanupErr error
+	handles    []tunnelListenerHandle
+}
+
+func (registry *tunnelListenerRegistry) AddOrClose(handle tunnelListenerHandle) error {
+	registry.mu.Lock()
+	if !registry.closed {
+		registry.handles = append(registry.handles, handle)
+		registry.mu.Unlock()
+		return nil
+	}
+	firstCause := registry.firstCause
+	registry.mu.Unlock()
+
+	registry.RecordCleanup(handle.Close())
+	if firstCause == nil {
+		return errTunnelListenerClosed
+	}
+	return firstCause
+}
+
+func (registry *tunnelListenerRegistry) BeginClose(cause error) (error, []tunnelListenerHandle) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if registry.firstCause == nil {
+		if cause == nil {
+			cause = errTunnelListenerClosed
+		}
+		registry.firstCause = cause
+	}
+	registry.closed = true
+	return registry.firstCause, slices.Clone(registry.handles)
+}
+
+func (registry *tunnelListenerRegistry) RecordCleanup(err error) {
+	if err == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.cleanupErr = errors.Join(registry.cleanupErr, err)
+	registry.mu.Unlock()
+}
+
+func (registry *tunnelListenerRegistry) Result() (error, error) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	return registry.firstCause, registry.cleanupErr
+}
+
+func (registry *tunnelListenerRegistry) Publish(commit func()) error {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if registry.closed {
+		if registry.firstCause == nil {
+			registry.firstCause = errTunnelListenerClosed
+		}
+		return registry.firstCause
+	}
+
+	var guard func(int) error
+	guard = func(index int) error {
+		if index == len(registry.handles) {
+			commit()
+			return nil
+		}
+		completed, result := registry.handles[index].WithCompletionGuard(func() error {
+			return guard(index + 1)
+		})
+		if completed {
+			if result == nil {
+				result = errTunnelListenerClosed
+			}
+			registry.closed = true
+			if registry.firstCause == nil {
+				registry.firstCause = result
+			}
+			return registry.firstCause
+		}
+		return result
+	}
+	return guard(0)
+}
+
+func newTunnelShutdown(
+	registry *tunnelListenerRegistry,
+	stop context.CancelCauseFunc,
+	detach func(),
+) func(error) error {
+	var shutdownOnce sync.Once
+	return func(cause error) error {
+		shutdownOnce.Do(func() {
+			firstCause, handles := registry.BeginClose(cause)
+			stop(firstCause)
+			detach()
+			var cleanupErr error
+			for _, handle := range handles {
+				cleanupErr = errors.Join(cleanupErr, handle.Close())
+			}
+			registry.RecordCleanup(cleanupErr)
+		})
+		_, cleanupErr := registry.Result()
+		return cleanupErr
+	}
+}
+
 func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ ServiceStartOpts) (rerr error) {
 	if running == nil {
 		return fmt.Errorf("running service is nil")
 	}
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
+	var registry *tunnelListenerRegistry
+	var shutdown func(error) error
 	defer func() {
-		if rerr != nil {
-			stop(fmt.Errorf("tunnel start error: %w", rerr))
+		if rerr == nil {
+			return
 		}
+		if shutdown == nil {
+			stop(fmt.Errorf("tunnel start error: %w", rerr))
+			return
+		}
+		setupErr := rerr
+		cleanupErr := shutdown(setupErr)
+		firstCause, _ := registry.Result()
+		if firstCause == nil {
+			firstCause = setupErr
+		}
+		rerr = errors.Join(firstCause, cleanupErr)
 	}()
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -1187,12 +1317,27 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	if err != nil {
 		return fmt.Errorf("start upstream: %w", err)
 	}
+	registry = &tunnelListenerRegistry{}
 	const bindHost = "0.0.0.0"
 	const dialHost = "127.0.0.1"
 	stopErr := errors.New("service stop called")
 	upstreamExitedErr := errors.New("upstream exited")
 
-	closers := make([]func() error, len(svc.TunnelPorts))
+	shutdown = newTunnelShutdown(registry, stop, func() { svcs.Detach(svcCtx, upstream) })
+	running.publishIfReady = registry.Publish
+
+	go func() {
+		if upstream.Wait == nil {
+			return
+		}
+		err := upstream.Wait(context.Background())
+		if err != nil {
+			_ = shutdown(fmt.Errorf("%w: %w", upstreamExitedErr, err))
+			return
+		}
+		_ = shutdown(upstreamExitedErr)
+	}()
+
 	ports := make([]Port, len(svc.TunnelPorts))
 
 	for i, forward := range svc.TunnelPorts {
@@ -1202,7 +1347,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 		} else {
 			frontend = 0 // allow OS to choose
 		}
-		res, closeListener, err := bk.ListenHostToContainer(
+		res, listener, err := bk.ListenHostToContainer(
 			svcCtx,
 			fmt.Sprintf("%s:%d", bindHost, frontend),
 			forward.Protocol.Network(),
@@ -1211,6 +1356,19 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 		if err != nil {
 			return fmt.Errorf("host to container: %w", err)
 		}
+		if listener == nil {
+			return errors.New("host-to-container listener is nil")
+		}
+		if err := registry.AddOrClose(listener); err != nil {
+			return err
+		}
+		go func() {
+			cause := listener.Wait()
+			if cause == nil {
+				cause = errTunnelListenerClosed
+			}
+			_ = shutdown(cause)
+		}()
 
 		_, portStr, err := net.SplitHostPort(res.GetAddr())
 		if err != nil {
@@ -1229,36 +1387,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 			Protocol:    forward.Protocol,
 			Description: &desc,
 		}
-
-		closers[i] = closeListener
 	}
-
-	var shutdownOnce sync.Once
-	var shutdownErr error
-	shutdown := func(cause error) error {
-		shutdownOnce.Do(func() {
-			stop(cause)
-			svcs.Detach(svcCtx, upstream)
-			var errs []error
-			for _, closeListener := range closers {
-				errs = append(errs, closeListener())
-			}
-			shutdownErr = errors.Join(errs...)
-		})
-		return shutdownErr
-	}
-
-	go func() {
-		if upstream.Wait == nil {
-			return
-		}
-		err := upstream.Wait(context.Background())
-		if err != nil {
-			_ = shutdown(fmt.Errorf("%w: %w", upstreamExitedErr, err))
-			return
-		}
-		_ = shutdown(upstreamExitedErr)
-	}()
 
 	running.Host = dialHost
 	running.Ports = ports

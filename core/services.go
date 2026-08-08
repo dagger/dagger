@@ -131,7 +131,8 @@ type RunningService struct {
 
 	manager *Services
 
-	releaseOnce sync.Once
+	publishIfReady func(commit func()) error
+	releaseOnce    sync.Once
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -1027,6 +1028,14 @@ func (ss *Services) startWithKey(
 				Key:     key,
 				manager: ss,
 			}
+			cleanupFailedStart := func(primary error, stopRequired bool) error {
+				var stopErr error
+				if stopRequired && running.Stop != nil {
+					stopErr = running.Stop(context.WithoutCancel(ctx), true)
+				}
+				resourceErr := running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
+				return stderrors.Join(primary, stopErr, resourceErr)
+			}
 			running.addOriginSpanContexts(opts.OriginSpanContexts)
 			suppress(running)
 			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
@@ -1061,11 +1070,11 @@ func (ss *Services) startWithKey(
 			defer close(start.done)
 
 			if err := svc.Start(svcCtx, running, key.Digest, opts); err != nil {
+				err = cleanupFailedStart(err, false)
 				start.err = err
 				profOp.End(wcprof.OutcomeError)
 				endOTelServiceStart(startSpan, &err)
 				releaseSuppression()
-				_ = running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
 				ss.l.Lock()
 				delete(ss.starting, key)
 				ss.l.Unlock()
@@ -1074,11 +1083,11 @@ func (ss *Services) startWithKey(
 			}
 			if running.Wait == nil {
 				err := fmt.Errorf("service %s started without Wait callback", network.HostHash(key.Digest))
+				err = cleanupFailedStart(err, true)
 				start.err = err
 				profOp.End(wcprof.OutcomeError)
 				endOTelServiceStart(startSpan, &err)
 				releaseSuppression()
-				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				ss.l.Lock()
 				delete(ss.starting, key)
 				ss.l.Unlock()
@@ -1089,16 +1098,35 @@ func (ss *Services) startWithKey(
 			ss.l.Lock()
 			delete(ss.starting, key)
 			if context.Cause(svcCtx) != nil {
+				cause := context.Cause(svcCtx)
 				ss.l.Unlock()
 				profOp.End(wcprof.OutcomeCanceled)
-				cause := context.Cause(svcCtx)
+				cause = cleanupFailedStart(cause, true)
+				start.err = cause
 				endOTelServiceStart(startSpan, &cause)
 				releaseSuppression()
-				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
-				return nil, nil, context.Cause(svcCtx)
+				return nil, nil, cause
 			}
-			ss.running[key] = running
-			ss.bindings[key] = 1
+			if running.publishIfReady != nil {
+				err := running.publishIfReady(func() {
+					ss.running[key] = running
+					ss.bindings[key] = 1
+				})
+				if err != nil {
+					delete(ss.starting, key)
+					ss.l.Unlock()
+					err = cleanupFailedStart(err, true)
+					start.err = err
+					profOp.End(wcprof.OutcomeError)
+					endOTelServiceStart(startSpan, &err)
+					releaseSuppression()
+					cancel(err)
+					return nil, nil, err
+				}
+			} else {
+				ss.running[key] = running
+				ss.bindings[key] = 1
+			}
 			ss.l.Unlock()
 			profOp.End(wcprof.OutcomeOK)
 			endOTelServiceStart(startSpan, nil)
