@@ -17,12 +17,15 @@ package core
 // One deliberate infrastructure note: Agent.send is DoNotCache (every send
 // must enqueue a distinct message), and DoNotCache results are detached in
 // dagql — which would make the handle unaddressable. send therefore pins its
-// result's identity by re-exec (design §9): after enqueueing it Selects
-// through the Agent.message(id:) lookup field, so the returned handle's ID
-// is the honest, replayable chain `…asAgent!message(id:"…")` — selectable as
-// `{ send { id } }` and re-addressable from any later request in the session
-// via node(id:), which is what makes the cancel-and-re-await contract hold
-// across requests (TestMessageIdentity).
+// result by re-exec (design §9): after enqueueing it Selects through the
+// Agent.message(id:) lookup field and returns THAT handle's ID — the honest,
+// replayable chain `…asAgent!message(id:"…")` — re-addressable from any later
+// request in the session via node(id:), which is what makes the
+// cancel-and-re-await contract hold across requests (TestMessageIdentity).
+// Like every imperative verb (start, pause, resume, interrupt, waitFor,
+// stop), send is ID-returning, sync-style: lazy clients force the side
+// effect at the call site, and re-hydrating the returned ID replays the
+// lookup, not the send.
 
 import (
 	"context"
@@ -54,11 +57,11 @@ var emptyReplayModel = "replay/" + base64.StdEncoding.EncodeToString([]byte("[]"
 
 // agentHandle drives one agent through raw GraphQL queries. Raw queries are
 // used (rather than the typed SDK) because the interesting assertions select
-// several fields off a single send in one query — e.g. { delivery await },
-// or the two aliased awaits of the idempotency test. Every query rebuilds
-// the same llm[.withTools].asAgent chain, which resolves to the same runtime
-// entry by content digest — the dedupe contract TestDedupe locks in
-// explicitly.
+// several fields off a single loaded message in one query — e.g.
+// { delivery await }, or the two aliased awaits of the idempotency test.
+// Every query rebuilds the same llm[.withTools].asAgent chain, which
+// resolves to the same runtime entry by content digest — the dedupe contract
+// TestDedupe locks in explicitly.
 type agentHandle struct {
 	c     *dagger.Client
 	model string
@@ -115,16 +118,60 @@ func (h *agentHandle) mustRun(ctx context.Context, t *testctx.T, selection strin
 	return out
 }
 
+// msgRun loads a pinned message handle by its ID — node(id:) replays the
+// …asAgent!message(id:…) chain — and runs the given selection on it,
+// returning the JSON subtree rooted at the node.
+func (h *agentHandle) msgRun(ctx context.Context, t *testctx.T, msgID, selection string) (gjson.Result, error) {
+	t.Helper()
+	res := map[string]any{}
+	if err := h.c.Do(ctx,
+		&dagger.Request{
+			Query: fmt.Sprintf(
+				`query($id: ID!) { node(id: $id) { ... on AgentMessage { %s } } }`,
+				selection),
+			Variables: map[string]any{"id": msgID},
+		},
+		&dagger.Response{Data: &res},
+	); err != nil {
+		return gjson.Result{}, err
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return gjson.Result{}, err
+	}
+	out := gjson.Get(string(raw), "node")
+	if !out.Exists() {
+		return gjson.Result{}, fmt.Errorf("message selection missing in response: %s", raw)
+	}
+	return out, nil
+}
+
+// sendID enqueues a message and returns the pinned message ID. send is
+// ID-returning (sync-style): the enqueue happens here, exactly once, and the
+// returned ID replays the message(id:) lookup — not the send — when loaded.
+func (h *agentHandle) sendID(ctx context.Context, t *testctx.T, message string) (string, error) {
+	t.Helper()
+	out, err := h.run(ctx, t, fmt.Sprintf(`send(message: %q)`, message))
+	if err != nil {
+		return "", err
+	}
+	return out.Get("send").String(), nil
+}
+
 // sendAndWait enqueues a message and blocks until the turn that consumed it
 // ends, returning the enqueue-time delivery evidence and the turn's reply.
-// Both are selected off the same send, in one query.
+// Both are selected off the loaded message handle, in one query.
 func (h *agentHandle) sendAndWait(ctx context.Context, t *testctx.T, message string) (delivery, reply string, _ error) {
 	t.Helper()
-	out, err := h.run(ctx, t, fmt.Sprintf(`send(message: %q) { delivery await }`, message))
+	msgID, err := h.sendID(ctx, t, message)
 	if err != nil {
 		return "", "", err
 	}
-	return out.Get("send.delivery").String(), out.Get("send.await").String(), nil
+	out, err := h.msgRun(ctx, t, msgID, `delivery await`)
+	if err != nil {
+		return "", "", err
+	}
+	return out.Get("delivery").String(), out.Get("await").String(), nil
 }
 
 // sendNoWait enqueues a message and returns only its delivery evidence —
@@ -132,27 +179,44 @@ func (h *agentHandle) sendAndWait(ctx context.Context, t *testctx.T, message str
 // in.
 func (h *agentHandle) sendNoWait(ctx context.Context, t *testctx.T, message string) (string, error) {
 	t.Helper()
-	out, err := h.run(ctx, t, fmt.Sprintf(`send(message: %q) { delivery }`, message))
+	msgID, err := h.sendID(ctx, t, message)
 	if err != nil {
 		return "", err
 	}
-	return out.Get("send.delivery").String(), nil
+	out, err := h.msgRun(ctx, t, msgID, `delivery`)
+	if err != nil {
+		return "", err
+	}
+	return out.Get("delivery").String(), nil
+}
+
+func (h *agentHandle) stateErr(ctx context.Context, t *testctx.T) (string, error) {
+	t.Helper()
+	out, err := h.run(ctx, t, `state`)
+	if err != nil {
+		return "", err
+	}
+	return out.Get("state").String(), nil
 }
 
 func (h *agentHandle) state(ctx context.Context, t *testctx.T) string {
 	t.Helper()
-	return h.mustRun(ctx, t, `state`).Get("state").String()
+	state, err := h.stateErr(ctx, t)
+	require.NoError(t, err)
+	return state
 }
 
 // verb runs a lifecycle verb (start, pause, resume, interrupt, stop) and
-// returns the agent's state as of just after it.
+// returns the agent's state read just after it. The verbs are ID-returning
+// (sync-style) leaves, so the state is a follow-up query rather than a
+// sub-selection — safe because each verb returns only once its transition
+// has landed.
 func (h *agentHandle) verb(ctx context.Context, t *testctx.T, verb string) (string, error) {
 	t.Helper()
-	out, err := h.run(ctx, t, fmt.Sprintf(`%s { state }`, verb))
-	if err != nil {
+	if _, err := h.run(ctx, t, verb); err != nil {
 		return "", err
 	}
-	return out.Get(verb + ".state").String(), nil
+	return h.stateErr(ctx, t)
 }
 
 func (h *agentHandle) mustVerb(ctx context.Context, t *testctx.T, verb string) string {
@@ -166,11 +230,10 @@ func (h *agentHandle) mustVerb(ctx context.Context, t *testctx.T, verb string) s
 // state read just after (or an error if the state became unreachable).
 func (h *agentHandle) waitFor(ctx context.Context, t *testctx.T, state string) (string, error) {
 	t.Helper()
-	out, err := h.run(ctx, t, fmt.Sprintf(`waitFor(state: %s) { state }`, state))
-	if err != nil {
+	if _, err := h.run(ctx, t, fmt.Sprintf(`waitFor(state: %s)`, state)); err != nil {
 		return "", err
 	}
-	return out.Get("waitFor.state").String(), nil
+	return h.stateErr(ctx, t)
 }
 
 // snapshot returns the last committed conversation's transcript and last
@@ -631,10 +694,11 @@ func (AgentRuntimeSuite) TestInterruptMidStep(ctx context.Context, t *testctx.T)
 }
 
 // TestAwaitIdempotency covers shared awaiting: two concurrent awaits on the
-// same AgentMessage both get the reply. The two aliased await selections
-// resolve concurrently within one query (dagql resolves sibling selections
-// in parallel) while the turn dwells in the slow tool, so both are genuinely
-// blocked on the same unresolved record before it resolves once for both.
+// same AgentMessage both get the reply. The two aliased await selections —
+// on the message handle loaded from send's pinned ID — resolve concurrently
+// within one query (dagql resolves sibling selections in parallel) while the
+// turn dwells in the slow tool, so both are genuinely blocked on the same
+// unresolved record before it resolves once for both.
 func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -645,21 +709,22 @@ func (AgentRuntimeSuite) TestAwaitIdempotency(ctx context.Context, t *testctx.T)
 
 	h := &agentHandle{c: c, model: model, name: "sharedawait", ctrID: ctrID}
 
-	out := h.mustRun(ctx, t, fmt.Sprintf(
-		`send(message: %q) { delivery first: await second: await }`, slowToolPrompt))
-	require.Equal(t, "STARTED", out.Get("send.delivery").String())
-	require.Equal(t, slowToolReply, out.Get("send.first").String())
-	require.Equal(t, slowToolReply, out.Get("send.second").String())
+	msgID, err := h.sendID(ctx, t, slowToolPrompt)
+	require.NoError(t, err)
+	out, err := h.msgRun(ctx, t, msgID, `delivery first: await second: await`)
+	require.NoError(t, err)
+	require.Equal(t, "STARTED", out.Get("delivery").String())
+	require.Equal(t, slowToolReply, out.Get("first").String())
+	require.Equal(t, slowToolReply, out.Get("second").String())
 }
 
 // TestMessageIdentity covers re-exec pinning of message handles (design §9):
-// send returns a handle whose ID is the honest chain …asAgent!message(id:…),
-// so `{ send { id } }` works, and the captured ID re-addresses the SAME
-// message record from a later request. That is the cancel-and-re-await
-// contract: an await canceled mid-turn loses nothing — a fresh request
-// re-loads the handle via node(id:) and awaits the reply. Also locks in the
-// lookup's clean failure modes: unknown message IDs, and agents with no
-// runtime entry.
+// send returns the ID of the pinned handle — the honest chain
+// …asAgent!message(id:…) — and that ID re-addresses the SAME message record
+// from a later request. That is the cancel-and-re-await contract: an await
+// canceled mid-turn loses nothing — a fresh request re-loads the handle via
+// node(id:) and awaits the reply. Also locks in the lookup's clean failure
+// modes: unknown message IDs, and agents with no runtime entry.
 func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -670,13 +735,16 @@ func (AgentRuntimeSuite) TestMessageIdentity(ctx context.Context, t *testctx.T) 
 
 	h := &agentHandle{c: c, model: model, name: "readdressable", ctrID: ctrID}
 
-	// Request 1: send returns immediately (it never blocks) with an
-	// addressable handle — id is selectable, which the detached DoNotCache
-	// result could not do.
-	out := h.mustRun(ctx, t, fmt.Sprintf(`send(message: %q) { id delivery }`, slowToolPrompt))
-	msgID := out.Get("send.id").String()
+	// Request 1: send returns immediately (it never blocks) with the pinned
+	// message ID — the addressable handle a detached DoNotCache result could
+	// never yield. The delivery evidence rides the record, readable through
+	// the loaded handle.
+	msgID, err := h.sendID(ctx, t, slowToolPrompt)
+	require.NoError(t, err)
 	require.NotEmpty(t, msgID)
-	require.Equal(t, "STARTED", out.Get("send.delivery").String())
+	out, err := h.msgRun(ctx, t, msgID, `delivery`)
+	require.NoError(t, err)
+	require.Equal(t, "STARTED", out.Get("delivery").String())
 
 	// awaitByID re-addresses the pinned handle in a fresh request —
 	// node(id:) replays the …asAgent!message(id:…) chain — and awaits it.

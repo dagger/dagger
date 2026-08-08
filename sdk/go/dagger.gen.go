@@ -422,17 +422,16 @@ func (r *Address) AsNode() Node {
 type Agent struct {
 	query *querybuilder.Selection
 
-	id    *ID
-	name  *string
-	state *AgentState
-}
-type WithAgentFunc func(r *Agent) *Agent
-
-// With calls the provided function with current Agent.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Agent) With(f WithAgentFunc) *Agent {
-	return f(r)
+	id        *ID
+	interrupt *ID
+	name      *string
+	pause     *ID
+	resume    *ID
+	send      *ID
+	start     *ID
+	state     *AgentState
+	stop      *ID
+	waitFor   *ID
 }
 
 func (r *Agent) WithGraphQLQuery(q *querybuilder.Selection) *Agent {
@@ -486,12 +485,16 @@ func (r *Agent) MarshalJSON() ([]byte, error) {
 // The interrupted turn stays open: messages it consumed remain pending, and resume continues the turn from the last committed step. To redirect, follow with send — steering and interrupting are separate verbs.
 //
 // On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
-func (r *Agent) Interrupt() *Agent {
+func (r *Agent) Interrupt(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("interrupt")
 
-	return &Agent{
-		query: q,
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // Look up a previously sent message by its message ID, returning its handle.
@@ -526,12 +529,16 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 // Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
 //
 // Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
-func (r *Agent) Pause() *Agent {
+func (r *Agent) Pause(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("pause")
 
-	return &Agent{
-		query: q,
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
@@ -539,28 +546,36 @@ func (r *Agent) Pause() *Agent {
 // Resuming a FAILED agent retries: the loop relaunches from the last committed snapshot, whose still-pending input is stepped again.
 //
 // No-op on a running or idle agent; resuming a stopped agent fails.
-func (r *Agent) Resume() *Agent {
+func (r *Agent) Resume(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("resume")
 
-	return &Agent{
-		query: q,
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
 //
 // Never blocks, never drops; concurrent sends queue in order.
 //
-// The returned handle's identity is pinned through the message lookup field, so it can be re-addressed from any request in the session: cancel an await and re-await freely.
+// The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.
 //
 // Sending to a never-started agent starts it (signal-with-start). Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume. Sending to a stopped agent fails: nothing would ever consume the message.
-func (r *Agent) Send(message string) *AgentMessage {
+func (r *Agent) Send(ctx context.Context, message string) (ID, error) {
+	if r.send != nil {
+		return *r.send, nil
+	}
 	q := r.query.Select("send")
 	q = q.Arg("message", message)
 
-	return &AgentMessage{
-		query: q,
-	}
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The conversation as of the last committed step: immutable, branchable, persistable.
@@ -579,12 +594,16 @@ func (r *Agent) Snapshot() *LLM {
 // Start the agent's evaluation loop. No-op if it is already running.
 //
 // The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.
-func (r *Agent) Start() *Agent {
+func (r *Agent) Start(ctx context.Context) (*Agent, error) {
 	q := r.query.Select("start")
 
-	return &Agent{
-		query: q,
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // Computed lifecycle state; never stored.
@@ -609,7 +628,7 @@ type AgentStopOpts struct {
 }
 
 // Release the agent's runtime. The tombstone (state, snapshot) stays readable for the rest of the session.
-func (r *Agent) Stop(opts ...AgentStopOpts) *Agent {
+func (r *Agent) Stop(ctx context.Context, opts ...AgentStopOpts) (*Agent, error) {
 	q := r.query.Select("stop")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `kill` optional argument
@@ -618,9 +637,13 @@ func (r *Agent) Stop(opts ...AgentStopOpts) *Agent {
 		}
 	}
 
-	return &Agent{
-		query: q,
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // AgentWaitForOpts contains options for Agent.WaitFor
@@ -634,7 +657,7 @@ type AgentWaitForOpts struct {
 // Block until the agent reaches the given state, returning immediately if it is already there.
 //
 // Fails if the state becomes unreachable: STOPPED is the only terminal state — waiting on a FAILED agent for another state blocks, since a resume may retry the loop.
-func (r *Agent) WaitFor(opts ...AgentWaitForOpts) *Agent {
+func (r *Agent) WaitFor(ctx context.Context, opts ...AgentWaitForOpts) (*Agent, error) {
 	q := r.query.Select("waitFor")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `state` optional argument
@@ -643,9 +666,13 @@ func (r *Agent) WaitFor(opts ...AgentWaitForOpts) *Agent {
 		}
 	}
 
-	return &Agent{
-		query: q,
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
+	return &Agent{
+		query: selectNode(q.Root(), id, "Agent"),
+	}, nil
 }
 
 // AsNode returns this Agent as a Node.

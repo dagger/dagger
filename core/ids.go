@@ -64,6 +64,8 @@ type LLMID = dagql.ID[*LLM]
 
 type AgentID = dagql.ID[*Agent]
 
+type AgentMessageID = dagql.ID[*AgentMessage]
+
 type EnvFileID = dagql.ID[*EnvFile]
 
 // ID is an alias for dagql.AnyID — a generic object identifier.

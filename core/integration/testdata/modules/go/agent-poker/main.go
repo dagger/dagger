@@ -21,7 +21,13 @@ type Poker struct{}
 // (The injected argument is named caller rather than parent because the Go
 // SDK's generated dispatch code reserves `parent` for the receiver.)
 func (m *Poker) Poke(ctx context.Context, caller *dagger.Agent, note string) (string, error) {
-	delivery, err := caller.Send(note).Delivery(ctx)
+	msgID, err := caller.Send(ctx, note)
+	if err != nil {
+		return "", err
+	}
+	// Send returns the pinned message ID (the enqueue already happened);
+	// loading it replays the message(id:) lookup, not the send.
+	delivery, err := dagger.Ref[*dagger.AgentMessage](dag, msgID).Delivery(ctx)
 	if err != nil {
 		return "", err
 	}

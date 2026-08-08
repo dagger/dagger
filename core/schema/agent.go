@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -41,7 +42,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			DoNotCache("Every send enqueues a distinct message into live runtime state.").
 			Doc(`Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.`,
 				`Never blocks, never drops; concurrent sends queue in order.`,
-				`The returned handle's identity is pinned through the message lookup field, so it can be re-addressed from any request in the session: cancel an await and re-await freely.`,
+				`The returned message ID is pinned through the message lookup field, so the handle it loads is re-addressable from any request in the session: cancel an await and re-await freely.`,
 				`Sending to a never-started agent starts it (signal-with-start). Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume. Sending to a stopped agent fails: nothing would ever consume the message.`).
 			Args(
 				dagql.Arg("message").Doc(`The message text, appended to the agent's history as a prompt when a turn consumes it.`),
@@ -126,6 +127,19 @@ func agentRuntimes(ctx context.Context) (*core.AgentRuntimes, error) {
 	return query.Agents(ctx)
 }
 
+// agentSelfID returns the parent agent's own ID as the field's result — the
+// sync-style contract of the imperative verbs (like Service.start/stop): they
+// return ID! with @expectedType rather than the object, so lazy clients force
+// the verb at the call site and re-hydrate the handle from the ID instead of
+// re-evaluating a DoNotCache chain (which would re-run the side effect).
+func agentSelfID(ctx context.Context, parent dagql.ObjectResult[*core.Agent]) (res dagql.Result[core.AgentID], _ error) {
+	parentID, err := parent.ID()
+	if err != nil {
+		return res, fmt.Errorf("agent ID: %w", err)
+	}
+	return dagql.NewResultForCurrentCall(ctx, dagql.NewID[*core.Agent](parentID))
+}
+
 func (s agentSchema) state(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (core.AgentState, error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
@@ -160,20 +174,20 @@ func (s agentSchema) snapshot(ctx context.Context, parent dagql.ObjectResult[*co
 	return rt.Snapshot(), nil
 }
 
-func (s agentSchema) start(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.Agent], error) {
+func (s agentSchema) start(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	if _, err := agents.Start(ctx, parent); err != nil {
-		return parent, err
+		return res, err
 	}
-	return parent, nil
+	return agentSelfID(ctx, parent)
 }
 
 func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
 	Message string
-}) (res dagql.ObjectResult[*core.AgentMessage], _ error) {
+}) (res dagql.Result[core.AgentMessageID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
 		return res, err
@@ -190,14 +204,19 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 	// requests. Pin the handle's identity by re-exec (design §9, the same
 	// trick step() uses to materialize state as selectors): a real Select
 	// through the message lookup field, on the agent receiver instance,
-	// returns an instance whose ID is the honest, replayable chain
+	// yields an instance whose ID is the honest, replayable chain
 	// `…asAgent!message(id:"…")` — addressable from any request in the
-	// session.
+	// session. That pinned ID is the result: send is imperative, so like
+	// the other verbs it returns ID! rather than the object, forcing lazy
+	// clients to execute the (unrepeatable) enqueue exactly once and
+	// re-hydrate the handle from the ID — which replays the lookup, not
+	// the send.
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
 	}
-	if err := srv.Select(ctx, parent, &res, dagql.Selector{
+	var pinned dagql.ObjectResult[*core.AgentMessage]
+	if err := srv.Select(ctx, parent, &pinned, dagql.Selector{
 		Field: "message",
 		Args: []dagql.NamedInput{
 			{
@@ -208,7 +227,11 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 	}); err != nil {
 		return res, err
 	}
-	return res, nil
+	pinnedID, err := pinned.ID()
+	if err != nil {
+		return res, fmt.Errorf("message ID: %w", err)
+	}
+	return dagql.NewResultForCurrentCall(ctx, dagql.NewID[*core.AgentMessage](pinnedID))
 }
 
 func (s agentSchema) message(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
@@ -221,55 +244,55 @@ func (s agentSchema) message(ctx context.Context, parent dagql.ObjectResult[*cor
 	return agents.LookupMessage(ctx, parent, args.ID)
 }
 
-func (s agentSchema) interrupt(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.Agent], error) {
+func (s agentSchema) interrupt(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	// Interrupting a never-started agent degenerates to pause, so create
 	// the entry lazily (without starting the loop), like pause does.
 	rt, err := agents.GetOrCreate(ctx, parent)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	if err := rt.Interrupt(); err != nil {
-		return parent, err
+		return res, err
 	}
-	return parent, nil
+	return agentSelfID(ctx, parent)
 }
 
-func (s agentSchema) pause(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.Agent], error) {
+func (s agentSchema) pause(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	// Pausing a never-started agent creates its entry lazily, paused: a
 	// later start or send parks immediately, with mail queuing as QUEUED.
 	rt, err := agents.GetOrCreate(ctx, parent)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	if err := rt.Pause(); err != nil {
-		return parent, err
+		return res, err
 	}
-	return parent, nil
+	return agentSelfID(ctx, parent)
 }
 
-func (s agentSchema) resume(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.Agent], error) {
+func (s agentSchema) resume(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	// Lazy entry for symmetry with pause: resuming a never-started,
 	// never-paused agent is a documented no-op.
 	rt, err := agents.GetOrCreate(ctx, parent)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	if err := rt.Resume(ctx); err != nil {
-		return parent, err
+		return res, err
 	}
-	return parent, nil
+	return agentSelfID(ctx, parent)
 }
 
 func (s agentSchema) messageDelivery(ctx context.Context, msg *core.AgentMessage, _ struct{}) (core.AgentMessageDelivery, error) {
@@ -286,38 +309,38 @@ func (s agentSchema) messageAwait(ctx context.Context, msg *core.AgentMessage, _
 
 func (s agentSchema) waitFor(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
 	State core.AgentState `default:"IDLE"`
-}) (dagql.ObjectResult[*core.Agent], error) {
+}) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	// Create the entry lazily (without starting the loop) so waiting on a
 	// never-started agent blocks on future transitions instead of erroring.
 	rt, err := agents.GetOrCreate(ctx, parent)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	if err := rt.WaitFor(ctx, args.State); err != nil {
-		return parent, err
+		return res, err
 	}
-	return parent, nil
+	return agentSelfID(ctx, parent)
 }
 
 func (s agentSchema) stop(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
 	Kill bool `default:"false"`
-}) (dagql.ObjectResult[*core.Agent], error) {
+}) (res dagql.Result[core.AgentID], _ error) {
 	agents, err := agentRuntimes(ctx)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	// Stopping a never-started agent still creates its entry, transitioned
 	// straight to the tombstone: stop is terminal either way, and idempotent.
 	rt, err := agents.GetOrCreate(ctx, parent)
 	if err != nil {
-		return parent, err
+		return res, err
 	}
 	if err := rt.Stop(ctx, args.Kill, nil); err != nil {
-		return parent, err
+		return res, err
 	}
-	return parent, nil
+	return agentSelfID(ctx, parent)
 }

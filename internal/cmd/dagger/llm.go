@@ -271,7 +271,7 @@ func (s *LLMSession) dropAgent() {
 		return
 	}
 	go func() {
-		if _, err := agent.Stop().State(s.plumbingCtx); err != nil {
+		if _, err := agent.Stop(s.plumbingCtx); err != nil {
 			slog.Debug("failed to stop replaced agent", "error", err)
 		}
 	}()
@@ -298,9 +298,14 @@ func (s *LLMSession) Interject(msg string) bool {
 		return false
 	}
 	go func() {
-		delivery, err := agent.Send(msg).Delivery(s.plumbingCtx)
+		msgID, err := agent.Send(s.plumbingCtx, msg)
 		if err != nil {
 			slog.Error("failed to interject message", "error", err)
+			return
+		}
+		delivery, err := dagger.Ref[*dagger.AgentMessage](s.dag, msgID).Delivery(s.plumbingCtx)
+		if err != nil {
+			slog.Error("failed to read interjection delivery", "error", err)
 			return
 		}
 		slog.Debug("interjected mid-turn message", "delivery", delivery)
@@ -317,13 +322,13 @@ func (s *LLMSession) Interject(msg string) bool {
 func (s *LLMSession) interruptAgent(agent *dagger.Agent) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.plumbingCtx), agentInterruptGrace)
 	defer cancel()
-	if _, err := agent.Interrupt().State(ctx); err != nil {
+	if _, err := agent.Interrupt(ctx); err != nil {
 		slog.Warn("failed to interrupt agent", "error", err)
 		return
 	}
-	if _, err := agent.WaitFor(dagger.AgentWaitForOpts{
+	if _, err := agent.WaitFor(ctx, dagger.AgentWaitForOpts{
 		State: dagger.AgentStatePaused,
-	}).State(ctx); err != nil {
+	}); err != nil {
 		slog.Debug("interrupted agent did not park in time", "error", err)
 	}
 }
@@ -383,11 +388,11 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		return s, err
 	}
 
-	// Enqueue the prompt on the record. Resolving the ID performs the send
-	// (once) and pins the message's identity to the replayable
+	// Enqueue the prompt on the record. Send executes eagerly (it returns an
+	// ID scalar) and the returned ID is pinned to the replayable
 	// `…asAgent!message(id:…)` chain, so the await below can be canceled
 	// without losing the handle.
-	msgID, err := agent.Send(input).ID(ctx)
+	msgID, err := agent.Send(ctx, input)
 	if err != nil {
 		return s, err
 	}
@@ -397,7 +402,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	// interrupt) or failed (resume retries), in which case the suspended turn
 	// continues from its last committed step and the just-sent prompt drains
 	// into it.
-	if _, err := agent.Resume().State(s.plumbingCtx); err != nil {
+	if _, err := agent.Resume(s.plumbingCtx); err != nil {
 		return s, err
 	}
 

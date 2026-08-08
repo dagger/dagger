@@ -114,7 +114,7 @@ type Agent implements Node {
 
   On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
   """
-  interrupt: Agent!
+  interrupt: ID! @expectedType(name: "Agent")
 
   """
   Look up a previously sent message by its message ID, returning its handle.
@@ -146,7 +146,7 @@ type Agent implements Node {
   a failed agent is allowed (resume decides the retry); pausing a stopped agent
   fails.
   """
-  pause: Agent!
+  pause: ID! @expectedType(name: "Agent")
 
   """
   Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
@@ -156,7 +156,7 @@ type Agent implements Node {
 
   No-op on a running or idle agent; resuming a stopped agent fails.
   """
-  resume: Agent!
+  resume: ID! @expectedType(name: "Agent")
 
   """
   Enqueue a message, on the record: it is consumed at a step boundary, appends
@@ -164,9 +164,9 @@ type Agent implements Node {
 
   Never blocks, never drops; concurrent sends queue in order.
 
-  The returned handle's identity is pinned through the message lookup field, so
-  it can be re-addressed from any request in the session: cancel an await and
-  re-await freely.
+  The returned message ID is pinned through the message lookup field, so the
+  handle it loads is re-addressable from any request in the session: cancel an
+  await and re-await freely.
 
   Sending to a never-started agent starts it (signal-with-start). Sending to a
   paused or failed agent enqueues with QUEUED delivery, to be drained by a
@@ -178,7 +178,7 @@ type Agent implements Node {
     The message text, appended to the agent's history as a prompt when a turn consumes it.
     """
     message: String!
-  ): AgentMessage!
+  ): ID! @expectedType(name: "AgentMessage")
 
   """
   The conversation as of the last committed step: immutable, branchable, persistable.
@@ -195,7 +195,7 @@ type Agent implements Node {
   The loop runs detached from the calling request: it steps the conversation
   while input is pending, then idles awaiting further lifecycle operations.
   """
-  start: Agent!
+  start: ID! @expectedType(name: "Agent")
 
   """
   Computed lifecycle state; never stored.
@@ -213,7 +213,7 @@ type Agent implements Node {
     Either way the completed steps are preserved in the snapshot.
     """
     kill: Boolean = false
-  ): Agent!
+  ): ID! @expectedType(name: "Agent")
 
   """
   Block until the agent reaches the given state, returning immediately if it is already there.
@@ -225,7 +225,7 @@ type Agent implements Node {
   waitFor(
     """The lifecycle state to wait for."""
     state: AgentState = IDLE
-  ): Agent!
+  ): ID! @expectedType(name: "Agent")
 }
 
 """A message delivered to an agent's mailbox."""
