@@ -167,14 +167,34 @@ fn catalog_has_only_exact_semantic_keys() {
 }
 
 #[test]
-fn source_free_checkpoint_contains_canonical_and_semantic_artifacts() {
-    let candidate = render_core(&plan()).expect("complete plan must render checkpoints");
-    assert_eq!(
+fn source_free_rendering_contains_only_generated_rust_artifacts() {
+    let candidate = render_core(&plan()).expect("complete plan must render a client candidate");
+
+    assert!(
         candidate
             .artifacts()
             .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        ["canonical-schema.json", "semantic-projection.json"]
+            .all(|path| path.ends_with(".rs"))
+    );
+    assert!(
+        candidate
+            .artifacts()
+            .contains_key("crates/dagger-sdk/src/gen/mod.rs")
+    );
+    assert!(
+        candidate
+            .artifacts()
+            .contains_key("crates/dagger-sdk/tests/core_reachability.rs")
+    );
+    assert!(
+        candidate
+            .artifacts()
+            .contains_key("crates/dagger-sdk/tests/core_projection.rs")
+    );
+    assert!(!candidate.artifacts().contains_key("canonical-schema.json"));
+    assert!(
+        !candidate
+            .artifacts()
+            .contains_key("semantic-projection.json")
     );
 }

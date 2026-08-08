@@ -339,8 +339,8 @@
     paths to remain request-free, executing paths to preserve typed Feature 2/3 errors,
     and every ID failure to be request-atomic.
 
-- [ ] 11. Render the idiomatic per-type generated Rust API
-  - [ ] 11.1 Replace the dynamic generator with a syntax-aware renderer
+- [x] 11. Render the idiomatic per-type generated Rust API
+  - [x] 11.1 Replace the dynamic generator with a syntax-aware renderer
     - Render a complete in-memory candidate from `ProjectionPlan` with `quote`, parse
       every file with `syn`, and return coordinate/artifact diagnostics for any invalid
       tokens; make rendering incapable of reopening raw schema or changing a mapping
@@ -351,7 +351,7 @@
     - Treat legacy `dagger-sdk/src/gen.rs` as the one explicit predecessor, not as a
       permanent wildcard or a reason to adopt unknown files.
     - _Requirements: 4.2-4.6, 8.5, 9.1-9.3, 9.9, 9.10, 10.4_
-  - [ ] 11.2 Render options, arguments, enums, and input objects
+  - [x] 11.2 Render options, arguments, enums, and input objects
     - Emit owned, cloneable, debuggable, defaultable, non-exhaustive options with public
       `Option<T>` fields, fluent `with_*` setters, ordinary required-only methods, and
       borrowing `_opts` forms; do not promise equality for lazy ID resolvers.
@@ -359,7 +359,7 @@
       constructors, fluent optional setters, recursive types, and precise serde rename/
       omit attributes; use existing argument encoders rather than hand-built GraphQL.
     - _Requirements: 3.16, 3.17, 5.1-5.15, 7.1-7.8, 10.5, 10.6, 10.9, 10.10_
-  - [ ] 11.3 Render handles, interface traits, and executing operations
+  - [x] 11.3 Render handles, interface traits, and executing operations
     - Emit the uniform session/selection handle representation, one complete statically
       dispatched trait and concrete handle per interface, declared object trait
       implementations, sealed Loadable/Into_ID integration, and every field operation.
@@ -368,7 +368,7 @@
     - Route each method through its approved lazy, probe, re-entry, self-return, or
       executing strategy and preserve exact Wire_Names independently of Rust names.
     - _Requirements: 4.1-4.15, 6.1-6.12, 8.1-8.6, 10.4, 10.7, 10.11, 10.12_
-  - [ ] 11.4 Render complete, sanitized public documentation
+  - [x] 11.4 Render complete, sanitized public documentation
     - Normalize schema text, preserve paragraphs/code, make URLs explicit, escape
       untrusted markup, close fences deterministically, and reject unsupported control
       text with its coordinate.
@@ -376,7 +376,7 @@
       enum/variant, including Wire_Name, omission/default behaviour, deprecation, and
       experimental reasons, without module-wide `missing_docs` or rustdoc suppression.
     - _Requirements: 7.10, 7.11, 8.7-8.13, 10.15_
-  - [ ] 11.5 Property test: Property 14 — options are owned, wire-exact, and reusable
+  - [x] 11.5 Property test: Property 14 — options are owned, wire-exact, and reusable
     - Generate at least 256 options plans and two-call reuse schedules with ordinary,
       zero-like, input-object, enum, raw-ID, and lazy-handle values; compare both
       documents/events to a reference model and assert caller-observable state is
@@ -384,7 +384,7 @@
     - Test identifier: `property_14_options_owned_wire_exact_reusable`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 14: Options are owned, wire-exact, and reusable`
     - _Requirements: 5.12, 5.13, 5.14, 5.15_
-  - [ ] 11.6 Property test: Property 21 — generated documentation is complete and warning-free
+  - [x] 11.6 Property test: Property 21 — generated documentation is complete and warning-free
     - Generate at least 256 descriptions with links, brackets, code fences, control
       text, missing content, deprecations, and experimental reasons; compare sanitized
       semantics to a reference policy, parse rendered files, and deny rustdoc warnings.
@@ -392,8 +392,8 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 21: Generated documentation is complete and warning-free`
     - _Requirements: 7.10, 7.11, 8.7, 8.8, 8.9, 8.10, 8.11, 8.12, 8.13, 10.15_
 
-- [ ] 12. Generate exhaustive compile and query-projection verification
-  - [ ] 12.1 Generate the positive public-reachability program
+- [x] 12. Generate exhaustive compile and query-projection verification
+  - [x] 12.1 Generate the positive public-reachability program
     - Derive a test program from the semantic catalog that references every generated
       public type, trait, handle, options value, field, method, scalar, enum, variant,
       and input constructor through the supported `dagger_sdk` namespace without
@@ -401,21 +401,21 @@
     - Inspect final source with `syn`, prove exact equality between expected and
       referenced public symbols, and record the covering test entry on each binding.
     - _Requirements: 4.2-4.6, 8.7, 10.4, 10.16_
-  - [ ] 12.2 Add generated and representative compile-fail contracts
+  - [x] 12.2 Add generated and representative compile-fail contracts
     - Generate required method/input omission cases and add focused `trybuild` cases for
       compatible/incompatible expected-type handles, interface implementors, ordinary
       features, and the no-`gen` handwritten raw client boundary.
     - Keep compiler fixtures stable at the error-class/public-name level and use the
       declared MSRV/features without undocumented flags.
     - _Requirements: 3.16, 3.17, 6.1-6.4, 8.15, 10.5, 10.11, 10.16_
-  - [ ] 12.3 Generate the complete structured query-projection suite
+  - [x] 12.3 Generate the complete structured query-projection suite
     - Derive one recording-executor case for every Exact_Target field and argument;
       parse structured documents and assert exact field/argument Wire_Names, wrappers,
       required presence, omission, and category-appropriate concrete values.
     - Record request counts, lazy/probe/executing boundaries, ID-resolution ordering,
       nullable/list re-entry roots, inline fragments, and typed pre-transport failures.
     - _Requirements: 4.6-4.15, 5.1-5.15, 6.3-6.10, 10.6, 10.7, 10.11, 10.12, 10.18_
-  - [ ] 12.4 Property test: Property 22 — the supported public surface respects release policy
+  - [x] 12.4 Property test: Property 22 — the supported public surface respects release policy
     - Generate at least 256 synthetic public API plans and exercise the fixed target
       compile matrix; require exact supported-namespace reachability, declared MSRV/
       features, breaking-fragment detection, and a compiling handwritten raw client
@@ -423,7 +423,7 @@
     - Test identifier: `property_22_supported_public_surface_respects_release_policy`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 22: The supported public surface respects release policy`
     - _Requirements: 8.14, 8.15, 10.4, 10.16_
-  - [ ] 12.5 Property test: Property 28 — query projection covers every wire coordinate
+  - [x] 12.5 Property test: Property 28 — query projection covers every wire coordinate
     - Exhaust all 720 fields and 611 arguments and run at least 256 generated concrete/
       omission value plans; assert exact equality between catalog and observed
       coordinates, exact Wire_Names, and zero unknown or unobserved coordinates.
@@ -431,7 +431,7 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 28: Query projection covers every wire coordinate`
     - _Requirements: 10.7_
 
-- [ ] 13. Checkpoint: generated public source and exhaustive verification are green
+- [x] 13. Checkpoint: generated public source and exhaustive verification are green
   - Generate into private test state, then run formatting, locked SDK/codegen tests,
     Properties 14/21-22/28, positive and negative compile suites, all target projection
     cases, no-default-features checking, rustdoc with warnings denied, clippy, and

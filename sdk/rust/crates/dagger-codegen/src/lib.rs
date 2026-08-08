@@ -16,12 +16,15 @@ pub mod target;
 use std::collections::BTreeMap;
 
 use diagnostic::CodegenError;
-use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticCoordinate, DiagnosticSet};
+use diagnostic::DiagnosticSet;
+#[cfg(test)]
+use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticCoordinate};
 use directive::DirectiveProjection;
 use naming::RustNameMap;
 use projection::catalog::ProjectionCatalog;
 use projection::fields::FieldProjection;
 use projection::types::{InterfaceImplementationProjection, TypeProjection};
+use render::verification::GeneratedVerification;
 use rust::RustGenerator;
 use schema::canonical::CanonicalSchema;
 use schema::raw::Schema;
@@ -102,6 +105,7 @@ impl ProjectionPlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenderedCandidate {
     artifacts: BTreeMap<String, Vec<u8>>,
+    verification: GeneratedVerification,
 }
 
 impl RenderedCandidate {
@@ -109,6 +113,12 @@ impl RenderedCandidate {
     #[must_use]
     pub const fn artifacts(&self) -> &BTreeMap<String, Vec<u8>> {
         &self.artifacts
+    }
+
+    /// Returns the exhaustive compile and query-projection verification plan.
+    #[must_use]
+    pub const fn verification(&self) -> &GeneratedVerification {
+        &self.verification
     }
 }
 
@@ -128,56 +138,32 @@ pub fn project_core(request: CoreProjectionRequest<'_>) -> Result<ProjectionPlan
     })
 }
 
-/// Renders the current canonical checkpoint artifact without filesystem authority.
+/// Renders the complete generated client and verification candidate in memory.
 ///
-/// Rust client artifacts are added by later projection tasks. This checkpoint output
-/// makes order-independence and repeatability executable without allowing raw schema
-/// values to cross the renderer boundary.
+/// Rendering consumes only the immutable semantic plan. It performs no filesystem,
+/// formatter, process, network, or publication operation.
 pub fn render_core(plan: &ProjectionPlan) -> Result<RenderedCandidate, DiagnosticSet> {
-    render_projection_checkpoint(plan)
+    render::render_plan(plan)
 }
 
-pub(crate) fn render_projection_checkpoint(
-    plan: &ProjectionPlan,
-) -> Result<RenderedCandidate, DiagnosticSet> {
-    let canonical = encode_canonical_checkpoint(plan.target(), plan.schema())?;
-    // JSON object keys can only be strings. Emitting the semantic-keyed registries as
-    // ordered sequences preserves their full structured keys without a lossy display
-    // conversion that could later become an accidental compatibility join.
-    let semantic = serde_json::to_vec(&(
-        plan.names().entries().iter().collect::<Vec<_>>(),
-        plan.named_types().values().collect::<Vec<_>>(),
-        plan.fields().values().collect::<Vec<_>>(),
-        plan.directives().records().values().collect::<Vec<_>>(),
-        plan.implementations(),
-        plan.catalog().bindings().values().collect::<Vec<_>>(),
-    ))
-    .map_err(|_| {
-        DiagnosticSet::one(Diagnostic::new(
-            DiagnosticCode::GeneratedProvenanceInvalid,
-            Some(DiagnosticCoordinate::new("semantic-projection.json")),
-            "semantic projection checkpoint artifact could not be encoded",
-        ))
-    })?;
-    Ok(RenderedCandidate {
-        artifacts: BTreeMap::from([
-            ("canonical-schema.json".to_owned(), canonical),
-            ("semantic-projection.json".to_owned(), semantic),
-        ]),
-    })
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CanonicalRenderedCandidate {
+    artifacts: BTreeMap<String, Vec<u8>>,
 }
 
 #[cfg(test)]
 pub(crate) fn render_canonical_checkpoint(
     target: &CodegenTarget,
     schema: &CanonicalSchema,
-) -> Result<RenderedCandidate, DiagnosticSet> {
+) -> Result<CanonicalRenderedCandidate, DiagnosticSet> {
     let canonical = encode_canonical_checkpoint(target, schema)?;
-    Ok(RenderedCandidate {
+    Ok(CanonicalRenderedCandidate {
         artifacts: BTreeMap::from([("canonical-schema.json".to_owned(), canonical)]),
     })
 }
 
+#[cfg(test)]
 fn encode_canonical_checkpoint(
     target: &CodegenTarget,
     schema: &CanonicalSchema,
