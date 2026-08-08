@@ -639,6 +639,16 @@ func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
 	return ws.mounts, true
 }
 
+// MountPoints returns the workspace-root-relative paths at which content is
+// mounted, sorted and deduplicated. The returned slice is shared with the
+// workspace and must not be mutated.
+func (ws *Workspace) MountPoints() []string {
+	if ws == nil {
+		return nil
+	}
+	return ws.mountPoints
+}
+
 // WithMounted returns a copy of the workspace with the given mounted content
 // tree and the workspace-root-relative path recorded as a mount point, keeping
 // the mount point list sorted and deduplicated.
