@@ -71,7 +71,7 @@ var (
 	AgentStateStopped = AgentStates.Register("STOPPED",
 		"Runtime released; snapshot remains readable.")
 	AgentStateFailed = AgentStates.Register("FAILED",
-		"The loop failed; snapshot holds the completed prefix.")
+		"The loop failed; snapshot holds the completed prefix. Resume retries.")
 )
 
 func (state AgentState) Type() *ast.Type {
@@ -91,12 +91,6 @@ func (state AgentState) Decoder() dagql.InputDecoder {
 
 func (state AgentState) ToLiteral() call.Literal {
 	return AgentStates.Literal(state)
-}
-
-// terminal reports whether the state is a tombstone: the runtime is released
-// and no further transitions will occur (until a later phase adds resume).
-func (state AgentState) terminal() bool {
-	return state == AgentStateStopped || state == AgentStateFailed
 }
 
 // AgentMessage is the handle returned by Agent.send: it identifies one
@@ -144,12 +138,11 @@ var (
 		"The message opened a new turn: the agent was idle or newly started.")
 	AgentMessageSteered = AgentMessageDeliveries.Register("STEERED",
 		"The message was absorbed into the in-flight turn at a step boundary, steering it.")
-	// AgentMessageQueued is registered for schema completeness but is
-	// unreachable until the pause phase lands: without pause, every
-	// message is either consumed by the in-flight turn (STEERED) or opens
-	// a new one (STARTED); only a paused agent accepts without draining.
+	// AgentMessageQueued is the evidence of a mailbox that accepts without
+	// draining: the agent is paused (or a FAILED tombstone awaiting a
+	// retry), so nothing consumes the message until a resume.
 	AgentMessageQueued = AgentMessageDeliveries.Register("QUEUED",
-		"The message is queued behind the in-flight turn, awaiting a resume.")
+		"The message is queued: the agent is paused or failed, and a resume will drain it.")
 )
 
 func (delivery AgentMessageDelivery) Type() *ast.Type {
@@ -284,9 +277,12 @@ func (ars *AgentRuntimes) Start(ctx context.Context, agent dagql.ObjectResult[*A
 // loop if it was never started (signal-with-start, Temporal's lesson — a
 // message to an unstarted agent must start it rather than be lost).
 //
-// Sending to a STOPPED or FAILED tombstone fails: without resume (a later
-// phase), no turn will ever consume the message, so accepting it would be a
-// silent drop — the one thing send promises never to do.
+// Sending to a STOPPED tombstone fails: no turn will ever consume the
+// message, so accepting it would be a silent drop — the one thing send
+// promises never to do. Sending to a paused agent or a FAILED tombstone
+// enqueues with QUEUED delivery: a resume drains it (retrying the loop in
+// the FAILED case), and until then awaiting the message projects the
+// tombstone's failure rather than blocking forever.
 func (ars *AgentRuntimes) Send(ctx context.Context, agent dagql.ObjectResult[*Agent], text string) (*AgentMessage, error) {
 	rt, err := ars.GetOrCreate(ctx, agent)
 	if err != nil {
@@ -358,11 +354,14 @@ type AgentRuntime struct {
 	started       bool                     // the loop goroutine was launched
 	stepping      bool                     // a Step is in flight
 	turnOpen      bool                     // a turn has consumed input and not yet resolved
+	paused        bool                     // pause requested: park without draining or stepping
 	stopRequested bool                     // a graceful stop was requested
 	done          bool                     // the loop has ended (tombstone)
+	sealed        bool                     // stop sealed the tombstone: projects STOPPED over FAILED, blocks resume
 	loopErr       error                    // why the loop failed, if it did
 	last          dagql.ObjectResult[*LLM] // last committed conversation (initially the seed)
 	cancel        context.CancelCauseFunc  // kills the loop context (set on start)
+	stepCancel    context.CancelCauseFunc  // cancels the in-flight step's context (set while stepping)
 
 	// Mailbox, guarded by mu. mailbox is the FIFO of pending (not yet
 	// consumed) message IDs; messages holds every record ever enqueued —
@@ -405,11 +404,24 @@ func (rt *AgentRuntime) State() AgentState {
 
 func (rt *AgentRuntime) stateLocked() AgentState {
 	switch {
-	case rt.done && rt.loopErr != nil:
+	case rt.done && rt.loopErr != nil && !rt.sealed:
+		// The loop failed and no stop sealed the tombstone: resume may
+		// still retry it.
 		return AgentStateFailed
 	case rt.done:
 		return AgentStateStopped
-	case rt.stepping, rt.turnOpen:
+	case rt.stepping:
+		// A pause or interrupt requested mid-step projects RUNNING until
+		// the step actually lands: stepping is a live fact, and the state
+		// never claims a park that hasn't happened.
+		return AgentStateRunning
+	case rt.paused:
+		// Paused parks the loop even with a suspended turn or queued mail:
+		// pause takes priority over pending work.
+		return AgentStatePaused
+	case rt.turnOpen:
+		// A turn is suspended between steps (or awaiting its resolution):
+		// the loop is about to continue it.
 		return AgentStateRunning
 	case len(rt.mailbox) > 0:
 		// Mail has arrived but the loop hasn't opened a turn on it yet
@@ -436,20 +448,28 @@ func (rt *AgentRuntime) Snapshot() dagql.ObjectResult[*LLM] {
 
 // enqueue appends a message to the mailbox, computing its delivery evidence
 // from the entry's facts at this instant, and wakes the loop if it is idle.
-// It fails on tombstones: a released runtime will never consume the message.
+// It fails on a STOPPED tombstone (a released runtime will never consume
+// the message); a FAILED tombstone accepts with QUEUED delivery, since a
+// resume may retry the loop and drain it.
 func (rt *AgentRuntime) enqueue(text string) (string, AgentMessageDelivery, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.done {
-		state := rt.stateLocked()
-		if rt.loopErr != nil {
-			return "", "", fmt.Errorf("agent %q is %s; resume arrives in a later phase (loop error: %w)", rt.name, state, rt.loopErr)
-		}
-		return "", "", fmt.Errorf("agent %q is %s; resume arrives in a later phase", rt.name, state)
+	if rt.stateLocked() == AgentStateStopped {
+		return "", "", fmt.Errorf("agent %q is stopped; no turn will ever consume the message", rt.name)
 	}
 	msgID := identity.NewID()
 	var delivery AgentMessageDelivery
 	switch {
+	case rt.done:
+		// FAILED tombstone: the loop is gone until a resume retries it.
+		// Accept rather than error — never silently drop — with QUEUED
+		// evidence; awaitMessage projects the tombstone's failure until a
+		// resume consumes the message.
+		delivery = AgentMessageQueued
+	case rt.paused:
+		// Accepting but not draining: the message waits behind the pause
+		// for a resume.
+		delivery = AgentMessageQueued
 	case rt.turnOpen || rt.stepping:
 		// A turn is in flight: the message WILL be absorbed into it at
 		// the next step boundary — the loop drains the mailbox at every
@@ -457,9 +477,7 @@ func (rt *AgentRuntime) enqueue(text string) (string, AgentMessageDelivery, erro
 		// so a message enqueued while turnOpen always joins that turn.
 		delivery = AgentMessageSteered
 	default:
-		// Idle or never started: the message opens a new turn. (A PAUSED
-		// runtime would make this QUEUED; pause arrives in a later phase,
-		// so that value is registered but unreachable.)
+		// Idle or never started: the message opens a new turn.
 		delivery = AgentMessageStarted
 	}
 	rec := &agentMessageRecord{
@@ -507,10 +525,11 @@ func (rt *AgentRuntime) failMessage(rec *agentMessageRecord, err error) {
 // awaitMessage blocks until the given message record resolves, returning
 // its reply or error. Idempotent: records persist for the session, so a
 // canceled request can re-await and read the same result, and concurrent
-// awaiters share it. If the runtime reaches a terminal state while the
-// record is still unresolved (a FAILED loop leaves unconsumed mail queued
-// for a later resume phase), awaiting fails with that context instead of
-// blocking forever.
+// awaiters share it. If the runtime reaches a tombstone while the record is
+// still unresolved (a FAILED loop leaves unconsumed mail queued for a
+// resume to drain), awaiting projects that context instead of blocking
+// forever — without resolving the record, so a later resume can still
+// consume the message and a re-await then reads its real reply.
 func (rt *AgentRuntime) awaitMessage(ctx context.Context, msgID string) (string, error) {
 	for {
 		rt.mu.Lock()
@@ -562,7 +581,9 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 			rt.mu.Unlock()
 			return err
 		}
-		if rt.stopRequested || len(rt.mailbox) == 0 {
+		if rt.stopRequested || rt.paused || len(rt.mailbox) == 0 {
+			// Stop settles the queue itself; pause parks without draining
+			// (pause takes priority over pending work).
 			rt.mu.Unlock()
 			return nil
 		}
@@ -607,8 +628,8 @@ func (rt *AgentRuntime) drainMailbox(ctx context.Context) error {
 }
 
 // start launches the evaluation loop, once. Subsequent calls are no-ops,
-// including on tombstones (a stopped agent stays stopped; a later phase adds
-// resume).
+// including on tombstones (a stopped agent stays stopped; Resume is the
+// retry path for a failed one).
 func (rt *AgentRuntime) start(ctx context.Context) {
 	rt.mu.Lock()
 	if rt.started || rt.done {
@@ -628,6 +649,13 @@ func (rt *AgentRuntime) start(ctx context.Context) {
 	go rt.loop(loopCtx)
 }
 
+// errAgentInterrupted is the cancellation cause Interrupt uses on the
+// in-flight step's context. The loop uses it to distinguish "step preempted
+// by interrupt" — park PAUSED with the turn suspended and its consumed
+// messages still pending — from "loop context canceled by stop or session
+// teardown", which tombstones as STOPPED.
+var errAgentInterrupted = errors.New("agent interrupted")
+
 // loop is the agent's evaluation loop, run on a goroutine under a detached
 // context. It mirrors LLM.Loop (core/llm.go) with the mailbox spliced in:
 // drain queued messages onto the conversation (each recorded as a
@@ -635,6 +663,10 @@ func (rt *AgentRuntime) start(ctx context.Context) {
 // every step boundary, so mid-turn messages steer the in-flight turn — and
 // when the turn ends, resolve every message it consumed with the turn's
 // reply, then block in receive (state: IDLE) until mail or a stop arrives.
+//
+// A pause parks the loop in that same receive without draining or stepping,
+// even mid-turn: the suspended turn (and any queued mail) waits for a
+// resume, which wakes the loop to continue exactly where it left off.
 func (rt *AgentRuntime) loop(ctx context.Context) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("agent: %s", rt.name))
 
@@ -648,8 +680,8 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			if loopErr != nil {
 				// FAILED: messages consumed by the failed turn resolve
 				// with its error. Unconsumed mail stays queued for a
-				// later resume phase to pick up; awaitMessage projects
-				// the failure from the tombstone meanwhile.
+				// resume to pick up; awaitMessage projects the failure
+				// from the tombstone meanwhile.
 				for _, rec := range rt.consumed {
 					rt.resolveLocked(rec, "", fmt.Errorf("agent %q failed during the turn that consumed this message: %w", rt.name, loopErr))
 				}
@@ -670,6 +702,7 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 				rt.mailbox = nil
 			}
 			rt.stepping = false
+			rt.stepCancel = nil
 			rt.turnOpen = false
 			rt.done = true
 			rt.loopErr = loopErr
@@ -687,6 +720,21 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		// — a message arriving mid-turn joins the in-flight turn (its
 		// STEERED delivery evidence) rather than waiting behind it.
 		for {
+			rt.mu.Lock()
+			if rt.stopRequested || ctx.Err() != nil {
+				rt.mu.Unlock()
+				return
+			}
+			if rt.paused {
+				// Pause takes priority over pending work: park without
+				// draining or stepping, even mid-turn — a suspended turn
+				// (turnOpen, pending input on the snapshot) waits for
+				// resume to continue it.
+				rt.mu.Unlock()
+				break
+			}
+			rt.mu.Unlock()
+
 			if err := rt.drainMailbox(ctx); err != nil {
 				if ctx.Err() != nil {
 					return
@@ -700,14 +748,25 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 				rt.mu.Unlock()
 				return
 			}
+			if rt.paused {
+				// A pause raced in during the drain: whatever was drained
+				// already joined the turn; park before stepping.
+				rt.mu.Unlock()
+				break
+			}
 			inst := rt.last
 			if !inst.Self().HasPending() {
 				rt.mu.Unlock()
 				break
 			}
+			// Each step gets its own cancellable context so Interrupt can
+			// preempt just the step: the loop context stays alive, which is
+			// exactly what distinguishes an interrupt from a stop below.
+			stepCtx, stepCancel := context.WithCancelCause(ctx)
 			rt.transitionLocked(func() {
 				rt.turnOpen = true
 				rt.stepping = true
+				rt.stepCancel = stepCancel
 			})
 			rt.mu.Unlock()
 
@@ -715,10 +774,16 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			// context (preserved by WithoutCancel above), so every committed
 			// snapshot is an honest ID chain — the same mechanism LLM.Loop
 			// uses.
-			next, err := inst.Self().Step(ctx, inst, 0)
+			next, err := inst.Self().Step(stepCtx, inst, 0)
+			// Read the cause before the cleanup cancel below overwrites it:
+			// errAgentInterrupted means Interrupt preempted this step while
+			// the loop context stayed alive.
+			interrupted := errors.Is(context.Cause(stepCtx), errAgentInterrupted)
+			stepCancel(nil)
 			rt.mu.Lock()
 			rt.transitionLocked(func() {
 				rt.stepping = false
+				rt.stepCancel = nil
 				// Step returns the last successfully recorded state even on
 				// error, so committing unconditionally preserves the
 				// completed prefix (mirrors LLM.Loop).
@@ -727,10 +792,20 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 			rt.mu.Unlock()
 			if err != nil {
 				if ctx.Err() != nil {
-					// Canceled (stop --kill or session teardown): keep the
-					// prefix, end as STOPPED rather than FAILED, mirroring
-					// LLM.Loop's interrupt semantics.
+					// Loop context canceled (stop --kill or session
+					// teardown): keep the prefix, end as STOPPED rather
+					// than FAILED, mirroring LLM.Loop's interrupt
+					// semantics.
 					return
+				}
+				if interrupted {
+					// Interrupt preempted the step: the completed prefix is
+					// committed, the turn stays open with its consumed
+					// messages pending (their input is still pending on the
+					// snapshot), and Interrupt set paused — loop back to the
+					// pause check and park. Resume re-steps the pending
+					// input, continuing the turn.
+					continue
 				}
 				loopErr = err
 				return
@@ -745,12 +820,17 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		// STEERED truthful: enqueue and this check are serialized on
 		// rt.mu, so a STEERED message is either already consumed or still
 		// in the mailbox here, never silently deferred to the next turn.
+		//
+		// A paused park skips both: no turn resolution (a suspended turn
+		// resolves only after resume completes it — pause never cuts a
+		// turn short) and no mailbox continuation (queued mail waits for
+		// resume too).
 		rt.mu.Lock()
-		if len(rt.mailbox) > 0 && !rt.stopRequested && ctx.Err() == nil {
+		if !rt.paused && len(rt.mailbox) > 0 && !rt.stopRequested && ctx.Err() == nil {
 			rt.mu.Unlock()
 			continue
 		}
-		if rt.turnOpen {
+		if rt.turnOpen && !rt.paused {
 			// Resolve every message the turn consumed with its final
 			// reply: reply correlation follows the message to whichever
 			// turn consumed it (design §3.2), not the clock.
@@ -765,24 +845,150 @@ func (rt *AgentRuntime) loop(ctx context.Context) {
 		}
 		rt.mu.Unlock()
 
-		// Mailbox empty, turn complete: IDLE. Block in receive until an
-		// enqueue or a stop request pokes wake.
+		// Mailbox empty and turn complete (IDLE), or paused (PAUSED):
+		// block in receive until an enqueue, a resume, or a stop request
+		// pokes wake.
 		select {
 		case <-ctx.Done():
 			return
 		case <-rt.wake:
-			// Re-check stop and the mailbox at the top of the loop.
+			// Re-check stop, pause, and the mailbox at the top of the loop.
 		}
 	}
+}
+
+// Pause marks the runtime paused. The in-flight step (if any) completes;
+// after that the loop parks without draining the mailbox or stepping, even
+// if input is still pending — pause takes priority over pending work, so a
+// mid-turn pause suspends the turn for resume to continue. Messages sent
+// while paused enqueue with QUEUED delivery.
+//
+// Pausing a never-started agent leaves its (lazily created) entry paused,
+// so a later start or send parks immediately. Pausing a FAILED tombstone is
+// allowed — it only sets the flag; resume decides the retry. Pausing a
+// STOPPED tombstone fails: a released runtime has nothing to pause.
+func (rt *AgentRuntime) Pause() error {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.stateLocked() == AgentStateStopped {
+		return fmt.Errorf("agent %q is stopped; a released runtime cannot be paused", rt.name)
+	}
+	if rt.paused {
+		return nil
+	}
+	rt.transitionLocked(func() {
+		rt.paused = true
+	})
+	return nil
+}
+
+// Interrupt preempts the in-flight step and pauses: it cancels the step's
+// context (the completed prefix stays committed — Step returns the last
+// recorded state on cancellation) and sets the paused flag. The interrupted
+// turn stays open and its consumed messages stay pending; resume re-steps
+// the still-pending input, continuing the turn, and turn end resolves them
+// normally. On an idle, never-started, or FAILED agent there is no step to
+// preempt, so interrupt degenerates to pause. Interrupting a STOPPED
+// tombstone fails.
+func (rt *AgentRuntime) Interrupt() error {
+	rt.mu.Lock()
+	if rt.stateLocked() == AgentStateStopped {
+		rt.mu.Unlock()
+		return fmt.Errorf("agent %q is stopped; a released runtime cannot be interrupted", rt.name)
+	}
+	if !rt.paused {
+		rt.transitionLocked(func() {
+			rt.paused = true
+		})
+	}
+	// Read the step cancel AFTER committing paused, under the same lock
+	// hold: once paused is set the loop starts no new step, so this either
+	// targets the one step in flight or is nil (nothing to preempt).
+	stepCancel := rt.stepCancel
+	rt.mu.Unlock()
+
+	if stepCancel != nil {
+		stepCancel(errAgentInterrupted)
+	}
+	return nil
+}
+
+// Resume clears the paused flag and wakes the loop: the suspended turn (if
+// any) continues from the last committed step, and queued mail drains.
+//
+// On a FAILED tombstone, resume retries (design §3.5, supervision-lite):
+// the loop relaunches from the last committed snapshot — the failed step's
+// input is still pending on it, so the loop naturally retries the step, and
+// QUEUED mail drains into the turn. On a running or idle non-paused agent
+// resume is a no-op; on a STOPPED tombstone it fails.
+func (rt *AgentRuntime) Resume(ctx context.Context) error {
+	rt.mu.Lock()
+	switch rt.stateLocked() {
+	case AgentStateStopped:
+		rt.mu.Unlock()
+		return fmt.Errorf("agent %q is stopped; a released runtime cannot be resumed", rt.name)
+	case AgentStateFailed:
+		// Retry: clear the tombstone facts and relaunch the loop goroutine
+		// on a fresh detached context. rt.last still holds the failed
+		// turn's pending input (Step commits the last recorded state even
+		// on error), so the relaunched loop picks the turn back up.
+		loopCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+		rt.cancel = cancel
+		rt.transitionLocked(func() {
+			rt.done = false
+			rt.loopErr = nil
+			rt.paused = false
+			rt.stopRequested = false
+			rt.started = true
+		})
+		rt.mu.Unlock()
+		go rt.loop(loopCtx)
+		return nil
+	}
+	if !rt.paused {
+		rt.mu.Unlock()
+		return nil
+	}
+	rt.transitionLocked(func() {
+		rt.paused = false
+	})
+	rt.mu.Unlock()
+
+	// Wake the parked loop; it re-checks the facts (suspended turn, queued
+	// mail) and continues where the pause left off.
+	select {
+	case rt.wake <- struct{}{}:
+	default:
+	}
+	return nil
 }
 
 // Stop ends the agent's loop and waits for the tombstone. Graceful stop
 // (kill=false) lets an in-flight step finish before the loop ends; kill
 // cancels the loop context immediately (the Step cancellation path already
-// preserves the completed prefix). Idempotent on tombstones.
+// preserves the completed prefix). Idempotent on tombstones — though
+// stopping a FAILED tombstone seals it: no resume will retry it anymore, so
+// its queued mail settles with stop errors and its state projects STOPPED
+// from then on.
 func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error) error {
 	rt.mu.Lock()
 	if rt.done {
+		if rt.stateLocked() == AgentStateFailed {
+			// A FAILED tombstone still admits a resume-retry and may hold
+			// QUEUED mail waiting on one. Stop forecloses the retry:
+			// settle the queue in the same transition that seals the
+			// tombstone, so no awaiter sees STOPPED with mail apparently
+			// still in flight.
+			rt.transitionLocked(func() {
+				for _, msgID := range rt.mailbox {
+					if rec := rt.messages[msgID]; rec != nil {
+						rt.resolveLocked(rec, "", fmt.Errorf("agent %q stopped before consuming this message", rt.name))
+					}
+				}
+				rt.mailbox = nil
+				rt.sealed = true
+			})
+		}
 		rt.mu.Unlock()
 		return nil
 	}
@@ -844,8 +1050,10 @@ func (rt *AgentRuntime) Stop(ctx context.Context, kill bool, cause error) error 
 
 // WaitFor blocks until the entry's projected state equals want, returning
 // immediately if it already does. It errors when the requested state becomes
-// unreachable: the entry reached a terminal state (STOPPED/FAILED) other
-// than the requested one, after which no further transitions occur.
+// unreachable — the entry reached STOPPED, the only terminal state after
+// which no transitions occur. FAILED is not unreachable-terminal: a resume
+// may retry the loop, so waiting on a FAILED agent for another state blocks
+// (the caller can cancel).
 func (rt *AgentRuntime) WaitFor(ctx context.Context, want AgentState) error {
 	for {
 		rt.mu.Lock()
@@ -857,7 +1065,7 @@ func (rt *AgentRuntime) WaitFor(ctx context.Context, want AgentState) error {
 		if cur == want {
 			return nil
 		}
-		if cur.terminal() {
+		if cur == AgentStateStopped {
 			if loopErr != nil {
 				return fmt.Errorf("agent %q is %s (%s unreachable): %w", rt.name, cur, want, loopErr)
 			}

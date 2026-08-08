@@ -481,6 +481,19 @@ func (r *Agent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Preempt the in-flight step, keeping all completed steps, and pause.
+//
+// The interrupted turn stays open: messages it consumed remain pending, and resume continues the turn from the last committed step. To redirect, follow with send — steering and interrupting are separate verbs.
+//
+// On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.
+func (r *Agent) Interrupt() *Agent {
+	q := r.query.Select("interrupt")
+
+	return &Agent{
+		query: q,
+	}
+}
+
 // Display label and identity discriminator — not a session-wide address.
 func (r *Agent) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -494,11 +507,37 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Stop draining the mailbox once the in-flight step completes.
+//
+// Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.
+//
+// Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.
+func (r *Agent) Pause() *Agent {
+	q := r.query.Select("pause")
+
+	return &Agent{
+		query: q,
+	}
+}
+
+// Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.
+//
+// Resuming a FAILED agent retries: the loop relaunches from the last committed snapshot, whose still-pending input is stepped again.
+//
+// No-op on a running or idle agent; resuming a stopped agent fails.
+func (r *Agent) Resume() *Agent {
+	q := r.query.Select("resume")
+
+	return &Agent{
+		query: q,
+	}
+}
+
 // Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
 //
 // Never blocks, never drops; concurrent sends queue in order.
 //
-// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped or failed agent fails: without resume (a later phase), nothing would ever consume the message.
+// Sending to a never-started agent starts it (signal-with-start). Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume. Sending to a stopped agent fails: nothing would ever consume the message.
 func (r *Agent) Send(message string) *AgentMessage {
 	q := r.query.Select("send")
 	q = q.Arg("message", message)
@@ -578,7 +617,7 @@ type AgentWaitForOpts struct {
 
 // Block until the agent reaches the given state, returning immediately if it is already there.
 //
-// Fails if the state becomes unreachable, e.g. waiting for RUNNING on a stopped agent.
+// Fails if the state becomes unreachable: STOPPED is the only terminal state — waiting on a FAILED agent for another state blocks, since a resume may retry the loop.
 func (r *Agent) WaitFor(opts ...AgentWaitForOpts) *Agent {
 	q := r.query.Select("waitFor")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -620,7 +659,7 @@ func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage
 //
 // Idempotent: cancel and re-await freely; concurrent waiters share the result.
 //
-// Fails if the agent reaches a terminal state before the message resolves, e.g. it stopped before consuming the message.
+// Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.
 func (r *AgentMessage) Await(ctx context.Context) (string, error) {
 	if r.await != nil {
 		return *r.await, nil
@@ -18463,7 +18502,7 @@ const (
 	// The message was absorbed into the in-flight turn at a step boundary, steering it.
 	AgentMessageDeliverySteered AgentMessageDelivery = "STEERED"
 
-	// The message is queued behind the in-flight turn, awaiting a resume.
+	// The message is queued: the agent is paused or failed, and a resume will drain it.
 	AgentMessageDeliveryQueued AgentMessageDelivery = "QUEUED"
 )
 
@@ -18548,7 +18587,7 @@ const (
 	// Runtime released; snapshot remains readable.
 	AgentStateStopped AgentState = "STOPPED"
 
-	// The loop failed; snapshot holds the completed prefix.
+	// The loop failed; snapshot holds the completed prefix. Resume retries.
 	AgentStateFailed AgentState = "FAILED"
 )
 

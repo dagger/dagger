@@ -41,15 +41,33 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			DoNotCache("Every send enqueues a distinct message into live runtime state.").
 			Doc(`Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.`,
 				`Never blocks, never drops; concurrent sends queue in order.`,
-				`Sending to a never-started agent starts it (signal-with-start). Sending to a stopped or failed agent fails: without resume (a later phase), nothing would ever consume the message.`).
+				`Sending to a never-started agent starts it (signal-with-start). Sending to a paused or failed agent enqueues with QUEUED delivery, to be drained by a resume. Sending to a stopped agent fails: nothing would ever consume the message.`).
 			Args(
 				dagql.Arg("message").Doc(`The message text, appended to the agent's history as a prompt when a turn consumes it.`),
 			),
 
+		dagql.NodeFunc("interrupt", s.interrupt).
+			DoNotCache("Imperatively mutates runtime state.").
+			Doc(`Preempt the in-flight step, keeping all completed steps, and pause.`,
+				`The interrupted turn stays open: messages it consumed remain pending, and resume continues the turn from the last committed step. To redirect, follow with send — steering and interrupting are separate verbs.`,
+				`On an idle, never-started, or failed agent this is equivalent to pause. Interrupting a stopped agent fails.`),
+
+		dagql.NodeFunc("pause", s.pause).
+			DoNotCache("Imperatively mutates runtime state.").
+			Doc(`Stop draining the mailbox once the in-flight step completes.`,
+				`Pause takes priority over pending work: a mid-turn pause suspends the turn, which resume continues. Messages sent while paused enqueue with QUEUED delivery until a resume.`,
+				`Pausing a never-started agent leaves it paused for its eventual start; pausing a failed agent is allowed (resume decides the retry); pausing a stopped agent fails.`),
+
+		dagql.NodeFunc("resume", s.resume).
+			DoNotCache("Imperatively mutates runtime state.").
+			Doc(`Resume draining the mailbox: a suspended turn continues from the last committed step, and queued messages drain.`,
+				`Resuming a FAILED agent retries: the loop relaunches from the last committed snapshot, whose still-pending input is stepped again.`,
+				`No-op on a running or idle agent; resuming a stopped agent fails.`),
+
 		dagql.NodeFunc("waitFor", s.waitFor).
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until the agent reaches the given state, returning immediately if it is already there.`,
-				`Fails if the state becomes unreachable, e.g. waiting for RUNNING on a stopped agent.`).
+				`Fails if the state becomes unreachable: STOPPED is the only terminal state — waiting on a FAILED agent for another state blocks, since a resume may retry the loop.`).
 			Args(
 				dagql.Arg("state").Doc(`The lifecycle state to wait for.`),
 			),
@@ -71,7 +89,7 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until the turn that consumed this message ends, and return that turn's reply.`,
 				`Idempotent: cancel and re-await freely; concurrent waiters share the result.`,
-				`Fails if the agent reaches a terminal state before the message resolves, e.g. it stopped before consuming the message.`),
+				`Fails if the agent stops before the message resolves. On a failed agent it projects the failure — but the message stays pending, so after a resume consumes it, a re-await returns the real reply.`),
 	}.Install(srv)
 
 	core.AgentStates.Install(srv)
@@ -145,6 +163,57 @@ func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.A
 	// Signal-with-start plus delivery-evidence computation both live in the
 	// registry's central enqueue path.
 	return agents.Send(ctx, parent, args.Message)
+}
+
+func (s agentSchema) interrupt(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.Agent], error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return parent, err
+	}
+	// Interrupting a never-started agent degenerates to pause, so create
+	// the entry lazily (without starting the loop), like pause does.
+	rt, err := agents.GetOrCreate(ctx, parent)
+	if err != nil {
+		return parent, err
+	}
+	if err := rt.Interrupt(); err != nil {
+		return parent, err
+	}
+	return parent, nil
+}
+
+func (s agentSchema) pause(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.Agent], error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return parent, err
+	}
+	// Pausing a never-started agent creates its entry lazily, paused: a
+	// later start or send parks immediately, with mail queuing as QUEUED.
+	rt, err := agents.GetOrCreate(ctx, parent)
+	if err != nil {
+		return parent, err
+	}
+	if err := rt.Pause(); err != nil {
+		return parent, err
+	}
+	return parent, nil
+}
+
+func (s agentSchema) resume(ctx context.Context, parent dagql.ObjectResult[*core.Agent], _ struct{}) (dagql.ObjectResult[*core.Agent], error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return parent, err
+	}
+	// Lazy entry for symmetry with pause: resuming a never-started,
+	// never-paused agent is a documented no-op.
+	rt, err := agents.GetOrCreate(ctx, parent)
+	if err != nil {
+		return parent, err
+	}
+	if err := rt.Resume(ctx); err != nil {
+		return parent, err
+	}
+	return parent, nil
 }
 
 func (s agentSchema) messageDelivery(ctx context.Context, msg *core.AgentMessage, _ struct{}) (core.AgentMessageDelivery, error) {
