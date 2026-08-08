@@ -690,6 +690,9 @@ func TestPublishedDetachableSourceCannotPublishFreshGeneration(t *testing.T) {
 		t.Fatal("creator registration did not stop")
 	}
 	require.Nil(t, sess.currentAttachment)
+	_, err := sess.waitForClientCaller(t.Context(), creator.clientID)
+	var unavailable *engine.SourceClientUnavailableError
+	require.ErrorAs(t, err, &unavailable)
 
 	opts := &ClientInitOpts{ClientMetadata: creator.clientMetadata}
 	claim, err := srv.claimCreatorAttachment(sess, opts)
@@ -751,7 +754,7 @@ func TestDetachableSourcePrePublicationFailureCanRetry(t *testing.T) {
 	}()
 	require.NoError(t, <-handshake)
 	waitCtx, waitCancel := context.WithTimeout(t.Context(), 5*time.Second)
-	_, err = sess.attachables.Wait(waitCtx, nested.clientID)
+	_, err = sess.attachables.Wait(waitCtx, nested.clientID, nil)
 	waitCancel()
 	require.NoError(t, err)
 	require.True(t, sess.sourceClientPublished(nested.clientID))

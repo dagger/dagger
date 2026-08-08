@@ -25,6 +25,9 @@ type sessionAttachableManager struct {
 	callers      map[string]*sessionAttachableCaller
 	reservations map[string]struct{}
 	waiters      map[string][]chan struct{}
+
+	testWaiterAdded func(string)
+	testWaiterWoke  func(string)
 }
 
 type sessionAttachableCaller struct {
@@ -170,34 +173,56 @@ func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCa
 	return caller, true
 }
 
-func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
+func (m *sessionAttachableManager) Wait(
+	ctx context.Context,
+	clientID string,
+	terminal func() error,
+) (engineutil.SessionCaller, error) {
 	for {
 		m.mu.Lock()
 		if caller, ok := m.callers[clientID]; ok && caller.active() {
 			m.mu.Unlock()
 			return caller, nil
 		}
+		if terminal != nil {
+			if err := terminal(); err != nil {
+				m.mu.Unlock()
+				return nil, err
+			}
+		}
 
 		waiter := make(chan struct{})
 		m.waiters[clientID] = append(m.waiters[clientID], waiter)
+		if m.testWaiterAdded != nil {
+			m.testWaiterAdded(clientID)
+		}
 		m.mu.Unlock()
 
 		select {
 		case <-ctx.Done():
-			m.removeWaiter(clientID, waiter)
-			if caller, ok := m.Lookup(clientID); ok {
+			m.mu.Lock()
+			m.removeWaiterLocked(clientID, waiter)
+			if caller, ok := m.callers[clientID]; ok && caller.active() {
+				m.mu.Unlock()
 				return caller, nil
 			}
+			if terminal != nil {
+				if err := terminal(); err != nil {
+					m.mu.Unlock()
+					return nil, err
+				}
+			}
+			m.mu.Unlock()
 			return nil, fmt.Errorf("no active session attachables for client %q: %w", clientID, context.Cause(ctx))
 		case <-waiter:
+			if m.testWaiterWoke != nil {
+				m.testWaiterWoke(clientID)
+			}
 		}
 	}
 }
 
-func (m *sessionAttachableManager) removeWaiter(clientID string, waiter chan struct{}) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+func (m *sessionAttachableManager) removeWaiterLocked(clientID string, waiter chan struct{}) {
 	waiters := m.waiters[clientID]
 	for i, candidate := range waiters {
 		if candidate == waiter {

@@ -921,10 +921,13 @@ func (srv *Server) initializeDaggerClient(
 	slog.Info("initializing new client")
 	var callerG singleflight.Group[string, engineutil.SessionCaller]
 	client.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		if caller, ok := client.daggerSession.attachables.Lookup(id); ok {
+			return caller, nil
+		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
-			return client.daggerSession.attachables.Wait(ctx, id)
+			return client.daggerSession.waitForClientCaller(ctx, id)
 		})
 		return caller, err
 	}
@@ -1122,6 +1125,15 @@ func (srv *Server) initializeDaggerClient(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+func (sess *daggerSession) waitForClientCaller(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
+	return sess.attachables.Wait(ctx, clientID, func() error {
+		if sess.lifetime == sessionLifetimeDetachable && sess.sourceClientPublished(clientID) {
+			return &engine.SourceClientUnavailableError{ClientID: clientID}
+		}
+		return nil
+	})
 }
 
 func (client *daggerClient) resolveHostServiceCaller(
