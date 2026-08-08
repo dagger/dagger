@@ -98,15 +98,21 @@ adopted:
 
 **There is always an agent.** Every evaluation loop *is* an agent; the
 synchronous API just never looks at the handle. `llm.loop` becomes sugar for
-(approximately) `llm.asAgent.start.waitFor(IDLE).snapshot`. This closes the
-worst coordination gap for free: module-driven loops stop being opaque,
-because any running evaluation is an addressable agent.
+(approximately) spawning an anonymous agent, starting it, waiting for
+`IDLE`, and reading the snapshot. This closes the worst coordination gap for
+free: module-driven loops stop being opaque, because any running evaluation
+is an addressable agent.
 
-An `Agent` is a content-addressed dagql **value** (its seed conversation plus
-a name), exactly as `Service` is a value: starting it registers a runtime
-entry — mailbox, loop goroutine on a detached context, computed state — in a
-runtime table keyed by (value digest, session), one running instance per key,
-following the `Services` registry model (services.go:157, :1219). `start` is
+An `Agent` is a **spawned instance**: `llm.spawn` mints a unique instance ID
+per call and pins it into the returned handle's chain via the pure
+`agent(id:)` lookup — Agent joins `AgentMessage` in the minted-and-pinned
+identity family (§9). The value itself stays a pure, content-addressed dagql
+value (seed conversation, minted instance ID, display name), and starting it
+registers a runtime entry — mailbox, loop goroutine on a detached context,
+computed state — in a session-scoped runtime table keyed by the value's
+digest. Because the digest contains the minted ID, every spawn gets a fresh
+entry: two spawns of one composition are two agents, and a stopped
+instance's slot can never be resolved to by a later spawn. `start` is
 `DoNotCache` and idempotent; `send` to an unstarted agent starts it
 (signal-with-start).
 
@@ -129,7 +135,7 @@ immutable LLM value.
 type Agent implements Node {
   id: ID!
 
-  """Display label and identity discriminator — not a session-wide address."""
+  """Display label — telemetry and error messages; carries no identity."""
   name: String!
 
   """Computed lifecycle state; never stored."""
@@ -222,10 +228,17 @@ Constructors and injection:
 ```graphql
 type LLM {
   """
-  Package the conversation as an agent: a startable, addressable evaluation
-  loop seeded with this conversation's state, tools, and workspace.
+  Spawn the conversation as an agent: a startable, addressable evaluation
+  loop seeded with this conversation's state, tools, and workspace. Every
+  spawn mints a unique agent instance; the returned ID is pinned to it.
   """
-  asAgent(name: String): Agent!
+  spawn(name: String): ID! @expectedType(name: "Agent")
+
+  """
+  Rehydrate a spawned agent's handle from its instance ID: the pure lookup
+  spawn pins instance identity through. Never creates an instance.
+  """
+  agent(id: String!, name: String!): Agent!
 }
 ```
 
@@ -277,8 +290,9 @@ GraphQL requests can.)
 
 There is **no session-wide agent namespace** — no `Query.agent(name)`, no
 `Query.agents`. To message an agent you must hold its ID. `name` is a display
-label and identity discriminator (two otherwise-identical agents — the
-`fork(label:)` role), not an address.
+label only — not an address, and not an identity: uniqueness is minted by
+`spawn`, so two spawns under one name are simply two agents sharing a label
+(agents need no `fork(label:)`-style discriminator).
 
 Orchestrators hold agents as **bound-object state**, the pattern
 `modules/editor` proves (a `todos` field plus `todoWrite(...): Editor!`
@@ -293,7 +307,7 @@ type Team {
   spawn(name: String!, task: String!, source: Workspace!): Team! {
     let worker = source.agents.compose
       .withSystemPrompt(workerPrompt)
-      .asAgent(name)
+      .spawn(name)
     worker.send(task)
     self.members += [worker]
     self
@@ -362,14 +376,24 @@ So: blocking calls are the *verb*; `WAITING_INPUT` is the *view*.
   the next step boundary, with `STEERED` delivery evidence), and tailcall's
   experience says never conflate the two.
 - **`stop`** releases the runtime and leaves a tombstone — state and final
-  snapshot readable for the rest of the session — following `ExitedService`
-  (services.go:180). (That precedent arguably wants generalizing anyway,
-  e.g. querying logs of a crashed service after the fact.)
+  snapshot readable for the rest of the session, in the spirit of
+  `ExitedService` (services.go:180). One deliberate divergence: Services
+  *free* a running entry's registry key on exit (`delete(ss.running, key)`,
+  services.go:1116–1137; tombstones go to a capped side list) precisely
+  because their keys are reusable composition digests. An agent's key
+  contains its spawn-minted instance ID — born unique, never reusable — so
+  the tombstone keeps the keyed slot harmlessly forever, and terminal stop
+  is the honest semantics of an instance (nobody asks to restart a k8s
+  UID).
 - **`FAILED`** holds the completed prefix in `snapshot`; `resume` re-enters
   the loop from it — supervision-lite.
-- **Dedupe**: two evaluations of the same `asAgent` chain in one session
-  resolve to the same value digest and thus the same running instance, like
-  services; distinct `name`s are the way to run identical twins.
+- **Instances, not dedupe**: `LLM` *values* dedupe — identical chains are
+  one cached conversation, with `fork(label:)` as the divergence knob — but
+  agents are spawned *instances*: `spawn` is `DoNotCache` and mints fresh
+  identity per call, so two evaluations of one composition are two runtimes.
+  The one load-bearing dedupe survives above the spawn: identical `llm.loop`
+  chains still cache-hit at loop's own call ID, so a second evaluation never
+  reaches the inner spawn.
 
 ## 4. Persistence: resume from telemetry
 
@@ -383,7 +407,7 @@ to and persist in Cloud.
 
 Resume = locate the turn-tip call digest (already findable via
 `llmCallDigest` attributes), decode its Call payload, re-Select it, then
-`asAgent.start`. Notes:
+`spawn` + `start`. Notes:
 
 - Span emission dedupes by call digest per session (`ShouldEmitTelemetry`,
   core/telemetry.go:80-84), so reconstruction must join call payloads across
@@ -407,9 +431,10 @@ the frontend becomes a pure observer — spans for progress (unchanged),
 `state`/`waitingOn` for the ball-in-your-court moment, `AgentMessage.await`
 when it wants a turn's reply. Ctrl-C maps to `interrupt` (prefix-preserving)
 instead of cancelling the turn context and rolling back client-side state.
-`dagger agent` starts a real Agent and attaches to it; a second terminal (or
-Cloud) attaching to the same session addresses the same agent via its
-telemetry-carried ID.
+`dagger agent` spawns a real Agent and attaches to it; a second terminal (or
+Cloud) attaching to the same session addresses the same agent **by held ID**
+— its telemetry-carried ID, never by re-deriving the composition, which
+would simply spawn a fresh agent (attach-by-rederivation is renounced; §9).
 
 ## 6. Naming: freeing `Agent`
 
@@ -427,7 +452,7 @@ Everything else keeps its name, and converges rather than collides:
 | `@agent` annotation, `Function.withAgent`, `IsAgent` | stay — "this function defines an agent" still reads right |
 | `dagger agent` CLI | stays, and now starts an actual `Agent` |
 
-Middlewares *define* agents; `compose(...).asAgent(name)` *instantiates* one.
+Middlewares *define* agents; `compose(...).spawn(name)` *instantiates* one.
 
 ## 7. Open questions
 
@@ -497,19 +522,45 @@ core/integration/agent_runtime_test.go), ratified here:
   uses to materialize state as selectors): after enqueueing, `send` re-execs
   through a lookup field — `Agent.message(id: String!): AgentMessage!` —
   via a real Select, so the returned handle's ID is an honest, replayable
-  chain (`…asAgent!message(id:"…")`) pinned to the generated message ID and
-  addressable from any request in the session.
-- **Imperative verbs are ID-returning, sync-style.** `start`, `send`,
-  `interrupt`, `pause`, `resume`, `waitFor`, and `stop` return `ID!` with
-  `@expectedType`, exactly like `Service.start`/`stop` and the `sync`
-  fields. Lazy clients (Dang) force scalar-returning fields at the call
-  site and re-hydrate the ID into an object via the annotation, so the
+  chain (`…agent(id:…)!message(id:"…")`) pinned to the generated message ID
+  and addressable from any request in the session.
+- **Agent identity is minted at spawn and pinned by re-exec.** Ratified
+  after live QA surfaced the failure the original model guaranteed: with
+  identity derived from the composition chain (name included), a stopped
+  agent's tombstone occupied the registry slot every identical
+  re-derivation resolved to — so dismiss-and-rehire against an unchanged
+  workspace addressed the predecessor's corpse (the task rides `send`, not
+  the chain, making this the common case, not an edge). Prior art is
+  unanimous — Temporal workflowID/runID + reuse policies, Erlang name/Pid,
+  Akka path/ref-with-UID ("a new incarnation … is not the same actor"),
+  k8s name/UID + generateName — a reusable name is never the instance ID,
+  and uniqueness is minted where instances are born, never by callers. So
+  the pure constructor `asAgent(name)` became the effectful verb
+  `spawn(name)`: it mints the instance ID in the resolver and pins it
+  through the pure `LLM.agent(id:, name:)` lookup — extending the
+  message-identity pattern (previous bullet) one level up — and, being
+  imperative, returns `ID!` with `@expectedType` like every other verb.
+  The registry is untouched: keys are still content digests, they just
+  never collide now, so send-to-STOPPED-errors, seal ordering,
+  signal-with-start, resume-retries-FAILED, message pinning, tombstone
+  readability (now per-instance), and no-namespace all hold verbatim.
+  Renounced with it: attach-by-rederivation — two evaluations of the same
+  composition are two agents, and observing a running agent requires
+  holding its ID (§3.3's addressing model, now strengthened: IDs are
+  unforgeable, since composition knowledge alone no longer derives a live
+  handle). Dissolved with it: the entire reuse-policy question — terminal
+  stop is the honest end of an instance, and name reuse is trivially safe.
+- **Imperative verbs are ID-returning, sync-style.** `spawn`, `start`,
+  `send`, `interrupt`, `pause`, `resume`, `waitFor`, and `stop` return
+  `ID!` with `@expectedType`, exactly like `Service.start`/`stop` and the
+  `sync` fields. Lazy clients (Dang) force scalar-returning fields at the
+  call site and re-hydrate the ID into an object via the annotation, so the
   side effect executes exactly once — eliminating the duplicate-send
   hazard of re-forcing a lazy `DoNotCache` chain. Reads stay
-  object-returning: `asAgent` (pure constructor), `snapshot`,
-  `message(id:)` (pure lookup). For `send` the returned ID is the pinned
-  lookup chain (previous bullet), so re-hydrating it replays the lookup,
-  not the enqueue.
+  object-returning: `agent(id:)` and `message(id:)` (pure lookups), and
+  `snapshot`. For `spawn` and `send` the returned ID is the pinned lookup
+  chain (previous bullets), so re-hydrating it replays the lookup, not the
+  mint/enqueue.
 - **Self-await hazard.** A tool holding its own calling agent's handle (via
   `Agent!` injection) can `send` to it — the message joins the in-flight
   turn as `STEERED` — but awaiting it from inside that same turn's tool call
@@ -539,21 +590,26 @@ core/integration/agent_runtime_test.go), ratified here:
 
 What is BUILT (see also §9 for ratified semantics):
 
-- **Core runtime**: `core/agent.go` (Agent value, `AgentRuntimes` session
-  registry keyed by content digest, loop with mailbox drained at step
+- **Core runtime**: `core/agent.go` (Agent value with spawn-minted
+  `InstanceID`, `AgentRuntimes` session registry keyed by content digest —
+  collision-free by construction, loop with mailbox drained at step
   boundaries, tombstones), `core/schema/agent.go` (fields: `name`, `state`,
   `snapshot`, `start`, `send`, `message`, `waitFor`, `pause`, `resume`,
   `interrupt`, `stop`; `AgentMessage.{delivery,await}`; `AgentState`,
   `AgentMessageDelivery`). Registry wiring in `engine/server/session.go`
   alongside `Services`.
+- **Spawned instance identity**: `LLM.spawn(name)` mints a unique instance
+  per call and pins it through the pure `LLM.agent(id:, name:)` lookup
+  (§9), in `core/schema/llm.go`; name is display-only. `asAgent` is gone.
 - **Message identity**: re-exec pinning via `Agent.message(id:)` (§9) —
   handles are honest chains, cancel-and-re-await works across requests.
-- **ID-returning verbs**: the imperative fields (`start`, `send`,
+- **ID-returning verbs**: the imperative fields (`spawn`, `start`, `send`,
   `interrupt`, `pause`, `resume`, `waitFor`, `stop`) return `ID!` with
-  `@expectedType`, `Service.start`-style (§9); reads (`asAgent`,
+  `@expectedType`, `Service.start`-style (§9); reads (`agent(id:)`,
   `snapshot`, `message(id:)`) stay object-returning. Typed SDKs
-  re-hydrate self-returning verbs natively; `send`'s message ID
-  re-hydrates via `node(id:)` (`dagger.Ref` in the Go SDK).
+  re-hydrate self-returning verbs natively; `spawn`'s agent ID and
+  `send`'s message ID re-hydrate via `node(id:)` (`dagger.Ref` in the Go
+  SDK).
 - **`Agent!` injection**: `core/agent_context.go` + `core/modfunc.go`
   (`FunctionArg.IsAgentHandle`, distinct from the middleware `IsAgent`
   flag); hidden from tool schemas via `core/llm_object_tools.go`. Works
@@ -565,14 +621,31 @@ What is BUILT (see also §9 for ratified semantics):
   `dagql/idtui/frontend_pretty.go`): submit = send + resume + await,
   re-rooting on `snapshot` at turn end; interjections send immediately
   (STEERED); Ctrl-C → `interrupt` (PAUSED, prefix kept), next submit
-  resumes; wholesale LLM replacement stops the stale runtime. The session
-  names agents uniquely (`interactive-<hex>`) — name-as-discriminator per
-  §3.3.
+  resumes; wholesale LLM replacement stops the stale runtime and the next
+  submit spawns afresh — instance uniqueness comes from `spawn` itself,
+  so the session's old entropy naming is gone.
+- **Async orchestration module** (§3.3 Team sketch, realized):
+  `modules/staff` — spawn/sendTo/ask/status/read/collect/interruptWorker/
+  dismiss over module-held `[Agent!]` state (the `modules/editor`
+  pattern), with each worker given an `askChief` line home whose answers
+  ride the chief's own record. Deliberately NOT registered in the repo
+  dagger.toml (load with `dagger -m ./modules/staff`). Side-effecting and
+  live-reading tools carry `@cache(policy: FunctionCachePolicy.Never)` —
+  load-bearing: dagql otherwise replays identical-arg calls, so a
+  zero-arg `status` could never observe a state transition. Windowed
+  reads (`read_agent`-style) are the module-side `read` projection over
+  `snapshot.messages`, as predicted — no core work needed.
 - **Tests**: `core/integration/agent_runtime_test.go` +
   `agent_injection_test.go` (fixture
-  `testdata/modules/go/agent-poker`), all against the keyless `replay/`
-  provider, including genuinely mid-turn STEERED and mid-step interrupt
-  via a slow-tool recording synchronized on a cache-volume marker.
+  `testdata/modules/go/agent-poker`) + `staff_test.go` (E2E over the
+  served `modules/staff`: spawn → askChief steering into the chief's open
+  turn → collect), all against the keyless `replay/` provider, including
+  genuinely mid-turn STEERED and mid-step interrupt via a slow-tool
+  recording synchronized on a cache-volume marker. Spawn semantics are
+  locked in by `TestSpawnInstances` (two spawns of an identical
+  composition are distinct, concurrently running agents) and
+  `TestSpawnAfterStop` (dismiss-and-rehire works; the predecessor's
+  tombstone stays readable by held ID).
 
 What is NOT built — threads to pull, each self-contained:
 
@@ -583,7 +656,8 @@ What is NOT built — threads to pull, each self-contained:
    `dagql/dagui/spans.go`.
 2. **Enqueue guards** (§3.3): depth limiting, self-send rejection, cycle
    detection — none exist. Central point: the enqueue path in
-   `AgentRuntimes` (`Send`).
+   `AgentRuntimes` (`Send`). Until then `modules/staff` documents the
+   ask/askChief deadlock and steers the chief around it by prompt.
 3. **Provenance stamping** (§3.3): drained messages record plain
    `withPrompt` selectors with no sender identity; no "via X" in history
    or telemetry.
@@ -591,21 +665,28 @@ What is NOT built — threads to pull, each self-contained:
    unreachable; needs the user-ask parking path (the non-modal
    resurrection of the dead `LLM.Interject`).
 5. **Loop-as-sugar** (§7): `LLM.loop`/`step` remain an independent code
-   path; consequently sync loops cannot satisfy `Agent!` args.
+   path; consequently sync loops cannot satisfy `Agent!` args. Note the
+   spawn pivot constrains the eventual sugar pleasantly: `loop` stays a
+   cached pure field whose resolver would spawn internally, and identical
+   `llm.loop` chains still dedupe at loop's own call ID — the second
+   evaluation cache-hits `loop` and never reaches the inner spawn.
 6. **`awaitAny`/`awaitAll`** (§7): absent; orchestrators poll
-   `state`/`waitFor` per agent.
-7. **Async orchestration module** (§3.3 Team sketch): not built;
-   `modules/delegate` remains synchronous. Buildable today on `asAgent` /
-   `send` / `message.await` / `snapshot` with module-held `[Agent!]` state
-   (the `modules/editor` pattern); windowed reads (`read_agent`-style) are
-   a module-side projection over `snapshot.messages` — no core work
-   needed. Note guards (thread 2) do not exist yet: the module should
-   avoid self-ask cycles by construction.
-8. **CLI follow-ups**: re-enabling undo/fork in prompt mode (the
+   `state`/`waitFor` per agent (staff's `collect` is a per-worker
+   `waitFor(IDLE)`).
+7. **CLI follow-ups**: re-enabling undo/fork in prompt mode (the
    "interrupts lose progress" rationale is retired — server-side
    interrupt is prefix-preserving); `startInteractivePromptMode`
    pre-initializes a default LLM that demands provider config even when
    the entrypoint supplies its own (pre-existing wart); confirm the
    `TestGolden` TUI snapshots in CI (they replay non-prompt traces and
    should be unaffected by the prompt-flow rewire).
+8. **Module-call cache staleness** (open investigation): in one live QA
+   session, after a second module reload, identical-arg staff calls
+   (`status`, `read`) replayed stale results DESPITE their
+   `@cache(Never)` annotations — which had verifiably worked right after
+   the first reload. Fresh arg-tuples always read live. Suspects: the
+   module-function cache policy path (`core/modfunc.go`,
+   `derivedCachePolicy`) or reload/re-serve interplay with cached
+   function metadata. Until root-caused, treat repeated same-arg module
+   reads in long reload-heavy sessions with suspicion.
 
