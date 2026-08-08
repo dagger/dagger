@@ -28,6 +28,7 @@ type Query { doug: Doug! }
 type Workspace { id: ID! }
 type Changeset { id: ID! }
 type LLM { id: ID! }
+type Agent { id: ID! }
 type Container { id: ID! }
 type Directory { id: ID! }
 type Secret { id: ID! }
@@ -67,6 +68,12 @@ type Doug {
 
   "Note the conversation, if there is one — an optional LLM argument."
   annotate(llm: ID @expectedType(name: "LLM")): Doug!
+
+  "Poke the calling agent — MCP supplies the Agent argument."
+  poke(
+    caller: ID! @expectedType(name: "Agent"),
+    note: String!,
+  ): String!
 
   "Apply a changeset — requires a non-liftable object arg, so ineligible."
   apply(changes: ID! @expectedType(name: "Changeset")): Doug!
@@ -139,17 +146,19 @@ func TestObjectToolEligible(t *testing.T) {
 	// handle to pass.
 	require.False(t, objectToolEligible(fieldByName(doug, "apply"), nil, conversationToolArgs))
 
-	// The LLM handle is supplied by MCP at object-tool dispatch, so this
-	// required argument does not disqualify the method...
+	// LLM and Agent handles are supplied by MCP at object-tool dispatch, so
+	// these required arguments do not disqualify the methods...
 	require.True(t, objectToolEligible(fieldByName(doug, "compact"), nil, conversationToolArgs))
 	require.True(t, objectToolEligible(fieldByName(doug, "annotate"), nil, conversationToolArgs))
+	require.True(t, objectToolEligible(fieldByName(doug, "poke"), nil, conversationToolArgs))
 
-	// ...unless the tools are served without a conversation to fill it from
-	// (dagger mcp). Then an LLM argument is unsatisfiable like any other
-	// object argument: a required one disqualifies the method, an optional one
-	// is left to the caller.
+	// ...unless the tools are served without a conversation to fill them from
+	// (dagger mcp). Then an LLM or Agent argument is unsatisfiable like any
+	// other object argument: a required one disqualifies the method, an
+	// optional one is left to the caller.
 	require.False(t, objectToolEligible(fieldByName(doug, "compact"), nil, standaloneToolArgs))
 	require.True(t, objectToolEligible(fieldByName(doug, "annotate"), nil, standaloneToolArgs))
+	require.False(t, objectToolEligible(fieldByName(doug, "poke"), nil, standaloneToolArgs))
 
 	// ...or when the type is LIFTABLE: a required Container arg renders as an
 	// address string and is lifted via the core Address API at dispatch time.
@@ -195,8 +204,8 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.NoError(t, err)
 	props := readSchema["properties"].(map[string]any)
 
-	// Workspace remains contextual, while the LLM argument is filled directly
-	// by MCP. Neither is exposed to the model's tool schema.
+	// Workspace remains contextual, while LLM and Agent arguments are filled
+	// directly by MCP. None are exposed to the model's tool schema.
 	require.NotContains(t, props, "source")
 	compactSchema, err := objectMethodSchema(schema, fieldByName(doug, "compact"), conversationToolArgs)
 	require.NoError(t, err)
@@ -204,6 +213,10 @@ func TestObjectMethodSchema(t *testing.T) {
 	annotateSchema, err := objectMethodSchema(schema, fieldByName(doug, "annotate"), conversationToolArgs)
 	require.NoError(t, err)
 	require.NotContains(t, annotateSchema["properties"], "llm")
+	pokeSchema, err := objectMethodSchema(schema, fieldByName(doug, "poke"), conversationToolArgs)
+	require.NoError(t, err)
+	require.NotContains(t, pokeSchema["properties"], "caller")
+	require.Contains(t, pokeSchema["properties"], "note")
 
 	// Served without a conversation, MCP has nothing to fill an LLM argument
 	// from, so an optional one is exposed by ID like any other object.

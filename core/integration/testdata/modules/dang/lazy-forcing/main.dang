@@ -1,0 +1,35 @@
+# Fixture for the lazy re-forcing hazard behind hack/designs/async-agents.md
+# §9: Dang forces a lazy chain once per SELECTION off it, not once per `let`
+# binding, so a chain whose calls cannot deduplicate RE-RUNS — side effects
+# included. modules/staff's harvest tools depend on the escape hatch measured
+# here, so it is worth a net of its own.
+#
+# LLM.spawn is the witness: it is DoNotCache and mints a fresh agent instance
+# per evaluation, so two reads that disagree prove the chain ran twice. The
+# replay/ model is never called — spawn only composes — so no provider
+# configuration is needed.
+type Lazyforcing {
+  let emptyReplay: String! = "replay/W10="
+
+  # Effectful and non-deduplicable: @cache(Never) keeps dagql from replaying
+  # the call, so every execution mints its own agent instance. Returns an
+  # object, which is what keeps the caller's chain lazy.
+  mint: Agent! @cache(policy: FunctionCachePolicy.Never) {
+    llm(model: emptyReplay).spawn(name: "probe")
+  }
+
+  # The hazard: two selections off one `let` over an unpinned object-returning
+  # @cache(Never) call each re-execute it, so the reads disagree (2).
+  unpinnedInstances: Int! @cache(policy: FunctionCachePolicy.Never) {
+    let minted = Dagger.lazyforcing.mint
+    [toString(minted.id), toString(minted.id)].uniq.length
+  }
+
+  # The escape hatch (§9): an ID-returning verb is forced at the CALL SITE and
+  # re-hydrated through node(id:), so the binding already holds a handle and
+  # re-selection replays the lookup, not the mint (1).
+  pinnedInstances: Int! @cache(policy: FunctionCachePolicy.Never) {
+    let minted = llm(model: emptyReplay).spawn(name: "probe")
+    [toString(minted.id), toString(minted.id)].uniq.length
+  }
+}

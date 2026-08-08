@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/juju/ansiterm/tabwriter"
@@ -16,6 +17,11 @@ import (
 
 var agentListMode bool
 var agentResume agentSessionFlag
+var agentCheckpointInclude []string
+var agentCheckpointExclude []string
+var agentCheckpointMaxUntrackedFileBytes int
+var agentCheckpointMaxUntrackedTotalBytes int
+var agentCheckpointMaxUntrackedFiles int
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [options] [name...]",
@@ -51,7 +57,7 @@ Examples:
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
-				// Compose all selected agents onto a fresh workspace-bound LLM,
+				// Compose all selected agents onto a frozen workspace-bound LLM,
 				// then hand the composed LLM to the interactive prompt. A module
 				// function returning LLM already lands in prompt mode today.
 				llmID, err := composeAgents(ctx, dag, args)
@@ -108,6 +114,16 @@ func init() {
 	// flags require '=' to attach a value — a space-separated one would be
 	// parsed as a positional agent name.)
 	agentCmd.Flags().Lookup("resume").NoOptDefVal = string(agentSessionPicker)
+	agentCmd.Flags().StringArrayVar(&agentCheckpointInclude, "checkpoint-include", nil,
+		"Explicitly include and approve an exact suspicious workspace path (repeatable)")
+	agentCmd.Flags().StringArrayVar(&agentCheckpointExclude, "checkpoint-exclude", nil,
+		"Exclude a workspace path pattern from the portable checkpoint (repeatable)")
+	agentCmd.Flags().IntVar(&agentCheckpointMaxUntrackedFileBytes, "checkpoint-max-untracked-file-bytes", 0,
+		"Maximum bytes for one untracked checkpoint file (default 16 MiB)")
+	agentCmd.Flags().IntVar(&agentCheckpointMaxUntrackedTotalBytes, "checkpoint-max-untracked-total-bytes", 0,
+		"Maximum aggregate untracked checkpoint bytes (default 64 MiB)")
+	agentCmd.Flags().IntVar(&agentCheckpointMaxUntrackedFiles, "checkpoint-max-untracked-files", 0,
+		"Maximum untracked checkpoint files (default 4096)")
 }
 
 // agentIncludeVars maps the positional agent names to the `include` variable of
@@ -119,11 +135,97 @@ func agentIncludeVars(include []string) map[string]any {
 	return map[string]any{"include": include}
 }
 
-const composeAgentsQuery = `query ComposeAgents($include: [String!]) {
+// checkpointVars is the capture policy every freeze in this session runs under:
+// the initial one that composes the agents, and each re-freeze that follows a
+// save or a reset.
+func checkpointVars() map[string]any {
+	return map[string]any{
+		"checkpointInclude":      agentCheckpointInclude,
+		"checkpointExclude":      agentCheckpointExclude,
+		"maxUntrackedFileBytes":  optionalPositiveInt(agentCheckpointMaxUntrackedFileBytes),
+		"maxUntrackedTotalBytes": optionalPositiveInt(agentCheckpointMaxUntrackedTotalBytes),
+		"maxUntrackedFiles":      optionalPositiveInt(agentCheckpointMaxUntrackedFiles),
+	}
+}
+
+func composeAgentsVars(include []string) map[string]any {
+	vars := checkpointVars()
+	maps.Copy(vars, agentIncludeVars(include))
+	return vars
+}
+
+func optionalPositiveInt(value int) any {
+	if value == 0 {
+		return nil
+	}
+	return value
+}
+
+const checkpointWorkspaceQuery = `query CheckpointWorkspace(
+  $checkpointInclude: [String!]
+  $checkpointExclude: [String!]
+  $maxUntrackedFileBytes: Int
+  $maxUntrackedTotalBytes: Int
+  $maxUntrackedFiles: Int
+) {
   workspace: currentWorkspace {
-    agents(include: $include) {
-      compose {
-        id
+    checkpoint(
+      include: $checkpointInclude
+      exclude: $checkpointExclude
+      maxUntrackedFileBytes: $maxUntrackedFileBytes
+      maxUntrackedTotalBytes: $maxUntrackedTotalBytes
+      maxUntrackedFiles: $maxUntrackedFiles
+    ) {
+      id
+    }
+  }
+}`
+
+// checkpointWorkspace freezes the live workspace into a fresh portable
+// checkpoint, under the same capture policy the session was composed with.
+//
+// A conversation only stays portable while its workspace is a frozen tree, so
+// every rebinding of the agent's workspace mid-session goes through here rather
+// than binding the live checkout back in: a bound tool keeps reading a
+// host-independent tree, and the trace keeps a replayable leaf.
+func checkpointWorkspace(ctx context.Context, dag *dagger.Client) (*dagger.Workspace, error) {
+	var res struct {
+		Workspace struct {
+			Checkpoint struct {
+				ID string
+			}
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query:     checkpointWorkspaceQuery,
+		OpName:    "CheckpointWorkspace",
+		Variables: checkpointVars(),
+	}, &dagger.Response{Data: &res}); err != nil {
+		return nil, err
+	}
+	return dagger.Ref[*dagger.Workspace](dag, dagger.ID(res.Workspace.Checkpoint.ID)), nil
+}
+
+const composeAgentsQuery = `query ComposeAgents(
+  $include: [String!]
+  $checkpointInclude: [String!]
+  $checkpointExclude: [String!]
+  $maxUntrackedFileBytes: Int
+  $maxUntrackedTotalBytes: Int
+  $maxUntrackedFiles: Int
+) {
+  workspace: currentWorkspace {
+    checkpoint(
+      include: $checkpointInclude
+      exclude: $checkpointExclude
+      maxUntrackedFileBytes: $maxUntrackedFileBytes
+      maxUntrackedTotalBytes: $maxUntrackedTotalBytes
+      maxUntrackedFiles: $maxUntrackedFiles
+    ) {
+      agents(include: $include) {
+        compose {
+          id
+        }
       }
     }
   }
@@ -132,9 +234,11 @@ const composeAgentsQuery = `query ComposeAgents($include: [String!]) {
 func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (string, error) {
 	var res struct {
 		Workspace struct {
-			Agents struct {
-				Compose struct {
-					ID string
+			Checkpoint struct {
+				Agents struct {
+					Compose struct {
+						ID string
+					}
 				}
 			}
 		}
@@ -142,14 +246,14 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string) (s
 	err := dag.Do(ctx, &dagger.Request{
 		Query:     composeAgentsQuery,
 		OpName:    "ComposeAgents",
-		Variables: agentIncludeVars(include),
+		Variables: composeAgentsVars(include),
 	}, &dagger.Response{
 		Data: &res,
 	})
 	if err != nil {
 		return "", err
 	}
-	return res.Workspace.Agents.Compose.ID, nil
+	return res.Workspace.Checkpoint.Agents.Compose.ID, nil
 }
 
 const listAgentsQuery = `query ListAgents($include: [String!]) {

@@ -107,7 +107,7 @@ type Editor {
 			Text: "done",
 		}}))
 	base := c.LLM(dagger.LLMOpts{Model: model}).WithWorkspace(ws)
-	transcript, err := ws.Agents().Compose(dagger.AgentGroupComposeOpts{Base: base}).
+	transcript, err := ws.Agents().Compose(dagger.AgentMiddlewareGroupComposeOpts{Base: base}).
 		WithPrompt("track it").
 		Loop().
 		Transcript(ctx)
