@@ -7,6 +7,16 @@ live QA session that shook out modules/staff; the big in-flight item is now
 the **spawn pivot** (a ratified-in-conversation design change, not yet
 implemented or written into the design doc).
 
+**UPDATE (post-pivot QA):** the spawn pivot below IS now implemented, and a
+second live QA session against the rebuilt+reinstalled modules/staff passed
+end to end: spawn/status/read/collect, interrupt→PAUSED→sendTo resume
+(delivery STEERED, steer honored), blocking ask, the askChief round-trip
+(question steered into the chief's open turn; the turn's closing reply came
+back verbatim), and — the pivot's headline case — **dismiss→re-spawn of the
+same name against an unchanged workspace: no tombstone collision, fresh
+runtime, second instance fully functional.** Open threads below updated
+with that session's findings.
+
 ## State of the branch
 
 - **ID-returning verbs (old Task A): DONE.** All imperative Agent verbs
@@ -174,15 +184,40 @@ agent_runtime_test.go machinery. Plan as before:
    policy path (core/modfunc.go:130–134 `derivedCachePolicy`) or reload/
    re-serve interplay with cached function metadata. Until root-caused,
    repeated same-arg module reads in long sessions are untrustworthy.
+   *Post-pivot QA: NOT reproduced — ~8 identical zero-arg `status` calls
+   observed live transitions (RUNNING→IDLE→PAUSED→RUNNING), and an
+   identical-args `read` returned a fresh tail after new messages landed.
+   But that session had a single build+install; the suspected trigger (a
+   SECOND reload) was never exercised, so the thread stays open.*
 2. **Worker workspace isolation.** Staff workers share only the message
    channel with the chief; their workspace edits stay in their own
    composition copies. Fine for research/QA staffing; code-writing workers
    need a delegateEdits-style changeset return — possible future staff tool.
 3. **Prompt leak** (chief system prompt rides into workers via workspace
    compose): known, mitigated by workerPrompt's closing paragraph; observed
-   effective live. Same class as delegate's documented leak.
+   effective live. Same class as delegate's documented leak. *Re-observed
+   in post-pivot QA: the leaked chief prompt appears in every worker's
+   record ahead of workerPrompt, and workers behaved correctly anyway.*
 4. **`Staff.read` counts SYSTEM entries toward `last`** — small `last`
    values return only boilerplate. Consider filtering SYSTEM role.
+   *Confirmed live: `read(last: 4)` on a fresh worker returned 3 SYSTEM
+   prompts + the task, i.e. one real entry.*
+5. **Workers don't know their own staff name.** A re-hired "scout" asked to
+   state its name self-identified as "Claude Code" — `name` is display
+   metadata on the runtime and never reaches the worker's conversation.
+   Cheap fix: interpolate the name into workerPrompt at spawn ("You are
+   worker ⟨name⟩ on a staff…"). Note the test-recording impact: recordings
+   match workerPrompt byte-for-byte, so the interpolation must be part of
+   the public constant's contract.
+6. **Idle notification (chief-side).** The chief only learns a worker went
+   idle by polling `status` or blocking in `collect` — felt directly in QA
+   when the askChief worker sat IDLE until the user nudged the chief. A
+   natural fit: on turn-end, push a "worker ⟨name⟩ went idle" message onto
+   the chief's queue — the same channel askChief already uses, so it steers
+   an open turn or wakes the chief for a new one; no polling, none of
+   collect's deadlock exposure. Could be a spawn opt-in in modules/staff
+   (`notifyOnIdle: true`) or engine-level (a watch/subscription verb on
+   Agent).
 
 ## Tooling notes
 
