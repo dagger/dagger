@@ -921,6 +921,11 @@
         },
         {
           "path": {
+            "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md"
+          }
+        },
+        {
+          "path": {
             "path": ".kiro/specs/rust-sdk-transport-observability/requirements.md"
           }
         },
@@ -932,7 +937,7 @@
       ],
       "repository": "github.com/dagger/dagger",
       "revision": "25300124ca110612edc09c43f89cb5fad6028170",
-      "source_digest": "sha256:df9a1f30783ea0c062bc548fa9f6ba83475c09a9510973d75410ec8554b126cc"
+      "source_digest": "sha256:1979a69f6633cfad6e2f34694cb2bcd064303997840dfc94558f0ff142363df3"
     },
     "sdk-contract-harness": {
       "authority_class": "sdk-contract-harness",

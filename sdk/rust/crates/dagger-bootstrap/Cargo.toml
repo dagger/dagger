@@ -16,11 +16,12 @@ workspace = true
 
 [dependencies]
 dagger-codegen = { workspace = true }
-dagger-sdk = { workspace = true }
+dagger-sdk-completeness = { workspace = true }
 
 eyre = { workspace = true }
 color-eyre = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tempfile.workspace = true
 clap.workspace = true

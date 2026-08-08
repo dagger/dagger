@@ -5,8 +5,8 @@
 - Dagger: v1.0.0-beta.10
 - Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
 - Rust SDK: 1.0.0-beta.10
-- Inventory digest: `sha256:e90dfa2a0c383dbbc4003091d05f0e8a8f537fc80fb87672ce82a2d49d3e86a9`
-- Ledger digest: `sha256:7c637d0b7afe3947c80cf42966be610ab3d11d9912a8a0048aa32a1ff8188e2a`
+- Inventory digest: `sha256:2a8389a376681a603e188507fb82acae9bb26799f06ef0b9f2c0a687281aa485`
+- Ledger digest: `sha256:1928e2f29b9d38ad9b328e1629e1730cf4cef05d593ff25ebfc8a8c19c2bc5e4`
 
 ## Verdicts
 
@@ -20,7 +20,7 @@
 - go-codegen: 83
 - go-engine-sdk: 13
 - go-integration-tests: 1072
-- rust-policy: 47
+- rust-policy: 63
 - sdk-contract-harness: 17
 
 ## Counts by capability kind
@@ -37,7 +37,7 @@
 - go-type: 321
 - go-var: 8
 - harness-check: 17
-- rust-policy: 46
+- rust-policy: 62
 - schema-argument: 611
 - schema-directive: 12
 - schema-directive-argument: 14
@@ -50,7 +50,7 @@
 
 ## Counts by status
 
-- Missing: 1102
+- Missing: 1118
 - Partial: 3455
 - Implemented: 15
 - Idiomatic_Equivalent: 10
@@ -59,10 +59,10 @@
 ## Counts by owner
 
 - feature-2: 13
-- feature-3: 47
-- feature-4: 3329
-- feature-5: 12
-- feature-6: 53
+- feature-3: 53
+- feature-4: 3277
+- feature-5: 31
+- feature-6: 96
 - feature-7: 2
 - feature-8: 1081
 - feature-9: 20
@@ -3027,6 +3027,22 @@
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Finstall-registers-sdk`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fscaffolded-module-loads`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fsdk-reports-module-options`
+- `policy/rust-policy/core-codegen-atomic-publication`
+- `policy/rust-policy/core-codegen-authority-containment`
+- `policy/rust-policy/core-codegen-collision-detection`
+- `policy/rust-policy/core-codegen-default-omission`
+- `policy/rust-policy/core-codegen-directive-accounting`
+- `policy/rust-policy/core-codegen-documentation`
+- `policy/rust-policy/core-codegen-exhaustive-manifest`
+- `policy/rust-policy/core-codegen-fallible-input`
+- `policy/rust-policy/core-codegen-identifier-roundtrip`
+- `policy/rust-policy/core-codegen-input-order-invariance`
+- `policy/rust-policy/core-codegen-list-object-reentry`
+- `policy/rust-policy/core-codegen-no-handwritten-fixes`
+- `policy/rust-policy/core-codegen-nullability`
+- `policy/rust-policy/core-codegen-scalar-wire-types`
+- `policy/rust-policy/core-codegen-target-drift`
+- `policy/rust-policy/core-codegen-toolchain-compatibility`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fdependency-policy`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust`

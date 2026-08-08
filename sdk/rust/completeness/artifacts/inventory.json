@@ -98571,6 +98571,774 @@
       "stability": "stable",
       "summary": "Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code."
     },
+    "policy/rust-policy/core-codegen-atomic-publication": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:3d434c845ee1ebf559b68cde9bd731dbebcc7bd88af0736b87f994027742a61b",
+      "capability_id": "policy/rust-policy/core-codegen-atomic-publication",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-atomic-publication",
+          "text": "WHEN update mode succeeds, THE generation command SHALL publish each changed\n   Generated_Artifact atomically."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-atomic-publication/source%2Frust-policy%2Frust-policy%2Fcore-codegen-atomic-publication",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:718",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-atomic-publication"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-atomic-publication/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-atomic-publication"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-atomic-publication",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "summary": "WHEN update mode succeeds, THE generation command SHALL publish each changed Generated_Artifact atomically."
+    },
+    "policy/rust-policy/core-codegen-authority-containment": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e33bc05452f316df2ecd16829c23e09cbe319b9e64763703376a7db7311af201",
+      "capability_id": "policy/rust-policy/core-codegen-authority-containment",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-authority-containment",
+          "text": "WHEN generation starts, THE Core_Generator SHALL verify the Canonical_Schema digest\n   against the Exact_Target authority registry."
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-authority-containment/source%2Frust-policy%2Frust-policy%2Fcore-codegen-authority-containment",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:455",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-authority-containment"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-authority-containment/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:96",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-authority-containment"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-authority-containment",
+        "source/rust-policy/rust-policy/locked-resolution"
+      ],
+      "stability": "stable",
+      "summary": "WHEN generation starts, THE Core_Generator SHALL verify the Canonical_Schema digest against the Exact_Target authority registry."
+    },
+    "policy/rust-policy/core-codegen-collision-detection": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:be571ae0e198eed92e7695ff177c657ccfed79c2348afc6762b5532d4daa71c4",
+      "capability_id": "policy/rust-policy/core-codegen-collision-detection",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-collision-detection",
+          "text": "IF two distinct source names collide after normalization, THEN THE Core_Generator\n   SHALL return `RUST_NAME_COLLISION` with both schema coordinates."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-collision-detection/source%2Frust-policy%2Frust-policy%2Fcore-codegen-collision-detection",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:679",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-collision-detection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-collision-detection/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-collision-detection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-collision-detection",
+        "source/rust-policy/rust-policy/idiomatic-rust"
+      ],
+      "stability": "stable",
+      "summary": "IF two distinct source names collide after normalization, THEN THE Core_Generator SHALL return `RUST_NAME_COLLISION` with both schema coordinates."
+    },
+    "policy/rust-policy/core-codegen-default-omission": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:c1119b3533e9466bee5a41c6a4d2dcb2829a1a24c93c500391c56bf3f1e48b9a",
+      "capability_id": "policy/rust-policy/core-codegen-default-omission",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-default-omission",
+          "text": "WHEN a defaulted argument is omitted, THE generated binding SHALL avoid\n    materializing the schema default on the client."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-default-omission/source%2Frust-policy%2Frust-policy%2Fcore-codegen-default-omission",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:583",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-default-omission"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-default-omission/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-default-omission"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-default-omission",
+        "source/rust-policy/rust-policy/idiomatic-rust"
+      ],
+      "stability": "stable",
+      "summary": "WHEN a defaulted argument is omitted, THE generated binding SHALL avoid materializing the schema default on the client."
+    },
+    "policy/rust-policy/core-codegen-directive-accounting": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:b9149bae6df57638d24cb501f3a665fdd525d83fde6e21899b8fa16e4463b735",
+      "capability_id": "policy/rust-policy/core-codegen-directive-accounting",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-directive-accounting",
+          "text": "WHILE a target directive has no active Core_Schema application, THE\n    Generated_Binding_Manifest SHALL record its validated target-inactive policy."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-directive-accounting/source%2Frust-policy%2Frust-policy%2Fcore-codegen-directive-accounting",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:654",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-directive-accounting"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-directive-accounting/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-directive-accounting"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-directive-accounting",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "summary": "WHILE a target directive has no active Core_Schema application, THE Generated_Binding_Manifest SHALL record its validated target-inactive policy."
+    },
+    "policy/rust-policy/core-codegen-documentation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:dd93034df12eec4be7e4b504b36a9374acb578e30a70fd3088262e78387e8e93",
+      "capability_id": "policy/rust-policy/core-codegen-documentation",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-documentation",
+          "text": "THE Core_Generator SHALL document every public generated type, trait, method,\n   options value, options field, scalar, enum, and enum variant."
+        },
+        "rust_guidance": {
+          "clause_id": "why-comments",
+          "text": "Comments explain why a decision is necessary, not what the next line does."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-documentation/source%2Frust-policy%2Frust-policy%2Fcore-codegen-documentation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:681",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-documentation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-documentation/source%2Frust-policy%2Frust-policy%2Fwhy-comments",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:56",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-documentation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-documentation",
+        "source/rust-policy/rust-policy/why-comments"
+      ],
+      "stability": "stable",
+      "summary": "THE Core_Generator SHALL document every public generated type, trait, method, options value, options field, scalar, enum, and enum variant."
+    },
+    "policy/rust-policy/core-codegen-exhaustive-manifest": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:a2ab6a04bd227494fe8839b7fc85ccb850d9cabc05f0b7e3d3343df355a71731",
+      "capability_id": "policy/rust-policy/core-codegen-exhaustive-manifest",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-exhaustive-manifest",
+          "text": "THE Generated_Binding_Manifest SHALL contain exactly one Binding_Record for every\n   Feature 4-owned Active_Capability."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-exhaustive-manifest/source%2Frust-policy%2Frust-policy%2Fcore-codegen-exhaustive-manifest",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:435",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-exhaustive-manifest"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-exhaustive-manifest/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-exhaustive-manifest"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-exhaustive-manifest",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "summary": "THE Generated_Binding_Manifest SHALL contain exactly one Binding_Record for every Feature 4-owned Active_Capability."
+    },
+    "policy/rust-policy/core-codegen-fallible-input": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:908bb41d0c21b6dc60e390883afa5f53fda9700b43e7d9704cabaca64531da63",
+      "capability_id": "policy/rust-policy/core-codegen-fallible-input",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-fallible-input",
+          "text": "WHEN caller-controlled schema input is malformed, THE Core_Generator SHALL return\n    an error without panic, `unwrap`, or invariant-free `expect` termination."
+        },
+        "rust_guidance": {
+          "clause_id": "panic-free-library",
+          "text": "Avoid `unwrap` and `panic` in library paths."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-fallible-input/source%2Frust-policy%2Frust-policy%2Fcore-codegen-fallible-input",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:479",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-fallible-input"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-fallible-input/source%2Frust-policy%2Frust-policy%2Fpanic-free-library",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:54",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-fallible-input"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-fallible-input",
+        "source/rust-policy/rust-policy/panic-free-library"
+      ],
+      "stability": "stable",
+      "summary": "WHEN caller-controlled schema input is malformed, THE Core_Generator SHALL return an error without panic, `unwrap`, or invariant-free `expect` termination."
+    },
+    "policy/rust-policy/core-codegen-identifier-roundtrip": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:c511feb2b2a01a0f3c47d59901b6ec3e654f042ab2d8f2ff82d3ad187576ffb3",
+      "capability_id": "policy/rust-policy/core-codegen-identifier-roundtrip",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-identifier-roundtrip",
+          "text": "WHEN a Rust-safe representation differs from the source name, THE generated binding\n   SHALL retain the exact Wire_Name for serialization or selection."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-identifier-roundtrip/source%2Frust-policy%2Frust-policy%2Fcore-codegen-identifier-roundtrip",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:677",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-identifier-roundtrip"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-identifier-roundtrip/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-identifier-roundtrip"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-identifier-roundtrip",
+        "source/rust-policy/rust-policy/idiomatic-rust"
+      ],
+      "stability": "stable",
+      "summary": "WHEN a Rust-safe representation differs from the source name, THE generated binding SHALL retain the exact Wire_Name for serialization or selection."
+    },
+    "policy/rust-policy/core-codegen-input-order-invariance": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:c30fb60ca1b38a602f72c3524bc721e65c5cff2e3df6ab34f6586d9987772307",
+      "capability_id": "policy/rust-policy/core-codegen-input-order-invariance",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-input-order-invariance",
+          "text": "IF validated input is semantically equivalent but differently ordered, THEN THE\n    Core_Generator SHALL construct the same canonical schema model."
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-input-order-invariance/source%2Frust-policy%2Frust-policy%2Fcore-codegen-input-order-invariance",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:475",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-input-order-invariance"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-input-order-invariance/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:96",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-input-order-invariance"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-input-order-invariance",
+        "source/rust-policy/rust-policy/locked-resolution"
+      ],
+      "stability": "stable",
+      "summary": "IF validated input is semantically equivalent but differently ordered, THEN THE Core_Generator SHALL construct the same canonical schema model."
+    },
+    "policy/rust-policy/core-codegen-list-object-reentry": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:1df356539e3fb8caecf288e44ee1ea192c2e77acc8de10e06adca8d688dfed26",
+      "capability_id": "policy/rust-policy/core-codegen-list-object-reentry",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-list-object-reentry",
+          "text": "IF list re-entry targets a type without the required ID surface, THEN THE\n    Core_Generator SHALL return `LIST_REENTRY_TYPE_INVALID`."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-list-object-reentry/source%2Frust-policy%2Frust-policy%2Fcore-codegen-list-object-reentry",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:623",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-list-object-reentry"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-list-object-reentry/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-list-object-reentry"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-list-object-reentry",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "IF list re-entry targets a type without the required ID surface, THEN THE Core_Generator SHALL return `LIST_REENTRY_TYPE_INVALID`."
+    },
+    "policy/rust-policy/core-codegen-no-handwritten-fixes": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:3a30a989354692fe4a74d5d40cb528f6a30af8b97574705b12b1f02c27dad174",
+      "capability_id": "policy/rust-policy/core-codegen-no-handwritten-fixes",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-no-handwritten-fixes",
+          "text": "WHEN source generation changes semantics, THE semantic change SHALL originate in\n    generator logic or templates rather than compiler fix-up output."
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-no-handwritten-fixes/source%2Frust-policy%2Frust-policy%2Fcore-codegen-no-handwritten-fixes",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:724",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-no-handwritten-fixes"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-no-handwritten-fixes/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:96",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-no-handwritten-fixes"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-no-handwritten-fixes",
+        "source/rust-policy/rust-policy/locked-resolution"
+      ],
+      "stability": "stable",
+      "summary": "WHEN source generation changes semantics, THE semantic change SHALL originate in generator logic or templates rather than compiler fix-up output."
+    },
+    "policy/rust-policy/core-codegen-nullability": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:5e346e08d7ebd1f304b254905befc7a9cbfb75495b495b6ac3b709d9485b6b6a",
+      "capability_id": "policy/rust-policy/core-codegen-nullability",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-nullability",
+          "text": "WHEN `NON_NULL` and `LIST` wrappers are nested, THE Core_Generator SHALL preserve\n    their order recursively in the Rust type."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-nullability/source%2Frust-policy%2Frust-policy%2Fcore-codegen-nullability",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:507",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-nullability"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-nullability/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-nullability"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-nullability",
+        "source/rust-policy/rust-policy/idiomatic-rust"
+      ],
+      "stability": "stable",
+      "summary": "WHEN `NON_NULL` and `LIST` wrappers are nested, THE Core_Generator SHALL preserve their order recursively in the Rust type."
+    },
+    "policy/rust-policy/core-codegen-scalar-wire-types": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:40e764fad60c2f0f1157c5f8e3aa412a63507d52aed7f847e496da85990c7227",
+      "capability_id": "policy/rust-policy/core-codegen-scalar-wire-types",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-scalar-wire-types",
+          "text": "THE Core_Generator SHALL map GraphQL `Int` to platform-independent Rust `i64`."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-scalar-wire-types/source%2Frust-policy%2Frust-policy%2Fcore-codegen-scalar-wire-types",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:492",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-scalar-wire-types"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-scalar-wire-types/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-scalar-wire-types"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-scalar-wire-types",
+        "source/rust-policy/rust-policy/idiomatic-rust"
+      ],
+      "stability": "stable",
+      "summary": "THE Core_Generator SHALL map GraphQL `Int` to platform-independent Rust `i64`."
+    },
+    "policy/rust-policy/core-codegen-target-drift": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e9001c1fea68e56b48aeb994409946574baec6a644063b873e4c71a5a277859e",
+      "capability_id": "policy/rust-policy/core-codegen-target-drift",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-target-drift",
+          "text": "WHEN the Exact_Target changes, THE completeness validator SHALL reject every\n    unreconciled Feature 4 capability addition, removal, fingerprint change, or owner\n    change."
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-target-drift/source%2Frust-policy%2Frust-policy%2Fcore-codegen-target-drift",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:444",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-target-drift"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-target-drift/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:96",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-target-drift"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/core-codegen-target-drift",
+        "source/rust-policy/rust-policy/locked-resolution"
+      ],
+      "stability": "stable",
+      "summary": "WHEN the Exact_Target changes, THE completeness validator SHALL reject every unreconciled Feature 4 capability addition, removal, fingerprint change, or owner change."
+    },
+    "policy/rust-policy/core-codegen-toolchain-compatibility": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:5fa33b390911bb682fe2927f35d710af9f314dbb3038f1e4777fea152c389572",
+      "capability_id": "policy/rust-policy/core-codegen-toolchain-compatibility",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "core-codegen-toolchain-compatibility",
+          "text": "WHEN source formatting is required, THE generation command SHALL use the formatter\n    from the pinned Rust toolchain."
+        },
+        "rust_guidance": {
+          "clause_id": "cargo-deny",
+          "text": "`cargo deny check` must pass."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-toolchain-compatibility/source%2Frust-policy%2Frust-policy%2Fcargo-deny",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:97",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-toolchain-compatibility"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/core-codegen-toolchain-compatibility/source%2Frust-policy%2Frust-policy%2Fcore-codegen-toolchain-compatibility",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:726",
+          "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/core-codegen-toolchain-compatibility"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/cargo-deny",
+        "source/rust-policy/rust-policy/core-codegen-toolchain-compatibility"
+      ],
+      "stability": "stable",
+      "summary": "WHEN source formatting is required, THE generation command SHALL use the formatter from the pinned Rust toolchain."
+    },
     "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:527fe435f42e30c40ed3d60b59b27d98db0608e7a7d2dbc5029d2a171236f4ef",

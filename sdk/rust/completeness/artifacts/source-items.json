@@ -89795,6 +89795,198 @@
       "source_item_id": "source/rust-policy/rust-policy/client-shared-handle-safety",
       "state": "active"
     },
+    "source/rust-policy/rust-policy/core-codegen-atomic-publication": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:a0f162875c3279472c7a20099a2da4dc14cafa896519b8034e6de44923a7598a",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:718",
+      "semantic_signature": {
+        "clause_id": "core-codegen-atomic-publication",
+        "text": "WHEN update mode succeeds, THE generation command SHALL publish each changed\n   Generated_Artifact atomically."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-atomic-publication",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-authority-containment": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:99fd7ff0be032e204ed1dce4249bfef44071a6973940095a82438b6e23640386",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:455",
+      "semantic_signature": {
+        "clause_id": "core-codegen-authority-containment",
+        "text": "WHEN generation starts, THE Core_Generator SHALL verify the Canonical_Schema digest\n   against the Exact_Target authority registry."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-authority-containment",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-collision-detection": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:3f196023aa1f2203dd7c99a98b89ce4043c858aa739d06d4c837cf5704c61bb8",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:679",
+      "semantic_signature": {
+        "clause_id": "core-codegen-collision-detection",
+        "text": "IF two distinct source names collide after normalization, THEN THE Core_Generator\n   SHALL return `RUST_NAME_COLLISION` with both schema coordinates."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-collision-detection",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-default-omission": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:cd62bf40747f6f298af5a1b11529c086041a97b5916d39e149837d3522a5c2d8",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:583",
+      "semantic_signature": {
+        "clause_id": "core-codegen-default-omission",
+        "text": "WHEN a defaulted argument is omitted, THE generated binding SHALL avoid\n    materializing the schema default on the client."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-default-omission",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-directive-accounting": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:5c2fa06c3db17c63bf0b085af9e6cfc2b640172559f4d2efaf0a056b06d2eb65",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:654",
+      "semantic_signature": {
+        "clause_id": "core-codegen-directive-accounting",
+        "text": "WHILE a target directive has no active Core_Schema application, THE\n    Generated_Binding_Manifest SHALL record its validated target-inactive policy."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-directive-accounting",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-documentation": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:1994ae783e77e6d4914fbb490934ebba3dd62249b735485a97a702344a39cd54",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:681",
+      "semantic_signature": {
+        "clause_id": "core-codegen-documentation",
+        "text": "THE Core_Generator SHALL document every public generated type, trait, method,\n   options value, options field, scalar, enum, and enum variant."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-documentation",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-exhaustive-manifest": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:081e3797110084d723143cc7037359dbdae4f60e80aa3b5e00f6389cf5a0137a",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:435",
+      "semantic_signature": {
+        "clause_id": "core-codegen-exhaustive-manifest",
+        "text": "THE Generated_Binding_Manifest SHALL contain exactly one Binding_Record for every\n   Feature 4-owned Active_Capability."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-exhaustive-manifest",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-fallible-input": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:5ce3fb54bf88249b83e26e9270bd8a3ebb30ff5eda3f6b72a23a8e504316b830",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:479",
+      "semantic_signature": {
+        "clause_id": "core-codegen-fallible-input",
+        "text": "WHEN caller-controlled schema input is malformed, THE Core_Generator SHALL return\n    an error without panic, `unwrap`, or invariant-free `expect` termination."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-fallible-input",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-identifier-roundtrip": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:fb081806ff753d787afadb37bdb65e88e142cdd7dc75f257346a25cb6a1b9299",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:677",
+      "semantic_signature": {
+        "clause_id": "core-codegen-identifier-roundtrip",
+        "text": "WHEN a Rust-safe representation differs from the source name, THE generated binding\n   SHALL retain the exact Wire_Name for serialization or selection."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-identifier-roundtrip",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-input-order-invariance": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:360581d0ced4e94ad66b29aa6881b40e18b45af28f0c4edde5399a00c54b1108",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:475",
+      "semantic_signature": {
+        "clause_id": "core-codegen-input-order-invariance",
+        "text": "IF validated input is semantically equivalent but differently ordered, THEN THE\n    Core_Generator SHALL construct the same canonical schema model."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-input-order-invariance",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-list-object-reentry": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:d1e28cf44c75e7b071526a8f130ef480c5f740056c53363ff108064771efdb4f",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:623",
+      "semantic_signature": {
+        "clause_id": "core-codegen-list-object-reentry",
+        "text": "IF list re-entry targets a type without the required ID surface, THEN THE\n    Core_Generator SHALL return `LIST_REENTRY_TYPE_INVALID`."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-list-object-reentry",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-no-handwritten-fixes": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:d6c608576c89739acd3dd124595a614f0140ae832c1fecf8482303408c75a29e",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:724",
+      "semantic_signature": {
+        "clause_id": "core-codegen-no-handwritten-fixes",
+        "text": "WHEN source generation changes semantics, THE semantic change SHALL originate in\n    generator logic or templates rather than compiler fix-up output."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-no-handwritten-fixes",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-nullability": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:a08c43a8f2667dc00d98f13d02f893692364e8d1c11b53c0135e5a188c20c9ba",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:507",
+      "semantic_signature": {
+        "clause_id": "core-codegen-nullability",
+        "text": "WHEN `NON_NULL` and `LIST` wrappers are nested, THE Core_Generator SHALL preserve\n    their order recursively in the Rust type."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-nullability",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-scalar-wire-types": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:e615e584538d9aa80bf8c2a72ee1e07ae867e32e6cf953a779e96e681a1b5003",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:492",
+      "semantic_signature": {
+        "clause_id": "core-codegen-scalar-wire-types",
+        "text": "THE Core_Generator SHALL map GraphQL `Int` to platform-independent Rust `i64`."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-scalar-wire-types",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-target-drift": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:b9f5e5b5417bcd05191bedbf912c81ac776a1a983df89fa75f985ab91c84cc92",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:444",
+      "semantic_signature": {
+        "clause_id": "core-codegen-target-drift",
+        "text": "WHEN the Exact_Target changes, THE completeness validator SHALL reject every\n    unreconciled Feature 4 capability addition, removal, fingerprint change, or owner\n    change."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-target-drift",
+      "state": "active"
+    },
+    "source/rust-policy/rust-policy/core-codegen-toolchain-compatibility": {
+      "authority_id": "rust-policy",
+      "fingerprint": "sha256:0422931245b1eaed2d8a1ca063edf82a7067ae5443e99796516c32ed41db07b7",
+      "item_kind": "rust-policy",
+      "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:726",
+      "semantic_signature": {
+        "clause_id": "core-codegen-toolchain-compatibility",
+        "text": "WHEN source formatting is required, THE generation command SHALL use the formatter\n    from the pinned Rust toolchain."
+      },
+      "source_item_id": "source/rust-policy/rust-policy/core-codegen-toolchain-compatibility",
+      "state": "active"
+    },
     "source/rust-policy/rust-policy/dependency-policy": {
       "authority_id": "rust-policy",
       "fingerprint": "sha256:169df8d4bd97d324719cf7e0becf2d71c07e4c0c528ce4d829e3ed846be40730",

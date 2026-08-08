@@ -9,6 +9,7 @@ pub mod cli;
 pub mod command;
 pub mod compatibility;
 pub mod contract;
+pub mod core_codegen;
 pub mod diagnostic;
 pub mod evidence;
 pub mod extract;
@@ -38,6 +39,10 @@ pub use cli::{ArtifactCliBackend, CliBackend, ContractCliBackend, run_with_backe
 pub use command::{CommandPolicy, command_defects};
 pub use compatibility::{ValidatedCompatibilityClaim, validate_compatibility_claim};
 pub use contract::{DerivedContract, derive_contract, rust_artifact_digest};
+pub use core_codegen::{
+    CoreCodegenScopeContract, CoreCodegenScopeTransition, apply_core_codegen_scope_correction,
+    core_codegen_policy_contract,
+};
 pub use diagnostic::{
     ContractDiagnostic, DiagnosticCode, DiagnosticCollector, DiagnosticSet, ToolError, Validation,
 };

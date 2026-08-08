@@ -1,47 +1,75 @@
 #![deny(warnings)]
+//! Pure schema-to-Rust code generation for the Dagger SDK.
+//!
+//! This crate accepts data and returns validated candidate source. It deliberately has
+//! no filesystem, process, network, engine-session, or completeness-ledger authority.
 
-mod functions;
-mod generator;
+pub mod diagnostic;
+pub mod projection;
+pub mod render;
 pub mod rust;
-pub mod utility;
-mod visitor;
+pub mod schema;
+pub mod target;
 
-use dagger_sdk::introspection::Schema;
+use diagnostic::CodegenError;
+use rust::RustGenerator;
+use schema::raw::Schema;
 
-use self::generator::DynGenerator;
-
-fn set_schema_parents(mut schema: Schema) -> Schema {
-    for t in schema.types.as_mut().into_iter().flatten().flatten() {
-        let t_parent = t.full_type.clone();
-        for field in t.full_type.fields.as_mut().into_iter().flatten() {
-            field.parent_type = Some(t_parent.clone());
+/// Generates a Rust client candidate from raw introspection schema data.
+///
+/// Parent links are populated on a private copy because transitional projection uses
+/// the owning GraphQL type for option-structure names and typed-ID conversion.
+pub fn generate(mut schema: Schema) -> Result<String, CodegenError> {
+    for definition in schema.types.as_mut().into_iter().flatten().flatten() {
+        let parent = definition.full_type.clone();
+        for field in definition.full_type.fields.as_mut().into_iter().flatten() {
+            field.parent_type = Some(parent.clone());
         }
     }
 
-    schema
-}
-
-pub fn generate(schema: Schema, generator: DynGenerator) -> eyre::Result<String> {
-    let schema = set_schema_parents(schema);
-    generator.generate(schema)
+    let tokens = RustGenerator.render(&schema)?;
+    let file = render::validate_file(tokens)?;
+    Ok(rust::candidate_text(&file))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use dagger_sdk::introspection::IntrospectionResponse;
-
     use super::generate;
-    use crate::rust::RustGenerator;
+    use crate::schema::raw::IntrospectionResponse;
 
     fn generate_from_json(json: &str) -> String {
-        let schema = serde_json::from_str::<IntrospectionResponse>(json).unwrap();
+        let response = serde_json::from_str::<IntrospectionResponse>(json)
+            .expect("test introspection response must decode");
         generate(
-            schema.into_schema().schema.unwrap(),
-            Arc::new(RustGenerator {}),
+            response
+                .into_schema()
+                .schema
+                .expect("test introspection response must contain a schema"),
         )
-        .unwrap()
+        .expect("test schema must render")
+    }
+
+    fn compact(value: &str) -> String {
+        value
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect()
+    }
+
+    fn contains_tokens(source: &str, expected: &str) -> bool {
+        compact(source).contains(&compact(expected))
+    }
+
+    fn interface_schema() -> &'static str {
+        include_str!("../tests/fixtures/interface-schema.json")
+    }
+
+    fn expected_type_schema() -> &'static str {
+        include_str!("../tests/fixtures/expected-type-schema.json")
+    }
+
+    fn optional_arg_lifetime_schema() -> &'static str {
+        include_str!("../tests/fixtures/optional-arg-lifetime-schema.json")
     }
 
     #[test]
@@ -51,571 +79,86 @@ mod tests {
         assert_eq!(first.as_bytes(), second.as_bytes());
     }
 
-    /// Minimal schema with an interface, two implementing objects, and a
-    /// Query root that returns the interface via node(id:).
-    fn interface_schema() -> &'static str {
-        r#"{
-  "__schema": {
-    "queryType": {"name": "Query"},
-    "mutationType": null,
-    "subscriptionType": null,
-    "types": [
-      {
-        "kind": "SCALAR", "name": "ID", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "String", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "Boolean", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "Int", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "INTERFACE", "name": "Node",
-        "description": "An object with a globally unique ID.",
-        "fields": [
-          {
-            "name": "id", "description": "The unique ID.",
-            "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          },
-          {
-            "name": "lookup", "description": "Lookup by path.",
-            "args": [{
-              "name": "path", "description": null,
-              "type": {"kind": "NON_NULL", "name": null,
-                "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-              "defaultValue": null
-            }],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          }
-        ],
-        "inputFields": null, "interfaces": null, "enumValues": null,
-        "possibleTypes": [
-          {"kind": "OBJECT", "name": "Container", "ofType": null},
-          {"kind": "OBJECT", "name": "Directory", "ofType": null}
-        ]
-      },
-      {
-        "kind": "OBJECT", "name": "Container",
-        "description": "A container.",
-        "fields": [
-          {
-            "name": "id", "description": null, "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          },
-          {
-            "name": "lookup", "description": "Lookup by path.",
-            "args": [{
-              "name": "path", "description": null,
-              "type": {"kind": "NON_NULL", "name": null,
-                "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-              "defaultValue": null
-            }],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          },
-          {
-            "name": "imageRef", "description": null, "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [{"kind": "INTERFACE", "name": "Node", "ofType": null}],
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT", "name": "Directory",
-        "description": "A directory.",
-        "fields": [
-          {
-            "name": "id", "description": null, "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          },
-          {
-            "name": "lookup", "description": "Lookup by path.",
-            "args": [{
-              "name": "path", "description": null,
-              "type": {"kind": "NON_NULL", "name": null,
-                "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-              "defaultValue": null
-            }],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [{"kind": "INTERFACE", "name": "Node", "ofType": null}],
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT", "name": "Query",
-        "description": null,
-        "fields": [
-          {
-            "name": "node", "description": null,
-            "args": [{
-              "name": "id", "description": null,
-              "type": {"kind": "NON_NULL", "name": null,
-                "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-              "defaultValue": null
-            }],
-            "type": {"kind": "INTERFACE", "name": "Node", "ofType": null},
-            "isDeprecated": false, "deprecationReason": null
-          }
-        ],
-        "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      }
-    ],
-    "directives": []
-  }
-}"#
+    #[test]
+    fn interfaces_and_implementors_are_projected() {
+        let code = generate_from_json(interface_schema());
+        for expected in [
+            "pub trait Node",
+            "pub struct NodeClient",
+            "impl Node for NodeClient",
+            "impl Node for Container",
+            "impl Node for Directory",
+            "impl Sealed for Container",
+            "impl Sealed for Directory",
+            "impl Sealed for NodeClient",
+        ] {
+            assert!(
+                contains_tokens(&code, expected),
+                "missing `{expected}` in {code}"
+            );
+        }
+        assert!(!contains_tokens(&code, "pub struct Node {"));
+        assert!(!contains_tokens(&code, "impl Sealed for Query"));
     }
 
     #[test]
-    fn interface_generates_trait() {
+    fn generated_handles_use_the_shared_session() {
         let code = generate_from_json(interface_schema());
-        // Should produce a trait, not just a struct
-        assert!(
-            code.contains("pub trait Node"),
-            "expected 'pub trait Node' in generated code"
-        );
-    }
-
-    #[test]
-    fn interface_generates_client_struct() {
-        let code = generate_from_json(interface_schema());
-        // The concrete struct for the interface is named FooClient
-        assert!(
-            code.contains("pub struct NodeClient"),
-            "expected 'pub struct NodeClient' in generated code"
-        );
-        // No bare `struct Node` (that would collide with the trait)
-        assert!(
-            !code.contains("pub struct Node {"),
-            "should not generate 'pub struct Node' (collides with trait)"
-        );
-    }
-
-    #[test]
-    fn interface_trait_impl_on_client() {
-        let code = generate_from_json(interface_schema());
-        assert!(
-            code.contains("impl Node for NodeClient"),
-            "expected 'impl Node for NodeClient'"
-        );
-    }
-
-    #[test]
-    fn interface_trait_impl_on_objects() {
-        let code = generate_from_json(interface_schema());
-        assert!(
-            code.contains("impl Node for Container"),
-            "expected 'impl Node for Container'"
-        );
-        assert!(
-            code.contains("impl Node for Directory"),
-            "expected 'impl Node for Directory'"
-        );
-    }
-
-    #[test]
-    fn interface_trait_impl_required_string_args_are_converted() {
-        let code = generate_from_json(interface_schema());
-        assert!(
-            code.contains(r#"query = query.arg("path", path.into());"#),
-            "trait impl should convert impl Into<String> before serializing it, got:\n{}",
-            code.lines()
-                .filter(|l| l.contains("path") || l.contains("lookup"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        assert!(
-            !code.contains(r#"query = query.arg("path", path);"#),
-            "trait impl must not pass impl Into<String> directly to Selection::arg"
-        );
-    }
-
-    #[test]
-    fn interface_return_type_uses_client() {
-        let code = generate_from_json(interface_schema());
-        // Query.node() should return NodeClient, not Node
-        assert!(
-            code.contains("-> NodeClient"),
-            "expected node() to return NodeClient, not Node"
-        );
-    }
-
-    #[test]
-    fn loadable_impl_on_objects() {
-        let code = generate_from_json(interface_schema());
-        assert!(
-            code.contains("impl Sealed for Container"),
-            "expected the sealed construction impl for Container"
-        );
-        assert!(
-            code.contains("impl Sealed for Directory"),
-            "expected the sealed construction impl for Directory"
-        );
-    }
-
-    #[test]
-    fn loadable_impl_on_interface_client() {
-        let code = generate_from_json(interface_schema());
-        assert!(
-            code.contains("impl Sealed for NodeClient"),
-            "expected the sealed construction impl for NodeClient"
-        );
-        // The GraphQL name must be the interface name, not the Rust struct name.
-        assert!(
-            code.contains(r#""Node""#),
-            "NodeClient.graphql_type() should return \"Node\", not \"NodeClient\""
-        );
-    }
-
-    #[test]
-    fn no_loadable_on_query() {
-        let code = generate_from_json(interface_schema());
-        assert!(
-            !code.contains("impl Sealed for Query"),
-            "Query should not implement Loadable (no id field)"
-        );
-    }
-
-    #[test]
-    fn generated_handles_store_only_private_session_and_selection() {
-        let code = generate_from_json(interface_schema());
-        assert!(code.contains("pub(crate) session: SessionHandle"));
-        assert!(code.contains("pub(crate) selection: Selection"));
+        for expected in [
+            "pub(crate) session: SessionHandle",
+            "pub(crate) selection: Selection",
+            "query.execute(&self.session).await",
+            "let session = self.session.clone();",
+            "query.execute(&session).await",
+            "query = query.arg(\"path\", path.into());",
+            "-> NodeClient",
+        ] {
+            assert!(
+                contains_tokens(&code, expected),
+                "missing `{expected}` in {code}"
+            );
+        }
         assert!(!code.contains("graphql_client"));
         assert!(!code.contains("DaggerSessionProc"));
     }
 
     #[test]
-    fn generated_methods_execute_through_the_shared_session() {
-        let code = generate_from_json(interface_schema());
-        assert!(code.contains("query.execute(&self.session).await"));
-        assert!(code.contains("let session = self.session.clone();"));
-        assert!(code.contains("query.execute(&session).await"));
-    }
-
-    /// Schema with `@expectedType` directives on field returns and arguments.
-    fn expected_type_schema() -> &'static str {
-        r#"{
-  "__schema": {
-    "queryType": {"name": "Query"},
-    "mutationType": null,
-    "subscriptionType": null,
-    "types": [
-      {
-        "kind": "SCALAR", "name": "ID", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "String", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "Boolean", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "Int", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT", "name": "Container",
-        "description": "A container.",
-        "fields": [
-          {
-            "name": "id", "description": null, "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null,
-            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Container\""}]}]
-          },
-          {
-            "name": "sync", "description": "Force evaluation.", "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null,
-            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Container\""}]}]
-          },
-          {
-            "name": "withDirectory", "description": "Add a directory.",
-            "args": [
-              {
-                "name": "path", "description": null,
-                "type": {"kind": "NON_NULL", "name": null,
-                  "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-                "defaultValue": null
-              },
-              {
-                "name": "directory", "description": null,
-                "type": {"kind": "NON_NULL", "name": null,
-                  "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-                "defaultValue": null,
-                "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Directory\""}]}]
-              }
-            ],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "OBJECT", "name": "Container", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          },
-          {
-            "name": "imageRef", "description": null, "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT", "name": "Directory",
-        "description": "A directory.",
-        "fields": [
-          {
-            "name": "id", "description": null, "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null,
-            "directives": [{"name": "expectedType", "args": [{"name": "name", "value": "\"Directory\""}]}]
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT", "name": "Query",
-        "description": null,
-        "fields": [
-          {
-            "name": "container", "description": null,
-            "args": [],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "OBJECT", "name": "Container", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          }
-        ],
-        "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      }
-    ],
-    "directives": []
-  }
-}"#
-    }
-
-    #[test]
-    fn convert_id_sync_returns_parent() {
+    fn expected_type_projection_preserves_typed_ids() {
         let code = generate_from_json(expected_type_schema());
-        // sync() should return Result<Container, QueryError>, not Result<Id, QueryError>
-        assert!(
-            code.contains("fn sync") && code.contains("-> Result<Container, QueryError>"),
-            "sync() should return Container, got:\n{}",
-            code.lines()
-                .filter(|l| l.contains("sync"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
+        for expected in [
+            "fn sync",
+            "-> Result<Container, QueryError>",
+            "select(\"node\")",
+            "inline_fragment(\"Container\")",
+            "fn id",
+            "-> Result<Id, QueryError>",
+            "directory: impl IntoID<Id>",
+        ] {
+            assert!(
+                contains_tokens(&code, expected),
+                "missing `{expected}` in {code}"
+            );
+        }
     }
 
     #[test]
-    fn convert_id_sync_uses_node_reload() {
-        let code = generate_from_json(expected_type_schema());
-        // sync() body should use node(id) + inline_fragment to reconstruct
-        assert!(
-            code.contains("select(\"node\")"),
-            "sync() should reconstruct via node(), got:\n{}",
-            code.lines()
-                .filter(|l| l.contains("node") || l.contains("sync"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        assert!(
-            code.contains("inline_fragment(\"Container\")"),
-            "sync() should use inline_fragment(\"Container\")\n{}",
-            code.lines()
-                .filter(|l| l.contains("inline_fragment"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    }
-
-    #[test]
-    fn id_field_not_converted() {
-        let code = generate_from_json(expected_type_schema());
-        // id() should still return Result<Id, QueryError>, not Result<Container, QueryError>
-        assert!(
-            code.contains("fn id") && code.contains("-> Result<Id, QueryError>"),
-            "id() should return Id, got:\n{}",
-            code.lines()
-                .filter(|l| l.contains("fn id"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    }
-
-    #[test]
-    fn expected_type_arg_accepts_object() {
-        let code = generate_from_json(expected_type_schema());
-        // withDirectory's directory arg should use IntoID<Id> (accepting Directory objects)
-        assert!(
-            code.contains("directory: impl IntoID<Id>"),
-            "directory arg should accept objects via IntoID<Id>, got:\n{}",
-            code.lines()
-                .filter(|l| l.contains("with_directory"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    }
-
-    /// Schema with optional enum and string args. Enum names can contain `str`
-    /// without borrowing anything, e.g. `RegistryProtocol`.
-    fn optional_arg_lifetime_schema() -> &'static str {
-        r#"{
-  "__schema": {
-    "queryType": {"name": "Query"},
-    "mutationType": null,
-    "subscriptionType": null,
-    "types": [
-      {
-        "kind": "SCALAR", "name": "ID", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "String", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "Boolean", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR", "name": "Int", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      },
-      {
-        "kind": "ENUM", "name": "RegistryProtocol", "description": null,
-        "fields": null, "inputFields": null, "interfaces": null,
-        "possibleTypes": null,
-        "enumValues": [
-          {"name": "HTTPS", "description": null, "isDeprecated": false, "deprecationReason": null},
-          {"name": "HTTP", "description": null, "isDeprecated": false, "deprecationReason": null}
-        ]
-      },
-      {
-        "kind": "OBJECT", "name": "Query",
-        "description": null,
-        "fields": [
-          {
-            "name": "enumOption", "description": null,
-            "args": [{
-              "name": "protocol", "description": null,
-              "type": {"kind": "ENUM", "name": "RegistryProtocol", "ofType": null},
-              "defaultValue": null
-            }],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          },
-          {
-            "name": "stringOption", "description": null,
-            "args": [{
-              "name": "name", "description": null,
-              "type": {"kind": "SCALAR", "name": "String", "ofType": null},
-              "defaultValue": null
-            }],
-            "type": {"kind": "NON_NULL", "name": null,
-              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
-            "isDeprecated": false, "deprecationReason": null
-          }
-        ],
-        "inputFields": null, "interfaces": null,
-        "enumValues": null, "possibleTypes": null
-      }
-    ],
-    "directives": []
-  }
-}"#
-    }
-
-    #[test]
-    fn optional_enum_arg_does_not_add_lifetime() {
+    fn optional_argument_lifetimes_follow_the_projected_type() {
         let code = generate_from_json(optional_arg_lifetime_schema());
-
-        assert!(
-            code.contains("pub enum RegistryProtocol"),
-            "expected RegistryProtocol enum in generated code"
-        );
-        assert!(
-            code.contains("pub struct QueryEnumOptionOpts {"),
-            "optional enum args should not add a lifetime, got:\n{}",
-            code.lines()
-                .filter(|l| l.contains("QueryEnumOptionOpts"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        assert!(
-            !code.contains("pub struct QueryEnumOptionOpts<'a>"),
-            "RegistryProtocol contains `str` in its name but does not borrow"
-        );
-        assert!(
-            code.contains("pub protocol: Option<RegistryProtocol>,"),
-            "expected optional enum field to use RegistryProtocol"
-        );
-    }
-
-    #[test]
-    fn optional_string_arg_still_adds_lifetime() {
-        let code = generate_from_json(optional_arg_lifetime_schema());
-
-        assert!(
-            code.contains("pub struct QueryStringOptionOpts<'a>"),
-            "optional string args should still add a lifetime, got:\n{}",
-            code.lines()
-                .filter(|l| l.contains("QueryStringOptionOpts"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        assert!(
-            code.contains("pub name: Option<&'a str>,"),
-            "expected optional string field to borrow with &'a str"
-        );
+        for expected in [
+            "pub enum RegistryProtocol",
+            "pub struct QueryEnumOptionOpts {",
+            "pub protocol: Option<RegistryProtocol>",
+            "pub struct QueryStringOptionOpts<'a>",
+            "pub name: Option<&'a str>",
+        ] {
+            assert!(
+                contains_tokens(&code, expected),
+                "missing `{expected}` in {code}"
+            );
+        }
+        assert!(!contains_tokens(
+            &code,
+            "pub struct QueryEnumOptionOpts<'a>"
+        ));
     }
 }

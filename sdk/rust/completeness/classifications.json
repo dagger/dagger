@@ -755,6 +755,23 @@
         "source_path": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md"
       }
     },
+    "routing/rust-policy/core-codegen": {
+      "authority_id": "rust-policy",
+      "classification": {
+        "gap": "Feature 4 core code generation lacks target-scoped implementation and verification",
+        "owner_feature": "feature-4",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:a6cf00469115c142d27a3d460c1331fab311bff671fdf0915033cfd20e755ad5"
+      },
+      "overrides": {},
+      "rule_id": "routing/rust-policy/core-codegen",
+      "selector": {
+        "authority_id": "rust-policy",
+        "source_path": ".kiro/specs/rust-sdk-core-codegen/requirements.md"
+      }
+    },
     "routing/rust-policy/transport-observability": {
       "authority_id": "rust-policy",
       "classification": {

@@ -1,0 +1,21 @@
+{
+  "__schema": {
+    "queryType":{"name":"Query"},"mutationType":null,"subscriptionType":null,
+    "types":[
+      {"kind":"SCALAR","name":"ID","description":null,"fields":null,"inputFields":null,"interfaces":null,"enumValues":null,"possibleTypes":null},
+      {"kind":"SCALAR","name":"String","description":null,"fields":null,"inputFields":null,"interfaces":null,"enumValues":null,"possibleTypes":null},
+      {
+        "kind":"OBJECT","name":"Container","description":null,
+        "fields":[
+          {"name":"id","description":null,"args":[],"type":{"kind":"NON_NULL","name":null,"ofType":{"kind":"SCALAR","name":"ID","ofType":null}},"isDeprecated":false,"deprecationReason":null,"directives":[{"name":"expectedType","args":[{"name":"name","value":"\"Container\""}]}]},
+          {"name":"sync","description":null,"args":[],"type":{"kind":"NON_NULL","name":null,"ofType":{"kind":"SCALAR","name":"ID","ofType":null}},"isDeprecated":false,"deprecationReason":null,"directives":[{"name":"expectedType","args":[{"name":"name","value":"\"Container\""}]}]},
+          {"name":"withDirectory","description":null,"args":[{"name":"directory","description":null,"type":{"kind":"NON_NULL","name":null,"ofType":{"kind":"SCALAR","name":"ID","ofType":null}},"defaultValue":null,"directives":[{"name":"expectedType","args":[{"name":"name","value":"\"Directory\""}]}]}],"type":{"kind":"NON_NULL","name":null,"ofType":{"kind":"OBJECT","name":"Container","ofType":null}},"isDeprecated":false,"deprecationReason":null}
+        ],
+        "inputFields":null,"interfaces":[],"enumValues":null,"possibleTypes":null
+      },
+      {"kind":"OBJECT","name":"Directory","description":null,"fields":[{"name":"id","description":null,"args":[],"type":{"kind":"NON_NULL","name":null,"ofType":{"kind":"SCALAR","name":"ID","ofType":null}},"isDeprecated":false,"deprecationReason":null}],"inputFields":null,"interfaces":[],"enumValues":null,"possibleTypes":null},
+      {"kind":"OBJECT","name":"Query","description":null,"fields":[{"name":"container","description":null,"args":[],"type":{"kind":"NON_NULL","name":null,"ofType":{"kind":"OBJECT","name":"Container","ofType":null}},"isDeprecated":false,"deprecationReason":null}],"inputFields":null,"interfaces":null,"enumValues":null,"possibleTypes":null}
+    ],
+    "directives":[]
+  }
+}

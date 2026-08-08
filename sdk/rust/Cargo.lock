@@ -330,10 +330,11 @@ dependencies = [
  "clap",
  "color-eyre",
  "dagger-codegen",
- "dagger-sdk",
+ "dagger-sdk-completeness",
  "eyre",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -342,15 +343,19 @@ name = "dagger-codegen"
 version = "1.0.0-beta.10"
 dependencies = [
  "convert_case",
- "dagger-sdk",
- "eyre",
- "genco",
+ "graphql-parser",
  "itertools",
  "pretty_assertions",
+ "proc-macro2",
+ "proptest",
+ "quote",
  "serde",
- "serde_graphql_input",
  "serde_json",
- "tracing",
+ "sha2",
+ "syn 2.0.119",
+ "tempfile",
+ "thiserror 1.0.69",
+ "trybuild",
 ]
 
 [[package]]
@@ -400,6 +405,7 @@ name = "dagger-sdk-completeness"
 version = "1.0.0-beta.10"
 dependencies = [
  "clap",
+ "dagger-codegen",
  "pretty_assertions",
  "proptest",
  "semver",
@@ -699,28 +705,6 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
-]
-
-[[package]]
-name = "genco"
-version = "0.17.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a35958104272e516c2a5f66a9d82fba4784d2b585fc1e2358b8f96e15d342995"
-dependencies = [
- "genco-macros",
- "relative-path",
- "smallvec",
-]
-
-[[package]]
-name = "genco-macros"
-version = "0.17.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43eaff6bbc0b3a878361aced5ec6a2818ee7c541c5b33b5880dfa9a86c23e9e7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -1660,12 +1644,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "relative-path"
-version = "1.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "reqwest"

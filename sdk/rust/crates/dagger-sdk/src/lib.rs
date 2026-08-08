@@ -200,17 +200,6 @@ pub use runtime_errors::{
     ShutdownError, ShutdownFailureKind,
 };
 
-/// Introspection wire types used by Dagger's Rust code-generation tools.
-///
-/// This namespace is hidden because application code should consume generated types;
-/// it exists so the separately packaged generator does not require concrete client,
-/// transport, process, or lifecycle internals.
-#[doc(hidden)]
-#[allow(missing_docs)]
-pub mod introspection {
-    pub use crate::core::introspection::*;
-}
-
 #[cfg(feature = "gen")]
 #[allow(dead_code)]
 // Schema descriptions are external input and can contain text that rustdoc

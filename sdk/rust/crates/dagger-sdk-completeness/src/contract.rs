@@ -20,6 +20,9 @@ use crate::canonical::{DigestDomain, canonical_bytes, canonical_digest, decode_c
 use crate::classification::{resolve_classifications, validate_status_entries};
 use crate::command::CommandPolicy;
 use crate::compatibility::validate_compatibility_claim;
+use crate::core_codegen::{
+    CoreCodegenScopeContract, apply_core_codegen_scope_correction, core_codegen_policy_contract,
+};
 use crate::diagnostic::{ContractDiagnostic, DiagnosticCode, DiagnosticSet, ToolError};
 use crate::evidence::{
     EvidenceAuditContext, EvidenceEligibility, EvidenceSource, EvidenceSourceRegistry,
@@ -108,6 +111,10 @@ pub fn derive_contract(
         read_canonical(&contract.join("harness-mappings.json"), "harness mappings")?;
     let compatibility: CompatibilityClaim =
         read_canonical(&contract.join("compatibility.json"), "compatibility claim")?;
+    let core_codegen_scope: CoreCodegenScopeContract = read_canonical(
+        &contract.join("core-codegen-scope.json"),
+        "core codegen scope",
+    )?;
     let mut feature_inputs = Vec::new();
     for policy in reviewed_feature_contracts() {
         let requirements = read_text(
@@ -124,6 +131,22 @@ pub fn derive_contract(
             declaration,
         });
     }
+    let policy = core_codegen_policy_contract(&core_codegen_scope);
+    let requirements = read_text(
+        &repository_root.join(policy.requirements_path),
+        "core codegen requirements",
+    )?;
+    let declaration = FeatureScopeDeclaration {
+        feature: FeatureId::Feature4,
+        existing_capability_ids: CanonicalSet::default(),
+        existing_scope_digest: core_codegen_scope.retained.capability_ids_digest.clone(),
+        policy_capability_ids: policy.scope.policy_capability_ids.clone(),
+    };
+    feature_inputs.push(FeatureContractInput {
+        policy,
+        requirements,
+        declaration,
+    });
 
     let schema_bytes = read(&contract.join("snapshots/schema.json"), "schema snapshot")?;
     let schema = decode_introspection(&schema_bytes).map_err(|_| ToolError::Decode {
@@ -192,25 +215,42 @@ pub fn derive_contract(
     )?;
     attach_missing_anchors(&mut inventory, &source_items, &authorities)?;
 
-    let ledger = validated(
+    let baseline_ledger = validated(
         resolve_classifications(&inventory, &source_items, &classifications),
         "resolved ledger",
     )?;
     validated(
-        validate_status_entries(&ledger, &evidence),
+        validate_status_entries(&baseline_ledger, &evidence),
         "status entries",
     )?;
     for feature in &feature_inputs {
+        if feature.declaration.feature == FeatureId::Feature4 {
+            continue;
+        }
         validated(
             validate_feature_scope_routing(
                 &inventory,
-                &ledger,
+                &baseline_ledger,
                 &feature.declaration,
                 &feature.policy.scope,
             ),
             "feature scope routing",
         )?;
     }
+    let core_codegen = validated(
+        apply_core_codegen_scope_correction(&inventory, &baseline_ledger, &core_codegen_scope),
+        "core codegen scope correction",
+    )?;
+    let ledger = core_codegen.ledger;
+    validated(
+        validate_feature_scope_routing(
+            &inventory,
+            &ledger,
+            &core_codegen.declaration,
+            &core_codegen.policy,
+        ),
+        "core codegen scope routing",
+    )?;
 
     let target_digest = TargetDigest::new(
         canonical_digest(DigestDomain::Target, &target).map_err(|_| ToolError::Decode {
@@ -673,8 +713,19 @@ fn feature_policy_candidates(
                     // storing copied line numbers in authored JSON would make harmless prose motion
                     // look like a semantic definition change.
                     source_anchors: CanonicalSet::default(),
-                    summary: NonEmptyText::new(clause.exact_text)
-                        .expect("reviewed policy text is non-empty"),
+                    // Exact Markdown selections may include source line wrapping. The durable
+                    // semantic signature retains those bytes, while the user-facing summary uses
+                    // one portable line accepted by NonEmptyText.
+                    summary: NonEmptyText::new(
+                        clause
+                            .exact_text
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    )
+                    .map_err(|_| ToolError::Decode {
+                        artifact: "feature policy summary",
+                    })?,
                     capability_fingerprint: semantic_fingerprint(&semantic_signature).map_err(
                         |_| ToolError::Decode {
                             artifact: "feature policy fingerprint",

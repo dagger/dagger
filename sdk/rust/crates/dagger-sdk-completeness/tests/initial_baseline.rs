@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:061c3a3e93b5377989475a69dff634075c9ffb3c12b006836208b08817e82f44";
+    "sha256:dcbf8c4c81a8ea5451c75c489f02c273d580e982c52c02a894d48b4251faea6b";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -110,13 +110,13 @@ fn target_locks_authorities_harness_status_and_ownership() {
     assert!(!derived.report.completeness_verdict);
     assert_eq!(
         derived.report.inventory_digest.as_str(),
-        "sha256:e90dfa2a0c383dbbc4003091d05f0e8a8f537fc80fb87672ce82a2d49d3e86a9"
+        "sha256:2a8389a376681a603e188507fb82acae9bb26799f06ef0b9f2c0a687281aa485"
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:7c637d0b7afe3947c80cf42966be610ab3d11d9912a8a0048aa32a1ff8188e2a"
+        "sha256:1928e2f29b9d38ad9b328e1629e1730cf4cef05d593ff25ebfc8a8c19c2bc5e4"
     );
-    assert_eq!(derived.report.blocking_capabilities.len(), 4_557);
+    assert_eq!(derived.report.blocking_capabilities.len(), 4_573);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
     assert!(
         derived
@@ -155,7 +155,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (AuthorityId::new("go-codegen").unwrap(), 83),
             (AuthorityId::new("go-engine-sdk").unwrap(), 13),
             (AuthorityId::new("go-integration-tests").unwrap(), 1_072),
-            (AuthorityId::new("rust-policy").unwrap(), 47),
+            (AuthorityId::new("rust-policy").unwrap(), 63),
             (AuthorityId::new("sdk-contract-harness").unwrap(), 17),
         ])
     );
@@ -165,7 +165,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
             (Status::IdiomaticEquivalent, 10),
             (Status::Implemented, 15),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_102),
+            (Status::Missing, 1_118),
             (Status::Partial, 3_455),
         ])
     );
@@ -173,10 +173,10 @@ fn target_locks_authorities_harness_status_and_ownership() {
         derived.report.counts_by_owner,
         std::collections::BTreeMap::from([
             (FeatureId::Feature2, 13),
-            (FeatureId::Feature3, 47),
-            (FeatureId::Feature4, 3_329),
-            (FeatureId::Feature5, 12),
-            (FeatureId::Feature6, 53),
+            (FeatureId::Feature3, 53),
+            (FeatureId::Feature4, 3_277),
+            (FeatureId::Feature5, 31),
+            (FeatureId::Feature6, 96),
             (FeatureId::Feature7, 2),
             (FeatureId::Feature8, 1_081),
             (FeatureId::Feature9, 20),

@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Establish the exact Feature 4 scope and Rust code-generation foundations
-  - [ ] 1.1 Apply the reviewed ownership correction and policy inventory
+- [x] 1. Establish the exact Feature 4 scope and Rust code-generation foundations
+  - [x] 1.1 Apply the reviewed ownership correction and policy inventory
     - Add the exact transition that retains 3,261 capabilities under Feature 4, routes
       six trace/execution-error declarations to Feature 3, 19 generator-operation
       declarations to Feature 5, and 43 module-source/introspection declarations to
@@ -12,7 +12,7 @@
     - Add golden fixtures preserving the pre-transition ledger and proving every
       capability outside the 68 corrected rows and 16 new policies is byte-equivalent.
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.11_
-  - [ ] 1.2 Reshape crate dependencies around a pure code generator
+  - [x] 1.2 Reshape crate dependencies around a pure code generator
     - Remove `dagger-codegen`'s dependency on `dagger-sdk` and its `eyre`/`genco`
       rendering boundary; add the approved workspace-pinned `proc-macro2`, `quote`,
       `syn`, `graphql-parser`, `sha2`, `serde`, `serde_json`, and `thiserror`
@@ -28,7 +28,7 @@
       graph requires it; preserve Rust 1.97.1, edition 2024, Apache-2.0, publishing
       boundaries, and `unsafe_code = "deny"`.
     - _Requirements: 2.11, 2.12, 9.10, 9.11, 9.14, 10.16_
-  - [ ] 1.3 Add shared code-generation strategies and recording test components
+  - [x] 1.3 Add shared code-generation strategies and recording test components
     - Add valid-first `proptest` strategies for target descriptors, raw and canonical
       schema fragments, recursive wrappers, names, defaults, directives, projection
       catalogs, artifact sets, capability mappings, and evidence records.
@@ -38,7 +38,7 @@
     - Persist minimized regressions and keep target-wide finite inventories available
       for exhaustive iteration rather than random sampling.
     - _Requirements: 2.3, 2.4, 2.10, 2.12, 9.1, 9.2, 9.15, 10.1-10.20_
-  - [ ] 1.4 Property test: Property 1 — ownership correction is exact and status-neutral
+  - [x] 1.4 Property test: Property 1 — ownership correction is exact and status-neutral
     - Implement a reference-transition `proptest` with at least 256 generated owner,
       status, order, fingerprint, and policy mutations around the exact source ledger;
       accept only the approved 3,261/6/19/43/16 partition and require status identity.
@@ -46,7 +46,7 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 1: Ownership correction is exact and status-neutral`
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-- [ ] 2. Checkpoint: scope, dependencies, and test foundations are green
+- [x] 2. Checkpoint: scope, dependencies, and test foundations are green
   - Run formatting, locked checking, completeness/codegen unit and property tests,
     clippy, rustdoc, and cargo-deny; require Property 1 to pass, the prior ledger to
     remain status-identical, and `dagger-codegen` to compile without `dagger-sdk` or

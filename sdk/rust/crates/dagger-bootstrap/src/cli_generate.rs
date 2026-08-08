@@ -1,11 +1,8 @@
-use std::fs;
-use std::io::Write;
-use std::sync::Arc;
-
 use clap::{Arg, ArgMatches};
 use dagger_codegen::generate;
-use dagger_codegen::rust::RustGenerator;
-use dagger_sdk::introspection;
+use dagger_codegen::schema::raw::IntrospectionResponse;
+use std::fs;
+use std::io::Write;
 
 #[allow(dead_code)]
 pub struct GenerateCommand;
@@ -21,13 +18,12 @@ impl GenerateCommand {
     pub async fn exec(arg_matches: &ArgMatches) -> eyre::Result<()> {
         let introspection_json_path = arg_matches.get_one::<String>("introspection-json").unwrap();
         let introspection_json = fs::read_to_string(introspection_json_path)?;
-        let schema =
-            serde_json::from_str::<introspection::IntrospectionResponse>(&introspection_json)
-                .unwrap();
-        let code = generate(
-            schema.into_schema().schema.unwrap(),
-            Arc::new(RustGenerator {}),
-        )?;
+        let response = serde_json::from_str::<IntrospectionResponse>(&introspection_json)?;
+        let schema = response
+            .into_schema()
+            .schema
+            .ok_or_else(|| eyre::eyre!("introspection response did not contain __schema"))?;
+        let code = generate(schema)?;
 
         if let Some(output) = arg_matches.get_one::<String>("output") {
             let mut file = std::fs::File::create(output)?;
