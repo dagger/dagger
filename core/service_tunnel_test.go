@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -249,6 +250,48 @@ func TestTunnelShutdownOwnsDetachAndCleanupOnce(t *testing.T) {
 	require.Equal(t, int32(1), detaches.Load())
 	require.Equal(t, 1, first.closes())
 	require.Equal(t, 1, second.closes())
+}
+
+func TestTunnelUpstreamMonitorStopsAfterSharedBindingDetach(t *testing.T) {
+	t.Parallel()
+	services := NewServices()
+	key := ServiceKey{
+		Digest:    digest.FromString("shared-tunnel-upstream"),
+		SessionID: "test-session",
+		Kind:      ServiceRuntimeShared,
+	}
+	waitStarted := make(chan struct{})
+	waitExited := make(chan struct{})
+	upstream := &RunningService{
+		Key:  key,
+		Host: "shared-upstream",
+		Wait: func(ctx context.Context) error {
+			close(waitStarted)
+			<-ctx.Done()
+			close(waitExited)
+			return context.Cause(ctx)
+		},
+	}
+	services.running[key] = upstream
+	services.bindings[key] = 2
+
+	registry := &tunnelListenerRegistry{}
+	monitorCtx, stop := context.WithCancelCause(t.Context())
+	shutdown := newTunnelShutdown(registry, stop, func() { services.Detach(monitorCtx, upstream) })
+	monitorDone := make(chan struct{})
+	go func() {
+		monitorTunnelUpstream(monitorCtx, upstream, shutdown)
+		close(monitorDone)
+	}()
+	waitCoreTunnelTest(t, waitStarted, "shared upstream monitor start")
+
+	require.NoError(t, shutdown(errors.New("tunnel stopped")))
+	waitCoreTunnelTest(t, waitExited, "shared upstream monitor exit")
+	waitCoreTunnelTest(t, monitorDone, "shared upstream monitor completion")
+	services.l.Lock()
+	defer services.l.Unlock()
+	require.Same(t, upstream, services.running[key])
+	require.Equal(t, 1, services.bindings[key])
 }
 
 func TestTunnelShutdownExplicitStopCanWinFinishedListener(t *testing.T) {

@@ -1270,6 +1270,21 @@ func newTunnelShutdown(
 	}
 }
 
+func monitorTunnelUpstream(ctx context.Context, upstream *RunningService, shutdown func(error) error) {
+	if upstream.Wait == nil {
+		return
+	}
+	err := upstream.Wait(ctx)
+	if context.Cause(ctx) != nil {
+		return
+	}
+	if err != nil {
+		_ = shutdown(fmt.Errorf("upstream exited: %w", err))
+		return
+	}
+	_ = shutdown(errors.New("upstream exited"))
+}
+
 func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ ServiceStartOpts) (rerr error) {
 	if running == nil {
 		return fmt.Errorf("running service is nil")
@@ -1321,22 +1336,11 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	const bindHost = "0.0.0.0"
 	const dialHost = "127.0.0.1"
 	stopErr := errors.New("service stop called")
-	upstreamExitedErr := errors.New("upstream exited")
 
 	shutdown = newTunnelShutdown(registry, stop, func() { svcs.Detach(svcCtx, upstream) })
 	running.publishIfReady = registry.Publish
 
-	go func() {
-		if upstream.Wait == nil {
-			return
-		}
-		err := upstream.Wait(context.Background())
-		if err != nil {
-			_ = shutdown(fmt.Errorf("%w: %w", upstreamExitedErr, err))
-			return
-		}
-		_ = shutdown(upstreamExitedErr)
-	}()
+	go monitorTunnelUpstream(svcCtx, upstream, shutdown)
 
 	ports := make([]Port, len(svc.TunnelPorts))
 
