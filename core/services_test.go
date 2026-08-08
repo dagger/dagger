@@ -107,7 +107,7 @@ func TestServicesStartSad(t *testing.T) {
 	expected := stub.Fail()
 
 	_, err := services.Start(ctx, stub.Digest(), stub, false)
-	require.Equal(t, expected, err)
+	require.ErrorIs(t, err, expected)
 
 	_, err = services.Get(ctx, stub.Digest(), false)
 	require.Error(t, err)
@@ -196,7 +196,8 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 	require.Equal(t, 1, stub.Starts())
 
 	// make the first attempt fail
-	require.Equal(t, stub.Fail(), <-errs)
+	firstFailure := stub.Fail()
+	require.ErrorIs(t, <-errs, firstFailure)
 
 	// wait for second start attempt [hopefully not flaky]
 	require.Eventually(t, func() bool {
@@ -204,7 +205,8 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 	}, 10*time.Second, 10*time.Millisecond)
 
 	// make the second attempt fail too
-	require.Equal(t, stub.Fail(), <-errs)
+	secondFailure := stub.Fail()
+	require.ErrorIs(t, <-errs, secondFailure)
 
 	// make sure we didn't try to start more than twice
 	require.Equal(t, 2, stub.Starts())
@@ -253,7 +255,8 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 	require.Equal(t, 1, stub.Starts())
 
 	// make the first attempt fail
-	require.Equal(t, stub.Fail(), <-errs)
+	firstFailure := stub.Fail()
+	require.ErrorIs(t, <-errs, firstFailure)
 
 	// wait for second start attempt [hopefully not flaky]
 	require.Eventually(t, func() bool {

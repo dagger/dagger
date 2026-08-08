@@ -243,7 +243,7 @@ func (c *Client) GetSessionCaller(ctx context.Context) (_ SessionCaller, rerr er
 func (c *Client) ListenHostToContainer(
 	ctx context.Context,
 	hostListenAddr, proto, upstream string,
-) (*h2c.ListenResponse, func() error, error) {
+) (*h2c.ListenResponse, *hostToContainerListener, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -284,106 +284,208 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	conns := map[string]net.Conn{}
-	connsL := &sync.Mutex{}
-	sendL := &sync.Mutex{}
+	handle := &hostToContainerListener{
+		done:        make(chan struct{}),
+		stream:      listener,
+		streamCtx:   listener.Context(),
+		cancelLocal: cancel,
+		dialContext: c.Dialer.DialContext,
+		conns:       map[string]net.Conn{},
+	}
+	handle.drain.Add(1)
+	go handle.run(proto, upstream)
 
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			res, err := listener.Recv()
-			if err != nil {
-				slog.WarnContext(ctx, "listener recv err", "err", err)
+	return listenRes, handle, nil
+}
+
+type hostToContainerDialContext func(context.Context, string, string) (net.Conn, error)
+
+type hostToContainerListener struct {
+	completionMu              sync.Mutex
+	completed                 bool
+	result                    error
+	done                      chan struct{}
+	testFinishLocked          func()
+	testCompletionGuardLocked func()
+
+	closeOnce   sync.Once
+	stream      h2c.TunnelListener_ListenClient
+	streamCtx   context.Context
+	cancelLocal context.CancelCauseFunc
+	dialContext hostToContainerDialContext
+
+	connsL  sync.Mutex
+	closing bool
+	conns   map[string]net.Conn
+
+	sendL sync.Mutex
+	drain sync.WaitGroup
+}
+
+func (listener *hostToContainerListener) finish(result error) {
+	listener.completionMu.Lock()
+	defer listener.completionMu.Unlock()
+	if listener.testFinishLocked != nil {
+		listener.testFinishLocked()
+	}
+	if listener.completed {
+		return
+	}
+	listener.completed = true
+	listener.result = result
+	close(listener.done)
+}
+
+func (listener *hostToContainerListener) Wait() error {
+	<-listener.done
+	listener.completionMu.Lock()
+	defer listener.completionMu.Unlock()
+	return listener.result
+}
+
+func (listener *hostToContainerListener) WithCompletionGuard(commit func() error) (bool, error) {
+	listener.completionMu.Lock()
+	defer listener.completionMu.Unlock()
+	if listener.testCompletionGuardLocked != nil {
+		listener.testCompletionGuardLocked()
+	}
+	if listener.completed {
+		return true, listener.result
+	}
+	return false, commit()
+}
+
+func (listener *hostToContainerListener) send(request *h2c.ListenRequest) error {
+	listener.sendL.Lock()
+	defer listener.sendL.Unlock()
+	return listener.stream.Send(request)
+}
+
+func (listener *hostToContainerListener) finishSendError(err error) {
+	listener.finish(fmt.Errorf("host-to-container listener send: %w", err))
+}
+
+func (listener *hostToContainerListener) removeConn(connID string, conn net.Conn) bool {
+	listener.connsL.Lock()
+	removed := listener.conns[connID] == conn
+	if removed {
+		delete(listener.conns, connID)
+	}
+	listener.connsL.Unlock()
+	return removed
+}
+
+func (listener *hostToContainerListener) closeConn(connID string, conn net.Conn) bool {
+	if !listener.removeConn(connID, conn) {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+func (listener *hostToContainerListener) run(proto, upstream string) {
+	defer listener.drain.Done()
+	for {
+		response, err := listener.stream.Recv()
+		if err != nil {
+			listener.finish(fmt.Errorf("host-to-container listener receive: %w", err))
+			return
+		}
+
+		connID := response.GetConnId()
+		if connID == "" {
+			continue
+		}
+
+		listener.connsL.Lock()
+		conn, found := listener.conns[connID]
+		listener.connsL.Unlock()
+		if !found {
+			conn, err = listener.dialContext(listener.streamCtx, proto, upstream)
+			if cause := context.Cause(listener.streamCtx); cause != nil {
+				if conn != nil {
+					_ = conn.Close()
+				}
+				listener.finish(fmt.Errorf("host-to-container listener context ended: %w", cause))
 				return
 			}
-
-			connID := res.GetConnId()
-			if connID == "" {
+			if err != nil {
+				slog.WarnContext(listener.streamCtx, "failed to dial", "proto", proto, "upstream", upstream, "err", err)
+				if sendErr := listener.send(&h2c.ListenRequest{ConnId: connID, Close: true}); sendErr != nil {
+					listener.finishSendError(sendErr)
+					return
+				}
 				continue
 			}
 
-			connsL.Lock()
-			conn, found := conns[connID]
-			connsL.Unlock()
+			listener.connsL.Lock()
+			if listener.closing {
+				listener.connsL.Unlock()
+				_ = conn.Close()
+				return
+			}
+			listener.conns[connID] = conn
+			listener.drain.Add(1)
+			listener.connsL.Unlock()
+			go listener.readConn(connID, conn)
+		}
 
-			if !found {
-				conn, err = c.Dialer.Dial(proto, upstream)
-				if err != nil {
-					slog.WarnContext(ctx, "failed to dial", "proto", proto, "upstream", upstream, "err", err)
-					sendL.Lock()
-					err = listener.Send(&h2c.ListenRequest{
-						ConnId: connID,
-						Close:  true,
-					})
-					sendL.Unlock()
-					if err != nil {
+		if response.Data != nil {
+			if _, err := conn.Write(response.Data); err != nil {
+				if listener.closeConn(connID, conn) {
+					if sendErr := listener.send(&h2c.ListenRequest{ConnId: connID, Close: true}); sendErr != nil {
+						listener.finishSendError(sendErr)
 						return
 					}
-					continue
-				}
-
-				connsL.Lock()
-				conns[connID] = conn
-				connsL.Unlock()
-
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-
-					data := make([]byte, 32*1024)
-					for {
-						n, err := conn.Read(data)
-						if err != nil {
-							break
-						}
-
-						sendL.Lock()
-						err = listener.Send(&h2c.ListenRequest{
-							ConnId: connID,
-							Data:   data[:n],
-						})
-						sendL.Unlock()
-						if err != nil {
-							break
-						}
-					}
-
-					sendL.Lock()
-					_ = listener.Send(&h2c.ListenRequest{
-						ConnId: connID,
-						Close:  true,
-					})
-					sendL.Unlock()
-				}()
-			}
-
-			if res.Data != nil {
-				_, err = conn.Write(res.Data)
-				if err != nil {
-					return
 				}
 			}
 		}
-	}()
+	}
+}
 
-	return listenRes, func() error {
-		defer cancel(errors.New("listen host to container done"))
-		sendL.Lock()
-		err := listener.CloseSend()
-		sendL.Unlock()
-		connsL.Lock()
+func (listener *hostToContainerListener) readConn(connID string, conn net.Conn) {
+	defer listener.drain.Done()
+
+	data := make([]byte, 32*1024)
+	for {
+		n, err := conn.Read(data)
+		if err != nil {
+			break
+		}
+		if err := listener.send(&h2c.ListenRequest{ConnId: connID, Data: data[:n]}); err != nil {
+			listener.finishSendError(err)
+			listener.closeConn(connID, conn)
+			return
+		}
+	}
+	if !listener.closeConn(connID, conn) {
+		return
+	}
+	if err := listener.send(&h2c.ListenRequest{ConnId: connID, Close: true}); err != nil {
+		listener.finishSendError(err)
+	}
+}
+
+func (listener *hostToContainerListener) Close() error {
+	listener.closeOnce.Do(func() {
+		listener.finish(nil)
+		listener.cancelLocal(errors.New("host-to-container listener closed"))
+
+		listener.connsL.Lock()
+		listener.closing = true
+		conns := listener.conns
+		listener.conns = map[string]net.Conn{}
+		listener.connsL.Unlock()
 		for _, conn := range conns {
-			conn.Close()
+			_ = conn.Close()
 		}
-		clear(conns)
-		connsL.Unlock()
-		if err == nil {
-			wg.Wait()
-		}
-		return err
-	}, nil
+
+		listener.sendL.Lock()
+		_ = listener.stream.CloseSend()
+		listener.sendL.Unlock()
+		listener.drain.Wait()
+	})
+	return nil
 }
 
 func (c *Client) GetCredential(ctx context.Context, protocol, host, path string) (*git.CredentialInfo, error) {

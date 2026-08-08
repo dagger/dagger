@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -92,6 +93,18 @@ type Params struct {
 
 	// The id of the session to connect to, or if blank a new one should be started.
 	SessionID string
+
+	// Detachable creates a top-level detachable session. This is an internal
+	// engine-client mode; it is not a public SDK connection option.
+	Detachable bool
+
+	// AttachSessionID selects the narrow observer path for an existing
+	// detachable session. It is mutually exclusive with Detachable.
+	AttachSessionID string
+
+	// OnAttachWait is called once if observer attachment must wait for a stale
+	// or live current attachment to clear.
+	OnAttachWait func()
 
 	Version string
 
@@ -199,9 +212,39 @@ type Client struct {
 	labels enginetel.Labels
 
 	isCloudScaleOutClient bool
+
+	connectionMode            connectionMode
+	attachmentID              string
+	detachedQueryAcknowledged atomic.Bool
 }
 
+type connectionMode uint8
+
+const (
+	connectionModeOrdinary connectionMode = iota
+	connectionModeDetachableCreator
+	connectionModeObserver
+	connectionModeControl
+)
+
 func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
+	return connect(ctx, params, connectionModeOrdinary)
+}
+
+//nolint:gocyclo // Connection setup keeps the lifecycle of each supported role in one cleanup scope.
+func connect(ctx context.Context, params Params, requestedMode connectionMode) (_ *Client, rerr error) {
+	if params.Detachable && params.AttachSessionID != "" {
+		return nil, errors.New("detachable creation and observer attachment are mutually exclusive")
+	}
+	mode := requestedMode
+	if mode != connectionModeControl {
+		switch {
+		case params.Detachable:
+			mode = connectionModeDetachableCreator
+		case params.AttachSessionID != "":
+			mode = connectionModeObserver
+		}
+	}
 	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
 		params.LoadWorkspaceModules,
 		params.SkipWorkspaceModules,
@@ -212,7 +255,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	params.LoadWorkspaceModules = loadWorkspaceModules
 	params.SkipWorkspaceModules = false
 
-	c := &Client{Params: params}
+	c := &Client{Params: params, connectionMode: mode}
 
 	if c.ID == "" {
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
@@ -221,8 +264,37 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		c.ID = identity.NewID()
 	}
 	configuredSessionID := c.SessionID
+	if mode == connectionModeObserver {
+		if c.SessionID != "" && c.SessionID != c.AttachSessionID {
+			return nil, errors.New("session ID and attach session ID must match")
+		}
+		c.SessionID = c.AttachSessionID
+		configuredSessionID = c.SessionID
+	}
+	if mode == connectionModeDetachableCreator {
+		if c.SessionID == "" {
+			c.SessionID, err = engine.GenerateSessionID()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := engine.ValidateSessionID(c.SessionID); err != nil {
+			return nil, fmt.Errorf("invalid detachable session ID: %w", err)
+		}
+	}
+	if mode == connectionModeObserver {
+		if err := engine.ValidateSessionID(c.SessionID); err != nil {
+			return nil, fmt.Errorf("invalid attached session ID: %w", err)
+		}
+	}
 	if c.SessionID == "" {
 		c.SessionID = identity.NewID()
+	}
+	if mode == connectionModeDetachableCreator || mode == connectionModeObserver {
+		c.attachmentID, err = engine.GenerateAttachmentID()
+		if err != nil {
+			return nil, err
+		}
 	}
 	if c.SecretToken == "" {
 		c.SecretToken = uuid.New().String()
@@ -268,6 +340,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
+		if mode != connectionModeOrdinary {
+			return nil, errors.New("detachable, observer, and control-only modes are not supported through DAGGER_SESSION_PORT")
+		}
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
 			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
@@ -317,8 +392,35 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 			c.bkClient.Close()
 		}
 	}()
+	if mode == connectionModeDetachableCreator {
+		defer func() {
+			if rerr == nil {
+				return
+			}
+			// A creator knows its session ID before the first engine request. An
+			// idempotent DELETE therefore closes the window where session
+			// initialization succeeded but a later Connect step failed before the
+			// caller could install its pre-acknowledgment cleanup.
+			if c.httpClient == nil {
+				c.httpClient = c.newHTTPClient()
+			}
+			terminateCtx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+			defer cancel()
+			if err := c.terminateSessionRemote(terminateCtx); err != nil && !isIncompatibleSessionProtocolError(err) {
+				rerr = errors.Join(rerr, fmt.Errorf("cleanup detachable session after connection failure: %w", err))
+			}
+		}()
+	}
+	if mode == connectionModeControl {
+		c.httpClient = c.newHTTPClient()
+		return c, nil
+	}
 
-	if err := c.startSession(connectCtx); err != nil {
+	if mode == connectionModeObserver {
+		if err := c.startObserverSession(connectCtx); err != nil {
+			return nil, fmt.Errorf("attach session: %w", err)
+		}
+	} else if err := c.startSession(connectCtx); err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
 
@@ -330,6 +432,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 
 	if err := c.subscribeTelemetry(connectCtx); err != nil {
 		return nil, fmt.Errorf("subscribe to telemetry: %w", err)
+	}
+	if mode == connectionModeObserver {
+		return c, nil
 	}
 
 	if err := c.daggerConnect(ctx); err != nil {
@@ -365,6 +470,9 @@ type EngineToEngineParams struct {
 // ConnectEngineToEngine connects a Dagger client to another Dagger engine using an existing session connection.
 // Session attachables are proxied back to the original client.
 func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ *Client, rerr error) {
+	if params.Detachable || params.AttachSessionID != "" {
+		return nil, errors.New("detachable and observer modes are not supported for engine-to-engine connections")
+	}
 	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
 		params.LoadWorkspaceModules,
 		params.SkipWorkspaceModules,
@@ -608,23 +716,31 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		attachables = append(attachables, attachable)
 	}
 
-	sessionConn, err := c.DialContext(ctx, "", "")
-	if err != nil {
-		return fmt.Errorf("dial for session attachables: %w", err)
-	}
-	defer func() {
-		if rerr != nil {
-			sessionConn.Close()
+	connect := func(attemptCtx context.Context) error {
+		sessionConn, err := c.DialContext(attemptCtx, "", "")
+		if err != nil {
+			return fmt.Errorf("dial for session attachables: %w", err)
 		}
-	}()
-
-	c.sessionSrv, err = ConnectSessionAttachables(ctx,
-		sessionConn,
-		c.AppendHTTPRequestHeaders(http.Header{}),
-		attachables...,
-	)
+		sessionSrv, err := ConnectSessionAttachables(
+			attemptCtx,
+			sessionConn,
+			c.AppendHTTPRequestHeaders(http.Header{}),
+			attachables...,
+		)
+		if err != nil {
+			sessionConn.Close()
+			return fmt.Errorf("connect session attachables: %w", err)
+		}
+		c.sessionSrv = sessionSrv
+		return nil
+	}
+	if c.connectionMode == connectionModeDetachableCreator {
+		err = retrySessionAttachment(ctx, attachmentRetryCreator, nil, connect, defaultAttachmentRetryPolicy())
+	} else {
+		err = connect(ctx)
+	}
 	if err != nil {
-		return fmt.Errorf("connect session attachables: %w", err)
+		return err
 	}
 
 	c.eg.Go(func() error {
@@ -640,6 +756,49 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		return nil
 	})
 
+	c.httpClient = c.newHTTPClient()
+	return nil
+}
+
+func (c *Client) startObserverSession(ctx context.Context) (rerr error) {
+	ctx, sessionSpan := Tracer(ctx).Start(ctx, "attaching to session", telemetry.Encapsulate())
+	defer telemetry.EndWithCause(sessionSpan, &rerr)
+
+	clientMetadata := c.clientMetadata()
+	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
+	connect := func(attemptCtx context.Context) error {
+		sessionConn, err := c.DialContext(attemptCtx, "", "")
+		if err != nil {
+			return fmt.Errorf("dial for session attachment: %w", err)
+		}
+		sessionSrv, err := ConnectSessionAttachables(
+			attemptCtx,
+			sessionConn,
+			c.AppendHTTPRequestHeaders(http.Header{}),
+		)
+		if err != nil {
+			sessionConn.Close()
+			return fmt.Errorf("connect session attachment: %w", err)
+		}
+		c.sessionSrv = sessionSrv
+		return nil
+	}
+	if err := retrySessionAttachment(ctx, attachmentRetryObserver, c.OnAttachWait, connect, defaultAttachmentRetryPolicy()); err != nil {
+		return err
+	}
+
+	c.eg.Go(func() error {
+		ctx, cancel, err := c.withClientCloseCancel(ctx)
+		if err != nil {
+			return err
+		}
+		go func() {
+			<-ctx.Done()
+			cancel(errors.New("startObserverSession context done"))
+		}()
+		c.sessionSrv.Run(ctx)
+		return nil
+	})
 	c.httpClient = c.newHTTPClient()
 	return nil
 }
@@ -745,7 +904,7 @@ func ConnectSessionAttachables(
 		if resp.Body != nil {
 			respBody, _ = io.ReadAll(resp.Body)
 		}
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return nil, decodeSessionProtocolError(resp.StatusCode, respBody)
 	}
 
 	// We tell the server that we have fully read the response and will now switch to serving gRPC
@@ -820,11 +979,25 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 }
 
 func (c *Client) Close() (rerr error) {
-	// shutdown happens outside of c.closeMu, since it requires a connection
-	if err := c.shutdownServer(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+	// Remote lifecycle work happens outside closeMu because it requires a live
+	// transport. Ordinary sessions retain /shutdown; detachable roles close only
+	// their attachment; control-only clients have no remote session to close.
+	switch c.connectionMode {
+	case connectionModeDetachableCreator, connectionModeObserver:
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), 10*time.Second)
+		if err := c.CloseAttachment(ctx); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("close attachment: %w", err))
+		}
+		cancel()
+	case connectionModeOrdinary:
+		if err := c.shutdownServer(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+		}
 	}
+	return errors.Join(rerr, c.closeLocalResources())
+}
 
+func (c *Client) closeLocalResources() (rerr error) {
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
 
@@ -917,13 +1090,26 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 		return fmt.Errorf("connect to SSE: %w", err)
 	}
 
+	done := make(chan struct{})
 	c.eg.Go(func() error {
+		select {
+		case <-ctx.Done():
+			// Closing is only used to unblock Next. It may race with the
+			// consumer's deferred close, so neither close result is meaningful.
+			_ = sseConn.Close()
+			return nil
+		case <-done:
+			return nil
+		}
+	})
+	c.eg.Go(func() error {
+		defer close(done)
 		defer sseConn.Close()
 
 		for {
 			event, err := sseConn.Next()
 			if err != nil {
-				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				if ctx.Err() != nil || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) || errors.Is(err, sse.ErrSourceClosed) {
 					return nil
 				}
 				return fmt.Errorf("decode: %w", err)
@@ -958,10 +1144,10 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
+	ctx = c.telemetryConsumerContext(ctx)
 
 	exp := &otlpConsumer{
-		path:       "/v1/traces",
+		path:       c.telemetryPath("traces"),
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -993,10 +1179,10 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
+	ctx = c.telemetryConsumerContext(ctx)
 
 	exp := &otlpConsumer{
-		path:       "/v1/logs",
+		path:       c.telemetryPath("logs"),
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1018,10 +1204,10 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
+	ctx = c.telemetryConsumerContext(ctx)
 
 	exp := &otlpConsumer{
-		path:       "/v1/metrics",
+		path:       c.telemetryPath("metrics"),
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
 		httpClient: httpClient,
@@ -1439,6 +1625,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		ClientID:                       c.ID,
 		ClientVersion:                  clientVersion,
 		SessionID:                      c.SessionID,
+		DetachableSession:              c.connectionMode == connectionModeDetachableCreator,
+		AttachSession:                  c.connectionMode == connectionModeObserver,
+		AttachmentID:                   c.attachmentID,
 		ClientSecretToken:              c.SecretToken,
 		ClientHostname:                 c.hostname,
 		ClientStableID:                 c.stableClientID,

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -144,4 +145,39 @@ func TestSocketForwardAgentClientFallsBackToAvailableSessionResourceBinding(t *t
 	assert.DeepEqual(t, msg.Data, []byte("ok:ping"))
 	assert.NilError(t, stream.CloseSend())
 	assert.Assert(t, is.Equal(int32(1), sshSrv.calls.Load()))
+}
+
+func TestSecretPlaintextCandidateExhaustionKeepsAggregateError(t *testing.T) {
+	ctx, cache := newSessionResourceFallbackTestContext(t, nil)
+	handle := dagql.SessionResourceHandle("missing-secret-handle")
+	assert.NilError(t, cache.BindSessionResource(ctx, "test-session", "dead-client", handle, &Secret{
+		URIVal:         "env://TOKEN",
+		SourceClientID: "dead-client",
+	}))
+
+	_, err := (&Secret{Handle: handle}).Plaintext(ctx)
+	assert.ErrorContains(t, err, `resolve session secret "missing-secret-handle"`)
+	assert.ErrorContains(t, err, "no available client binding")
+	assert.ErrorContains(t, err, `client "dead-client"`)
+	assert.ErrorContains(t, err, `no active session attachables for client "dead-client"`)
+	var unavailable *engine.SourceClientUnavailableError
+	assert.Assert(t, !errors.As(err, &unavailable))
+}
+
+func TestSocketForwardAgentClientCandidateExhaustionKeepsAggregateError(t *testing.T) {
+	ctx, cache := newSessionResourceFallbackTestContext(t, nil)
+	handle := dagql.SessionResourceHandle("missing-socket-handle")
+	assert.NilError(t, cache.BindSessionResource(ctx, "test-session", "dead-client", handle, &Socket{
+		Kind:           SocketKindUnixOpaque,
+		URLVal:         "unix:///tmp/dead.sock",
+		SourceClientID: "dead-client",
+	}))
+
+	_, err := (&Socket{Handle: handle}).ForwardAgentClient(ctx)
+	assert.ErrorContains(t, err, `resolve session socket "missing-socket-handle"`)
+	assert.ErrorContains(t, err, "no available client binding")
+	assert.ErrorContains(t, err, `client "dead-client"`)
+	assert.ErrorContains(t, err, `no active session attachables for client "dead-client"`)
+	var unavailable *engine.SourceClientUnavailableError
+	assert.Assert(t, !errors.As(err, &unavailable))
 }

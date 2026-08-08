@@ -59,6 +59,19 @@ type ClientMetadata struct {
 	// module clients connect to
 	SessionID string `json:"session_id"`
 
+	// DetachableSession declares that this top-level client creates a detachable
+	// session. It is engine-internal protocol state and is never inherited by
+	// nested clients.
+	DetachableSession bool `json:"detachable_session,omitempty"`
+
+	// AttachSession declares that this top-level client is observing an existing
+	// detachable session. It never authorizes session creation.
+	AttachSession bool `json:"attach_session,omitempty"`
+
+	// AttachmentID is the caller-generated identity for one detachable
+	// attachment. The engine combines it with an internal generation.
+	AttachmentID string `json:"attachment_id,omitempty"`
+
 	// ClientHostname is the hostname of the client that made the request. It's
 	// used to help identify clients in the logs more clearly; nothing functional.
 	ClientHostname string `json:"client_hostname"`

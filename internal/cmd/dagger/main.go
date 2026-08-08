@@ -178,6 +178,7 @@ func init() {
 	settingsCmd.GroupID = "workspace"
 
 	apiCmd.GroupID = "toolbox"
+	sessionsCmd.GroupID = "toolbox"
 	moduleCmd.GroupID = "toolbox"
 	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
@@ -194,6 +195,7 @@ func init() {
 		versionRoot,
 		queryCmd,
 		apiCmd,
+		sessionsCmd,
 		traceCmd,
 		lockCmd,
 		settingsCmd,

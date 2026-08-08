@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -21,6 +22,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
@@ -94,6 +96,10 @@ type FuncCommand struct {
 	// DisableModuleLoad skips adding a flag for loading a user Dagger Module.
 	DisableModuleLoad bool
 
+	// EnableDetach adds the P0 call-local --detach flag. Only the root call and
+	// api call commands enable it.
+	EnableDetach bool
+
 	// cmd is the parent cobra command.
 	cmd *cobra.Command
 
@@ -111,9 +117,11 @@ type FuncCommand struct {
 	// arguments rather than a debug level log.
 	warnSkipped bool
 
-	q   *querybuilder.Selection
-	c   *client.Client
-	ctx context.Context
+	q            *querybuilder.Selection
+	c            *client.Client
+	ctx          context.Context
+	detach       bool
+	responsePath []string
 
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
@@ -191,6 +199,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				}
 
 				params := initModuleParams(execArgs)
+				params.Detachable = fc.detach && !fc.needsHelp
 				params.LoadWorkspaceModules = shouldLoadWorkspaceModules(fc.DisableModuleLoad)
 				// The leading token is the likely target module; the engine
 				// narrows workspace module loading from it (deliberately not
@@ -201,6 +210,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
+					fc.responsePath = nil
 
 					// withEngine changes the context.
 					c.SetContext(ctx)
@@ -230,6 +240,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 								Original:     err,
 							}
 						}
+						var usageErr *detachUsageError
+						if errors.As(err, &usageErr) {
+							return idtui.ExitError{OriginalCode: 2, Original: err}
+						}
 						return idtui.ExitError{OriginalCode: 1, Original: err}
 					}
 
@@ -255,6 +269,9 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
 
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
+		if fc.EnableDetach {
+			fc.cmd.PersistentFlags().BoolVar(&fc.detach, "detach", false, "Run the final call in a detachable session")
+		}
 	}
 	return fc.cmd
 }
@@ -684,6 +701,9 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 // selectFunc adds the function selection to the query.
 func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	fc.q = fc.q.Select(fn.Name)
+	if fn.Name != "" {
+		fc.responsePath = append(fc.responsePath, fn.Name)
+	}
 
 	missingFlags := []string{}
 
@@ -745,7 +765,37 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 // RunE is the final command in the function chain, where the API request is made.
 func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		q := handleObjectLeaf(fc.q, fn.ReturnType)
+		q, leaf := handleObjectLeafWithPath(fc.q, fn.ReturnType)
+		responsePath := append([]string(nil), fc.responsePath...)
+		if leaf != "" {
+			responsePath = append(responsePath, leaf)
+		}
+		if fc.detach {
+			presentation, err := detachedPresentation(fn.ReturnType, responsePath, q)
+			if err != nil {
+				fc.showUsage = true
+				return err
+			}
+			fc.showUsage = false
+			request, err := buildDetachedQueryRequest(ctx, q)
+			if err != nil {
+				return err
+			}
+			response, err := fc.c.SubmitPrimaryQuery(ctx, request, presentation)
+			if err != nil {
+				return err
+			}
+			if err := waitAtDetachedQueryAcknowledgedTestBarrier(response.SessionID, response.QueryID); err != nil {
+				return err
+			}
+			if jsonOutput {
+				encoder := json.NewEncoder(cmd.OutOrStdout())
+				encoder.SetEscapeHTML(false)
+				return encoder.Encode(response)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Session: %s\nQuery:   %s\n", response.SessionID, response.QueryID)
+			return err
+		}
 
 		// Silence usage from this point on as errors don't likely come
 		// from wrong CLI usage.
@@ -775,9 +825,14 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 }
 
 func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuilder.Selection {
+	q, _ = handleObjectLeafWithPath(q, typeDef)
+	return q
+}
+
+func handleObjectLeafWithPath(q *querybuilder.Selection, typeDef *modTypeDef) (*querybuilder.Selection, string) {
 	obj := typeDef.AsFunctionProvider()
 	if obj == nil {
-		return q
+		return q, ""
 	}
 
 	// Use duck typing to detect supported functions.
@@ -809,19 +864,170 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 		if hasExportAllowParentDirPath {
 			q = q.Arg("allowParentDirPath", true)
 		}
-		return q
+		return q, "export"
 	}
 
 	// TODO: Replace with interface when possible.
 	if hasSync {
-		return q.SelectWithAlias("id", "sync")
+		return q.SelectWithAlias("id", "sync"), "id"
 	}
 
 	if typeDef.Name() == "Query" {
-		return nil
+		return nil, ""
 	}
 
-	return q.Select("id")
+	return q.Select("id"), "id"
+}
+
+type detachUsageError struct {
+	message string
+}
+
+func (err *detachUsageError) Error() string { return err.message }
+
+func detachedPresentation(returnType *modTypeDef, responsePath []string, q *querybuilder.Selection) (engine.QueryPresentation, error) {
+	usageErr := func(message string) (engine.QueryPresentation, error) {
+		return engine.QueryPresentation{}, &detachUsageError{message: message}
+	}
+	if outputPath != "" {
+		return usageErr("--detach cannot be used with --output")
+	}
+	if q == nil {
+		return usageErr("--detach requires a function result in P0")
+	}
+	if returnType == nil {
+		return usageErr("--detach cannot determine the result type")
+	}
+	if returnType.Kind == dagger.TypeDefKindInterfaceKind {
+		return usageErr("--detach does not support interface results in P0")
+	}
+	name := returnType.Name()
+	switch name {
+	case Changeset:
+		return usageErr("--detach does not support Changeset results in P0")
+	case LLM:
+		return usageErr("--detach does not support LLM results in P0")
+	case "Terminal":
+		return usageErr("--detach does not support terminal results in P0")
+	case "Pipe":
+		return usageErr("--detach does not support pipe results in P0")
+	}
+
+	presentation := engine.QueryPresentation{
+		Kind: "call", ResponsePath: append([]string(nil), responsePath...),
+		ReturnKind: string(returnType.Kind), JSON: jsonOutput,
+		Void: returnType.Kind == dagger.TypeDefKindVoidKind,
+	}
+	if list := returnType.AsList; list != nil {
+		element := list.ElementTypeDef
+		if element == nil {
+			return usageErr("--detach cannot determine the list element type")
+		}
+		presentation.ElementKind = string(element.Kind)
+		if element.Name() == Changeset {
+			return usageErr("--detach does not support lists of Changeset results in P0")
+		}
+		if element.AsFunctionProvider() != nil {
+			return usageErr("--detach does not support object-list results in P0")
+		}
+		if !detachableScalarKind(element.Kind) {
+			return usageErr(fmt.Sprintf("--detach does not support lists of %s results in P0", element.Kind))
+		}
+		return presentation, nil
+	}
+	if returnType.AsFunctionProvider() != nil {
+		return presentation, nil
+	}
+	if !presentation.Void && !detachableScalarKind(returnType.Kind) {
+		return usageErr(fmt.Sprintf("--detach does not support %s results in P0", returnType.Kind))
+	}
+	return presentation, nil
+}
+
+func detachableScalarKind(kind dagger.TypeDefKind) bool {
+	switch kind {
+	case dagger.TypeDefKindStringKind,
+		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind,
+		dagger.TypeDefKindBooleanKind,
+		dagger.TypeDefKindScalarKind,
+		dagger.TypeDefKindEnumKind:
+		return true
+	default:
+		return false
+	}
+}
+
+func buildDetachedQueryRequest(ctx context.Context, q *querybuilder.Selection) (json.RawMessage, error) {
+	selection, err := q.Build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	request, err := json.Marshal(&graphql.Request{
+		Query: "query Query " + selection, OpName: "Query",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode detached GraphQL request: %w", err)
+	}
+	return request, nil
+}
+
+func extractDetachedResult(body []byte, presentation engine.QueryPresentation) (any, error) {
+	var envelope struct {
+		Data   any `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decode saved GraphQL result: %w", err)
+	}
+	if len(envelope.Errors) > 0 {
+		messages := make([]string, 0, len(envelope.Errors))
+		for _, graphqlErr := range envelope.Errors {
+			messages = append(messages, graphqlErr.Message)
+		}
+		return nil, errors.New(strings.Join(messages, "\n"))
+	}
+	value := envelope.Data
+	for _, field := range presentation.ResponsePath {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("saved result path %q reached %T", strings.Join(presentation.ResponsePath, "."), value)
+		}
+		var found bool
+		value, found = object[field]
+		if !found {
+			return nil, fmt.Errorf("saved result is missing response field %q", field)
+		}
+	}
+	return value, nil
+}
+
+func formatDetachedResult(w io.Writer, value any, presentation engine.QueryPresentation) error {
+	if presentation.Void {
+		return nil
+	}
+	if presentation.ReturnKind == string(dagger.TypeDefKindObjectKind) {
+		id, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("saved object result is %T, not an ID", value)
+		}
+		return printEncodedID(w, id)
+	}
+	if presentation.JSON {
+		encoder := json.NewEncoder(w)
+		encoder.SetEscapeHTML(false)
+		encoder.SetIndent("", "    ")
+		return encoder.Encode(value)
+	}
+	if err := printPlainResult(w, value); err != nil {
+		return err
+	}
+	if stdoutIsTTY {
+		fmt.Fprintln(w)
+	}
+	return nil
 }
 
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {

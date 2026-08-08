@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detachable Dagger sessions: source-client callbacks</title>
+  <style>
+    :root { --ink:#17212b; --muted:#52606d; --line:#d8dee6; --soft:#f5f7fa; --accent:#5b3fd6; --accent-soft:#f0edff; --good:#176b3a; --bad:#a12c2c; --code:#f0f2f5; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#fff; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1660px; margin:0 auto; padding:36px 42px 80px; }
+    h1,h2,h3,h4 { line-height:1.2; scroll-margin-top:20px; }
+    h1 { margin:0 0 8px; font-size:34px; }
+    h2 { margin:42px 0 14px; padding-top:8px; border-top:2px solid var(--ink); font-size:25px; }
+    h3 { margin:28px 0 10px; font-size:19px; }
+    h4 { margin:20px 0 8px; font-size:16px; }
+    p { max-width:1120px; margin:8px 0 12px; }
+    a { color:#3d2aaf; text-decoration-thickness:1px; text-underline-offset:2px; }
+    code,pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    code { background:var(--code); padding:1px 4px; border-radius:3px; font-size:.92em; }
+    pre { margin:12px 0 18px; padding:15px 17px; overflow:auto; background:#17212b; color:#f8fafc; border-radius:6px; line-height:1.45; font-size:13px; }
+    pre code { padding:0; color:inherit; background:transparent; }
+    ul,ol { max-width:1160px; margin:8px 0 14px; padding-left:26px; }
+    li { margin:4px 0; }
+    .meta,.callout,.finding { max-width:1200px; margin:14px 0; padding:13px 16px; border:1px solid var(--line); border-left:5px solid var(--accent); background:var(--accent-soft); border-radius:4px; }
+    .meta { color:var(--muted); background:var(--soft); border-left-color:#7b8794; }
+    .finding { background:#eef8f2; border-left-color:var(--good); }
+    .warning { background:#fff1f1; border-left-color:var(--bad); }
+    .muted { color:var(--muted); }
+    .small { font-size:13px; }
+    .toc { max-width:900px; columns:2; column-gap:38px; padding:14px 20px 14px 38px; background:var(--soft); border:1px solid var(--line); border-radius:5px; }
+    .toc li { break-inside:avoid; }
+    .table-wrap { width:100%; overflow-x:auto; margin:12px 0 22px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; line-height:1.42; }
+    th,td { padding:9px 10px; text-align:left; vertical-align:top; border:1px solid var(--line); }
+    th { background:#e9edf2; font-weight:650; }
+    tbody tr:nth-child(even) { background:#fafbfc; }
+    .catalogue { min-width:2850px; }
+    .wide { min-width:1500px; }
+    .medium { min-width:980px; }
+    .yes { color:var(--good); font-weight:650; }
+    .no { color:var(--bad); font-weight:650; }
+    details { max-width:1200px; margin:12px 0; padding:9px 13px; border:1px solid var(--line); border-radius:4px; background:#fafbfc; }
+    summary { cursor:pointer; font-weight:650; }
+    @media(max-width:850px){ main{padding:24px 18px 60px}.toc{columns:1} }
+    @media print { main{max-width:none;padding:0}.table-wrap{overflow:visible}table{font-size:9px}pre{white-space:pre-wrap}details{display:block}details>*{display:block} }
+  </style>
+</head>
+<body><main>
+  <h1>Detachable Dagger sessions: source-client callbacks</h1>
+  <p class="muted">A companion to the <a href="detachable-sessions.html">detachable sessions design</a> and the <a href="detachable-sessions-p0-implementation.html">reviewed P0 implementation plan</a></p>
+
+  <div class="meta">
+    <strong>Investigation base:</strong> reviewed detachable-sessions P0 head
+    <a href="https://github.com/dagger/dagger/tree/322c50b200058c348b1c3a7a2bad306c39413b4b"><code>322c50b200058c348b1c3a7a2bad306c39413b4b</code></a>.
+    Its upstream merge base is <a href="https://github.com/dagger/dagger/tree/eb0ba40f8008eac2ef3356aed44d85db1c2a1d57"><code>eb0ba40f8008eac2ef3356aed44d85db1c2a1d57</code></a>.
+    This document contains investigation and an implementation proposal only. It does not contain production code.
+  </div>
+
+  <h3>Contents</h3>
+  <ol class="toc">
+    <li><a href="#scope">Scope, policy, invariants, and non-goals</a></li>
+    <li><a href="#model">Current client and attachable model</a></li>
+    <li><a href="#catalogue">Complete dependency catalogue</a></li>
+    <li><a href="#ownership">Copied versus client-backed behavior</a></li>
+    <li><a href="#disconnect">Disconnect and deregistration sequences</a></li>
+    <li><a href="#errors">Error propagation and isolation</a></li>
+    <li><a href="#reattach">Reattachment semantics</a></li>
+    <li><a href="#implementation">Recommended minimal implementation</a></li>
+    <li><a href="#tunnel-lifecycle">Shared tunnel completion and startup cleanup</a></li>
+    <li><a href="#files">Exact package and file changes</a></li>
+    <li><a href="#phases">Implementation phases and commit boundaries</a></li>
+    <li><a href="#tests">Test plan</a></li>
+    <li><a href="#faults">Fault-injection seams</a></li>
+    <li><a href="#acceptance">Acceptance criteria</a></li>
+    <li><a href="#deferred">Explicit deferred work</a></li>
+  </ol>
+
+  <h2 id="scope">1. Scope, approved policy, invariants, and non-goals</h2>
+  <p>A <strong>source client</strong> is the concrete physical client identified by <code>ClientMetadata.ClientID</code> whose registered session attachable supplies data or performs an operation for an engine object. The term says where the callback goes. It does not create a general client role.</p>
+  <p>A source client's attachables belong permanently to that physical client. Graceful disconnect makes them unavailable immediately. Abrupt loss makes them unavailable when the existing connection-death path removes their registration. A later observer does not restore, replace, redirect, or rebind them.</p>
+
+  <div class="finding"><strong>Approved behavior:</strong> source-dependent work fails at the operation that needs the absent source. The failure does not close the detachable session. It does not cancel an unrelated query. It does not stop an unrelated service. Engine-owned work and data continue.</div>
+
+  <h3>Invariants</h3>
+  <ol>
+    <li><code>ClientMetadata.ClientID</code> remains the physical callback identity.</li>
+    <li><code>mainClientCallerID</code> remains immutable for existing main-client and ancestry semantics.</li>
+    <li><code>creatorClientID</code> remains the root creator identity for detachable lifecycle only. Creator callbacks continue to use <code>mainClientCallerID</code>.</li>
+    <li><code>currentAttachment.ClientID</code> is lifecycle state. It never becomes a callback fallback.</li>
+    <li>An observer registers no source attachables and cannot submit <code>/query</code>.</li>
+    <li>A callback lookup never substitutes the observer, the current attachment, or another client.</li>
+    <li>A separately registered value with the same session-resource handle may still be selected by the existing candidate algorithm. That is selection among independent bindings. It is not rebinding.</li>
+    <li>Known source absence fails without the current ten-second lookup delay.</li>
+    <li>Unknown initial publication retains its bounded wait. This preserves startup ordering.</li>
+    <li>Ordinary non-detachable sessions retain their current user-visible behavior except that an already-failed host-to-container tunnel stops appearing live and releases its binding.</li>
+    <li>Only explicit termination and engine shutdown cancel the detachable session root.</li>
+  </ol>
+
+  <h3>Non-goals</h3>
+  <p>This phase does not add callback rebinding, new GraphQL work from an observer, public SDK behavior, <code>dagger up</code>, cache ownership changes, multiple queries, concurrent attachments, engine restart survival, TTLs, names, Cloud scale-out, shell, listen, interactive stream resumption, or cross-engine callback routing. The shared tunnel correction adds no new <code>dagger up</code> product support. It does not make copied data portable across engine restart. It does not change the hidden SDK transport.</p>
+
+  <h2 id="model">2. Current client and attachable model</h2>
+
+  <h3>Identity meanings</h3>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Identifier</th><th>Exact location</th><th>Current meaning</th><th>Callback significance</th><th>Recommendation</th></tr></thead><tbody>
+    <tr><td><code>ClientMetadata.SessionID</code></td><td><code>engine/metadata.go</code>; <code>daggerSession.sessionID</code></td><td>One Dagger session.</td><td>Scopes clients, services, cache session resources, telemetry, and the detachable record. It does not select a callback provider.</td><td>Unchanged.</td></tr>
+    <tr><td><code>ClientMetadata.ClientID</code></td><td><code>engine/metadata.go</code>; <code>daggerClient.clientID</code></td><td>One concrete physical engine client. It also carries the historical BuildKit session-ID meaning.</td><td>Key for <code>sessionAttachableManager</code>. This is the source identity.</td><td>Unchanged. Define it as the source ID at callback boundaries.</td></tr>
+    <tr><td><code>ClientMetadata.ClientStableID</code></td><td><code>engine/client/client.go</code>; <code>core.ClientFilesyncMirror</code></td><td>Host-stable filesync mirror key.</td><td>It reuses an engine-side mirror. It is not a callback identity and cannot authorize substitution.</td><td>Unchanged. Never use it for source lookup.</td></tr>
+    <tr><td><code>daggerSession.mainClientCallerID</code></td><td><code>engine/server/session.go</code></td><td>Immutable root/main client identity. It controls existing main-client authorization, ancestry, active-client reporting, and several creator callbacks.</td><td><code>getMainClientCaller</code> and <code>sessionMainClientConn</code> currently use it.</td><td>Keep the field and behavior unchanged.</td></tr>
+    <tr><td><code>daggerSession.creatorClientID</code></td><td><code>engine/server/session.go</code></td><td>P0's immutable detachable creator lifecycle identity.</td><td>None. Callback lookup continues to use <code>mainClientCallerID</code>.</td><td>Keep the field lifecycle-only.</td></tr>
+    <tr><td><code>ClientInitOpts.CallerClientID</code></td><td><code>engine/server/session.go</code></td><td>Immediate parent of a nested client.</td><td>Builds ancestry. It does not itself select a callback.</td><td>Unchanged.</td></tr>
+    <tr><td><code>daggerClient.parents</code></td><td><code>engine/server/session.go</code></td><td>Full root-to-parent ancestry.</td><td>Used for telemetry fan-out, nearest non-module source lookup, and synthetic host-service fallback.</td><td>Unchanged.</td></tr>
+    <tr><td><code>NonModuleParentClientMetadata</code></td><td><code>core.Query</code>; <code>engine/server/session.go</code></td><td>Nearest current or ancestor client that is not a module client.</td><td>Restamps local module source, local defaults, local LLM, and trusted Git work to the physical client that owns those host callbacks.</td><td>Unchanged. Document it as source selection, not observer selection.</td></tr>
+    <tr><td><code>HostServiceProxyClientID</code></td><td><code>ClientInitOpts</code>; <code>daggerClient.hostServiceProxyClientID</code></td><td>Explicit ancestor fallback for a synthetic nested client that has no attachables.</td><td><code>resolveHostServiceCaller</code> uses it only for that explicit nested-client case.</td><td>Unchanged. It never points to an observer.</td></tr>
+    <tr><td><code>sessionAttachment.ClientID</code></td><td><code>engine/server/session_control.go</code></td><td>The current creator or observer lifecycle attachment.</td><td>None. P0 does not publish it into callback lookup.</td><td>Unchanged.</td></tr>
+    <tr><td><code>Secret.SourceClientID</code></td><td><code>core/secret.go</code></td><td>Physical client that registered the URI secret provider.</td><td>Permanent source identity for <code>Secrets/GetSecret</code>.</td><td>Unchanged.</td></tr>
+    <tr><td><code>Socket.SourceClientID</code></td><td><code>core/socket.go</code>; persisted in <code>core.Service</code></td><td>Physical client that owns a Unix, TCP, UDP, SSH-agent, host-service, or local-LLM socket.</td><td>Permanent source identity for <code>SSH/ForwardAgent</code>.</td><td>Unchanged.</td></tr>
+    <tr><td><code>Workspace.ClientID</code></td><td><code>core/workspace.go</code>; <code>engine/server/session.go</code></td><td>Physical owner of a host workspace.</td><td><code>workspaceClientContext</code> selects that client's engine utility and metadata for lock reads and exports.</td><td>Unchanged.</td></tr>
+  </tbody></table></div>
+
+  <h3>Registration and lookup</h3>
+  <p><code>engine/client/client.go::startSession</code> registers <code>SocketProvider</code>, <code>SecretProvider</code>, Docker auth, <code>TunnelListenerAttachable</code>, terminal, Git, optional pipe, filesync source and target, optional prompt, and optional image-store services. <code>NewSessionAttachablesServer</code> also registers gRPC health. It advertises every method through <code>X-Docker-Expose-Session-Grpc-Method</code>.</p>
+  <p><code>startObserverSession</code> calls <code>ConnectSessionAttachables</code> with no attachables. The observer advertises only gRPC health. It does not call <code>daggerConnect</code>. It has no GraphQL client.</p>
+  <pre><code>object or operation
+    │
+    ├─ explicit object source ── Secret.SourceClientID / Socket.SourceClientID
+    │
+    ├─ current source ────────── ClientMetadata.ClientID
+    │
+    ├─ creator source ────────── mainClientCallerID
+    │
+    └─ explicit nested fallback ─ HostServiceProxyClientID
+             │
+             ▼
+daggerClient.getClientCaller / resolveHostServiceCaller
+             │
+             ▼
+sessionAttachableManager.Lookup or Wait(clientID)
+             │
+             ▼
+sessionAttachableCaller.Conn() ── gRPC to that physical client only</code></pre>
+
+  <p><code>initializeDaggerClient</code> implements <code>getClientCaller</code> with <code>context.WithoutCancel</code>, a fixed ten-second timeout, and <code>singleflight.Group</code>. It then calls <code>sessionAttachableManager.Wait</code>. This wait ignores the GraphQL operation's cancellation until its own timeout.</p>
+  <p><code>core.Query.SpecificClientAttachableConn</code> uses non-blocking <code>Lookup</code> only when <code>IfAvailable</code> is true. Session-resource candidate selection uses that form. Every other call uses the ten-second wait.</p>
+
+  <h3>Lookup and request keys</h3>
+  <ul>
+    <li><code>sessionAttachableManager.callers</code>, <code>reservations</code>, and <code>waiters</code> use physical <code>ClientID</code> as their only key.</li>
+    <li><code>sessionAttachableCaller.supported</code> stores lower-case full gRPC method URLs advertised in <code>X-Docker-Expose-Session-Grpc-Method</code>. <code>callerSupports</code> tests a full service descriptor against that set.</li>
+    <li><code>dagql.Cache.BindSessionResource</code> stores <code>sessionResourcesBySession[sessionID][SessionResourceHandle].byClientID[clientID]</code>. <code>ResolveSessionResourceCandidates</code> orders the requested client first, <code>latestClientID</code> second, and remaining client IDs lexically.</li>
+    <li>Filesync carries <code>LocalImportOpts</code> in <code>X-Dagger-Local-Import-Opts</code> and <code>LocalExportOpts</code> in <code>X-Dagger-Local-Export-Opts</code>. Compatibility import keys are <code>dir-name</code>, <code>include-patterns</code>, <code>exclude-patterns</code>, <code>followpaths</code>, and <code>dagger.gitignore</code>.</li>
+    <li>Socket forwarding carries the concrete URL in <code>X-Dagger-Socket-URLEncoded</code>. Basic image store RPCs carry the image name in <code>dagger.store.tag</code>.</li>
+    <li><code>GetSecretRequest.ID</code> carries the secret URI. <code>CredentialsRequest.Host</code> carries the registry host. <code>GitCredentialRequest</code> carries <code>Protocol</code>, <code>Host</code>, and <code>Path</code>. <code>ListenRequest</code> carries <code>Addr</code>, <code>Protocol</code>, <code>ConnId</code>, <code>Data</code>, and <code>Close</code>.</li>
+  </ul>
+
+  <h3>Active code versus retained BuildKit code</h3>
+  <p>The active Dagger server does not construct an <code>internal/buildkit/session.Manager</code>. The retained BuildKit local, Git, HTTP, upload, auth-token, cache importer, and cache exporter callback helpers are therefore not reachable through the current Dagger server wiring. Current client metadata still carries <code>UpstreamCacheImportConfig</code> and <code>UpstreamCacheExportConfig</code>, but no active server code consumes them.</p>
+  <p>This proposal catalogues the active Dagger paths. It records registered-but-unused RPC methods separately. It does not modify retained BuildKit compatibility code.</p>
+
+  <details><summary>P0 commit range inspected</summary>
+    <p class="small"><code>2e76ace2f0</code> design: propose detachable sessions; <code>cc760a207b</code> design: define detachable sessions P0; <code>23d52119f7</code> design: place P0 in implementation plan; <code>de4d175f73</code> design: clarify detachable session P0; <code>22adaf9949</code> design: narrow detachable session protocol changes; <code>8da44a29b3</code> design: detail detachable sessions P0 implementation; <code>84dab53345</code> design: simplify detachable sessions P0; <code>21c9f1ffca</code> design: close detachable P0 lifecycle gaps; <code>124720dad4</code> design: finalize detachable P0 attachment semantics; <code>7ac1197b60</code> design: clarify detachable attachment retries; <code>0627a90a5b</code> feat: implement detachable session engine lifecycle; <code>f6d30f7aef</code> feat: add detachable session client modes; <code>6783d39a1b</code> feat: add detachable call and sessions commands; <code>d93688550b</code> fix: print session attachment wait once; <code>b48cf0044d</code> test: cover detachable sessions end to end; <code>7367fd15e8</code> test: verify detachable client boundaries; <code>25d990b14c</code> fix: harden detachable session lifecycle boundaries; <code>b0de222021</code> fix: preserve accepted detached query execution; <code>2a07ab97ff</code> fix: handle detached query states before result fetch; <code>bfa478dff7</code> test: make detachable interrupt lifecycle diagnostic; <code>1e6fad43df</code> test: harden detachable session lifecycle coverage; <code>e97eb3a134</code> docs: add detachable sessions change note; <code>d360263a81</code> fix: satisfy generation and lint checks; <code>322c50b200</code> test: avoid racing command output diagnostics.</p>
+  </details>
+
+  <h2 id="catalogue">3. Dependency catalogue</h2>
+  <details><summary>Open the complete callback dependency catalogue</summary>
+  <p>The table includes every active lookup found through <code>SpecificClientAttachableConn</code>, <code>getClientCaller</code>, <code>GetSessionCaller</code>, <code>GetHostServiceCaller</code>, <code>GetMainClientCaller</code>, <code>sessionMainClientConn</code>, and generated gRPC client construction. “Continue” means the detachable session and unrelated work continue. It does not promise that the source-dependent operation succeeds.</p>
+
+  <div class="table-wrap"><table class="catalogue"><thead><tr>
+    <th>Subsystem and operation</th><th>Exact code path, types, functions, and RPCs</th><th>Source identity used</th><th>When callback occurs</th><th>Copied, lazy, or permanently client-backed</th><th>Current graceful disconnect</th><th>Current abrupt disconnect</th><th>Can detached work continue?</th><th>Proposed absent-source behavior</th><th>Effect after observer reattachment</th><th>Exact tests required</th>
+  </tr></thead><tbody>
+    <tr><td>Attachable health</td><td><code>engine/server/session_attachables.go::attachableClientConn</code>, <code>monitorAttachableHealth</code>; <code>grpc.health.v1.Health/Check</code>.</td><td>The registered <code>clientID</code>.</td><td>Every five seconds after registration.</td><td>Permanently transport-backed.</td><td><code>Deregister</code> cancels and waits. No further health lookup succeeds.</td><td>Two failures are fatal. The failure state resets only after five successes.</td><td>Yes. Health removal must not cancel the session.</td><td>Keep removal conditional on the same caller still occupying the manager entry. The source publication set makes the missing caller recognizable afterward.</td><td>Observer health is independent. It does not restore the source.</td><td>Immediate close, blackhole timeout, one failure plus four successes plus failure, five-success reset, stale registration cleanup race.</td></tr>
+    <tr><td>Host path metadata and small reads</td><td><code>engineutil.Client.diffcopy</code>, <code>ReadCallerHostFile</code>, <code>AbsPath</code>, <code>StatCallerHostPath</code>, <code>SearchCallerHostPath</code>, <code>GlobCallerHostPath</code>; <code>moby.filesync.v1.FileSync/DiffCopy</code>.</td><td>Current <code>ClientMetadata.ClientID</code> through <code>GetSessionCaller</code>.</td><td>At each helper invocation.</td><td>Operation-local bytes or metadata. Nothing remains callback-backed after return.</td><td>The next call waits ten seconds today.</td><td>During the stale interval the RPC may fail or block. After removal the next lookup waits ten seconds.</td><td>Yes. Only the helper's caller fails.</td><td>Return the immediate source-unavailable error with the source ID. Existing helper context remains.</td><td>No redirection. The observer's filesystem is never read.</td><td>Each helper after graceful source close; one in-flight DiffCopy loss; observer with conflicting path; session still listable.</td></tr>
+    <tr><td>Host directory and file import</td><td><code>core/schema/host.go::directory</code>; <code>Query.SpecificClientAttachableConn</code>; <code>core.ClientFilesyncMirror.Snapshot</code>; <code>engine/filesync.FileSyncer.Snapshot</code>; <code>remoteFS</code>; <code>FileSync/DiffCopy</code>.</td><td>Current <code>ClientMetadata.ClientID</code>. <code>ClientStableID</code> selects only the mirror.</td><td>When the <code>host.directory</code> resolver evaluates, before returning the directory.</td><td>Copied into an engine <code>bkcache.ImmutableRef</code>. The mirror is engine-side but every new snapshot still calls the source.</td><td>An unfinished or new import waits ten seconds after deregistration. A completed immutable ref remains usable.</td><td>An in-flight import fails. A completed ref remains usable.</td><td>Yes. Descendants of a completed snapshot continue.</td><td>Fail only the import field. Never use old mirror bytes as a fresh host read.</td><td>The observer cannot refresh or replace the snapshot source.</td><td>Construct then disconnect before evaluation; disconnect during stat and file transfer; evaluate completed directory afterward; mirror cannot mask a source change.</td></tr>
+    <tr><td>Directory, file, changeset, and reader export to host</td><td><code>Directory.Export</code>, <code>File.Export</code>, <code>Changeset.Export</code>; <code>engineutil.LocalDirExport</code>, <code>LocalFileExport</code>, <code>IOReaderExport</code>; <code>moby.filesync.v1.FileSend/DiffCopy</code>.</td><td>Current <code>ClientMetadata.ClientID</code>.</td><td>After the engine materializes the export source, when writing the destination.</td><td>Source data is engine-owned. The destination write is permanently source-client-backed.</td><td>The write waits ten seconds today. The engine snapshot remains.</td><td>The transfer fails. The destination may be partial according to existing filesync semantics.</td><td>Yes. Only the export field fails.</td><td>Return the immediate source-unavailable error through existing export wrapping. Preserve the snapshot.</td><td>No write to the observer's host.</td><td>Graceful and abrupt loss before and during each export mode; no observer destination mutation; an engine-only sibling branch completes.</td></tr>
+    <tr><td>Workspace lock read and export</td><td><code>workspaceClientContext</code>, <code>readWorkspaceLockState</code>, <code>exportWorkspaceLockToHost</code>, <code>flushWorkspaceLocks</code>; the filesync helpers above.</td><td><code>Workspace.ClientID</code> and that client's metadata.</td><td>During workspace load, mutation, explicit field work, or ordinary shutdown lock flush.</td><td>Parsed lock and delta are engine-side. Host read and final export need the source.</td><td>Detachable <code>Client.Close</code> does not run <code>/shutdown</code> or lock flush. A later source-dependent lock operation waits today.</td><td>Same as filesync. Explicit termination does not flush to host.</td><td>Yes. Unexported lock delta remains session state until termination.</td><td>Fail the lock operation clearly. Do not make termination wait for an absent host.</td><td>Observer cannot receive the lock file.</td><td>Dirty lock plus creator detach; terminate stays bounded; ordinary shutdown behavior unchanged.</td></tr>
+    <tr><td>Plaintext <code>setSecret</code></td><td><code>core/schema/query.go::setSecret</code>; <code>core.Secret.PlaintextVal</code>; session-resource cache.</td><td>No callback after construction.</td><td>Plaintext arrives in the GraphQL request.</td><td>Copied into engine session state. Persisted-object encoding omits plaintext.</td><td>Continues.</td><td>Continues.</td><td>Yes.</td><td>No absent-source error.</td><td>Observer sees no plaintext and supplies nothing.</td><td>Use plaintext secret after detach; verify release on terminate and no persistence payload.</td></tr>
+    <tr><td>URI and command-backed secret</td><td><code>core/schema/secret.go::secret</code>; <code>core.Secret.plaintext</code>; <code>engine/client/secretprovider</code>; <code>moby.buildkit.secrets.v1.Secrets/GetSecret</code>. Schemes: <code>env</code>, <code>file</code>, <code>cmd</code>, <code>op</code>, <code>vault</code>, <code>libsecret</code>, <code>gcp</code>, <code>aws+sm</code>, <code>aws+ps</code>.</td><td><code>Secret.SourceClientID</code> captured at construction.</td><td>Every plaintext evaluation. Without <code>cacheKey</code>, construction also evaluates once to derive a handle.</td><td>Permanently client-backed. The no-cache-key constructor does not retain the fetched plaintext.</td><td>Direct plaintext waits ten seconds today. Candidate lookup is non-blocking and may try an independently registered binding.</td><td>In-flight RPC fails. Candidate code retries another binding only for attachable/transport failures.</td><td>Yes. Only the field, exec secret mount, registry-auth construction, or other consumer fails.</td><td>A direct blocking lookup returns the immediate source-unavailable error for the exact source. <code>IfAvailable</code> candidate lookup and aggregate exhaustion stay unchanged.</td><td>Observer is not a candidate unless it independently created and bound a value, which P0 cannot do.</td><td>All schemes through a fake provider; with and without cache key; candidate fallback dead then live; aggregate exhaustion; observer cannot satisfy source.</td></tr>
+    <tr><td>Best-effort host environment fallback</td><td><code>core.Host.GetEnv</code>; <code>core.EnvFile.variables</code>; LLM router config in <code>core/llm.go</code>; uses <code>Secrets/GetSecret</code>.</td><td>Current <code>ClientMetadata.ClientID</code>.</td><td>During environment interpolation or optional LLM configuration discovery.</td><td>Operation-local string. Callback errors are converted to an empty value today.</td><td>Waits and then appears unset.</td><td>Appears unset after transport failure.</td><td>Usually. A later required-variable check may fail differently.</td><td>Preserve the current empty-value fallback.</td><td>Observer is not queried.</td><td>Missing variable versus missing source; required interpolation; optional LLM configuration; ordinary behavior compatibility.</td></tr>
+    <tr><td>Socket, SSH agent, and host network dial</td><td><code>core.Socket.ForwardAgentClient</code>; <code>MountSSHAgent</code>; <code>AgentFingerprints</code>; <code>engine/client.SocketProvider</code>; <code>moby.sshforward.v1.SSH/ForwardAgent</code> with <code>X-Dagger-Socket-URLEncoded</code>.</td><td><code>Socket.SourceClientID</code> captured at construction or persisted in a service.</td><td>At fingerprinting, mount connection, host-service connection, or direct socket use.</td><td>Permanently client-backed. A live stream is transport-backed.</td><td>New lookup waits ten seconds today. Existing streams close when deregistered.</td><td>New or existing streams fail during the stale interval or after removal.</td><td>Yes. The socket consumer fails.</td><td>A new blocking lookup returns the immediate source-unavailable error. Established stream behavior stays unchanged.</td><td>Never dials an observer path. The P0 integration test already proves this.</td><td>Unix, TCP, UDP, SSH agent; construction versus evaluation; established stream loss; independent handle fallback.</td></tr>
+    <tr><td>Container-to-host reverse-tunnel service</td><td><code>core.Service.startReverseTunnel</code>; <code>core.c2hTunnel.Tunnel</code>; <code>Socket.ForwardAgentClient</code>; <code>SSH/ForwardAgent</code>.</td><td>Each persisted <code>Service.HostSockets[i].SourceClientID</code>.</td><td>Service listeners are engine-side. Each accepted connection opens a source callback.</td><td>Listener and network namespace are engine-owned. Every upstream connection is source-backed.</td><td>The next accepted connection waits today and then makes the tunnel exit.</td><td>An existing copy or next connection fails. <code>RunningService.Wait</code> observes tunnel exit.</td><td>Yes. That service exits. Related consumers can observe dependency exit. Unrelated services remain.</td><td>Fail only this reverse-tunnel service. Let existing <code>Services.handleExit</code> remove it.</td><td>Observer does not revive the service.</td><td>Service healthy before detach; next connection after detach; unrelated container service stays running; related binding sees exit.</td></tr>
+    <tr><td>Host-to-container tunnel service</td><td><code>core.Service.startTunnel</code>; <code>engineutil.Client.ListenHostToContainer</code>; <code>dagger.h2c.TunnelListener/Listen</code>.</td><td>Current <code>ClientMetadata.ClientID</code> through <code>GetSessionCaller</code>.</td><td>Callback establishes a host listener during service start and carries all later connections.</td><td>Permanently client-backed stream.</td><td>Listener stream closes, but receive failure is only logged today. Service can remain falsely running.</td><td>Same gap after transport death.</td><td>Yes, but the affected service state is currently wrong.</td><td>Route listener completion through <code>startTunnel</code>'s existing <code>shutdown(cause)</code> path. Release this tunnel's binding and remove the failed tunnel from running state.</td><td>Observer does not receive the listener.</td><td>Ordinary and detachable: first-listener failure, later-port failure, death before publication, death after publication, concurrent Close/Wait, no leaked binding or listener, no panic.</td></tr>
+    <tr><td>Local LLM host tunnel</td><td><code>core.setupLocalTunnel</code>, <code>runLocalTunnel</code>; <code>Socket.ForwardAgentClient</code>; <code>SSH/ForwardAgent</code>.</td><td>Current <code>ClientMetadata.ClientID</code> captured in a <code>Socket</code>.</td><td>Each accepted engine-loopback connection opens a source callback.</td><td>Engine listener persists for the session. Each upstream is source-backed.</td><td>New connection waits today, logs, and closes.</td><td>Copy or connect fails and closes that connection.</td><td>Yes. The LLM HTTP operation receives a network failure. Session and listener survive until session close.</td><td>Keep the current per-connection failure boundary.</td><td>Observer cannot become the model-network source.</td><td>Source loss before and during request; next unrelated engine-only field succeeds; terminate closes listener.</td></tr>
+    <tr><td>Explicit registry credentials</td><td><code>core/schema/container.go::withRegistryAuth</code>; <code>Secret.Plaintext</code>; <code>auth.RegistryAuthProvider.AddCredential</code>.</td><td>The secret's own source only while <code>withRegistryAuth</code> evaluates.</td><td>At <code>withRegistryAuth</code> evaluation.</td><td>Username and secret are copied into the session's in-memory <code>RegistryAuthProvider</code>.</td><td>Continues after successful construction.</td><td>Continues after successful construction.</td><td>Yes.</td><td>Only construction fails if the source secret is unavailable.</td><td>Observer cannot replace the credential.</td><td>Construct before detach then pull; construct after detach; remove credential; release at termination.</td></tr>
+    <tr><td>Default Docker registry credentials</td><td><code>serverresolver.sessionAuthSource.Credentials</code>; <code>sessionMainClientConn</code>; <code>moby.filesync.v1.Auth/Credentials</code>; <code>Resolver.lookupCredentials</code>.</td><td>Immutable creator through <code>mainClientCallerID</code> today.</td><td>Lazily on registry auth challenge when no explicit session credential exists.</td><td>Callback-backed for lookup. Containerd authorizer/token state may reuse a result within its operation, but the session auth source retains no copied default credential.</td><td>Next lookup waits ten seconds today. <code>lookupCredentials</code> uses <code>context.Background()</code>.</td><td>Challenge may fail during stale transport or after delayed lookup.</td><td>Yes. The pull, push, import, or export operation fails.</td><td>Return the immediate source-unavailable error through the existing immutable creator lookup.</td><td>Observer Docker config is never queried.</td><td>Explicit credential continues; default private pull after detach fails clearly; public pull continues; observer has valid conflicting credential but is unused.</td></tr>
+    <tr><td>Git credential helper</td><td><code>core/schema/git.go</code>; <code>engineutil.Client.GetCredential</code>; <code>dagger.git.Git/GetCredential</code>.</td><td>Current or <code>NonModuleParentClientMetadata.ClientID</code>. Trusted dependency resolution may also try immutable main/creator metadata.</td><td>During Git resolver construction before private HTTP fetch.</td><td>Operation-local. A successful password is copied into an engine <code>setSecret</code> for that Git operation.</td><td>Lookup waits today. Current implicit-credential code warns and may continue.</td><td>Transport failure is warned; later fetch may fail as authentication.</td><td>Yes. Only the Git operation is affected.</td><td>Preserve the candidate order and current suppression. Non-suppressed blocking lookups return the immediate source-unavailable error.</td><td>Observer is never a credential candidate.</td><td>Current, non-module parent, trusted creator fallback, public repo, private repo, warning path, observer conflicting credential.</td></tr>
+    <tr><td>Git configuration</td><td><code>engineutil.Client.GetGitConfig</code>; <code>core/sdk/go_sdk.go::gitConfigSelectors</code>; <code>dagger.git.Git/GetConfig</code>.</td><td>Current or explicit host-service proxy source.</td><td>During Go SDK/codegen setup.</td><td>Operation-local <code>url.*.insteadOf</code> entries.</td><td>Caller lookup waits. Client-side NOT_FOUND and CONFIG_RETRIEVAL_FAILED results are intentionally treated as empty, but lookup/transport errors are not.</td><td>Transport failure returns an error.</td><td>Yes. The codegen field fails.</td><td>Return the immediate source-unavailable error. Preserve existing best-effort result codes.</td><td>Observer config is unused.</td><td>Missing Git remains empty; absent source returns <code>SourceClientUnavailableError</code>; synthetic nested proxy uses exact ancestor.</td></tr>
+    <tr><td>Host image import</td><td><code>core/schema/host.go::containerImage</code>; <code>engineutil.Client.ReadImage</code>; <code>containerd.NewImageStoreFromClient</code>; <code>contentproxy.NewContentStore</code>; <code>containerd.services.images.v1.Images/Get</code>; <code>containerd.services.content.v1.Content/Info</code>; <code>containerd.services.content.v1.Content/Read</code>; or <code>dagger.store.BasicStore/ReadTarball</code>; <code>contentutil.CopyChain</code>; <code>Container.Import</code>. <code>ReadImage</code> constructs a lease proxy, but this import path does not call it.</td><td>Current or explicit host-service proxy source.</td><td>When <code>host.containerImage</code> evaluates.</td><td>Source-backed during transfer. Completed content is copied into <code>query.OCIStore()</code> and the resulting container is engine-owned.</td><td>New import waits. Completed import continues.</td><td>In-flight transfer fails. Completed import continues.</td><td>Yes.</td><td>Fail only host image import. A new blocking lookup returns the immediate source-unavailable error.</td><td>Observer image store is unused.</td><td>Both store backends; disconnect before image Get, during content Info/Read or tar transfer, and after complete import.</td></tr>
+    <tr><td>Host image export/load</td><td><code>Container.Export</code>; <code>engineutil.ExportContainerImage</code>; <code>WriteImage</code>; <code>imageexport.exportToImageStore</code>; <code>containerd.services.leases.v1.Leases/Create</code>; <code>containerd.services.leases.v1.Leases/Delete</code>; <code>containerd.services.content.v1.Content/Info</code>; <code>containerd.services.content.v1.Content/Read</code>; <code>containerd.services.content.v1.Content/Write</code>; <code>containerd.services.content.v1.Content/Update</code>; <code>containerd.services.images.v1.Images/Update</code>, then <code>containerd.services.images.v1.Images/Create</code> on not found; or <code>dagger.store.BasicStore/WriteTarball</code>.</td><td>Current or explicit host-service proxy source.</td><td>After the engine materializes the image, while storing it into the host backend.</td><td>The assembled engine image is copied. Host load remains source-backed until transfer and image-store commit finish.</td><td>Lookup waits today.</td><td>Transfer fails. Host store may contain partial content according to backend semantics.</td><td>Yes. Engine image remains.</td><td>Fail only export/load. A new blocking lookup returns the immediate source-unavailable error.</td><td>No load into observer image store.</td><td>Both backends; loss during lease creation, content Info/Read/Write/Update, image Update/Create, tar transfer, and lease deletion; unrelated registry publish still works if auth is available.</td></tr>
+    <tr><td>Interactive terminal</td><td><code>core.prepTerminal</code>; <code>engineutil.Client.OpenTerminal</code>; <code>dagger.terminal.Terminal/Session</code>.</td><td>Immutable main/creator through <code>GetMainClientCaller</code>.</td><td>When interactive exec or error-terminal flow opens. Stream carries engine stdout/stderr to client and client stdin/resize to engine.</td><td>Permanently stream-backed.</td><td>Open waits today. An active stream returns receive/send errors.</td><td>Stream errors reach <code>TerminalClient.ErrCh</code> or close.</td><td>Yes. The terminal or associated exec fails. P0 CLI already rejects detached Terminal results.</td><td>Opening returns the immediate source-unavailable error. Keep the current stream failure boundary and never cancel the session root.</td><td>Observer terminal is not opened.</td><td>Loss before ready, after ready, during stdin, stdout, resize, and close; session remains terminable.</td></tr>
+    <tr><td>stdin/stdout pipe</td><td><code>core/mcpserver.go</code>; <code>engineutil.Client.OpenPipe</code>; <code>dagger.pipe.Pipe/IO</code>.</td><td>Immutable main/creator through <code>GetMainClientCaller</code>.</td><td>When an MCP server or internal pipe opens.</td><td>Permanently stream-backed. Ordinary noninteractive exec stdout/stderr and literal stdin are engine-side and do not use this RPC.</td><td>Open waits. Existing <code>PipeIO</code> converts Unavailable to EOF.</td><td>Stream may appear as EOF.</td><td>Yes. The pipe consumer ends. P0 CLI rejects detached Pipe and LLM results.</td><td>A blocking open returns the immediate source-unavailable error. Established EOF behavior stays unchanged.</td><td>Observer stdin/stdout are unused.</td><td>Open after detach; disconnect mid-read and mid-write; ordinary pipe EOF compatibility.</td></tr>
+    <tr><td>Human and LLM prompts</td><td><code>engineutil.PromptAllowLLM</code>, <code>PromptHumanHelp</code>; <code>dagger.prompt.Prompt/PromptBool</code>; <code>dagger.prompt.Prompt/PromptString</code>.</td><td>Immutable main/creator through <code>GetMainClientCaller</code>.</td><td>When remote LLM permission or human-help flow needs input.</td><td>One callback per prompt. Result is operation-local.</td><td>Lookup waits today.</td><td>RPC fails.</td><td>Yes. The LLM field/query fails.</td><td>A new blocking lookup returns the immediate source-unavailable error.</td><td>Observer is not prompted.</td><td>Both prompt RPCs after graceful and abrupt loss; unrelated service continues.</td></tr>
+    <tr><td>Local module source and defaults</td><td><code>ModuleSource.LoadUserDefaults</code>, <code>loadContextFromSource</code>, <code>LoadContextFile</code>, <code>modulesource_gitfile.loadClientDir</code>; <code>NonModuleParentClientMetadata</code>; host filesync and secret operations above.</td><td>Nearest non-module physical parent.</td><td>When a local module context, file, outer <code>.env</code>, Git file, or defaults are evaluated.</td><td>Copied after each host snapshot or read. Lazy recipes can defer the callback until evaluation.</td><td>Deferred work waits today.</td><td>In-flight source operations fail.</td><td>Yes. The module field/query fails. Other engine work continues.</td><td>Preserve restamped source metadata and propagate the exact underlying source error.</td><td>Observer never becomes the non-module parent.</td><td>Construct local module before detach and evaluate after; copied module snapshot after detach; nested ancestry; unrelated module continues.</td></tr>
+    <tr><td>Nested client and SDK callbacks</td><td><code>ServeHTTPToNestedClient</code>; <code>ClientInitOpts.CallerClientID</code>; <code>daggerClient.parents</code>; <code>HostServiceProxyClientID</code>; nested SDK clients register through the same <code>/sessionAttachables</code> path.</td><td>The nested physical <code>ClientID</code>, its non-module parent, or explicit proxy ancestor according to each operation.</td><td>When nested work invokes one of the callback operations above.</td><td>Same copied/lazy rules as the underlying operation.</td><td>A detachable nested client's ordinary <code>/shutdown</code> currently stops its local transport but does not immediately deregister manager state.</td><td>Health removes it later.</td><td>Yes. The nested operation fails. Session remains.</td><td>For detachable sessions, nested graceful shutdown deregisters that exact source immediately. Ordinary sessions stay unchanged.</td><td>Observer is not in the ancestry and is not a proxy target.</td><td>Nested source graceful shutdown, abrupt loss, parent source remains, observer attach, and stale nested disconnect versus a separate observer.</td></tr>
+    <tr><td>Cloud engine-to-engine callback proxy</td><td><code>core.ModTreeNode.tryRunGeneratorAsCheckScaleOut</code> and <code>tryRunCheckScaleOut</code>; <code>Server.CloudEngineClient</code>; <code>engineclient.ConnectEngineToEngine</code>; <code>Client.startE2ESession</code>; <code>FilesyncSourceProxy</code>, <code>FilesyncTargetProxy</code>, <code>SecretProviderProxy</code>, <code>SocketSessionProxy</code>, <code>AuthProxy</code>, <code>TunnelListenerProxy</code>, <code>TerminalProxy</code>, <code>GitAttachableProxy</code>, <code>PipeProxy</code>, <code>PromptProxy</code>, and <code>StoreProxy</code>.</td><td>The Cloud engine keys callbacks by the engine-to-engine client's physical <code>ClientID</code>. Each proxy forwards through the local non-module parent's <code>SessionCaller.Conn()</code>.</td><td>When opted-in check or generator scale-out invokes any proxied operation.</td><td>The Cloud registration is permanently proxy-backed for the scale-out call. The ultimate host value follows the copied/lazy rule of the proxied operation.</td><td>Closing the local parent caller connection makes later proxy RPCs fail. The remote registration remains until deferred <code>cloudClient.Close</code>.</td><td>Same proxy transport failure until the scale-out client closes.</td><td>Yes for the local detachable session. The scale-out operation can fail.</td><td>No cross-engine identity or lifetime change in this phase. Preserve proxy transport context. The Cloud engine can name its direct source ID, not the ultimate local physical client.</td><td>The local observer is not connected to the proxy chain.</td><td>Keep <code>ConnectEngineToEngine</code> rejection of detachable and observer modes; static proxy method inventory; existing scale-out lifecycle tests.</td></tr>
+    <tr><td>Telemetry and progress observation</td><td><code>engine/server/telemetry.go</code>; <code>clientdb.DB</code>; session telemetry SSE; <code>Client.WaitTelemetry</code>.</td><td>Creator <code>clientID</code> selects the stored telemetry database. This is engine storage identity, not attachable lookup.</td><td>Engine appends continuously. Observer pulls through HTTP session-control routes.</td><td>Copied into engine append-only logs.</td><td>Continues. Creator DB keepalive remains.</td><td>Continues.</td><td>Yes.</td><td>No source-client error. Observer HTTP cancellation affects only its reader.</td><td>Observer replays and follows creator telemetry without becoming a source.</td><td>Creator detach during telemetry writes; observer detach; completed replay; explicit termination cleanup.</td></tr>
+    <tr><td>Engine-owned container services, health, and ports</td><td><code>core.Services.startWithKey</code>; <code>Service.startContainer</code>; <code>newPortHealth</code>; <code>RunningService.Wait</code>.</td><td>No source unless the service has <code>HostSockets</code> or <code>TunnelUpstream</code>.</td><td>Engine execution and network checks.</td><td>Engine-owned.</td><td>Continues.</td><td>Continues.</td><td>Yes.</td><td>No absent-source error. Related tunnel dependencies use their catalogue rows.</td><td>Observer can observe progress only.</td><td>Creator detach while independent container services run; source-backed tunnel failure does not stop an unrelated service.</td></tr>
+    <tr><td>Cache import/export callbacks</td><td><code>ClientMetadata.UpstreamCacheImportConfig</code>, <code>UpstreamCacheExportConfig</code>; retained <code>internal/buildkit</code> session helpers.</td><td>No active source identity in current Dagger server.</td><td>No active callback.</td><td>Dagger snapshot/cache volumes are engine-owned. Metadata fields are currently unused by server code.</td><td>No callback behavior.</td><td>No callback behavior.</td><td>Yes.</td><td>No change in this phase.</td><td>No effect.</td><td>A closure test that no active server wiring constructs <code>session.Manager</code>; existing engine cache tests.</td></tr>
+    <tr><td>Registered but inactive methods</td><td><code>moby.filesync.v1.FileSync/TarStream</code>; <code>moby.sshforward.v1.SSH/CheckAgent</code>; <code>moby.filesync.v1.Auth/FetchToken</code>; <code>moby.filesync.v1.Auth/GetTokenAuthority</code>; <code>moby.filesync.v1.Auth/VerifyTokenAuthority</code>; <code>containerd.services.content.v1.Content/List</code>; <code>containerd.services.content.v1.Content/Delete</code>; <code>containerd.services.content.v1.Content/Status</code>; <code>containerd.services.content.v1.Content/ListStatuses</code>; <code>containerd.services.content.v1.Content/Abort</code>; <code>containerd.services.images.v1.Images/List</code>; <code>containerd.services.images.v1.Images/Delete</code>; <code>containerd.services.leases.v1.Leases/List</code>; <code>containerd.services.leases.v1.Leases/AddResource</code>; <code>containerd.services.leases.v1.Leases/DeleteResource</code>; <code>containerd.services.leases.v1.Leases/ListResources</code>.</td><td>Would be the registered physical client.</td><td>No active Dagger call site at this base. Active methods on the same services appear in the rows above.</td><td>Not applicable.</td><td>Not applicable.</td><td>Not applicable.</td><td>Yes.</td><td>Do not add behavior. Re-audit if active wiring changes.</td><td>No effect.</td><td>Static callback inventory test or review check.</td></tr>
+  </tbody></table></div>
+  </details>
+
+  <h2 id="ownership">4. Copied versus client-backed behavior</h2>
+  <p>Object construction and object evaluation are separate. An object can capture a source ID without calling that source until a later DagQL evaluation.</p>
+
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Value</th><th>Construction</th><th>Evaluation</th><th>State after successful evaluation</th><th>Behavior after source loss</th></tr></thead><tbody>
+    <tr><td>Host <code>Directory</code> or <code>File</code></td><td>The <code>host.directory</code> resolver itself calls filesync. A surrounding lazy recipe may defer that resolver.</td><td>Stat, walk, and file data come from the current source.</td><td>Engine immutable snapshot and digest.</td><td>Completed snapshot continues. A new or unfinished import fails.</td></tr>
+    <tr><td><code>Socket</code></td><td>Captures <code>SourceClientID</code> and URL. Host service and local LLM do the same.</td><td>Each fingerprint, mount, or connection calls <code>ForwardAgent</code>.</td><td>No copied socket endpoint. Established stream only.</td><td>New and existing source-backed streams fail.</td></tr>
+    <tr><td>Plaintext <code>Secret</code></td><td>Copies plaintext into session state.</td><td>Returns an in-memory copy.</td><td>Engine session value.</td><td>Continues until termination.</td></tr>
+    <tr><td>URI <code>Secret</code></td><td>Captures URI and <code>SourceClientID</code>. Without <code>cacheKey</code>, construction reads once only to derive a content handle.</td><td>Every plaintext call invokes <code>GetSecret</code>.</td><td>The URI object remains callback-backed. The construction read is not retained as plaintext.</td><td>Fails unless an independent same-handle binding is selected.</td></tr>
+    <tr><td>Explicit registry auth</td><td><code>withRegistryAuth</code> resolves the secret immediately.</td><td>Later registry challenge reads session memory.</td><td>Username and secret in <code>RegistryAuthProvider</code>.</td><td>Continues.</td></tr>
+    <tr><td>Default Docker auth</td><td>No eager copy.</td><td><code>Auth/Credentials</code> runs on an auth challenge.</td><td>May be operation-local in the authorizer. It is not copied into the session provider.</td><td>A later challenge fails.</td></tr>
+    <tr><td>Git credential</td><td>Fetched during Git resolver setup.</td><td>The fetch uses an engine secret created from the returned password.</td><td>Operation-local copied secret.</td><td>That operation continues once copied. A later Git setup needs the source again.</td></tr>
+    <tr><td>Host image import</td><td>Source store metadata and content are read during resolver evaluation.</td><td>Content chain or tarball is copied.</td><td>Engine OCI content and container recipe.</td><td>Completed import continues.</td></tr>
+    <tr><td>Host image export</td><td>Engine assembles image first.</td><td>Writes to source store.</td><td>Engine image remains. Host outcome depends on transfer completion.</td><td>New export fails.</td></tr>
+    <tr><td>Terminal, pipe, prompt, tunnel</td><td>Nothing durable is copied before use.</td><td>RPC or stream performs the operation.</td><td>Prompt result is operation-local. Streams remain transport-backed.</td><td>Source-dependent operation fails or ends.</td></tr>
+    <tr><td>Telemetry and saved GraphQL result</td><td>Engine allocates storage at session/query creation.</td><td>Engine appends and commits independently.</td><td>Engine-owned files and DB rows.</td><td>Continues and remains observable.</td></tr>
+  </tbody></table></div>
+
+  <div class="finding"><strong>No new source field is needed on copied values.</strong> Host snapshots and imported images finish their callback before becoming engine-owned. <code>Secret</code>, <code>Socket</code>, persisted host services, and <code>Workspace</code> already encode their physical source. Current metadata already carries the source for synchronous helpers.</div>
+
+  <h3>Session-resource candidate fallback</h3>
+  <p><code>Secret.Plaintext</code> and socket paths can call <code>ResolveSessionResourceCandidates</code>. Each candidate contains its own concrete value and source ID. A dead candidate can be skipped when <code>IfAvailable</code> reports no caller or a retryable transport failure occurs. A later independent client binding with the same logical handle can succeed. The implementation must keep this behavior.</p>
+  <p>The implementation must not rewrite a dead candidate's <code>SourceClientID</code>. It must not publish an observer as a candidate. It must not interpret <code>ClientStableID</code> as equivalence.</p>
+
+  <h2 id="disconnect">5. Disconnect and deregistration sequences</h2>
+
+  <h3>Graceful top-level close</h3>
+  <pre><code>creator or observer Client.Close
+    │
+    ├─ DELETE /v1/sessions/{session}/attachments/{attachment}
+    │      │
+    │      ├─ snapshot exact attachment ID, client ID, generation
+    │      ├─ sessionAttachableManager.Deregister(clientID)
+    │      │      ├─ cancel exact caller
+    │      │      ├─ Register defer removes it if still owned
+    │      │      └─ wait for caller.done
+    │      └─ detachAttachment only if ID and generation still match
+    │
+    └─ stop local gRPC server and local resources
+
+detachable session closingCtx is not canceled
+services are not globally stopped
+engine cache session is not released</code></pre>
+  <p>Current P0 already performs <code>Deregister</code> before clearing lifecycle ownership. Lookups cease succeeding as soon as the caller is canceled and removed. The source publication set distinguishes an absent published source from a source that has not registered yet. The same set prevents later same-ID registration.</p>
+
+  <h3>Graceful nested source shutdown</h3>
+  <p>A nested client currently uses ordinary <code>/shutdown</code>. In a detachable session, its local attachable transport then disappears and health eventually detects loss. This does not meet the approved immediate graceful deregistration rule.</p>
+  <p>The bounded change is inside <code>serveShutdown</code>. When the session is detachable and the client is not the top-level creator or an observer, call <code>sess.attachables.Deregister(client.clientID)</code> before nested-client cleanup. Keep the ordinary-session branch unchanged. The source publication set makes later blocking lookup return the immediate source-unavailable error.</p>
+
+  <h3>Abrupt transport loss</h3>
+  <pre><code>physical connection disappears
+    │
+    ├─ until health declares death:
+    │      Lookup still returns the stale caller
+    │      RPC may fail immediately or block
+    │      lifecycle still reports attached
+    │      observer attach may receive conflict
+    │
+    ├─ monitorAttachableHealth returns after fatal failure
+    │
+    ├─ Register defer verifies m.callers[clientID] == exact caller
+    ├─ manager deletes exact caller and wakes waiters
+    └─ attachment death clears only matching ID and generation</code></pre>
+  <p>A hard closed transport was observed at approximately ten seconds: the checks at five and ten seconds both failed immediately. The removal callback received <code>context canceled</code>, not a diagnostic health error.</p>
+  <p>The worst bounded blackhole window is larger. The first check starts within five seconds and can consume its 30-second timeout. The queued second check can then use <code>1.5 × 30s = 45s</code>. Fatal detection can therefore approach 80 seconds. One failed check remains armed through one to four successful checks. Five consecutive successes reset it.</p>
+  <p>This phase follows the existing death-detection policy. It does not shorten those timeouts. During the detection interval, callbacks retain their current transport behavior. Observer attachment remains independent and never becomes the source.</p>
+
+  <h3>Explicit termination and engine shutdown</h3>
+  <p><code>startSessionTermination</code> calls <code>removeDaggerSession</code>. That path calls <code>beginClosing</code>, stops all session services, closes resolver and analytics state, drains DagQL work, releases containers and engine cache session state, shuts down telemetry, and removes result files. Source-unavailable handling never calls this path.</p>
+
+  <h3>Stale events</h3>
+  <p><code>sessionAttachableManager.Register</code> currently allows a new registration to replace an inactive caller before the old registration's deferred cleanup runs. The old cleanup suppresses <code>Removed</code> when its exact <code>sessionAttachableCaller</code> no longer owns <code>m.callers[clientID]</code>. That ordinary-session replacement behavior cannot apply to a detachable source after publication.</p>
+  <p>The detachable non-observer path must reject an already-published source ID. Before it replaces an inactive caller, it must reserve the manager entry and check the source publication set again. The set remains after manager deletion. Observer registrations do not change it. <code>detachAttachment</code> continues to check attachment ID and generation, so a stale creator event cannot clear a separate observer.</p>
+
+  <h2 id="errors">6. Error propagation and isolation</h2>
+
+  <h3>Recognizable error</h3>
+  <p>Add one Go error type in package <code>engine</code>:</p>
+  <pre><code>type SourceClientUnavailableError struct {
+    ClientID string
+}
+
+func (e *SourceClientUnavailableError) Error() string {
+    return fmt.Sprintf("source client %q is unavailable", e.ClientID)
+}</code></pre>
+  <p>This error is required only for blocking source lookup through <code>daggerClient.getClientCaller</code> and <code>sessionAttachableManager.Wait</code>. It means that the source published once and now has no active caller. Existing resolver wrapping remains around it. <code>errors.As</code> recognizes the type.</p>
+  <p><code>SpecificClientAttachableConn</code> with <code>IfAvailable</code> remains unchanged. It returns <code>ok=false</code> when no caller is active. Secret and socket candidate exhaustion keeps its current aggregate error. It does not promise <code>SourceClientUnavailableError</code> or one physical source ID.</p>
+
+  <h3>Propagation boundaries</h3>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Boundary</th><th>Current behavior</th><th>Required behavior</th></tr></thead><tbody>
+    <tr><td>DagQL resolver</td><td>Resolver error becomes a GraphQL field/query error. gqlgen normally writes HTTP <code>200</code> with <code>errors</code>.</td><td>Preserve that behavior. The saved detached result is marked failed. The session remains active.</td></tr>
+    <tr><td>Pre-handler workspace or module load</td><td><code>executeGraphQL</code> wraps load failures in <code>gqlErr</code> with HTTP <code>500</code>.</td><td>Save the exact HTTP result and mark the detached query failed. Do not close the session.</td></tr>
+    <tr><td>Session-control HTTP</td><td>Session protocol errors are used for lifecycle routes only.</td><td>Do not add a callback-failure control route or HTTP status. Source failure belongs to the query result.</td></tr>
+    <tr><td>CLI attach</td><td><code>extractDetachedResult</code> joins GraphQL messages. Failed query returns nonzero after rendering the saved result.</td><td>Show the source operation error. Keep the attachment until normal close. Session stays listable and terminable.</td></tr>
+    <tr><td>Internal Go</td><td>Current blocking missing-caller errors are deadline-shaped strings.</td><td>Use <code>errors.As</code> with <code>SourceClientUnavailableError</code> only for a blocking lookup of a published source with no active caller.</td></tr>
+    <tr><td>Source-backed service</td><td>Reverse tunnel exits are observed. Host-to-container listener death is not.</td><td>Only the failed tunnel's <code>RunningService.Wait</code> fails. <code>Services.Detach</code> releases this tunnel's binding.</td></tr>
+  </tbody></table></div>
+
+  <h3>Exact running-work failure boundary</h3>
+  <ul>
+    <li>A direct host, secret, socket, Git, image, registry, prompt, terminal-open, or pipe-open failure originates in one DagQL resolver or one resolver dependency.</li>
+    <li>The containing GraphQL response has an <code>errors</code> entry. P0 marks the primary query failed when any GraphQL error is present.</li>
+    <li>GraphQL null propagation and gqlgen's execution policy can affect sibling fields in that same request. Marking a source unavailable does not add another cancellation.</li>
+    <li>A callback needed by one container evaluation fails that evaluation and its containing field. It does not close <code>engineutil.Client</code>.</li>
+    <li>A callback needed to start a service fails that service start. Related bindings detach through existing code.</li>
+    <li>A callback lost by a running reverse tunnel makes that one <code>RunningService.Wait</code> finish today. The shared correction makes host-to-container listener death finish that tunnel's <code>RunningService.Wait</code>.</li>
+    <li>Engine-owned services with another <code>ServiceKey</code> continue.</li>
+    <li>P0 has one primary GraphQL query and permits no observer query. There is no second primary query to cancel in this phase. The session cancellation root remains live for lifecycle control and future isolation.</li>
+  </ul>
+
+  <h3>Proof of isolation</h3>
+  <ul>
+    <li><code>runDetachedQuery</code> executes with <code>sess.closingCtx</code>. Callback helpers receive child contexts. They do not own <code>sess.cancelClosing</code>.</li>
+    <li><code>engineutil.Client.withClientCloseCancel</code> makes an operation child. Returning a callback error does not call <code>engineutil.Client.Close</code>.</li>
+    <li><code>Services.startWithKey</code> creates <code>svcCtx</code> with <code>context.WithoutCancel</code>. A service owns only its own cancel function.</li>
+    <li><code>Services.StartBindings</code> deliberately uses <code>errgroup.Group</code> without cancellation. One start failure detaches the related bindings. It does not stop unrelated session services.</li>
+    <li><code>Services.handleExit</code> removes only the exact <code>RunningService</code>.</li>
+    <li><code>releaseClientConnection</code> returns without reaping a detachable session.</li>
+    <li>No active callback error path calls <code>startSessionTermination</code>, <code>beginClosing</code>, <code>StopSessionServices</code>, or <code>Cache.ReleaseSession</code>.</li>
+  </ul>
+
+  <div class="warning callout"><strong>Isolation review rule:</strong> implementation review must reject any source-error branch that calls a session-wide cancel or closes shared engine utility state. The only allowed wider propagation is existing dependency propagation from an affected service to work that explicitly depends on that service.</div>
+
+  <h2 id="reattach">7. Reattachment semantics</h2>
+  <p>P0 reattachment provides observation, saved-result retrieval, telemetry following, lifecycle control, attachment close, and explicit termination. It does not provide a GraphQL client. It does not register filesync, secret, socket, auth, tunnel, terminal, Git, pipe, prompt, or image-store services.</p>
+  <p>The detached query keeps the creator <code>daggerClient</code> and creator metadata. <code>detachedQueryContext</code> restores that identity. <code>mainClientCallerID</code> remains immutable. <code>sessionMainClientConn</code> resolves that immutable ID. No current callback path reads <code>currentAttachment.ClientID</code>.</p>
+
+  <pre><code>creator disconnects                  observer attaches
+        │                                   │
+        ├─ creator source unavailable       ├─ fresh observer ClientID
+        ├─ creator dagql client retained    ├─ health only
+        ├─ creator telemetry DB retained    ├─ telemetry/result HTTP reads
+        └─ primary query retained           └─ close or terminate control
+
+There is no arrow from observer attachables to creator source lookup.</code></pre>
+
+  <p>The creator's physical client ID, version, hostname, ancestry, and telemetry database remain in engine memory for query execution and diagnostics until termination. The client secret token remains internal. The observer does not mutate creator metadata.</p>
+  <p>The required change in section 8 prevents a disconnected creator from republishing source attachables under the same physical ID. It can return only through the normal observer path with a fresh observer identity. That path remains health-only.</p>
+
+  <h2 id="implementation">8. Recommended minimal implementation</h2>
+
+  <h3 id="implementation-proof">8.1 Why production changes are needed</h3>
+  <div class="finding"><strong>Short answer:</strong> the approved policy is mostly implemented already. Four production changes are required. The fourth is the approved shared correction for failed host-to-container tunnels. Callback identity, failure isolation, copied data, and unrelated engine work already behave correctly and need tests only.</div>
+
+  <h4>Required change 1: reject a source that already published</h4>
+  <div class="table-wrap"><table class="medium"><tbody>
+    <tr><th>Current behavior</th><td>After lifecycle ownership is cleared, the creator can present the same <code>ClientID</code> and matching <code>ClientSecretToken</code>, claim another attachment generation, and publish another attachable connection. Shipped clients normally generate fresh IDs. The internal creator retry path still makes same-ID return reachable.</td></tr>
+    <tr><th>Why it is wrong for detachable sessions</th><td>The approved policy makes a published source permanently unavailable after disconnect. A later registration under the same physical ID restores that source's callbacks. That is callback rebinding even though the map key did not change.</td></tr>
+    <tr><th>Concrete failure scenario</th><td>The creator publishes a socket provider and disconnects. The same <code>ClientID</code> claims a fresh generation and publishes another provider. A creator-bound <code>Socket</code> still contains that ID, so its next lookup reaches the new provider instead of failing.</td></tr>
+    <tr><th>New behavior</th><td>A detachable non-observer source may publish once. A failure before successful publication remains retryable. Any return after successful publication is rejected, including a return with the same ID and valid secret. This is an intentional behavior change required by Erik's no-rebinding rule.</td></tr>
+    <tr><th>Minimal code change</th><td>Record successful publication. Use the two-check strict-reservation protocol in section 8.2. Leave ordinary sessions and observer reservation behavior unchanged.</td></tr>
+    <tr><th>Evidence in current code</th><td><code>engine/client/client.go</code> assigns <code>identity.NewID()</code> when a shipped client has no explicit ID. <code>getOrInitClient</code> still accepts an existing creator when its ID and secret match. <code>claimCreatorAttachment</code> permits another generation after attachment ownership is clear. <code>TestCreatorRetryWaitsForRemovalThenPublishesFreshGeneration</code> exercises that reachable internal path. <code>Reserve</code> and <code>Register</code> reject only an active existing caller.</td></tr>
+    <tr><th>Required test</th><td>Invert <code>TestCreatorRetryWaitsForRemovalThenPublishesFreshGeneration</code>. It must reject return after publication. Keep pre-publication hijack, response, acknowledgement, and registration-failure retries. Add the deterministic two-request interleaving test in section 8.2.</td></tr>
+  </tbody></table></div>
+  <p>This change is not merely a race fix. It changes the supported same-ID creator retry boundary from “after attachment removal” to “only before first successful attachable publication.”</p>
+
+  <h4>Required change 2: return an immediate source-unavailable error</h4>
+  <div class="table-wrap"><table class="medium"><tbody>
+    <tr><th>Current behavior</th><td>Top-level graceful close removes the caller immediately. The next blocking lookup still calls <code>sessionAttachableManager.Wait</code> under a new ten-second context. It ends with <code>no active session attachables ... context deadline exceeded</code>. The same wait happens after abrupt removal.</td></tr>
+    <tr><th>Why it is wrong for detachable sessions</th><td>The engine already knows that a published source disconnected. Waiting for initial publication suggests that the callback may still appear. The final deadline error does not plainly say that the permanent source is unavailable.</td></tr>
+    <tr><th>Concrete failure scenario</th><td>A detached query evaluates a URI secret after the creator closed gracefully. The source was published and deregistered, but secret evaluation waits ten seconds before returning a deadline-shaped error.</td></tr>
+    <tr><th>New behavior</th><td>A blocking lookup for a published detachable source with no active caller returns an immediate source-unavailable error, <code>SourceClientUnavailableError</code>. A source that has not published keeps the existing bounded wait. <code>IfAvailable</code> remains unchanged.</td></tr>
+    <tr><th>Minimal code change</th><td>Record successful source publication once. If no active caller exists for a published detachable source, return the immediate source-unavailable error. Recheck that condition inside the existing wait loop so publication or removal cannot be missed. Do not add a second unavailable set or wrappers in every callback package.</td></tr>
+    <tr><th>Evidence in current code</th><td><code>engine/server/session_control.go::serveSessionAttachmentClose</code> calls <code>Deregister</code> before <code>detachAttachment</code>. <code>engine/server/session.go::initializeDaggerClient</code> always wraps <code>attachables.Wait</code> in <code>context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)</code>. <code>engine/server/session_attachables.go::Wait</code> installs another waiter whenever a wake finds no active caller. It has no terminal source-state check. The investigation probe reproduced the deadline error after <code>Deregister</code>.</td></tr>
+    <tr><th>Required test</th><td>Publish and deregister a detachable source, then perform a blocking lookup. It must return <code>SourceClientUnavailableError</code> before the deadline. Repeat after health removes a dead connection. Start one wait before publication and remove the caller before that waiter receives it. The waiter must return the same error instead of timing out. Keep candidate-selection assertions on the existing <code>ok=false</code> and aggregate-error behavior.</td></tr>
+  </tbody></table></div>
+  <p>Publication state is necessary because an empty manager slot has two current meanings. It can mean “the first registration is still starting” or “the permanent source disconnected.” The first case must wait. The second case must fail.</p>
+
+  <h4>Required change 3: deregister during nested shutdown</h4>
+  <div class="table-wrap"><table class="medium"><tbody>
+    <tr><th>Current behavior</th><td>A nested client in a detachable session uses <code>/shutdown</code>. <code>serveShutdown</code> flushes state and closes <code>client.shutdownCh</code>. It does not call <code>sess.attachables.Deregister(client.clientID)</code>. The manager stops serving that caller only after transport loss reaches the existing health path.</td></tr>
+    <tr><th>Why it is wrong for detachable sessions</th><td>The approved policy requires graceful source disconnect to deregister attachables immediately. A completed shutdown response must not leave the nested source discoverable in the manager.</td></tr>
+    <tr><th>Concrete failure scenario</th><td>A nested SDK client publishes callbacks, finishes its work, and calls <code>/shutdown</code> while the detachable session continues. Before health removes the caller, a source lookup can still obtain the stale nested connection.</td></tr>
+    <tr><th>New behavior</th><td>Nested shutdown flushes workspace locks, flushes that client's telemetry, calls <code>Deregister(client.clientID)</code> and waits for removal, closes <code>client.shutdownCh</code>, then returns. A missing manager entry is a successful no-op. Top-level detachable attachments still use the attachment-close route. Ordinary shutdown remains unchanged.</td></tr>
+    <tr><th>Minimal code change</th><td>Add the detachable nested-client deregistration between telemetry flush and <code>client.shutdownCh</code> close. Preserve both flush phases and their current error aggregation.</td></tr>
+    <tr><th>Evidence in current code</th><td><code>engine/server/session.go::serveShutdown</code> rejects top-level detachable creator and observer shutdown. Its nested branch flushes workspace and telemetry state and closes <code>client.shutdownCh</code>. There is no attachable deregistration call.</td></tr>
+    <tr><th>Required test</th><td>Use a real published registration and a dirty workspace lock. Hold the export with channels. Prove export completes before deregistration starts. Prove lookup is absent when the response returns. Race shutdown with explicit session termination and prove neither path deadlocks.</td></tr>
+  </tbody></table></div>
+
+  <h4>Required change 4: stop reporting a dead host listener as live</h4>
+  <div class="table-wrap"><table class="medium"><tbody>
+    <tr><th>Current behavior</th><td>After <code>TunnelListener/Listen</code> starts, the receive goroutine in <code>engineutil.Client.ListenHostToContainer</code> logs a <code>Recv</code> error and returns. The function exposes only the initial response and a close function. <code>core.Service.startTunnel</code> cannot observe listener death. Its partial-start error paths do not release the acquired upstream binding. The close function waits for <code>sendL</code> before its deferred stream cancellation. It also uses <code>c.Dialer.Dial</code>, so an in-flight upstream dial does not receive listener cancellation and can return after close snapshots the connection map. <code>RunningService.stopFromManager</code> skips tracked-resource release when <code>Stop</code> returns an error.</td></tr>
+    <tr><th>Why it is wrong for detachable sessions</th><td>The source-backed listener can fail while the affected <code>RunningService</code> remains advertised as running. Cleanup can also retain the tunnel binding, listeners, or tracked resources. The policy requires the affected operation to end without stopping unrelated services or leaking its resources.</td></tr>
+    <tr><th>Concrete failure scenario</th><td>A host-to-container tunnel reports its port successfully and the creator disconnects. The listener stream closes, but clients keep seeing the failed service. Separately, <code>Close</code> can wait behind a shared <code>Send</code> that needs cancellation, or return while a background-context upstream dial later registers a connection. During multi-port startup, the first listener can fail and cancel a later <code>Listen</code>. The later cancellation error can then hide the first listener error.</td></tr>
+    <tr><th>New behavior</th><td>Listener death converges through <code>startTunnel</code>'s existing <code>shutdown(cause)</code> and <code>sync.Once</code>. Startup rolls back every acquired listener and this tunnel's upstream binding. <code>Close</code> cancels before waiting for <code>sendL</code>, prevents late dial registration, and drains all work. Stream-context cancellation that ends an in-flight dial publishes a terminal listener result unless Close-first nil already won. The first shutdown cause remains the startup result when it cancels a later <code>Listen</code>. Tracked-resource release runs even after a shutdown error. After publication, listener death removes the failed tunnel and releases this tunnel's binding without unconditionally terminating an upstream that still has another binder.</td></tr>
+    <tr><th>Minimal code change</th><td>Add the guarded sticky listener result in <code>engine/engineutil/client.go</code>. Add one synchronized listener registry and the existing <code>shutdown(cause)</code> owner in <code>core/service.go</code>. Add only <code>RunningService.publishIfReady</code> plus a local failed-start cleanup sequence in <code>Services.startWithKey</code>. Section 9 pins the types, methods, and lock order.</td></tr>
+    <tr><th>Evidence in current code</th><td>The post-start <code>listener.Recv</code> error path in <code>engine/engineutil/client.go::ListenHostToContainer</code> only logs and returns. The same function calls <code>c.Dialer.Dial</code>, registers the returned connection under <code>connsL</code>, and performs <code>wg.Add(1)</code> only after releasing that lock. Its close function takes <code>sendL</code> before the deferred <code>cancel</code>. <code>core.Service.startTunnel</code> creates <code>shutdown</code> only after all listeners and returns directly from earlier setup errors. <code>RunningService.stopFromManager</code> returns a <code>Stop</code> error before <code>releaseTrackedRefsOnce</code>. <code>Services.startWithKey</code> already holds <code>Services.l</code> and checks <code>context.Cause(svcCtx)</code> before insertion, but that check is not atomic with listener completion and insertion. Adding only a monitor would not close that final gap.</td></tr>
+    <tr><th>Required test</th><td>Use deterministic ordinary and detachable cases for first-listener failure, later-port failure, completion before publication, and completion after publication. Select each publication outcome through the listener's actual completion guard. Also cover a second listen returning successfully or with a distinct error after the first listener starts shutdown, a blocked upstream dial released by <code>Close</code>, a blocked dial released by external stream-context cancellation without <code>Close</code>, a late successful dial after <code>Close</code> marks the listener closing, a shared <code>Send</code> released by cancellation before <code>Close</code> takes <code>sendL</code>, explicit Stop races, cleanup errors, sticky Close/Wait results, no leaked listener or binding, no panic, and survival of another upstream binding.</td></tr>
+  </tbody></table></div>
+
+  <h4>Behavior already correct and requiring tests only</h4>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Current behavior</th><th>Why no production change is needed</th><th>Evidence in current code</th><th>Required test</th></tr></thead><tbody>
+    <tr><td>Top-level graceful close deregisters the exact caller before clearing attachment ownership.</td><td>This already satisfies immediate graceful deregistration.</td><td><code>serveSessionAttachmentClose</code> snapshots ID and generation, calls <code>Deregister(clientID)</code>, then calls <code>detachAttachment</code>.</td><td>Keep the ordering test and add a lookup assertion at response time.</td></tr>
+    <tr><td>Abrupt transport loss follows health detection and removes only the registration still stored for that client ID.</td><td>This is the approved abrupt-loss policy.</td><td><code>monitorAttachableHealth</code> cancels the caller. <code>Register</code> removes it only when <code>m.callers[clientID] == caller</code>.</td><td>Keep hard-close, blackhole, recovery, and stale-cleanup race tests.</td></tr>
+    <tr><td>An observer does not replace creator callbacks.</td><td>The observer has a fresh ID, publishes health only, cannot submit <code>/query</code>, and is never assigned to creator lookup fields.</td><td><code>startObserverSession</code>, immutable <code>mainClientCallerID</code>, and <code>sessionMainClientConn</code>. The existing host-callback integration test proves non-substitution.</td><td>Keep <code>TestHostCallbackRemainsBoundToCreator</code> and assert observer callback handlers are not called.</td></tr>
+    <tr><td>A callback error does not terminate the detachable session or stop unrelated services.</td><td>No active callback error path owns the session cancel function.</td><td>Callback errors return through resolvers or affected service work. They do not call <code>startSessionTermination</code>, <code>beginClosing</code>, <code>StopSessionServices</code>, or <code>Cache.ReleaseSession</code>.</td><td>Fail one source-backed resolver and one source-backed service. Assert <code>sess.closingCtx</code>, an engine-only sibling branch, and an unrelated service remain live.</td></tr>
+    <tr><td>Copied values and engine-owned work continue after source loss.</td><td>They no longer invoke the source.</td><td>Completed filesync snapshots and image imports use engine stores. Plaintext secrets and explicit registry credentials are in session memory. Telemetry and detached results are engine-owned.</td><td>Use each copied value after detach and terminate the session explicitly afterward.</td></tr>
+    <tr><td>Independent secret or socket bindings can be tried after one binding fails.</td><td>This is independent candidate selection, not callback rebinding.</td><td><code>ResolveSessionResourceCandidates</code> returns concrete per-client values. Secret and socket candidate loops use non-blocking <code>IfAvailable</code>.</td><td>Keep dead-first/live-second candidate tests and assert the dead value's <code>SourceClientID</code> is never rewritten.</td></tr>
+    <tr><td>Ordinary session lifecycle and callbacks retain their current behavior.</td><td>The source publication set, terminal check in <code>Wait</code>, and nested shutdown change are detachable-only. The shared tunnel correction changes ordinary behavior only after a host listener has already failed.</td><td><code>sessionLifetimeAttached</code> branches in connection release and shutdown. Tunnel setup uses the same <code>ListenHostToContainer</code> and <code>startTunnel</code> code for both lifetimes.</td><td>Run ordinary-session equivalents for registration wait, shutdown, and callback errors. Add the ordinary failed-tunnel tests required by change 4.</td></tr>
+  </tbody></table></div>
+
+  <h4>Production changes that are actually required</h4>
+  <ol>
+    <li>Enforce one successful publication for each detachable non-observer source with the race-safe registration protocol in section 8.2.</li>
+    <li>End blocking lookup with <code>SourceClientUnavailableError</code> when that published source has no active caller.</li>
+    <li>Deregister a nested source after workspace and telemetry flush and before closing <code>client.shutdownCh</code>.</li>
+    <li>Apply the shared host-to-container tunnel correction in section 9.</li>
+  </ol>
+
+  <h3>8.2 Race-safe one-time publication</h3>
+  <p>Add one mutex and one source publication set to <code>daggerSession</code>. The set contains each detachable non-observer <code>ClientID</code> that completed attachable publication. It is not a role registry.</p>
+  <pre><code>sourceClientMu          sync.RWMutex
+publishedSourceClients map[string]struct{}
+
+func (sess *daggerSession) markSourceClientPublished(clientID string)
+func (sess *daggerSession) sourceClientPublished(clientID string) bool</code></pre>
+  <p>Use this protocol in <code>serveSessionAttachables</code> for a detachable non-observer source:</p>
+  <ol>
+    <li>Read the source publication set. Reject the request if the ID is present.</li>
+    <li>Acquire a strict manager reservation. Strict reservation rejects a reservation or caller already stored for that ID, even when that caller is no longer active.</li>
+    <li>While this request still logically owns the reservation, read the source publication set again.</li>
+    <li>If the ID is now present, release the reservation and reject before hijacking the HTTP connection.</li>
+    <li>Otherwise hijack, complete the handshake, and call <code>Register</code>. Its <code>Published</code> callback records publication before claim-specific lifecycle work.</li>
+  </ol>
+  <p>The second read closes a real interleaving. Request B can pass its first read. Request A can then publish, disconnect, and be removed. Request B can then reserve the empty manager slot. Without the second read, request B publishes again.</p>
+  <p>Never hold <code>sourceClientMu</code> while calling <code>Reserve</code>, <code>ReleaseReservation</code>, <code>Register</code>, <code>Wait</code>, or any other operation that acquires <code>sessionAttachableManager.mu</code>. Each publication-set method takes and releases <code>sourceClientMu</code> within that method.</p>
+  <p>Add a channel-controlled test for the interleaving above. Pause request B after its first read. Publish and remove request A. Resume request B. Assert that its second read releases the reservation, returns the protocol error before hijack, and leaves no reservation or caller.</p>
+
+  <h3>8.3 Blocking source lookup</h3>
+  <p><code>getClientCaller</code> first returns an active caller. If no caller is active and the detachable source has published, it returns the immediate source-unavailable error. Otherwise it keeps the existing bounded initial-publication wait.</p>
+  <p>Extend <code>sessionAttachableManager.Wait</code> with a terminal function. <code>Wait</code> invokes it under <code>manager.mu</code> after finding no active caller and before adding another waiter. The function may only read publication state and return an error. It must not invoke a callback or call another manager operation.</p>
+  <p>This lock order is safe because publication-set methods never hold <code>sourceClientMu</code> while entering the manager. The terminal function briefly takes <code>sourceClientMu</code> while <code>manager.mu</code> is held.</p>
+  <p>The terminal check in <code>Wait</code> is sound only because section 8.2 forbids another publication. If republishing remained possible, a published source with no caller could be temporarily absent and the immediate source-unavailable error would be wrong.</p>
+  <p><code>IfAvailable</code> does not use the terminal function. It remains a non-blocking <code>Lookup</code>. Candidate exhaustion keeps its current aggregate error.</p>
+
+  <h3>8.4 Detachable nested shutdown</h3>
+  <p>For a nested client in a detachable session, <code>serveShutdown</code> uses this order:</p>
+  <ol>
+    <li>Flush workspace locks with the current uncancellable flush context.</li>
+    <li>Flush that nested client's telemetry.</li>
+    <li>Call <code>sess.attachables.Deregister(client.clientID)</code>. Wait for the stored registration to be removed. Treat no manager entry as success.</li>
+    <li>Close <code>client.shutdownCh</code> through <code>client.closeShutdownOnce</code>.</li>
+    <li>Return the existing joined flush error, if any.</li>
+  </ol>
+  <p>This order preserves the host callback needed by dirty workspace-lock export. It makes the callback unavailable before the client receives shutdown completion.</p>
+
+  <h3>8.5 Shared tunnel completion</h3>
+  <p>Apply the same correction to ordinary and detachable host-to-container tunnels. Listener death routes through the existing per-tunnel <code>shutdown(cause)</code>. It does not cancel the session. <code>Services.Detach</code> releases this tunnel's binding. It stops the upstream only when no other binding remains.</p>
+
+  <h2 id="tunnel-lifecycle">9. Shared tunnel completion and startup cleanup</h2>
+  <p><code>engine/engineutil/client.go::ListenHostToContainer</code> logs a post-start <code>Recv</code> error and returns from its goroutine. <code>core/service.go::startTunnel</code> cannot observe that error. A dead host listener can therefore remain in <code>Services.running</code>. The approved correction changes this shared code for ordinary and detachable tunnels.</p>
+
+  <div class="finding"><strong>Approved scope:</strong> use the shared correction. Do not add detachable-lifetime metadata. Ordinary behavior changes only when a host listener has already failed. A healthy ordinary tunnel keeps its current startup and runtime behavior.</div>
+
+  <h3>Private listener completion contract</h3>
+  <p><code>ListenHostToContainer</code> returns a pointer to the private engineutil type below. Core stores it through the private <code>tunnelListenerHandle</code> interface. The three exported methods are an internal cross-package contract. They are not a product or SDK API.</p>
+  <pre><code>// engine/engineutil/client.go
+type hostToContainerListener struct {
+    completionMu sync.Mutex
+    completed    bool
+    result       error
+    done         chan struct{}
+
+    closeOnce   sync.Once
+    stream      h2c.TunnelListener_ListenClient
+    streamCtx   context.Context // stream.Context() after the initial Recv
+    cancelLocal context.CancelCauseFunc
+    dialContext hostToContainerDialContext
+
+    connsL  sync.Mutex
+    closing bool
+    conns   map[string]net.Conn
+
+    sendL sync.Mutex
+    drain sync.WaitGroup
+}
+
+type hostToContainerDialContext func(
+    context.Context, string, string,
+) (net.Conn, error)
+
+func (c *Client) ListenHostToContainer(
+    ctx context.Context,
+    hostListenAddr, proto, upstream string,
+) (*h2c.ListenResponse, *hostToContainerListener, error)
+
+func (l *hostToContainerListener) Close() error
+func (l *hostToContainerListener) Wait() error
+func (l *hostToContainerListener) WithCompletionGuard(func() error) (completed bool, result error)
+
+// core/service.go
+type tunnelListenerHandle interface {
+    Close() error
+    Wait() error
+    WithCompletionGuard(func() error) (bool, error)
+}</code></pre>
+  <ul>
+    <li>The private <code>finish(result)</code> method locks <code>completionMu</code>. The first call stores <code>result</code>, sets <code>completed</code>, and closes <code>done</code>. Later calls do nothing.</li>
+    <li><code>finish</code> publishes the sticky result and returns. It does not cancel or drain work. This prevents a receive or connection goroutine from waiting for itself.</li>
+    <li><code>Wait</code> waits for <code>done</code>, briefly locks <code>completionMu</code>, and returns the stored result. It returns the same result before or after <code>Close</code>.</li>
+    <li><code>WithCompletionGuard</code> holds <code>completionMu</code> while it either reports the stored result or invokes its function. It never drains or invokes cleanup.</li>
+    <li>A local upstream dial failure rejects only that connection. A local read or write failure removes and closes only that connection. The listener sends that connection's close message when possible and continues accepting other connections. Failure of that shared stream <code>Send</code>, or of any other runtime <code>Send</code> or <code>Recv</code>, calls <code>finish</code> with the stream error and is listener-terminal.</li>
+    <li>After the initial response <code>Recv</code>, production stores <code>stream</code> and sets <code>streamCtx = stream.Context()</code>. It initializes <code>dialContext</code> with <code>c.Dialer.DialContext</code>. Every upstream dial receives <code>streamCtx</code>, not the service context or a background context. The private function field is the package test seam. Tests replace it with a channel-controlled dial. No exported option is added.</li>
+    <li>If <code>dialContext</code> returns and <code>context.Cause(streamCtx)</code> is non-nil, the receive goroutine calls <code>finish(fmt.Errorf("host-to-container listener context ended: %w", cause))</code> before it exits. It closes any non-nil connection returned with cancellation and sends no connection message. This makes <code>Wait</code> complete when stream cancellation interrupts a dial.</li>
+    <li><code>Close</code> calls <code>finish(nil)</code> before <code>cancelLocal</code>. A dial released by that cancellation attempts the non-nil <code>finish</code>, but the sticky nil result has already won. If stream cancellation happens without <code>Close</code> winning first, the non-nil context cause wins. A shared <code>Recv</code> or <code>Send</code> error that called <code>finish</code> earlier remains the more specific sticky result.</li>
+    <li>An unrelated dial error with a live <code>streamCtx</code> remains connection-local and sends that connection's close message when the shared stream is still usable.</li>
+    <li>A successful dial takes <code>connsL</code>. If <code>closing</code> is false, it adds the connection to <code>conns</code> and calls <code>drain.Add(1)</code> before releasing <code>connsL</code>. It can start the connection goroutine only after that accounting. If <code>closing</code> is true, it releases <code>connsL</code>, closes the returned connection immediately, and starts no goroutine.</li>
+    <li><code>Close</code> is idempotent through <code>closeOnce</code>. It calls <code>finish(nil)</code> and then calls <code>cancelLocal</code> to cancel the RPC and its <code>streamCtx</code>. It then locks <code>connsL</code>, sets <code>closing</code>, snapshots and clears <code>conns</code>, and unlocks. It closes the snapshot without holding <code>connsL</code>.</li>
+    <li>After cancellation and connection close, <code>Close</code> acquires <code>sendL</code>, calls <code>CloseSend</code>, and releases <code>sendL</code>. This preserves grpc-go's rule that <code>CloseSend</code> must not run concurrently with <code>SendMsg</code>. <code>Close</code> then calls <code>drain.Wait</code>.</li>
+    <li>The receive goroutine is added to <code>drain</code> before it starts. Every positive connection-goroutine add occurs under <code>connsL</code> while <code>closing</code> is false. <code>Close</code> sets <code>closing</code> under the same lock before it starts <code>drain.Wait</code>. No new connection goroutine can be added after draining starts. A fake dial that ignores cancellation can still return late, but the receive goroutine is already accounted for and closes that connection before it exits.</li>
+    <li>The listener never holds <code>connsL</code> while it closes a connection, takes <code>sendL</code>, calls <code>CloseSend</code>, or waits. A connection goroutine removes its map entry under <code>connsL</code>, releases that lock, and only then closes or sends. <code>finish</code> releases <code>completionMu</code> before cancellation or cleanup. These rules avoid lock inversion among <code>completionMu</code>, <code>connsL</code>, and <code>sendL</code>.</li>
+    <li>In grpc-go v1.80, <code>ClientStream.Context()</code> returns the committed transport stream context. <code>clientStream.finish</code> cancels that context after terminal <code>RecvMsg</code> or client-generated <code>SendMsg</code> failure, caller cancellation, or <code>ClientConn</code> close. The context cause is normally cancellation-shaped. The exact RPC status still comes from <code>Recv</code>. The initial response has already been received before this design reads <code>stream.Context()</code>, as required by grpc-go's API contract.</li>
+    <li>grpc-go v1.80 documents <code>ClientStream.CloseSend</code> as always returning nil. <code>google.golang.org/grpc/stream.go::clientStream.CloseSend</code> and <code>addrConnStream.CloseSend</code> both implement that contract. Stream status comes from <code>RecvMsg</code>. Keep <code>Close() error</code> for the existing internal closer contract, but return nil from the production handle after draining. Do not add <code>closeErr</code> state or a production <code>CloseSend</code>-error branch.</li>
+  </ul>
+
+  <h3>Multi-port listener registry</h3>
+  <pre><code>type tunnelListenerRegistry struct {
+    mu         sync.Mutex
+    closed     bool
+    firstCause error
+    cleanupErr error
+    handles    []tunnelListenerHandle // listener creation order
+}
+
+var errTunnelListenerClosed = errors.New("host-to-container listener closed before publication")
+
+func (r *tunnelListenerRegistry) AddOrClose(tunnelListenerHandle) error
+func (r *tunnelListenerRegistry) BeginClose(cause error) (error, []tunnelListenerHandle)
+func (r *tunnelListenerRegistry) RecordCleanup(error)
+func (r *tunnelListenerRegistry) Result() (firstCause, cleanupErr error)
+func (r *tunnelListenerRegistry) Publish(commit func()) error</code></pre>
+  <p><code>AddOrClose</code> appends a handle while the registry is open. If shutdown already marked it closed, <code>AddOrClose</code> copies <code>firstCause</code>, releases <code>mu</code>, and closes the late handle immediately. It records any close error through <code>RecordCleanup</code> and returns <code>firstCause</code>. <code>startTunnel</code> then aborts. The named-return defer joins the recorded cleanup error. This makes listener registration and shutdown atomic without closing a handle under the registry mutex.</p>
+  <p><code>BeginClose</code> preserves an existing <code>firstCause</code>, or records its argument as the first cause. A nil cause becomes <code>errTunnelListenerClosed</code>. It marks the registry closed and snapshots all registered handles under <code>mu</code>. It returns the first cause and the snapshot after releasing <code>mu</code>. The caller performs no detach or handle work under <code>mu</code>.</p>
+  <p><code>RecordCleanup</code> joins only non-nil cleanup errors under <code>mu</code>. <code>Result</code> reads the stored first cause and cleanup result under the same mutex. The first cause is never included in <code>cleanupErr</code>. This separation lets the startup return include the first cause exactly once.</p>
+  <p>The registry appends only a non-nil handle returned by a successful listen. It does not preallocate closer slots. A first <code>ListenHostToContainer</code> setup failure therefore closes an empty snapshot. A later-port setup failure closes only handles that were acquired. Neither path can call a nil closer.</p>
+
+  <h3>Startup rollback, publication, and lock order</h3>
+  <pre><code>// core/services.go
+type RunningService struct {
+    // existing fields
+    publishIfReady func(commit func()) error
+}</code></pre>
+  <p><code>startTunnel</code> creates the registry and the <code>sync.Once</code>-guarded <code>shutdown</code> closure immediately after <code>StartResult</code> acquires the upstream binding. No listener setup or fallible parsing occurs between binding acquisition and creation of that cleanup owner. It assigns <code>publishIfReady = registry.Publish</code>. Other service kinds leave the field nil. The upstream-exit monitor starts at this point, so upstream exit during listener setup uses the same cleanup owner.</p>
+  <p>Keep <code>startTunnel</code>'s named <code>rerr</code> defer at function scope. Declare <code>registry</code> and <code>shutdown</code> before the defer. Assign both immediately after binding acquisition:</p>
+  <pre><code>var registry *tunnelListenerRegistry
+var shutdown func(error) error
+defer func() {
+    if rerr == nil {
+        return
+    }
+    if shutdown == nil {
+        stop(fmt.Errorf("tunnel start error: %w", rerr))
+        return
+    }
+    setupErr := rerr
+    cleanupErr := shutdown(setupErr)
+    firstCause, _ := registry.Result()
+    if firstCause == nil {
+        firstCause = setupErr // defensive; shutdown normally records it
+    }
+    rerr = errors.Join(firstCause, cleanupErr)
+}()</code></pre>
+  <p>An error before binding acquisition retains the current local-context cancellation. For an error after binding acquisition, the defer first invokes the same <code>shutdown</code> used at runtime. It then replaces the named return with the registry's first cause joined with cleanup errors. If the current setup error entered <code>shutdownOnce</code> first, that error is <code>firstCause</code> and appears once. If an earlier listener error entered first and canceled a later in-flight <code>Listen</code>, the earlier error replaces the later cancellation-shaped setup error. The later error is not joined. Cleanup errors remain joined once because <code>cleanupErr</code> never contains <code>firstCause</code>.</p>
+  <p>The defer closes every registered listener and releases this tunnel's upstream binding before <code>svc.Start</code> returns. There is no <code>startupRollback</code> field and no generic startup defer in <code>startWithKey</code>. A successful return suppresses only this deferred invocation because <code>rerr</code> is nil. The same <code>shutdown</code> closure remains active through <code>RunningService.Stop</code>, listener monitors, and the upstream monitor.</p>
+  <p>After each successful <code>ListenHostToContainer</code> call, <code>startTunnel</code> calls <code>AddOrClose</code> before parsing the returned address or starting the next listen. It starts that handle's <code>Wait</code> monitor immediately after the add. The monitor remains active after publication. A first <code>ListenHostToContainer</code> setup error closes an empty registry and releases the binding. Address parsing failure and later-port failure close every earlier handle and release the binding.</p>
+  <p><code>startWithKey</code> preserves its existing <code>context.Cause(svcCtx)</code> check under <code>Services.l</code>. If that check passes, it calls <code>publishIfReady</code> before releasing <code>Services.l</code> or inserting the service.</p>
+  <p><code>registry.Publish</code> is called while <code>Services.startWithKey</code> holds <code>Services.l</code>. It locks <code>registry.mu</code>. A closed registry rejects publication with its first cause. An empty cause becomes <code>errTunnelListenerClosed</code>. An open registry nests <code>WithCompletionGuard</code> for every handle in listener creation order. The final guarded function inserts the service into <code>Services.running</code> and sets its binding count. If a guard reports completion, <code>Publish</code> marks the registry closed and records that result, or <code>errTunnelListenerClosed</code> for a nil result. It then returns the result without invoking cleanup. The stable lock order is:</p>
+  <pre><code>Services.l
+  → tunnelListenerRegistry.mu
+    → hostToContainerListener.completionMu in listener creation order</code></pre>
+  <p>If completion records first, <code>WithCompletionGuard</code> reports it and <code>Publish</code> rejects synchronously. This does not depend on the monitor goroutine. If publication holds the guard first, insertion commits before completion can record. The same completion records after the guards are released and becomes runtime shutdown.</p>
+  <p>Do not replace this handoff with a <code>Completed</code> snapshot. Completion can occur after a snapshot reports false and before insertion. The monitor may not remove the service until after callers observe it as running. Holding the actual <code>completionMu</code> guards through insertion closes that interval.</p>
+  <p>Terminal completion never calls cleanup while holding <code>completionMu</code>. A monitor calls <code>Wait</code> without registry or completion locks. It calls <code>shutdown(cause)</code> only after <code>Wait</code> returns. An unexpected nil result becomes <code>errTunnelListenerClosed</code>. <code>shutdown</code> releases <code>registry.mu</code> before it closes handles or calls <code>Services.Detach</code>. This prevents inversion with <code>Services.l</code>.</p>
+
+  <h3>One shutdown owner and unconditional resource release</h3>
+  <p>The existing <code>shutdown(cause)</code> closure remains guarded by one <code>sync.Once</code>. It is the only upstream-binding and registered-listener cleanup owner. Setup failure, publication rejection through <code>RunningService.Stop</code>, explicit <code>Stop</code>, listener failure, and upstream exit all converge on it. <code>AddOrClose</code> closes only a late handle that never entered the registry.</p>
+  <p>Inside <code>shutdownOnce</code>, <code>shutdown</code> uses this exact sequence:</p>
+  <ol>
+    <li>Call <code>BeginClose(cause)</code>. This stores the first cause and returns the registered handles in creation order.</li>
+    <li>Cancel <code>svcCtx</code> with that first cause.</li>
+    <li>Call <code>Services.Detach</code> once for this tunnel's upstream binding.</li>
+    <li>Call <code>Close</code> once on each snapshot handle in creation order. Each <code>Close</code> publishes nil only if no terminal result already won, cancels its stream, closes active connections, and drains its goroutines.</li>
+    <li>Pass only joined <code>Close</code> errors to <code>RecordCleanup</code>.</li>
+  </ol>
+  <p>Shutdown never calls handle <code>Wait</code>. The listener monitor already obtained the sticky terminal result through <code>Wait</code> before it called <code>shutdown</code>. A sibling handle's <code>Close</code> publishes nil and drains it. The first terminal cause remains only in <code>firstCause</code>; it is not added to <code>cleanupErr</code>. This avoids waiting on the monitor that is executing shutdown and avoids duplicating the cause. Outside <code>shutdownOnce</code>, every call returns the current cleanup half of <code>registry.Result</code>. This includes a late-handle close error recorded after the first shutdown call. Another binder can keep the upstream running.</p>
+  <p>Keep <code>RunningService.stopFromManager</code> unchanged. Changing it globally would release tracked resources before <code>stopGraceful</code> performs its force-stop retry. Instead, define one local closure in the new-start branch of <code>startWithKey</code>:</p>
+  <pre><code>cleanupFailedStart := func(primary error, stopRequired bool) error {
+    var stopErr error
+    if stopRequired &amp;&amp; running.Stop != nil {
+        stopErr = running.Stop(context.WithoutCancel(ctx), true)
+    }
+    resourceErr := running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
+    return stderrors.Join(primary, stopErr, resourceErr)
+}</code></pre>
+  <p>The closure always attempts tracked-resource release. When <code>stopRequired</code> is true, a failed <code>Stop</code> cannot skip that release. The false case is used only after <code>svc.Start</code> returns an error. For a tunnel, <code>startTunnel</code>'s defer already attempted shutdown and joined its error. For other service kinds, false preserves the current rule that <code>startWithKey</code> does not call <code>Stop</code> after <code>Start</code> itself fails. Normal runtime stop and graceful-to-force escalation keep their current behavior.</p>
+  <p>Update the existing <code>startWithKey</code> failure branches as follows:</p>
+  <ol>
+    <li>If <code>svc.Start</code> returns an error, <code>startTunnel</code>'s defer has already run <code>shutdown</code>. Replace the current standalone <code>releaseTrackedRefsOnce</code> call with <code>cleanupFailedStart(err, false)</code>. Assign the joined result to <code>start.err</code>, profiling, cancellation, and the return value.</li>
+    <li>If <code>running.Wait</code> is nil, replace <code>running.stopFromManager</code> with <code>cleanupFailedStart(err, true)</code>. Preserve the missing-Wait error as the primary error. Assign the joined result before ending profiling, canceling, and returning.</li>
+    <li>If <code>context.Cause(svcCtx)</code> is non-nil, capture the cause and release <code>Services.l</code>. Replace <code>running.stopFromManager</code> with <code>cleanupFailedStart(cause, true)</code>. Return the cause joined with shutdown and resource errors.</li>
+    <li>If <code>publishIfReady</code> rejects, let <code>Publish</code> release every completion guard and <code>registry.mu</code>. While still holding <code>Services.l</code>, delete <code>ss.starting[key]</code>. Do not insert <code>ss.running[key]</code> or <code>ss.bindings[key]</code>. Release <code>Services.l</code>. Call <code>cleanupFailedStart(err, true)</code> and store its joined result in <code>start.err</code>. End <code>profOp</code> with <code>wcprof.OutcomeError</code>. Pass the joined result to <code>endOTelServiceStart</code>. Release dependency-exit suppression. Call <code>cancel(joined)</code>. Return the same joined result. The function's existing deferred <code>close(start.done)</code> then wakes joiners. <code>Stop</code> reaches the same tunnel <code>shutdown</code>, and tracked-resource release still runs if shutdown fails.</li>
+  </ol>
+  <p>On publication rejection, <code>Publish</code> records the listener result as <code>firstCause</code> before releasing the registry. <code>BeginClose</code> preserves that cause when <code>RunningService.Stop</code> later supplies the ordinary stop sentinel. The listener result therefore remains primary.</p>
+  <p>No branch calls <code>cleanupFailedStart</code> while holding <code>Services.l</code>, <code>registry.mu</code>, or a completion guard. The tunnel's <code>shutdownOnce</code> makes every race call <code>Services.Detach</code> exactly once.</p>
+
+  <h3>Explicit Stop versus listener completion</h3>
+  <p>The first call that enters <code>shutdownOnce</code> wins the service result. Listener completion alone does not reserve the win. If the listener has finished but its monitor is paused before <code>shutdown</code>, an explicit <code>Stop</code> can win and <code>RunningService.Wait</code> returns the existing successful-stop result. If the monitor enters <code>shutdown</code> first, its listener error remains the service result and the later <code>Stop</code> only observes the stored cleanup result. Both orders close the same handles and detach the same binding once.</p>
+
+  <h3>Deterministic tunnel tests</h3>
+  <p>Run every row for an ordinary session and a detachable session. Use channels to choose the failure point. Do not use timing sleeps.</p>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Failure point</th><th>Required assertions</th></tr></thead><tbody>
+    <tr><td>First listen setup fails</td><td>No listener handle is registered or published. The setup error becomes <code>firstCause</code> once. <code>Services.Detach</code> releases this tunnel's upstream binding once. <code>Services.running</code> has no tunnel entry. No goroutine or binding remains.</td></tr>
+    <tr><td>Later port fails</td><td>Every earlier listener closes. This tunnel's upstream binding is released once. No tunnel is published. Concurrent cleanup does not panic.</td></tr>
+    <tr><td>Completion wins publication</td><td>Use a channel hook to let <code>finish</code> record the result under the actual <code>completionMu</code> before publication completes. Release the hook and assert that publication returns the sticky result and inserts nothing. Do not infer ordering from elapsed time.</td></tr>
+    <tr><td>Publication wins completion</td><td>Use a channel hook inside the guarded publication callback to select publication first. Trigger <code>finish</code>, let insertion commit, then release the callback. Assert that the same completion becomes runtime shutdown, removes the failed tunnel, and releases only this tunnel's binding.</td></tr>
+    <tr><td>Stream context cancels a blocked dial</td><td>Return a fake stream with a cause-cancelable <code>Context</code>. Publish the tunnel, deliver a connection request, and block the injected dial until that context ends. Cancel the stream context with a terminal sentinel without calling <code>Close</code>. Assert that the dial returns, <code>Wait</code> returns a non-nil result wrapping the sentinel, the monitor enters <code>shutdown</code>, and <code>Services.Detach</code> runs once. Shutdown then calls <code>Close</code>; nil must not replace the terminal result, and <code>cleanupErr</code> must not contain that result.</td></tr>
+    <tr><td>Second listen succeeds after shutdown</td><td>Block the second <code>ListenHostToContainer</code> call. Fail the first registered listener and let <code>BeginClose</code> store its error. Return a successful second handle. <code>AddOrClose</code> closes it immediately and records any close error. Startup returns the first listener error once, joined with cleanup errors. No listener or binding leaks.</td></tr>
+    <tr><td>Second listen fails after shutdown</td><td>Block the second <code>ListenHostToContainer</code> call. Fail the first registered listener and wait until its error is stored and <code>svcCtx</code> is canceled. Return a distinct cancellation-shaped error from the second call. Startup returns the first listener error, not the later error. Walk the joined error tree and assert one occurrence of the first cause.</td></tr>
+    <tr><td>Explicit Stop wins</td><td>Finish a published listener and hold its monitor before <code>shutdown</code>. Call <code>Stop</code>. Assert the successful-stop result, then release the monitor and assert one detach and one cleanup.</td></tr>
+    <tr><td>Listener completion wins</td><td>Let the monitor enter <code>shutdown</code> before calling <code>Stop</code>. Assert that <code>RunningService.Wait</code> keeps the listener error and that the later stop causes no second detach or cleanup.</td></tr>
+    <tr><td>Cleanup errors</td><td>Reject publication with a primary sentinel. Inject a core fake-handle close error and a tracked-resource release error. The fake error exercises cleanup aggregation; it is not a grpc-go <code>CloseSend</code> result. Assert all three with <code>errors.Is</code>, one <code>Services.Detach</code>, and one tracked-resource release.</td></tr>
+  </tbody></table></div>
+  <p>Add engineutil tests for shared <code>Send</code> failure and shared <code>Recv</code> failure. Each must publish one sticky listener error. Add both <code>Close</code>-wins and stream-error-wins tests. Assert the exact <code>Wait</code> result, repeated idempotent <code>Close</code>, one detach, no leaked listener, and no panic.</p>
+  <p>Add a deterministic fake-stream test in which <code>Send</code> holds <code>sendL</code> and waits for stream-context cancellation. Signal when <code>Send</code> has entered. Call <code>Close</code>. Cancellation must release <code>Send</code>, after which <code>Close</code> serializes <code>CloseSend</code>, drains all goroutines, and returns. Select outcomes with channels and a test deadline. Do not use a sleep to claim that <code>Close</code> was blocked or unblocked.</p>
+  <p>Add three deterministic engineutil dial tests through <code>hostToContainerListener.dialContext</code>. In the first, the fake dial signals entry and waits for its context. <code>Close</code> must publish nil, cancel that context, drain the receive goroutine, and return; <code>Wait</code> must keep nil. In the second, cancel the fake stream context without calling <code>Close</code>. The dial must return and publish the non-nil terminal context cause before the receive goroutine exits. In the third, the fake dial signals entry, ignores cancellation until the test releases it, and returns a tracked connection after <code>Close</code> has set <code>closing</code>. The receive goroutine must close the late connection, must not add or start a connection goroutine, and must let <code>Close</code> finish. Use channel-selected outcomes and a test deadline. Do not use sleeps.</p>
+
+  <h2 id="files">10. Exact package, file, type, and function changes</h2>
+  <p>This is the authoritative production file list. Section 9 defines the shared tunnel changes.</p>
+  <div class="table-wrap"><table class="wide"><thead><tr><th>Status</th><th>File</th><th>Type or function</th><th>Change</th><th>Reason</th></tr></thead><tbody>
+    <tr><td><strong>Required</strong></td><td><code>engine/source_client.go</code></td><td><code>SourceClientUnavailableError</code></td><td>Add the small recognizable error with <code>ClientID</code>.</td><td>A blocking lookup for a published source with no caller must not look like initial-publication timeout.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>engine/server/session.go</code></td><td><code>daggerSession</code></td><td>Add the source publication set and two small methods.</td><td>Distinguish successful publication from initial startup and failed pre-publication handshakes.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>engine/server/session.go</code></td><td><code>initializeDaggerClient</code>, <code>getClientCaller</code> closure</td><td>Return the immediate source-unavailable error for blocking lookup. Supply the publication-only terminal function to <code>Wait</code>.</td><td>Published-source absence becomes immediate. Initial publication still waits.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>engine/server/session.go</code></td><td><code>serveSessionAttachables</code></td><td>Perform publication read, strict reservation, second publication read, then hijack. Record successful publication.</td><td>Forbid post-publication return and close the two-request race.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>engine/server/session.go</code></td><td><code>serveShutdown</code></td><td>After workspace and telemetry flush, deregister the nested source and wait. Then close <code>client.shutdownCh</code>.</td><td>Keep the callback through flush and remove it before shutdown completes.</td></tr>
+    <tr><td>Tests only</td><td><code>engine/server/session.go</code></td><td><code>SpecificClientAttachableConn</code></td><td>Keep blocking lookup delegation and non-blocking <code>IfAvailable</code>.</td><td>The required behavior comes from <code>getClientCaller</code>; candidate fallback already works.</td></tr>
+    <tr><td>Tests only</td><td><code>engine/server/session_control.go</code></td><td><code>serveSessionAttachmentClose</code></td><td>Keep exact <code>Deregister</code>-before-detach ordering.</td><td>Top-level graceful deregistration is already correct.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>engine/server/session_attachables.go</code></td><td><code>sessionAttachableManager.Reserve</code>, <code>Wait</code></td><td>Add strict reservation and the read-only terminal function. Store no detachable policy in the manager.</td><td>Protect registration and end a blocking wait after permanent source loss.</td></tr>
+    <tr><td>Test seam only</td><td><code>engine/server/session_attachables.go</code></td><td><code>monitorAttachableHealth</code></td><td>Add package-private clock or check injection only where deterministic tests need it.</td><td>No production behavior change.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>engine/engineutil/client.go</code></td><td><code>hostToContainerDialContext</code>, <code>hostToContainerListener</code>; <code>Close</code>, <code>Wait</code>, <code>WithCompletionGuard</code></td><td>Store the stream and its <code>Context</code>. Store the sticky result under <code>completionMu</code>. Use <code>DialContext</code> with that stream context. Publish a non-nil context cause when stream cancellation ends an in-flight dial unless <code>Close</code> already stored nil. Add <code>closing</code> and atomic connection add-or-close under <code>connsL</code>. Cancel before taking <code>sendL</code>. Keep completion publication separate from draining.</td><td>Expose actual listener completion to core, let cancellation release blocked sends and dials, preserve the Close-first result, and prevent a late dial from escaping <code>Close</code>.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>core/service.go</code></td><td><code>tunnelListenerHandle</code>, <code>tunnelListenerRegistry</code>, <code>Service.startTunnel</code>, existing <code>shutdown(cause)</code></td><td>Add atomic add-or-close, first-cause and cleanup results, guarded publication, startup rollback in <code>startTunnel</code>'s own error defer, and listener monitoring.</td><td>Release every resource on partial startup, preserve an earlier listener cause when it cancels later setup, and route every terminal path through one cleanup owner.</td></tr>
+    <tr><td><strong>Required</strong></td><td><code>core/services.go</code></td><td><code>RunningService.publishIfReady</code>, local <code>cleanupFailedStart</code>, <code>Services.startWithKey</code></td><td>Commit insertion through <code>publishIfReady</code> while holding <code>Services.l</code>. On each failed-start branch, release all locks and independently release tracked resources. Call <code>Stop</code> only after <code>svc.Start</code> succeeded; the <code>svc.Start</code>-error branch passes <code>stopRequired=false</code>.</td><td>Serialize actual listener completion with publication and prevent a post-start cleanup error from skipping resource release without changing the existing rule for a <code>svc.Start</code> error.</td></tr>
+    <tr><td>Tests only</td><td><code>engine/server/*_test.go</code>, <code>core/*_test.go</code>, <code>core/integration/detachable_session_test.go</code></td><td>Focused tests and fakes</td><td>Add required tests and lock down behavior already correct.</td><td>Prove all four required changes.</td></tr>
+  </tbody></table></div>
+
+  <h2 id="phases">11. Ordered implementation phases and intentional commit boundaries</h2>
+  <ol>
+    <li><strong>Commit 1 — enforce one-time source publication.</strong> Add publication state, the two-check strict-reservation protocol, and deterministic race tests. Invert the current post-publication retry test.</li>
+    <li><strong>Commit 2 — end blocking lookup after source loss.</strong> Add the immediate source-unavailable error and the read-only <code>Wait</code> terminal function. Include lock-order and missed-wake tests.</li>
+    <li><strong>Commit 3 — order nested shutdown.</strong> Insert deregistration after both flush phases and before <code>client.shutdownCh</code> closes. Include the real registration, dirty lock, and termination-race test.</li>
+    <li><strong>Commit 4 — shared tunnel completion.</strong> Keep the guarded listener result, context-aware dial registration, cancel-before-<code>sendL</code> close order, synchronized first-cause registry, local startup rollback, serialized publication, unconditional failed-start resource release, monitoring, and ordinary/detachable tests together.</li>
+    <li><strong>Tests-only commit — preserve existing behavior.</strong> Cover observer non-substitution, copied values, callback failure isolation, and ordinary-session compatibility.</li>
+  </ol>
+  <p>Do not mix SDK, <code>dagger up</code>, cache ownership, or rebinding work into these commits.</p>
+
+  <h2 id="tests">12. Unit, race, server lifecycle, CLI, and source-built test plan</h2>
+  <p>Follow <code>skills/engine-debugging/SKILL.md</code>. Use focused package tests. Run core integration through <code>dagger api call engine-dev test --pkg ... --run='...'</code>. Capture full integration output under <code>/tmp</code>. Do not use broad <code>./...</code> campaigns.</p>
+
+  <h3>Unit tests</h3>
+  <ul>
+    <li>Unknown initial source publication still waits and can succeed.</li>
+    <li>Published then gracefully deregistered detachable source returns <code>SourceClientUnavailableError</code> immediately.</li>
+    <li>Published then abruptly removed source returns the same error after health declares death.</li>
+    <li>Ordinary session lookup retains the ten-second bounded wait and existing error.</li>
+    <li><code>IfAvailable</code> still returns <code>ok=false</code> without <code>SourceClientUnavailableError</code>.</li>
+    <li>A dead secret or socket candidate is skipped and an independently bound live candidate succeeds. Exhaustion keeps the current aggregate error.</li>
+    <li>A source with a completed host snapshot, imported image, plaintext secret, or explicit registry credential continues without callback.</li>
+    <li>A direct URI-secret or socket operation that uses blocking lookup receives <code>SourceClientUnavailableError</code>. Candidate selection does not promise that type.</li>
+    <li>Other blocking host export, default registry credential, prompt, terminal, pipe-open, and image-transfer lookups receive the immediate source-unavailable error.</li>
+    <li>No callback error calls the session termination hooks or closes <code>sess.closingCtx</code>.</li>
+    <li><code>hostToContainerListener</code> publishes shared <code>Send</code> and <code>Recv</code> failures once. Connection-local failures do not complete the listener.</li>
+    <li><code>Close</code>-wins and stream-error-wins cases return the exact sticky <code>Wait</code> result and repeated idempotent <code>Close</code> result. A fake shared <code>Send</code> holding <code>sendL</code> exits on cancellation before <code>CloseSend</code> runs, and <code>Close</code> drains fully.</li>
+    <li>A channel-controlled <code>dialContext</code> that waits for cancellation exits when <code>Close</code> cancels the listener and keeps the nil result. External cancellation of the fake <code>ClientStream.Context</code> without <code>Close</code> publishes a non-nil terminal result and unblocks <code>Wait</code>. A fake dial that returns success only after fake <code>CloseSend</code> signals that <code>closing</code> was marked has its connection closed immediately and starts no connection goroutine.</li>
+  </ul>
+
+  <h3>Race and generation tests</h3>
+  <ul>
+    <li>Use channels to pause request B after its first publication read. Publish and remove request A. Resume request B. Its second read rejects before hijack and releases its strict reservation.</li>
+    <li>Ordinary manager replacement retains its stale-cleanup protection. A detachable source that published is rejected before replacement.</li>
+    <li>Graceful close races with a callback lookup. The lookup either obtains the old exact caller and fails transport, or returns the immediate source-unavailable error. It never finds an observer.</li>
+    <li>A waiter wakes for source publication, but the caller is removed before the waiter reacquires the manager lock. The terminal check returns the immediate source-unavailable error instead of installing a waiter that times out.</li>
+    <li>Abrupt death races with observer claim. Attachment generation remains correct and source lookup remains unavailable.</li>
+    <li>Pre-publication failure races with retry. The source is not marked and retry can publish.</li>
+    <li>The same creator ID and matching secret are rejected after publication. Invert <code>TestCreatorRetryWaitsForRemovalThenPublishesFreshGeneration</code>.</li>
+    <li>A real nested registration with a dirty workspace lock blocks in export. Export completes before deregistration. Lookup is absent at response time. Concurrent termination does not deadlock.</li>
+    <li>Run the manager and lifecycle group under <code>-race</code>.</li>
+  </ul>
+
+  <h3>Server and service lifecycle tests</h3>
+  <ul>
+    <li>An accepted engine-only detached query survives creator graceful close and abrupt transport loss.</li>
+    <li>A source-dependent resolver fails while another concurrent engine-only resolver completes.</li>
+    <li>An engine-owned service stays running after creator detach.</li>
+    <li>A container-to-host reverse tunnel exits on its next source connection. An unrelated service stays running.</li>
+    <li>For ordinary and detachable tunnels, listener death reaches <code>RunningService.Wait</code>, closes sibling listeners, and calls <code>Services.Detach</code> for this tunnel's upstream binding. Another upstream binding and an unrelated service remain.</li>
+    <li>For both lifetimes, first-listener failure, later-port failure, and death before publication leave no entry in <code>Services.running</code>. Every acquired listener closes. This tunnel's upstream binding is released.</li>
+    <li>For both lifetimes, death after publication removes only the failed tunnel. Concurrent <code>Close</code>, <code>Wait</code>, and shutdown complete without panic or duplicate detach.</li>
+    <li>For both lifetimes, a second listen can return successfully after the first registered listener closes the registry. <code>AddOrClose</code> closes the late handle and preserves the first listener error.</li>
+    <li>For both lifetimes, a first registered listener fails while the second listen is in flight. Make the second listen return a different cancellation error. The startup result contains the first listener cause once, omits the later cancellation error, and includes cleanup errors.</li>
+    <li>For both lifetimes, channels select explicit-Stop-first and listener-monitor-first outcomes. The first <code>shutdownOnce</code> caller determines <code>RunningService.Wait</code>, and each outcome detaches once.</li>
+    <li>Publication rejection with fake-handle close and tracked-resource errors returns all sentinel errors. It attempts tracked-resource release and <code>Services.Detach</code> exactly once.</li>
+    <li>Explicit termination remains the only path that stops all session services and releases the engine cache session.</li>
+    <li>Hard-close health detection and blackhole timeout use a fake ticker and fake health client. Do not sleep for 80 seconds.</li>
+  </ul>
+
+  <h3>CLI tests</h3>
+  <ul>
+    <li><code>sessions attach</code> renders a saved GraphQL source error and exits nonzero without terminating the session.</li>
+    <li>The same session remains visible to <code>list</code> and <code>inspect</code>. <code>terminate</code> still succeeds.</li>
+    <li>Observer publication and close do not change source publication state or source lookup results.</li>
+    <li>An ordinary call retains current close, shutdown, and error behavior.</li>
+    <li>No new detach flag, observer GraphQL command, or SDK option appears.</li>
+  </ul>
+
+  <h3>Source-built core integration tests</h3>
+  <ol>
+    <li>Keep <code>TestDetachableSession/TestHostCallbackRemainsBoundToCreator</code>. For blocking creator lookup, change its expected error to <code>SourceClientUnavailableError</code>.</li>
+    <li>Create host directory and plaintext secret before detach. Use both successfully after detach.</li>
+    <li>Create a lazy host directory, URI secret, host socket, and default private-registry pull before detach. Direct blocking lookups return the immediate source-unavailable error with the physical source ID. Candidate exhaustion keeps its aggregate error.</li>
+    <li>Run one primary detached query with two sibling branches. Make one invoke a dead source callback and the other perform engine-only work. Assert only the callback branch fails, subject to the actual DagQL null-propagation boundary.</li>
+    <li>Run one engine-owned service and one source-backed tunnel. Disconnect the source. Assert the engine-owned service remains healthy and the tunnel releases only its own binding.</li>
+    <li>Run the four tunnel failure points through ordinary and detachable source-built cases. Assert no leaked host listener, no leaked upstream binding, and no panic.</li>
+    <li>Attach an observer with conflicting host bytes, secret, Docker credentials, Git config, image store, stdin, and prompt handler. Assert none is called.</li>
+    <li>Repeat creator loss as graceful DELETE and hard transport close. Assert graceful failure is immediate and hard loss follows health detection.</li>
+    <li>Run the ordinary-session equivalents. Assert current user-visible behavior outside the approved failed-tunnel correction.</li>
+  </ol>
+
+  <h3>Investigation evidence at this base</h3>
+  <div class="table-wrap"><table class="medium"><thead><tr><th>Command or probe</th><th>Question</th><th>Result</th></tr></thead><tbody>
+    <tr><td>Static inspection of <code>core/service.go::startTunnel</code>, <code>core/services.go::startWithKey</code>, and <code>RunningService.stopFromManager</code></td><td>Can startup rollback stay local, where can an earlier cause be lost, and where must cleanup ordering change?</td><td>Yes. <code>startTunnel</code> has named <code>rerr</code>. Its existing error defer can use the one shutdown closure as soon as binding acquisition assigns it. A first registered listener can cancel <code>svcCtx</code> while a later <code>ListenHostToContainer</code> is in flight, so the later return can otherwise replace the first listener cause. <code>startWithKey</code> has separate start-error, missing-Wait, canceled, and publication paths. The start-error path intentionally does not call <code>Stop</code>. <code>stopFromManager</code> currently skips resource release after a Stop error.</td></tr>
+    <tr><td>Static inspection of <code>engine/engineutil/client.go::ListenHostToContainer</code></td><td>Can <code>Close</code> account for an in-flight upstream dial?</td><td>No. The current code uses <code>c.Dialer.Dial</code>, which has no listener context. It adds a successful connection to the map under <code>connsL</code>, releases the lock, and only then calls <code>wg.Add(1)</code>. A dial can therefore return after the close snapshot and can add work after close starts waiting.</td></tr>
+    <tr><td>Static inspection of grpc-go v1.80 <code>ClientStream</code>, <code>clientStream.Context</code>, <code>clientStream.finish</code>, <code>clientStream.CloseSend</code>, and <code>addrConnStream.CloseSend</code></td><td>Which context should cancel a dial, and what result and serialization does <code>CloseSend</code> require?</td><td><code>ClientStream.Context</code> returns the committed transport stream context after the initial <code>Recv</code>. <code>clientStream.finish</code> cancels it, while the exact RPC status remains a <code>RecvMsg</code> result. The API forbids concurrent <code>SendMsg</code> and <code>CloseSend</code>. Both <code>CloseSend</code> implementations always return nil.</td></tr>
+    <tr><td><code>go test ./engine/server -count=1 -run='Test(DetachableLastDisconnectPreservesSession|SupersededRegistrationDoesNotEmitRemoved|CreatorRetryWaitsForRemovalThenPublishesFreshGeneration|ExplicitCloseOfReservationPreventsLateRegistration|AcceptedEngineOnlyQuerySurvivesCreatorAttachmentClose)$'</code></td><td>Do current lifecycle, generation, explicit-close, and accepted-query boundaries pass?</td><td>Pass.</td></tr>
+    <tr><td><code>go test -race ./engine/server -count=1 -run='Test(SupersededRegistrationDoesNotEmitRemoved|CreatorRetryWaitsForRemovalThenPublishesFreshGeneration|ExplicitCloseOfReservationPreventsLateRegistration)$'</code></td><td>Do the focused registration/generation tests expose a race?</td><td>Pass. No race reported.</td></tr>
+    <tr><td><code>dagger api call engine-dev test --pkg ./core/integration --run='TestDetachableSession/TestHostCallbackRemainsBoundToCreator'</code></td><td>Can an observer satisfy a creator-bound socket?</td><td>Pass. It cannot.</td></tr>
+    <tr><td>Disposable manager probe with a 75 ms wait context</td><td>What happens after graceful <code>Deregister</code>?</td><td>Returned after 75.39 ms with <code>no active session attachables for client "source-client": context deadline exceeded</code>. Production supplies ten seconds.</td></tr>
+    <tr><td>Disposable hard-close probe</td><td>How long does immediate transport failure take and what cause reaches <code>Removed</code>?</td><td>10.001 s. <code>Removed</code> received <code>context canceled</code>.</td></tr>
+  </tbody></table></div>
+  <p>No telemetry trace was captured. Static call-graph inspection and focused process tests answered the callback identity and cancellation questions without a trace.</p>
+
+  <h2 id="faults">13. Fault-injection seams for disconnect and callback races</h2>
+  <ul>
+    <li>Parameterize <code>monitorAttachableHealth</code> behind package-private tick, timeout, clock, and <code>Check</code> functions. Production defaults remain unchanged.</li>
+    <li>Add channel hooks after the first publication read and after strict reservation. Use them only in the two-request registration test.</li>
+    <li>Add a hook after a waiter wakes and before it checks for an active caller and terminal publication state.</li>
+    <li>Use a real attachable registration and a channel-blocked workspace export for nested shutdown ordering.</li>
+    <li>Add package-private channel hooks at actual <code>completionMu</code> acquisition in <code>finish</code> and <code>WithCompletionGuard</code>. Select both publication race outcomes without relying on monitor scheduling.</li>
+    <li>Use a channel-controlled second listen to return either a successful handle or a distinct error after <code>BeginClose</code>. Assert atomic add-or-close and first-cause preservation.</li>
+    <li>Inject <code>hostToContainerListener.dialContext</code> and a fake stream with a cause-cancelable <code>Context</code>. Select Close-first cancellation and external stream-context cancellation independently. Make another dial return a tracked connection only after fake <code>CloseSend</code> proves that <code>Close</code> passed the <code>closing</code> transition.</li>
+    <li>Inject shared <code>Send</code>, shared <code>Recv</code>, connection-local I/O, concurrent <code>Close</code>/<code>Wait</code>, explicit stop ordering, core fake-handle close errors, and tracked-resource release errors.</li>
+    <li>Use sentinel cancellation causes for query, affected service, unrelated service, session root, and engine shutdown. Assert only the intended sentinel fires.</li>
+    <li>Use channels and fake clocks. Do not use sleeps to choose race winners.</li>
+  </ul>
+
+  <h2 id="acceptance">14. Acceptance criteria</h2>
+  <ol>
+    <li>Every active engine-to-client RPC and callback lookup in the catalogue has an exact source identity.</li>
+    <li>Every value is classified as copied, lazy, permanently callback-backed, engine-owned, or inactive.</li>
+    <li>Graceful source disconnect prevents new callback lookup immediately.</li>
+    <li>Abrupt source loss follows existing health detection. Stale lookup during detection never redirects to an observer.</li>
+    <li>A detachable non-observer source cannot publish again after successful publication, even with the same ID and matching secret.</li>
+    <li>Pre-publication retry still works.</li>
+    <li>The two publication reads and strict reservation close the delayed-request interleaving without lock inversion.</li>
+    <li>A blocking lookup for a published source with no active caller returns <code>SourceClientUnavailableError</code>. The error is recognizable with <code>errors.As</code>.</li>
+    <li><code>IfAvailable</code>, secret candidate selection, and socket candidate selection keep their current return and aggregate-error behavior.</li>
+    <li>Nested shutdown flushes workspace locks, flushes telemetry, deregisters and waits, closes <code>client.shutdownCh</code>, then returns.</li>
+    <li>The failure does not cancel <code>sess.closingCtx</code>, terminate the session, release session cache ownership, or stop unrelated services.</li>
+    <li>Copied host snapshots, imported images, plaintext secrets, explicit registry credentials, saved results, telemetry, and engine-owned services continue after source loss.</li>
+    <li>Source-backed operations fail at their existing resolver, query, execution, or service boundary.</li>
+    <li>A dead listener is never published as live. Completion is sticky and exactly once. <code>Services.Detach</code> releases only this tunnel's binding.</li>
+    <li>Ordinary and detachable tests cover first-listener failure, later-port failure, death before publication, and death after publication. They leave no listener or binding behind and do not panic.</li>
+    <li>Publication is serialized against each listener's actual <code>completionMu</code>. Monitor scheduling is not part of correctness.</li>
+    <li>The synchronized listener registry closes a successful late handle after shutdown. If a first listener error cancels a later in-flight listen, startup returns that first cause once and does not replace it with the later cancellation error.</li>
+    <li>Shared stream errors are listener-terminal. Connection-local errors are not. <code>Close</code> publishes local completion, cancels, marks connection registration closed, snapshots and clears active upstream connections, closes them, serializes <code>CloseSend</code> after cancellation, and drains.</li>
+    <li>Every upstream dial uses the stored <code>ClientStream.Context</code>. External stream-context cancellation during a dial publishes a non-nil sticky result and reaches core shutdown. Close-first cancellation keeps the nil sticky result. A successful dial registers and adds its connection goroutine under <code>connsL</code>, or closes immediately after <code>closing</code>. No wait-group add or connection goroutine starts after <code>Close</code> begins draining.</li>
+    <li>Shutdown calls <code>BeginClose</code>, cancels <code>svcCtx</code>, detaches once, and closes each snapshot handle in creation order. It does not call handle <code>Wait</code> or add the sticky terminal cause to <code>cleanupErr</code>.</li>
+    <li>The production listener stores no <code>CloseSend</code> error state. grpc-go stream status remains a <code>Recv</code>/<code>Wait</code> result.</li>
+    <li>Publication rejection, shutdown failure, and tracked-resource release failure are joined once. Tracked-resource release is attempted even when shutdown fails.</li>
+    <li>An explicit Stop and an already-finished listener follow the first call into <code>shutdownOnce</code>. Either selected order detaches the binding and cleans up once.</li>
+    <li>Observer reattachment remains health-only and provides observation, result/telemetry following, lifecycle control, and explicit termination.</li>
+    <li>Ordinary sessions retain existing startup, wait, shutdown, disconnect, and cleanup behavior except that an already-failed host-to-container tunnel now stops appearing live and releases its binding.</li>
+    <li>No callback rebinding, general role framework, observer GraphQL work, SDK work, or deferred feature enters the implementation.</li>
+    <li>Focused unit, race, server lifecycle, CLI, and source-built integration tests pass under the engine-debugging workflow.</li>
+  </ol>
+
+  <h2 id="deferred">15. Explicit deferred work</h2>
+  <ul>
+    <li>Callback rebinding, replacement, redirection, or migration.</li>
+    <li>Any protocol for an observer to advertise itself as a source.</li>
+    <li>New GraphQL requests from an attached observer.</li>
+    <li>Multiple primary queries or concurrent attachments.</li>
+    <li>Interactive terminal, pipe, stdin, stdout, or stderr resumption.</li>
+    <li>Public SDK detach or attach APIs and SDK launcher changes.</li>
+    <li><code>dagger up</code>, shell, listen, and other command support.</li>
+    <li>Cache ownership or DagQL pruning changes.</li>
+    <li>Engine restart survival, durable source metadata, TTLs, and names.</li>
+    <li>Cloud scale-out and cross-engine callback routing.</li>
+    <li>A general client-role framework.</li>
+    <li>Changing the existing attachable health policy.</li>
+    <li>Activating retained BuildKit cache importer/exporter or auth-token callbacks.</li>
+    <li>Richer per-callback transport diagnostics and callback-facing helper renames.</li>
+    <li>Changing <code>Host.GetEnv</code> error suppression, implicit Git credential fallback, or established pipe EOF behavior.</li>
+  </ul>
+
+  <div class="finding"><strong>Recommended implementation boundary:</strong> implement the four required changes: one-time source publication, immediate blocking-lookup failure after source loss, ordered nested shutdown, and shared host-to-container tunnel completion. Do not add detachable-lifetime metadata or broader callback machinery.</div>
+</main></body></html>

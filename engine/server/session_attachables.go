@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -20,25 +21,68 @@ import (
 )
 
 type sessionAttachableManager struct {
-	mu      sync.Mutex
-	callers map[string]*sessionAttachableCaller
-	waiters map[string][]chan struct{}
+	mu           sync.Mutex
+	callers      map[string]*sessionAttachableCaller
+	reservations map[string]struct{}
+	waiters      map[string][]chan struct{}
+
+	testWaiterAdded func(string)
+	testWaiterWoke  func(string)
 }
 
 type sessionAttachableCaller struct {
 	ctx       context.Context
 	conn      *grpc.ClientConn
 	supported map[string]struct{}
+	cancel    context.CancelCauseFunc
+	done      chan struct{}
 }
+
+type sessionAttachableCallbacks struct {
+	Published func()
+	Removed   func(error)
+}
+
+var (
+	errAttachableConnectionExists = errors.New("session attachables connection already exists")
+	errAttachableExplicitClose    = errors.New("session attachment explicitly closed")
+)
 
 func newSessionAttachableManager() *sessionAttachableManager {
 	return &sessionAttachableManager{
-		callers: map[string]*sessionAttachableCaller{},
-		waiters: map[string][]chan struct{}{},
+		callers:      map[string]*sessionAttachableCaller{},
+		reservations: map[string]struct{}{},
+		waiters:      map[string][]chan struct{}{},
 	}
 }
 
-func (m *sessionAttachableManager) Register(ctx context.Context, clientID string, conn net.Conn, methodURLs []string) error {
+// Reserve atomically claims the pre-hijack registration slot for clientID. It
+// is deliberately separate from Register so a duplicate can receive a normal
+// machine-readable HTTP 409 before either connection is upgraded. Strict
+// reservations also reject an inactive caller that has not finished removal.
+func (m *sessionAttachableManager) Reserve(clientID string, strict bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.reservations[clientID]; ok {
+		return errAttachableConnectionExists
+	}
+	if existing, ok := m.callers[clientID]; ok {
+		if strict || existing.active() {
+			return errAttachableConnectionExists
+		}
+	}
+	m.reservations[clientID] = struct{}{}
+	return nil
+}
+
+func (m *sessionAttachableManager) ReleaseReservation(clientID string) {
+	m.mu.Lock()
+	delete(m.reservations, clientID)
+	m.wakeWaitersLocked(clientID)
+	m.mu.Unlock()
+}
+
+func (m *sessionAttachableManager) Register(ctx context.Context, clientID string, conn net.Conn, methodURLs []string, callbacks sessionAttachableCallbacks) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(context.Canceled)
 
@@ -51,32 +95,71 @@ func (m *sessionAttachableManager) Register(ctx context.Context, clientID string
 		ctx:       ctx,
 		conn:      cc,
 		supported: map[string]struct{}{},
+		cancel:    cancel,
+		done:      make(chan struct{}),
 	}
 	for _, methodURL := range methodURLs {
 		caller.supported[strings.ToLower(methodURL)] = struct{}{}
 	}
 
 	m.mu.Lock()
-	if existing, ok := m.callers[clientID]; ok && existing.active() {
+	if _, reserved := m.reservations[clientID]; !reserved {
 		m.mu.Unlock()
-		return fmt.Errorf("session attachables for client %q already exist", clientID)
+		return errAttachableExplicitClose
 	}
+	if existing, ok := m.callers[clientID]; ok && existing.active() {
+		delete(m.reservations, clientID)
+		m.mu.Unlock()
+		return errAttachableConnectionExists
+	}
+	delete(m.reservations, clientID)
 	m.callers[clientID] = caller
 	m.wakeWaitersLocked(clientID)
 	m.mu.Unlock()
+	if callbacks.Published != nil {
+		callbacks.Published()
+	}
 
 	defer func() {
 		m.mu.Lock()
-		if m.callers[clientID] == caller {
+		owned := m.callers[clientID] == caller
+		if owned {
 			delete(m.callers, clientID)
 			m.wakeWaitersLocked(clientID)
 		}
 		m.mu.Unlock()
+		cause := context.Cause(caller.ctx)
+		if owned && callbacks.Removed != nil {
+			callbacks.Removed(cause)
+		}
+		close(caller.done)
 	}()
 
 	<-caller.ctx.Done()
 	conn.Close()
 	return nil
+}
+
+// Deregister cancels and waits for the exact published caller to leave the
+// manager. Returning only after removal lets the explicit-close path satisfy
+// the protocol ordering: deregister attachables first, then clear attachment
+// ownership.
+func (m *sessionAttachableManager) Deregister(clientID string) bool {
+	m.mu.Lock()
+	if _, ok := m.reservations[clientID]; ok {
+		delete(m.reservations, clientID)
+		m.wakeWaitersLocked(clientID)
+		m.mu.Unlock()
+		return true
+	}
+	caller, ok := m.callers[clientID]
+	m.mu.Unlock()
+	if !ok {
+		return false
+	}
+	caller.cancel(errAttachableExplicitClose)
+	<-caller.done
+	return true
 }
 
 func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCaller, bool) {
@@ -90,34 +173,56 @@ func (m *sessionAttachableManager) Lookup(clientID string) (engineutil.SessionCa
 	return caller, true
 }
 
-func (m *sessionAttachableManager) Wait(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
+func (m *sessionAttachableManager) Wait(
+	ctx context.Context,
+	clientID string,
+	terminal func() error,
+) (engineutil.SessionCaller, error) {
 	for {
 		m.mu.Lock()
 		if caller, ok := m.callers[clientID]; ok && caller.active() {
 			m.mu.Unlock()
 			return caller, nil
 		}
+		if terminal != nil {
+			if err := terminal(); err != nil {
+				m.mu.Unlock()
+				return nil, err
+			}
+		}
 
 		waiter := make(chan struct{})
 		m.waiters[clientID] = append(m.waiters[clientID], waiter)
+		if m.testWaiterAdded != nil {
+			m.testWaiterAdded(clientID)
+		}
 		m.mu.Unlock()
 
 		select {
 		case <-ctx.Done():
-			m.removeWaiter(clientID, waiter)
-			if caller, ok := m.Lookup(clientID); ok {
+			m.mu.Lock()
+			m.removeWaiterLocked(clientID, waiter)
+			if caller, ok := m.callers[clientID]; ok && caller.active() {
+				m.mu.Unlock()
 				return caller, nil
 			}
+			if terminal != nil {
+				if err := terminal(); err != nil {
+					m.mu.Unlock()
+					return nil, err
+				}
+			}
+			m.mu.Unlock()
 			return nil, fmt.Errorf("no active session attachables for client %q: %w", clientID, context.Cause(ctx))
 		case <-waiter:
+			if m.testWaiterWoke != nil {
+				m.testWaiterWoke(clientID)
+			}
 		}
 	}
 }
 
-func (m *sessionAttachableManager) removeWaiter(clientID string, waiter chan struct{}) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+func (m *sessionAttachableManager) removeWaiterLocked(clientID string, waiter chan struct{}) {
 	waiters := m.waiters[clientID]
 	for i, candidate := range waiters {
 		if candidate == waiter {
@@ -193,36 +298,64 @@ func monitorAttachableHealth(ctx context.Context, cc *grpc.ClientConn, cancelCon
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	healthClient := grpc_health_v1.NewHealthClient(cc)
+	runAttachableHealthMonitor(ctx, attachableHealthMonitorConfig{
+		ticks: ticker.C,
+		now:   time.Now,
+		withTimeout: func(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+			return context.WithTimeoutCause(ctx, timeout, context.DeadlineExceeded)
+		},
+		check: func(ctx context.Context) error {
+			_, err := healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+			return err
+		},
+	})
+}
 
+type attachableHealthMonitorConfig struct {
+	ticks       <-chan time.Time
+	now         func() time.Time
+	withTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+	check       func(context.Context) error
+	testChecked func()
+}
+
+func runAttachableHealthMonitor(ctx context.Context, config attachableHealthMonitorConfig) {
 	failedBefore := false
 	consecutiveSuccessful := 0
-	defaultHealthcheckDuration := 30 * time.Second
+	const defaultHealthcheckDuration = 30 * time.Second
 	lastHealthcheckDuration := time.Duration(0)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			healthcheckStart := time.Now()
+		case <-config.ticks:
+			healthcheckStart := config.now()
 			timeout := time.Duration(math.Max(float64(defaultHealthcheckDuration), float64(lastHealthcheckDuration)*1.5))
 
 			checkCtx, cancel := context.WithCancelCause(ctx)
-			checkCtx, _ = context.WithTimeoutCause(checkCtx, timeout, context.DeadlineExceeded)
-			_, err := healthClient.Check(checkCtx, &grpc_health_v1.HealthCheckRequest{})
+			checkCtx, cancelTimeout := config.withTimeout(checkCtx, timeout)
+			err := config.check(checkCtx)
+			cancelTimeout()
 			cancel(context.Canceled)
 
-			lastHealthcheckDuration = time.Since(healthcheckStart)
+			lastHealthcheckDuration = config.now().Sub(healthcheckStart)
 
 			if err != nil {
 				select {
 				case <-ctx.Done():
 					slog.DebugContext(ctx, "context done, skipping healthcheck error")
+					if config.testChecked != nil {
+						config.testChecked()
+					}
 					return
 				default:
 				}
 				if failedBefore {
 					slog.DebugContext(ctx, "healthcheck failed fatally")
+					if config.testChecked != nil {
+						config.testChecked()
+					}
 					return
 				}
 
@@ -248,6 +381,9 @@ func monitorAttachableHealth(ctx context.Context, cc *grpc.ClientConn, cancelCon
 				"timeout", timeout,
 				"actualDuration", lastHealthcheckDuration,
 			)
+			if config.testChecked != nil {
+				config.testChecked()
+			}
 		}
 	}
 }
