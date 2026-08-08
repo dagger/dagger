@@ -1381,12 +1381,13 @@ type internalSpanFilter struct {
 	root         string
 	skipServices bool
 	memo         map[string]bool
-	// subtree is the set of spans beneath the captured root — the same walk
-	// the log selection scopes to. It bounds beneathInternal's ancestor walk:
-	// spans join the capture via cause links (e.g. a service exec span
-	// parented under whatever call triggered the start), so their parent
-	// chains leave the subtree without ever passing through the root, and
-	// internal-ness out there is not between the log and the capture root.
+	// subtree is the set of spans the capture scopes to — the same walk the
+	// log selection uses (the captured root, its cause-link targets, and both
+	// sets' subtrees). It bounds beneathInternal's ancestor walk: spans join
+	// the capture via cause links (e.g. a service exec span parented under
+	// whatever call triggered the start), so their parent chains leave the
+	// subtree without ever passing through the root, and internal-ness out
+	// there is not between the log and the capture root.
 	subtree map[string]struct{}
 }
 
@@ -1396,7 +1397,7 @@ func newInternalSpanFilter(db *clientdb.DB, rootSpanID string, skipServices bool
 		root:         rootSpanID,
 		skipServices: skipServices,
 		memo:         map[string]bool{},
-		subtree:      db.DescendantSpans(rootSpanID),
+		subtree:      db.SpanLogScope(rootSpanID),
 	}
 }
 
@@ -1408,7 +1409,7 @@ func newInternalSpanFilter(db *clientdb.DB, rootSpanID string, skipServices bool
 // found nothing new; a grown subtree drops them, since a walk that previously
 // stopped at the subtree's edge may now continue further.
 func (f *internalSpanFilter) refresh() {
-	subtree := f.db.DescendantSpans(f.root)
+	subtree := f.db.SpanLogScope(f.root)
 	if len(subtree) == len(f.subtree) {
 		return
 	}
