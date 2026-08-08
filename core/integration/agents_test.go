@@ -15,6 +15,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -186,6 +188,36 @@ func (AgentsSuite) TestComposeToolset(ctx context.Context, t *testctx.T) {
 	require.NotContains(t, out, "## editor_")
 }
 
+// TestComposeExclude covers the exclude arg: dropping a whole agent from the
+// composition without enumerating its tools — the shape orchestration modules
+// like modules/staff use to keep their own toolset out of spawned workers.
+func (AgentsSuite) TestComposeExclude(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := installAgents(t, c, "editor", "godoc")
+	require.NoError(t, err)
+
+	// Excluding godoc removes its whole toolset; editor's remains — and with
+	// the collision partner gone, editor keeps its bare tool names.
+	out, err := modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents(exclude:["godoc"]){compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "## readFile")
+	require.Contains(t, out, "## shared")
+	require.NotContains(t, out, "## goDoc")
+	require.NotContains(t, out, "## editor_")
+	require.NotContains(t, out, "## godoc_")
+
+	// Exclude composes with include: the intersection here selects nothing,
+	// folding over no agents into the bare workspace-bound LLM.
+	out, err = modGen.
+		With(daggerQuery(`{workspace: currentWorkspace{agents(include:["editor"], exclude:["editor"]){compose{tools}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, out, "## readFile")
+	require.NotContains(t, out, "## goDoc")
+}
+
 // TestComposeSeedIsWorkspaceBound locks in that compose's default base LLM is
 // bound to the workspace the group was rolled up from. llm() starts unbound
 // (NewLLM no longer binds the ambient workspace), so without the explicit
@@ -304,6 +336,64 @@ func (AgentsSuite) TestOverlayModuleSourceEdit(ctx context.Context, t *testctx.T
 	require.NoError(t, err)
 	require.Contains(t, out, "Read a file (stub).")
 	require.NotContains(t, out, marker)
+}
+
+// TestComposedToolsRecoverFromBrokenOverlayModule reproduces the next-turn
+// failure mode: the LLM was composed while its tool module was valid, then its
+// bound workspace acquired a staged syntax error. Schema derivation must retain
+// the served tool module so the LLM can repair the file, while explicit
+// recomposition stays strict and a subsequent valid edit takes effect.
+func (AgentsSuite) TestComposedToolsRecoverFromBrokenOverlayModule(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	moduleDir := filepath.Join(workdir, "modules", "editor")
+	require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(workdir, "dagger.toml"),
+		[]byte("[modules.editor]\nsource = \"./modules/editor\"\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(moduleDir, "dagger.json"),
+		[]byte(`{"name":"editor","engineVersion":"v1.0.0","sdk":"dang"}`),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(moduleDir, "main.dang"),
+		[]byte(editorSourceWithDoc("Read a file (stub).")),
+		0o644,
+	))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir), dagger.WithLoadWorkspaceModules())
+	composed := c.CurrentWorkspace().Agents().Compose()
+	baseline, err := composed.Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, baseline, "## readFile")
+	require.Contains(t, baseline, "Read a file (stub).")
+
+	// A tool edit advances the bound Workspace without recomposing the LLM. If
+	// the edited module does not compile, schema derivation must retain the
+	// session's served snapshot so the existing tools can repair the file.
+	broken := c.CurrentWorkspace().WithNewFile("modules/editor/main.dang", "type Editor {")
+	tools, err := composed.WithWorkspace(broken).Tools(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseline, tools)
+
+	// Explicit reload remains strict: it must report the bad source rather than
+	// claim that the invalid composition succeeded.
+	_, err = broken.Agents().Compose().Tools(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "load from workspace overlay")
+
+	// Replacing the bad edit produces a new workspace ID, so overlay loading is
+	// retried and the repaired module becomes visible instead of the fallback
+	// being sticky for the rest of the session.
+	const marker = "REPAIRED OVERLAY DOC MARKER"
+	repaired := broken.WithNewFile("modules/editor/main.dang", editorSourceWithDoc(marker))
+	tools, err = composed.WithWorkspace(repaired).Tools(ctx)
+	require.NoError(t, err)
+	require.Contains(t, tools, marker)
+	require.NotContains(t, tools, "Read a file (stub).")
 }
 
 // TestOverlayWithModule covers the other half: a module installed into the

@@ -147,6 +147,13 @@ func (db *DB) HasConversationForSpan(root *Span) bool {
 // promoteConversationLocked) so RowsView iterates these revealed spans instead
 // of host's raw children.
 func (db *DB) PromoteConversationTo(host *Span) {
+	db.PromoteConversationNodesTo(host, db.SurfacedConversation())
+}
+
+// PromoteConversationNodesTo is PromoteConversationTo for an explicit subset of
+// the surfaced conversation -- the roster's focused-agent view, which promotes
+// one agent's turns rather than every turn in the trace.
+func (db *DB) PromoteConversationNodesTo(host *Span, nodes []*MessageNode) {
 	if host == nil {
 		return
 	}
@@ -157,5 +164,28 @@ func (db *DB) PromoteConversationTo(host *Span) {
 			wire(node.Span, node.Children)
 		}
 	}
-	wire(host, db.SurfacedConversation())
+	wire(host, nodes)
+}
+
+// DemoteConversationNodesFrom withdraws a promotion, removing each node's span
+// from the RevealedSpans of whatever it was wired under.
+//
+// Promotion is an ADD into a set that outlives the render -- it mutates the
+// cached, reused DB's spans, which recalculateViewLocked already warns about --
+// so it is idempotent for a fixed scope but cannot express a CHANGE of scope.
+// Focusing another agent therefore has to withdraw the previous scope
+// explicitly; without this the host accumulates every transcript it was ever
+// pointed at and the switcher only ever adds.
+func (db *DB) DemoteConversationNodesFrom(host *Span, nodes []*MessageNode) {
+	if host == nil {
+		return
+	}
+	var unwire func(parent *Span, nodes []*MessageNode)
+	unwire = func(parent *Span, nodes []*MessageNode) {
+		for _, node := range nodes {
+			parent.RevealedSpans.Remove(node.Span)
+			unwire(node.Span, node.Children)
+		}
+	}
+	unwire(host, nodes)
 }

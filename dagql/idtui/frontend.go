@@ -336,6 +336,11 @@ type ShellHandler interface {
 	// It returns an async function that performs the branch (may be nil), to
 	// be run by the caller in a goroutine.
 	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
+
+	// EditFromID interrupts the focused conversation and rewinds it to the
+	// encoded pre-prompt LLM state. The returned operation runs asynchronously;
+	// a nil error means the frontend may load the original prompt for editing.
+	EditFromID(ctx context.Context, encodedID string) func() error
 }
 
 type Dump struct {
