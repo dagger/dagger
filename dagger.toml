@@ -143,6 +143,9 @@ source = "modules/contributor"
 githubToken = "cmd://gh auth token"
 remote = "dagger/dagger"
 
+[env.dev.modules.librarian]
+source = "modules/librarian"
+
 [modules.history]
 source = "modules/history"
 

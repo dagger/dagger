@@ -1,0 +1,240 @@
+# librarian: read-only exploration of OTHER git repositories.
+#
+# The workspace tools (read/grep/find) only see THIS project. When an agent
+# needs to study somebody else's codebase — an upstream dependency, a project
+# it was asked a question about — the fallback used to be webFetch against
+# raw.githubusercontent.com: guessing file paths one at a time, no grep, no
+# globbing, and lossy line-paging. These tools close that gap.
+#
+# Everything here is a pure read of `git(url).ref(...).tree`: the engine
+# fetches and caches the checkout, `Directory.search` does the grepping
+# (the same machinery behind the workspace grep tool), `Directory.glob`
+# lists, and `File.contents` reads. No containers, no credentials, and
+# nothing ever touches the caller's workspace — a repo is "mounted" only in
+# the sense that it becomes greppable and readable on demand.
+
+# Cap find listings so a "**" against a monorepo stays context-friendly.
+let maxEntries = 500
+
+"""
+Read-only exploration of other git repositories: grep, glob, and read files
+from any repo by URL, without cloning it into the workspace.
+"""
+type Librarian {
+  """
+  Compose the librarian tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Search file contents in another git repository for a regex pattern.
+  Returns matches grouped by file as "line: content" rows.
+
+  The repository is fetched (and cached) by the engine; repeat calls against
+  the same ref are cheap. Typical flow: repoGrep to locate, then repoRead to
+  study the hit with context.
+  """
+  repoGrep(
+    """
+    Git URL of the repository, e.g. "https://github.com/badlogic/pi-mono".
+    GitHub "owner/name" shorthand works too.
+    """
+    repo: String!,
+    """
+    Regular expression to search for (RE2 syntax).
+    """
+    pattern: String!,
+    """
+    Branch, tag, or commit to search at. Empty means the default branch.
+    """
+    ref: String! = "",
+    """
+    Glob patterns limiting which files are searched, e.g. ["**/*.ts"].
+    """
+    globs: [String!]! = [],
+    """
+    Case-insensitive search.
+    """
+    insensitive: Boolean! = false,
+    """
+    Treat pattern as literal text instead of a regular expression.
+    """
+    literalText: Boolean! = false,
+    """
+    Maximum number of matches to return.
+    """
+    limit: Int! = 100,
+  ): String! {
+    let hits = checkout(repo, ref)
+      .search(
+        pattern: pattern,
+        literal: literalText,
+        insensitive: insensitive,
+        globs: globs,
+        limit: limit,
+      )
+      .{{filePath, lineNumber, matchedLines}}
+
+    if (hits.isEmpty) {
+      return "No matches found."
+    }
+
+    let lastPath = ""
+    let out: [String!]! = []
+    hits.each { h =>
+      if (h.filePath != lastPath) {
+        lastPath = h.filePath
+        out += [h.filePath]
+      }
+      out += ["  " + toString(h.lineNumber) + ": " + h.matchedLines.trimSuffix("\n")]
+    }
+
+    if (hits.length >= limit) {
+      out += ["", `(capped at ${toString(limit)} matches — refine the pattern, scope with globs, or raise limit)`]
+    }
+
+    out.join("\n")
+  }
+
+  """
+  Find paths in another git repository by glob pattern. Use "**" to match
+  across directories, e.g. "packages/*/src/**/*.ts".
+  """
+  repoFind(
+    """
+    Git URL of the repository, e.g. "https://github.com/badlogic/pi-mono".
+    GitHub "owner/name" shorthand works too.
+    """
+    repo: String!,
+    """
+    Glob pattern to match paths against, e.g. "src/**/*.go".
+    """
+    pattern: String!,
+    """
+    Branch, tag, or commit to list at. Empty means the default branch.
+    """
+    ref: String! = "",
+  ): String! {
+    let entries = checkout(repo, ref).glob(pattern)
+
+    if (entries.isEmpty) {
+      return "No paths match."
+    }
+
+    let shown = entries.takeFirst(maxEntries)
+    if (entries.length > shown.length) {
+      let note = `… (${toString(entries.length - shown.length)} more paths truncated — narrow the pattern)`
+      (shown + [note]).join("\n")
+    } else {
+      shown.join("\n")
+    }
+  }
+
+  """
+  Read a file from another git repository, with numbered lines. Output is
+  sliced by offset/limit like the workspace read tool; when truncated, the
+  footer says which offset to continue from.
+  """
+  repoRead(
+    """
+    Git URL of the repository, e.g. "https://github.com/badlogic/pi-mono".
+    GitHub "owner/name" shorthand works too.
+    """
+    repo: String!,
+    """
+    Path of the file within the repository.
+    """
+    path: String!,
+    """
+    Branch, tag, or commit to read at. Empty means the default branch.
+    """
+    ref: String! = "",
+    """
+    Line offset to start reading from.
+    """
+    offset: Int! = 0,
+    """
+    Maximum number of lines to return.
+    """
+    limit: Int! = 500,
+  ): String! {
+    let contents = checkout(repo, ref).file(path).contents
+
+    if (contents == "") {
+      return "(empty file)"
+    }
+
+    let all = if (contents.hasSuffix("\n")) {
+      contents.trimSuffix("\n").split("\n")
+    } else {
+      contents.split("\n")
+    }
+
+    if (offset >= all.length) {
+      return `offset ${toString(offset)} is beyond the end of the file (${toString(all.length)} lines)`
+    }
+
+    let slice = all.dropFirst(offset).takeFirst(limit)
+    let numbered = slice.map { line, i =>
+      toString(offset + i + 1).padLeft(5) + "→" + line
+    }
+
+    let remaining = all.length - offset - slice.length
+    if (remaining > 0) {
+      let note = `… (${toString(remaining)} more lines; continue with offset: ${toString(offset + slice.length)})`
+      (numbered + [note]).join("\n")
+    } else {
+      numbered.join("\n")
+    }
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  # The checked-out tree of repo at ref (default branch when ref is empty).
+  # Layered on git()'s engine-level caching, so every tool call against the
+  # same (repo, ref) resolves to the same cached fetch.
+  let checkout(repo: String!, ref: String!): Directory! {
+    let repository = git(normalize(repo))
+    let target = if (ref == "") {
+      repository.head
+    } else {
+      # ref() accepts a commit id, tag, branch, or fully-qualified ref.
+      repository.ref(ref)
+    }
+    target.tree(discardGitDir: true)
+  }
+
+  # Expand GitHub "owner/name" shorthand into a full URL; pass anything that
+  # already looks like a URL through untouched.
+  let normalize(repo: String!): String! {
+    if (repo.containsMatch(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)) {
+      "https://github.com/" + repo
+    } else {
+      repo
+    }
+  }
+
+  # Instructions for the agent holding these tools.
+  let systemPrompt: String! = """
+    You have read-only exploration tools for OTHER git repositories:
+    `repoGrep`, `repoFind`, and `repoRead`. Whenever the code you need to
+    understand lives in a git repo that is not this workspace — an upstream
+    dependency, a project you were asked about — reach for these instead of
+    webFetch: fetching rendered web pages for source code is slow, noisy,
+    and unsearchable.
+
+    All three take the same repo reference: a full git URL or GitHub
+    "owner/name" shorthand, plus an optional `ref` (branch, tag, or commit;
+    empty means the default branch). The engine fetches each (repo, ref)
+    once and caches it, so iterating — grep, then read, then grep again —
+    is cheap.
+
+    Work like you would locally: `repoFind` to orient ("src/**/*.ts"),
+    `repoGrep` to locate the code, `repoRead` with offset/limit to study
+    it. Pin `ref` to a tag or commit when the exact version matters.
+  """
+}
