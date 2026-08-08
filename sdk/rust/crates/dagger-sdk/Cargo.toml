@@ -3,6 +3,7 @@ name = "dagger-sdk"
 description = "A dagger sdk for rust, written in rust"
 publish = true
 readme = "README.md"
+include = ["/src/**", "/README.md", "/LICENSE"]
 
 version.workspace = true
 edition.workspace = true
@@ -54,9 +55,6 @@ proptest.workspace = true
 rand.workspace = true
 tracing-test.workspace = true
 trybuild.workspace = true
-
-[build-dependencies]
-serde_json.workspace = true
 
 [features]
 default = ["gen"]

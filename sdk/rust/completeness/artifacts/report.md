@@ -5,8 +5,8 @@
 - Dagger: v1.0.0-beta.10
 - Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
 - Rust SDK: 1.0.0-beta.10
-- Inventory digest: `sha256:2a8389a376681a603e188507fb82acae9bb26799f06ef0b9f2c0a687281aa485`
-- Ledger digest: `sha256:1928e2f29b9d38ad9b328e1629e1730cf4cef05d593ff25ebfc8a8c19c2bc5e4`
+- Inventory digest: `sha256:b06a6a9f5a4b457595608a5716975096c95ba0c32d16a81e72f13e61bb7ae45f`
+- Ledger digest: `sha256:2bc98eb8634fe072f3294de51398bc14c6510ef81d3bdcd34507b7af52867cad`
 
 ## Verdicts
 

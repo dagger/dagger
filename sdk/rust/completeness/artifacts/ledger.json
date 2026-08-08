@@ -113366,7 +113366,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-atomic-publication/source%2Frust-policy%2Frust-policy%2Fcore-codegen-atomic-publication",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:718",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:729",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-atomic-publication"
@@ -113417,7 +113417,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-authority-containment/source%2Frust-policy%2Frust-policy%2Fcore-codegen-authority-containment",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:455",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:463",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-authority-containment"
@@ -113468,7 +113468,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-collision-detection/source%2Frust-policy%2Frust-policy%2Fcore-codegen-collision-detection",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:679",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:690",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-collision-detection"
@@ -113519,7 +113519,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-default-omission/source%2Frust-policy%2Frust-policy%2Fcore-codegen-default-omission",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:583",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:591",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-default-omission"
@@ -113570,7 +113570,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-directive-accounting/source%2Frust-policy%2Frust-policy%2Fcore-codegen-directive-accounting",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:654",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:662",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-directive-accounting"
@@ -113621,7 +113621,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-documentation/source%2Frust-policy%2Frust-policy%2Fcore-codegen-documentation",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:681",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:692",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-documentation"
@@ -113672,7 +113672,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-exhaustive-manifest/source%2Frust-policy%2Frust-policy%2Fcore-codegen-exhaustive-manifest",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:435",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:443",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-exhaustive-manifest"
@@ -113723,7 +113723,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-fallible-input/source%2Frust-policy%2Frust-policy%2Fcore-codegen-fallible-input",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:479",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:487",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-fallible-input"
@@ -113774,7 +113774,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-identifier-roundtrip/source%2Frust-policy%2Frust-policy%2Fcore-codegen-identifier-roundtrip",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:677",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:688",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-identifier-roundtrip"
@@ -113825,7 +113825,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-input-order-invariance/source%2Frust-policy%2Frust-policy%2Fcore-codegen-input-order-invariance",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:475",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:483",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-input-order-invariance"
@@ -113876,7 +113876,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-list-object-reentry/source%2Frust-policy%2Frust-policy%2Fcore-codegen-list-object-reentry",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:623",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:631",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-list-object-reentry"
@@ -113927,7 +113927,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-no-handwritten-fixes/source%2Frust-policy%2Frust-policy%2Fcore-codegen-no-handwritten-fixes",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:724",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:735",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-no-handwritten-fixes"
@@ -113978,7 +113978,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-nullability/source%2Frust-policy%2Frust-policy%2Fcore-codegen-nullability",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:507",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:515",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-nullability"
@@ -114029,7 +114029,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-scalar-wire-types/source%2Frust-policy%2Frust-policy%2Fcore-codegen-scalar-wire-types",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:492",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:500",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-scalar-wire-types"
@@ -114080,7 +114080,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-target-drift/source%2Frust-policy%2Frust-policy%2Fcore-codegen-target-drift",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:444",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:452",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-target-drift"
@@ -114143,7 +114143,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-toolchain-compatibility/source%2Frust-policy%2Frust-policy%2Fcore-codegen-toolchain-compatibility",
           "evidence_kind": "authority",
-          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:726",
+          "locator": ".kiro/specs/rust-sdk-core-codegen/requirements.md:737",
           "path": ".kiro/specs/rust-sdk-core-codegen/requirements.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-toolchain-compatibility"

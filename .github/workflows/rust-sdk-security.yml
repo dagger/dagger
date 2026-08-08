@@ -37,3 +37,9 @@ jobs:
         run: cargo install --locked cargo-deny@0.19.9
       - name: Check dependency security and policy
         run: cargo deny check
+      - name: Check crate publication policy
+        run: |
+          cargo metadata --no-deps --format-version 1 --locked |
+            jq -e '([.packages[] | select(.publish != []) | .name] | sort) == ["dagger-sdk"]'
+      - name: Verify the public SDK package
+        run: cargo package -p dagger-sdk --all-features --locked

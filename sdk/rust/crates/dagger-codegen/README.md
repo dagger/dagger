@@ -42,10 +42,12 @@ completeness, and ownership checks before publishing generated files.
 
 ## Development status
 
-`dagger-codegen` is published in version lockstep with the Rust SDK so Dagger's own
-tooling can use an exact compatible release. Its API is still being stabilized as the
-generated Rust client reaches complete target coverage. It is not a supported
-replacement for `dagger-sdk`.
+`dagger-codegen` is workspace-private while its API and the generated Rust client
+surface are being stabilized. Dagger's repository tooling consumes it through an exact
+workspace path rather than as an independently supported package. If a future external
+generator requires this crate, its public contract and publication policy must be
+reviewed before enabling publication. It is not a supported replacement for
+`dagger-sdk`.
 
 Contributors should read the Rust SDK
 [`CONTRIBUTING.md`](https://github.com/dagger/dagger/blob/main/sdk/rust/CONTRIBUTING.md)

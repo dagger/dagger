@@ -73,6 +73,7 @@ func New(
 			"!.kiro/specs/rust-sdk-client-lifecycle/requirements.md",
 			"!.kiro/specs/rust-sdk-client-lifecycle/design.md",
 			"!.kiro/specs/rust-sdk-client-lifecycle/tasks.md",
+			"!.kiro/specs/rust-sdk-core-codegen/requirements.md",
 			"!.kiro/specs/rust-sdk-transport-observability/requirements.md",
 			"!.kiro/specs/rust-sdk-transport-observability/design.md",
 			"!.kiro/specs/rust-sdk-transport-observability/tasks.md",
@@ -280,7 +281,7 @@ func (t *RustSdkDev) ReleaseDryRun(
 	}
 
 	base := t.releaseContainer(versionFlag).
-		WithExec([]string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features", "--dry-run"})
+		WithExec([]string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features", "--dry-run", "--locked"})
 
 	// if the version is not a valid semver, use the one from the Cargo.toml
 	// to compare with.
@@ -351,7 +352,7 @@ func (t *RustSdkDev) Release(
 	}
 
 	ctr := t.releaseContainer(versionFlag)
-	args := []string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features"}
+	args := []string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features", "--locked"}
 	if cargoRegistryIndex != "" {
 		// Cargo alternate registries are configured through
 		// CARGO_REGISTRIES_<NAME>_* environment variables.

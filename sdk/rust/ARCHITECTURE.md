@@ -8,14 +8,16 @@ handle can outlive or bypass the client's lifecycle state.
 ## Workspace ownership
 
 - `crates/dagger-sdk` owns the public client, generated bindings, implicit connector,
-  raw GraphQL values, diagnostics, errors, and session lifecycle.
-- `crates/dagger-codegen` converts the pinned engine schema into Rust source. Generated
-  output is reviewed through fixtures and is never edited by hand.
+  raw GraphQL values, diagnostics, errors, and session lifecycle. It is the workspace's
+  sole publishable crate.
+- `crates/dagger-codegen` is a workspace-private compiler that converts the pinned
+  engine schema into Rust source. Generated output is reviewed through fixtures and is
+  never edited by hand.
 - `crates/dagger-bootstrap` supports code-generation bootstrapping and is not a
   publishable application dependency.
-- `crates/dagger-sdk-completeness` derives the source inventory, ledger, evidence, and
-  reports used to measure the Rust SDK against the pinned Go SDK, engine schema,
-  common SDK harness, and Rust policy.
+- `crates/dagger-sdk-completeness` is workspace-private and derives the source
+  inventory, ledger, evidence, and reports used to measure the Rust SDK against the
+  pinned Go SDK, engine schema, common SDK harness, and Rust policy.
 
 ## Connection pipeline
 

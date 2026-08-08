@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:a0361c15631527e5eee33a402607fb7e08768c602d38a704eebb7455a1676990";
+    "sha256:63d6d9466ccfb16e691c68a9f901b529e93c933bf1930023b9d849269e7446f6";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -110,11 +110,11 @@ fn target_locks_authorities_harness_status_and_ownership() {
     assert!(!derived.report.completeness_verdict);
     assert_eq!(
         derived.report.inventory_digest.as_str(),
-        "sha256:2a8389a376681a603e188507fb82acae9bb26799f06ef0b9f2c0a687281aa485"
+        "sha256:b06a6a9f5a4b457595608a5716975096c95ba0c32d16a81e72f13e61bb7ae45f"
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:1928e2f29b9d38ad9b328e1629e1730cf4cef05d593ff25ebfc8a8c19c2bc5e4"
+        "sha256:2bc98eb8634fe072f3294de51398bc14c6510ef81d3bdcd34507b7af52867cad"
     );
     assert_eq!(derived.report.blocking_capabilities.len(), 4_573);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
