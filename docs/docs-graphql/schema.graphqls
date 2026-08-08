@@ -111,6 +111,23 @@ type Agent implements Node {
   name: String!
 
   """
+  Enqueue a message, on the record: it is consumed at a step boundary, appends
+  to the agent's history, and steers the running turn or opens a new one.
+
+  Never blocks, never drops; concurrent sends queue in order.
+
+  Sending to a never-started agent starts it (signal-with-start). Sending to a
+  stopped or failed agent fails: without resume (a later phase), nothing would
+  ever consume the message.
+  """
+  send(
+    """
+    The message text, appended to the agent's history as a prompt when a turn consumes it.
+    """
+    message: String!
+  ): AgentMessage!
+
+  """
   The conversation as of the last committed step: immutable, branchable, persistable.
 
   The seed conversation if the agent never stepped.
@@ -154,6 +171,43 @@ type Agent implements Node {
     """The lifecycle state to wait for."""
     state: AgentState = IDLE
   ): Agent!
+}
+
+"""A message delivered to an agent's mailbox."""
+type AgentMessage implements Node {
+  """
+  Block until the turn that consumed this message ends, and return that turn's reply.
+
+  Idempotent: cancel and re-await freely; concurrent waiters share the result.
+
+  Fails if the agent reaches a terminal state before the message resolves, e.g. it stopped before consuming the message.
+  """
+  await: String!
+
+  """
+  How the message landed: opened a new turn (STARTED), was absorbed into the
+  running turn at a step boundary (STEERED), or queued behind it (QUEUED).
+
+  Computed once, at enqueue time.
+  """
+  delivery: AgentMessageDelivery!
+
+  """A unique identifier for this AgentMessage."""
+  id: ID!
+}
+
+"""How a message landed in an agent's evaluation."""
+enum AgentMessageDelivery {
+  """The message opened a new turn: the agent was idle or newly started."""
+  STARTED
+
+  """
+  The message was absorbed into the in-flight turn at a step boundary, steering it.
+  """
+  STEERED
+
+  """The message is queued behind the in-flight turn, awaiting a resume."""
+  QUEUED
 }
 
 type AgentMiddleware implements Node {

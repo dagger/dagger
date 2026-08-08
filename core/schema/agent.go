@@ -37,6 +37,15 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			Doc(`Start the agent's evaluation loop. No-op if it is already running.`,
 				`The loop runs detached from the calling request: it steps the conversation while input is pending, then idles awaiting further lifecycle operations.`),
 
+		dagql.NodeFunc("send", s.send).
+			DoNotCache("Every send enqueues a distinct message into live runtime state.").
+			Doc(`Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.`,
+				`Never blocks, never drops; concurrent sends queue in order.`,
+				`Sending to a never-started agent starts it (signal-with-start). Sending to a stopped or failed agent fails: without resume (a later phase), nothing would ever consume the message.`).
+			Args(
+				dagql.Arg("message").Doc(`The message text, appended to the agent's history as a prompt when a turn consumes it.`),
+			),
+
 		dagql.NodeFunc("waitFor", s.waitFor).
 			DoNotCache("Blocks on live runtime state.").
 			Doc(`Block until the agent reaches the given state, returning immediately if it is already there.`,
@@ -53,7 +62,20 @@ func (s agentSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	dagql.Fields[*core.AgentMessage]{
+		dagql.Func("delivery", s.messageDelivery).
+			Doc(`How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).`,
+				`Computed once, at enqueue time.`),
+
+		dagql.Func("await", s.messageAwait).
+			DoNotCache("Blocks on live runtime state.").
+			Doc(`Block until the turn that consumed this message ends, and return that turn's reply.`,
+				`Idempotent: cancel and re-await freely; concurrent waiters share the result.`,
+				`Fails if the agent reaches a terminal state before the message resolves, e.g. it stopped before consuming the message.`),
+	}.Install(srv)
+
 	core.AgentStates.Install(srv)
+	core.AgentMessageDeliveries.Install(srv)
 }
 
 func (s agentSchema) name(ctx context.Context, agent *core.Agent, _ struct{}) (string, error) {
@@ -111,6 +133,30 @@ func (s agentSchema) start(ctx context.Context, parent dagql.ObjectResult[*core.
 		return parent, err
 	}
 	return parent, nil
+}
+
+func (s agentSchema) send(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {
+	Message string
+}) (*core.AgentMessage, error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Signal-with-start plus delivery-evidence computation both live in the
+	// registry's central enqueue path.
+	return agents.Send(ctx, parent, args.Message)
+}
+
+func (s agentSchema) messageDelivery(ctx context.Context, msg *core.AgentMessage, _ struct{}) (core.AgentMessageDelivery, error) {
+	return msg.Delivery, nil
+}
+
+func (s agentSchema) messageAwait(ctx context.Context, msg *core.AgentMessage, _ struct{}) (string, error) {
+	agents, err := agentRuntimes(ctx)
+	if err != nil {
+		return "", err
+	}
+	return agents.AwaitMessage(ctx, msg)
 }
 
 func (s agentSchema) waitFor(ctx context.Context, parent dagql.ObjectResult[*core.Agent], args struct {

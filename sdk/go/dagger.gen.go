@@ -494,6 +494,20 @@ func (r *Agent) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Enqueue a message, on the record: it is consumed at a step boundary, appends to the agent's history, and steers the running turn or opens a new one.
+//
+// Never blocks, never drops; concurrent sends queue in order.
+//
+// Sending to a never-started agent starts it (signal-with-start). Sending to a stopped or failed agent fails: without resume (a later phase), nothing would ever consume the message.
+func (r *Agent) Send(message string) *AgentMessage {
+	q := r.query.Select("send")
+	q = q.Arg("message", message)
+
+	return &AgentMessage{
+		query: q,
+	}
+}
+
 // The conversation as of the last committed step: immutable, branchable, persistable.
 //
 // The seed conversation if the agent never stepped.
@@ -582,6 +596,101 @@ func (r *Agent) WaitFor(opts ...AgentWaitForOpts) *Agent {
 // AsNode returns this Agent as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Agent) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A message delivered to an agent's mailbox.
+type AgentMessage struct {
+	query *querybuilder.Selection
+
+	await    *string
+	delivery *AgentMessageDelivery
+	id       *ID
+}
+
+func (r *AgentMessage) WithGraphQLQuery(q *querybuilder.Selection) *AgentMessage {
+	return &AgentMessage{
+		query: q,
+	}
+}
+
+// Block until the turn that consumed this message ends, and return that turn's reply.
+//
+// Idempotent: cancel and re-await freely; concurrent waiters share the result.
+//
+// Fails if the agent reaches a terminal state before the message resolves, e.g. it stopped before consuming the message.
+func (r *AgentMessage) Await(ctx context.Context) (string, error) {
+	if r.await != nil {
+		return *r.await, nil
+	}
+	q := r.query.Select("await")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// How the message landed: opened a new turn (STARTED), was absorbed into the running turn at a step boundary (STEERED), or queued behind it (QUEUED).
+//
+// Computed once, at enqueue time.
+func (r *AgentMessage) Delivery(ctx context.Context) (AgentMessageDelivery, error) {
+	if r.delivery != nil {
+		return *r.delivery, nil
+	}
+	q := r.query.Select("delivery")
+
+	var response AgentMessageDelivery
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this AgentMessage.
+func (r *AgentMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *AgentMessage) XXX_GraphQLType() string {
+	return "AgentMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *AgentMessage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *AgentMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *AgentMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this AgentMessage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *AgentMessage) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -18293,6 +18402,70 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 		return nil, fmt.Errorf("unknown Syncer implementation: %s", typeName)
 	}
 }
+
+// How a message landed in an agent's evaluation.
+type AgentMessageDelivery string
+
+func (AgentMessageDelivery) IsEnum() {}
+
+func (v AgentMessageDelivery) Name() string {
+	switch v {
+	case AgentMessageDeliveryStarted:
+		return "STARTED"
+	case AgentMessageDeliverySteered:
+		return "STEERED"
+	case AgentMessageDeliveryQueued:
+		return "QUEUED"
+	default:
+		return ""
+	}
+}
+
+func (v AgentMessageDelivery) Value() string {
+	return string(v)
+}
+
+func (v *AgentMessageDelivery) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *AgentMessageDelivery) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "QUEUED":
+		*v = AgentMessageDeliveryQueued
+	case "STARTED":
+		*v = AgentMessageDeliveryStarted
+	case "STEERED":
+		*v = AgentMessageDeliverySteered
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// The message opened a new turn: the agent was idle or newly started.
+	AgentMessageDeliveryStarted AgentMessageDelivery = "STARTED"
+
+	// The message was absorbed into the in-flight turn at a step boundary, steering it.
+	AgentMessageDeliverySteered AgentMessageDelivery = "STEERED"
+
+	// The message is queued behind the in-flight turn, awaiting a resume.
+	AgentMessageDeliveryQueued AgentMessageDelivery = "QUEUED"
+)
 
 // Computed lifecycle state of an agent.
 type AgentState string
