@@ -5,19 +5,29 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/core"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
+	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/engineutil"
+	bkfilesync "github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 const (
@@ -578,6 +588,213 @@ func TestDetachableAttachmentShutdownRejectedButNestedShutdownSucceeds(t *testin
 		t.Fatal("nested shutdown closed the creator")
 	default:
 	}
+}
+
+func TestDetachableNestedShutdownFlushesBeforeDeregister(t *testing.T) {
+	t.Parallel()
+	srv, sess, _ := newDetachableLifecycleTestSession(t, 0)
+	srv.locker = locker.New()
+	nested := &daggerClient{
+		daggerSession: sess, clientID: "nested-source", shutdownCh: make(chan struct{}),
+		clientMetadata: &engine.ClientMetadata{SessionID: sess.sessionID, ClientID: "nested-source"},
+	}
+	sess.clientMu.Lock()
+	sess.clients[nested.clientID] = nested
+	sess.clientMu.Unlock()
+
+	filesyncer, err := engineclient.NewFilesyncer()
+	require.NoError(t, err)
+	grpcServer := grpc.NewServer()
+	filesyncer.AsSource().Register(grpcServer)
+	exportEntered := make(chan struct{})
+	exportRelease := make(chan struct{})
+	bkfilesync.RegisterFileSendServer(grpcServer, &blockingWorkspaceFileSend{
+		target: filesyncer.AsTarget(), entered: exportEntered, release: exportRelease,
+	})
+	listener := bufconn.Listen(1 << 20)
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	go func() { _ = grpcServer.Serve(listener) }()
+	attachableConn, err := listener.Dial()
+	require.NoError(t, err)
+
+	require.NoError(t, sess.attachables.Reserve(nested.clientID, true))
+	registrationPublished := make(chan struct{})
+	registrationResult := make(chan error, 1)
+	go func() {
+		registrationResult <- sess.attachables.Register(
+			sess.withClosingCancel(t.Context()), nested.clientID, attachableConn,
+			[]string{"/moby.filesync.v1.FileSync/DiffCopy", "/moby.filesync.v1.FileSend/DiffCopy"},
+			sessionAttachableCallbacks{Published: func() {
+				sess.markSourceClientPublished(nested.clientID)
+				close(registrationPublished)
+			}},
+		)
+	}()
+	<-registrationPublished
+
+	nested.getClientCaller = func(ctx context.Context, clientID string) (engineutil.SessionCaller, error) {
+		if caller, ok := sess.attachables.Lookup(clientID); ok {
+			return caller, nil
+		}
+		return sess.waitForClientCaller(ctx, clientID)
+	}
+	nested.engineUtilClient, err = engineutil.NewClient(t.Context(), &engineutil.Opts{
+		GetClientCaller:      nested.getClientCaller,
+		GetHostServiceCaller: nested.getClientCaller,
+		GetMainClientCaller: func(ctx context.Context) (engineutil.SessionCaller, error) {
+			return nested.getClientCaller(ctx, nested.clientID)
+		},
+	})
+	require.NoError(t, err)
+
+	hostRoot := t.TempDir()
+	lockPath := filepath.Join(hostRoot, workspacepkg.LockFileName)
+	initialLock, err := workspacepkg.NewLock().Marshal()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(lockPath, initialLock, 0o600))
+	ws := &core.Workspace{ClientID: nested.clientID, LockFile: workspacepkg.LockFileName}
+	ws.SetHostPath(hostRoot)
+	delta := workspacepkg.NewLock()
+	require.NoError(t, delta.SetLookup("", "container.from", []any{"alpine:latest"}, workspacepkg.LookupResult{
+		Value: "sha256:deadbeef", Policy: workspacepkg.PolicyPin,
+	}))
+	nested.workspace = ws
+	sess.lockFiles = map[workspaceLockKey]*workspaceLockState{
+		{ownerClientID: nested.clientID, lockPath: lockPath}: {
+			ws: ws.Clone(), lockPath: lockPath, lock: workspacepkg.NewLock(),
+			delta: delta, loaded: true, dirty: true,
+		},
+	}
+
+	telemetryFlushed := make(chan struct{})
+	nested.tracerProvider = sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(&attachableCheckingSpanProcessor{
+		manager: sess.attachables, clientID: nested.clientID, flushed: telemetryFlushed,
+	}))
+
+	shutdownResult := make(chan error, 1)
+	go func() {
+		shutdownResult <- srv.serveShutdown(
+			httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil),
+			nested,
+		)
+	}()
+	<-exportEntered
+	_, available := sess.attachables.Lookup(nested.clientID)
+	require.True(t, available, "workspace export lost its source callback")
+	select {
+	case <-telemetryFlushed:
+		t.Fatal("telemetry flushed before workspace export completed")
+	default:
+	}
+	select {
+	case <-nested.shutdownCh:
+		t.Fatal("nested shutdown completed while workspace export was blocked")
+	default:
+	}
+
+	close(exportRelease)
+	select {
+	case err := <-shutdownResult:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("nested shutdown did not complete")
+	}
+	select {
+	case <-telemetryFlushed:
+	default:
+		t.Fatal("nested telemetry did not flush")
+	}
+	select {
+	case <-nested.shutdownCh:
+	default:
+		t.Fatal("nested shutdown channel was not closed")
+	}
+	require.NoError(t, <-registrationResult)
+	_, available = sess.attachables.Lookup(nested.clientID)
+	require.False(t, available)
+	_, err = sess.waitForClientCaller(t.Context(), nested.clientID)
+	var unavailable *engine.SourceClientUnavailableError
+	require.ErrorAs(t, err, &unavailable)
+	flushedLock, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, flushedLock)
+}
+
+func TestDetachableNestedShutdownConcurrentTerminationDoesNotDeadlock(t *testing.T) {
+	t.Parallel()
+	srv, sess, _ := newDetachableLifecycleTestSession(t, 0)
+	nested := &daggerClient{
+		daggerSession: sess, clientID: "nested", shutdownCh: make(chan struct{}),
+	}
+	sess.clientMu.Lock()
+	sess.clients[nested.clientID] = nested
+	sess.clientMu.Unlock()
+	hooks := &sessionTestHooks{Events: make(chan sessionTestEvent, 16)}
+	beforeDeregister := make(chan struct{})
+	hooks.setBarrier(sessionHookNestedBeforeDeregister, beforeDeregister)
+	srv.sessionTestHooks = hooks
+
+	shutdownResult := make(chan error, 1)
+	go func() {
+		shutdownResult <- srv.serveShutdown(
+			httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodPost, engine.ShutdownEndpoint, nil),
+			nested,
+		)
+	}()
+	waitForSessionHookCount(t, hooks.Events, sessionHookNestedBeforeDeregister, 1)
+	terminationDone := srv.startSessionTermination(sess.sessionID)
+	require.NotNil(t, terminationDone)
+	close(beforeDeregister)
+
+	select {
+	case err := <-shutdownResult:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("nested shutdown deadlocked with termination")
+	}
+	select {
+	case <-terminationDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("termination deadlocked with nested shutdown")
+	}
+	require.False(t, sessionInRegistry(srv, sess.sessionID))
+}
+
+type blockingWorkspaceFileSend struct {
+	target  engineclient.FilesyncTarget
+	entered chan struct{}
+	release <-chan struct{}
+}
+
+func (server *blockingWorkspaceFileSend) DiffCopy(stream bkfilesync.FileSend_DiffCopyServer) error {
+	close(server.entered)
+	<-server.release
+	return server.target.DiffCopy(stream)
+}
+
+type attachableCheckingSpanProcessor struct {
+	manager  *sessionAttachableManager
+	clientID string
+	flushed  chan struct{}
+	once     sync.Once
+}
+
+func (*attachableCheckingSpanProcessor) OnStart(context.Context, sdktrace.ReadWriteSpan) {}
+func (*attachableCheckingSpanProcessor) OnEnd(sdktrace.ReadOnlySpan)                     {}
+
+func (processor *attachableCheckingSpanProcessor) Shutdown(context.Context) error { return nil }
+
+func (processor *attachableCheckingSpanProcessor) ForceFlush(context.Context) error {
+	if _, available := processor.manager.Lookup(processor.clientID); !available {
+		return fmt.Errorf("source attachable was unavailable during telemetry flush")
+	}
+	processor.once.Do(func() { close(processor.flushed) })
+	return nil
 }
 
 func TestSupersededRegistrationDoesNotEmitRemoved(t *testing.T) {

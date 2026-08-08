@@ -2390,6 +2390,16 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
 	}
 
+	if sess.lifetime == sessionLifetimeDetachable && client.clientID != sess.mainClientCallerID {
+		srv.hitSessionHook(sessionTestEvent{
+			Name: sessionHookNestedBeforeDeregister, SessionID: sess.sessionID, ClientID: client.clientID,
+		})
+		_ = drainPhase("deregister client attachables", func() error {
+			sess.attachables.Deregister(client.clientID)
+			return nil
+		})
+	}
+
 	client.closeShutdownOnce.Do(func() {
 		close(client.shutdownCh)
 	})

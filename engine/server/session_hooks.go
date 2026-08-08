@@ -10,6 +10,7 @@ const (
 	sessionHookAttachmentPublished            = "attachment_published"
 	sessionHookSourcePublicationRead          = "source_publication_read"
 	sessionHookSourceReservation              = "source_reservation"
+	sessionHookNestedBeforeDeregister         = "nested_before_deregister"
 	sessionHookExplicitClose                  = "explicit_close"
 	sessionHookAttachmentDeath                = "attachment_death"
 	sessionHookAttachmentCleared              = "attachment_cleared"
