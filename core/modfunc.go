@@ -647,6 +647,7 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var llmArgs []*FunctionArg
+	var agentArgs []*FunctionArg
 	var userDefaults []*UserDefault
 
 	// The decoded args map includes schema defaults, but the call ID only
@@ -691,6 +692,13 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			llmArgs = append(llmArgs, argMetadata)
 			continue
 		}
+		// An Agent argument is auto-injected with the CALLING agent when the
+		// function is dispatched as a tool from a running agent loop (see
+		// loadAgentArg) — the child->parent channel of async-agents §3.1.
+		if argMetadata.IsAgentHandle() {
+			agentArgs = append(agentArgs, argMetadata)
+			continue
+		}
 		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
 		if err != nil {
 			return fmt.Errorf("%s.%s(%s=): load user default: %w",
@@ -707,7 +715,7 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 	}
 
-	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 || len(llmArgs) > 0 {
+	if len(ctxArgs) > 0 || len(userDefaults) > 0 || len(workspaceArgs) > 0 || len(llmArgs) > 0 || len(agentArgs) > 0 {
 		type argInput struct {
 			argName string
 			val     dagql.IDType
@@ -776,6 +784,25 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			})
 		}
 
+		// Process Agent arguments - automatically injected with the calling
+		// agent, when the call was dispatched from a running agent loop.
+		agentArgVals := make([]*argInput, len(agentArgs))
+		for i, arg := range agentArgs {
+			eg.Go(func() error {
+				agentVal, err := fn.loadAgentArg(ctx)
+				if err != nil {
+					return fmt.Errorf("load agent arg %q: %w", arg.Name, err)
+				}
+
+				agentArgVals[i] = &argInput{
+					argName: arg.Name,
+					val:     agentVal,
+				}
+
+				return nil
+			})
+		}
+
 		// Process user-defined user defaults for objects (and lists of objects)
 		type userDefaultArgInput struct {
 			argName string
@@ -820,6 +847,15 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			}
 		}
 		for _, arg := range llmArgVals {
+			if arg == nil {
+				continue
+			}
+			args[arg.argName] = dagql.Opt(arg.val)
+			if err := req.SetArgInput(ctx, arg.argName, dagql.Opt(arg.val), false); err != nil {
+				return err
+			}
+		}
+		for _, arg := range agentArgVals {
 			if arg == nil {
 				continue
 			}
@@ -1349,6 +1385,28 @@ func (fn *ModuleFunction) loadLLMArg(ctx context.Context) (dagql.IDType, error) 
 		return nil, fmt.Errorf("get bound LLM ID: %w", err)
 	}
 	return dagql.NewID[*LLM](llmID), nil
+}
+
+// loadAgentArg fills an auto-injected Agent argument with the calling agent —
+// the one whose evaluation loop dispatched this call — bound into the context
+// by the loop itself (AgentRuntime.loop -> [AgentToContext]). This is the
+// child->parent channel of hack/designs/async-agents.md §3.1: the injected
+// handle lets a tool message (steer) the agent that invoked it.
+//
+// Like an LLM argument there is no ambient fallback — a calling agent only
+// exists under a running agent loop — so invoking such a function any other
+// way (a synchronous LLM.loop, or a direct call) is a clear error rather
+// than a silent null.
+func (fn *ModuleFunction) loadAgentArg(ctx context.Context) (dagql.IDType, error) {
+	boundAgent, ok := AgentFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("function requires the calling agent; invoke it from an agent loop (LLM.asAgent) — synchronous loop support is planned")
+	}
+	agentID, err := boundAgent.ID()
+	if err != nil {
+		return nil, fmt.Errorf("get bound agent ID: %w", err)
+	}
+	return dagql.NewID[*Agent](agentID), nil
 }
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {

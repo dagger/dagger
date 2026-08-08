@@ -246,6 +246,7 @@ func (ars *AgentRuntimes) GetOrCreate(ctx context.Context, agent dagql.ObjectRes
 	rt := &AgentRuntime{
 		key:      key,
 		name:     agent.Self().Name,
+		self:     agent,
 		last:     agent.Self().Seed,
 		messages: map[string]*agentMessageRecord{},
 		// wake has a single slot: it only needs to record "something changed,
@@ -377,6 +378,13 @@ func (ars *AgentRuntimes) KillAll(ctx context.Context, cause error) error {
 type AgentRuntime struct {
 	key  digest.Digest
 	name string
+
+	// self is the agent handle the entry was created from: an honest dagql
+	// instance of the agent value. Immutable after creation (any handle
+	// with the same content digest denotes the same entry). The loop binds
+	// it into its context (AgentToContext) so tools dispatched by a step
+	// can reach the calling agent — the Agent! argument injection.
+	self dagql.ObjectResult[*Agent]
 
 	mu sync.Mutex
 
@@ -698,6 +706,13 @@ var errAgentInterrupted = errors.New("agent interrupted")
 // even mid-turn: the suspended turn (and any queued mail) waits for a
 // resume, which wakes the loop to continue exactly where it left off.
 func (rt *AgentRuntime) loop(ctx context.Context) {
+	// Bind the agent's own handle into the loop context: every Step below —
+	// and thus every tool dispatched within one — descends from it, so a
+	// module tool declaring an `Agent!` argument is auto-injected with THIS
+	// agent (AgentToContext -> ModuleFunction.loadAgentArg), the
+	// child->parent channel of design §3.1. Covers the Resume-retry
+	// relaunch too, which re-enters here on a fresh detached context.
+	ctx = AgentToContext(ctx, rt.self)
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("agent: %s", rt.name))
 
 	var loopErr error
