@@ -372,6 +372,15 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		return nil, err
 	}
 
+	// A turn cut short — a refusal, a token or context limit — can still have
+	// streamed content before it stopped, so the stop reason has to be checked
+	// on its own rather than only when nothing accumulated. Otherwise a refusal
+	// landing a few thinking tokens in reads as a clean finish, and the caller
+	// idles on a reply carrying no text and no tool calls.
+	if !anthropicStoppedCleanly(acc.StopReason) {
+		return nil, &ModelFinishedError{Reason: string(acc.StopReason)}
+	}
+
 	// Check that we have some accumulated content.
 	if len(acc.Content) == 0 {
 		return nil, &ModelFinishedError{
@@ -425,6 +434,22 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		DisplaySpans:     displaySpans,
 		ToolCallDisplays: toolCallDisplays,
 	}, nil
+}
+
+// anthropicStoppedCleanly reports whether a stop reason means the model
+// finished its turn normally. It rejects only the reasons known to leave the
+// turn unusable, so a reason added to the API later keeps working instead of
+// failing every request.
+func anthropicStoppedCleanly(reason anthropic.StopReason) bool {
+	switch reason {
+	case anthropic.StopReasonRefusal,
+		anthropic.StopReasonMaxTokens,
+		// Absent from the non-beta enum, but the API still sends it.
+		"model_context_window_exceeded":
+		return false
+	default:
+		return true
+	}
 }
 
 // appendOrMerge appends content blocks to the messages slice. If the last

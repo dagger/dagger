@@ -287,6 +287,11 @@ func (c *GenaiClient) processStreamResponse(
 		if candidate.Content == nil {
 			return contentBlocks, tokenUsage, &ModelFinishedError{Reason: string(candidate.FinishReason)}
 		}
+		// A blocked or truncated candidate can arrive with content attached, so
+		// the finish reason is checked even when Content is set.
+		if !genaiFinishedCleanly(candidate.FinishReason) {
+			return contentBlocks, tokenUsage, &ModelFinishedError{Reason: string(candidate.FinishReason)}
+		}
 
 		for _, part := range candidate.Content.Parts {
 			sig := ""
@@ -347,6 +352,21 @@ func (c *GenaiClient) processStreamResponse(
 	flushThinking()
 	flushText()
 	return contentBlocks, tokenUsage, nil
+}
+
+// genaiFinishedCleanly reports whether a candidate's finish reason means the
+// model finished normally. Gemini's enum is almost entirely failure modes
+// (SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, MALFORMED_FUNCTION_CALL,
+// ...), so this allows the good reasons rather than listing the bad ones. A
+// finish reason is reported only on the last streamed chunk, so an empty one
+// means the turn is still in progress.
+func genaiFinishedCleanly(reason genai.FinishReason) bool {
+	switch reason {
+	case "", genai.FinishReasonStop, genai.FinishReasonUnspecified:
+		return true
+	default:
+		return false
+	}
 }
 
 // decodeThoughtSignature turns a base64-encoded thought signature (as stored on
