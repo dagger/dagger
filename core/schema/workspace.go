@@ -187,6 +187,35 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("authorName").Doc("Author and committer name."),
 				dagql.Arg("authorEmail").Doc("Author and committer email."),
 			),
+		dagql.NodeFunc("commitsFrom", s.commitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Plan which of another workspace's staged commits can be applied to this one.",
+				"Both workspaces are expected to descend from the same checkout - typically this workspace and one an agent was spawned with. Each of the source's staged commits is classified against this one, oldest first, as if every pickable commit before it had already been applied: PICKED, REDUNDANT, CONFLICT (see reason and conflictPaths), or PICKABLE.",
+				"Read-only: nothing is staged and neither workspace is modified. Pass the pickable hashes to withCommitsFrom to apply them.").
+			Args(
+				dagql.Arg("source").Doc("The workspace whose staged commits to consider."),
+				dagql.Arg("commits").Doc("Restrict the plan to these commit hashes, full or an unambiguous prefix. They are always considered in the source's stack order. Empty considers every staged commit."),
+			),
+		dagql.NodeFunc("withCommitsFrom", s.withCommitsFrom).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with another workspace's staged commits replayed on top, without mutating either source.",
+				"Each commit is applied to this workspace's current content as a patch - not as a whole-file overlay - so commits still land cleanly when this workspace has moved on since the source branched off. The replayed commit keeps the original message, date and author identity, and records the original commit as its origin, so pulling the same work again is recognised as already present.",
+				"Commits this workspace already has, and commits whose content is already present, are skipped. A commit that cannot be applied is an error naming the commit and the conflicting paths: plan with commitsFrom first and pass the pickable hashes.").
+			Args(
+				dagql.Arg("source").Doc("The workspace whose staged commits to replay."),
+				dagql.Arg("commits").Doc("Restrict the replay to these commit hashes, full or an unambiguous prefix. They are always applied in the source's stack order. Empty replays every staged commit."),
+			),
+		dagql.NodeFunc("__withReplayedCommit", s.withReplayedCommit).
+			Doc("(Internal-only) Return this workspace with a commit staged, recording the commit it was replayed from.",
+				"Backs one step of Workspace.withCommitsFrom: identical to Workspace.withCommit except that the resulting commit carries the origin, which is how a later pull recognises the work as already present.").
+			Args(
+				dagql.Arg("message").Doc("Commit message."),
+				dagql.Arg("paths").Doc("Restrict the commit to these paths."),
+				dagql.Arg("date").Doc("RFC3339 author and committer date."),
+				dagql.Arg("authorName").Doc("Author and committer name."),
+				dagql.Arg("authorEmail").Doc("Author and committer email."),
+				dagql.Arg("origin").Doc("Hash of the commit this one is replayed from, collapsed to its own origin when it already had one."),
+			),
 		dagql.NodeFunc("__withGeneratedLocalDependencies", s.withGeneratedLocalDependencies).
 			Doc("(Internal-only) Return this workspace with a module's generated local dependency closure applied and recorded.",
 				"Applies internally generated local-dependency changes for the module at the given path, and marks the workspace so nested generation for that module does not repeat the staging.").
@@ -445,6 +474,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceStagedCommit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceCommitPick](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.WorkspaceSDK](srv).View(AfterVersion("v1.0.0-0")))
@@ -473,6 +503,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.WorkspaceStagedCommit]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceCommitPick]{}.Install(srv)
+
+	core.WorkspaceCommitPickStatuses.Install(srv, AfterVersion("v1.0.0-0"))
+	core.WorkspaceCommitPickReasons.Install(srv, AfterVersion("v1.0.0-0"))
 
 	dagql.Fields[*core.WorkspaceModule]{
 		dagql.NodeFunc("settings", s.moduleSettings).

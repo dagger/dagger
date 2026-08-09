@@ -76,6 +76,63 @@ func (s *workspaceSchema) withCommit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceWithCommitArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return s.stageCommit(ctx, parent, args, "")
+}
+
+// workspaceReplayCommitArgs is workspaceWithCommitArgs plus the provenance a
+// replayed commit records. Origin is deliberately NOT part of
+// workspaceWithCommitArgs: selectors() is what reaches __stagedCommit, so
+// provenance can never change the commit that gets staged, its hash, or its
+// cache identity.
+//
+// The shared fields are spelled out rather than embedded: dagql assigns an
+// embedded arg struct by reflection, which cannot set a field whose name comes
+// from an unexported type.
+type workspaceReplayCommitArgs struct {
+	Message     string
+	Paths       []string `default:"[]"`
+	Date        string
+	AuthorName  dagql.Optional[dagql.String]
+	AuthorEmail dagql.Optional[dagql.String]
+	Origin      string
+}
+
+func (args workspaceReplayCommitArgs) commitArgs() workspaceWithCommitArgs {
+	return workspaceWithCommitArgs{
+		Message:     args.Message,
+		Paths:       args.Paths,
+		Date:        args.Date,
+		AuthorName:  args.AuthorName,
+		AuthorEmail: args.AuthorEmail,
+	}
+}
+
+// withReplayedCommit is __withReplayedCommit: withCommit plus the record of
+// where the commit came from. It is a field of its own rather than an argument
+// on withCommit because provenance is meaningless to a normal caller, and it is
+// a field at all rather than an in-resolver loop because
+// Workspace.withCommitsFrom stages one commit per fold step: every step has to
+// be a real dagql call so the intermediate workspaces get distinct IDs.
+func (s *workspaceSchema) withReplayedCommit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceReplayCommitArgs,
+) (inst dagql.ObjectResult[*core.Workspace], err error) {
+	if args.Origin == "" {
+		return inst, fmt.Errorf("__withReplayedCommit: origin is required")
+	}
+	return s.stageCommit(ctx, parent, args.commitArgs(), args.Origin)
+}
+
+// stageCommit is the body of Workspace.withCommit, parameterized by the
+// provenance to record: origin is empty for a commit authored here, and the
+// hash of the original commit for one replayed out of another workspace.
+func (s *workspaceSchema) stageCommit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithCommitArgs,
+	origin string,
 ) (inst dagql.ObjectResult[*core.Workspace], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -129,6 +186,7 @@ func (s *workspaceSchema) withCommit(
 	opts := args.commitOpts(ws)
 	pending := core.WorkspacePendingCommit{
 		SHA:         sha.String(),
+		Origin:      origin,
 		Message:     opts.Message,
 		Date:        opts.Date,
 		AuthorName:  opts.AuthorName,
@@ -276,6 +334,7 @@ func (s *workspaceSchema) stagedCommitEntry(
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.WorkspaceStagedCommit{
 		SHA:         commit.SHA,
+		Origin:      commit.Origin,
 		Message:     commit.Message,
 		Date:        commit.Date,
 		AuthorName:  commit.AuthorName,
