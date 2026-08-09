@@ -513,8 +513,8 @@
     two identical private generations to be byte-identical, check mode to produce no
     writes, and every injected update failure to preserve the prior artifact set.
 
-- [ ] 16. Close the exhaustive binding manifest and evidence contract
-  - [ ] 16.1 Add closed compatibility mappings for retained Go capabilities
+- [x] 16. Close the exhaustive binding manifest and evidence contract
+  - [x] 16.1 Add closed compatibility mappings for retained Go capabilities
     - Add `completeness/core-codegen-mappings.json` with exact reviewed rules for schema
       operations, enums, options, inputs, interface conversions, ID/load/re-entry,
       serialization, 21 shared Go-codegen policies, and 16 Rust policies.
@@ -522,7 +522,7 @@
       reject catch-all, name-only, duplicate, ambiguous, wrong-owner, extra, missing,
       and fingerprint-drifted mappings.
     - _Requirements: 1.7, 1.8, 1.11, 10.1, 10.2, 10.3_
-  - [ ] 16.2 Assemble the generated binding manifest as an exact join
+  - [x] 16.2 Assemble the generated binding manifest as an exact join
     - Join the target descriptor, corrected ledger, reviewed mappings, projection
       catalog, and formatted artifacts into canonical JSON at
       `completeness/artifacts/core-codegen-bindings.json`.
@@ -531,7 +531,7 @@
       non-empty evidence domains, and reviewed decision IDs for every materially
       different Rust public shape; do not let the manifest assign completeness status.
     - _Requirements: 1.7-1.11, 9.1-9.3, 10.1, 10.2, 10.3, 10.19, 10.20_
-  - [ ] 16.3 Verify evidence freshness and conservative ledger transitions
+  - [x] 16.3 Verify evidence freshness and conservative ledger transitions
     - Join only implementation/property/compile/projection/documentation/exact-target
       evidence matching target, subject revision, command, result digest, capability
       scope, projection fingerprint, implementation fingerprint, and required domain.
@@ -539,14 +539,14 @@
       records, and leave every capability `Missing` or `Partial` until all record-specific
       evidence closes through Feature 1's sole status transition engine.
     - _Requirements: 1.8, 1.9, 1.10, 1.11, 10.19, 10.20_
-  - [ ] 16.4 Property test: Property 2 — binding closure is a capability bijection
+  - [x] 16.4 Property test: Property 2 — binding closure is a capability bijection
     - Generate at least 256 ledgers, catalogs, mapping rules, decisions, and evidence
       domain combinations around the exact retained target; compare manifest acceptance
       and resulting conservative status to an independent set/bijection model.
     - Test identifier: `property_02_binding_closure_capability_bijection`.
     - Tag: `// Feature: rust-sdk-core-codegen, Property 2: Binding closure is a capability bijection`
     - _Requirements: 1.7, 1.8, 1.9, 1.10, 10.1, 10.2, 10.3, 10.19, 10.20_
-  - [ ] 16.5 Property test: Property 30 — evidence cannot outlive its subject
+  - [x] 16.5 Property test: Property 30 — evidence cannot outlive its subject
     - Generate at least 256 accepted records and single/multiple mutations of target,
       subject revision, command identity, result digest, capability scope, projection,
       implementation, and evidence domain; independently recompute freshness and reject
@@ -555,8 +555,8 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 30: Evidence cannot outlive its subject`
     - _Requirements: 1.9, 10.19, 10.20_
 
-- [ ] 17. Wire repository generation and exact-target core conformance
-  - [ ] 17.1 Replace the live-schema/cargo-fix Dagger generation path
+- [x] 17. Wire repository generation and exact-target core conformance
+  - [x] 17.1 Replace the live-schema/cargo-fix Dagger generation path
     - Change `toolchains/rust-sdk-dev` so `WithGeneratedClient` invokes checked-input
       `dagger-rust generate --update`, returns only the declared change set, and never
       mounts live introspection or runs `cargo fix`.
@@ -565,7 +565,7 @@
       verification; keep format/check/test/clippy/doc/deny functions independently
       visible.
     - _Requirements: 9.4, 9.10, 9.11, 9.12, 9.13, 10.4-10.16_
-  - [ ] 17.2 Add focused exact-target generated-client conformance
+  - [x] 17.2 Add focused exact-target generated-client conformance
     - Start and verify the engine revision from `target.json`, connect through Feature
       3, and exercise generated scalar/custom scalar, enum, input object, lazy object,
       interface, nullable handle, ordered object list, raw/handle expected type,
@@ -576,7 +576,7 @@
     - Emit deterministic capability-scoped evidence only for behaviours actually
       observed against the exact target.
     - _Requirements: 4.1, 4.7-4.14, 5.5-5.11, 6.3-6.10, 7.1-7.14, 10.17, 10.18, 10.19_
-  - [ ] 17.3 Property test: Property 29 — exact-target conformance spans every generated category
+  - [x] 17.3 Property test: Property 29 — exact-target conformance spans every generated category
     - Generate at least 256 conformance/evidence admission records with target, command,
       category, operation, result, and capability-scope mutations; compare acceptance to
       a reference category matrix and exhaust the finite live Exact_Target category set
@@ -585,7 +585,7 @@
     - Tag: `// Feature: rust-sdk-core-codegen, Property 29: Exact-target conformance spans every generated category`
     - _Requirements: 10.17_
 
-- [ ] 18. Checkpoint: manifest closure and exact-target conformance are green
+- [x] 18. Checkpoint: manifest closure and exact-target conformance are green
   - Run formatting, locked workspace tests, Properties 2/29-30, generated check, all
     compile/projection suites, exact-target `CoreConformance`, rustdoc, clippy, and
     cargo-deny; require every passing evidence record to name the exact target and only

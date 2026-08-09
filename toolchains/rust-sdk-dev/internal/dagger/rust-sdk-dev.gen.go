@@ -39,16 +39,23 @@ func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSD
 	}
 }
 
-// Develop the Dagger Rust SDK (experimental)
+// Develop and verify the Dagger Rust SDK.
 type RustSDKDev struct { // rust-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
-	cargoCheck    *Void
-	cargoFmt      *Void
-	id            *ID
-	release       *Void
-	releaseDryRun *Void
-	test          *Void
+	cargoCheck            *Void
+	cargoClippy           *Void
+	cargoDeny             *Void
+	cargoDoc              *Void
+	cargoFmt              *Void
+	completenessIntegrity *Void
+	coreConformance       *string
+	examples              *Void
+	generatedClientCheck  *Void
+	id                    *ID
+	release               *Void
+	releaseDryRun         *Void
+	test                  *Void
 }
 type WithRustSDKDevFunc func(r *RustSDKDev) *RustSDKDev
 
@@ -92,6 +99,36 @@ func (r *RustSDKDev) CargoCheck(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
+// Run Clippy on all Rust SDK targets.
+func (r *RustSDKDev) CargoClippy(ctx context.Context) error {
+	if r.cargoClippy != nil {
+		return nil
+	}
+	q := r.query.Select("cargoClippy")
+
+	return q.Execute(ctx)
+}
+
+// Check the Rust SDK dependency advisories, licenses, bans, and sources.
+func (r *RustSDKDev) CargoDeny(ctx context.Context) error {
+	if r.cargoDeny != nil {
+		return nil
+	}
+	q := r.query.Select("cargoDeny")
+
+	return q.Execute(ctx)
+}
+
+// Build the Rust SDK documentation with warnings denied.
+func (r *RustSDKDev) CargoDoc(ctx context.Context) error {
+	if r.cargoDoc != nil {
+		return nil
+	}
+	q := r.query.Select("cargoDoc")
+
+	return q.Execute(ctx)
+}
+
 // Run cargo fmt on the Rust SDK
 func (r *RustSDKDev) CargoFmt(ctx context.Context) error {
 	if r.cargoFmt != nil {
@@ -108,6 +145,53 @@ func (r *RustSDKDev) Changes() *Changeset {
 	return &Changeset{
 		query: q,
 	}
+}
+
+// CompletenessArtifacts captures the current engine schema and stages canonical derived files.
+//
+// The active workspace is immutable: callers receive only the Changeset between the original
+// input and a graph-local candidate tree.
+func (r *RustSDKDev) CompletenessArtifacts() *Changeset {
+	q := r.query.Select("completenessArtifacts")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// CompletenessHarness runs the exact pinned sdk-sdk baseline profile.
+//
+// Subject failures are captured as normalized outcomes and remain completeness blockers. Only
+// acquisition, checksum, invocation, or normalization failures fail this callable operation.
+func (r *RustSDKDev) CompletenessHarness() *File {
+	q := r.query.Select("completenessHarness")
+
+	return &File{
+		query: q,
+	}
+}
+
+// CompletenessIntegrity reconstructs the F1 contract from its pinned local inputs.
+func (r *RustSDKDev) CompletenessIntegrity(ctx context.Context) error {
+	if r.completenessIntegrity != nil {
+		return nil
+	}
+	q := r.query.Select("completenessIntegrity")
+
+	return q.Execute(ctx)
+}
+
+// Run focused generated-client observations against the immutable checked engine source.
+func (r *RustSDKDev) CoreConformance(ctx context.Context) (string, error) {
+	if r.coreConformance != nil {
+		return *r.coreConformance, nil
+	}
+	q := r.query.Select("coreConformance")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // RustSDKDevDevContainerOpts contains options for RustSDKDev.DevContainer
@@ -133,6 +217,26 @@ func (r *RustSDKDev) DevContainer(opts ...RustSDKDevDevContainerOpts) *Container
 	return &Container{
 		query: q,
 	}
+}
+
+// Format and lint each standalone Rust SDK example.
+func (r *RustSDKDev) Examples(ctx context.Context) error {
+	if r.examples != nil {
+		return nil
+	}
+	q := r.query.Select("examples")
+
+	return q.Execute(ctx)
+}
+
+// Verify the complete checked-input generated client in graph-local state.
+func (r *RustSDKDev) GeneratedClientCheck(ctx context.Context) error {
+	if r.generatedClientCheck != nil {
+		return nil
+	}
+	q := r.query.Select("generatedClientCheck")
+
+	return q.Execute(ctx)
 }
 
 // A unique identifier for this RustSdkDev.

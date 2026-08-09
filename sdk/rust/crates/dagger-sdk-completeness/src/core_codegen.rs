@@ -17,6 +17,26 @@ use crate::model::{
 };
 use crate::traceability::FeatureScopeDeclaration;
 
+mod conformance;
+mod evidence;
+mod manifest;
+
+pub use conformance::{
+    ConformanceCategory, ConformanceObservation, CoreConformanceRun, core_conformance_evidence,
+    required_conformance_categories,
+};
+pub use evidence::{
+    CoreCodegenEvidenceClosure, CoreCodegenEvidencePolicy, CoreCodegenEvidenceRecord,
+    CoreCodegenEvidenceRegistry, CoreCodegenEvidenceResult, admit_core_codegen_evidence,
+    verify_core_codegen_evidence,
+};
+pub use manifest::{
+    BindingRecord, CoreCodegenMappings, EvidenceDomain, GeneratedArtifactKind,
+    GeneratedArtifactProvenance, GeneratedArtifactRecord, GeneratedBindingManifest,
+    ManifestBindingKind, MappingDisposition, ReviewedMappingRule, assemble_core_codegen_manifest,
+    validate_core_codegen_bijection, validate_core_codegen_manifest,
+};
+
 /// Repository-relative source containing the approved core-codegen requirements.
 pub const REQUIREMENTS_PATH: &str = ".kiro/specs/rust-sdk-core-codegen/requirements.md";
 

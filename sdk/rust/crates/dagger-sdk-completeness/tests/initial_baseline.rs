@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:88c011eec493e3ac447d2bcef2b4df890741feaa7126798febbac871ea518911";
+    "sha256:c78f9063ff511afdd7ea5ce32a6171921094313b5949e5062307d6f9c8301376";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -244,6 +244,13 @@ fn verification_and_render_are_root_independent_and_byte_exact() {
     let original = repository_root();
     let fixture = tempfile::tempdir().unwrap();
     materialize_contract_fixture(&original, fixture.path());
+
+    let harness_path = Path::new("sdk/rust/completeness/harness-mappings.json");
+    assert_eq!(
+        fs::read(original.join(harness_path)).unwrap(),
+        fs::read(fixture.path().join(harness_path)).unwrap(),
+        "the root-independent fixture must preserve the authored harness mappings byte-for-byte",
+    );
 
     let original_derived = derive_contract(&original, true).unwrap();
     let fixture_derived = derive_contract(fixture.path(), true).unwrap();

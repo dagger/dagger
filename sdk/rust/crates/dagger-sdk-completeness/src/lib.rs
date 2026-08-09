@@ -40,8 +40,15 @@ pub use command::{CommandPolicy, command_defects};
 pub use compatibility::{ValidatedCompatibilityClaim, validate_compatibility_claim};
 pub use contract::{DerivedContract, derive_contract, rust_artifact_digest};
 pub use core_codegen::{
-    CoreCodegenScopeContract, CoreCodegenScopeTransition, apply_core_codegen_scope_correction,
-    core_codegen_policy_contract,
+    BindingRecord, ConformanceCategory, ConformanceObservation, CoreCodegenEvidenceClosure,
+    CoreCodegenEvidencePolicy, CoreCodegenEvidenceRecord, CoreCodegenEvidenceRegistry,
+    CoreCodegenEvidenceResult, CoreCodegenMappings, CoreCodegenScopeContract,
+    CoreCodegenScopeTransition, CoreConformanceRun, EvidenceDomain, GeneratedArtifactKind,
+    GeneratedArtifactProvenance, GeneratedArtifactRecord, GeneratedBindingManifest,
+    ManifestBindingKind, MappingDisposition, ReviewedMappingRule, admit_core_codegen_evidence,
+    apply_core_codegen_scope_correction, assemble_core_codegen_manifest,
+    core_codegen_policy_contract, core_conformance_evidence, required_conformance_categories,
+    validate_core_codegen_bijection, validate_core_codegen_manifest, verify_core_codegen_evidence,
 };
 pub use diagnostic::{
     ContractDiagnostic, DiagnosticCode, DiagnosticCollector, DiagnosticSet, ToolError, Validation,

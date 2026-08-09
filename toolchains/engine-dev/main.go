@@ -134,6 +134,26 @@ func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	return dev
 }
 
+// WithGitSource replaces the injected workspace source with one immutable commit.
+// The resolved commit is also the provenance stamped into the engine and CLI, so a
+// caller cannot accidentally test one tree while advertising another revision.
+func (dev *EngineDev) WithGitSource(
+	repository string,
+	revision string,
+) *EngineDev {
+	ref := dag.Git(repository).Commit(revision)
+	dev.Source = ref.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+	// The full commit is both the immutable Git object selector and the value
+	// stamped into built artifacts; an absent object fails when the tree loads.
+	dev.VCSCommit = revision
+	dev.VCSDirty = false
+	// Nested toolchains require an explicit workspace in module-runtime calls.
+	// Deriving it from the same immutable ref prevents ambient checkout state
+	// from entering the build while keeping those constructor calls valid.
+	dev.Ws = ref.AsWorkspace()
+	return dev
+}
+
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
 func (dev *EngineDev) Playground(
 	ctx context.Context,

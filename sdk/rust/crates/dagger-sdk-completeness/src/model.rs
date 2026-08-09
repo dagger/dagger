@@ -302,6 +302,18 @@ string_newtype!(
     "Stable identifier for an evidence record."
 );
 string_newtype!(
+    DecisionId,
+    "decision ID",
+    validate_canonical_id,
+    "Stable identifier for one reviewed idiomatic compatibility decision."
+);
+string_newtype!(
+    PolicyId,
+    "policy ID",
+    validate_canonical_id,
+    "Stable identifier for one closed compatibility mapping policy."
+);
+string_newtype!(
     ExtractorId,
     "extractor ID",
     validate_canonical_id,

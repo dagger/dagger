@@ -17,6 +17,11 @@ use std::path::{Component, Path, PathBuf};
 use dagger_codegen::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticCoordinate, DiagnosticSet};
 use dagger_codegen::target::CodegenTarget;
 use dagger_codegen::{CoreProjectionRequest, project_core, render_core};
+use dagger_sdk_completeness::{
+    CoreCodegenMappings, Digest as ContractDigest, GeneratedArtifactKind,
+    GeneratedArtifactProvenance, GeneratedArtifactRecord, RepositoryRelativePath, ResolvedLedger,
+    assemble_core_codegen_manifest, decode_canonical,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest as _, Sha256};
 
@@ -187,6 +192,8 @@ struct InputSnapshot {
     files: Vec<InputFile>,
     target_bytes: Vec<u8>,
     schema_bytes: Vec<u8>,
+    ledger: ResolvedLedger,
+    mappings: CoreCodegenMappings,
     prior_manifest: ArtifactManifest,
 }
 
@@ -215,8 +222,22 @@ where
     })?;
     let rendered = render_core(&plan)?;
     let formatted = formatter.finalize(&paths.workspace, &target, &rendered)?;
-    let candidate_manifest = ArtifactManifest::from_artifacts(&target, &formatted);
-    let manifest_bytes = candidate_manifest.encode()?;
+    let artifacts = completeness_artifacts(&formatted)?;
+    let candidate_manifest = assemble_core_codegen_manifest(
+        &target,
+        &snapshot.ledger,
+        &snapshot.mappings,
+        plan.catalog(),
+        artifacts,
+    )
+    .map_err(completeness_diagnostics)?;
+    let manifest_bytes = candidate_manifest.encode().map_err(|_| {
+        input_error(
+            DiagnosticCode::GeneratedProvenanceInvalid,
+            "manifest",
+            "generated binding manifest could not be encoded",
+        )
+    })?;
     let manifest_path = ArtifactPath::new(BINDING_MANIFEST)?;
     let changes = publish::compare(
         &paths.workspace,
@@ -356,16 +377,20 @@ impl InputSnapshot {
             DiagnosticCode::GeneratedProvenanceInvalid,
         )?;
 
-        decode_json_object(
-            "ledger",
-            &ledger_bytes,
-            DiagnosticCode::CapabilityScopeChanged,
-        )?;
-        decode_json_object(
-            "mappings",
-            &mappings_bytes,
-            DiagnosticCode::CapabilityBindingMissing,
-        )?;
+        let ledger = decode_canonical::<ResolvedLedger>(&ledger_bytes).map_err(|_| {
+            input_error(
+                DiagnosticCode::CapabilityScopeChanged,
+                "ledger",
+                "generation ledger is not canonical contract JSON",
+            )
+        })?;
+        let mappings = CoreCodegenMappings::decode(&mappings_bytes).map_err(|_| {
+            input_error(
+                DiagnosticCode::CapabilityBindingMissing,
+                "mappings",
+                "generation mappings are not canonical contract JSON",
+            )
+        })?;
         let prior_manifest = ArtifactManifest::decode(&manifest_bytes)?;
         let files = [
             ("target", &paths.target, &target_bytes),
@@ -386,6 +411,8 @@ impl InputSnapshot {
             files,
             target_bytes,
             schema_bytes,
+            ledger,
+            mappings,
             prior_manifest,
         })
     }
@@ -502,13 +529,89 @@ pub(super) fn open_regular_nofollow(path: &Path) -> std::io::Result<File> {
     File::open(path)
 }
 
-fn decode_json_object(
-    label: &'static str,
-    bytes: &[u8],
-    code: DiagnosticCode,
-) -> Result<BTreeMap<String, serde_json::Value>, DiagnosticSet> {
-    serde_json::from_slice(bytes)
-        .map_err(|_| input_error(code, label, "generation input is not a JSON object"))
+fn completeness_artifacts(
+    formatted: &format::FormattedArtifactSet,
+) -> Result<BTreeMap<RepositoryRelativePath, GeneratedArtifactRecord>, DiagnosticSet> {
+    formatted
+        .files()
+        .iter()
+        .map(|(path, artifact)| {
+            let path = RepositoryRelativePath::new(path.as_str().to_owned()).map_err(|_| {
+                input_error(
+                    DiagnosticCode::GeneratedProvenanceInvalid,
+                    "artifact-path",
+                    "formatted artifact path is not a canonical repository-relative path",
+                )
+            })?;
+            let sha256 = ContractDigest::new(artifact.sha256().to_owned()).map_err(|_| {
+                input_error(
+                    DiagnosticCode::GeneratedProvenanceInvalid,
+                    "artifact-digest",
+                    "formatted artifact byte digest is invalid",
+                )
+            })?;
+            let semantic_sha256 = ContractDigest::new(artifact.semantic_sha256().to_owned())
+                .map_err(|_| {
+                    input_error(
+                        DiagnosticCode::GeneratedProvenanceInvalid,
+                        "artifact-semantic-digest",
+                        "formatted artifact semantic digest is invalid",
+                    )
+                })?;
+            let provenance = artifact.provenance();
+            Ok((
+                path,
+                GeneratedArtifactRecord {
+                    kind: match artifact.kind() {
+                        format::ArtifactKind::RustModule => GeneratedArtifactKind::RustModule,
+                        format::ArtifactKind::RustTest => GeneratedArtifactKind::RustTest,
+                    },
+                    sha256,
+                    semantic_sha256,
+                    provenance: GeneratedArtifactProvenance {
+                        format: provenance.format.clone(),
+                        ownership: provenance.ownership.clone(),
+                        schema_digest: provenance.schema_digest.clone(),
+                        target_revision: provenance.target_revision.clone(),
+                    },
+                },
+            ))
+        })
+        .collect()
+}
+
+fn completeness_diagnostics(errors: dagger_sdk_completeness::DiagnosticSet) -> DiagnosticSet {
+    let diagnostics = errors.into_inner().into_iter().map(|error| {
+        let code = match error.code {
+            dagger_sdk_completeness::DiagnosticCode::CapabilityBindingDuplicate => {
+                DiagnosticCode::CapabilityBindingDuplicate
+            }
+            dagger_sdk_completeness::DiagnosticCode::CapabilityFingerprintMismatch => {
+                DiagnosticCode::CapabilityFingerprintMismatch
+            }
+            dagger_sdk_completeness::DiagnosticCode::CapabilityEvidenceIncomplete => {
+                DiagnosticCode::CapabilityEvidenceIncomplete
+            }
+            dagger_sdk_completeness::DiagnosticCode::TargetRevisionInvalid
+            | dagger_sdk_completeness::DiagnosticCode::EvidenceTargetMismatch => {
+                DiagnosticCode::TargetIdentityInvalid
+            }
+            dagger_sdk_completeness::DiagnosticCode::CapabilityBindingMissing
+            | dagger_sdk_completeness::DiagnosticCode::CapabilityMappingInvalid
+            | dagger_sdk_completeness::DiagnosticCode::DecisionEvidenceInvalid
+            | dagger_sdk_completeness::DiagnosticCode::FormatUnsupported => {
+                DiagnosticCode::CapabilityBindingMissing
+            }
+            _ => DiagnosticCode::CapabilityScopeChanged,
+        };
+        Diagnostic::new(
+            code,
+            Some(DiagnosticCoordinate::new(error.subject)),
+            error.detail,
+        )
+    });
+    DiagnosticSet::new(diagnostics.collect())
+        .expect("a completeness DiagnosticSet is non-empty by construction")
 }
 
 fn reject_symlink_or_non_directory(label: &'static str, path: &Path) -> Result<(), DiagnosticSet> {

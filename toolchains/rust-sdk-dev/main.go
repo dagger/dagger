@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -13,12 +14,13 @@ import (
 )
 
 const (
-	rustSdkImage       = "rust:1.97.1-bookworm"
-	rustSdkImageDigest = "sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb"
-	goHelperImage      = "golang:1.26.1-bookworm"
-	goHelperDigest     = "sha256:ab3d6955bbc813a0f3fdf220c1d817dd89c0b3f283777db8ece4a32fe7858edd"
-
-	rustGeneratedClientFilePath = "crates/dagger-sdk/src/gen.rs"
+	rustSdkImage         = "rust:1.97.1-bookworm"
+	rustSdkImageDigest   = "sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb"
+	goHelperImage        = "golang:1.26.1-bookworm"
+	goHelperDigest       = "sha256:ab3d6955bbc813a0f3fdf220c1d817dd89c0b3f283777db8ece4a32fe7858edd"
+	coreTargetRepository = "https://github.com/dagger/dagger.git"
+	coreTargetRevision   = "25300124ca110612edc09c43f89cb5fad6028170"
+	coreTargetVersion    = "v1.0.0-beta.10"
 
 	rustSdkCrate     = "dagger-sdk"
 	cargoEditVersion = "0.13.0"
@@ -77,14 +79,11 @@ func New(
 			"!.kiro/specs/rust-sdk-transport-observability/requirements.md",
 			"!.kiro/specs/rust-sdk-transport-observability/design.md",
 			"!.kiro/specs/rust-sdk-transport-observability/tasks.md",
+			"!toolchains/rust-sdk-dev/testdata/core_conformance.rs",
 		},
 	})
 
-	baseContainer := dag.Container().
-		From(rustSdkImage+"@"+rustSdkImageDigest).
-		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
-		WithWorkdir("/src").
+	baseContainer := rustBaseContainer().
 		// FIXME: not all functions need a full engine build. Do this lazily as needed
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine(dagger.DaggerEngineOpts{
@@ -102,6 +101,14 @@ func New(
 	}
 }
 
+func rustBaseContainer() *dagger.Container {
+	return dag.Container().
+		From(rustSdkImage+"@"+rustSdkImageDigest).
+		WithEnvVariable("CARGO_HOME", "/root/.cargo").
+		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
+		WithWorkdir("/src")
+}
+
 // Return the Rust SDK workspace mounted in a dev container,
 // and working directory set to the SDK source.
 func (t *RustSdkDev) DevContainer(
@@ -110,8 +117,15 @@ func (t *RustSdkDev) DevContainer(
 	// +default="false"
 	runInstall bool,
 ) *dagger.Container {
+	return t.devContainer(t.BaseContainer, runInstall)
+}
+
+func (t *RustSdkDev) devContainer(
+	base *dagger.Container,
+	runInstall bool,
+) *dagger.Container {
 	if !runInstall {
-		return t.BaseContainer.
+		return base.
 			WithMountedDirectory(".", t.Workspace).
 			WithWorkdir(t.SourcePath)
 	}
@@ -127,7 +141,7 @@ func (t *RustSdkDev) DevContainer(
 		},
 	})
 
-	ctr := t.BaseContainer.
+	ctr := base.
 		WithDirectory(".", installSrc).
 		WithWorkdir(t.SourcePath).
 		// combine into one layer so there's no assumptions on state of cache volume across steps
@@ -247,20 +261,99 @@ func (t *RustSdkDev) Changes() *dagger.Changeset {
 
 func (t *RustSdkDev) WithGeneratedClient() *RustSdkDev {
 	relLayer := t.DevContainer(true).
-		WithMountedFile("/introspection.json", dag.DaggerEngine(dagger.DaggerEngineOpts{Ws: t.Ws}).IntrospectionJSON()).
-		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
-		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
-		WithExec([]string{"cargo", "fmt"}).
+		WithExec([]string{
+			"cargo", "run", "-p", "dagger-bootstrap", "--bin", "dagger-rust", "--locked", "--",
+			"generate", "--workspace", "/src/sdk/rust", "--update",
+		}).
 		Directory(".").
 		Filter(dagger.DirectoryFilterOpts{
 			Exclude: []string{"target"},
 		})
 
+	// Replace the SDK subtree so removals made by the generator are preserved.
+	// Overlaying the layer would silently retain obsolete generated files.
 	t.Workspace = t.Workspace.
-		// Merge rel layer inside the current workspace (excluding target)
+		WithoutDirectory(t.SourcePath).
 		WithDirectory(t.SourcePath, relLayer)
 
 	return t
+}
+
+// Verify the complete checked-input generated client in graph-local state.
+//
+// +check
+func (t *RustSdkDev) GeneratedClientCheck(ctx context.Context) error {
+	generated := *t
+	generated.WithGeneratedClient()
+
+	_, err := generated.DevContainer(true).
+		WithExec([]string{
+			"cargo", "run", "-p", "dagger-bootstrap", "--bin", "dagger-rust", "--locked", "--",
+			"generate", "--workspace", "/src/sdk/rust", "--check",
+		}).
+		WithExec([]string{
+			"cargo", "test", "-p", "dagger-sdk", "--all-features", "--locked", "--test", "core_reachability", "--test", "core_projection",
+		}).
+		WithExec([]string{
+			"cargo", "test", "-p", "dagger-codegen", "--locked", "--test", "compile_projection",
+		}).
+		WithExec([]string{
+			"cargo", "test", "-p", "dagger-sdk-completeness", "--locked", "--test", "core_codegen_binding",
+		}).
+		WithEnvVariable("RUSTDOCFLAGS", "-D warnings").
+		WithExec([]string{
+			"cargo", "doc", "-p", "dagger-sdk", "--all-features", "--no-deps", "--locked",
+		}).
+		Sync(ctx)
+
+	return err
+}
+
+// Run focused generated-client observations against the immutable checked engine source.
+//
+// +check
+func (t *RustSdkDev) CoreConformance(ctx context.Context) (string, error) {
+	generated := *t
+	generated.WithGeneratedClient()
+	sourceIdentity, err := generated.Source().Digest(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve generated source identity: %w", err)
+	}
+	// A Dagger digest algorithm change expires evidence conservatively; domain
+	// separation gives the evidence contract one stable external digest syntax.
+	subjectDigest := sha256.Sum256([]byte("dagger-rust-sdk-subject-v1\x00" + sourceIdentity))
+	generated.Workspace = generated.Workspace.WithFile(
+		generated.SourcePath+"/crates/dagger-sdk/examples/core_conformance.rs",
+		t.Ws.File("toolchains/rust-sdk-dev/testdata/core_conformance.rs"),
+	)
+
+	exactEngine := dag.DaggerEngine(dagger.DaggerEngineOpts{Ws: t.Ws}).
+		WithGitSource(coreTargetRepository, coreTargetRevision)
+	service := exactEngine.Service("rust-sdk-core-conformance", dagger.DaggerEngineServiceOpts{
+		Version: coreTargetVersion,
+	})
+	runner := exactEngine.InstallClient(generated.devContainer(rustBaseContainer(), true), dagger.DaggerEngineInstallClientOpts{
+		Service: service,
+		Version: coreTargetVersion,
+	})
+	evidence := runner.
+		WithEnvVariable("DAGGER_RUST_CONFORMANCE_OUTPUT", "/tmp/core-conformance-observations.json").
+		WithExec([]string{
+			"dagger", "run", "cargo", "run", "-p", "dagger-sdk", "--example", "core_conformance", "--locked",
+		}).
+		WithExec([]string{
+			"cargo", "run", "-p", "dagger-sdk-completeness", "--bin", "dagger-core-conformance-evidence", "--locked", "--",
+			"--root", "/src/sdk/rust",
+			"--observations", "/tmp/core-conformance-observations.json",
+			"--subject-digest", fmt.Sprintf("sha256:%x", subjectDigest),
+			"--output", "/tmp/core-conformance-evidence.json",
+		}).
+		File("/tmp/core-conformance-evidence.json")
+	contents, err := evidence.Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("run exact-target core conformance: %w", err)
+	}
+	return contents, nil
 }
 
 // Test the publishing process

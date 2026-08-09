@@ -87,7 +87,10 @@ mod r#gen;"##;
         fs::write(destination, bytes).expect("private candidate artifact must write");
     }
 
-    let target_dir = workspace.join("target/tests/core-codegen-candidate");
+    // Candidate sources vary independently of the checked-in workspace. Keeping their
+    // artifacts beside the private candidate prevents concurrent or containerized
+    // verification from reusing an identically hashed but different source tree.
+    let target_dir = root.join("target");
     run_cargo(
         root,
         &target_dir,

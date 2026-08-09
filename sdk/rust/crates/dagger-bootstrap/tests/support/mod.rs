@@ -14,6 +14,8 @@ use tempfile::TempDir;
 
 pub const TARGET: &[u8] = include_bytes!("../../../../completeness/target.json");
 pub const SCHEMA: &[u8] = include_bytes!("../../../../completeness/snapshots/schema.json");
+const LEDGER: &[u8] = include_bytes!("../../../../completeness/artifacts/ledger.json");
+const MAPPINGS: &[u8] = include_bytes!("../../../../completeness/core-codegen-mappings.json");
 const TOOLCHAIN: &[u8] = include_bytes!("../../../../rust-toolchain.toml");
 
 pub struct Fixture {
@@ -35,11 +37,11 @@ impl Fixture {
         );
         write(
             &workspace.join("completeness/artifacts/ledger.json"),
-            b"{}\n",
+            LEDGER,
         );
         write(
             &workspace.join("completeness/core-codegen-mappings.json"),
-            b"{}\n",
+            MAPPINGS,
         );
         let target = target();
         let empty = FormattedArtifactSet::from_bytes(&target, BTreeMap::new(), "fixture")
