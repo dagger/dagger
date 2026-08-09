@@ -120,6 +120,42 @@ func WorkspaceRepoHeadSHA(ctx context.Context, repoDir dagql.ObjectResult[*Direc
 	return sha, nil
 }
 
+// WorkspaceRepoContainsCommits reports, for each hash, whether the repository
+// tree's HEAD already has that commit in its history. Every hash is probed
+// inside ONE mount, because mounting is the expensive part and the probes
+// themselves are a single `git merge-base --is-ancestor` each.
+//
+// An unknown or unreadable hash reads as absent, which is the safe answer: the
+// caller falls through to content-level classification rather than silently
+// skipping work it cannot prove is already here.
+func WorkspaceRepoContainsCommits(
+	ctx context.Context,
+	repoDir dagql.ObjectResult[*Directory],
+	shas []string,
+) (map[string]bool, error) {
+	contains := make(map[string]bool, len(shas))
+	if len(shas) == 0 {
+		return contains, nil
+	}
+	_, err := withGitMergeWorkspace(ctx, repoDir, "Workspace repo contains commits", func(ws *gitMergeWorkspace) error {
+		for _, sha := range shas {
+			if sha == "" {
+				continue
+			}
+			if _, done := contains[sha]; done {
+				continue
+			}
+			_, err := runGitEnv(ctx, ws.workDir, nil, "merge-base", "--is-ancestor", sha, "HEAD")
+			contains[sha] = err == nil
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return contains, nil
+}
+
 // WorkspaceStagedCommitsRef is the ref a staged-commit bundle records for its
 // tip. Bundles can only carry commits under a ref name, and the client fetches
 // that name back out, so both ends agree on this one.
