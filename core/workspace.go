@@ -196,6 +196,15 @@ type Workspace struct {
 type WorkspacePendingCommit struct {
 	// SHA is the resulting commit hash.
 	SHA string
+	// Origin is the hash of the commit this one was replayed from, when it was
+	// pulled out of another workspace by Workspace.withCommitsFrom. Empty for
+	// commits authored in this workspace by Workspace.withCommit.
+	//
+	// It collapses transitively to the root: replaying a commit that already
+	// carries an origin records THAT origin, not the immediate source's hash.
+	// So a commit pulled A -> B -> C still names the commit A staged, and a
+	// later pull straight from A recognises it as already present.
+	Origin string
 	// Message is the commit message.
 	Message string
 	// Date is the RFC3339 author *and* committer date the commit was made with.
@@ -857,6 +866,7 @@ type persistedWorkspaceCacheMount struct {
 // holding the commit.
 type persistedWorkspacePendingCommit struct {
 	SHA          string   `json:"sha,omitempty"`
+	Origin       string   `json:"origin,omitempty"`
 	Message      string   `json:"message,omitempty"`
 	Date         string   `json:"date,omitempty"`
 	AuthorName   string   `json:"authorName,omitempty"`
@@ -1057,6 +1067,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	for _, c := range ws.pendingCommits {
 		persistedCommit := persistedWorkspacePendingCommit{
 			SHA:         c.SHA,
+			Origin:      c.Origin,
 			Message:     c.Message,
 			Date:        c.Date,
 			AuthorName:  c.AuthorName,
@@ -1141,6 +1152,7 @@ func (*Workspace) DecodePersistedObject(
 	for _, persistedCommit := range persisted.PendingCommits {
 		commit := WorkspacePendingCommit{
 			SHA:         persistedCommit.SHA,
+			Origin:      persistedCommit.Origin,
 			Message:     persistedCommit.Message,
 			Date:        persistedCommit.Date,
 			AuthorName:  persistedCommit.AuthorName,
