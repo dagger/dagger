@@ -1,0 +1,31 @@
+kind: Added
+body: |
+  Add `Workspace.commitsFrom` and `Workspace.withCommitsFrom`: replay commits
+  staged in one workspace onto another, so work an agent did in its own copy of
+  the workspace can be harvested by the workspace that spawned it.
+
+  `commitsFrom(source:)` plans, without changing anything: each of the source's
+  staged commits is classified against this workspace, oldest first, as if every
+  pickable commit before it had already been applied — `PICKABLE`, `PICKED` (this
+  workspace already has it), `REDUNDANT` (its content is already present), or
+  `CONFLICT` with a `reason` (`CONTENT` or `DIRTY`) and the `conflictPaths` that
+  obstruct it.
+
+  `withCommitsFrom(source:)` applies. Each commit is applied as a patch, not as a
+  whole-file overlay, so commits still land cleanly when this workspace has moved
+  on since the source branched off, and a commit touching a path this workspace
+  has uncommitted edits on is refused rather than sweeping that work into someone
+  else's commit. A replayed commit keeps the original message, date and author
+  identity, and records the original commit as its `origin` (also exposed on
+  `WorkspaceGit.stagedCommits`), so pulling the same work again is recognised as
+  already present.
+
+  - `commits` restricts either call to particular hashes, full or an unambiguous
+    prefix; they are always considered in the source's stack order.
+  - Commits that cannot be applied are reported as a batch, naming each commit and
+    its conflicting paths: plan with `commitsFrom` first and pass the pickable
+    hashes.
+time: 2026-08-09T19:45:00Z
+custom:
+  Author: vito
+  PR: ""
