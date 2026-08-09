@@ -14,6 +14,7 @@ import (
 // WorkspaceGit.stagedCommits.
 type WorkspaceStagedCommit struct {
 	SHA         string `field:"true" name:"sha" doc:"The full hash of the staged commit."`
+	Origin      string `field:"true" name:"origin" doc:"The hash of the commit this one was replayed from, when it was pulled from another workspace; empty when it was authored here."`
 	Message     string `field:"true" name:"message" doc:"The full commit message, subject and body."`
 	Date        string `field:"true" name:"date" doc:"The RFC3339 author and committer date the commit was made with."`
 	AuthorName  string `field:"true" name:"authorName" doc:"The author and committer name the commit was made with."`
@@ -67,6 +68,7 @@ func (c *WorkspaceStagedCommit) AttachDependencyResults(
 // folded in, which is itself persistable.
 type persistedWorkspaceStagedCommitPayload struct {
 	SHA            string `json:"sha,omitempty"`
+	Origin         string `json:"origin,omitempty"`
 	Message        string `json:"message,omitempty"`
 	Date           string `json:"date,omitempty"`
 	AuthorName     string `json:"authorName,omitempty"`
@@ -81,6 +83,7 @@ func (c *WorkspaceStagedCommit) EncodePersistedObject(ctx context.Context, cache
 	}
 	payload := persistedWorkspaceStagedCommitPayload{
 		SHA:         c.SHA,
+		Origin:      c.Origin,
 		Message:     c.Message,
 		Date:        c.Date,
 		AuthorName:  c.AuthorName,
@@ -113,6 +116,7 @@ func (*WorkspaceStagedCommit) DecodePersistedObject(
 	}
 	c := &WorkspaceStagedCommit{
 		SHA:         persisted.SHA,
+		Origin:      persisted.Origin,
 		Message:     persisted.Message,
 		Date:        persisted.Date,
 		AuthorName:  persisted.AuthorName,
