@@ -91,8 +91,8 @@ pub use target::{
 };
 pub use traceability::{
     CandidateStatusChanges, ChildSpecDeclaration, FeatureScopeDeclaration, ResidualBlocker,
-    parse_feature_scope_declaration, validate_downstream_traceability,
-    validate_feature_scope_routing, validate_feature_status_changes,
-    validate_ownership_only_correction,
+    apply_feature_status_changes, parse_feature_scope_declaration,
+    validate_downstream_traceability, validate_feature_scope_routing,
+    validate_feature_status_changes, validate_ownership_only_correction,
 };
 pub use transition::{ContractSnapshot, diff_targets, drift_diagnostics};

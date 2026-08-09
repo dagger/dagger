@@ -1,3 +1,5 @@
+//! Legacy introspection request construction for CLI-started sessions.
+
 use graphql_client::GraphQLQuery;
 use reqwest::{
     Client, RequestBuilder,

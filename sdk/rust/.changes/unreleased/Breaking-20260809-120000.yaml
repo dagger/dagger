@@ -1,0 +1,9 @@
+kind: Breaking
+body: |
+    Replace the legacy monolithic Rust generated client with target-pinned, schema-complete core bindings.
+
+    Generated types now live in generator-owned modules with corrected Rust names, option and input-object shapes, interface handles, typed ID conversions, enum wire mappings, deprecation markers, and public documentation. The supported generated surface remains re-exported from `dagger_sdk`, but code that depended on a beta-era generated name or shape may need to adopt its corrected equivalent.
+time: 2026-08-09T12:00:00Z
+custom:
+    Author: iw
+    PR: "35"

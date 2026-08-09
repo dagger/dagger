@@ -19,13 +19,16 @@ use crate::canonical::{DigestDomain, canonical_bytes, canonical_digest, decode_c
 use crate::diagnostic::{ContractDiagnostic, DiagnosticCode, DiagnosticCollector, Validation};
 use crate::model::{
     AuthorityId, CanonicalSet, CapabilityId, CapabilityKind, CapabilityRecord, CommitSha,
-    DecisionId, Digest, FeatureId, PolicyId, RepositoryRelativePath, ResolvedLedger,
+    DecisionId, Digest, FeatureId, PolicyId, RepositoryRelativePath, ResolvedLedger, Status,
 };
 
 const MANIFEST_FORMAT_VERSION: u32 = 1;
 const MAPPINGS_FORMAT_VERSION: u32 = 1;
 const APPROVED_RETAINED_SCOPE_DIGEST: &str =
     "sha256:2b46180b54356faf2071a91198afd1a0e40a757b57a1686f579d2f9ab6ed583f";
+const GENERATED_CLIENT_IMPLEMENTATION_EVIDENCE: &str =
+    "implementation/core-codegen/generated-client";
+const GENERATED_CLIENT_VERIFICATION_EVIDENCE: &str = "verification/core-codegen/release-closure";
 
 /// Executable proof domain required by one generated binding.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -251,7 +254,7 @@ pub fn assemble_core_codegen_manifest(
     let active = ledger
         .capabilities
         .iter()
-        .filter(|(_, row)| row.owner_feature == Some(FeatureId::Feature4))
+        .filter(|(_, row)| is_core_codegen_capability(row))
         .collect::<BTreeMap<_, _>>();
     let retained_ids = active
         .iter()
@@ -834,7 +837,7 @@ fn validate_binding_bijection(
     let expected = ledger
         .capabilities
         .iter()
-        .filter(|(_, row)| row.owner_feature == Some(FeatureId::Feature4))
+        .filter(|(_, row)| is_core_codegen_capability(row))
         .map(|(capability_id, _)| capability_id.clone())
         .collect::<BTreeSet<_>>();
     let actual = manifest.bindings.keys().cloned().collect::<BTreeSet<_>>();
@@ -879,6 +882,25 @@ fn validate_binding_bijection(
             ));
         }
     }
+}
+
+fn is_core_codegen_capability(row: &CapabilityRecord) -> bool {
+    if row.owner_feature == Some(FeatureId::Feature4) {
+        return true;
+    }
+
+    // Completed rows no longer retain a downstream owner. The exact paired evidence
+    // identities preserve their reviewed generator scope so later check/update runs
+    // rebuild the same manifest instead of silently dropping already-closed bindings.
+    row.status == Status::Implemented
+        && row
+            .implementation_evidence
+            .iter()
+            .any(|evidence| evidence.as_str() == GENERATED_CLIENT_IMPLEMENTATION_EVIDENCE)
+        && row
+            .verification_evidence
+            .iter()
+            .any(|evidence| evidence.as_str() == GENERATED_CLIENT_VERIFICATION_EVIDENCE)
 }
 
 fn report_set_difference(

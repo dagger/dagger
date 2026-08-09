@@ -1,5 +1,7 @@
 //! End-to-end checks which consume only the stable public SDK facade.
 
+#![cfg(feature = "gen")]
+
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

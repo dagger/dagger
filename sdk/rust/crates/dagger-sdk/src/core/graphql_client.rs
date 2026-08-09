@@ -1,3 +1,5 @@
+//! Adapter from the legacy GraphQL transport into the SDK's internal client trait.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

@@ -1,31 +1,14 @@
-# Dagger Rust SDK Examples
+# Dagger Rust SDK examples
 
-## [CLI](./cli/src/main.rs)
+These standalone workspaces consume the local `dagger-sdk` crate and exercise realistic
+application pipelines. Run commands from `sdk/rust`; each program starts its own SDK
+client and therefore also works under `dagger run` when an existing session is desired.
 
-This CI pipeline is an example of how to use the Dagger SDK to automate the build of a Rust CLI application.
+| Example | What it demonstrates | Command |
+| --- | --- | --- |
+| [CLI](cli/src/main.rs) | Build a Rust CLI in a container and export the binary | `cargo run --manifest-path examples/cli/Cargo.toml` |
+| [Backend](backend/src/main.rs) | Build, package, and optionally publish an Axum service | `cargo run --manifest-path examples/backend/Cargo.toml -- --help` |
+| [Frontend](frontend/src/main.rs) | Build and package a Leptos and Tailwind application | `cargo run --manifest-path examples/frontend/Cargo.toml -- --help` |
 
-Therefore source code from the host is mounted into a build container, where cargo build --release is executed to compile the application.
-
-The resulting binary is then exported to the host machine.
-
-## [Backend](./backend/src/main.rs)
-
-This CI pipeline is an example of how to use the Dagger SDK to automate the build of a backend service using **Axum** framework.
-
-The pipeline demonstrates how to split a more complex pipeline into different functions and contains the following steps:
-
-1. **Building the Backend**
-2. **Creating the Production Image**
-3. **Publishing the Image**
-
-**Clap** is used to configure the build.
-
-## [Frontend](./frontend/src/main.rs)
-
-This CI pipeline automates the build of a Rust-based frontend application based on **Leptos** & **Tailwind**.
-
-Similar to the backend pipeline, the pipeline is subdivided into smaller steps:
-
-1. **Building the Frontend**
-2. **Creating the Production Image**
-3. **Publishing the Image**
+The smaller API-focused examples packaged inside `dagger-sdk` run with
+`cargo run -p dagger-sdk --example first-pipeline` and related example names.

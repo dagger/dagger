@@ -48,29 +48,14 @@ fn exact_candidate_compiles_with_supported_features_and_warning_free_docs() {
         Some("gen.rs"),
     );
 
-    // The predecessor needed broad rustdoc suppression because it copied schema text
-    // directly. Removing it in private state proves the sanitized candidate needs no
-    // module-wide exemption before later publication replaces the predecessor.
+    // The published crate must consume sanitized generated docs directly. Reintroducing
+    // a module-wide exemption would hide regressions that this candidate build owns.
     let library_path = candidate_package.join("src/lib.rs");
     let library = fs::read_to_string(&library_path).expect("copied library must be UTF-8");
-    let suppressed = r##"#[cfg(feature = "gen")]
-#[allow(dead_code)]
-// Schema descriptions are external input and can contain text that rustdoc
-// interprets as links, HTML, or bare URLs.
-#[allow(
-    rustdoc::bare_urls,
-    rustdoc::broken_intra_doc_links,
-    rustdoc::invalid_html_tags
-)]
-mod r#gen;"##;
     let unsuppressed = "#[cfg(feature = \"gen\")]\nmod r#gen;";
-    let library = library.replace(suppressed, unsuppressed);
-    assert_ne!(
-        library,
-        fs::read_to_string(&library_path).expect("copied library must remain readable"),
-        "predecessor rustdoc suppression must be removed in private state"
-    );
-    fs::write(&library_path, library).expect("private library source must update");
+    assert!(library.contains(unsuppressed));
+    assert!(!library.contains("#[allow(rustdoc::"));
+    assert!(!library.contains("#[allow(missing_docs)]"));
 
     let target = CodegenTarget::decode_exact(TARGET).expect("checked target must decode");
     let plan = project_core(CoreProjectionRequest {

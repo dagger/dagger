@@ -1,3 +1,8 @@
+//! Legacy beta connector internals retained behind the stable owned-client facade.
+//!
+//! These types are intentionally unreachable from the public crate root. They remain
+//! available while connection provisioning moves onto the stable lifecycle contracts.
+
 #![allow(dead_code)]
 
 pub mod cli_session;

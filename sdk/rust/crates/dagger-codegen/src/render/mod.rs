@@ -113,6 +113,10 @@ pub(crate) fn render_plan(plan: &ProjectionPlan) -> Result<RenderedCandidate, Di
 
     let public_symbols = collect_public_symbols(plan, &artifacts)?;
     let (reachability, referenced_symbols) = render_reachability(plan)?;
+    let reachability = quote! {
+        #![cfg(feature = "gen")]
+        #reachability
+    };
     let reachability_path = format!("{GENERATED_TEST_ROOT}/core_reachability.rs");
     artifacts.insert(
         reachability_path.clone(),
@@ -126,6 +130,10 @@ pub(crate) fn render_plan(plan: &ProjectionPlan) -> Result<RenderedCandidate, Di
     );
 
     let projection_test = render_projection_inventory(plan);
+    let projection_test = quote! {
+        #![cfg(feature = "gen")]
+        #projection_test
+    };
     let projection_path = format!("{GENERATED_TEST_ROOT}/core_projection.rs");
     artifacts.insert(
         projection_path.clone(),
@@ -556,11 +564,19 @@ fn render_options_for_owner(
                     argument.wire_name
                 ),
             )?;
+            let (setter_parameter, setter_value) = match &argument.rust_type {
+                RustType::String => (quote! { impl Into<String> }, quote! { value.into() }),
+                RustType::Vec(inner) if **inner == RustType::String => (
+                    quote! { Vec<impl Into<String>> },
+                    quote! { value.into_iter().map(Into::into).collect() },
+                ),
+                _ => (value_type.clone(), quote! { value }),
+            };
             setters.push(quote! {
                 #[doc = #setter_doc]
                 #[must_use]
-                pub fn #setter_name(mut self, value: #value_type) -> Self {
-                    self.#field_name = Some(value);
+                pub fn #setter_name(mut self, value: #setter_parameter) -> Self {
+                    self.#field_name = Some(#setter_value);
                     self
                 }
             });
@@ -971,6 +987,9 @@ fn required_parameters(
             let send_bound = send.then(|| quote! { + Send });
             match &argument.rust_type {
                 RustType::String => Ok(quote! { #name: impl Into<String> #send_bound }),
+                RustType::Vec(inner) if **inner == RustType::String => {
+                    Ok(quote! { #name: Vec<impl Into<String> #send_bound> })
+                }
                 RustType::IdInput(_) => Ok(quote! { #name: impl Into<#value_type> #send_bound }),
                 _ => Ok(quote! { #name: #value_type }),
             }
@@ -1002,6 +1021,14 @@ fn method_setup(
                 } else if matches!(argument.rust_type, RustType::String) {
                     statements.push(quote! {
                         let query = query.arg(#argument_wire_name, #name.into());
+                    });
+                } else if matches!(
+                    &argument.rust_type,
+                    RustType::Vec(inner) if **inner == RustType::String
+                ) {
+                    statements.push(quote! {
+                        let #name = #name.into_iter().map(Into::into).collect::<Vec<String>>();
+                        let query = query.arg(#argument_wire_name, #name);
                     });
                 } else {
                     statements.push(quote! {
@@ -1661,7 +1688,7 @@ fn append_method_reachability(
         .filter(|argument| argument.presence == ArgumentPresence::Required)
         .map(|argument| reach_method_value(plan, &argument.rust_type, &argument.coordinate))
         .collect::<Result<Vec<_>, _>>()?;
-    calls.push(quote! { let _ = #receiver.#method(#(#arguments),*); });
+    calls.push(quote! { drop(#receiver.#method(#(#arguments),*)); });
     symbols.insert(format!("dagger_sdk::{owner}::{}", field.rust_name));
 
     let Some(options_method) = field.options_method_name.as_deref() else {
@@ -1674,7 +1701,7 @@ fn append_method_reachability(
     let options_type = source_ident(options_name, &field.coordinate)?;
     calls.push(quote! {
         let opts = #options_type::default();
-        let _ = #receiver.#options_method_ident(#(#arguments,)* &opts);
+        drop(#receiver.#options_method_ident(#(#arguments,)* &opts));
     });
     symbols.insert(format!("dagger_sdk::{owner}::{options_method}"));
     symbols.insert(format!("dagger_sdk::{options_name}"));
@@ -1691,7 +1718,7 @@ fn append_method_reachability(
         let value = reach_value(plan, &argument.rust_type, &argument.coordinate)?;
         calls.push(quote! {
             let _ = &opts.#field_name;
-            let _ = #options_type::default().#setter_name(#value);
+            drop(#options_type::default().#setter_name(#value));
         });
         symbols.insert(format!(
             "dagger_sdk::{options_name}::{}",
@@ -1746,7 +1773,7 @@ fn render_input_reachability(
         .filter(|field| field.presence == ArgumentPresence::Required)
         .map(|field| reach_value(plan, &field.rust_type, &field.coordinate))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut statements = vec![quote! { let _ = #name::#constructor(#(#required),*); }];
+    let mut statements = vec![quote! { drop(#name::#constructor(#(#required),*)); }];
     symbols.insert(format!("dagger_sdk::{}", input.rust_name));
     symbols.insert(format!(
         "dagger_sdk::{}::{}",
@@ -1762,7 +1789,7 @@ fn render_input_reachability(
         if let Some(setter) = field.setter_name.as_deref() {
             let setter_ident = source_ident(setter, &field.coordinate)?;
             let supplied = reach_value(plan, &field.rust_type, &field.coordinate)?;
-            statements.push(quote! { let _ = value.clone().#setter_ident(#supplied); });
+            statements.push(quote! { drop(value.clone().#setter_ident(#supplied)); });
             symbols.insert(format!("dagger_sdk::{}::{setter}", input.rust_name));
         }
     }

@@ -1,3 +1,8 @@
+//! Legacy CLI download and platform-selection implementation.
+//!
+//! The stable provisioner owns the release-grade verified path; this module remains
+//! private until all beta connection entry points have been retired.
+
 use std::{
     fs::File,
     io::{Write, copy},

@@ -1,3 +1,5 @@
+//! Loopback connection parameters decoded from the legacy CLI session handshake.
+
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]

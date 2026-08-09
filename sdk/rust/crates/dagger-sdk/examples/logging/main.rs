@@ -14,12 +14,7 @@ async fn main() -> eyre::Result<()> {
 
     let host_source_dir = client.host().directory_opts(
         "examples/build-the-application/app",
-        HostDirectoryOpts {
-            exclude: Some(vec!["node_modules", "ci/"]),
-            include: None,
-            no_cache: None,
-            gitignore: None,
-        },
+        &HostDirectoryOpts::default().with_exclude(vec!["node_modules", "ci/"]),
     );
     let build_dir = client
         .container()

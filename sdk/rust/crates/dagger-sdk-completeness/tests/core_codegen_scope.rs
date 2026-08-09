@@ -45,9 +45,12 @@ fn fixtures() -> &'static Fixtures {
     FIXTURES.get_or_init(|| {
         let root = repository_root().join("sdk/rust/completeness");
         let inventory = read_canonical(&root.join("artifacts/inventory.json"));
-        let checked_after = read_canonical(&root.join("artifacts/ledger.json"));
+        let source_items = read_canonical(&root.join("artifacts/source-items.json"));
+        let classifications = read_canonical(&root.join("classifications.json"));
         let contract = read_canonical(&root.join("core-codegen-scope.json"));
-        let reference_before = reference_before(&checked_after, &contract);
+        let reference_before = resolve_classifications(&inventory, &source_items, &classifications)
+            .expect("authored baseline classifications must resolve");
+        let checked_after = reference_after(&reference_before, &contract);
         Fixtures {
             inventory,
             checked_after,
@@ -57,25 +60,25 @@ fn fixtures() -> &'static Fixtures {
     })
 }
 
-fn reference_before(after: &ResolvedLedger, contract: &CoreCodegenScopeContract) -> ResolvedLedger {
-    let mut before = after.clone();
+fn reference_after(before: &ResolvedLedger, contract: &CoreCodegenScopeContract) -> ResolvedLedger {
+    let mut after = before.clone();
     for correction in &contract.corrections {
         let paths = correction
             .source_paths
             .iter()
             .collect::<std::collections::BTreeSet<_>>();
-        for row in before.capabilities.values_mut() {
+        for row in after.capabilities.values_mut() {
             let explicit = correction.capability_ids.contains(&row.capability_id);
             let selected_path = row
                 .source_anchors
                 .iter()
                 .any(|anchor| paths.contains(&anchor.path));
             if explicit || selected_path {
-                row.owner_feature = Some(FeatureId::Feature4);
+                row.owner_feature = Some(correction.destination.clone());
             }
         }
     }
-    before
+    after
 }
 
 fn mutate(

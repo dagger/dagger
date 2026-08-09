@@ -1,3 +1,5 @@
+//! Legacy beta connection configuration retained for connector migration.
+
 use crate::core::logger::DynLogger;
 use derive_builder::Builder;
 use std::path::PathBuf;

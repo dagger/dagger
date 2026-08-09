@@ -40,6 +40,27 @@ jobs:
       - name: Check crate publication policy
         run: |
           cargo metadata --no-deps --format-version 1 --locked |
-            jq -e '([.packages[] | select(.publish != []) | .name] | sort) == ["dagger-sdk"]'
+            jq -e '
+              ([.packages[] | select(.publish != []) | .name] | sort) == ["dagger-sdk"] and
+              (.packages[] | select(.name == "dagger-sdk") |
+                (.features == {"default": ["gen"], "gen": []}) and
+                ([.dependencies[] | select(.req == "*")] | length == 0) and
+                ([.dependencies[] | select(.source != null and (.source | startswith("registry+https://github.com/rust-lang/crates.io-index") | not))] | length == 0)
+              )'
+      - name: Check generated source and security boundaries
+        run: |
+          cargo test -p dagger-sdk --test source_policy --all-features --locked
+          cargo test -p dagger-bootstrap --test generation --locked
+          cargo test -p dagger-codegen --test render --test projection --locked
+          cargo test -p dagger-sdk --all-features --locked \
+            public_error_rendering_is_redacted_while_sources_remain_inspectable
+          cargo test -p dagger-sdk --all-features --locked \
+            session_control_and_process_input_debug_never_render_credentials
       - name: Verify the public SDK package
-        run: cargo package -p dagger-sdk --all-features --locked
+        run: |
+          cargo package -p dagger-sdk --all-features --locked
+          package_files="$(cargo package -p dagger-sdk --list --locked)"
+          grep -Fqx -- 'README.md' <<<"$package_files"
+          grep -Fqx -- 'LICENSE' <<<"$package_files"
+          grep -Fqx -- 'examples/first-pipeline/main.rs' <<<"$package_files"
+          grep -Fqx -- 'src/gen/mod.rs' <<<"$package_files"

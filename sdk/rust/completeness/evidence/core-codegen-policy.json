@@ -1,0 +1,11 @@
+{
+  "command_digests": {
+    "compile": "sha256:f466bfd88c702dcf64421753db41ca3a786136953549f413fb5b00037ca90a38",
+    "documentation": "sha256:66964c76807e6208ca9f3f0cf4bfeb07fcf31b645db262681b8856560ee56d8b",
+    "exact-target": "sha256:f41adcb4f72cf662771b0121f07d0f8aa40d2699344dfd494a535e9a29f81e00",
+    "implementation": "sha256:425158d4a3f959dbcea508536826e1eabd5fd40e702903b58b79271819961575",
+    "property": "sha256:f466bfd88c702dcf64421753db41ca3a786136953549f413fb5b00037ca90a38",
+    "query-projection": "sha256:f466bfd88c702dcf64421753db41ca3a786136953549f413fb5b00037ca90a38"
+  },
+  "subject_revision": "sha256:9a9076aca5452851bd3fe92ca200111dff8d2c8d9e74d4dcd4ae10a6e3ef4d9a"
+}

@@ -8,8 +8,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:17f7be7ab6c71f93245f626b802befe18d37ae9066e86d9ff7a1cd1d2d62c749",
-      "sha256": "sha256:583c94cf5170126e829bc376f5e7099ed9162ac058ab07b27a3bca70b920e17b"
+      "semantic_sha256": "sha256:288b9af9f0aa38c99e55c72fdd7563d0396f9df2c3f65506ec5d48c225e4823a",
+      "sha256": "sha256:c6fb8c22229bb3d4889639566de179974b61510ea13ddf3cd6065200cb7694ff"
     },
     "crates/dagger-sdk/src/gen/build_arg.rs": {
       "kind": "rust-module",
@@ -129,8 +129,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:e9ef882879499eb38dc3f793cc55f06ac5086a204971d24eac2d20277d7cb4fe",
-      "sha256": "sha256:b3cdc3ec64d53ae41174a65874407a29c34a20845669b37c17eda5ecbd0208a5"
+      "semantic_sha256": "sha256:5aeccab3c5963f12aceb5899ee9da461a927895dfd74d1d7622fb93c631c0f3d",
+      "sha256": "sha256:839230c5173864ef088a476f5d06d9caffea48919014aa1987ddd2833dcea85b"
     },
     "crates/dagger-sdk/src/gen/current_module.rs": {
       "kind": "rust-module",
@@ -140,8 +140,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:3c298962cf8662137d88a750621f258d54634117594b2ec1c047fe8073ba67ec",
-      "sha256": "sha256:913e44967eb3b0615bea8500ca482d285e707ad5f5db1161d0979ed316beb1f8"
+      "semantic_sha256": "sha256:1af17b59bd777640865da5ee4d7c5d0274029bdec822554b5d3c19f4aaa20765",
+      "sha256": "sha256:9d391e0ea2906fb6925bf4dbaef32b4868827fed29f1dedb6a7be52cb7053353"
     },
     "crates/dagger-sdk/src/gen/current_module_as_sdk.rs": {
       "kind": "rust-module",
@@ -206,8 +206,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:9a9593e705be8ac4d371cfb36a2440420a10b2c8bb466cf08dbac72c837458aa",
-      "sha256": "sha256:15d70b9b8bb1ca4c8902e3539d80bfb5851a18be5797ce51f27d9186aeb46756"
+      "semantic_sha256": "sha256:1fe8a8db16d6070c1ccf458134db85a9375bbf21501bca9a6a6eb86f0b398baf",
+      "sha256": "sha256:4b4fe52255433654616fbfea08076278d3ea5e1712aae15386f005dc3ab6c528"
     },
     "crates/dagger-sdk/src/gen/engine.rs": {
       "kind": "rust-module",
@@ -228,8 +228,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:dad685dcdbf375da85215745d73f05dc759880506795225096b2ed8feb6651f2",
-      "sha256": "sha256:6949e4c34a13d7068f65c0af3d003a9637a3c0d0a128f35e95458cb5f0ef84f5"
+      "semantic_sha256": "sha256:7681f3a27dcd788c9996105adf29721c237f43a94584d40c91430c3f9e68e5fa",
+      "sha256": "sha256:c13c3d06a931a782e060234bc7d374f55c30817aa43fdd4a48d55c51c05b74c0"
     },
     "crates/dagger-sdk/src/gen/engine_cache_entry.rs": {
       "kind": "rust-module",
@@ -360,8 +360,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:d81dd2742643532edcd9cf7da143226af845dfca2c2488f0df726a05c4f05dec",
-      "sha256": "sha256:50f0f3610fdae615b9b5ccce89b068759a17b6b921c12d52d9bcf3fe89889ce1"
+      "semantic_sha256": "sha256:5366fefafe5274a1ce5bd9ce08879645d0babe4e9edfe9b6abfb0e18d68524a4",
+      "sha256": "sha256:1add470c381238fe372c1d3232e027066779cbb9731882369b476c16fd432d87"
     },
     "crates/dagger-sdk/src/gen/file_type.rs": {
       "kind": "rust-module",
@@ -382,8 +382,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:5c2acba36c39db5a28ccfb53cc2acb2cf089ce4c710736bc3387034d33f28df6",
-      "sha256": "sha256:0499f33d71665531763ef80b964d2c63d14cde27ab644d3ee4e91517dc709b3c"
+      "semantic_sha256": "sha256:a6fc7d6a6f0f27124f9f1d6231feb501349f69d7ec9370a3c350a5b185fa2feb",
+      "sha256": "sha256:1541a0c198cc13bae29ce1912f5809ea5c908623de1e7935b8e34d8891adc507"
     },
     "crates/dagger-sdk/src/gen/function_arg.rs": {
       "kind": "rust-module",
@@ -437,8 +437,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:d86a0c3d4461e2dad8ea67b0a82048351967c87bf75fd2df05e4703dc0471fb9",
-      "sha256": "sha256:7cfe2ac0b488ee1fb89baaa382a8416eb9d9db31e7ee8a70dafb25e1c6727d06"
+      "semantic_sha256": "sha256:5421982825fc8a2e1e91172c2d4209a6f06e1977a9a1de82f2feed0465b870bc",
+      "sha256": "sha256:a6da094a644486836e976edb2424ebaeede5f26b958c07df541ea7a4dba7d99b"
     },
     "crates/dagger-sdk/src/gen/generator.rs": {
       "kind": "rust-module",
@@ -470,8 +470,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:ccf4ada0f8099d2f9d8012f0826d3619859c4971c6323c7832d1b2ca394498df",
-      "sha256": "sha256:3330e9025ed2042c51759010b4100853803852fa46d3b24bf0512ecabf31541f"
+      "semantic_sha256": "sha256:74f671e839c84623e2bf38c0f50cacd7fcc83a2f7a9240a1f75118fe625cf719",
+      "sha256": "sha256:6c3435428b966f1170e189af62335d1f01619b484734453f5c5d43eddfd308a2"
     },
     "crates/dagger-sdk/src/gen/git_repository.rs": {
       "kind": "rust-module",
@@ -481,8 +481,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:442bd4245016839a7bba1b67e700ca002bb564784e2cbdcb257bda883c5562ce",
-      "sha256": "sha256:9b8c18f0c54a20cfac10e62297ac66a0ce1a63ebd56d9c223a80419837c1c055"
+      "semantic_sha256": "sha256:dff26bd01f685193296ce06d24a8996e154f75c8a5b8a05d863cead48248123c",
+      "sha256": "sha256:ada13a7082fb8c60bf12221b76d069d155ebc30b860a4efe79d9ece97d7b296f"
     },
     "crates/dagger-sdk/src/gen/healthcheck_config.rs": {
       "kind": "rust-module",
@@ -503,8 +503,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:c348fb2ed29f151c9a05aa4a28359beda60b04f3fa7f906906314e9a607192af",
-      "sha256": "sha256:85538fa1536fe48a5531901f11f504ac146d5d8230e6a0e8a4f9c5b5f87a1966"
+      "semantic_sha256": "sha256:b22c30e4890c31ada040e8b7835ee45a819c2294d0c19a5cb3011a3264e4ecfc",
+      "sha256": "sha256:90fb6576be36c76401bb48f7642959527282faf90c32e0dcc0174604873e7846"
     },
     "crates/dagger-sdk/src/gen/http_state.rs": {
       "kind": "rust-module",
@@ -569,8 +569,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:4c195b26fef255cf8405358b2d63152d874a9d3cca49ba201013a8662dde19d0",
-      "sha256": "sha256:2b581d11b75e8208c8199f3c68cec269fa517f4d99ba6a8d16c7f3373348215c"
+      "semantic_sha256": "sha256:31bfc6711d350b4520e42b88e7f189bab18396ff3427039ef232153629e993df",
+      "sha256": "sha256:5e893cf82a3fb0929ce934163e0317d4e81796228fca4e2798d6b3f60b72e91a"
     },
     "crates/dagger-sdk/src/gen/label.rs": {
       "kind": "rust-module",
@@ -602,8 +602,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:09736bae46a8879febe6485a7d56a761d38f8f462df3a97f67a763eeb5c53c09",
-      "sha256": "sha256:65b2ef94d7f3bd368022d71437735c72ef1d800e1256c6086cd299c4e18c3636"
+      "semantic_sha256": "sha256:52c74cb5b64c00e670b146427e3a2155f30705f30e8cfa8026a491207c6a48ff",
+      "sha256": "sha256:5ef4e849602b28e9e29beaf5fef2f64116e8756da8a18fe24b4a46bd6a2f6336"
     },
     "crates/dagger-sdk/src/gen/llm_content_block.rs": {
       "kind": "rust-module",
@@ -690,8 +690,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:75557f5057602545bc022985b59432c0f67042b0aef95de74287226629c5a17c",
-      "sha256": "sha256:a7ef24bd93a12e1570f3d86832b153df906e0d5d5da324c5f2af8a59ba41c05a"
+      "semantic_sha256": "sha256:37776418c3e6fc4c51b27ec6fb188e8b7f64da040b6bfafee4fa792e3f23d6aa",
+      "sha256": "sha256:0126ebe820061512b33b0cfb5a9cbc66ff526f07b5859b1ef8e1d478cad6bff8"
     },
     "crates/dagger-sdk/src/gen/module_config_client.rs": {
       "kind": "rust-module",
@@ -712,8 +712,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:a8819cf57748f7728548b84d7beb5b2a0ffabac04b8a15cd9f1e05d0260c309f",
-      "sha256": "sha256:217e22f2f9564f5f4758683d141c9373ae604970a2b4c81301f987dd78d7d00d"
+      "semantic_sha256": "sha256:0e15cb1a940908b4febdbeb42e9371711dafd9c88a0fc16872764765e797beed",
+      "sha256": "sha256:2c10c43f66b38b4522f0b6131f2f8c9647a7e77e320a95a67ce66dd74a5ebd70"
     },
     "crates/dagger-sdk/src/gen/module_source_experimental_feature.rs": {
       "kind": "rust-module",
@@ -822,8 +822,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:bc490d0ad68030b85e78d12260a549cb5cb9127f14e35bb7e6d0af96fedfa834",
-      "sha256": "sha256:ac12ee60991eab7722257a9fc0af615eff91361c924851f86dab957fb7ce87cd"
+      "semantic_sha256": "sha256:7d6895469bf9d5872257227da6bebf40229563c453e90b393647a033d275dcab",
+      "sha256": "sha256:b14704240e53e89a96b62d6e4a0256f3772b02f1e35f3379c0da88cb0fb61e0e"
     },
     "crates/dagger-sdk/src/gen/registry_protocol.rs": {
       "kind": "rust-module",
@@ -932,8 +932,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:cc1d7f1d62ecfc21bdffdd9b74afb6afd9ac4fd9b47f78a207fda0339de26f26",
-      "sha256": "sha256:2b43037bdaea511130f81891712b4ce8624bfef9492c8adf59a6626440ca5f7b"
+      "semantic_sha256": "sha256:3e86b589c03210cee4a85a966f98a51dbb49f168cc5bda7dbf4527623ab136b2",
+      "sha256": "sha256:fa33b5d4dc8ebf707242460654c22dd6f477078e63f66f5e72e0a73aee806dc4"
     },
     "crates/dagger-sdk/src/gen/socket.rs": {
       "kind": "rust-module",
@@ -998,8 +998,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:e0b8f99945e07510df30f155285113f3e6a86adca75dbcef5f2cadc0b1f1f961",
-      "sha256": "sha256:7a3536d37d26c3a5ab4a230af8da63614d05274dbcf682cf5ce80154b09668f1"
+      "semantic_sha256": "sha256:053214aea52fb36d4eb9349a2118c1072c5d1ab8ae8ca314f5c9fa45fe5b8e66",
+      "sha256": "sha256:579d62007b6a0f07c22e1eb3cbc002e04c2cfdf1d3505855d435835622d2fda2"
     },
     "crates/dagger-sdk/src/gen/type_def_kind.rs": {
       "kind": "rust-module",
@@ -1053,8 +1053,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:a231f79ab6ac39d11bb891ac19016e821596fe8d3374e378796d52cfb9a418ae",
-      "sha256": "sha256:7c5d483dcdd598c9e00b93561a65eff41440666368481fe876f86c40711015d8"
+      "semantic_sha256": "sha256:d749eebb59338e45aece0f77591b20396ddf054daa1289f4437a5256e6e90a63",
+      "sha256": "sha256:fe84747f549105e8a0ae5c0e86099ca06f1bd040668181df6571fb1a8759a872"
     },
     "crates/dagger-sdk/src/gen/workspace_git.rs": {
       "kind": "rust-module",
@@ -1130,8 +1130,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:04b48df059e6dc46d0d42c14f89b37a89e4325162bb480775492474366b838e9",
-      "sha256": "sha256:5d238f66005980b07031eaae5f85a9a29c313e0d1301b19bf16ea66ce63f74af"
+      "semantic_sha256": "sha256:8805326a0f8790fc79f68ceed39375409afa693a5bac774ead09d9aa90ca7903",
+      "sha256": "sha256:1a62f7b7d214afc5502edcdabbbc184fe846af1e4b97dcf0d4e0ab88b53de48b"
     },
     "crates/dagger-sdk/tests/core_reachability.rs": {
       "kind": "rust-test",
@@ -1141,8 +1141,8 @@
         "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
         "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
       },
-      "semantic_sha256": "sha256:895366471d80651fd5dc2492d7cb5eb71fe39e36d863f865cc1879a13f9bd7a0",
-      "sha256": "sha256:708f621bd48b3949c83eb52f37265fe0025c93f0186881ae2610ac3ea5378ed6"
+      "semantic_sha256": "sha256:6454e54f7964dae2bdad0cbc78274fb8c1c1a7afc35f33ebd47dfe916419105a",
+      "sha256": "sha256:3fa4dbbaba00add71091f5c6f1c90a1863ec5cb613263e7002e0e5053b939628"
     }
   },
   "bindings": {

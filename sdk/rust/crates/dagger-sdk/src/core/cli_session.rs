@@ -1,3 +1,5 @@
+//! Legacy CLI child-process ownership and session-parameter discovery.
+
 use std::{fs::canonicalize, path::Path, process::Stdio, sync::Arc};
 
 use eyre::Context;

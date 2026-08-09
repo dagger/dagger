@@ -17,11 +17,13 @@ use crate::authority::{
     validate_authority_registry, validate_authority_sources, validate_source_coverage,
 };
 use crate::canonical::{DigestDomain, canonical_bytes, canonical_digest, decode_canonical};
-use crate::classification::{resolve_classifications, validate_status_entries};
+use crate::classification::resolve_classifications;
 use crate::command::CommandPolicy;
 use crate::compatibility::validate_compatibility_claim;
 use crate::core_codegen::{
-    CoreCodegenScopeContract, apply_core_codegen_scope_correction, core_codegen_policy_contract,
+    CoreCodegenEvidencePolicy, CoreCodegenEvidenceRegistry, CoreCodegenScopeContract,
+    GeneratedBindingManifest, ManifestBindingKind, apply_core_codegen_scope_correction,
+    core_codegen_policy_contract, verify_core_codegen_evidence,
 };
 use crate::diagnostic::{ContractDiagnostic, DiagnosticCode, DiagnosticSet, ToolError};
 use crate::evidence::{
@@ -48,7 +50,8 @@ use crate::observation::{TransportObservationRegistry, validate_transport_observ
 use crate::report::{build_report, render_human_report};
 use crate::target::{TargetObservation, validate_target};
 use crate::traceability::{
-    FeatureScopeDeclaration, parse_feature_scope_declaration, validate_feature_scope_routing,
+    CandidateStatusChanges, FeatureScopeDeclaration, apply_feature_status_changes,
+    parse_feature_scope_declaration, validate_feature_scope_routing,
 };
 
 const DAGGER_AUTHORITY: &str = "github.com/dagger/dagger";
@@ -114,6 +117,18 @@ pub fn derive_contract(
     let core_codegen_scope: CoreCodegenScopeContract = read_canonical(
         &contract.join("core-codegen-scope.json"),
         "core codegen scope",
+    )?;
+    let core_codegen_manifest: GeneratedBindingManifest = read_canonical(
+        &contract.join("artifacts/core-codegen-bindings.json"),
+        "core codegen binding manifest",
+    )?;
+    let core_codegen_evidence: CoreCodegenEvidenceRegistry = read_canonical(
+        &contract.join("evidence/core-codegen-registry.json"),
+        "core codegen evidence registry",
+    )?;
+    let core_codegen_evidence_policy: CoreCodegenEvidencePolicy = read_canonical(
+        &contract.join("evidence/core-codegen-policy.json"),
+        "core codegen evidence policy",
     )?;
     let mut feature_inputs = Vec::new();
     for policy in reviewed_feature_contracts() {
@@ -219,10 +234,9 @@ pub fn derive_contract(
         resolve_classifications(&inventory, &source_items, &classifications),
         "resolved ledger",
     )?;
-    validated(
-        validate_status_entries(&baseline_ledger, &evidence),
-        "status entries",
-    )?;
+    // The authored baseline is an intermediate routing state. Final candidate evidence
+    // deliberately retires superseded baseline scopes, so validate evidence links only
+    // after ownership correction and the evidence-backed status transition are applied.
     for feature in &feature_inputs {
         if feature.declaration.feature == FeatureId::Feature4 {
             continue;
@@ -241,11 +255,10 @@ pub fn derive_contract(
         apply_core_codegen_scope_correction(&inventory, &baseline_ledger, &core_codegen_scope),
         "core codegen scope correction",
     )?;
-    let ledger = core_codegen.ledger;
     validated(
         validate_feature_scope_routing(
             &inventory,
-            &ledger,
+            &core_codegen.ledger,
             &core_codegen.declaration,
             &core_codegen.policy,
         ),
@@ -257,6 +270,61 @@ pub fn derive_contract(
             artifact: "target digest",
         })?,
     );
+    let core_codegen_closure = verify_core_codegen_evidence(
+        &core_codegen_manifest,
+        &core_codegen_evidence,
+        &core_codegen_evidence_policy,
+    );
+    if !core_codegen_closure.expired_evidence_ids().is_empty() {
+        return Err(ToolError::Decode {
+            artifact: "core codegen evidence freshness",
+        });
+    }
+    let implementation_evidence = EvidenceId::new("implementation/core-codegen/generated-client")
+        .expect("static evidence identity is valid");
+    let verification_evidence = EvidenceId::new("verification/core-codegen/release-closure")
+        .expect("static evidence identity is valid");
+    let mut candidate = CandidateStatusChanges::default();
+    for capability_id in core_codegen_closure.closed_capability_ids() {
+        let binding =
+            core_codegen_manifest
+                .bindings
+                .get(capability_id)
+                .ok_or(ToolError::Decode {
+                    artifact: "core codegen closed binding",
+                })?;
+        if binding.binding_kind == ManifestBindingKind::IdiomaticEquivalent
+            || binding.decision_id.is_some()
+        {
+            return Err(ToolError::Decode {
+                artifact: "core codegen direct status transition",
+            });
+        }
+        candidate.changes.insert(
+            capability_id.clone(),
+            ClassificationValues {
+                status: Status::Implemented,
+                gap: None,
+                owner_feature: None,
+                implementation_evidence: CanonicalSet::new([implementation_evidence.clone()]),
+                verification_evidence: CanonicalSet::new([verification_evidence.clone()]),
+                decision_evidence: CanonicalSet::default(),
+            },
+        );
+    }
+    let ledger = validated(
+        apply_feature_status_changes(
+            &core_codegen.ledger,
+            &core_codegen.declaration,
+            &core_codegen.policy,
+            &candidate,
+            &evidence,
+            &target_digest,
+            &BTreeMap::new(),
+            false,
+        ),
+        "core codegen status transition",
+    )?;
     let command_policy = command_policy()?;
     let evidence_sources = evidence_sources(
         repository_root,

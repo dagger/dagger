@@ -2,6 +2,8 @@
 //! supplied. The stable client deliberately does not launch an implicit CLI session
 //! until that connector exists, so these are not part of the default workspace gate.
 
+#![cfg(feature = "gen")]
+
 use std::time::{Duration, SystemTime};
 
 use dagger_sdk::{Client, ClientConfig, QueryError, connect, connect_with};

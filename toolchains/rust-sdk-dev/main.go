@@ -315,7 +315,18 @@ func (t *RustSdkDev) GeneratedClientCheck(ctx context.Context) error {
 func (t *RustSdkDev) CoreConformance(ctx context.Context) (string, error) {
 	generated := *t
 	generated.WithGeneratedClient()
-	sourceIdentity, err := generated.Source().Digest(ctx)
+	// Evidence artifacts are derived from this identity, so including them would make
+	// the subject self-referential. Bind live evidence to the complete compilable Rust
+	// source instead; the manifest separately binds every generated artifact byte.
+	subjectSource := generated.Source().Filter(dagger.DirectoryFilterOpts{
+		Include: []string{
+			"Cargo.lock",
+			"Cargo.toml",
+			"rust-toolchain.toml",
+			"crates/**",
+		},
+	})
+	sourceIdentity, err := subjectSource.Digest(ctx)
 	if err != nil {
 		return "", fmt.Errorf("resolve generated source identity: %w", err)
 	}

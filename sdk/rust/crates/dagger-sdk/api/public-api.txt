@@ -19,6 +19,7 @@ GraphQlError
 GraphQlLocation
 GraphQlPathSegment
 ConfigError
+ConfigOption
 ConnectError
 ExistingSessionError
 ExistingSessionErrorKind
@@ -40,9 +41,20 @@ ShutdownError
 ShutdownFailureKind
 ExecError
 RequestError
+RequestEncodingError
+RequestEncodingErrorKind
+ResponseDecodingError
+ResponseDecodingErrorKind
 QueryError
 CloseError
 QueryBuildError
+QueryBuildErrorKind
+TimeoutPhase
+IdInput
+Id
+Json
+Platform
 IntoID
 Loadable
+# Available at the crate root only when the default `gen` feature is enabled.
 generated::*

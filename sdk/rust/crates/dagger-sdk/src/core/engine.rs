@@ -1,3 +1,5 @@
+//! Legacy engine startup orchestration retained for connector migration.
+
 use crate::core::{DAGGER_ENGINE_VERSION, logger::DynLogger};
 use crate::core::{
     cli_session::CliSession,

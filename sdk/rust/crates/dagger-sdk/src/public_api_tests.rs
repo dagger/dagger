@@ -22,7 +22,15 @@ const BETA_API: &str = include_str!("../api/beta-public-api.txt");
 const MIGRATION: &str = include_str!("../api/beta-migration.json");
 const LIB_SOURCE: &str = include_str!("lib.rs");
 const CONFIG_SOURCE: &str = include_str!("config.rs");
-const GENERATED_SOURCE: &str = include_str!("gen.rs");
+const GENERATED_SOURCES: &[&str] = &[
+    include_str!("gen/mod.rs"),
+    include_str!("gen/query.rs"),
+    include_str!("gen/container.rs"),
+    include_str!("gen/directory.rs"),
+    include_str!("gen/file.rs"),
+    include_str!("gen/node.rs"),
+    include_str!("gen/exportable.rs"),
+];
 
 const CONTRACT_MODULES: &[(&str, &str, &[&str])] = &[
     (
@@ -87,6 +95,12 @@ fn manifest_lines(input: &str) -> Vec<&str> {
 }
 
 fn assert_send_sync<T: Send + Sync>() {}
+
+fn generated_source_contains(needle: &str) -> bool {
+    GENERATED_SOURCES
+        .iter()
+        .any(|source| source.contains(needle))
+}
 
 fn production_source_is_panic_free() -> bool {
     [
@@ -221,11 +235,11 @@ proptest! {
         let handles = ["Query", "Container", "Directory", "File", "NodeClient", "ExportableClient"];
         let selected = if mutation { "UnknownHandle" } else { handles[sample] };
         let declaration = format!("pub struct {selected}");
-        prop_assert_eq!(GENERATED_SOURCE.contains(&declaration), !mutation);
-        prop_assert!(!GENERATED_SOURCE.contains("pub session: SessionHandle"));
-        prop_assert!(!GENERATED_SOURCE.contains("pub selection: Selection"));
-        prop_assert!(!GENERATED_SOURCE.contains("graphql_client"));
-        prop_assert!(!GENERATED_SOURCE.contains("DaggerSessionProc"));
+        prop_assert_eq!(generated_source_contains(&declaration), !mutation);
+        prop_assert!(!generated_source_contains("pub session: SessionHandle"));
+        prop_assert!(!generated_source_contains("pub selection: Selection"));
+        prop_assert!(!generated_source_contains("graphql_client"));
+        prop_assert!(!generated_source_contains("DaggerSessionProc"));
     }
 
     // Invariant: ordinary cleanup-related rendering never interpolates opaque caller data.
@@ -295,11 +309,11 @@ proptest! {
     // Feature: rust-sdk-client-lifecycle, Property 23: the stable surface is documented and intentionally exported
     #[test]
     fn stable_surface_is_documented_and_intentionally_exported(
-        index in 0_usize..47,
+        index in any::<usize>(),
         mutate in any::<bool>(),
     ) {
         let manifest = manifest_lines(PUBLIC_API);
-        let item = if mutate { "Config" } else { manifest[index] };
+        let item = if mutate { "Config" } else { manifest[index % manifest.len()] };
         let represented = item != "Config" && (item == "generated::*"
             || LIB_SOURCE.contains(&format!("{item},"))
             || LIB_SOURCE.contains(&format!("{{{item},"))

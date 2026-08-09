@@ -1,3 +1,5 @@
+//! Legacy live-schema acquisition retained only for connector migration.
+
 use crate::core::introspection::IntrospectionResponse;
 use crate::core::{config::Config, engine::Engine, session::Session};
 

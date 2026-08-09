@@ -3,7 +3,7 @@ name = "dagger-sdk"
 description = "A dagger sdk for rust, written in rust"
 publish = true
 readme = "README.md"
-include = ["/src/**", "/README.md", "/LICENSE"]
+include = ["/src/**", "/examples/**", "/README.md", "/LICENSE"]
 
 version.workspace = true
 edition.workspace = true
@@ -59,3 +59,48 @@ trybuild.workspace = true
 [features]
 default = ["gen"]
 gen = []
+
+[[example]]
+name = "build-the-application"
+path = "examples/build-the-application/main.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "caching"
+path = "examples/caching/main.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "existing-dockerfile"
+path = "examples/existing-dockerfile/main.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "first-pipeline"
+path = "examples/first-pipeline/main.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "injected-connection"
+path = "examples/injected_connection.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "logging"
+path = "examples/logging/main.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "multi-stage-build"
+path = "examples/multi-stage-build/main.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "publish-the-application"
+path = "examples/publish-the-application/main.rs"
+required-features = ["gen"]
+
+[[example]]
+name = "test-the-application"
+path = "examples/test-the-application/main.rs"
+required-features = ["gen"]

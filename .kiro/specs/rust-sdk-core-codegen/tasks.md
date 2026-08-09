@@ -591,8 +591,8 @@
     cargo-deny; require every passing evidence record to name the exact target and only
     its observed capability scope, with unclosed rows remaining honestly blocking.
 
-- [ ] 19. Stabilize documentation, public compatibility, and committed outputs
-  - [ ] 19.1 Document the durable generated-client and maintenance contracts
+- [x] 19. Stabilize documentation, public compatibility, and committed outputs
+  - [x] 19.1 Document the durable generated-client and maintenance contracts
     - Add `//!` ownership/invariant documentation to handwritten generator/bootstrap/
       completeness/runtime modules and `///` guarantees, caller assumptions, failure,
       omission, lifecycle, and security behaviour to every handwritten public item.
@@ -602,7 +602,7 @@
     - Keep production comments focused on durable WHY/invariants; do not refer to spec
       feature names, task numbers, or property IDs outside test traceability tags.
     - _Requirements: 8.7-8.13, 9.3-9.15, 10.15, 10.19, 10.20_
-  - [ ] 19.2 Fence the intended public and feature surface
+  - [x] 19.2 Fence the intended public and feature surface
     - Update the Rust public API snapshot, crate-root re-exports, examples, and feature
       matrix; include the required Rust SDK breaking-change fragment for corrections
       that change the existing generated public shape.
@@ -610,16 +610,17 @@
       source-policy tests forbidding generated edits, module-wide lint suppression,
       panic shortcuts, compiler fix-ups, and planning metadata in production comments.
     - _Requirements: 8.12-8.15, 9.10, 10.4, 10.15, 10.16_
-  - [ ] 19.3 Publish the first complete generated artifact set into the worktree
+  - [x] 19.3 Publish the first complete generated artifact set into the worktree
     - Run explicit update from the checked target, assert the localized diff equals the
       manifest-declared change set, remove only the manifest-owned legacy `gen.rs`, and
-      verify a subsequent check and `dagger generate -y` are clean.
+      verify a subsequent check and the scoped
+      `dagger generate -y rust-sdk:apiclient` workflow are clean.
     - Register only passing implementation/test/documentation/exact-target evidence,
       derive ledger statuses through Feature 1, and regenerate committed reports; do
       not optimize the `Implemented` count or relabel any capability lacking its own
       required evidence.
     - _Requirements: 1.7-1.11, 9.1-9.13, 10.1-10.20_
-  - [ ] 19.4 Fence dependency and generated-surface security policy
+  - [x] 19.4 Fence dependency and generated-surface security policy
     - Extend cargo-deny and repository Rust security configuration/tests for the final
       locked graph, direct dependency/features, generated serde/documentation, path
       confinement, process invocation, and credential-safe diagnostics.
@@ -628,11 +629,11 @@
       failure before final evidence is accepted.
     - _Requirements: 2.12, 8.12, 8.13, 9.6-9.15, 10.16_
 
-- [ ] 20. Final checkpoint: Feature 4 is releasable
+- [x] 20. Final checkpoint: Feature 4 is releasable
   - Run `cargo fmt --all --check`, locked workspace check/test/clippy, warning-denied
     rustdoc, no-default-features SDK tests, cargo-deny, direct generation check,
-    `GeneratedClientCheck`, `CoreConformance`, repository Dagger generation, and Rust
-    security checks.
+    `GeneratedClientCheck`, `CoreConformance`, scoped `rust-sdk:apiclient` repository
+    generation, and Rust security checks.
   - Require all 30 property identifiers, all target-wide finite inventories, compile
     pass/fail suites, 720-field/611-argument projection coverage, exact-target evidence,
     binding-manifest bijection, regenerated reports, public API/doc fences, and a clean

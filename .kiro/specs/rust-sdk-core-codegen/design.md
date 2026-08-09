@@ -1701,11 +1701,13 @@ cargo deny check
 dagger-rust generate --workspace sdk/rust --check
 dagger call rust-sdk-dev generated-client-check
 dagger call rust-sdk-dev core-conformance
+dagger generate -y rust-sdk:apiclient
 ```
 
 The Dagger function names are the stable repository interface; their internal command
-composition remains independently visible in CI. `dagger generate -y` must also leave
-the checkout clean after the checked target artifacts have been deliberately updated.
+composition remains independently visible in CI. The scoped `rust-sdk:apiclient`
+generator must also leave the checkout clean after the checked target artifacts have
+been deliberately updated. Whole-workspace generation is not a Rust SDK release gate.
 
 ## Design Consent Gate
 

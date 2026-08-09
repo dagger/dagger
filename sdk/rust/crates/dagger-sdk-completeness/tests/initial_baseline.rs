@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:c78f9063ff511afdd7ea5ce32a6171921094313b5949e5062307d6f9c8301376";
+    "sha256:a66c91e66d346f535922445a515af7e05a57e2f60d3a37adac64b925f55471b4";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -114,9 +114,9 @@ fn target_locks_authorities_harness_status_and_ownership() {
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:2bc98eb8634fe072f3294de51398bc14c6510ef81d3bdcd34507b7af52867cad"
+        "sha256:73e8958e7be92297e1068df6eb0e9865dc6984c236c3ae0d97555041510e254a"
     );
-    assert_eq!(derived.report.blocking_capabilities.len(), 4_573);
+    assert_eq!(derived.report.blocking_capabilities.len(), 3_855);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
     assert!(
         derived
@@ -163,18 +163,49 @@ fn target_locks_authorities_harness_status_and_ownership() {
         derived.report.counts_by_status,
         std::collections::BTreeMap::from([
             (Status::IdiomaticEquivalent, 10),
-            (Status::Implemented, 15),
+            (Status::Implemented, 733),
             (Status::Inapplicable, 0),
-            (Status::Missing, 1_118),
-            (Status::Partial, 3_455),
+            (Status::Missing, 1_102),
+            (Status::Partial, 2_753),
         ])
     );
+    let generated_argument = derived
+        .ledger
+        .capabilities
+        .get(
+            &CapabilityId::new("schema/engine-schema/schema-argument/%41ddress/directory/exclude")
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(generated_argument.status, Status::Implemented);
+    assert_eq!(
+        generated_argument.implementation_evidence,
+        CanonicalSet::new([
+            EvidenceId::new("implementation/core-codegen/generated-client").unwrap()
+        ])
+    );
+    assert_eq!(
+        generated_argument.verification_evidence,
+        CanonicalSet::new([EvidenceId::new("verification/core-codegen/release-closure").unwrap()])
+    );
+    let unclosed_enum_value = derived
+        .ledger
+        .capabilities
+        .get(
+            &CapabilityId::new(
+                "schema/engine-schema/schema-enum-value/%43ache%53haring%4Dode/%4C%4F%43%4B%45%44",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(unclosed_enum_value.status, Status::Partial);
+    assert!(unclosed_enum_value.gap.is_some());
     assert_eq!(
         derived.report.counts_by_owner,
         std::collections::BTreeMap::from([
             (FeatureId::Feature2, 13),
             (FeatureId::Feature3, 53),
-            (FeatureId::Feature4, 3_277),
+            (FeatureId::Feature4, 2_559),
             (FeatureId::Feature5, 31),
             (FeatureId::Feature6, 96),
             (FeatureId::Feature7, 2),

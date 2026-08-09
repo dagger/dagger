@@ -1,3 +1,5 @@
+//! Legacy HTTP GraphQL transport and its wire error representation.
+
 use reqwest::Error;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};

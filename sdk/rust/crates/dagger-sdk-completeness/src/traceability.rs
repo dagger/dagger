@@ -353,6 +353,48 @@ pub fn validate_feature_status_changes(
     diagnostics.finish(())
 }
 
+/// Validates and applies capability-local status replacements after ownership routing.
+///
+/// Keeping mutation behind the same validator prevents callers from bypassing scope,
+/// prior-owner, evidence, or residual-blocker checks after a routing correction.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_feature_status_changes(
+    current: &ResolvedLedger,
+    declaration: &FeatureScopeDeclaration,
+    policy: &FeatureScopePolicy,
+    candidate: &CandidateStatusChanges,
+    candidate_evidence: &EvidenceRegistry,
+    target: &TargetDigest,
+    residual_blockers: &BTreeMap<CapabilityId, ResidualBlocker>,
+    require_no_blockers: bool,
+) -> Validation<ResolvedLedger> {
+    validate_feature_status_changes(
+        current,
+        declaration,
+        policy,
+        candidate,
+        candidate_evidence,
+        target,
+        residual_blockers,
+        require_no_blockers,
+    )?;
+
+    let mut ledger = current.clone();
+    for (capability_id, replacement) in &candidate.changes {
+        let row = ledger
+            .capabilities
+            .get(capability_id)
+            .expect("validated status replacements must remain in the ledger")
+            .clone();
+        ledger.capabilities.insert(
+            capability_id.clone(),
+            replace_classification(&row, replacement),
+        );
+    }
+    validate_status_entries(&ledger, candidate_evidence)?;
+    Ok(ledger)
+}
+
 /// Validates declared IDs, actual transitions, ownership, and candidate-local evidence.
 pub fn validate_downstream_traceability(
     current: &ResolvedLedger,

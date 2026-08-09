@@ -57,10 +57,24 @@ dagger run cargo run
 See the crate documentation for raw GraphQL, typed execution errors, diagnostics,
 trace propagation, compatibility policy, injected connections, and shutdown details.
 
+## Features
+
+| Cargo selection | Public surface | Intended use |
+| --- | --- | --- |
+| default | handwritten client plus generated core-schema bindings | normal SDK applications |
+| `--features gen` | same generated surface, when defaults were disabled explicitly | selective workspace configurations |
+| `--no-default-features` | owned client, raw GraphQL, diagnostics, errors, and scalar values | raw queries or smaller integrations that do not need typed core bindings |
+| `--all-features` | the complete supported SDK surface | CI and release verification |
+
+The generated types are re-exported at the crate root only when `gen` is enabled.
+Disabling it never changes the raw request/response or client lifecycle contracts.
+
 ## Examples and contributing
 
-Workspace examples live in [`../../examples`](../../examples). From `sdk/rust`, run
-one with `cargo run --example first-pipeline`.
+Small examples are packaged with the crate. From `sdk/rust`, run one with
+`cargo run -p dagger-sdk --example first-pipeline`. Standalone application examples
+live in [`../../examples`](../../examples).
 
 Development and verification commands are documented in
-[`../../CONTRIBUTING.md`](../../CONTRIBUTING.md).
+[`../../CONTRIBUTING.md`](../../CONTRIBUTING.md); generated-client maintenance and
+release evidence are documented in [`../../MAINTAINING.md`](../../MAINTAINING.md).

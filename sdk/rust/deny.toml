@@ -18,7 +18,6 @@ allow = [
     "ISC",
     "MPL-2.0",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Zlib",
 ]
 confidence-threshold = 0.9
@@ -30,6 +29,7 @@ exceptions = []
 name = "ring"
 expression = "ISC AND MIT AND OpenSSL"
 license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
 
 [bans]
 # Async and HTTP dependency trees commonly contain justified duplicate major versions.

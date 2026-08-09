@@ -204,7 +204,7 @@ pub fn validate_target(
         &observation.rust_version,
     );
 
-    // Source adapters own byte acquisition and hashing (Task 4). Keeping only their independently
+    // Source adapters own byte acquisition and hashing. Keeping only their independently
     // observed mismatch IDs here preserves this validator's pure, deterministic boundary.
     for authority_id in observation.source_digest_mismatches.as_slice() {
         diagnostics.push(ContractDiagnostic::new(

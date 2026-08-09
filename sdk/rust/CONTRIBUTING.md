@@ -34,8 +34,9 @@ or a better idiomatic Rust design.
 - `crates/dagger-codegen` converts the engine's GraphQL schema into Rust types and
   client methods.
 - `crates/dagger-bootstrap` provides the code-generation entry point.
-- `crates/dagger-sdk/src/gen.rs` is generated. Change the generator or templates, then
-  regenerate it; do not edit it directly.
+- `crates/dagger-sdk/src/gen/` and the `core_projection`/`core_reachability` integration
+  tests are generated. Change the generator or templates, then regenerate them; do not
+  edit them directly.
 - `examples` contains executable examples and example applications.
 - `../../toolchains/rust-sdk-dev` contains the Dagger-based development, generation,
   test, and release automation for this SDK.
@@ -43,6 +44,8 @@ or a better idiomatic Rust design.
   artifacts for the Go-level completeness programme.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the existing component overview.
+The complete checked-target refresh and release procedure is in
+[MAINTAINING.md](MAINTAINING.md).
 
 ## Rust toolchains
 
@@ -88,15 +91,25 @@ Run that command from the repository root.
 
 ## Generated code
 
-Run generation from the repository root:
+During generator development, run the direct read-only check from `sdk/rust`:
 
 ```console
-dagger generate -y
+cargo run -p dagger-bootstrap --bin dagger-rust --locked -- \
+  generate --workspace . --check
+```
+
+Use `--update` only when intentionally publishing the complete generator-owned output
+set. Before submitting, run repository generation from the repository root:
+
+```console
+./hack/with-dev ./bin/dagger generate -y rust-sdk:apiclient
 ```
 
 Generation must be deterministic. Include generated changes that result from an
 intentional generator or schema change, and inspect them as part of review. Do not
-hide unrelated generated churn in a feature commit.
+hide unrelated generated churn in a feature commit. The unscoped `dagger generate -y`
+runs every generator registered by the repository workspace and is not required for a
+Rust-only change.
 
 ## Testing parity
 
@@ -116,7 +129,8 @@ New public behaviour needs tests at the lowest useful level:
 - Keep each pull request to one coherent change.
 - Explain what changed, why the design is idiomatic Rust, and how parity was verified.
 - List the commands actually run and explain any omissions.
-- Run `dagger generate -y` and include intentional generated output.
+- Run `./hack/with-dev ./bin/dagger generate -y rust-sdk:apiclient` and include
+  intentional generated output.
 - Run the relevant format, check, test, and lint commands.
 - Keep `cargo deny check` green for advisories, licenses, dependency bans, and sources.
 - Add a Changie fragment for user-facing changes as required by the root contribution

@@ -6,9 +6,7 @@ async fn main() -> eyre::Result<()> {
     let client = owned.query();
     let host_source_dir = client.host().directory_opts(
         "./examples/caching/app",
-        dagger_sdk::HostDirectoryOptsBuilder::default()
-            .exclude(vec!["node_modules/", "ci/"])
-            .build()?,
+        &dagger_sdk::HostDirectoryOpts::default().with_exclude(vec!["node_modules/", "ci/"]),
     );
 
     let node_cache = client.cache_volume("node");
@@ -17,7 +15,7 @@ async fn main() -> eyre::Result<()> {
         .container()
         .from("node:16")
         .with_mounted_directory("/src", host_source_dir)
-        .with_mounted_cache("/root/.npm", node_cache);
+        .with_mounted_cache(node_cache, "/root/.npm");
 
     let runner = source
         .with_workdir("/src")

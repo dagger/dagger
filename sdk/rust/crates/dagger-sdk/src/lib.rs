@@ -14,6 +14,7 @@
 //! # Implicit connection and query execution
 //!
 //! ```no_run
+//! # #[cfg(feature = "gen")]
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = dagger_sdk::connect().await?;
 //! let version = client.query().version().await?;
@@ -37,6 +38,7 @@
 //! when they are malformed.
 //!
 //! ```no_run
+//! # #[cfg(feature = "gen")]
 //! # async fn existing_session() -> Result<(), Box<dyn std::error::Error>> {
 //! // This process is assumed to have been started by `dagger run`.
 //! let client = dagger_sdk::connect().await?;
@@ -54,6 +56,7 @@
 //! `Display` and `Debug` output.
 //!
 //! ```no_run
+//! # #[cfg(feature = "gen")]
 //! # async fn inspect_exec() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = dagger_sdk::connect().await?;
 //! let result = client
@@ -109,6 +112,7 @@
 //! ```no_run
 //! use tracing::Instrument as _;
 //!
+//! # #[cfg(feature = "gen")]
 //! # async fn traced() -> Result<(), Box<dyn std::error::Error>> {
 //! let operation = async {
 //!     let client = dagger_sdk::connect().await?;
@@ -205,14 +209,6 @@ pub use runtime_errors::{
 pub use scalar::{Id, Json, Platform};
 
 #[cfg(feature = "gen")]
-#[allow(dead_code)]
-// Schema descriptions are external input and can contain text that rustdoc
-// interprets as links, HTML, or bare URLs.
-#[allow(
-    rustdoc::bare_urls,
-    rustdoc::broken_intra_doc_links,
-    rustdoc::invalid_html_tags
-)]
 mod r#gen;
 
 pub use client::{Client, connect, connect_with};
@@ -293,10 +289,10 @@ mod foundation_tests;
 #[cfg(test)]
 mod lifecycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gen"))]
 mod query_tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gen"))]
 mod public_api_tests;
 
 #[cfg(test)]
@@ -305,7 +301,7 @@ mod source_foundation_tests;
 #[cfg(test)]
 mod connector_tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gen"))]
 mod core_codegen_runtime_tests;
 
 #[cfg(test)]
@@ -329,5 +325,5 @@ mod test_support;
 #[cfg(test)]
 mod transport_foundation_tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gen"))]
 mod runtime_connector_tests;

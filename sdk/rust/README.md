@@ -23,9 +23,14 @@ Install the published SDK with `cargo add dagger-sdk`. See
 [`crates/dagger-sdk/README.md`](crates/dagger-sdk/README.md) for application usage,
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for ownership and security boundaries, and
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the pinned toolchain and verification commands.
+Maintainers should use [`MAINTAINING.md`](MAINTAINING.md) for checked-target refresh,
+generation, evidence, rollback, and release review.
 
-Workspace examples live in [`examples`](examples) and can be run from this directory:
+Small crate examples can be run from this directory:
 
 ```bash
-cargo run --example first-pipeline
+cargo run -p dagger-sdk --example first-pipeline
 ```
+
+The standalone application examples under [`examples`](examples) each have their own
+manifest; their exact commands are listed in [`examples/README.md`](examples/README.md).

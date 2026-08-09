@@ -1,3 +1,5 @@
+//! Minimal logging boundary used by the legacy connector implementation.
+
 use std::sync::Arc;
 
 use crate::diagnostic::DiagnosticSinkError;

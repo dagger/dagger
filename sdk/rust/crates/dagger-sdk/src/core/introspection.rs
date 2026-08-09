@@ -1,3 +1,5 @@
+//! Legacy GraphQL introspection response model used during connector migration.
+
 // These private enums mirror GraphQL introspection discriminants byte-for-byte; changing their
 // Rust spelling would obscure the wire contract without improving the application-facing API.
 #![allow(non_camel_case_types, clippy::upper_case_acronyms)]

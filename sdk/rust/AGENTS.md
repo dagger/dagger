@@ -104,8 +104,16 @@ defect, even when formatting, compilation, and tests pass.
 
 ## Generated code and parity
 
-Regenerate with `dagger generate -y` from the repository root. Inspect generated output
-and keep generator changes together with their expected output.
+Regenerate from the repository root with the Rust-only selector:
+
+```console
+./hack/with-dev ./bin/dagger generate -y rust-sdk:apiclient
+```
+
+Inspect generated output and keep generator changes together with their expected output.
+The unscoped `dagger generate -y` runs every registered workspace generator and is not
+a Rust SDK development gate; reserve it for changes intentionally spanning the whole
+repository.
 
 For work represented in the Go SDK:
 
@@ -129,9 +137,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --lock
 cargo deny check
 ```
 
-Also run `dagger generate -y` and the relevant repository Dagger checks when the change
-touches code generation, engine integration, examples, or release automation. State
-every command actually run in the pull request and explain any omission.
+Also run `./hack/with-dev ./bin/dagger generate -y rust-sdk:apiclient` and the relevant
+repository Dagger checks when the change touches code generation, engine integration,
+examples, or release automation. State every command actually run in the pull request
+and explain any omission.
 
 ## Worktree and Git safety
 

@@ -291,8 +291,10 @@ before accepting any change.
   in the F1 harness. Judge acquisition and normalization by the outer exit status, then judge SDK
   completeness from the normalized per-check outcomes.
 - **Regenerate bindings only when the Dagger module API changes.** Adding or renaming a public
-  function in `toolchains/rust-sdk-dev` requires the repository's normal `dagger generate -y`
-  workflow and review of `dagger.gen.go`. Ordinary contract reproduction does not.
+  function in `toolchains/rust-sdk-dev` requires the repository's Go module-binding generator
+  and review of `dagger.gen.go`. That exceptional binding refresh is distinct from the normal
+  Rust API-client workflow, `dagger generate -y rust-sdk:apiclient`; ordinary contract
+  reproduction requires neither.
 - **Treat linked-worktree warnings as diagnostics, not verdicts.** Some local Dagger invocations
   warn that libgit does not understand the Git `worktreeConfig` extension. A successful trace and
   correct result remain valid; if repository loading actually fails, reproduce from a normal clone

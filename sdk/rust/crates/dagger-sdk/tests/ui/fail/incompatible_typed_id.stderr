@@ -8,10 +8,10 @@ error[E0277]: the trait bound `IdInput<dagger_sdk::Directory>: From<Container>` 
   |
 help: the trait `From<Container>` is not implemented for `IdInput<dagger_sdk::Directory>`
       but trait `From<dagger_sdk::Directory>` is implemented for it
- --> src/gen.rs
+ --> src/gen/directory.rs
   |
-  | impl From<Directory> for IdInput<Directory> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | impl From<Directory> for crate::IdInput<Directory> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   = help: for that trait implementation, expected `dagger_sdk::Directory`, found `Container`
   = note: required for `Container` to implement `Into<IdInput<dagger_sdk::Directory>>`
 note: required by a bound in `dagger_sdk::client::<impl Query>::r#ref`

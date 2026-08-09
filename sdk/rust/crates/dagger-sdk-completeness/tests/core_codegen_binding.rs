@@ -46,13 +46,23 @@ fn exact_manifest() -> (GeneratedBindingManifest, ResolvedLedger) {
 #[test]
 fn exact_target_manifest_is_complete_but_status_neutral() {
     let (manifest, ledger) = exact_manifest();
-    let active = ledger
+    let routed = ledger
         .capabilities
         .values()
         .filter(|row| row.owner_feature == Some(FeatureId::Feature4))
         .count();
-    assert_eq!(active, 3_277);
-    assert_eq!(manifest.bindings.len(), active);
+    let closed = ledger
+        .capabilities
+        .values()
+        .filter(|row| {
+            row.implementation_evidence
+                .iter()
+                .any(|evidence| evidence.as_str() == "implementation/core-codegen/generated-client")
+        })
+        .count();
+    assert_eq!(routed, 2_559);
+    assert_eq!(closed, 718);
+    assert_eq!(manifest.bindings.len(), routed + closed);
     assert_eq!(
         manifest
             .bindings

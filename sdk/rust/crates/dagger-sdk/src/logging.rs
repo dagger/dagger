@@ -1,3 +1,8 @@
+//! Compatibility loggers for legacy connector output.
+//!
+//! Stable request diagnostics use [`crate::DiagnosticSink`]; these adapters remain
+//! private so their stdout/stderr behaviour cannot become a public compatibility seam.
+
 use crate::{
     core::logger::{DynLogger, Logger},
     diagnostic::DiagnosticSinkError,

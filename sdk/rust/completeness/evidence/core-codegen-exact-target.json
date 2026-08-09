@@ -1,0 +1,57 @@
+{
+  "capability_ids": [
+    "schema/engine-schema/schema-field/%43ontainer/docker%48ealthcheck",
+    "schema/engine-schema/schema-field/%43ontainer/env%56ariables",
+    "schema/engine-schema/schema-field/%43ontainer/id",
+    "schema/engine-schema/schema-field/%43ontainer/stdout",
+    "schema/engine-schema/schema-field/%43ontainer/sync",
+    "schema/engine-schema/schema-field/%44irectory/docker%42uild",
+    "schema/engine-schema/schema-field/%44irectory/entries",
+    "schema/engine-schema/schema-field/%45ngine%43ache/prune",
+    "schema/engine-schema/schema-field/%51uery/cache%56olume",
+    "schema/engine-schema/schema-field/%51uery/container",
+    "schema/engine-schema/schema-field/%51uery/default%50latform",
+    "schema/engine-schema/schema-field/%51uery/git",
+    "schema/engine-schema/schema-field/%51uery/node",
+    "schema/engine-schema/schema-field/%51uery/version"
+  ],
+  "command": {
+    "args": [
+      "call",
+      "core-conformance"
+    ],
+    "environment": {},
+    "program": "dagger",
+    "working_directory": "toolchains/rust-sdk-dev"
+  },
+  "domains": [
+    "exact-target"
+  ],
+  "evidence_id": "verification/core-codegen/exact-target",
+  "implementation_fingerprints": {
+    "schema/engine-schema/schema-field/%43ontainer/docker%48ealthcheck": "sha256:672c46ea94d7d64ffcd70e881565cc26cb1e49217b80602255c08fde26e25203",
+    "schema/engine-schema/schema-field/%43ontainer/env%56ariables": "sha256:3b6134a1a9ec2cdc09a78d4be9ee0434ec9e725eab42d7c8a240f2f2f0af90d3",
+    "schema/engine-schema/schema-field/%43ontainer/id": "sha256:4a066411a9e5f6dca4fc143eee1e7cc812faa332dd563617cc70221d8a9e1c79",
+    "schema/engine-schema/schema-field/%43ontainer/stdout": "sha256:1b2e63e8d3d1aeb4117dc28c0e82cd198dc70c5f9d51b580ca638c0f6df3b6e1",
+    "schema/engine-schema/schema-field/%43ontainer/sync": "sha256:4307bbe9dd16085578178a2ee8ea5de1aaa984f374f3cd1f39981fb259f7fd08",
+    "schema/engine-schema/schema-field/%44irectory/docker%42uild": "sha256:07bdd64800a283d5b1bd043b6b280e9d0301a7927e583e539842ed40195bf514",
+    "schema/engine-schema/schema-field/%44irectory/entries": "sha256:cabb5e0811dc34ef962ce6798cbc0cc67ec50164809053c4c20f828860359a03",
+    "schema/engine-schema/schema-field/%45ngine%43ache/prune": "sha256:51c123542a0f4072b560ed0314db72a34c48c191f491b5419e98dcc2e3b59956",
+    "schema/engine-schema/schema-field/%51uery/cache%56olume": "sha256:8d71692f0827f9659355a234a34ba92f9b7e513061ab0fdb52e236e8209223cf",
+    "schema/engine-schema/schema-field/%51uery/container": "sha256:cf322bfcf2521dfef0c041042e53af673cbf9cc0d989e62bdb1c6f8102aaf508",
+    "schema/engine-schema/schema-field/%51uery/default%50latform": "sha256:b876ef69d572008d1a66205c57dc3a950bfc4535f021f294c622bcc9999ae904",
+    "schema/engine-schema/schema-field/%51uery/git": "sha256:e473f63831aa4d77adad753dd5424ac9dae8bd1295b8d46890680de9393b5e0f",
+    "schema/engine-schema/schema-field/%51uery/node": "sha256:f6b5c6df713b98f37dde8d526076cbc15e983a99563668fb8e62b8bb97aaeaca",
+    "schema/engine-schema/schema-field/%51uery/version": "sha256:4bbf423d3105064d970e0e51974fdb806b17ba56dc983851a1909aeb5754297f"
+  },
+  "projection_fingerprint": "sha256:55ac56ce5186829195465c3f20adf04255c39f640c85a47a1137277084afe3c7",
+  "result": {
+    "assertion": "exact-target generated-client category matrix passed",
+    "capability_scope_digest": "sha256:1adc498d6927e291a484eb4ce3724ae2ac21060cc4ed2ef5cb43494e6db161e4",
+    "outcome": "passed"
+  },
+  "result_digest": "sha256:abbb510933b327023b7ec5cacd0d558190105e67da913db81e2233b0174d9378",
+  "schema_digest": "sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306",
+  "subject_revision": "sha256:9a9076aca5452851bd3fe92ca200111dff8d2c8d9e74d4dcd4ae10a6e3ef4d9a",
+  "target_revision": "25300124ca110612edc09c43f89cb5fad6028170"
+}
