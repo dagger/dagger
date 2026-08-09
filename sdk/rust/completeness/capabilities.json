@@ -97913,7 +97913,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:97",
+          "locator": "sdk/rust/AGENTS.md:100",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny"
@@ -98000,7 +98000,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:96",
+          "locator": "sdk/rust/AGENTS.md:99",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Flocked-resolution"
@@ -98029,7 +98029,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/source%2Frust-policy%2Frust-policy%2Funsafe-denied",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:92",
+          "locator": "sdk/rust/AGENTS.md:95",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Funsafe-denied"
@@ -98090,7 +98090,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/workspace-target-verification",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:92",
+          "locator": "sdk/rust/AGENTS.md:95",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/workspace-target-verification"

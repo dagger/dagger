@@ -136,10 +136,22 @@ pub fn derive_contract(
             &repository_root.join(policy.requirements_path),
             "feature requirements",
         )?;
-        let declaration = validated(
-            parse_feature_scope_declaration(&requirements, &policy.scope),
-            "feature scope declaration",
-        )?;
+        let declaration = if policy.scope.feature == FeatureId::Feature5 {
+            // The 31-row engine-integration set is intentionally stored once in the
+            // reviewed machine-readable mapping policy. Re-parsing a second Markdown
+            // list would allow the two authorities to drift before evidence assembly.
+            FeatureScopeDeclaration {
+                feature: policy.scope.feature.clone(),
+                existing_capability_ids: policy.scope.existing_capability_ids.clone(),
+                existing_scope_digest: policy.scope.existing_scope_digest.clone(),
+                policy_capability_ids: policy.scope.policy_capability_ids.clone(),
+            }
+        } else {
+            validated(
+                parse_feature_scope_declaration(&requirements, &policy.scope),
+                "feature scope declaration",
+            )?
+        };
         feature_inputs.push(FeatureContractInput {
             policy,
             requirements,
@@ -238,7 +250,10 @@ pub fn derive_contract(
     // deliberately retires superseded baseline scopes, so validate evidence links only
     // after ownership correction and the evidence-backed status transition are applied.
     for feature in &feature_inputs {
-        if feature.declaration.feature == FeatureId::Feature4 {
+        if matches!(
+            feature.declaration.feature,
+            FeatureId::Feature4 | FeatureId::Feature5
+        ) {
             continue;
         }
         validated(
@@ -263,6 +278,21 @@ pub fn derive_contract(
             &core_codegen.policy,
         ),
         "core codegen scope routing",
+    )?;
+    let engine_integration = feature_inputs
+        .iter()
+        .find(|feature| feature.declaration.feature == FeatureId::Feature5)
+        .expect("reviewed feature inputs always contain engine integration");
+    // Validate this scope after core-codegen ownership correction, which routes its
+    // 19 retained Go-codegen responsibilities to the engine-integration owner.
+    validated(
+        validate_feature_scope_routing(
+            &inventory,
+            &core_codegen.ledger,
+            &engine_integration.declaration,
+            &engine_integration.policy.scope,
+        ),
+        "engine integration scope routing",
     )?;
 
     let target_digest = TargetDigest::new(

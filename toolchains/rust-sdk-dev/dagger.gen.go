@@ -61,27 +61,30 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r RustSdkDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		OriginalWorkspace *dagger.Directory
-		Workspace         *dagger.Directory
-		SourcePath        string
-		BaseContainer     *dagger.Container
-		Ws                *dagger.Workspace
+		OriginalWorkspace  *dagger.Directory
+		Workspace          *dagger.Directory
+		SourcePath         string
+		BaseContainer      *dagger.Container
+		Ws                 *dagger.Workspace
+		ClientDockerConfig *dagger.Secret
 	}
 	concrete.OriginalWorkspace = r.OriginalWorkspace
 	concrete.Workspace = r.Workspace
 	concrete.SourcePath = r.SourcePath
 	concrete.BaseContainer = r.BaseContainer
 	concrete.Ws = r.Ws
+	concrete.ClientDockerConfig = r.ClientDockerConfig
 	return json.Marshal(&concrete)
 }
 
 func (r *RustSdkDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		OriginalWorkspace *dagger.Directory
-		Workspace         *dagger.Directory
-		SourcePath        string
-		BaseContainer     *dagger.Container
-		Ws                *dagger.Workspace
+		OriginalWorkspace  *dagger.Directory
+		Workspace          *dagger.Directory
+		SourcePath         string
+		BaseContainer      *dagger.Container
+		Ws                 *dagger.Workspace
+		ClientDockerConfig *dagger.Secret
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -92,6 +95,7 @@ func (r *RustSdkDev) UnmarshalJSON(bs []byte) error {
 	r.SourcePath = concrete.SourcePath
 	r.BaseContainer = concrete.BaseContainer
 	r.Ws = concrete.Ws
+	r.ClientDockerConfig = concrete.ClientDockerConfig
 	return nil
 }
 
@@ -305,6 +309,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*RustSdkDev).DevContainer(&parent, runInstall), nil
+		case "EngineUnit":
+			var parent RustSdkDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustSdkDev).EngineUnit(&parent, ctx)
 		case "Examples":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -422,42 +433,42 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("APIClient",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate the Rust SDK API client.").
-							WithSourceMap(dag.SourceMap("main.go", 243, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 294, 1)).
 							WithGenerator()).
 					WithFunction(
 						dag.Function("CargoCheck",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run cargo check on the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 170, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 190, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoClippy",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run Clippy on all Rust SDK targets.").
-							WithSourceMap(dag.SourceMap("main.go", 182, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 202, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoDeny",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check the Rust SDK dependency advisories, licenses, bans, and sources.").
-							WithSourceMap(dag.SourceMap("main.go", 203, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 223, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoDoc",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Build the Rust SDK documentation with warnings denied.").
-							WithSourceMap(dag.SourceMap("main.go", 192, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 212, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CargoFmt",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run cargo fmt on the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 160, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 180, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Changes",
 							dag.TypeDef().WithObject("Changeset")).
-							WithSourceMap(dag.SourceMap("main.go", 247, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 298, 1))).
 					WithFunction(
 						dag.Function("CompletenessArtifacts",
 							dag.TypeDef().WithObject("Changeset")).
@@ -479,64 +490,70 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("CoreConformance",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Run focused generated-client observations against the immutable checked engine source.").
-							WithSourceMap(dag.SourceMap("main.go", 304, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 355, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("DevContainer",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Return the Rust SDK workspace mounted in a dev container,\nand working directory set to the SDK source.").
-							WithSourceMap(dag.SourceMap("main.go", 110, 1)).
-							WithArg("runInstall", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Install workspace dependencies and any tools required\nto develop the Rust SDK.", SourceMap: dag.SourceMap("main.go", 114, 2), DefaultValue: dagger.JSON("\"false\"")})).
+							WithSourceMap(dag.SourceMap("main.go", 123, 1)).
+							WithArg("runInstall", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Install workspace dependencies and any tools required\nto develop the Rust SDK.", SourceMap: dag.SourceMap("main.go", 127, 2), DefaultValue: dagger.JSON("\"false\"")})).
+					WithFunction(
+						dag.Function("EngineUnit",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Run the focused Rust engine-tool and adapter unit suite without constructing an engine.\n\nTests are mounted only after dependency installation, so test-only edits do not invalidate the\ncompiler/toolchain and dependency layer shared by later engine-content checkpoints.").
+							WithSourceMap(dag.SourceMap("main.go", 267, 1)).
+							WithCheck()).
 					WithFunction(
 						dag.Function("Examples",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Format and lint each standalone Rust SDK example.").
-							WithSourceMap(dag.SourceMap("main.go", 214, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 234, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("GeneratedClientCheck",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify the complete checked-input generated client in graph-local state.").
-							WithSourceMap(dag.SourceMap("main.go", 274, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 325, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Release",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Release the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 418, 1)).
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to release", SourceMap: dag.SourceMap("main.go", 422, 2)}).
-							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 424, 2)}).
-							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Cargo registry index URL to publish to instead of crates.io.", SourceMap: dag.SourceMap("main.go", 428, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 480, 1)).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to release", SourceMap: dag.SourceMap("main.go", 484, 2)}).
+							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 486, 2)}).
+							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Cargo registry index URL to publish to instead of crates.io.", SourceMap: dag.SourceMap("main.go", 490, 2)})).
 					WithFunction(
 						dag.Function("ReleaseDryRun",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Test the publishing process").
-							WithSourceMap(dag.SourceMap("main.go", 350, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 412, 1)).
 							WithCheck().
-							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to fake-release", SourceMap: dag.SourceMap("main.go", 355, 2), DefaultValue: dagger.JSON("\"HEAD\"")})).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Source git tag to fake-release", SourceMap: dag.SourceMap("main.go", 417, 2), DefaultValue: dagger.JSON("\"HEAD\"")})).
 					WithFunction(
 						dag.Function("Source",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Source returns the source directory for the Rust SDK.").
-							WithSourceMap(dag.SourceMap("main.go", 154, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 174, 1))).
 					WithFunction(
 						dag.Function("Test",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Test the Rust SDK").
-							WithSourceMap(dag.SourceMap("main.go", 231, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 251, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("WithGeneratedClient",
 							dag.TypeDef().WithObject("RustSdkDev")).
-							WithSourceMap(dag.SourceMap("main.go", 251, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 302, 1))).
 					WithField("BaseContainer", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 38, 2)}).
 					WithConstructor(
 						dag.Function("New",
 							dag.TypeDef().WithObject("RustSdkDev")).
-							WithSourceMap(dag.SourceMap("main.go", 42, 1)).
-							WithArg("workspace", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "A directory with all the files needed to develop the SDK", SourceMap: dag.SourceMap("main.go", 44, 2)}).
-							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 47, 2), DefaultValue: dagger.JSON("\"sdk/rust\"")}).
-							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 50, 2)}))), nil
+							WithSourceMap(dag.SourceMap("main.go", 43, 1)).
+							WithArg("workspace", dag.TypeDef().WithObject("Workspace"), dagger.FunctionWithArgOpts{Description: "A directory with all the files needed to develop the SDK", SourceMap: dag.SourceMap("main.go", 45, 2)}).
+							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The path of the SDK source in the workspace", SourceMap: dag.SourceMap("main.go", 48, 2), DefaultValue: dagger.JSON("\"sdk/rust\"")}).
+							WithArg("clientDockerConfig", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "A docker config file with credentials to install on clients.", SourceMap: dag.SourceMap("main.go", 51, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

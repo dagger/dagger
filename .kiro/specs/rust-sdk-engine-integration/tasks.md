@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Establish the exact engine-integration scope, private crate, and fast test foundation
-  - [ ] 1.1 Make Rust SDK engine work lazy and independently testable
+- [x] 1. Establish the exact engine-integration scope, private crate, and fast test foundation
+  - [x] 1.1 Make Rust SDK engine work lazy and independently testable
     - Remove the unconditional Dagger engine/client installation from
       `toolchains/rust-sdk-dev.New`; retain a Rust-only base and introduce an explicit
       engine-bearing path used only by engine-content and integration cases.
@@ -11,7 +11,7 @@
     - Keep existing public Rust checks behaviorally unchanged and document why test-only
       changes cannot invalidate the packaged compiler/toolchain layer.
     - _Requirements: 13.31, 13.32, 13.33, 13.35_
-  - [ ] 1.2 Add the private Rust engine-tool crate and approved dependency graph
+  - [x] 1.2 Add the private Rust engine-tool crate and approved dependency graph
     - Add `dagger-sdk-engine` with `publish = false`, binary
       `dagger-rust-engine`, library entrypoint, README, Apache-2.0 metadata, module
       documentation, `unsafe_code = "deny"`, and workspace lint inheritance.
@@ -21,7 +21,7 @@
     - Keep `dagger-sdk` as the sole publishable crate, update `Cargo.lock`, and extend
       cargo-deny source/license policy only where the approved locked graph requires it.
     - _Requirements: 11.6, 11.7, 11.24, 12.16_
-  - [ ] 1.3 Align property traceability and source-documentation guidance
+  - [x] 1.3 Align property traceability and source-documentation guidance
     - Reconcile `sdk/rust/AGENTS.md` with the approved no-feature-label policy: property
       identity lives in stable `property_NN_*` test names, while comments explain the
       invariant without naming a specification feature, task, or planning phase.
@@ -30,7 +30,7 @@
       path confinement, ownership, precedence, cancellation, credential boundaries,
       and deliberate engine/Rust translations.
     - _Requirements: 12.8, 12.9, 12.15, 12.16, 13.33_
-  - [ ] 1.4 Add strict canonical engine-integration models and shared strategies
+  - [x] 1.4 Add strict canonical engine-integration models and shared strategies
     - Add the target identity, relative path, operation request/kind, module input,
       operation plan/manifest, artifact record, engine source/dependency descriptor,
       discovered/runtime Cargo typestates, runtime provenance input/result, packaged
@@ -44,7 +44,7 @@
       subject, and stable diagnostic coordinate; centralize 256-case pure and 128-case
       filesystem/concurrency defaults above the 100-case floor.
     - _Requirements: 2.5-2.8, 5.8-5.16, 6.1, 6.2, 6.10, 8.2-8.9, 12.8, 12.9, 12.15_
-  - [ ] 1.5 Register the exact engine-integration scope and policy inventory
+  - [x] 1.5 Register the exact engine-integration scope and policy inventory
     - Add the 22 approved `policy/rust-policy/engine-*` capabilities and the exact
       31-row existing Feature 5 scope without changing a status.
     - Add closed implementation-subject, owner, evidence-domain, delegated-content,
@@ -52,9 +52,9 @@
       name-only, catch-all, wrong-target, fingerprint-drifted, and out-of-scope rows.
     - Preserve hook evidence separately from Feature 6 dispatch and Feature 7 client
       content evidence, and retain the approved scope digest
-      `sha256:f74b60b146fe70876a7aac39810eb1e3c4da49fc7fc1cfa9075293c1c8906fdc`.
+      `sha256:1f502e06f809fcfd90a8b9a3912eece3384585ad5c88963fac7681acb79c8cb3`.
     - _Requirements: 1.1-1.12_
-  - [ ] 1.6 Property test: Property 1 — exact capability scope and evidence separation
+  - [x] 1.6 Property test: Property 1 — exact capability scope and evidence separation
     - Implement a reference-set `proptest` with at least 256 generated row, owner,
       evidence-domain, status, ordering, delegation, and policy mutations; accept only
       the approved 31/22 partition and require status identity before evidence exists.
@@ -62,7 +62,7 @@
     - The one-line invariant comment explains why hook and delegated-content evidence
       cannot close one another, without naming a specification feature.
     - _Requirements: 1.1-1.12_
-  - [ ] 1.7 Property test: Property 30 — canonical models round-trip without semantic loss
+  - [x] 1.7 Property test: Property 30 — canonical models round-trip without semantic loss
     - Generate at least 256 valid and invalid operation, descriptor, manifest,
       provenance, path, dependency, and evidence models; require strict
       encode/decode equality and digest equality while rejecting unknown fields,
@@ -70,7 +70,7 @@
     - Test identifier: `property_30_canonical_models_round_trip_without_semantic_loss`.
     - _Requirements: 2.6-2.8, 5.9-5.16, 6.10, 8.2-8.9, 13.24-13.26_
 
-- [ ] 2. Checkpoint: scope, canonical models, and engine-free development are green
+- [x] 2. Checkpoint: scope, canonical models, and engine-free development are green
   - Run Rust formatting, locked check/test for the new private crate and completeness
     modules, Properties 1 and 30, warning-denied clippy/rustdoc, cargo-deny, focused Go
     toolchain tests, and `rust-sdk-dev engine-unit`.

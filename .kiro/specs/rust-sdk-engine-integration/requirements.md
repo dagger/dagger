@@ -272,7 +272,7 @@ shown explicitly.
 
 The post-Feature-4 ledger routes 31 capabilities to `feature-5`. Their lexicographically
 sorted compact-JSON Capability_ID list has scope digest
-`sha256:f74b60b146fe70876a7aac39810eb1e3c4da49fc7fc1cfa9075293c1c8906fdc`.
+`sha256:1f502e06f809fcfd90a8b9a3912eece3384585ad5c88963fac7681acb79c8cb3`.
 This document does not change a status merely by restating that scope.
 
 | Authority | Rows | Current status | Feature 5 policy |
@@ -431,7 +431,7 @@ or client completeness.
 #### Acceptance Criteria
 
 1. THE Feature 5 scope manifest SHALL enumerate the 31 existing Capability_IDs with
-   scope digest `sha256:f74b60b146fe70876a7aac39810eb1e3c4da49fc7fc1cfa9075293c1c8906fdc`.
+   scope digest `sha256:1f502e06f809fcfd90a8b9a3912eece3384585ad5c88963fac7681acb79c8cb3`.
 2. THE Feature 5 scope manifest SHALL enumerate every Rust policy capability declared
    in this document.
 3. THE Feature 5 scope manifest SHALL map every capability to one implementation

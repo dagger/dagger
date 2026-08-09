@@ -91,9 +91,47 @@ pub fn transport_contract() -> FeatureContractPolicy {
     )
 }
 
+/// Returns the approved built-in engine-integration contract.
+pub fn engine_integration_contract() -> FeatureContractPolicy {
+    let existing_capability_ids = reviewed_ids(FEATURE5_EXISTING_IDS);
+    let policy_capability_ids = reviewed_ids(FEATURE5_POLICY_IDS);
+    let expected_prior_blocking_owners = existing_capability_ids
+        .iter()
+        .chain(policy_capability_ids.iter())
+        .cloned()
+        .map(|capability_id| (capability_id, FeatureId::Feature5))
+        .collect();
+
+    FeatureContractPolicy {
+        requirements_path: ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+        scope: FeatureScopePolicy {
+            feature: FeatureId::Feature5,
+            // Store the exhaustive existing set in one machine-readable policy. The
+            // prose heading remains an audit anchor rather than a second list that could
+            // drift independently.
+            existing_scope_heading: "### Existing Feature 5 Scope",
+            policy_scope_heading: "### Rust Policy Capabilities Added by Feature 5",
+            existing_capability_ids,
+            existing_scope_digest: Digest::new(
+                "sha256:1f502e06f809fcfd90a8b9a3912eece3384585ad5c88963fac7681acb79c8cb3",
+            )
+            .expect("reviewed engine-integration scope digest must be valid"),
+            policy_capability_ids,
+            expected_prior_blocking_owners,
+            evidence_repository: RepositoryId::new("github.com/dagger/dagger")
+                .expect("reviewed evidence repository must be valid"),
+        },
+        policy_clauses: FEATURE5_POLICIES,
+    }
+}
+
 /// Returns every reviewed feature contract in delivery order.
-pub fn reviewed_feature_contracts() -> [FeatureContractPolicy; 2] {
-    [client_lifecycle_contract(), transport_contract()]
+pub fn reviewed_feature_contracts() -> [FeatureContractPolicy; 3] {
+    [
+        client_lifecycle_contract(),
+        transport_contract(),
+        engine_integration_contract(),
+    ]
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -467,6 +505,178 @@ const FEATURE3_PRIOR_FEATURE2_IDS: &[&str] = &[
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkdir",
     "behavior/go-client/source%2Fgo-client%2Fgo-function%2Fdagger%2F%2557ith%2557orkspace",
     "behavior/go-client/source%2Fgo-client%2Fgo-method%2Fdagger%2F%2543lient%2F%2543lose",
+];
+
+const FEATURE5_EXISTING_IDS: &[&str] = &[
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-const%2Fgenerator%2F%2553%2544%254%42%254%43ang%2547o",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-const%2Fgenerator%2F%2553%2544%254%42%254%43ang%2554ype%2553cript",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-const%2Fgogenerator%2F%2543lient%2547en%2546ile",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-const%2Fgogenerator%2F%2553tarter%2554emplate%2546ile",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-function%2Ftemplates%2F%2544ep%2554emplate",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-function%2Ftemplates%2F%2554emplates",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-method%2Fgogenerator%2F%254%44ounted%2546%2553%2F%254%46pen",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-method%2Fgogenerator%2F%2547o%2547enerator%2F%2547enerate%254%43ibrary",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-method%2Fgogenerator%2F%2547o%2547enerator%2F%2547enerate%254%44odule",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-method%2Fgogenerator%2F%2547o%2547enerator%2F%2547enerate%2543lient",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-method%2Fgogenerator%2F%2547o%2547enerator%2F%2547enerate%2545ntrypoint",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-test%2Fgogenerator%2F%2554est%2553ync%254%44od%2552eplace%2541nd%2554idy%2550ins%2544agger%2557ithout%2555pdating%2554ransitive%2544eps",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-type%2Fgenerator%2F%2547enerated%2553tate",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-type%2Fgenerator%2F%2547enerator",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-type%2Fgenerator%2F%2553%2544%254%42%254%43ang",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-type%2Fgogenerator%2F%254%44ounted%2546%2553",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-type%2Fgogenerator%2F%2547o%2547enerator",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-type%2Fgogenerator%2F%2550ackage%2549nfo",
+    "behavior/go-codegen/source%2Fgo-codegen%2Fgo-var%2Fgenerator%2F%2545rr%2555nknown%2553%2544%254%42%254%43ang",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-method%2Fcore%2F%2543ontainer%2552untime%2F%2541s%2543ontainer",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-method%2Fcore%2F%2543ontainer%2552untime%2F%2543all",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%254%44odule%2549nitializer",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%254%44odule%2552untime",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%254%44odule%2554ypes",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2543lient%2547enerator",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2543lient%2549nitializer",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2543ode%2547enerator",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2543ontainer%2552untime",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2552untime",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2552untime%2554arget",
+    "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2553%2544%254%42",
+];
+
+const FEATURE5_POLICY_IDS: &[&str] = &[
+    "policy/rust-policy/engine-bare-sdk-resolution",
+    "policy/rust-policy/engine-build-provenance-selection",
+    "policy/rust-policy/engine-version-shorthand-rejection",
+    "policy/rust-policy/engine-workspace-sdk-installation",
+    "policy/rust-policy/engine-init-changeset-confinement",
+    "policy/rust-policy/engine-existing-project-preservation",
+    "policy/rust-policy/engine-user-generated-file-ownership",
+    "policy/rust-policy/engine-visible-schema-core-compatibility",
+    "policy/rust-policy/engine-operation-input-completeness",
+    "policy/rust-policy/engine-operation-output-confinement",
+    "policy/rust-policy/engine-operation-determinism",
+    "policy/rust-policy/engine-runtime-toolchain-selection",
+    "policy/rust-policy/engine-locked-dependency-closure",
+    "policy/rust-policy/engine-immutable-sdk-dependency-source",
+    "policy/rust-policy/engine-committed-generated-runtime",
+    "policy/rust-policy/engine-legacy-runtime-codegen-isolation",
+    "policy/rust-policy/engine-runtime-protocol-boundary",
+    "policy/rust-policy/engine-runtime-cache-isolation",
+    "policy/rust-policy/engine-packaged-asset-provenance",
+    "policy/rust-policy/engine-credential-safe-diagnostics",
+    "policy/rust-policy/engine-exact-target-integration-evidence",
+    "policy/rust-policy/engine-scope-drift-closure",
+];
+
+const FEATURE5_POLICIES: &[ReviewedPolicyClause] = &[
+    clause(
+        "engine-bare-sdk-resolution",
+        "WHEN a module selects Bare_Rust_Reference, THE engine SDK loader SHALL resolve the\n   Builtin_Rust_SDK before attempting external module resolution.",
+        "typed-public-errors",
+    ),
+    clause(
+        "engine-build-provenance-selection",
+        "WHEN the Builtin_Rust_SDK loads, THE engine SHALL bind it to an\n   Engine_Source_Descriptor embedded by the engine build.",
+        "dependency-policy",
+    ),
+    clause(
+        "engine-version-shorthand-rejection",
+        "IF Versioned_Rust_Shorthand is supplied, THEN THE engine SHALL return\n   `the rust sdk does not currently support selecting a specific version`.",
+        "typed-public-errors",
+    ),
+    clause(
+        "engine-workspace-sdk-installation",
+        "WHEN `dagger sdk install rust` succeeds, THE workspace SHALL contain one\n   Workspace_SDK_Installation named `dagger-rust-sdk`.",
+        "explicit-ownership",
+    ),
+    clause(
+        "engine-init-changeset-confinement",
+        "THE Rust_Initialization Changeset SHALL exclude paths outside the initialized\n   module root.",
+        "explicit-ownership",
+    ),
+    clause(
+        "engine-existing-project-preservation",
+        "WHEN initialization finds one compatible package manifest, THE Rust initializer\n   SHALL preserve every unrelated semantic setting.",
+        "explicit-ownership",
+    ),
+    clause(
+        "engine-user-generated-file-ownership",
+        "WHEN authored Rust source exists, THE Rust initializer SHALL preserve every authored\n    source file byte-for-byte.",
+        "explicit-ownership",
+    ),
+    clause(
+        "engine-visible-schema-core-compatibility",
+        "THE Rust backend SHALL validate every Core_Schema coordinate in the Visible_Schema\n   against the Target_Revision compatibility policy.",
+        "idiomatic-rust",
+    ),
+    clause(
+        "engine-operation-input-completeness",
+        "THE Operation_Input SHALL include the exact engine target identity.",
+        "typed-public-errors",
+    ),
+    clause(
+        "engine-operation-output-confinement",
+        "IF an output root escapes the engine-selected operation root, THEN THE Rust backend\n    SHALL return a path-confinement diagnostic.",
+        "panic-free-library",
+    ),
+    clause(
+        "engine-operation-determinism",
+        "WHEN identical Operation_Input is processed twice, THE Rust backend SHALL produce\n    byte-identical artifacts and Operation_Manifest bytes.",
+        "explicit-ownership",
+    ),
+    clause(
+        "engine-runtime-toolchain-selection",
+        "WHEN a Cargo_Project declares one compatible exact toolchain, THE runtime builder\n    SHALL use that toolchain.",
+        "locked-resolution",
+    ),
+    clause(
+        "engine-locked-dependency-closure",
+        "WHEN a compatible Cargo.lock is present, THE runtime builder SHALL invoke Cargo\n    with `--locked`.",
+        "locked-resolution",
+    ),
+    clause(
+        "engine-immutable-sdk-dependency-source",
+        "THE generated Cargo_Project SHALL depend on an exact registry version or immutable\n   Git revision of `dagger-sdk`.",
+        "dependency-policy",
+    ),
+    clause(
+        "engine-committed-generated-runtime",
+        "WHILE Checked_Generated_Mode is active, THE runtime builder SHALL consume committed\n   generated artifacts.",
+        "explicit-ownership",
+    ),
+    clause(
+        "engine-legacy-runtime-codegen-isolation",
+        "WHILE Legacy_Runtime_Codegen_Mode is active, THE runtime builder SHALL generate only\n   in private ephemeral container state.",
+        "explicit-ownership",
+    ),
+    clause(
+        "engine-runtime-protocol-boundary",
+        "WHEN the Runtime_Entrypoint starts under ModuleRuntime.Call, THE Rust process SHALL\n   connect through the supplied nested engine session.",
+        "typed-public-errors",
+    ),
+    clause(
+        "engine-runtime-cache-isolation",
+        "THE runtime builder SHALL key caches without secret values.",
+        "secret-safe-output",
+    ),
+    clause(
+        "engine-packaged-asset-provenance",
+        "THE engine build SHALL bind the content digest to the produced engine image.",
+        "dependency-policy",
+    ),
+    clause(
+        "engine-credential-safe-diagnostics",
+        "WHEN a process exits unsuccessfully, THE Rust integration SHALL capture bounded\n    credential-safe diagnostics.",
+        "secret-safe-output",
+    ),
+    clause(
+        "engine-exact-target-integration-evidence",
+        "WHEN exact-target observations pass, THE evidence producer SHALL bind their result\n    to the exact engine revision, engine version, schema digest, Rust SDK source digest,\n    toolchain, and packaged-asset digest.",
+        "locked-resolution",
+    ),
+    clause(
+        "engine-scope-drift-closure",
+        "IF a current or newly extracted engine SDK capability is absent from the scope\n   manifest, THEN THE completeness contract SHALL fail before status rendering.",
+        "typed-public-errors",
+    ),
 ];
 
 const fn clause(

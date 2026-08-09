@@ -5,8 +5,8 @@
 - Dagger: v1.0.0-beta.10
 - Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
 - Rust SDK: 1.0.0-beta.10
-- Inventory digest: `sha256:b06a6a9f5a4b457595608a5716975096c95ba0c32d16a81e72f13e61bb7ae45f`
-- Ledger digest: `sha256:73e8958e7be92297e1068df6eb0e9865dc6984c236c3ae0d97555041510e254a`
+- Inventory digest: `sha256:c28bfa1b1b491f4bc4b7836b90cb5286338661ba4e78860a1566a9d68fbf0f5a`
+- Ledger digest: `sha256:f5fbb35aea7501f4fea1a8593dd74aa4c41d05a4652cce1819469bf6d1095af3`
 
 ## Verdicts
 
@@ -20,7 +20,7 @@
 - go-codegen: 83
 - go-engine-sdk: 13
 - go-integration-tests: 1072
-- rust-policy: 63
+- rust-policy: 85
 - sdk-contract-harness: 17
 
 ## Counts by capability kind
@@ -37,7 +37,7 @@
 - go-type: 321
 - go-var: 8
 - harness-check: 17
-- rust-policy: 62
+- rust-policy: 84
 - schema-argument: 611
 - schema-directive: 12
 - schema-directive-argument: 14
@@ -50,7 +50,7 @@
 
 ## Counts by status
 
-- Missing: 1102
+- Missing: 1124
 - Partial: 2753
 - Implemented: 733
 - Idiomatic_Equivalent: 10
@@ -61,7 +61,7 @@
 - feature-2: 13
 - feature-3: 53
 - feature-4: 2559
-- feature-5: 31
+- feature-5: 53
 - feature-6: 96
 - feature-7: 2
 - feature-8: 1081
@@ -3006,6 +3006,28 @@
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Finstall-registers-sdk`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fscaffolded-module-loads`
 - `behavior/sdk-contract-harness/source%2Fsdk-contract-harness%2Fharness-check%2Fsdk-reports-module-options`
+- `policy/rust-policy/engine-bare-sdk-resolution`
+- `policy/rust-policy/engine-build-provenance-selection`
+- `policy/rust-policy/engine-committed-generated-runtime`
+- `policy/rust-policy/engine-credential-safe-diagnostics`
+- `policy/rust-policy/engine-exact-target-integration-evidence`
+- `policy/rust-policy/engine-existing-project-preservation`
+- `policy/rust-policy/engine-immutable-sdk-dependency-source`
+- `policy/rust-policy/engine-init-changeset-confinement`
+- `policy/rust-policy/engine-legacy-runtime-codegen-isolation`
+- `policy/rust-policy/engine-locked-dependency-closure`
+- `policy/rust-policy/engine-operation-determinism`
+- `policy/rust-policy/engine-operation-input-completeness`
+- `policy/rust-policy/engine-operation-output-confinement`
+- `policy/rust-policy/engine-packaged-asset-provenance`
+- `policy/rust-policy/engine-runtime-cache-isolation`
+- `policy/rust-policy/engine-runtime-protocol-boundary`
+- `policy/rust-policy/engine-runtime-toolchain-selection`
+- `policy/rust-policy/engine-scope-drift-closure`
+- `policy/rust-policy/engine-user-generated-file-ownership`
+- `policy/rust-policy/engine-version-shorthand-rejection`
+- `policy/rust-policy/engine-visible-schema-core-compatibility`
+- `policy/rust-policy/engine-workspace-sdk-installation`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fdependency-policy`
 - `policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust`

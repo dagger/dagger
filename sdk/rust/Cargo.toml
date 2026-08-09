@@ -15,6 +15,7 @@ dagger-codegen = { version = "=1.0.0-beta.10", path = "crates/dagger-codegen" }
 dagger-bootstrap = { version = "=1.0.0-beta.10", path = "crates/dagger-bootstrap" }
 dagger-sdk = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk", default-features = false }
 dagger-sdk-completeness = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-completeness" }
+dagger-sdk-engine = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-engine" }
 
 eyre = "0.6.9"
 color-eyre = "0.6.2"
@@ -56,6 +57,7 @@ syn = { version = "2.0.117", features = ["full", "extra-traits"] }
 semver = "1.0.28"
 tar = "0.4.40"
 tempfile = "3.9.0"
+toml_edit = { version = "=0.25.13", default-features = false, features = ["display", "parse"] }
 tracing-opentelemetry = { version = "=0.33.0", default-features = false }
 async-trait = "0.1.77"
 which = "6.0.3"

@@ -32,11 +32,12 @@ const (
 
 // Develop and verify the Dagger Rust SDK.
 type RustSdkDev struct {
-	OriginalWorkspace *dagger.Directory // +private
-	Workspace         *dagger.Directory // +private
-	SourcePath        string            // +private
-	BaseContainer     *dagger.Container
-	Ws                *dagger.Workspace // +private
+	OriginalWorkspace  *dagger.Directory // +private
+	Workspace          *dagger.Directory // +private
+	SourcePath         string            // +private
+	BaseContainer      *dagger.Container
+	Ws                 *dagger.Workspace // +private
+	ClientDockerConfig *dagger.Secret    // +private
 }
 
 func New(
@@ -56,6 +57,7 @@ func New(
 			"!sdk/rust/completeness",
 			"!sdk/rust/examples",
 			"!sdk/rust/AGENTS.md",
+			"!sdk/rust/ARCHITECTURE.md",
 			"!sdk/rust/CONTRIBUTING.md",
 			"!sdk/rust/Cargo.lock",
 			"!sdk/rust/Cargo.toml",
@@ -66,10 +68,12 @@ func New(
 			"!sdk/go",
 			"!cmd/codegen/generator",
 			"!core/sdk.go",
-			"!core/sdk/go_sdk.go",
+			"!core/sdk/**",
 			"!core/integration",
+			"!engine/distconsts/consts.go",
 			"!internal/cmd/dagger",
 			"!internal/version/VERSION",
+			"!toolchains/engine-dev/build/**",
 			"!future/sdk-tests.md",
 			"!.kiro/specs/rust-sdk-completeness-contract/requirements.md",
 			"!.kiro/specs/rust-sdk-client-lifecycle/requirements.md",
@@ -79,25 +83,20 @@ func New(
 			"!.kiro/specs/rust-sdk-transport-observability/requirements.md",
 			"!.kiro/specs/rust-sdk-transport-observability/design.md",
 			"!.kiro/specs/rust-sdk-transport-observability/tasks.md",
-			"!toolchains/rust-sdk-dev/testdata/core_conformance.rs",
+			"!.kiro/specs/rust-sdk-engine-integration/requirements.md",
+			"!.kiro/specs/rust-sdk-engine-integration/design.md",
+			"!.kiro/specs/rust-sdk-engine-integration/tasks.md",
+			"!toolchains/rust-sdk-dev/**",
 		},
 	})
 
-	baseContainer := rustBaseContainer().
-		// FIXME: not all functions need a full engine build. Do this lazily as needed
-		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine(dagger.DaggerEngineOpts{
-				ClientDockerConfig: clientDockerConfig,
-				Ws:                 workspace,
-			}).InstallClient(c)
-		})
-
 	return &RustSdkDev{
-		OriginalWorkspace: rustSrc,
-		Workspace:         rustSrc,
-		SourcePath:        sourcePath,
-		BaseContainer:     baseContainer,
-		Ws:                workspace,
+		OriginalWorkspace:  rustSrc,
+		Workspace:          rustSrc,
+		SourcePath:         sourcePath,
+		BaseContainer:      rustBaseContainer(),
+		Ws:                 workspace,
+		ClientDockerConfig: clientDockerConfig,
 	}
 }
 
@@ -107,6 +106,16 @@ func rustBaseContainer() *dagger.Container {
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
 		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
 		WithWorkdir("/src")
+}
+
+// engineClientContainer is the explicit engine-bearing boundary reserved for engine-content and
+// exact-target integration functions. Ordinary Rust checks must continue from BaseContainer so a
+// schema, documentation, or unit-test edit cannot silently trigger an engine build.
+func (t *RustSdkDev) engineClientContainer(base *dagger.Container) *dagger.Container {
+	return dag.DaggerEngine(dagger.DaggerEngineOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+		Ws:                 t.Ws,
+	}).InstallClient(base)
 }
 
 // Return the Rust SDK workspace mounted in a dev container,
@@ -247,6 +256,37 @@ func (t *RustSdkDev) Test(ctx context.Context) error {
 		Sync(ctx)
 
 	return err
+}
+
+// Run the focused Rust engine-tool and adapter unit suite without constructing an engine.
+//
+// Tests are mounted only after dependency installation, so test-only edits do not invalidate the
+// compiler/toolchain and dependency layer shared by later engine-content checkpoints.
+//
+// +check
+func (t *RustSdkDev) EngineUnit(ctx context.Context) error {
+	_, err := t.DevContainer(true).
+		WithExec([]string{
+			"cargo", "test", "-p", "dagger-sdk-engine", "--all-targets", "--locked",
+		}).
+		WithExec([]string{
+			"cargo", "test", "-p", "dagger-sdk-completeness", "--test", "engine_integration", "--locked",
+		}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("run focused Rust engine unit tests: %w", err)
+	}
+
+	_, err = dag.Container().
+		From(goHelperImage+"@"+goHelperDigest).
+		WithMountedDirectory("/src", t.Workspace).
+		WithWorkdir("/src/toolchains/rust-sdk-dev").
+		WithExec([]string{"go", "test", "./internal/enginefree"}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("run focused Rust SDK adapter tests: %w", err)
+	}
+	return nil
 }
 
 // Regenerate the Rust SDK API client.

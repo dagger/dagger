@@ -113070,7 +113070,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/client-public-surface-encapsulation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/client-public-surface-encapsulation"
@@ -113180,7 +113180,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/client-reserved-environment/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/client-reserved-environment"
@@ -113235,7 +113235,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/client-secret-redaction/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/client-secret-redaction"
@@ -113345,7 +113345,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/client-shared-handle-safety/source%2Frust-policy%2Frust-policy%2Funsafe-denied",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:92",
+          "locator": "sdk/rust/AGENTS.md:95",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/client-shared-handle-safety"
@@ -113455,7 +113455,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-authority-containment/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:96",
+          "locator": "sdk/rust/AGENTS.md:99",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-authority-containment"
@@ -113895,7 +113895,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-input-order-invariance/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:96",
+          "locator": "sdk/rust/AGENTS.md:99",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-input-order-invariance"
@@ -114005,7 +114005,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-no-handwritten-fixes/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:96",
+          "locator": "sdk/rust/AGENTS.md:99",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-no-handwritten-fixes"
@@ -114170,7 +114170,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-target-drift/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:96",
+          "locator": "sdk/rust/AGENTS.md:99",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-target-drift"
@@ -114213,7 +114213,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/core-codegen-toolchain-compatibility/source%2Frust-policy%2Frust-policy%2Fcargo-deny",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:97",
+          "locator": "sdk/rust/AGENTS.md:100",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/core-codegen-toolchain-compatibility"
@@ -114245,6 +114245,1128 @@
         "verification/core-codegen/release-closure"
       ]
     },
+    "policy/rust-policy/engine-bare-sdk-resolution": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:46b062c16db26ef03ac10272dc29233ceab0e710f0b00d757d60fd2d215e0a58",
+      "capability_id": "policy/rust-policy/engine-bare-sdk-resolution",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-bare-sdk-resolution",
+          "text": "WHEN a module selects Bare_Rust_Reference, THE engine SDK loader SHALL resolve the\n   Builtin_Rust_SDK before attempting external module resolution."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-bare-sdk-resolution/source%2Frust-policy%2Frust-policy%2Fengine-bare-sdk-resolution",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:467",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-bare-sdk-resolution"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-bare-sdk-resolution/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-bare-sdk-resolution"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-bare-sdk-resolution",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN a module selects Bare_Rust_Reference, THE engine SDK loader SHALL resolve the Builtin_Rust_SDK before attempting external module resolution."
+    },
+    "policy/rust-policy/engine-build-provenance-selection": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:d8ad63f0cd8e5016ab23661ceafd4370e4396d62ddabb6acd19ff17f2540df5b",
+      "capability_id": "policy/rust-policy/engine-build-provenance-selection",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-build-provenance-selection",
+          "text": "WHEN the Builtin_Rust_SDK loads, THE engine SHALL bind it to an\n   Engine_Source_Descriptor embedded by the engine build."
+        },
+        "rust_guidance": {
+          "clause_id": "dependency-policy",
+          "text": "New dependencies are design decisions."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-build-provenance-selection/source%2Frust-policy%2Frust-policy%2Fdependency-policy",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:59",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-build-provenance-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-build-provenance-selection/source%2Frust-policy%2Frust-policy%2Fengine-build-provenance-selection",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:473",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-build-provenance-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/dependency-policy",
+        "source/rust-policy/rust-policy/engine-build-provenance-selection"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN the Builtin_Rust_SDK loads, THE engine SHALL bind it to an Engine_Source_Descriptor embedded by the engine build."
+    },
+    "policy/rust-policy/engine-committed-generated-runtime": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e985c30d9d7bf6aad79b606fe0b9b92b7b04118db22bf40d639021f0e1678d40",
+      "capability_id": "policy/rust-policy/engine-committed-generated-runtime",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-committed-generated-runtime",
+          "text": "WHILE Checked_Generated_Mode is active, THE runtime builder SHALL consume committed\n   generated artifacts."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-committed-generated-runtime/source%2Frust-policy%2Frust-policy%2Fengine-committed-generated-runtime",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:754",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-committed-generated-runtime"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-committed-generated-runtime/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-committed-generated-runtime"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-committed-generated-runtime",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHILE Checked_Generated_Mode is active, THE runtime builder SHALL consume committed generated artifacts."
+    },
+    "policy/rust-policy/engine-credential-safe-diagnostics": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:9f2c6599324dacc0a410ac7f33bcf1ce3edbc8158676e27d38d4a8dcf5cc51da",
+      "capability_id": "policy/rust-policy/engine-credential-safe-diagnostics",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-credential-safe-diagnostics",
+          "text": "WHEN a process exits unsuccessfully, THE Rust integration SHALL capture bounded\n    credential-safe diagnostics."
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-credential-safe-diagnostics/source%2Frust-policy%2Frust-policy%2Fengine-credential-safe-diagnostics",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:892",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-credential-safe-diagnostics"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-credential-safe-diagnostics/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:105",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-credential-safe-diagnostics"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-credential-safe-diagnostics",
+        "source/rust-policy/rust-policy/secret-safe-output"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN a process exits unsuccessfully, THE Rust integration SHALL capture bounded credential-safe diagnostics."
+    },
+    "policy/rust-policy/engine-exact-target-integration-evidence": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:5e8b4dd36eaefeb4ae7cebf1559752d0cd4f3a65c603a5199aad7812a9bbed7c",
+      "capability_id": "policy/rust-policy/engine-exact-target-integration-evidence",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-exact-target-integration-evidence",
+          "text": "WHEN exact-target observations pass, THE evidence producer SHALL bind their result\n    to the exact engine revision, engine version, schema digest, Rust SDK source digest,\n    toolchain, and packaged-asset digest."
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-exact-target-integration-evidence/source%2Frust-policy%2Frust-policy%2Fengine-exact-target-integration-evidence",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:941",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-exact-target-integration-evidence"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-exact-target-integration-evidence/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:99",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-exact-target-integration-evidence"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-exact-target-integration-evidence",
+        "source/rust-policy/rust-policy/locked-resolution"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN exact-target observations pass, THE evidence producer SHALL bind their result to the exact engine revision, engine version, schema digest, Rust SDK source digest, toolchain, and packaged-asset digest."
+    },
+    "policy/rust-policy/engine-existing-project-preservation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:2b179e39b037c031c36d6ed95ee180689e09b37f2a615431744163405685dd5b",
+      "capability_id": "policy/rust-policy/engine-existing-project-preservation",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-existing-project-preservation",
+          "text": "WHEN initialization finds one compatible package manifest, THE Rust initializer\n   SHALL preserve every unrelated semantic setting."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-existing-project-preservation/source%2Frust-policy%2Frust-policy%2Fengine-existing-project-preservation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:542",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-existing-project-preservation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-existing-project-preservation/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-existing-project-preservation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-existing-project-preservation",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN initialization finds one compatible package manifest, THE Rust initializer SHALL preserve every unrelated semantic setting."
+    },
+    "policy/rust-policy/engine-immutable-sdk-dependency-source": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:904a637ab02bf6c11b6a8968854eec82aff0215de3c58c0d6ce00e4bdfdbe6fc",
+      "capability_id": "policy/rust-policy/engine-immutable-sdk-dependency-source",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-immutable-sdk-dependency-source",
+          "text": "THE generated Cargo_Project SHALL depend on an exact registry version or immutable\n   Git revision of `dagger-sdk`."
+        },
+        "rust_guidance": {
+          "clause_id": "dependency-policy",
+          "text": "New dependencies are design decisions."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-immutable-sdk-dependency-source/source%2Frust-policy%2Frust-policy%2Fdependency-policy",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:59",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-immutable-sdk-dependency-source"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-immutable-sdk-dependency-source/source%2Frust-policy%2Frust-policy%2Fengine-immutable-sdk-dependency-source",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:833",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-immutable-sdk-dependency-source"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/dependency-policy",
+        "source/rust-policy/rust-policy/engine-immutable-sdk-dependency-source"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "THE generated Cargo_Project SHALL depend on an exact registry version or immutable Git revision of `dagger-sdk`."
+    },
+    "policy/rust-policy/engine-init-changeset-confinement": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:4c357cfc5916e759ead733b7334afd36a451399c02b006f5740c107b41c8b36e",
+      "capability_id": "policy/rust-policy/engine-init-changeset-confinement",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-init-changeset-confinement",
+          "text": "THE Rust_Initialization Changeset SHALL exclude paths outside the initialized\n   module root."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-init-changeset-confinement/source%2Frust-policy%2Frust-policy%2Fengine-init-changeset-confinement",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:511",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-init-changeset-confinement"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-init-changeset-confinement/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-init-changeset-confinement"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-init-changeset-confinement",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "THE Rust_Initialization Changeset SHALL exclude paths outside the initialized module root."
+    },
+    "policy/rust-policy/engine-legacy-runtime-codegen-isolation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:1994516b8410576ff0972e97f6324e8e189f9355ff0040b97517772c03b7ebb9",
+      "capability_id": "policy/rust-policy/engine-legacy-runtime-codegen-isolation",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-legacy-runtime-codegen-isolation",
+          "text": "WHILE Legacy_Runtime_Codegen_Mode is active, THE runtime builder SHALL generate only\n   in private ephemeral container state."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-legacy-runtime-codegen-isolation/source%2Frust-policy%2Frust-policy%2Fengine-legacy-runtime-codegen-isolation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:764",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-legacy-runtime-codegen-isolation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-legacy-runtime-codegen-isolation/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-legacy-runtime-codegen-isolation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-legacy-runtime-codegen-isolation",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHILE Legacy_Runtime_Codegen_Mode is active, THE runtime builder SHALL generate only in private ephemeral container state."
+    },
+    "policy/rust-policy/engine-locked-dependency-closure": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:3e93ca3eaca55fdf9d3126303b50277ebce3bbb50783f35a9166a154f50a827f",
+      "capability_id": "policy/rust-policy/engine-locked-dependency-closure",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-locked-dependency-closure",
+          "text": "WHEN a compatible Cargo.lock is present, THE runtime builder SHALL invoke Cargo\n    with `--locked`."
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-locked-dependency-closure/source%2Frust-policy%2Frust-policy%2Fengine-locked-dependency-closure",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:731",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-locked-dependency-closure"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-locked-dependency-closure/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:99",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-locked-dependency-closure"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-locked-dependency-closure",
+        "source/rust-policy/rust-policy/locked-resolution"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN a compatible Cargo.lock is present, THE runtime builder SHALL invoke Cargo with `--locked`."
+    },
+    "policy/rust-policy/engine-operation-determinism": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:18be9769a926d895cc4f0b8197185b2e6ba7d949fa5e3c8751d47859e05bfd06",
+      "capability_id": "policy/rust-policy/engine-operation-determinism",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-operation-determinism",
+          "text": "WHEN identical Operation_Input is processed twice, THE Rust backend SHALL produce\n    byte-identical artifacts and Operation_Manifest bytes."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-operation-determinism/source%2Frust-policy%2Frust-policy%2Fengine-operation-determinism",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:648",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-operation-determinism"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-operation-determinism/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-operation-determinism"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-operation-determinism",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN identical Operation_Input is processed twice, THE Rust backend SHALL produce byte-identical artifacts and Operation_Manifest bytes."
+    },
+    "policy/rust-policy/engine-operation-input-completeness": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e9f4fa84d1e530f909a944b7801c04e979d3f9d0e3ea98258f3a083ad783536e",
+      "capability_id": "policy/rust-policy/engine-operation-input-completeness",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-operation-input-completeness",
+          "text": "THE Operation_Input SHALL include the exact engine target identity."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-operation-input-completeness/source%2Frust-policy%2Frust-policy%2Fengine-operation-input-completeness",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:603",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-operation-input-completeness"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-operation-input-completeness/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-operation-input-completeness"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-operation-input-completeness",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "THE Operation_Input SHALL include the exact engine target identity."
+    },
+    "policy/rust-policy/engine-operation-output-confinement": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:f26de1691dd8a0f62a20d811f3830389d9d5333f5cde413b45f8676d42cc3a39",
+      "capability_id": "policy/rust-policy/engine-operation-output-confinement",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-operation-output-confinement",
+          "text": "IF an output root escapes the engine-selected operation root, THEN THE Rust backend\n    SHALL return a path-confinement diagnostic."
+        },
+        "rust_guidance": {
+          "clause_id": "panic-free-library",
+          "text": "Avoid `unwrap` and `panic` in library paths."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-operation-output-confinement/source%2Frust-policy%2Frust-policy%2Fengine-operation-output-confinement",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:609",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-operation-output-confinement"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-operation-output-confinement/source%2Frust-policy%2Frust-policy%2Fpanic-free-library",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:54",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-operation-output-confinement"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-operation-output-confinement",
+        "source/rust-policy/rust-policy/panic-free-library"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "IF an output root escapes the engine-selected operation root, THEN THE Rust backend SHALL return a path-confinement diagnostic."
+    },
+    "policy/rust-policy/engine-packaged-asset-provenance": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:2f9aca592ace8a5c03dac7a937aaeef9d5c28e1261d0ede0f0a89ac64843193d",
+      "capability_id": "policy/rust-policy/engine-packaged-asset-provenance",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-packaged-asset-provenance",
+          "text": "THE engine build SHALL bind the content digest to the produced engine image."
+        },
+        "rust_guidance": {
+          "clause_id": "dependency-policy",
+          "text": "New dependencies are design decisions."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-packaged-asset-provenance/source%2Frust-policy%2Frust-policy%2Fdependency-policy",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:59",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-packaged-asset-provenance"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-packaged-asset-provenance/source%2Frust-policy%2Frust-policy%2Fengine-packaged-asset-provenance",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:826",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-packaged-asset-provenance"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/dependency-policy",
+        "source/rust-policy/rust-policy/engine-packaged-asset-provenance"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "THE engine build SHALL bind the content digest to the produced engine image."
+    },
+    "policy/rust-policy/engine-runtime-cache-isolation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:405c976e6b2d28b00f99abf2e04fdd8a868f55ae4213afa3c0d8cce1aac205e7",
+      "capability_id": "policy/rust-policy/engine-runtime-cache-isolation",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-runtime-cache-isolation",
+          "text": "THE runtime builder SHALL key caches without secret values."
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-runtime-cache-isolation/source%2Frust-policy%2Frust-policy%2Fengine-runtime-cache-isolation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:846",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-runtime-cache-isolation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-runtime-cache-isolation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:105",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-runtime-cache-isolation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-runtime-cache-isolation",
+        "source/rust-policy/rust-policy/secret-safe-output"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "THE runtime builder SHALL key caches without secret values."
+    },
+    "policy/rust-policy/engine-runtime-protocol-boundary": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e22dac8c16f36c6b96eb3ed95295d5c95a32c3e8bace8cb704dc6e76ebecdef7",
+      "capability_id": "policy/rust-policy/engine-runtime-protocol-boundary",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-runtime-protocol-boundary",
+          "text": "WHEN the Runtime_Entrypoint starts under ModuleRuntime.Call, THE Rust process SHALL\n   connect through the supplied nested engine session."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-runtime-protocol-boundary/source%2Frust-policy%2Frust-policy%2Fengine-runtime-protocol-boundary",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:787",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-runtime-protocol-boundary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-runtime-protocol-boundary/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-runtime-protocol-boundary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-runtime-protocol-boundary",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN the Runtime_Entrypoint starts under ModuleRuntime.Call, THE Rust process SHALL connect through the supplied nested engine session."
+    },
+    "policy/rust-policy/engine-runtime-toolchain-selection": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:09b79b3147f0878125a05d31cb3cdd60494598dc3ce0eed3492972dee65abb91",
+      "capability_id": "policy/rust-policy/engine-runtime-toolchain-selection",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-runtime-toolchain-selection",
+          "text": "WHEN a Cargo_Project declares one compatible exact toolchain, THE runtime builder\n    SHALL use that toolchain."
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-runtime-toolchain-selection/source%2Frust-policy%2Frust-policy%2Fengine-runtime-toolchain-selection",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:723",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-runtime-toolchain-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-runtime-toolchain-selection/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:99",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-runtime-toolchain-selection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-runtime-toolchain-selection",
+        "source/rust-policy/rust-policy/locked-resolution"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN a Cargo_Project declares one compatible exact toolchain, THE runtime builder SHALL use that toolchain."
+    },
+    "policy/rust-policy/engine-scope-drift-closure": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:41404cdb5336f2761163119f0c57dc0d697bcd31c8e9ed052515e43201f16d8b",
+      "capability_id": "policy/rust-policy/engine-scope-drift-closure",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-scope-drift-closure",
+          "text": "IF a current or newly extracted engine SDK capability is absent from the scope\n   manifest, THEN THE completeness contract SHALL fail before status rendering."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-scope-drift-closure/source%2Frust-policy%2Frust-policy%2Fengine-scope-drift-closure",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:448",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-scope-drift-closure"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-scope-drift-closure/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-scope-drift-closure"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-scope-drift-closure",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "IF a current or newly extracted engine SDK capability is absent from the scope manifest, THEN THE completeness contract SHALL fail before status rendering."
+    },
+    "policy/rust-policy/engine-user-generated-file-ownership": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:760ca770f324cf639b51f8d567f1b4c624a8c83879c63857d88815c0ec2743a9",
+      "capability_id": "policy/rust-policy/engine-user-generated-file-ownership",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-user-generated-file-ownership",
+          "text": "WHEN authored Rust source exists, THE Rust initializer SHALL preserve every authored\n    source file byte-for-byte."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-user-generated-file-ownership/source%2Frust-policy%2Frust-policy%2Fengine-user-generated-file-ownership",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:564",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-user-generated-file-ownership"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-user-generated-file-ownership/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-user-generated-file-ownership"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-user-generated-file-ownership",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN authored Rust source exists, THE Rust initializer SHALL preserve every authored source file byte-for-byte."
+    },
+    "policy/rust-policy/engine-version-shorthand-rejection": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:dea847f71362972db02984989a39463bf4c04195836366c0cd09209eb23c4f2d",
+      "capability_id": "policy/rust-policy/engine-version-shorthand-rejection",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-version-shorthand-rejection",
+          "text": "IF Versioned_Rust_Shorthand is supplied, THEN THE engine SHALL return\n   `the rust sdk does not currently support selecting a specific version`."
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-version-shorthand-rejection/source%2Frust-policy%2Frust-policy%2Fengine-version-shorthand-rejection",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:478",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-version-shorthand-rejection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-version-shorthand-rejection/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-version-shorthand-rejection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-version-shorthand-rejection",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "IF Versioned_Rust_Shorthand is supplied, THEN THE engine SHALL return `the rust sdk does not currently support selecting a specific version`."
+    },
+    "policy/rust-policy/engine-visible-schema-core-compatibility": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:0df8734ec8554dee716fbec3209ef7556ef8c63808032452c4894269486a5d4e",
+      "capability_id": "policy/rust-policy/engine-visible-schema-core-compatibility",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-visible-schema-core-compatibility",
+          "text": "THE Rust backend SHALL validate every Core_Schema coordinate in the Visible_Schema\n   against the Target_Revision compatibility policy."
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-visible-schema-core-compatibility/source%2Frust-policy%2Frust-policy%2Fengine-visible-schema-core-compatibility",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:589",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-visible-schema-core-compatibility"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-visible-schema-core-compatibility/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-visible-schema-core-compatibility"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-visible-schema-core-compatibility",
+        "source/rust-policy/rust-policy/idiomatic-rust"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "THE Rust backend SHALL validate every Core_Schema coordinate in the Visible_Schema against the Target_Revision compatibility policy."
+    },
+    "policy/rust-policy/engine-workspace-sdk-installation": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:fed6e2b61e3270987fbfee0dabaf23fbfc2a75c263c38d206ec0a85d1b932cd1",
+      "capability_id": "policy/rust-policy/engine-workspace-sdk-installation",
+      "capability_kind": "rust-policy",
+      "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+      "owner_feature": "feature-5",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "engine-workspace-sdk-installation",
+          "text": "WHEN `dagger sdk install rust` succeeds, THE workspace SHALL contain one\n   Workspace_SDK_Installation named `dagger-rust-sdk`."
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-workspace-sdk-installation/source%2Frust-policy%2Frust-policy%2Fengine-workspace-sdk-installation",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:499",
+          "path": ".kiro/specs/rust-sdk-engine-integration/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-workspace-sdk-installation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/engine-workspace-sdk-installation/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/engine-workspace-sdk-installation"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/engine-workspace-sdk-installation",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "status": "Missing",
+      "summary": "WHEN `dagger sdk install rust` succeeds, THE workspace SHALL contain one Workspace_SDK_Installation named `dagger-rust-sdk`."
+    },
     "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:527fe435f42e30c40ed3d60b59b27d98db0608e7a7d2dbc5029d2a171236f4ef",
@@ -114264,7 +115386,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:97",
+          "locator": "sdk/rust/AGENTS.md:100",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny"
@@ -114369,7 +115491,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:96",
+          "locator": "sdk/rust/AGENTS.md:99",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Flocked-resolution"
@@ -114404,7 +115526,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/source%2Frust-policy%2Frust-policy%2Funsafe-denied",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:92",
+          "locator": "sdk/rust/AGENTS.md:95",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Funsafe-denied"
@@ -114606,7 +115728,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/transport-cache-permission-safety/source%2Frust-policy%2Frust-policy%2Funsafe-denied",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:92",
+          "locator": "sdk/rust/AGENTS.md:95",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/transport-cache-permission-safety"
@@ -114765,7 +115887,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/transport-cli-trace-propagation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/transport-cli-trace-propagation"
@@ -114879,7 +116001,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/transport-control-line-isolation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/transport-control-line-isolation"
@@ -114936,7 +116058,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/transport-diagnostic-bounds/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/transport-diagnostic-bounds"
@@ -115278,7 +116400,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/transport-http-trace-propagation/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/transport-http-trace-propagation"
@@ -115392,7 +116514,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/transport-loopback-authentication/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:102",
+          "locator": "sdk/rust/AGENTS.md:105",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/transport-loopback-authentication"
@@ -115917,7 +117039,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/transport-verified-cli-download/source%2Frust-policy%2Frust-policy%2Funsafe-denied",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:92",
+          "locator": "sdk/rust/AGENTS.md:95",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/transport-verified-cli-download"
@@ -115957,7 +117079,7 @@
           "claim": "Pinned authority source defines this reviewed capability",
           "evidence_id": "authority/policy/rust-policy/workspace-target-verification",
           "evidence_kind": "authority",
-          "locator": "sdk/rust/AGENTS.md:92",
+          "locator": "sdk/rust/AGENTS.md:95",
           "path": "sdk/rust/AGENTS.md",
           "proved_capability_ids": [
             "policy/rust-policy/workspace-target-verification"

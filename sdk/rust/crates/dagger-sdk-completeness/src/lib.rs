@@ -11,6 +11,7 @@ pub mod compatibility;
 pub mod contract;
 pub mod core_codegen;
 pub mod diagnostic;
+pub mod engine_integration;
 pub mod evidence;
 pub mod extract;
 pub mod feature_scope;
@@ -53,13 +54,19 @@ pub use core_codegen::{
 pub use diagnostic::{
     ContractDiagnostic, DiagnosticCode, DiagnosticCollector, DiagnosticSet, ToolError, Validation,
 };
+pub use engine_integration::{
+    AllowedTerminalStatus, CapabilityMapping, CaseId, CaseObservation, DelegatedContentDomain,
+    EngineEvidenceDomain, EngineIntegrationManifest, EngineIntegrationMappings,
+    EngineIntegrationObservation, EngineMappingDisposition, ImplementationSubject,
+    ValidatedEngineIntegrationMappings, validate_engine_integration_mappings,
+};
 pub use evidence::{
     EvidenceAuditContext, EvidenceEligibility, EvidenceSource, EvidenceSourceRegistry,
     ValidatedEvidenceRegistry, audit_evidence_registry,
 };
 pub use feature_scope::{
     FeatureContractPolicy, FeatureScopePolicy, ReviewedPolicyClause, client_lifecycle_contract,
-    reviewed_feature_contracts, transport_contract,
+    engine_integration_contract, reviewed_feature_contracts, transport_contract,
 };
 pub use harness::{
     HarnessAdmission, HarnessCheckInventory, HarnessCheckSource, HarnessCommandExecutor,

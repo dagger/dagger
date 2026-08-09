@@ -78,11 +78,14 @@ or agent to reconstruct it from those authorities is an avoidable correctness ri
   hashing domains, target/evidence containment, precedence, ownership, retry or
   idempotency assumptions, concurrency boundaries, and deliberate trade-offs. Explain
   why the decision is necessary, not what the following line does.
-- Cite the pinned schema, harness check, Go symbol/test, or approved specification when
-  behaviour is ground-truthed and the anchor prevents accidental reinterpretation.
+- Cite the pinned schema, harness check, or Go symbol/test when behaviour is
+  ground-truthed and the anchor prevents accidental reinterpretation. Keep
+  implementation source independent of specification features, tasks, and planning
+  phases; those labels describe delivery history rather than the enduring contract.
 - Keep obvious control flow, signature paraphrases, and ceremonial section comments out
-  of the source. Property tests carry one invariant sentence and the required
-  `// Feature: <name>, Property N: <text>` tag.
+  of the source. Property identity lives in stable `property_NN_*` test names; its
+  one-line comment states the invariant without naming a specification feature, task,
+  or planning phase.
 
 Missing module context or missing explanation for non-obvious correctness logic is a
 defect, even when formatting, compilation, and tests pass.

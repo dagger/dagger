@@ -772,6 +772,23 @@
         "source_path": ".kiro/specs/rust-sdk-core-codegen/requirements.md"
       }
     },
+    "routing/rust-policy/engine-integration": {
+      "authority_id": "rust-policy",
+      "classification": {
+        "gap": "Feature 5 built-in engine integration lacks implementation and exact-target evidence",
+        "owner_feature": "feature-5",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "digest": "sha256:09567ee5fbfd3e7a20d570ea8398f940416d699d605919af94aaea4a6d85248d"
+      },
+      "overrides": {},
+      "rule_id": "routing/rust-policy/engine-integration",
+      "selector": {
+        "authority_id": "rust-policy",
+        "source_path": ".kiro/specs/rust-sdk-engine-integration/requirements.md"
+      }
+    },
     "routing/rust-policy/transport-observability": {
       "authority_id": "rust-policy",
       "classification": {
