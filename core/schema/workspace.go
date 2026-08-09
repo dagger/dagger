@@ -2758,15 +2758,22 @@ func (s *workspaceSchema) cacheMountChanges(
 // discards its pending overlay to re-sync with whatever the host now holds
 // (the CLI's ctrl+u), and any other caller that knows its cached reads are
 // stale.
+//
+// The invalidation is entirely a side effect on the owning client's read epoch,
+// so the result is the PARENT's own object result rather than a new one minted
+// for this call. That is load-bearing: the field carries dagql.PerCallInput (it
+// must re-run, and re-bump, on every call), so a result minted for the current
+// call would carry a random nonce in its ID — and every workspace the caller
+// derives afterwards would chain off that ID for the rest of the session,
+// permanently novel and unmatchable in the cache. Module loads pay that price
+// worst: an agent that reloads once would re-declare its own modules on every
+// subsequent edit. Returning parent keeps the epoch bump and leaves the
+// caller's call chain exactly where it was.
 func (s *workspaceSchema) reloaded(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	_ struct{},
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	// Bump under the workspace's owning client, the same context export bumps
 	// in and the one withWorkspaceHostReadContext reads the epoch from — a
 	// bump under the caller's own client would be a silent no-op whenever the
@@ -2785,7 +2792,7 @@ func (s *workspaceSchema) reloaded(
 			slog.Warn("could not bump workspace read epoch", "error", err)
 		}
 	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, parent.Self().Clone())
+	return parent, nil
 }
 
 func (s *workspaceSchema) overlayWorkspaceWithMutation(
