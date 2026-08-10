@@ -1952,6 +1952,8 @@ type ContainerFromOpts struct {
 	Protocol RegistryProtocol
 	// Allow HTTPS registry communication without verifying the server certificate.
 	InsecureSkipTLSVerify bool
+	// Include prerelease tags when selecting the latest release.
+	LatestIncludeSubreleases bool
 }
 
 // Download a container image, and apply it to the container state. All previous state will be lost.
@@ -1969,6 +1971,10 @@ func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 		// `insecureSkipTLSVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
 			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
+		// `latestIncludeSubreleases` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LatestIncludeSubreleases) {
+			q = q.Arg("latestIncludeSubreleases", opts[i].LatestIncludeSubreleases)
 		}
 	}
 	q = q.Arg("address", address)
@@ -9153,11 +9159,23 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// GitRepositoryLatestVersionOpts contains options for GitRepository.LatestVersion
+type GitRepositoryLatestVersionOpts struct {
+	// Include prerelease tags when selecting the latest release.
+	IncludeSubreleases bool
+}
+
 // Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
 //
 // This operation is pinned.
-func (r *GitRepository) LatestVersion() *GitRef {
+func (r *GitRepository) LatestVersion(opts ...GitRepositoryLatestVersionOpts) *GitRef {
 	q := r.query.Select("latestVersion")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includeSubreleases` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeSubreleases) {
+			q = q.Arg("includeSubreleases", opts[i].IncludeSubreleases)
+		}
+	}
 
 	return &GitRef{
 		query: q,

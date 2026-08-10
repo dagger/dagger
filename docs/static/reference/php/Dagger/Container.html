@@ -316,7 +316,7 @@
                     <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_from">from</a>(string $address, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $registryService = null, <abbr title="Dagger\Dagger\RegistryProtocol">RegistryProtocol</abbr>|null $protocol = null, bool|null $insecureSkipTLSVerify = false)
+                    <a href="#method_from">from</a>(string $address, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $registryService = null, <abbr title="Dagger\Dagger\RegistryProtocol">RegistryProtocol</abbr>|null $protocol = null, bool|null $insecureSkipTLSVerify = false, bool|null $latestIncludeSubreleases = false)
         
                                             <p><p>Download a container image, and apply it to the container state. All previous state will be lost.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -1811,7 +1811,7 @@
                     <h3 id="method_from">
         <div class="location">at line 291</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
-    <strong>from</strong>(string $address, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $registryService = null, <abbr title="Dagger\Dagger\RegistryProtocol">RegistryProtocol</abbr>|null $protocol = null, bool|null $insecureSkipTLSVerify = false)
+    <strong>from</strong>(string $address, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $registryService = null, <abbr title="Dagger\Dagger\RegistryProtocol">RegistryProtocol</abbr>|null $protocol = null, bool|null $insecureSkipTLSVerify = false, bool|null $latestIncludeSubreleases = false)
         </code>
     </h3>
     <div class="details">    
@@ -1843,6 +1843,11 @@
                     <tr>
                 <td>bool|null</td>
                 <td>$insecureSkipTLSVerify</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$latestIncludeSubreleases</td>
                 <td></td>
             </tr>
             </table>

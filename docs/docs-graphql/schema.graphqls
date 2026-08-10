@@ -642,6 +642,9 @@ type Container implements Exportable & Node & Syncer {
     Allow HTTPS registry communication without verifying the server certificate.
     """
     insecureSkipTLSVerify: Boolean = false
+
+    """Include prerelease tags when selecting the latest release."""
+    latestIncludeSubreleases: Boolean = false
   ): Container!
 
   """A unique identifier for this Container."""
@@ -3334,7 +3337,10 @@ type GitRepository implements Node {
 
   This operation is pinned.
   """
-  latestVersion: GitRef!
+  latestVersion(
+    """Include prerelease tags when selecting the latest release."""
+    includeSubreleases: Boolean = false
+  ): GitRef!
 
   """Returns details of a ref."""
   ref(
@@ -6255,3 +6261,4 @@ type WorkspaceSDK implements Node {
   """The module reference this SDK was installed from."""
   ref: String!
 }
+

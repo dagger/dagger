@@ -406,6 +406,11 @@ export type ContainerFromOpts = {
    * Allow HTTPS registry communication without verifying the server certificate.
    */
   insecureSkipTLSVerify?: boolean
+
+  /**
+   * Include prerelease tags when selecting the latest release.
+   */
+  latestIncludeSubreleases?: boolean
 }
 
 export type ContainerImportOpts = {
@@ -1846,6 +1851,13 @@ export type GitRepositoryBranchesOpts = {
    * Glob patterns (e.g., "refs/tags/v*").
    */
   patterns?: string[]
+}
+
+export type GitRepositoryLatestVersionOpts = {
+  /**
+   * Include prerelease tags when selecting the latest release.
+   */
+  includeSubreleases?: boolean
 }
 
 export type GitRepositoryTagsOpts = {
@@ -4676,6 +4688,7 @@ export class Container extends BaseClient {
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
    * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.latestIncludeSubreleases Include prerelease tags when selecting the latest release.
    */
   from = (address: string, opts?: ContainerFromOpts): Container => {
     const metadata = {
@@ -9792,9 +9805,10 @@ export class GitRepository extends BaseClient {
    * Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
    *
    * This operation is pinned.
+   * @param opts.includeSubreleases Include prerelease tags when selecting the latest release.
    */
-  latestVersion = (): GitRef => {
-    const ctx = this._ctx.select("latestVersion")
+  latestVersion = (opts?: GitRepositoryLatestVersionOpts): GitRef => {
+    const ctx = this._ctx.select("latestVersion", { ...opts })
     return new GitRef(ctx)
   }
 

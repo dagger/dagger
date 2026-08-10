@@ -102,10 +102,12 @@ defmodule Dagger.GitRepository do
 
   This operation is pinned.
   """
-  @spec latest_version(t()) :: Dagger.GitRef.t()
-  def latest_version(%__MODULE__{} = git_repository) do
+  @spec latest_version(t(), [{:include_subreleases, boolean() | nil}]) :: Dagger.GitRef.t()
+  def latest_version(%__MODULE__{} = git_repository, optional_args \\ []) do
     query_builder =
-      git_repository.query_builder |> QB.select("latestVersion")
+      git_repository.query_builder
+      |> QB.select("latestVersion")
+      |> QB.maybe_put_arg("includeSubreleases", optional_args[:include_subreleases])
 
     %Dagger.GitRef{
       query_builder: query_builder,

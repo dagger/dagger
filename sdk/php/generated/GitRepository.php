@@ -80,9 +80,12 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
      *
      * This operation is pinned.
      */
-    public function latestVersion(): GitRef
+    public function latestVersion(?bool $includeSubreleases = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latestVersion');
+        if (null !== $includeSubreleases) {
+        $innerQueryBuilder->setArgument('includeSubreleases', $includeSubreleases);
+        }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
