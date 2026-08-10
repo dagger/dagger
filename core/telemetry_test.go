@@ -178,7 +178,7 @@ func (ms *mockServer) SnapshotManager() bkcache.SnapshotManager        { return 
 func (ms *mockServer) Locker() *locker.Locker                          { return nil }
 func (ms *mockServer) SecretSalt() []byte                              { return nil }
 func (ms *mockServer) EngineVolumeState() EngineVolumeState            { return EngineVolumeState{} }
-func (ms *mockServer) FlushCallTelemetry(context.Context) error        { return nil }
+func (ms *mockServer) FlushSessionTelemetry(context.Context) error     { return nil }
 func (ms *mockServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
 	return context.WithoutCancel(ctx), nil
 }
