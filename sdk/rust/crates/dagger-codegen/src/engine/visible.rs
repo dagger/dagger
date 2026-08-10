@@ -13,10 +13,36 @@ use crate::schema::{
 };
 use crate::target::CodegenTarget;
 
+use super::OperationKind;
+
 const CHECKED_CORE_SCHEMA: &[u8] = include_bytes!("../../../../completeness/snapshots/schema.json");
 
 static CHECKED_CORE_MANIFEST: OnceLock<Result<CoreCoordinateManifest, DiagnosticSet>> =
     OnceLock::new();
+static CHECKED_MODULE_MANIFEST: OnceLock<Result<CoreCoordinateManifest, DiagnosticSet>> =
+    OnceLock::new();
+
+// These are the exact module-introspection exclusions selected by core/moddeps.go and
+// core/env.go at the checked target. ID types are scrubbed beside each raw type by the
+// engine's schema builder.
+const MODULE_HIDDEN_TYPES: &[&str] = &[
+    "Host",
+    "HostID",
+    "Engine",
+    "EngineID",
+    "EngineCache",
+    "EngineCacheID",
+    "EngineCacheEntry",
+    "EngineCacheEntryID",
+    "EngineCacheEntrySet",
+    "EngineCacheEntrySetID",
+];
+const MODULE_HIDDEN_FIELDS: &[&str] = &[
+    "Query.currentWorkspace",
+    "Query.engineVolume",
+    "Query.sshfsVolume",
+    "Address.volume",
+];
 
 /// Complete compatible visible schema and its single semantic projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,7 +98,30 @@ pub fn project_visible_schema(
     target: &CodegenTarget,
     input: &[u8],
 ) -> Result<VisibleSchemaPlan, DiagnosticSet> {
-    let manifest = checked_core_manifest(target)?;
+    project_visible_schema_with_manifest(target, input, checked_core_manifest(target)?)
+}
+
+pub(super) fn project_operation_visible_schema(
+    target: &CodegenTarget,
+    operation: OperationKind,
+    input: &[u8],
+) -> Result<VisibleSchemaPlan, DiagnosticSet> {
+    let manifest = if matches!(
+        operation,
+        OperationKind::GenerateModule | OperationKind::GenerateEntrypoint
+    ) {
+        checked_module_manifest(target)?
+    } else {
+        checked_core_manifest(target)?
+    };
+    project_visible_schema_with_manifest(target, input, manifest)
+}
+
+fn project_visible_schema_with_manifest(
+    target: &CodegenTarget,
+    input: &[u8],
+    manifest: CoreCoordinateManifest,
+) -> Result<VisibleSchemaPlan, DiagnosticSet> {
     let canonical = decode_and_validate_with_mode(
         target,
         input,
@@ -124,6 +173,21 @@ fn checked_core_manifest(target: &CodegenTarget) -> Result<CoreCoordinateManifes
         .get_or_init(|| {
             let schema = decode_and_validate(target, CHECKED_CORE_SCHEMA)?;
             CoreCoordinateManifest::from_checked_schema(&schema)
+        })
+        .clone()
+}
+
+fn checked_module_manifest(
+    target: &CodegenTarget,
+) -> Result<CoreCoordinateManifest, DiagnosticSet> {
+    CHECKED_MODULE_MANIFEST
+        .get_or_init(|| {
+            let schema = decode_and_validate(target, CHECKED_CORE_SCHEMA)?;
+            CoreCoordinateManifest::from_checked_schema_with_scrub(
+                &schema,
+                MODULE_HIDDEN_TYPES,
+                MODULE_HIDDEN_FIELDS,
+            )
         })
         .clone()
 }

@@ -258,6 +258,18 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "RustEngineContent":
 		switch fnName {
+		case "EngineIntegration":
+			var parent RustEngineContent
+			if err = json.Unmarshal(parentJSON, &parent); err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var cases []string
+			if inputArgs["cases"] != nil {
+				if err = json.Unmarshal(inputArgs["cases"], &cases); err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cases", err))
+				}
+			}
+			return (*RustEngineContent).EngineIntegration(&parent, ctx, cases)
 		case "Resolution":
 			var parent RustEngineContent
 			err = json.Unmarshal(parentJSON, &parent)
@@ -628,6 +640,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("engineRepository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Credential-free HTTPS repository that owns the engine source revision.", SourceMap: dag.SourceMap("main.go", 57, 2), DefaultValue: dagger.JSON("\"https://github.com/dagger/dagger\"")}))).
 			WithObject(
 				dag.TypeDef().WithObject("RustEngineContent", dagger.TypeDefWithObjectOpts{Description: "RustEngineContent retains one engine-dev content object with both identities\nneeded to prove the acyclic packaged-content boundary.", SourceMap: dag.SourceMap("main.go", 316, 6)}).
+					WithFunction(
+						dag.Function("EngineIntegration",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("EngineIntegration exercises the initialization, operation, and runtime boundaries\nagainst one exact-target engine and one previously built Rust SDK content object.").
+							WithSourceMap(dag.SourceMap("main.go", 438, 1)).
+							WithArg("cases", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{Description: "Focused case names; an empty list runs the complete checkpoint.", SourceMap: dag.SourceMap("main.go", 441, 2), DefaultValue: dagger.JSON("[]")})).
 					WithFunction(
 						dag.Function("Resolution",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).

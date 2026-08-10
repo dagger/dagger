@@ -520,6 +520,51 @@ func (r *DaggerEngine) ServiceWithRustSdkcontent(rustSdkcontent *DaggerEngineRus
 	}
 }
 
+// DaggerEngineServiceWithFocusedRustSdkcontentOpts contains options for DaggerEngine.ServiceWithFocusedRustSdkcontent
+type DaggerEngineServiceWithFocusedRustSdkcontentOpts struct {
+	SharedCache bool
+
+	Metrics bool
+
+	Version string
+}
+
+// ServiceWithFocusedRustSDKContent starts a development engine by overlaying the
+// current engine binary, exact-target Go SDK, and reusable Rust SDK content onto a
+// digest-pinned baseline whose support slice is proven equal to the target revision.
+// The complete release builder remains the authority outside this focused test path.
+func (r *DaggerEngine) ServiceWithFocusedRustSdkcontent(
+	rustSdkcontent *DaggerEngineRustEngineContent,
+	name string,
+	baseImage string,
+	baseRevision string,
+	targetRepository string,
+	targetRevision string,
+	opts ...DaggerEngineServiceWithFocusedRustSdkcontentOpts,
+) *Service {
+	assertNotNil("rustSdkcontent", rustSdkcontent)
+	q := r.query.Select("serviceWithFocusedRustSdkcontent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].SharedCache) {
+			q = q.Arg("sharedCache", opts[i].SharedCache)
+		}
+		if !querybuilder.IsZeroValue(opts[i].Metrics) {
+			q = q.Arg("metrics", opts[i].Metrics)
+		}
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+	q = q.Arg("rustSdkcontent", rustSdkcontent)
+	q = q.Arg("name", name)
+	q = q.Arg("baseImage", baseImage)
+	q = q.Arg("baseRevision", baseRevision)
+	q = q.Arg("targetRepository", targetRepository)
+	q = q.Arg("targetRevision", targetRevision)
+
+	return &Service{query: q}
+}
+
 func (r *DaggerEngine) Source() *Directory { // dagger-engine (../../../../toolchains/engine-dev/main.go:98:2)
 	q := r.query.Select("source")
 
@@ -765,6 +810,17 @@ func (r *DaggerEngine) WithGitSource(repository string, revision string) *Dagger
 	return &DaggerEngine{
 		query: q,
 	}
+}
+
+// WithSource replaces the injected workspace view without changing its VCS identity.
+// Callers use this when one development operation needs a smaller content-addressed
+// source boundary than the complete engine distribution.
+func (r *DaggerEngine) WithSource(source *Directory) *DaggerEngine {
+	assertNotNil("source", source)
+	q := r.query.Select("withSource")
+	q = q.Arg("source", source)
+
+	return &DaggerEngine{query: q}
 }
 
 func (r *DaggerEngine) WithLogLevel(level string) *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:142:1)

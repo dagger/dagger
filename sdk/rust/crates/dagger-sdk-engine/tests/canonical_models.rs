@@ -46,6 +46,9 @@ fn round_trip_corpus(corpus: &ModelCorpus) {
     round_trip(&corpus.runtime_project);
     round_trip(&corpus.provenance_input);
     round_trip(&corpus.provenance);
+    round_trip(&corpus.runtime_policy);
+    round_trip(&corpus.runtime_request);
+    round_trip(&corpus.runtime_plan);
     round_trip(&corpus.asset);
     round_trip(&corpus.asset_manifest);
     round_trip(&corpus.evidence);

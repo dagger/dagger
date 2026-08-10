@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
@@ -238,7 +239,10 @@ func resolvedModuleEntrySourceWithPin(configDir string, entry workspace.ModuleEn
 }
 
 func moduleEntrySourceWithPinRelativeTo(configDir, targetDir string, entry workspace.ModuleEntry) (string, error) {
-	if !workspace.IsLocalRef(entry.Source, "") {
+	// Built-in names are resolved by the engine, not relative to the workspace
+	// like extensionless local paths. This matters for SDKs that intentionally
+	// use their installed module as the runtime and omit RuntimeTarget.
+	if coresdk.IsBuiltinSDKName(entry.Source) || !workspace.IsLocalRef(entry.Source, "") {
 		return moduleEntrySourceWithPin(entry), nil
 	}
 	source := workspace.ResolveModuleEntrySource(configDir, entry.Source)

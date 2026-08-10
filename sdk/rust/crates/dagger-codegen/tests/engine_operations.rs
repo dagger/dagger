@@ -10,7 +10,9 @@ use dagger_codegen::engine::{
 };
 use dagger_codegen::target::CodegenTarget;
 
-use support::{CORE_SCHEMA_BYTES, TARGET_BYTES, VisibleSchemaCase, visible_schema};
+use support::{
+    CORE_SCHEMA_BYTES, TARGET_BYTES, VisibleSchemaCase, module_visible_schema, visible_schema,
+};
 
 fn target() -> CodegenTarget {
     CodegenTarget::decode_exact(TARGET_BYTES).expect("checked target must decode")
@@ -153,6 +155,103 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
             }
         }
     }
+}
+
+#[test]
+fn module_visibility_accepts_only_the_target_introspection_scrub() {
+    let target = target();
+    let module = module();
+    let dependency = dependency();
+    let output = RelativeOperationPath::parse("candidate").expect("fixture path must parse");
+    let schema = module_visible_schema(0);
+
+    let plan = project_operation(OperationProjectionRequest {
+        target: &target,
+        operation: OperationKind::GenerateModule,
+        visible_schema_json: &schema,
+        module: Some(&module),
+        output: &output,
+        sdk_dependency: &dependency,
+        entrypoint: None,
+    })
+    .expect("the exact target module scrub must remain compatible");
+    for (path, artifact) in plan.artifacts() {
+        if artifact.kind == dagger_codegen::engine::CandidateArtifactKind::RustSource {
+            let source = std::str::from_utf8(&artifact.content)
+                .unwrap_or_else(|_| panic!("{} must be UTF-8", path.as_str()));
+            syn::parse_file(source)
+                .unwrap_or_else(|error| panic!("{} must parse: {error}", path.as_str()));
+        }
+    }
+    let directory = tempfile::tempdir().expect("formatter fixture root must be created");
+    let mut rust_paths = Vec::new();
+    for (path, artifact) in plan.artifacts() {
+        if artifact.kind != dagger_codegen::engine::CandidateArtifactKind::RustSource {
+            continue;
+        }
+        let destination = directory.path().join(path.as_str());
+        std::fs::create_dir_all(
+            destination
+                .parent()
+                .expect("generated artifact must have a parent"),
+        )
+        .expect("generated artifact parent must be created");
+        std::fs::write(&destination, &artifact.content)
+            .expect("generated artifact must be written");
+        rust_paths.push(path.as_str().to_owned());
+    }
+    let formatted = std::process::Command::new("rustfmt")
+        .arg("+1.97.1")
+        .args(["--edition", "2024"])
+        .args(&rust_paths)
+        .current_dir(directory.path())
+        .output()
+        .expect("pinned rustfmt must start");
+    assert!(
+        formatted.status.success(),
+        "module-visible artifacts must format: {}",
+        String::from_utf8_lossy(&formatted.stderr)
+    );
+
+    let diagnostics = project_operation(OperationProjectionRequest {
+        target: &target,
+        operation: OperationKind::GenerateClient,
+        visible_schema_json: &schema,
+        module: Some(&module),
+        output: &output,
+        sdk_dependency: &dependency,
+        entrypoint: None,
+    })
+    .expect_err("client generation requires the complete client-visible core");
+    assert!(
+        diagnostics.contains(DiagnosticCode::SchemaCoreCoordinateMissing)
+            || diagnostics.contains(DiagnosticCode::SchemaReferenceInvalid)
+    );
+
+    let mut unexpected: serde_json::Value =
+        serde_json::from_slice(&schema).expect("module-visible fixture must decode");
+    let query = unexpected["__schema"]["types"]
+        .as_array_mut()
+        .expect("fixture types must be an array")
+        .iter_mut()
+        .find(|definition| definition["name"] == "Query")
+        .expect("fixture must contain Query");
+    query["fields"]
+        .as_array_mut()
+        .expect("Query fields must be an array")
+        .retain(|field| field["name"] != "address");
+    let unexpected = serde_json::to_vec(&unexpected).expect("fixture must encode");
+    let diagnostics = project_operation(OperationProjectionRequest {
+        target: &target,
+        operation: OperationKind::GenerateModule,
+        visible_schema_json: &unexpected,
+        module: Some(&module),
+        output: &output,
+        sdk_dependency: &dependency,
+        entrypoint: None,
+    })
+    .expect_err("an unrelated module-schema omission must remain incompatible");
+    assert!(diagnostics.contains(DiagnosticCode::SchemaCoreCoordinateMissing));
 }
 
 #[test]

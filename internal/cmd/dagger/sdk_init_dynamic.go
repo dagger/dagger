@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -86,6 +87,16 @@ func registerSDKInitCommandsFromConfigForKind(
 	registerUninstalledSDKInitSuggestion(moduleParent, clientParent, kind, args, sdks)
 
 	for _, sdk := range sdks {
+		if sdk.entry.Source == sdkmeta.Rust && sdk.entry.Pin == "" {
+			// Packaged built-ins have no host ref that the CLI can inspect as a
+			// ModuleSource. Rust deliberately declares no extra init arguments yet,
+			// so register only its implemented module initializer; the engine still
+			// resolves and invokes the packaged adapter for the actual operation.
+			if kind == sdkInitKindModule {
+				moduleParent.AddCommand(newModuleInitSDKCommand(sdk.commandName))
+			}
+			continue
+		}
 		sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
 		if err != nil {
 			return err

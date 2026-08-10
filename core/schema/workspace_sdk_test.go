@@ -111,6 +111,13 @@ func TestModuleEntrySourceWithPinRelativeToLeavesGitRefsCanonical(t *testing.T) 
 	require.Equal(t, "github.com/acme/sdk@v1.2.3", mustModuleEntrySourceWithPinRelativeTo(t, "apps/demo", ".dagger/modules/new", entry))
 }
 
+func TestModuleEntrySourceWithPinRelativeToLeavesBuiltinRefsCanonical(t *testing.T) {
+	t.Parallel()
+
+	entry := workspace.ModuleEntry{Source: "rust"}
+	require.Equal(t, "rust", mustModuleEntrySourceWithPinRelativeTo(t, "apps/demo", ".dagger/modules/new", entry))
+}
+
 func mustModuleEntrySourceWithPinRelativeTo(t *testing.T, configDir, targetDir string, entry workspace.ModuleEntry) string {
 	t.Helper()
 	ref, err := moduleEntrySourceWithPinRelativeTo(configDir, targetDir, entry)

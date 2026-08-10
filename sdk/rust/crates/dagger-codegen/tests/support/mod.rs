@@ -68,6 +68,115 @@ pub(crate) fn visible_schema(case: VisibleSchemaCase, permutation: u16) -> Vec<u
     serde_json::to_vec(&document).expect("schema fixture must encode")
 }
 
+pub(crate) fn module_visible_schema(permutation: u16) -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(CORE_SCHEMA_BYTES).expect("checked schema fixture must decode");
+    for hidden in [
+        "Host",
+        "HostID",
+        "Engine",
+        "EngineID",
+        "EngineCache",
+        "EngineCacheID",
+        "EngineCacheEntry",
+        "EngineCacheEntryID",
+        "EngineCacheEntrySet",
+        "EngineCacheEntrySetID",
+    ] {
+        scrub_type(&mut document, hidden);
+    }
+    for hidden in [
+        "Query.currentWorkspace",
+        "Query.engineVolume",
+        "Query.sshfsVolume",
+        "Address.volume",
+    ] {
+        scrub_field(&mut document, hidden);
+    }
+    permute_schema(&mut document, permutation);
+    serde_json::to_vec(&document).expect("module-visible schema fixture must encode")
+}
+
+fn scrub_type(document: &mut Value, hidden: &str) {
+    let definitions = std::mem::take(schema_array_mut(document, "types"));
+    *schema_array_mut(document, "types") = definitions
+        .into_iter()
+        .filter_map(|mut definition| {
+            let kind = definition["kind"].as_str().unwrap_or_default();
+            let name = definition["name"].as_str().unwrap_or_default().to_owned();
+            if kind == "SCALAR" {
+                return (name != hidden).then_some(definition);
+            }
+            retain_without_type(&mut definition, "fields", hidden, field_references_type);
+            retain_without_type(
+                &mut definition,
+                "inputFields",
+                hidden,
+                input_value_references_type,
+            );
+            if let Some(values) = definition
+                .get_mut("enumValues")
+                .and_then(Value::as_array_mut)
+            {
+                values.retain(|value| value["name"].as_str() != Some(hidden));
+            }
+            let empty = ["fields", "inputFields", "enumValues"].iter().all(|key| {
+                definition
+                    .get(*key)
+                    .and_then(Value::as_array)
+                    .is_none_or(Vec::is_empty)
+            });
+            (name != hidden && !empty).then_some(definition)
+        })
+        .collect();
+}
+
+fn retain_without_type(
+    definition: &mut Value,
+    collection: &str,
+    hidden: &str,
+    references: fn(&Value, &str) -> bool,
+) {
+    if let Some(values) = definition.get_mut(collection).and_then(Value::as_array_mut) {
+        values.retain(|value| !references(value, hidden));
+    }
+}
+
+fn field_references_type(field: &Value, hidden: &str) -> bool {
+    type_ref_references(&field["type"], hidden)
+        || field["args"].as_array().is_some_and(|arguments| {
+            arguments
+                .iter()
+                .any(|arg| input_value_references_type(arg, hidden))
+        })
+}
+
+fn input_value_references_type(value: &Value, hidden: &str) -> bool {
+    type_ref_references(&value["type"], hidden)
+}
+
+fn type_ref_references(type_ref: &Value, hidden: &str) -> bool {
+    type_ref["name"].as_str() == Some(hidden)
+        || type_ref
+            .get("ofType")
+            .is_some_and(|nested| type_ref_references(nested, hidden))
+}
+
+fn scrub_field(document: &mut Value, hidden: &str) {
+    let Some((type_name, field_name)) = hidden.split_once('.') else {
+        return;
+    };
+    let Some(definition) = schema_array_mut(document, "types")
+        .iter_mut()
+        .find(|definition| definition["name"].as_str() == Some(type_name))
+    else {
+        return;
+    };
+    if let Some(fields) = definition.get_mut("fields").and_then(Value::as_array_mut) {
+        fields.retain(|field| field["name"].as_str() != Some(field_name));
+    }
+}
+
 fn add_extension(document: &mut Value, name: &str, add_field: bool) {
     schema_array_mut(document, "types").push(json!({
         "kind": "ENUM",

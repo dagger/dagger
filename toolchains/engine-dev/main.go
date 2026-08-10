@@ -165,6 +165,16 @@ func (dev *EngineDev) WithGitSource(
 	return dev
 }
 
+// WithSource replaces the injected workspace view without changing its VCS identity.
+// Callers use this when one development operation needs a smaller content-addressed
+// source boundary than the complete engine distribution.
+func (dev *EngineDev) WithSource(source *dagger.Directory) *EngineDev {
+	if source != nil {
+		dev.Source = source
+	}
+	return dev
+}
+
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
 func (dev *EngineDev) Playground(
 	ctx context.Context,
@@ -242,19 +252,6 @@ func (dev *EngineDev) container(
 	version string,
 	rustSDKContent *RustEngineContent,
 ) (*dagger.Container, error) {
-	cfg, err := generateConfig(dev.LogLevel)
-	if err != nil {
-		return nil, err
-	}
-	engineTOML, err := generateEngineTOML(dev.EngineConfig)
-	if err != nil {
-		return nil, err
-	}
-	entrypoint, err := generateEntrypoint()
-	if err != nil {
-		return nil, err
-	}
-
 	builder, err := build.NewBuilder(ctx, dev.Source, dev.VCSRepository, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
 	if err != nil {
 		return nil, err
@@ -282,6 +279,27 @@ func (dev *EngineDev) container(
 	if err != nil {
 		return nil, err
 	}
+	return dev.configureContainer(ctr, platform, version)
+}
+
+func (dev *EngineDev) configureContainer(
+	ctr *dagger.Container,
+	platform dagger.Platform,
+	version string,
+) (*dagger.Container, error) {
+	cfg, err := generateConfig(dev.LogLevel)
+	if err != nil {
+		return nil, err
+	}
+	engineTOML, err := generateEngineTOML(dev.EngineConfig)
+	if err != nil {
+		return nil, err
+	}
+	entrypoint, err := generateEntrypoint()
+	if err != nil {
+		return nil, err
+	}
+
 	for _, prog := range dev.EBPFProgs {
 		ctr = ctr.WithEnvVariable("DAGGER_EBPF_PROG_"+strings.ToUpper(prog), "y")
 	}
@@ -292,7 +310,13 @@ func (dev *EngineDev) container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{
+		Source:    dev.Source,
+		Version:   version,
+		VcsCommit: dev.VCSCommit,
+		VcsDirty:  dev.VCSDirty,
+		Ws:        dev.Ws,
+	}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -336,6 +360,112 @@ func (dev *EngineDev) RustSDKContent(
 		ManifestDigest:   content.ManifestDigest(),
 		DescriptorDigest: content.DescriptorDigest(),
 	}, nil
+}
+
+// focusedEngineSupportSource selects everything inherited from the immutable
+// baseline image. Comparing this slice across revisions prevents a focused build
+// from concealing a runtime-support change behind an older published image.
+func focusedEngineSupportSource(repository, revision string) *dagger.Directory {
+	return dag.Git(repository).
+		Commit(revision).
+		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		Filter(dagger.DirectoryFilterOpts{Include: []string{
+			"go.mod",
+			"go.sum",
+			"cmd/dialstdio/**",
+			"cmd/dnsname/**",
+			"cmd/init/**",
+			"engine/distconsts/**",
+			"modules/wolfi/**",
+			"toolchains/engine-dev/build/**",
+			"toolchains/engine-dev/consts/**",
+			"toolchains/engine-dev/dagger-module.toml",
+			"toolchains/go/**",
+		}})
+}
+
+func validateFocusedEngineBase(
+	ctx context.Context,
+	repository string,
+	baseRevision string,
+	targetRevision string,
+) error {
+	if len(baseRevision) != 40 || len(targetRevision) != 40 {
+		return fmt.Errorf("focused engine base and target require full immutable revisions")
+	}
+	baseDigest, err := focusedEngineSupportSource(repository, baseRevision).Digest(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve focused engine baseline support identity: %w", err)
+	}
+	targetDigest, err := focusedEngineSupportSource(repository, targetRevision).Digest(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve focused engine target support identity: %w", err)
+	}
+	if baseDigest != targetDigest {
+		return fmt.Errorf("focused engine baseline support differs from target revision")
+	}
+	return nil
+}
+
+func (dev *EngineDev) focusedRustContainer(
+	ctx context.Context,
+	rustSDKContent *RustEngineContent,
+	baseImage string,
+	baseRevision string,
+	targetRepository string,
+	targetRevision string,
+	platform dagger.Platform,
+	version string,
+) (*dagger.Container, error) {
+	if rustSDKContent == nil {
+		return nil, fmt.Errorf("Rust SDK content is required")
+	}
+	targetRepository = canonicalEngineRepository(targetRepository)
+	if targetRepository == "" {
+		return nil, fmt.Errorf("focused engine target repository is required")
+	}
+	if err := validateFocusedEngineBase(ctx, targetRepository, baseRevision, targetRevision); err != nil {
+		return nil, err
+	}
+
+	builder, err := build.NewBuilder(ctx, dev.Source, dev.VCSRepository, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
+	if err != nil {
+		return nil, err
+	}
+	builder = builder.WithRace(dev.Race)
+	builder, err = builder.WithRustSDKContent(
+		rustSDKContent.Content,
+		rustSDKContent.ManifestDigest,
+		rustSDKContent.DescriptorDigest,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if platform != "" {
+		builder = builder.WithPlatform(platform)
+	}
+
+	targetRef := dag.Git(targetRepository).Commit(targetRevision)
+	targetBuilder, err := build.NewBuilder(
+		ctx,
+		targetRef.Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}),
+		targetRepository,
+		version,
+		targetRevision,
+		false,
+		targetRef.AsWorkspace(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if platform != "" {
+		targetBuilder = targetBuilder.WithPlatform(platform)
+	}
+	ctr, err := builder.FocusedRustEngine(ctx, baseImage, targetBuilder)
+	if err != nil {
+		return nil, err
+	}
+	return dev.configureContainer(ctr, platform, version)
 }
 
 func canonicalEngineRepository(repository string) string {
@@ -389,6 +519,50 @@ func (dev *EngineDev) ServiceWithRustSDKContent(
 	return dev.service(ctx, rustSDKContent, name, gpuSupport, sharedCache, metrics, version)
 }
 
+// ServiceWithFocusedRustSDKContent starts a development engine by overlaying the
+// current engine binary, exact-target Go SDK, and reusable Rust SDK content onto a
+// digest-pinned baseline whose support slice is proven equal to the target revision.
+// The complete release builder remains the authority outside this focused test path.
+func (dev *EngineDev) ServiceWithFocusedRustSDKContent(
+	ctx context.Context,
+	rustSDKContent *RustEngineContent,
+	name string,
+	baseImage string,
+	baseRevision string,
+	targetRepository string,
+	targetRevision string,
+	// +optional
+	sharedCache bool,
+	// +optional
+	metrics bool,
+	// +optional
+	version string,
+) (*dagger.Service, error) {
+	// Support 256 layers of nested dagger engines :-P
+	dev = dev.IncrementSubnet()
+	devEngine, err := dev.focusedRustContainer(
+		ctx,
+		rustSDKContent,
+		baseImage,
+		baseRevision,
+		targetRepository,
+		targetRevision,
+		"",
+		version,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return dev.serviceFromContainer(
+		devEngine,
+		name,
+		sharedCache,
+		metrics,
+		version,
+		rustSDKContent.ManifestDigest,
+	), nil
+}
+
 func (dev *EngineDev) service(
 	ctx context.Context,
 	rustSDKContent *RustEngineContent,
@@ -400,22 +574,33 @@ func (dev *EngineDev) service(
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
 	dev = dev.IncrementSubnet()
-	cacheVolumeName := "dagger-dev-engine-state"
-	if !sharedCache {
-		if version != "" {
-			cacheVolumeName = "dagger-dev-engine-state-" + version
-		} else {
-			cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
-		}
-		if name != "" {
-			cacheVolumeName += "-" + name
-		}
-	}
-
 	devEngine, err := dev.container(ctx, "", gpuSupport, version, rustSDKContent)
 	if err != nil {
 		return nil, err
 	}
+	rustManifestDigest := ""
+	if rustSDKContent != nil {
+		rustManifestDigest = rustSDKContent.ManifestDigest
+	}
+	return dev.serviceFromContainer(
+		devEngine,
+		name,
+		sharedCache,
+		metrics,
+		version,
+		rustManifestDigest,
+	), nil
+}
+
+func (dev *EngineDev) serviceFromContainer(
+	devEngine *dagger.Container,
+	name string,
+	sharedCache bool,
+	metrics bool,
+	version string,
+	rustManifestDigest string,
+) *dagger.Service {
+	cacheVolumeName := engineStateCacheVolume(version, rustManifestDigest, name, sharedCache)
 
 	devEngine = devEngine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
@@ -439,7 +624,38 @@ func (dev *EngineDev) service(
 		},
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
-	}), nil
+	})
+}
+
+func engineStateCacheVolume(
+	version string,
+	rustManifestDigest string,
+	name string,
+	shared bool,
+) string {
+	const prefix = "dagger-dev-engine-state"
+	if shared {
+		return prefix
+	}
+
+	identity := version
+	if rustManifestDigest != "" {
+		// Engine state may retain resolved built-in modules. Binding it to the Rust
+		// manifest prevents a rebuilt SDK from inheriting an adapter loaded from an
+		// older content object carrying the same engine version.
+		rustIdentity := strings.TrimPrefix(rustManifestDigest, "sha256:")
+		if identity != "" {
+			identity += "-"
+		}
+		identity += rustIdentity
+	}
+	if identity == "" {
+		identity = rand.Text()
+	}
+	if name != "" {
+		identity += "-" + name
+	}
+	return prefix + "-" + identity
 }
 
 // Configure the given client container so that it can connect to the given engine service

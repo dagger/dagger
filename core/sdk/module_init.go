@@ -142,18 +142,23 @@ func (sdk *module) initFunctionCallArgs(
 		usedSDKArgs[arg.Name] = struct{}{}
 	}
 
-	var unknown []string
-	for key := range sdkArgs {
-		if _, ok := usedSDKArgs[key]; !ok {
-			unknown = append(unknown, key)
-		}
-	}
-	slices.Sort(unknown)
+	unknown := unknownInitSDKArgs(sdkArgs, usedSDKArgs)
 	if len(unknown) > 0 {
 		return nil, fmt.Errorf("unknown sdk %s arg(s): %v", fn.Name, unknown)
 	}
 
 	return named, nil
+}
+
+func unknownInitSDKArgs(sdkArgs map[string]any, used map[string]struct{}) []string {
+	unknown := make([]string, 0, len(sdkArgs))
+	for key := range sdkArgs {
+		if _, ok := used[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	slices.Sort(unknown)
+	return unknown
 }
 
 func DecodeInitArgs(raw core.JSON) (map[string]any, error) {

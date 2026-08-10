@@ -33,6 +33,9 @@ pub struct ModelCorpus {
     pub runtime_project: RuntimeCargoProject,
     pub provenance_input: RuntimeProvenanceInput,
     pub provenance: RuntimeProvenance,
+    pub runtime_policy: RuntimePolicy,
+    pub runtime_request: RuntimeVerificationRequest,
+    pub runtime_plan: RuntimeBuildPlan,
     pub asset: PackagedAsset,
     pub asset_manifest: PackagedAssetManifest,
     pub evidence: EngineEvidenceSubject,
@@ -241,6 +244,45 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         input: provenance_input.clone(),
         binary_digest: digest(seed, 13),
     };
+    let runtime_policy = RuntimePolicy {
+        format_version: FormatVersion,
+        build_image: value(
+            "rust:1.97.1-bookworm@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ),
+        runtime_base_image: value(
+            "gcr.io/distroless/cc-debian12:nonroot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ),
+        runtime_base_digest: value(
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ),
+        linux_amd64_target: value("x86_64-unknown-linux-gnu"),
+        linux_arm64_target: value("aarch64-unknown-linux-gnu"),
+        cargo_target_dir: value("/var/lib/dagger/rust/target"),
+        runtime_binary_path: value("/var/lib/dagger/rust/target/release/dagger-module"),
+        runtime_install_path: value("/usr/local/bin/dagger-module"),
+        provenance_install_path: value("/usr/local/share/dagger/rust/runtime-provenance.json"),
+    };
+    let runtime_request = RuntimeVerificationRequest {
+        format_version: FormatVersion,
+        target: target.clone(),
+        module: module.clone(),
+        mode: provenance_input.mode,
+        operation_manifest: path(&format!("{root}/.dagger/rust/operation-manifest.json")),
+        base_image_digest: runtime_policy.runtime_base_digest.clone(),
+        rust_target: provenance_input.target.clone(),
+    };
+    let runtime_plan = RuntimeBuildPlan {
+        format_version: FormatVersion,
+        project: runtime_project.clone(),
+        mode: provenance_input.mode,
+        manifest: manifest.clone(),
+        cargo_args: dagger_sdk_engine::runtime::runtime_cargo_arguments(
+            &runtime_project,
+            &provenance_input.target,
+        ),
+        binary_relative_path: path("release/dagger-module"),
+        provenance_input: provenance_input.clone(),
+    };
     let asset = PackagedAsset {
         path: path("usr/local/bin/dagger-rust-engine"),
         digest: digest(seed, 14),
@@ -287,6 +329,9 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         runtime_project,
         provenance_input,
         provenance,
+        runtime_policy,
+        runtime_request,
+        runtime_plan,
         asset,
         asset_manifest,
         evidence,

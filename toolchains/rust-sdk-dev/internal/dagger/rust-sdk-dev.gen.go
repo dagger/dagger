@@ -400,10 +400,32 @@ func (r *RustSDKDev) WithGeneratedClient() *RustSDKDev {
 type RustSDKDevRustEngineContent struct { // rust-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
-	descriptorDigest *string
-	id               *ID
-	manifestDigest   *string
-	resolution       *string
+	descriptorDigest  *string
+	engineIntegration *string
+	id                *ID
+	manifestDigest    *string
+	resolution        *string
+}
+
+// RustSDKDevRustEngineContentEngineIntegrationOpts contains focused case selection.
+type RustSDKDevRustEngineContentEngineIntegrationOpts struct {
+	Cases []string
+}
+
+// EngineIntegration exercises Rust SDK hooks against one reusable exact engine.
+func (r *RustSDKDevRustEngineContent) EngineIntegration(ctx context.Context, opts ...RustSDKDevRustEngineContentEngineIntegrationOpts) (string, error) {
+	if r.engineIntegration != nil {
+		return *r.engineIntegration, nil
+	}
+	q := r.query.Select("engineIntegration")
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Cases) {
+			q = q.Arg("cases", opts[i].Cases)
+		}
+	}
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 func (r *RustSDKDevRustEngineContent) WithGraphQLQuery(q *querybuilder.Selection) *RustSDKDevRustEngineContent {

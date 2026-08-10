@@ -63,6 +63,20 @@ pub enum EngineDiagnosticCode {
     OperationInputInvalid,
     /// A child process was cancelled and reaped.
     OperationCancelled,
+    /// Checked runtime generation is missing a required committed artifact.
+    GeneratedMissing,
+    /// Checked runtime generation differs from its committed ownership manifest.
+    GeneratedStale,
+    /// Checked runtime construction has no committed Cargo lockfile.
+    LockfileMissing,
+    /// The committed Cargo lockfile does not resolve the selected manifest.
+    LockfileStale,
+    /// The generated `dagger-module` target is absent or caller-controlled.
+    RuntimeTargetInvalid,
+    /// Cargo compilation or post-build processing failed.
+    RuntimeBuildFailed,
+    /// A runtime diagnostic could not be proven free of credential material.
+    DiagnosticRedactionFailed,
 }
 
 impl fmt::Display for EngineDiagnosticCode {

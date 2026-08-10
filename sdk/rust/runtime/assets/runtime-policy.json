@@ -1,0 +1,12 @@
+{
+  "build_image": "rust:1.97.1-bookworm@sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb",
+  "cargo_target_dir": "/var/lib/dagger/rust/target",
+  "format_version": 1,
+  "linux_amd64_target": "x86_64-unknown-linux-gnu",
+  "linux_arm64_target": "aarch64-unknown-linux-gnu",
+  "provenance_install_path": "/usr/local/share/dagger/rust/runtime-provenance.json",
+  "runtime_base_digest": "sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e",
+  "runtime_base_image": "gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e",
+  "runtime_binary_path": "/var/lib/dagger/rust/target/release/dagger-module",
+  "runtime_install_path": "/usr/local/bin/dagger-module"
+}

@@ -236,23 +236,31 @@ func (l *Loader) loadBuiltinSDK(
 		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", sdk.Source, err)
 	}
 
+	moduleSource := []dagql.Selector{{Field: "directory", Args: []dagql.NamedInput{
+		{Name: "path", Value: dagql.String("runtime")},
+	}}, {Field: "asModuleSource"}}
+	if sdk.Source == string(sdkRust) {
+		// Rust's installed-SDK generators execute through the module itself, not
+		// through the hook instance that receives optionalFullSDKSourceDir. Keep
+		// the sealed content root as their +defaultPath context while selecting
+		// runtime/ as the implementation root.
+		moduleSource = []dagql.Selector{{
+			Field: "asModuleSource",
+			Args: []dagql.NamedInput{
+				{Name: "sourceRootPath", Value: dagql.String("runtime")},
+			},
+		}}
+	}
 	var sdkMod dagql.ObjectResult[*core.Module]
 	err = dag.Select(ctx, fullSDKDir, &sdkMod,
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String("runtime")},
+		append(moduleSource,
+			dagql.Selector{
+				Field: "asModule",
+				Args: []dagql.NamedInput{
+					{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+				},
 			},
-		},
-		dagql.Selector{
-			Field: "asModuleSource",
-		},
-		dagql.Selector{
-			Field: "asModule",
-			Args: []dagql.NamedInput{
-				{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
-			},
-		},
+		)...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import module sdk %s: %w", sdk.Source, err)

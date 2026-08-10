@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
+use dagger_codegen::diagnostic::DiagnosticSet as CompilerDiagnosticSet;
 use dagger_codegen::engine as compiler;
 use dagger_codegen::target::CodegenTarget;
 use sha2::{Digest as _, Sha256};
@@ -16,12 +17,13 @@ use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::post_work::{
     Cancellation, current_allowlisted_environment, execute, require_convergence,
 };
-use crate::publication::{OperationCandidate, PublicationOutcome, publish, verify_ownership};
+use crate::publication::{OperationCandidate, publish, verify_ownership};
+use crate::root::validate_path_sets;
 use crate::{
     ArtifactKind, ArtifactOwnership, ArtifactRecord, CandidateArtifact, EngineSourceDescriptor,
-    ExactVersion, GenerationMode, GeneratorIdentity, ModuleConfigFormat, OperationManifest,
-    OperationRequest, OperationRoot, PostWorkPlan, PostWorkRecord, PublishedSdkDependency,
-    RelativeOperationPath, Sha256Digest,
+    ExactVersion, ExecutionResult, ExecutionResultKind, FormatVersion, GenerationMode,
+    GeneratorIdentity, ModuleConfigFormat, OperationManifest, OperationRequest, OperationRoot,
+    PostWorkPlan, PostWorkRecord, PublishedSdkDependency, RelativeOperationPath, Sha256Digest,
 };
 
 const TARGET_DESCRIPTOR: &[u8] = include_bytes!("../../../completeness/target.json");
@@ -33,7 +35,7 @@ pub async fn execute_operation(
     schema: &[u8],
     descriptor: &EngineSourceDescriptor,
     cancel: &Cancellation,
-) -> Result<PublicationOutcome, EngineDiagnostic> {
+) -> Result<ExecutionResult, EngineDiagnostic> {
     validate_request(request, descriptor)?;
     let target = CodegenTarget::decode_exact(TARGET_DESCRIPTOR).map_err(|_| {
         diagnostic(
@@ -43,20 +45,7 @@ pub async fn execute_operation(
         )
     })?;
     validate_compiler_target(request, &target)?;
-    target.verify_schema(schema).map_err(|_| {
-        diagnostic(
-            EngineDiagnosticCode::OperationInputInvalid,
-            "request.visible_schema",
-            "schema bytes differ from the exact checked target",
-        )
-    })?;
-    if digest(schema) != request.visible_schema.digest {
-        return Err(diagnostic(
-            EngineDiagnosticCode::OperationInputInvalid,
-            "request.visible_schema.digest",
-            "schema bytes differ from the operation request digest",
-        ));
-    }
+    validate_schema_identity(&request.visible_schema, schema)?;
 
     let module = request
         .module
@@ -102,13 +91,17 @@ pub async fn execute_operation(
         sdk_dependency: &dependency,
         entrypoint: entrypoint.as_ref(),
     })
-    .map_err(|_| {
-        diagnostic(
-            EngineDiagnosticCode::GenerationFailed,
-            request.operation.as_str(),
-            "pure operation projection rejected the validated request",
-        )
-    })?;
+    .map_err(compiler_diagnostic)?;
+    let mut vcs_generated = projected
+        .vcs_generated()
+        .iter()
+        .map(engine_path)
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    let vcs_ignored = projected
+        .vcs_ignored()
+        .iter()
+        .map(engine_path)
+        .collect::<Result<BTreeSet<_>, _>>()?;
 
     let temporary = tempfile::tempdir().map_err(|_| generation_failed())?;
     for (path, artifact) in projected.artifacts() {
@@ -141,9 +134,12 @@ pub async fn execute_operation(
         let environment = current_allowlisted_environment();
         let outcome = execute(&staging_root, &plan, &environment, cancel).await?;
         if !outcome.success {
+            let coordinate = first_failing_format_path(&staging_root, &plan, &environment, cancel)
+                .await?
+                .unwrap_or_else(|| "post-work.rustfmt".to_owned());
             return Err(diagnostic(
                 EngineDiagnosticCode::FormatFailed,
-                "post-work.rustfmt",
+                &coordinate,
                 "pinned rustfmt rejected generated Rust source",
             ));
         }
@@ -199,10 +195,12 @@ pub async fn execute_operation(
         })
         .collect();
     let manifest_path = RelativeOperationPath::parse(&format!(
-        "{}/operation-manifest.json",
+        "{}/.dagger/rust/operation-manifest.json",
         request.output_root.as_str()
     ))
     .map_err(|_| generation_failed())?;
+    vcs_generated.insert(manifest_path.clone());
+    validate_path_sets(&vcs_generated, &vcs_ignored)?;
     let previous_bytes = root
         .exists(&manifest_path)
         .then(|| root.read(&manifest_path))
@@ -261,11 +259,93 @@ pub async fn execute_operation(
         artifacts,
         removed,
         manifest,
-        manifest_path,
+        manifest_path: manifest_path.clone(),
         previous_manifest_digest: previous_bytes.as_deref().map(digest),
     };
     let publication = verify_ownership(root, previous.as_ref(), &candidate)?;
-    publish(root, publication)
+    let _published = publish(root, publication)?;
+    Ok(ExecutionResult {
+        format_version: FormatVersion,
+        kind: ExecutionResultKind::Generation,
+        output_root: request.output_root.clone(),
+        operation_manifest: Some(manifest_path),
+        vcs_generated,
+        vcs_ignored,
+    })
+}
+
+async fn first_failing_format_path(
+    root: &OperationRoot,
+    plan: &PostWorkPlan,
+    environment: &BTreeMap<String, String>,
+    cancel: &Cancellation,
+) -> Result<Option<String>, EngineDiagnostic> {
+    let PostWorkPlan::FormatRust { toolchain, files } = plan else {
+        return Ok(None);
+    };
+    // Formatter stderr may contain caller-authored source. A failure-only replay of
+    // one normalized generated path at a time identifies the repair coordinate
+    // without forwarding process output across the private adapter boundary.
+    for file in files {
+        let single = PostWorkPlan::FormatRust {
+            toolchain: toolchain.clone(),
+            files: BTreeSet::from([file.clone()]),
+        };
+        if !execute(root, &single, environment, cancel).await?.success {
+            return Ok(Some(file.to_string()));
+        }
+    }
+    Ok(None)
+}
+
+// Engine operations receive the core schema plus module-scoped extensions. The pure
+// compiler validates every reviewed core coordinate before rendering; this boundary
+// separately proves that the mounted bytes are exactly those named by the request.
+fn validate_schema_identity(
+    input: &crate::SchemaInput,
+    schema: &[u8],
+) -> Result<(), EngineDiagnostic> {
+    if digest(schema) != input.digest {
+        return Err(diagnostic(
+            EngineDiagnosticCode::OperationInputInvalid,
+            "request.visible_schema.digest",
+            "schema bytes differ from the operation request digest",
+        ));
+    }
+    Ok(())
+}
+
+fn compiler_diagnostic(diagnostics: CompilerDiagnosticSet) -> EngineDiagnostic {
+    let primary = &diagnostics.diagnostics()[0];
+    EngineDiagnostic::new(
+        EngineDiagnosticCode::GenerationFailed,
+        Some(
+            primary
+                .coordinate
+                .as_ref()
+                .map_or("visible-schema", |coordinate| coordinate.as_str()),
+        ),
+        format!("{}: {}", primary.code, primary.message),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{digest, validate_schema_identity};
+    use crate::{RelativeOperationPath, SchemaInput};
+
+    #[test]
+    fn mounted_visible_schema_is_bound_by_digest_without_requiring_core_only_bytes() {
+        let schema = br#"{"__schema":{"types":[{"name":"ModuleExtension"}]}}"#;
+        let input = SchemaInput {
+            path: RelativeOperationPath::parse("schema.json").expect("fixture path must parse"),
+            digest: digest(schema),
+        };
+
+        validate_schema_identity(&input, schema)
+            .expect("named bytes must pass identity validation");
+        assert!(validate_schema_identity(&input, b"{}").is_err());
+    }
 }
 
 fn validate_compiler_target(

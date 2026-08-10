@@ -60,11 +60,12 @@ const (
 )
 
 type rustTargetDescriptor struct {
-	DaggerRevision string `json:"dagger_revision"`
-	EngineVersion  string `json:"engine_version"`
-	RustSDKVersion string `json:"rust_sdk_version"`
-	RustVersion    string `json:"rust_version"`
-	SchemaDigest   string `json:"schema_digest"`
+	DaggerRepository string `json:"dagger_repository"`
+	DaggerRevision   string `json:"dagger_revision"`
+	EngineVersion    string `json:"engine_version"`
+	RustSDKVersion   string `json:"rust_sdk_version"`
+	RustVersion      string `json:"rust_version"`
+	SchemaDigest     string `json:"schema_digest"`
 }
 
 // RustSDKContent builds and seals the module-backed Rust SDK content used by the
@@ -89,7 +90,8 @@ func (build *Builder) RustSDKContent(ctx context.Context) (*sdkContent, error) {
 	if err := json.Unmarshal([]byte(targetContents), &target); err != nil {
 		return nil, fmt.Errorf("decode Rust SDK checked target: %w", err)
 	}
-	if target.RustVersion != "1.97.1" || target.RustSDKVersion == "" || target.SchemaDigest == "" {
+	if target.DaggerRepository != "github.com/dagger/dagger" || len(target.DaggerRevision) != 40 ||
+		target.RustVersion != "1.97.1" || target.RustSDKVersion == "" || target.SchemaDigest == "" {
 		return nil, fmt.Errorf("Rust SDK checked target is incomplete or uses another toolchain")
 	}
 	requestedVersion := strings.TrimPrefix(build.version, "v")
@@ -97,6 +99,15 @@ func (build *Builder) RustSDKContent(ctx context.Context) (*sdkContent, error) {
 	if requestedVersion != "" && requestedVersion != targetVersion {
 		return nil, fmt.Errorf("Rust SDK target engine version %q differs from build version %q", targetVersion, requestedVersion)
 	}
+	rustTarget, err := rustSDKTargetTriple(build.platformSpec.Architecture)
+	if err != nil {
+		return nil, err
+	}
+	rustfmtPath := fmt.Sprintf(
+		"/usr/local/rustup/toolchains/%s-%s/bin/rustfmt",
+		target.RustVersion,
+		rustTarget,
+	)
 
 	rustWorkspace := build.source.Directory("sdk/rust").Filter(dagger.DirectoryFilterOpts{
 		Include: []string{
@@ -110,19 +121,24 @@ func (build *Builder) RustSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithDirectory("/src", rustWorkspace).
 		WithWorkdir("/src").
 		WithExec([]string{
+			"rustup", "component", "add", "rustfmt", "--toolchain", target.RustVersion,
+		}).
+		WithExec([]string{
 			"cargo", "build", "--release", "--locked", "--package", "dagger-sdk-engine", "--bin", "dagger-rust-engine",
 		})
 
 	runtimeSource := build.source.Directory("sdk/rust/runtime").Filter(dagger.DirectoryFilterOpts{
 		Include: []string{
-			"dagger-module.toml", "go.mod", "go.sum", "main.go", "dagger.gen.go", "internal/**/*.go",
+			"dagger-module.toml", "go.mod", "go.sum", "main.go", "runtime.go", "dagger.gen.go", "internal/**/*.go",
 		},
 		Exclude: []string{"**/*_test.go"},
 	})
 	rootfs := dag.Directory().
 		WithDirectory("runtime", runtimeSource).
 		WithFile("dist/dagger-rust-engine", buildCtr.File("/src/target/release/dagger-rust-engine"), dagger.DirectoryWithFileOpts{Permissions: 0o755}).
+		WithFile("dist/rustfmt", buildCtr.File(rustfmtPath), dagger.DirectoryWithFileOpts{Permissions: 0o755}).
 		WithFile("dist/client-generation.json", build.source.File("sdk/rust/crates/dagger-codegen/assets/client-generation.json")).
+		WithFile("dist/runtime-policy.json", build.source.File("sdk/rust/runtime/assets/runtime-policy.json")).
 		WithFile("LICENSE", build.source.File("LICENSE"))
 
 	dependencyKind := "registry"
@@ -131,23 +147,29 @@ func (build *Builder) RustSDKContent(ctx context.Context) (*sdkContent, error) {
 		dependencyKind = "git"
 		dependencyValue = build.vcsCommit
 	}
+	packageArgs := []string{
+		"/src/target/release/dagger-rust-engine", "package-content",
+		"--root", "/content",
+		"--repository", "https://" + target.DaggerRepository,
+		"--dagger-revision", target.DaggerRevision,
+		"--engine-version", targetVersion,
+		"--rust-sdk-version", target.RustSDKVersion,
+		"--rust-toolchain", target.RustVersion,
+		"--core-schema-digest", target.SchemaDigest,
+		"--dependency-kind", dependencyKind,
+		"--dependency-value", dependencyValue,
+	}
+	if dependencyKind == "git" {
+		// Fork provenance belongs to the generated public dependency. The
+		// private compiler target remains the reviewed canonical target.
+		packageArgs = append(packageArgs, "--dependency-repository", repository)
+	}
 	sealedCtr := buildCtr.
 		// A scratch mount makes the package tool's writes available as a clean
 		// directory output. Taking a subdirectory from the build container itself
 		// would retain builder layers and their original /content path in the OCI image.
 		WithMountedDirectory("/content", rootfs).
-		WithExec([]string{
-			"/src/target/release/dagger-rust-engine", "package-content",
-			"--root", "/content",
-			"--repository", repository,
-			"--dagger-revision", build.vcsCommit,
-			"--engine-version", targetVersion,
-			"--rust-sdk-version", target.RustSDKVersion,
-			"--rust-toolchain", target.RustVersion,
-			"--core-schema-digest", target.SchemaDigest,
-			"--dependency-kind", dependencyKind,
-			"--dependency-value", dependencyValue,
-		})
+		WithExec(packageArgs)
 	descriptorDigest, err := sealedCtr.Stdout(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("seal Rust SDK content: %w", err)
@@ -181,6 +203,17 @@ func (build *Builder) RustSDKContent(ctx context.Context) (*sdkContent, error) {
 			distconsts.RustSDKDescriptorDigestEnvName: descriptorDigest,
 		},
 	}, nil
+}
+
+func rustSDKTargetTriple(architecture string) (string, error) {
+	switch architecture {
+	case "amd64":
+		return "x86_64-unknown-linux-gnu", nil
+	case "arm64":
+		return "aarch64-unknown-linux-gnu", nil
+	default:
+		return "", fmt.Errorf("Rust SDK does not support engine architecture %q", architecture)
+	}
 }
 
 func isCanonicalDigest(value string) bool {

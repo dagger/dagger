@@ -16,7 +16,9 @@ use sha2::{Digest as _, Sha256};
 
 use crate::canonical::{DigestDomain, canonical_digest};
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
-use crate::post_work::{Cancellation, CommandSpec, current_allowlisted_environment, execute_fixed};
+use crate::post_work::{
+    Cancellation, CommandSpec, current_allowlisted_environment, execute_fixed_structured_stdout,
+};
 use crate::project::toolchain::{ToolchainDeclaration, select_toolchain};
 use crate::{
     ArtifactOwnership, CargoPackage, CargoTarget, DiscoveredCargoProject, ExactRustToolchain,
@@ -216,6 +218,49 @@ pub fn metadata_arguments(manifest: &RelativeOperationPath, locked: bool) -> Vec
     arguments
 }
 
+/// Reads the nearest exact toolchain declaration in package-to-workspace precedence.
+pub fn toolchain_declarations(
+    root: &OperationRoot,
+    module_root: &RelativeOperationPath,
+) -> Result<Vec<(RelativeOperationPath, Vec<u8>)>, EngineDiagnostic> {
+    let mut current = Some(module_root.as_str().to_owned());
+    while let Some(directory) = current {
+        let mut level = Vec::new();
+        for name in ["rust-toolchain.toml", "rust-toolchain"] {
+            let spelling = if directory.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{directory}/{name}")
+            };
+            let path = RelativeOperationPath::parse(&spelling).map_err(|_| {
+                diagnostic(
+                    EngineDiagnosticCode::OutputPathEscape,
+                    module_root.as_str(),
+                    "toolchain search path is not canonical",
+                )
+            })?;
+            if root.exists(&path) {
+                level.push((path.clone(), root.read(&path)?));
+            }
+        }
+        if level.len() > 1 {
+            return Err(diagnostic(
+                EngineDiagnosticCode::ToolchainNonReproducible,
+                &directory,
+                "multiple toolchain declarations have equal precedence",
+            ));
+        }
+        if !level.is_empty() {
+            return Ok(level);
+        }
+        current = directory
+            .rsplit_once('/')
+            .map(|(parent, _)| parent.to_owned())
+            .or_else(|| (!directory.is_empty()).then(String::new));
+    }
+    Ok(Vec::new())
+}
+
 /// Runs bounded no-dependency metadata and returns a validated discovery typestate.
 pub async fn discover_project(
     root: &OperationRoot,
@@ -231,7 +276,7 @@ pub async fn discover_project(
             "selected Cargo manifest is missing or not regular",
         )
     })?;
-    let outcome = execute_fixed(
+    let outcome = execute_fixed_structured_stdout(
         root,
         &CommandSpec {
             executable: "/usr/local/cargo/bin/cargo",
@@ -248,6 +293,13 @@ pub async fn discover_project(
             EngineDiagnosticCode::DependencyResolutionFailed,
             "cargo-metadata",
             "Cargo metadata failed while resolving the selected local workspace",
+        ));
+    }
+    if outcome.truncated {
+        return Err(diagnostic(
+            EngineDiagnosticCode::CargoManifestInvalid,
+            "cargo-metadata",
+            "Cargo metadata exceeds its process-output bound",
         ));
     }
     let metadata = decode_metadata(&outcome.stdout)?;

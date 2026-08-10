@@ -119,6 +119,60 @@ pub struct OperationRequest {
     pub entrypoint_type_defs: Option<SchemaInput>,
 }
 
+/// Complete semantic input to Rust-owned project initialization.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitializationRequest {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Exact engine and Rust SDK target.
+    pub target: TargetIdentity,
+    /// Engine-selected module identity and workspace-relative root.
+    pub module: ModuleOperationInput,
+    /// Cargo package name used only when a new package is required.
+    pub package_name: StableCoordinate,
+    /// Immutable dependency emitted into the selected Cargo manifest.
+    pub sdk_dependency: PublishedSdkDependency,
+}
+
+/// Closed request accepted by the private `execute` command.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "request_kind", content = "request", rename_all = "kebab-case")]
+pub enum EngineExecutionRequest {
+    /// Initialize or adopt one engine-selected Rust module project.
+    InitializeModule(InitializationRequest),
+    /// Execute one of the four schema-driven generation operations.
+    Generate(OperationRequest),
+}
+
+/// Result class emitted by the private operation runner.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExecutionResultKind {
+    /// SDK-owned Cargo and starter-source initialization changes.
+    Initialization,
+    /// One generated operation plus its durable ownership manifest.
+    Generation,
+}
+
+/// Canonical data-only result consumed by the Go engine adapter.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionResult {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Result class selected by the request variant.
+    pub kind: ExecutionResultKind,
+    /// Confined result subtree selected by the adapter.
+    pub output_root: RelativeOperationPath,
+    /// Durable generation manifest, absent for initialization-only changes.
+    pub operation_manifest: Option<RelativeOperationPath>,
+    /// Explicit generated VCS paths returned to the engine.
+    pub vcs_generated: BTreeSet<RelativeOperationPath>,
+    /// Explicit ignored VCS paths returned to the engine.
+    pub vcs_ignored: BTreeSet<RelativeOperationPath>,
+}
+
 /// Class of one generator-owned candidate artifact.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -418,6 +472,72 @@ pub struct RuntimeProvenance {
     pub input: RuntimeProvenanceInput,
     /// Digest of the final post-strip runtime executable.
     pub binary_digest: Sha256Digest,
+}
+
+/// Immutable container and path policy packaged beside the private adapter.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimePolicy {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Digest-pinned Rust build image used for operations and compilation.
+    pub build_image: StableCoordinate,
+    /// Digest-pinned clean runtime base image.
+    pub runtime_base_image: StableCoordinate,
+    /// Digest component of the clean runtime base image.
+    pub runtime_base_digest: Sha256Digest,
+    /// Rust target selected for Linux AMD64 engines.
+    pub linux_amd64_target: RustTarget,
+    /// Rust target selected for Linux ARM64 engines.
+    pub linux_arm64_target: RustTarget,
+    /// Fixed SDK-owned Cargo target directory inside the build container.
+    pub cargo_target_dir: StableCoordinate,
+    /// Fixed post-build binary path inside the build container.
+    pub runtime_binary_path: StableCoordinate,
+    /// Fixed executable path in the clean runtime image.
+    pub runtime_install_path: StableCoordinate,
+    /// Fixed provenance path in the clean runtime image.
+    pub provenance_install_path: StableCoordinate,
+}
+
+/// Closed runtime verification input constructed from engine-owned identities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeVerificationRequest {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Exact engine and Rust SDK target.
+    pub target: TargetIdentity,
+    /// Engine-selected module identity.
+    pub module: ModuleOperationInput,
+    /// Checked committed generation or private legacy generation.
+    pub mode: RuntimeCodegenMode,
+    /// Canonical generated ownership manifest beneath the operation root.
+    pub operation_manifest: RelativeOperationPath,
+    /// Exact clean runtime base digest selected from packaged policy.
+    pub base_image_digest: Sha256Digest,
+    /// Exact Rust compilation target selected from packaged policy.
+    pub rust_target: RustTarget,
+}
+
+/// Canonical pre-build contract emitted only after runtime verification succeeds.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeBuildPlan {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Fully verified Cargo project typestate.
+    pub project: RuntimeCargoProject,
+    /// Checked or isolated legacy generation mode.
+    pub mode: RuntimeCodegenMode,
+    /// Exact generation manifest verified against project bytes.
+    pub manifest: OperationManifest,
+    /// Runner-authored Cargo arguments; the executable remains fixed in the adapter.
+    pub cargo_args: Vec<String>,
+    /// Fixed binary path relative to the SDK-owned Cargo target directory.
+    pub binary_relative_path: RelativeOperationPath,
+    /// Complete non-secret provenance known before compilation.
+    pub provenance_input: RuntimeProvenanceInput,
 }
 
 /// One private asset packaged into built-in Rust SDK content.

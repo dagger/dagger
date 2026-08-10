@@ -229,6 +229,48 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	return ctr, nil
 }
 
+// FocusedRustEngine overlays the changing engine and Rust integration onto one
+// immutable engine baseline. The baseline retains the production runtime support
+// binaries; its Go SDK content is replaced because the packaged Rust adapter is a Go
+// Dagger module and must compile against the exact target schema.
+//
+// This is a development construction path only. Engine and release builds continue
+// through Engine, which assembles and verifies the complete distribution.
+func (build *Builder) FocusedRustEngine(
+	ctx context.Context,
+	baseImage string,
+	target *Builder,
+) (*dagger.Container, error) {
+	if err := validateDigestPinnedImage(baseImage); err != nil {
+		return nil, fmt.Errorf("focused Rust engine base: %w", err)
+	}
+	if target == nil {
+		return nil, fmt.Errorf("focused Rust engine requires target engine source")
+	}
+	if build.rustSDKContent == nil {
+		return nil, fmt.Errorf("focused Rust engine requires reusable Rust SDK content")
+	}
+
+	goSDKContent, err := target.goSDKContent(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("build focused engine target Go SDK content: %w", err)
+	}
+	engineBinary := build.engineBinary(build.race)
+	if err := build.verifyPlatform(ctx, engineBinary); err != nil {
+		return nil, fmt.Errorf("verify focused Rust engine binary: %w", err)
+	}
+
+	ctr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+		From(baseImage).
+		WithFile(consts.EngineServerPath, engineBinary).
+		With(goSDKContent.apply).
+		With(build.rustSDKContent.apply)
+	if build.version != "" {
+		ctr = ctr.WithAnnotation(versionAnnotation, build.version)
+	}
+	return ctr, nil
+}
+
 func (build *Builder) CodegenBinary() *dagger.File {
 	return build.binary("./cmd/codegen", false)
 }

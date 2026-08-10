@@ -566,6 +566,7 @@ The builder creates these content-root paths:
 ```text
 runtime/                                      packaged Go Dagger module
 dist/dagger-rust-engine                      private Rust operation executable
+dist/rustfmt                                 exact-toolchain formatter executable
 dist/engine-source.json                      canonical EngineSourceDescriptor
 dist/packaged-assets.json                    path/digest manifest
 dist/client-generation.json                  validated required-host-file metadata
@@ -577,8 +578,11 @@ The `runtime/` include set is explicit. `packaged-assets.json` covers every payl
 path but excludes itself and `engine-source.json`; the final OCI digest covers all
 paths. Tests, local targets, credentials, `.git`, the
 repository completeness artifacts, and unpublished Rust crate source are not copied
-unless a path is named as a runtime template in the asset manifest. The executable is
-built from source during the same engine build; no checked-in binary is trusted.
+unless a path is named as a runtime template in the asset manifest. The operation
+executable is built from source during the same engine build. The formatter component
+is installed from the exact target toolchain during that build and copied as its real
+binary rather than a rustup proxy; both executables are hashed by the asset manifest,
+and no checked-in binary is trusted.
 
 ### Module-backed engine adapter (`sdk/rust/runtime`)
 
@@ -734,11 +738,17 @@ pub enum SchemaCompatibilityMode<'a> {
 }
 ```
 
-`ExactTarget` remains repository core generation. `ExactCoreWithExtensions` requires
-every target core coordinate and semantic fingerprint, rejects an incompatible
-replacement, and admits additional module/dependency coordinates. Extensions still
-pass the same reference resolution, wrapper, default, directive, naming, collision,
-documentation, and deterministic ordering checks.
+`ExactTarget` remains repository core generation. `ExactCoreWithExtensions` selects
+one operation-specific core manifest: library and client operations require every
+target core coordinate, while module and entrypoint operations permit only the exact
+introspection scrub closure selected by `core/moddeps.go:17-25,161-171` and
+`core/env.go:42-52 @ Target_Revision`. Every retained semantic fingerprint remains
+exact; an incompatible replacement or unrelated omission fails. Target-known dangling
+interface edges left by the engine's `ScrubType` implementation are admitted only when
+their missing named-type coordinate belongs to that same scrub closure. Additional
+module/dependency coordinates still pass the same reference resolution, wrapper,
+default, directive, naming, collision, documentation, and deterministic ordering
+checks.
 
 The target core manifest is generated from the same checked target snapshot used by
 Feature 4. It is not inferred by name prefixes from the incoming schema. An extension
@@ -1000,7 +1010,9 @@ pub enum PostWorkPlan {
 
 The executor constructs argument arrays itself:
 
-- `rustfmt +<exact-toolchain> --edition 2024 <sorted-files>`;
+- packaged `rustfmt --edition 2024 <sorted-files>`, whose binary is hashed from the
+  exact target toolchain during engine-content construction and mounted back into its
+  target-specific rustup path so relative private-library lookup remains valid;
 - `cargo generate-lockfile --manifest-path <path>` only when initialization creates or
   deliberately changes dependency resolution; and
 - `cargo metadata --format-version 1 --locked --manifest-path <path>` when verifying an
@@ -1222,6 +1234,17 @@ only for Generate_Entrypoint. A previous manifest is ownership state loaded by t
 runner, not a semantic operation input; it therefore cannot perturb `input_digest` for
 an otherwise identical second run. Unknown fields are rejected at this engine boundary
 rather than silently discarded.
+
+`ModuleOperationInput.source_digest` is computed over the implementation-scoped source
+as a canonical path-ordered inventory of metadata-free leaf-file digests after
+overlaying the engine's normalized module-config representation, then excluding only
+the SDK-owned generated binding subtree, generated runtime entrypoint,
+operation-manifest subtree, and Dagger-maintained `.gitattributes` and `.gitignore`
+bookkeeping. Empty directories and parent scaffolding created solely by excluded paths
+do not affect identity. Those excluded bytes are products authenticated separately by
+`OperationManifest.artifacts`; including them in their own input identity would make a
+newly published manifest stale immediately. Cargo inputs, lock state, module config,
+and every caller-authored implementation file remain inside the semantic source digest.
 
 ### Operation plan and manifest
 

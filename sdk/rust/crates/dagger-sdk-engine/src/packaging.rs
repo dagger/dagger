@@ -24,10 +24,12 @@ pub const DESCRIPTOR_PATH: &str = "dist/engine-source.json";
 /// Canonical packaged-asset manifest path beneath Rust SDK content.
 pub const PACKAGED_ASSET_MANIFEST_PATH: &str = "dist/packaged-assets.json";
 
-const REQUIRED_PAYLOADS: [&str; 11] = [
+const REQUIRED_PAYLOADS: [&str; 15] = [
     "LICENSE",
     "dist/client-generation.json",
     "dist/dagger-rust-engine",
+    "dist/rustfmt",
+    "dist/runtime-policy.json",
     "runtime/dagger.gen.go",
     "runtime/dagger-module.toml",
     "runtime/go.mod",
@@ -35,7 +37,9 @@ const REQUIRED_PAYLOADS: [&str; 11] = [
     "runtime/internal/dagger/dagger.gen.go",
     "runtime/internal/dagger/rust-sdk.gen.go",
     "runtime/internal/metadata/client_generation.go",
+    "runtime/internal/metadata/engine.go",
     "runtime/main.go",
+    "runtime/runtime.go",
 ];
 
 /// Immutable coordinates supplied by the engine build before payload hashing.
@@ -51,7 +55,9 @@ pub struct PackageIdentity {
     pub rust_sdk_version: ExactVersion,
     /// Exact compiler used for the private operation executable.
     pub rust_toolchain: ExactRustToolchain,
-    /// Public dependency rendered into generated Cargo projects.
+    /// Public dependency rendered into generated Cargo projects. Fork builds may use
+    /// an independently immutable repository revision while retaining the canonical
+    /// compiler target above.
     pub sdk_dependency: PublishedSdkDependency,
     /// Checked target core-schema identity.
     pub core_schema_digest: Sha256Digest,
@@ -245,7 +251,10 @@ pub fn derive_shipped_audit_graph(
 
     for asset in manifest.assets.values() {
         let id = coordinate(&format!("asset:{}", asset.path))?;
-        let kind = if asset.path.as_str() == "dist/dagger-rust-engine" {
+        let kind = if matches!(
+            asset.path.as_str(),
+            "dist/dagger-rust-engine" | "dist/rustfmt"
+        ) {
             SecuritySubjectKind::PackagedBinary
         } else {
             SecuritySubjectKind::PackagedAsset
@@ -447,11 +456,12 @@ fn validate_asset_manifest(manifest: &PackagedAssetManifest) -> Result<(), Engin
                 "acyclic metadata files must not hash themselves",
             ));
         }
-        if path.as_str() == "dist/dagger-rust-engine" && !asset.executable {
+        if matches!(path.as_str(), "dist/dagger-rust-engine" | "dist/rustfmt") && !asset.executable
+        {
             return Err(packaging_error(
                 EngineDiagnosticCode::PackagedAssetInvalid,
                 path.as_str(),
-                "packaged Rust operation tool must be executable",
+                "packaged Rust tool must be executable",
             ));
         }
     }

@@ -12,10 +12,12 @@ use serde::{Deserialize, Serialize};
 use support::fixed_model_corpus;
 
 const REPLAY: &[u8] = include_bytes!("../../../completeness/engine-foundation-replay.json");
-const REQUIRED_PAYLOADS: [&str; 11] = [
+const REQUIRED_PAYLOADS: [&str; 15] = [
     "LICENSE",
     "dist/client-generation.json",
     "dist/dagger-rust-engine",
+    "dist/rustfmt",
+    "dist/runtime-policy.json",
     "runtime/dagger.gen.go",
     "runtime/dagger-module.toml",
     "runtime/go.mod",
@@ -23,7 +25,9 @@ const REQUIRED_PAYLOADS: [&str; 11] = [
     "runtime/internal/dagger/dagger.gen.go",
     "runtime/internal/dagger/rust-sdk.gen.go",
     "runtime/internal/metadata/client_generation.go",
+    "runtime/internal/metadata/engine.go",
     "runtime/main.go",
+    "runtime/runtime.go",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -434,7 +438,7 @@ fn write_payload(root: &std::path::Path, seed: u8) {
         let destination = root.join(relative);
         fs::create_dir_all(destination.parent().unwrap()).unwrap();
         fs::write(&destination, [seed, index as u8]).unwrap();
-        if *relative == "dist/dagger-rust-engine" {
+        if matches!(*relative, "dist/dagger-rust-engine" | "dist/rustfmt") {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt as _;
@@ -447,16 +451,12 @@ fn write_payload(root: &std::path::Path, seed: u8) {
 }
 
 fn package_identity(seed: u8, fork: bool) -> PackageIdentity {
-    let repository: CanonicalRepositoryUrl = if fork {
-        value("https://github.com/acme/dagger")
-    } else {
-        value("https://github.com/dagger/dagger")
-    };
+    let repository = value("https://github.com/dagger/dagger");
     let dagger_revision = revision(seed);
     let sdk_dependency = if fork {
         PublishedSdkDependency::Git {
-            url: repository.clone(),
-            revision: dagger_revision.clone(),
+            url: value("https://github.com/acme/dagger"),
+            revision: revision(seed.wrapping_add(1)),
             package: value("dagger-sdk"),
         }
     } else {
@@ -484,7 +484,7 @@ fn synthetic_manifest(seed: u8) -> PackagedAssetManifest {
                 PackagedAsset {
                     path,
                     digest: digest(seed, index as u8),
-                    executable: *relative == "dist/dagger-rust-engine",
+                    executable: matches!(*relative, "dist/dagger-rust-engine" | "dist/rustfmt"),
                 },
             )
         })

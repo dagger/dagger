@@ -12,12 +12,15 @@ use clap::{Arg, Command};
 
 use crate::DigestDomain;
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
+use crate::initialization::execute_initialization;
 use crate::post_work::Cancellation;
 use crate::runner::execute_operation;
+use crate::runtime::{finalize_runtime, verify_runtime};
 use crate::{
-    CanonicalRegistry, CanonicalRepositoryUrl, EngineSourceDescriptor, ExactRustToolchain,
-    ExactVersion, FullRevision, OperationRequest, OperationRoot, PackageIdentity,
-    PublishedSdkDependency, SdkPackageName, Sha256Digest, build_packaged_content, canonical_digest,
+    CanonicalRegistry, CanonicalRepositoryUrl, EngineExecutionRequest, EngineSourceDescriptor,
+    ExactRustToolchain, ExactVersion, FullRevision, OperationRoot, PackageIdentity,
+    PublishedSdkDependency, RuntimeBuildPlan, RuntimePolicy, RuntimeVerificationRequest,
+    SdkPackageName, Sha256Digest, build_packaged_content, canonical_bytes, canonical_digest,
     decode_canonical,
 };
 
@@ -36,20 +39,23 @@ where
             "command line does not match the fixed private operation interface",
         )
     })?;
-    if let Some(package) = matches.subcommand_matches("package-content") {
-        return package_content(package);
+    match matches.subcommand() {
+        Some(("package-content", package)) => package_content(package),
+        Some(("execute", execute_matches)) => execute(execute_matches).await,
+        Some(("verify-runtime", verify)) => verify_runtime_command(verify).await,
+        Some(("finalize-runtime", finalize)) => finalize_runtime_command(finalize),
+        _ => Ok(()),
     }
-    let Some(execute) = matches.subcommand_matches("execute") else {
-        return Ok(());
-    };
-    let request_path = required_path(execute, "request")?;
-    let schema_path = required_path(execute, "schema")?;
-    let descriptor_path = required_path(execute, "descriptor")?;
-    let project_path = required_path(execute, "project")?;
+}
+
+async fn execute(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
+    let request_path = required_path(matches, "request")?;
+    let descriptor_path = required_path(matches, "descriptor")?;
+    let project_path = required_path(matches, "project")?;
+    let result_path = required_path(matches, "result")?;
     let request = read_control(&request_path, "request")?;
-    let schema = read_control(&schema_path, "schema")?;
     let descriptor = read_control(&descriptor_path, "descriptor")?;
-    let request: OperationRequest = decode_canonical(&request)
+    let request: EngineExecutionRequest = decode_canonical(&request)
         .map_err(|_| invalid("request", "operation request is not strict canonical JSON"))?;
     let descriptor: EngineSourceDescriptor = decode_canonical(&descriptor).map_err(|_| {
         invalid(
@@ -58,15 +64,100 @@ where
         )
     })?;
     let root = OperationRoot::open(project_path)?;
-    execute_operation(
+    let result = match request {
+        EngineExecutionRequest::InitializeModule(request) => {
+            if matches.get_one::<String>("schema").is_some() {
+                return Err(invalid(
+                    "schema",
+                    "initialization must not receive a visible schema",
+                ));
+            }
+            execute_initialization(&root, &request, &descriptor, &Cancellation::default()).await?
+        }
+        EngineExecutionRequest::Generate(request) => {
+            let schema_path = optional_path(matches, "schema").ok_or_else(|| {
+                invalid(
+                    "schema",
+                    "generation requires the fixed visible-schema input",
+                )
+            })?;
+            let schema = read_control(&schema_path, "schema")?;
+            execute_operation(
+                &root,
+                &request,
+                &schema,
+                &descriptor,
+                &Cancellation::default(),
+            )
+            .await?
+        }
+    };
+    write_control(
+        &result_path,
+        "result",
+        &canonical_bytes(&result).map_err(|_| {
+            invalid(
+                "result",
+                "operation result could not be canonically encoded",
+            )
+        })?,
+    )
+}
+
+async fn verify_runtime_command(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
+    let request: RuntimeVerificationRequest = decode_canonical(&read_control(
+        &required_path(matches, "request")?,
+        "request",
+    )?)
+    .map_err(|_| invalid("request", "runtime request is not strict canonical JSON"))?;
+    let descriptor: EngineSourceDescriptor = decode_canonical(&read_control(
+        &required_path(matches, "descriptor")?,
+        "descriptor",
+    )?)
+    .map_err(|_| {
+        invalid(
+            "descriptor",
+            "engine descriptor is not strict canonical JSON",
+        )
+    })?;
+    let policy: RuntimePolicy =
+        decode_canonical(&read_control(&required_path(matches, "policy")?, "policy")?)
+            .map_err(|_| invalid("policy", "runtime policy is not strict canonical JSON"))?;
+    let root = OperationRoot::open(required_path(matches, "project")?)?;
+    let plan = verify_runtime(
         &root,
         &request,
-        &schema,
         &descriptor,
+        &policy,
         &Cancellation::default(),
     )
     .await?;
-    Ok(())
+    write_control(
+        &required_path(matches, "output")?,
+        "output",
+        &canonical_bytes(&plan)
+            .map_err(|_| invalid("output", "runtime plan could not be canonically encoded"))?,
+    )
+}
+
+fn finalize_runtime_command(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
+    let plan: RuntimeBuildPlan =
+        decode_canonical(&read_control(&required_path(matches, "plan")?, "plan")?)
+            .map_err(|_| invalid("plan", "runtime plan is not strict canonical JSON"))?;
+    let policy: RuntimePolicy =
+        decode_canonical(&read_control(&required_path(matches, "policy")?, "policy")?)
+            .map_err(|_| invalid("policy", "runtime policy is not strict canonical JSON"))?;
+    let provenance = finalize_runtime(&plan, &required_path(matches, "binary")?, &policy)?;
+    write_control(
+        &required_path(matches, "output")?,
+        "output",
+        &canonical_bytes(&provenance).map_err(|_| {
+            invalid(
+                "output",
+                "runtime provenance could not be canonically encoded",
+            )
+        })?,
+    )
 }
 
 /// Returns the complete production command shape for help and parser tests.
@@ -79,9 +170,27 @@ pub fn command() -> Command {
             Command::new("execute")
                 .about("Execute one typed Rust SDK generation operation")
                 .arg(required("request"))
-                .arg(required("schema"))
+                .arg(optional("schema"))
                 .arg(required("descriptor"))
-                .arg(required("project")),
+                .arg(required("project"))
+                .arg(required("result")),
+        )
+        .subcommand(
+            Command::new("verify-runtime")
+                .about("Verify committed Rust module inputs and emit one fixed build plan")
+                .arg(required("request"))
+                .arg(required("descriptor"))
+                .arg(required("policy"))
+                .arg(required("project"))
+                .arg(required("output")),
+        )
+        .subcommand(
+            Command::new("finalize-runtime")
+                .about("Hash the fixed runtime binary and finalize canonical provenance")
+                .arg(required("plan"))
+                .arg(required("policy"))
+                .arg(required("binary"))
+                .arg(required("output")),
         )
         .subcommand(
             Command::new("package-content")
@@ -94,7 +203,8 @@ pub fn command() -> Command {
                 .arg(required("rust-toolchain"))
                 .arg(required("core-schema-digest"))
                 .arg(required("dependency-kind"))
-                .arg(required("dependency-value")),
+                .arg(required("dependency-value"))
+                .arg(optional("dependency-repository")),
         )
 }
 
@@ -121,7 +231,7 @@ fn package_content(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
             })?,
         },
         "git" => PublishedSdkDependency::Git {
-            url: repository.clone(),
+            url: scalar::<CanonicalRepositoryUrl>(matches, "dependency-repository")?,
             revision: dependency_value.parse().map_err(|_| {
                 invalid(
                     "dependency-value",
@@ -163,9 +273,16 @@ fn package_content(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
 /// Serializes one bounded structured diagnostic for private stderr.
 #[must_use]
 pub fn render_diagnostic(diagnostic: &EngineDiagnostic) -> String {
-    serde_json::to_string(diagnostic).unwrap_or_else(|_| {
-        "{\"code\":\"GENERATION_FAILED\",\"message\":\"diagnostic encoding failed\"}".to_owned()
-    })
+    canonical_bytes(diagnostic)
+		.map(|bytes| {
+			// The process entrypoint supplies the terminal newline. Removing the
+			// encoder's newline here keeps the bytes canonical after `eprintln!`.
+			let payload = bytes.strip_suffix(b"\n").unwrap_or(&bytes);
+			String::from_utf8_lossy(payload).into_owned()
+		})
+		.unwrap_or_else(|_| {
+			"{\n  \"causes\": [],\n  \"code\": \"GENERATION_FAILED\",\n  \"coordinate\": \"diagnostic\",\n  \"message\": \"diagnostic encoding failed\"\n}".to_owned()
+		})
 }
 
 fn required(name: &'static str) -> Arg {
@@ -176,6 +293,10 @@ fn required(name: &'static str) -> Arg {
         .num_args(1)
 }
 
+fn optional(name: &'static str) -> Arg {
+    Arg::new(name).long(name).value_name("PATH").num_args(1)
+}
+
 fn required_path(
     matches: &clap::ArgMatches,
     name: &'static str,
@@ -184,6 +305,10 @@ fn required_path(
         .get_one::<String>(name)
         .map(PathBuf::from)
         .ok_or_else(|| invalid("cli", "required fixed path argument is missing"))
+}
+
+fn optional_path(matches: &clap::ArgMatches, name: &'static str) -> Option<PathBuf> {
+    matches.get_one::<String>(name).map(PathBuf::from)
 }
 
 fn required_value(
@@ -224,6 +349,31 @@ fn read_control(path: &Path, coordinate: &str) -> Result<Vec<u8>, EngineDiagnost
         ));
     }
     fs::read(path).map_err(|_| invalid(coordinate, "operation input could not be read"))
+}
+
+fn write_control(path: &Path, coordinate: &str, bytes: &[u8]) -> Result<(), EngineDiagnostic> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| invalid(coordinate, "control output has no parent directory"))?;
+    let metadata = fs::symlink_metadata(parent)
+        .map_err(|_| invalid(coordinate, "control output parent is missing"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(invalid(
+            coordinate,
+            "control output parent must be a real directory",
+        ));
+    }
+    if fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err(invalid(
+            coordinate,
+            "control output must not replace a symlink",
+        ));
+    }
+    let temporary = path.with_extension("tmp");
+    fs::write(&temporary, bytes)
+        .map_err(|_| invalid(coordinate, "control output could not be staged"))?;
+    fs::rename(temporary, path)
+        .map_err(|_| invalid(coordinate, "control output could not be published"))
 }
 
 fn invalid(coordinate: &str, message: &str) -> EngineDiagnostic {

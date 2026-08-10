@@ -686,6 +686,76 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EngineDev).ServiceWithRustSDKContent(&parent, ctx, rustSdkcontent, name, gpuSupport, sharedCache, metrics, version)
+		case "ServiceWithFocusedRustSDKContent":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var rustSdkcontent *RustEngineContent
+			if inputArgs["rustSDKContent"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["rustSDKContent"]), &rustSdkcontent)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg rustSDKContent", err))
+				}
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			var baseImage string
+			if inputArgs["baseImage"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["baseImage"]), &baseImage)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg baseImage", err))
+				}
+			}
+			var baseRevision string
+			if inputArgs["baseRevision"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["baseRevision"]), &baseRevision)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg baseRevision", err))
+				}
+			}
+			var targetRepository string
+			if inputArgs["targetRepository"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["targetRepository"]), &targetRepository)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg targetRepository", err))
+				}
+			}
+			var targetRevision string
+			if inputArgs["targetRevision"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["targetRevision"]), &targetRevision)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg targetRevision", err))
+				}
+			}
+			var sharedCache bool
+			if inputArgs["sharedCache"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sharedCache"]), &sharedCache)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sharedCache", err))
+				}
+			}
+			var metrics bool
+			if inputArgs["metrics"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["metrics"]), &metrics)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg metrics", err))
+				}
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*EngineDev).ServiceWithFocusedRustSDKContent(&parent, ctx, rustSdkcontent, name, baseImage, baseRevision, targetRepository, targetRevision, sharedCache, metrics, version)
 		case "Test":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -924,6 +994,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*EngineDev).WithGitSource(&parent, repository, revision), nil
+		case "WithSource":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			return (*EngineDev).WithSource(&parent, source), nil
 		case "WithLogLevel":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -1150,6 +1234,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("metrics", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 364, 2)}).
 							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 366, 2)})).
 					WithFunction(
+						dag.Function("ServiceWithFocusedRustSDKContent",
+							dag.TypeDef().WithObject("Service")).
+							WithDescription("ServiceWithFocusedRustSDKContent starts a development engine by overlaying the\ncurrent engine binary, exact-target Go SDK, and reusable Rust SDK content onto a\ndigest-pinned baseline whose support slice is proven equal to the target revision.\nThe complete release builder remains the authority outside this focused test path.").
+							WithSourceMap(dag.SourceMap("main.go", 531, 1)).
+							WithArg("rustSDKContent", dag.TypeDef().WithObject("RustEngineContent"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 533, 2)}).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 534, 2)}).
+							WithArg("baseImage", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 535, 2)}).
+							WithArg("baseRevision", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 536, 2)}).
+							WithArg("targetRepository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 537, 2)}).
+							WithArg("targetRevision", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 538, 2)}).
+							WithArg("sharedCache", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 540, 2)}).
+							WithArg("metrics", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 542, 2)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 544, 2)})).
+					WithFunction(
 						dag.Function("ServiceWithRustSDKContent",
 							dag.TypeDef().WithObject("Service")).
 							WithDescription("ServiceWithRustSDKContent starts an engine from one previously built Rust SDK\ncontent object, preserving its manifest and descriptor identities unchanged.").
@@ -1223,6 +1321,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithObject("EngineDev")).
 							WithSourceMap(dag.SourceMap("main.go", 142, 1)).
 							WithArg("level", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 142, 36)})).
+					WithFunction(
+						dag.Function("WithSource",
+							dag.TypeDef().WithObject("EngineDev")).
+							WithDescription("WithSource replaces the injected workspace view without changing its VCS identity.\nCallers use this when one development operation needs a smaller content-addressed\nsource boundary than the complete engine distribution.").
+							WithSourceMap(dag.SourceMap("main.go", 171, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 171, 37)})).
 					WithFunction(
 						dag.Function("WithRace",
 							dag.TypeDef().WithObject("EngineDev")).

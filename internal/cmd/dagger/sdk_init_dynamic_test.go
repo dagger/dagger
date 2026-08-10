@@ -2,9 +2,11 @@ package daggercmd
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -137,6 +139,36 @@ func TestConfiguredSDKsRejectsDuplicateCommandName(t *testing.T) {
 
 	_, err := configuredSDKs(cfg)
 	require.ErrorContains(t, err, `SDK command name "go" is ambiguous`)
+}
+
+func TestPackagedRustSDKRegistersOnlyImplementedInitializer(t *testing.T) {
+	moduleParent := &cobra.Command{Use: "init", Args: cobra.NoArgs}
+	clientParent := &cobra.Command{Use: "init", Args: cobra.NoArgs}
+	cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
+		"dagger-rust-sdk": {
+			Source: sdkmeta.Rust,
+			AsSDK:  &workspace.ModuleAsSDK{Name: sdkmeta.Rust},
+		},
+	}}
+
+	err := registerSDKInitCommandsFromConfigForKind(
+		context.Background(), nil, moduleParent, clientParent, cfg, "/work",
+		sdkInitKindModule, []string{"module", "init", "rust", "example"},
+	)
+	require.NoError(t, err)
+	cmd, _, err := moduleParent.Find([]string{"rust", "example"})
+	require.NoError(t, err)
+	require.Equal(t, "rust", cmd.Name())
+	require.Empty(t, cmd.Flags().FlagUsages())
+
+	moduleParent = &cobra.Command{Use: "init", Args: cobra.NoArgs}
+	clientParent = &cobra.Command{Use: "init", Args: cobra.NoArgs}
+	err = registerSDKInitCommandsFromConfigForKind(
+		context.Background(), nil, moduleParent, clientParent, cfg, "/work",
+		sdkInitKindClient, []string{"api", "client", "init", "rust", "client", "."},
+	)
+	require.NoError(t, err)
+	require.Empty(t, clientParent.Commands())
 }
 
 func TestSDKInitFunctionFlagArgsSkipsUnsupportedOptionalArgs(t *testing.T) {

@@ -80,10 +80,15 @@ pub fn decode_and_validate_with_mode(
         ))
     })?;
 
+    let compatibility = match mode {
+        SchemaCompatibilityMode::ExactTarget => None,
+        SchemaCompatibilityMode::ExactCoreWithExtensions(manifest) => Some(manifest),
+    };
     let schema = validate_response_mode(
         target,
         &response,
         matches!(mode, SchemaCompatibilityMode::ExactTarget),
+        compatibility,
     )?;
     if let SchemaCompatibilityMode::ExactCoreWithExtensions(manifest) = mode {
         manifest.verify(&schema)?;
@@ -96,13 +101,14 @@ fn validate_response(
     target: &CodegenTarget,
     response: &IntrospectionResponse,
 ) -> Result<CanonicalSchema, DiagnosticSet> {
-    validate_response_mode(target, response, true)
+    validate_response_mode(target, response, true, None)
 }
 
 fn validate_response_mode(
     target: &CodegenTarget,
     response: &IntrospectionResponse,
     exact_inventory: bool,
+    compatibility: Option<&super::CoreCoordinateManifest>,
 ) -> Result<CanonicalSchema, DiagnosticSet> {
     let mut diagnostics = Vec::new();
     let container = match response {
@@ -140,8 +146,13 @@ fn validate_response_mode(
     let query = validate_roots(schema, &type_index, &mut diagnostics);
     let directives =
         canonicalize_directives(schema, &type_index, &directive_index, &mut diagnostics);
-    let types = canonicalize_types(&type_index, &directive_index, &mut diagnostics);
-    validate_interface_consistency(&types, &mut diagnostics);
+    let types = canonicalize_types(
+        &type_index,
+        &directive_index,
+        compatibility,
+        &mut diagnostics,
+    );
+    validate_interface_consistency(&types, compatibility, &mut diagnostics);
 
     let inventory = inventory(&types, &directives, query.is_some());
     if exact_inventory {
@@ -451,6 +462,7 @@ fn canonicalize_directives(
 fn canonicalize_types(
     type_index: &TypeIndex<'_>,
     directive_index: &DirectiveIndex<'_>,
+    compatibility: Option<&super::CoreCoordinateManifest>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> BTreeMap<SchemaName, TypeDefinition> {
     let mut types = BTreeMap::new();
@@ -480,6 +492,7 @@ fn canonicalize_types(
                 directives,
                 type_index,
                 directive_index,
+                compatibility,
                 diagnostics,
             )
             .map(TypeDefinition::Object),
@@ -489,6 +502,7 @@ fn canonicalize_types(
                 directives,
                 type_index,
                 directive_index,
+                compatibility,
                 diagnostics,
             )
             .map(TypeDefinition::Interface),
@@ -525,6 +539,7 @@ fn canonicalize_object(
     directives: Vec<DirectiveApplication>,
     type_index: &TypeIndex<'_>,
     directive_index: &DirectiveIndex<'_>,
+    compatibility: Option<&super::CoreCoordinateManifest>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<ObjectDefinition> {
     let fields = canonicalize_fields(name, definition, type_index, directive_index, diagnostics)?;
@@ -533,6 +548,7 @@ fn canonicalize_object(
         definition.interfaces.as_deref().unwrap_or_default(),
         TypeKind::Interface,
         type_index,
+        compatibility,
         diagnostics,
     );
     Some(ObjectDefinition {
@@ -551,6 +567,7 @@ fn canonicalize_interface(
     directives: Vec<DirectiveApplication>,
     type_index: &TypeIndex<'_>,
     directive_index: &DirectiveIndex<'_>,
+    compatibility: Option<&super::CoreCoordinateManifest>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<InterfaceDefinition> {
     let fields = canonicalize_fields(name, definition, type_index, directive_index, diagnostics)?;
@@ -559,6 +576,7 @@ fn canonicalize_interface(
         definition.interfaces.as_deref().unwrap_or_default(),
         TypeKind::Interface,
         type_index,
+        compatibility,
         diagnostics,
     );
     let possible_types = definition
@@ -572,6 +590,7 @@ fn canonicalize_interface(
                 &possible.type_ref,
                 TypeKind::Object,
                 type_index,
+                compatibility,
                 diagnostics,
             )
         })
@@ -1113,6 +1132,7 @@ fn canonicalize_edges(
     edges: &[raw::FullTypeInterface],
     expected_kind: TypeKind,
     type_index: &TypeIndex<'_>,
+    compatibility: Option<&super::CoreCoordinateManifest>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> BTreeSet<SchemaName> {
     edges
@@ -1123,6 +1143,7 @@ fn canonicalize_edges(
                 &edge.type_ref,
                 expected_kind.clone(),
                 type_index,
+                compatibility,
                 diagnostics,
             )
         })
@@ -1134,9 +1155,22 @@ fn canonicalize_named_edge(
     type_ref: &TypeRef,
     expected_kind: TypeKind,
     type_index: &TypeIndex<'_>,
+    compatibility: Option<&super::CoreCoordinateManifest>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<SchemaName> {
     let coordinate = SchemaCoordinate::named_type(owner);
+    if type_ref.of_type.is_none()
+        && type_ref
+            .kind
+            .as_ref()
+            .is_some_and(|kind| same_named_kind(&expected_kind, kind))
+        && let Some(name_source) = type_ref.name.as_deref()
+        && let Some(name) = parse_name(name_source, coordinate.as_str(), diagnostics)
+        && !type_index.contains_key(&name)
+        && compatibility.is_some_and(|manifest| manifest.permits_missing_type(&name))
+    {
+        return Some(name);
+    }
     let type_use = canonicalize_type_ref(type_ref, &coordinate, type_index, diagnostics)?;
     let TypeShape::Named(name) = type_use.shape else {
         diagnostics.push(schema_error(
@@ -1521,6 +1555,7 @@ fn validate_named_const(
 
 fn validate_interface_consistency(
     types: &BTreeMap<SchemaName, TypeDefinition>,
+    compatibility: Option<&super::CoreCoordinateManifest>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for (interface_name, definition) in types {
@@ -1528,6 +1563,11 @@ fn validate_interface_consistency(
             continue;
         };
         for object_name in &interface.possible_types {
+            if !types.contains_key(object_name)
+                && compatibility.is_some_and(|manifest| manifest.permits_missing_type(object_name))
+            {
+                continue;
+            }
             let implements = matches!(
                 types.get(object_name),
                 Some(TypeDefinition::Object(object)) if object.interfaces.contains(interface_name)

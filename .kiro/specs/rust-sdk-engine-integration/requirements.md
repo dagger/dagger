@@ -586,10 +586,12 @@ generate a plausible but incompatible project.
 
 1. WHEN an engine Codegen_Operation supplies a Visible_Schema, THE Rust backend SHALL
    decode the complete supplied schema.
-2. THE Rust backend SHALL validate every Core_Schema coordinate in the Visible_Schema
-   against the Target_Revision compatibility policy.
+2. THE Rust backend SHALL validate every Core_Schema coordinate required by the
+   operation's Target_Revision visibility policy against the reviewed semantic shape.
 3. THE Rust backend SHALL treat module and dependency coordinates as operation-scoped
-   additions rather than target Core_Schema replacements.
+   additions rather than target Core_Schema replacements, and SHALL permit only the
+   exact target-declared module-introspection scrub closure to be absent from module
+   and entrypoint operations.
 4. IF a target Core_Schema coordinate changes incompatibly, THEN THE Rust backend SHALL
    return a coordinate-bearing compatibility diagnostic.
 5. IF a Visible_Schema contains an unresolved reference, THEN THE Rust backend SHALL

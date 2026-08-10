@@ -11,7 +11,7 @@ use super::model::{
     ModuleProjectionInput, OperationKind, OperationPlan, OperationProjectionRequest, PostWorkPlan,
     PublishedSdkDependency, RelativeOperationPath, operation_diagnostic,
 };
-use super::visible::{VisibleSchemaPlan, project_visible_schema};
+use super::visible::VisibleSchemaPlan;
 
 /// Inputs common to the reusable binding renderer.
 pub struct LibraryRenderInput<'a> {
@@ -174,7 +174,11 @@ pub fn project_operation_with<R: OperationRenderer>(
     request: OperationProjectionRequest<'_>,
 ) -> Result<OperationPlan, DiagnosticSet> {
     validate_operation_inputs(request.operation, request.module, request.entrypoint)?;
-    let schema = project_visible_schema(request.target, request.visible_schema_json)?;
+    let schema = super::visible::project_operation_visible_schema(
+        request.target,
+        request.operation,
+        request.visible_schema_json,
+    )?;
     dispatch_prepared_operation(
         renderer,
         PreparedOperationRequest {

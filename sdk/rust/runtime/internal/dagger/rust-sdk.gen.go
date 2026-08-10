@@ -9,10 +9,20 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-func (r *Query) RustSDK(sdkSourceDir *Directory) *RustSDK { // rust-sdk (../../../../../:0:0)
-	assertNotNil("sdkSourceDir", sdkSourceDir)
+// RustSDKOpts contains options for Query.RustSDK
+type RustSDKOpts struct {
+	// Complete engine-packaged Rust SDK content, including runtime and dist metadata.
+	SDKSourceDir *Directory
+}
+
+func (r *Query) RustSDK(opts ...RustSDKOpts) *RustSDK { // rust-sdk (../../../../../:0:0)
 	q := r.query.Select("rustSdk")
-	q = q.Arg("sdkSourceDir", sdkSourceDir)
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sdkSourceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SDKSourceDir) {
+			q = q.Arg("sdkSourceDir", opts[i].SDKSourceDir)
+		}
+	}
 
 	return &RustSDK{
 		query: q,
@@ -29,6 +39,61 @@ type RustSDK struct { // rust-sdk (../../../../../:0:0)
 
 func (r *RustSDK) WithGraphQLQuery(q *querybuilder.Selection) *RustSDK {
 	return &RustSDK{
+		query: q,
+	}
+}
+
+// Codegen compiles the engine-visible schema into the scoped module context and
+// returns the Rust-owned VCS policy emitted by the same operation plan.
+func (r *RustSDK) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+	assertNotNil("modSource", modSource)
+	assertNotNil("introspectionJson", introspectionJson)
+	q := r.query.Select("codegen")
+	q = q.Arg("modSource", modSource)
+	q = q.Arg("introspectionJson", introspectionJson)
+
+	return &GeneratedCode{
+		query: q,
+	}
+}
+
+// GenerateClient renders the standalone client only within the requested output
+// subtree of the scoped module context.
+func (r *RustSDK) GenerateClient(modSource *ModuleSource, introspectionJson *File, outputDir string) *Directory {
+	assertNotNil("modSource", modSource)
+	assertNotNil("introspectionJson", introspectionJson)
+	q := r.query.Select("generateClient")
+	q = q.Arg("modSource", modSource)
+	q = q.Arg("introspectionJson", introspectionJson)
+	q = q.Arg("outputDir", outputDir)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// GenerateClients regenerates every managed Rust client at or below the
+// workspace's current location. Client schemas remain bound to their resolved
+// module sources while output is confined to the registered workspace path.
+func (r *RustSDK) GenerateClients(ws *Workspace) *Changeset {
+	assertNotNil("ws", ws)
+	q := r.query.Select("generateClients")
+	q = q.Arg("ws", ws)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// GenerateModules regenerates every managed Rust module at or below the
+// workspace's current location. Each module sees its freshly generated local
+// dependencies, but only its own changes survive in the returned changeset.
+func (r *RustSDK) GenerateModules(ws *Workspace) *Changeset {
+	assertNotNil("ws", ws)
+	q := r.query.Select("generateModules")
+	q = q.Arg("ws", ws)
+
+	return &Changeset{
 		query: q,
 	}
 }
@@ -80,4 +145,51 @@ func (r *RustSDK) UnmarshalJSON(bs []byte) error {
 	}
 	*r = RustSDK{query: selectNode(dag.query, id, "RustSdk")}
 	return nil
+}
+
+// InitModule returns only SDK-owned project amendments. The engine independently
+// authors module configuration and decides whether scoped generation follows.
+func (r *RustSDK) InitModule(ws *Workspace, name string, path string) *Changeset {
+	assertNotNil("ws", ws)
+	q := r.query.Select("initModule")
+	q = q.Arg("ws", ws)
+	q = q.Arg("name", name)
+	q = q.Arg("path", path)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// RustSDKModuleRuntimeOpts contains options for RustSDK.ModuleRuntime
+type RustSDKModuleRuntimeOpts struct {
+	IntrospectionJSON *File
+}
+
+// ModuleRuntime verifies committed generation for current modules and regenerates
+// only inside a private snapshot for legacy modules before compiling the fixed target.
+func (r *RustSDK) ModuleRuntime(modSource *ModuleSource, opts ...RustSDKModuleRuntimeOpts) *Container {
+	assertNotNil("modSource", modSource)
+	q := r.query.Select("moduleRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `introspectionJson` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IntrospectionJSON) {
+			q = q.Arg("introspectionJson", opts[i].IntrospectionJSON)
+		}
+	}
+	q = q.Arg("modSource", modSource)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// RequiredClientGenerationFiles returns the renderer-owned finite host input set.
+func (r *RustSDK) RequiredClientGenerationFiles(ctx context.Context) ([]string, error) {
+	q := r.query.Select("requiredClientGenerationFiles")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
