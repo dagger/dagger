@@ -2352,16 +2352,9 @@ func (s *workspaceSchema) workspaceOverlayChanges(
 	if err != nil {
 		return overlay, true, err
 	}
-	stagedID, err := staged.ID()
+	stagedTree, err := stagedTreeOver(ctx, overlay.Self().Before, staged)
 	if err != nil {
 		return overlay, true, err
-	}
-	var stagedTree dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, overlay.Self().Before, &stagedTree, dagql.Selector{
-		Field: "withChanges",
-		Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](stagedID)}},
-	}); err != nil {
-		return overlay, true, fmt.Errorf("resolve staged tree: %w", err)
 	}
 	stagedTreeID, err := stagedTree.ID()
 	if err != nil {
