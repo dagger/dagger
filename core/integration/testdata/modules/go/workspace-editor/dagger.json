@@ -1,0 +1,8 @@
+{
+  "name": "editor",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "source": "."
+}
