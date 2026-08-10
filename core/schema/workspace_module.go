@@ -31,14 +31,16 @@ func (s *workspaceSchema) workspaceModules(
 	}
 	// The listing is the effective view, merged in the same order as module
 	// loading (base, user-level overlay, selected env overlay), so modules an
-	// overlay adds are discoverable. It inherits the env overlay's strictness
-	// too — a missing or broken env fails listing instead of silently falling
-	// back to the base config, deliberately matching env-selected config reads.
+	// overlay adds are discoverable — with or without an env selected, since
+	// loading applies the user overlay unconditionally too. It inherits the
+	// env overlay's strictness — a missing or broken env fails listing instead
+	// of silently falling back to the base config, deliberately matching
+	// env-selected config reads.
+	cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
+	if err != nil {
+		return nil, err
+	}
 	if envName, ok := selectedWorkspaceEnv(ctx); ok {
-		cfg, err = workspace.ApplyUserOverlay(cfg, ws.UserConfigOverlay())
-		if err != nil {
-			return nil, err
-		}
 		cfg, err = workspace.ApplyEnvOverlay(cfg, envName)
 		if err != nil {
 			return nil, err

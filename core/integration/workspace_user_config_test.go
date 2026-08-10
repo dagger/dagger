@@ -94,6 +94,25 @@ profile = "alice-dev"
 		require.Equal(t, userConfigWorkspaceFixture, string(repoConfig))
 	})
 
+	t.Run("user-added modules list without an env selection", func(ctx context.Context, t *testctx.T) {
+		// A source-bearing always-on user entry adds a module for loading, so
+		// the listing must show it too — with or without --env, since the user
+		// overlay applies unconditionally in both.
+		workdir, userConfigPath := newUserConfigWorkdir(ctx, t,
+			"git@github.com:acme/user-config-test.git", `
+[workspaces."github.com/acme/user-config-test".modules.personal]
+source = "github.com/acme/personal"
+`)
+
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "installed")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "personal")
+
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "--env=staging", "installed")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "personal")
+	})
+
 	t.Run("equivalent remote URL forms match", func(ctx context.Context, t *testctx.T) {
 		// Repo origin is scp-style ssh; the user config keys the same remote
 		// in https form with a .git suffix.
