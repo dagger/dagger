@@ -378,11 +378,35 @@ func (s *workspaceSchema) stagedCommitChanges(
 		return inst, nil
 	}
 
-	// The state staged before this commit: the previous commit's staged tree,
-	// or — for the first commit — the base the cumulative record is anchored on.
+	// The state staged before this commit, expressed over THIS commit's base:
+	// the previous commit's cumulative record applied to it. For the first
+	// commit that base is the whole answer, since nothing was staged before it.
+	//
+	// Re-applying rather than reusing commits[index-1].Committed.After is what
+	// keeps the two sides of the diff comparable. Each cumulative record is
+	// anchored on the overlay's Before as it stood when THAT commit was staged,
+	// and for a host-backed workspace that base is sparse — host.directory
+	// including only the paths touched so far (sparseHostBase). The touched set
+	// grows with every edit, so the earlier commit's staged tree is anchored on
+	// a strictly narrower base than this one's: a path first edited after that
+	// commit was staged is simply absent from it. Diffing against it directly
+	// reports such a path as a whole-file ADDED — the file's own content read as
+	// if it had just been created — even though it is long-tracked and modified
+	// by a line. That verdict is not cosmetic: this changeset is also what
+	// withCommitsFrom replays as a patch, so an add-patch fails to apply against
+	// a receiver that already has the file.
 	before := commit.Committed.Self().Before
 	if index > 0 && commits[index-1].Committed.Self() != nil {
-		before = commits[index-1].Committed.Self().After
+		prevID, err := commits[index-1].Committed.ID()
+		if err != nil {
+			return inst, err
+		}
+		if err := srv.Select(ctx, before, &before, dagql.Selector{
+			Field: "withChanges",
+			Args:  []dagql.NamedInput{{Name: "changes", Value: dagql.NewID[*core.Changeset](prevID)}},
+		}); err != nil {
+			return inst, fmt.Errorf("staged commit changes: re-anchor previous staged state: %w", err)
+		}
 	}
 	beforeID, err := before.ID()
 	if err != nil {
