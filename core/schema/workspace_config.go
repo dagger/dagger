@@ -294,7 +294,7 @@ func envScopedConfigKey(cfg *workspace.Config, envName, key string, policy works
 		return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
 	}
 	if _, ok := cfg.Env[envName]; !ok && policy == workspaceConfigMustExist {
-		return "", workspace.UndefinedEnvError(cfg, envName)
+		return "", workspace.NewUndefinedEnvError(cfg, envName)
 	}
 
 	parts, err := workspace.SplitConfigPath(key)

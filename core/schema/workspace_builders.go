@@ -400,7 +400,7 @@ func (s *workspaceSchema) withoutEnvModule(
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	env, ok := staged.Config.Env[envName]
 	if !ok {
-		return dagql.ObjectResult[*core.Workspace]{}, workspace.UndefinedEnvError(staged.Config, envName)
+		return dagql.ObjectResult[*core.Workspace]{}, workspace.NewUndefinedEnvError(staged.Config, envName)
 	}
 	entry, ok := env.Modules[name]
 	if !ok || entry.Source == "" {

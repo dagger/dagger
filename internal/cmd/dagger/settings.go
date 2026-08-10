@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 const workspaceSettingsQuery = `
@@ -102,7 +104,7 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 	}
 	envWrite := len(args) >= 3 && !workspaceSettingsUnset && workspaceEnv != ""
 	err := runWorkspaceSettingsSession(cmd, args, envWrite, false)
-	if envWrite && err != nil && strings.Contains(err.Error(), fmt.Sprintf(workspacepkg.UndefinedEnvErrorPrefix, workspaceEnv)) {
+	if envWrite && isUndefinedEnvError(err, workspaceEnv) {
 		// A write is the gesture that creates a missing env. The first attempt
 		// applies the overlay so existing envs keep full discovery (including
 		// modules the env itself adds); only when the env turns out not to
@@ -111,6 +113,23 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 		return runWorkspaceSettingsSession(cmd, args, envWrite, true)
 	}
 	return err
+}
+
+// isUndefinedEnvError reports whether err is the engine rejecting the named
+// env as undefined. The engine marks the error with GraphQL extensions
+// (workspace.UndefinedEnvError), so match those structurally when present;
+// fall back to the message prefix for errors that cross boundaries without
+// extensions (version-skewed engines, session-connect failures).
+func isUndefinedEnvError(err error, env string) bool {
+	if err == nil {
+		return false
+	}
+	var gqlErr *gqlerror.Error
+	if errors.As(err, &gqlErr) && gqlErr.Extensions["_type"] == workspacepkg.UndefinedEnvErrorType {
+		name, _ := gqlErr.Extensions["env"].(string)
+		return name == env
+	}
+	return strings.Contains(err.Error(), fmt.Sprintf(workspacepkg.UndefinedEnvErrorPrefix, env))
 }
 
 func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, suppressEnv bool) error {

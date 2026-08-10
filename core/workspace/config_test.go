@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -1142,4 +1143,21 @@ other = "kept"
 		require.NotContains(t, cfg.Modules["my.module"].Settings, "some.key")
 		require.Equal(t, "kept", cfg.Modules["my.module"].Settings["other"])
 	})
+}
+
+func TestUndefinedEnvErrorExtensions(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{Env: map[string]EnvOverlay{"ci": {}, "prod": {}}}
+	err := NewUndefinedEnvError(cfg, "prdo")
+	require.EqualError(t, err, `workspace env "prdo" is not defined (defined envs: ci, prod)`)
+
+	// dagql attaches Extensions() from any error in the wrap chain via
+	// errors.As, so the marker must survive the fmt.Errorf wrapping the
+	// workspace-load path adds.
+	wrapped := fmt.Errorf("query module objects: loading workspace: %w", err)
+	var ext interface{ Extensions() map[string]any }
+	require.True(t, errors.As(wrapped, &ext))
+	require.Equal(t, UndefinedEnvErrorType, ext.Extensions()["_type"])
+	require.Equal(t, "prdo", ext.Extensions()["env"])
 }
