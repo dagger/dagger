@@ -434,6 +434,19 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	if err != nil {
 		return err
 	}
+	// Shadowing a module that already resolved to another source (base
+	// config, or another overlay) is intentional — pointing an env at a fork
+	// — but must be visible at install time. Compare before exporting: the
+	// pre-write chain re-resolves from the host, so after export it would
+	// already see the new env entry.
+	overridesFrom := ""
+	if workspaceEnv != "" && !isEmpty {
+		if before, err := target.Module(resolvedName).Source(ctx); err == nil && before != "" {
+			if after, err := updated.Module(resolvedName).Source(ctx); err == nil && after != before {
+				overridesFrom = before
+			}
+		}
+	}
 	if err := updated.Export(ctx); err != nil {
 		return err
 	}
@@ -456,8 +469,15 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 		}
 	}
 	if workspaceEnv != "" {
-		_, err = fmt.Fprintf(out, "Installed module %q into env %q in %s\n", resolvedName, workspaceEnv, configPath)
-		return err
+		if _, err := fmt.Fprintf(out, "Installed module %q into env %q in %s\n", resolvedName, workspaceEnv, configPath); err != nil {
+			return err
+		}
+		if overridesFrom != "" {
+			if _, err := fmt.Fprintf(out, "Module %q in env %q overrides source %q\n", resolvedName, workspaceEnv, overridesFrom); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	_, err = fmt.Fprintf(out, "Installed module %q in %s\n", resolvedName, configPath)
 	return err

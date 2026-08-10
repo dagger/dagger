@@ -603,6 +603,33 @@ source = "dep"
 		requireErrOut(t, err, `module "dep" is not installed in env "dev"`)
 	})
 
+	t.Run("env install over a base module announces the source override", func(ctx context.Context, t *testctx.T) {
+		workdir := newEnvInstallWorkdir(ctx, t, `[modules.dep]
+source = "dep"
+`)
+		forkDir := filepath.Join(workdir, "fork")
+		require.NoError(t, os.MkdirAll(forkDir, 0o755))
+		copyTestdataFixture(ctx, t, forkDir, "modules", "go", "minimal-dep")
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "--name=dep", "./fork")
+		require.NoError(t, err)
+		outStr := string(out)
+		require.Contains(t, outStr, `Installed module "dep" into env "dev"`)
+		require.Contains(t, outStr, `Module "dep" in env "dev" overrides source "dep"`)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "dep", cfg.Modules["dep"].Source)
+		require.Equal(t, "fork", cfg.Env["dev"].Modules["dep"].Source)
+
+		// Installing a genuinely new module into the env stays notice-free.
+		otherDir := filepath.Join(workdir, "other")
+		require.NoError(t, os.MkdirAll(otherDir, 0o755))
+		copyTestdataFixture(ctx, t, otherDir, "modules", "go", "minimal-dep")
+		out, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--env=dev", "install", "--name=other", "./other")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "overrides source")
+	})
+
 	t.Run("SDK installs reject an env selection", func(ctx context.Context, t *testctx.T) {
 		workdir := newEnvInstallWorkdir(ctx, t, `[modules]
 `)
