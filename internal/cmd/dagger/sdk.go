@@ -152,20 +152,22 @@ func runSDKInstall(cmd *cobra.Command, args []string) error {
 	if name == "" {
 		name = defaultName
 	}
-	// The name the authoring commands dispatch on: the as-sdk alias if the
-	// registry set one, otherwise the install name.
-	hintName := asSDKName
-	if hintName == "" {
-		hintName = name
-	}
 
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
 		dag := ec.Dagger()
-		if err := installWorkspaceSDK(ctx, dag, cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere); err != nil {
+		installedName, err := installWorkspaceSDK(ctx, dag, cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere)
+		if err != nil {
 			return err
+		}
+		// The name the authoring commands dispatch on: the as-sdk alias if the
+		// registry set one, otherwise the name the install resolved to — which
+		// for a full ref is only known once the engine derived it.
+		hintName := asSDKName
+		if hintName == "" {
+			hintName = installedName
 		}
 		printSDKInstallCapabilityHints(ctx, dag, cmd, hintName, canonicalRef)
 		return nil
@@ -238,11 +240,14 @@ func printSDKInstallCapabilityHints(ctx context.Context, dag *dagger.Client, cmd
 	}
 }
 
-func installWorkspaceSDK(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name, asSDKName string, here bool) error {
+// installWorkspaceSDK installs the SDK and returns the workspace name it ended
+// up installed under — for a full ref that name is derived engine-side, so
+// callers can only learn it from here.
+func installWorkspaceSDK(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name, asSDKName string, here bool) (string, error) {
 	current := dag.CurrentWorkspace()
 	previousConfig, err := current.ConfigFile(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	updated, err := materializeWorkspace(ctx, dag, current.WithSDK(ref, dagger.WorkspaceWithSDKOpts{
 		Name:      name,
@@ -250,38 +255,38 @@ func installWorkspaceSDK(ctx context.Context, dag *dagger.Client, out io.Writer,
 		AsSDKName: asSDKName,
 	}))
 	if err != nil {
-		return err
+		return "", err
 	}
 	resolvedName, err := workspaceInstalledModuleName(ctx, current, updated, ref, name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	configPath, err := workspaceConfigHostPath(ctx, updated)
 	if err != nil {
-		return err
+		return "", err
 	}
 	updatedConfig, err := updated.ConfigFile(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	isEmpty, err := updated.Changes().IsEmpty(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := updated.Export(ctx); err != nil {
-		return err
+		return "", err
 	}
 	if isEmpty {
 		_, err = fmt.Fprintf(out, "SDK %q is already installed\n", resolvedName)
-		return err
+		return resolvedName, err
 	}
 	if previousConfig != updatedConfig {
 		if _, err := fmt.Fprintf(out, "Created workspace config in %s\n", filepath.Dir(configPath)); err != nil {
-			return err
+			return "", err
 		}
 	}
 	_, err = fmt.Fprintf(out, "Installed SDK %q in %s\n", resolvedName, configPath)
-	return err
+	return resolvedName, err
 }
 
 func runSDKUninstall(cmd *cobra.Command, args []string) error {
