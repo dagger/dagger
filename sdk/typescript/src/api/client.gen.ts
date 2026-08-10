@@ -15057,6 +15057,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return a module defined in the workspace configuration.
+   *
+   * Reflects the selected env's effective view.
    * @param name Module name to inspect.
    */
   module_ = (name: string): WorkspaceModule => {
@@ -15079,6 +15081,8 @@ export class Workspace extends BaseClient {
 
   /**
    * List modules defined in the workspace configuration.
+   *
+   * Reflects the selected env's effective view.
    */
   modules = async (): Promise<WorkspaceModule[]> => {
     type modules = {
@@ -15194,6 +15198,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a configuration value written.
+   *
+   * When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
    * @param key Dotted key path.
    * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
    * @param opts.values List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
@@ -15258,6 +15264,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a module installed in its config.
+   *
+   * When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
    * @param ref Module reference to install.
    * @param opts.name Override name for the installed module entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -15362,6 +15370,8 @@ export class Workspace extends BaseClient {
    * Return this workspace with a configuration value removed.
    *
    * Errors when the key is not currently set.
+   *
+   * When the session selects an env, the key is scoped to that env's overlay.
    * @param key Dotted key path (e.g. modules.greeter.settings.greeting).
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
@@ -15393,6 +15403,8 @@ export class Workspace extends BaseClient {
 
   /**
    * Return this workspace with a module removed from its config.
+   *
+   * When the session selects an env, only that env's overlay entry is removed.
    * @param name Name of the installed module entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */

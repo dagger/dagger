@@ -237,6 +237,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return a module defined in the workspace configuration.
+     *
+     * Reflects the selected env's effective view.
      */
     public function module(string $name): WorkspaceModule
     {
@@ -261,6 +263,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * List modules defined in the workspace configuration.
+     *
+     * Reflects the selected env's effective view.
      */
     public function modules(): array
     {
@@ -388,6 +392,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return this workspace with a configuration value written.
+     *
+     * When the session selects an env, the key is scoped to that env's overlay and the env is created if missing.
      */
     public function withConfigValue(string $key, string $value, ?array $values = null, ?bool $here = false): Workspace
     {
@@ -473,6 +479,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return this workspace with a module installed in its config.
+     *
+     * When the session selects an env, the module is recorded in that env's overlay and the env is created if missing.
      */
     public function withModule(string $ref, ?string $name = '', ?bool $here = false): Workspace
     {
@@ -593,6 +601,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      * Return this workspace with a configuration value removed.
      *
      * Errors when the key is not currently set.
+     *
+     * When the session selects an env, the key is scoped to that env's overlay.
      */
     public function withoutConfigValue(string $key, ?bool $here = false): Workspace
     {
@@ -626,6 +636,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 
     /**
      * Return this workspace with a module removed from its config.
+     *
+     * When the session selects an env, only that env's overlay entry is removed.
      */
     public function withoutModule(string $name, ?bool $here = false): Workspace
     {

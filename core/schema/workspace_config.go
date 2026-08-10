@@ -178,6 +178,9 @@ func (s *workspaceSchema) configRead(
 	args configReadArgs,
 ) (dagql.String, error) {
 	if parent.ConfigFile == "" {
+		if envName, ok := selectedWorkspaceEnv(ctx); ok {
+			return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
+		}
 		result, err := workspace.ReadConfigValue(nil, args.Key)
 		if err != nil {
 			return "", err
@@ -281,12 +284,17 @@ func effectiveWorkspaceConfigBytes(ws *core.Workspace, cfg *workspace.Config, en
 	return workspace.SerializeConfig(applied), nil
 }
 
-func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, error) {
+// envScopedConfigKey maps a modules.<name>.settings.* key into the selected
+// env's overlay storage. Under workspaceConfigInitIfMissing a missing env is
+// created by the write (writing a setting is the gesture that creates an env);
+// under workspaceConfigMustExist a missing env is rejected, so unsets keep
+// requiring the env to exist.
+func envScopedConfigKey(cfg *workspace.Config, envName, key string, policy workspaceConfigMutationPolicy) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
 	}
-	if _, ok := cfg.Env[envName]; !ok {
-		return "", fmt.Errorf("workspace env %q is not defined", envName)
+	if _, ok := cfg.Env[envName]; !ok && policy == workspaceConfigMustExist {
+		return "", workspace.NewUndefinedEnvError(cfg, envName)
 	}
 
 	parts, err := workspace.SplitConfigPath(key)
@@ -299,7 +307,11 @@ func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, err
 
 	moduleName := parts[1]
 	if _, ok := cfg.Modules[moduleName]; !ok {
-		return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+		// The module may be one the env itself adds, which only exists in the
+		// overlay.
+		if _, ok := cfg.Env[envName].Modules[moduleName]; !ok {
+			return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+		}
 	}
 
 	return workspace.JoinConfigPath(append([]string{"env", envName}, parts...)...), nil

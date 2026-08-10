@@ -94,6 +94,49 @@ profile = "alice-dev"
 		require.Equal(t, userConfigWorkspaceFixture, string(repoConfig))
 	})
 
+	t.Run("user-added modules list without an env selection", func(ctx context.Context, t *testctx.T) {
+		// A source-bearing always-on user entry adds a module for loading, so
+		// the listing must show it too — with or without --env, since the user
+		// overlay applies unconditionally in both.
+		workdir, userConfigPath := newUserConfigWorkdir(ctx, t,
+			"git@github.com:acme/user-config-test.git", `
+[workspaces."github.com/acme/user-config-test".modules.personal]
+source = "github.com/acme/personal"
+`)
+
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "installed")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "personal")
+
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--silent", "--env=staging", "installed")
+		require.NoError(t, err)
+		require.Contains(t, string(out), "personal")
+	})
+
+	t.Run("repo writes into a user-only env still print the creation notice", func(ctx context.Context, t *testctx.T) {
+		// The env exists only user-level, so the effective env list knows it —
+		// but a repo-level env-scoped write still adds [env.personal] to
+		// dagger.toml, and that creation must not happen silently.
+		workdir, userConfigPath := newUserConfigWorkdir(ctx, t,
+			"git@github.com:acme/user-config-test.git", `
+[workspaces."github.com/acme/user-config-test".env.personal.modules.aws.settings]
+profile = "alice-personal"
+`)
+
+		out, err := hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=personal", "workspace", "config", "modules.aws.settings.region", "eu-west-1")
+		require.NoError(t, err)
+		require.Contains(t, string(out), `Created env "personal"`)
+
+		repoConfig, err := os.ReadFile(filepath.Join(workdir, "dagger.toml"))
+		require.NoError(t, err)
+		require.Contains(t, string(repoConfig), "[env.personal")
+
+		// The repo env now exists, so a second write doesn't repeat the notice.
+		out, err = hostDaggerUserConfigExec(ctx, t, workdir, userConfigPath, "--env=personal", "workspace", "config", "modules.aws.settings.region", "eu-west-2")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "Created env")
+	})
+
 	t.Run("equivalent remote URL forms match", func(ctx context.Context, t *testctx.T) {
 		// Repo origin is scp-style ssh; the user config keys the same remote
 		// in https form with a .git suffix.

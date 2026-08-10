@@ -280,7 +280,7 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 		case 1:
 			return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0])
 		case 2:
-			return writeWorkspaceConfig(ctx, ws, args[0], args[1])
+			return writeWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0], args[1])
 		default:
 			return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
 		}
@@ -302,8 +302,99 @@ func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspa
 	return err
 }
 
-func writeWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, key, value string) error {
-	return ws.WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx)
+func writeWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key, value string) error {
+	envName := writtenConfigEnvName(key)
+	target := ws
+	creates := false
+	if envName != "" {
+		var err error
+		creates, target, err = workspaceEnvWriteCreates(ctx, ws, envName, workspaceHere)
+		if err != nil {
+			return err
+		}
+	}
+	if err := target.WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx); err != nil {
+		return err
+	}
+	if creates {
+		fmt.Fprintf(out, "Created env %q\n", envName)
+	}
+	return nil
+}
+
+// writtenConfigEnvName returns the env a config write lands in: the env named
+// by an explicit env.<name>.* key (which always addresses raw overlay storage,
+// even under --env), or the --env selection for other keys.
+func writtenConfigEnvName(key string) string {
+	if strings.HasPrefix(key, "env.") {
+		if parts, err := workspacepkg.SplitConfigPath(key); err == nil && len(parts) >= 2 {
+			return parts[1]
+		}
+		return ""
+	}
+	if key != "env" {
+		return workspaceEnv
+	}
+	return ""
+}
+
+// workspaceEnvWriteCreates reports whether writing to env `name` will create it,
+// and returns the workspace the write should chain onto (with the env staged so
+// creation stays explicit). Detection is here-aware by comparing config
+// directories, not by trusting EnvList alone: workspace detection selects the
+// nearest dagger.toml walking up from the cwd, so a --here write whose cwd isn't
+// the selected config's own directory targets a directory that has no config of
+// its own — it always writes a fresh config there, hence a new env. When the
+// --here target and the selected config share a directory (or --here is off),
+// the write lands in the selected config, where the env is new iff EnvList (read
+// from that same config) doesn't already list it.
+func workspaceEnvWriteCreates(ctx context.Context, ws *dagger.Workspace, name string, here bool) (bool, *dagger.Workspace, error) {
+	staged := ws.WithConfigEnv(name, dagger.WorkspaceWithConfigEnvOpts{Here: here})
+	if here {
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return false, nil, err
+		}
+		if configFile == "" {
+			// No selected config: --here writes a fresh dagger.toml at the cwd.
+			return true, staged, nil
+		}
+		// configFile is cwd-relative, so the selected config lives in the
+		// --here target (the cwd) exactly when its directory is ".".
+		if path.Dir(configFile) != "." {
+			return true, staged, nil
+		}
+	}
+	// Probe the repository config file itself: every read through the API is
+	// user-overlay-effective, and an env defined only in the user-level
+	// config must not suppress the notice for the repo-side env section this
+	// write creates. Env-scoped writes are host-local by definition, so the
+	// selected config file is readable directly.
+	configFile, err := ws.ConfigFile(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	if configFile == "" {
+		// No repo config at all yet; the write creates it and the env.
+		return true, staged, nil
+	}
+	configPath, err := workspaceConfigHostPath(ctx, ws)
+	if err != nil {
+		return false, nil, err
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, staged, nil
+		}
+		return false, nil, err
+	}
+	cfg, err := workspacepkg.ParseConfig(data)
+	if err != nil {
+		return false, nil, err
+	}
+	_, defined := cfg.Env[name]
+	return !defined, staged, nil
 }
 
 func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {
@@ -312,11 +403,22 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	if err != nil {
 		return err
 	}
-	updated, err := materializeWorkspace(ctx, dag, current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: name, Here: here}))
+	target := current
+	createsEnv := false
+	if workspaceEnv != "" {
+		// An env-scoped install is a write, so a missing env is created by it.
+		// Chaining the write on the env-staged workspace also keeps the
+		// before/after module diff below usable when the env didn't exist yet.
+		createsEnv, target, err = workspaceEnvWriteCreates(ctx, current, workspaceEnv, here)
+		if err != nil {
+			return err
+		}
+	}
+	updated, err := materializeWorkspace(ctx, dag, target.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: name, Here: here}))
 	if err != nil {
 		return err
 	}
-	resolvedName, err := workspaceInstalledModuleName(ctx, current, updated, ref, name)
+	resolvedName, err := workspaceInstalledModuleName(ctx, target, updated, ref, name)
 	if err != nil {
 		return err
 	}
@@ -332,10 +434,27 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	if err != nil {
 		return err
 	}
+	// Shadowing a module that already resolved to another source (base
+	// config, or another overlay) is intentional — pointing an env at a fork
+	// — but must be visible at install time. Compare before exporting: the
+	// pre-write chain re-resolves from the host, so after export it would
+	// already see the new env entry.
+	overridesFrom := ""
+	if workspaceEnv != "" && !isEmpty {
+		if before, err := target.Module(resolvedName).Source(ctx); err == nil && before != "" {
+			if after, err := updated.Module(resolvedName).Source(ctx); err == nil && after != before {
+				overridesFrom = before
+			}
+		}
+	}
 	if err := updated.Export(ctx); err != nil {
 		return err
 	}
 	if isEmpty {
+		if workspaceEnv != "" {
+			_, err = fmt.Fprintf(out, "Module %q is already installed in env %q\n", resolvedName, workspaceEnv)
+			return err
+		}
 		_, err = fmt.Fprintf(out, "Module %q is already installed\n", resolvedName)
 		return err
 	}
@@ -343,6 +462,22 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 		if _, err := fmt.Fprintf(out, "Created workspace config in %s\n", filepath.Dir(configPath)); err != nil {
 			return err
 		}
+	}
+	if createsEnv {
+		if _, err := fmt.Fprintf(out, "Created env %q\n", workspaceEnv); err != nil {
+			return err
+		}
+	}
+	if workspaceEnv != "" {
+		if _, err := fmt.Fprintf(out, "Installed module %q into env %q in %s\n", resolvedName, workspaceEnv, configPath); err != nil {
+			return err
+		}
+		if overridesFrom != "" {
+			if _, err := fmt.Fprintf(out, "Module %q in env %q overrides source %q\n", resolvedName, workspaceEnv, overridesFrom); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	_, err = fmt.Fprintf(out, "Installed module %q in %s\n", resolvedName, configPath)
 	return err
@@ -416,6 +551,10 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		return err
 	}
 	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	if workspaceEnv != "" {
+		_, err = fmt.Fprintf(out, "Uninstalled module %q from env %q in %s\n", name, workspaceEnv, configPath)
 		return err
 	}
 	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
