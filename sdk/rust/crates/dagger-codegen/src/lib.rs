@@ -6,6 +6,7 @@
 
 pub mod diagnostic;
 pub mod directive;
+pub mod engine;
 pub mod naming;
 pub mod projection;
 pub mod render;

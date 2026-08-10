@@ -6,7 +6,9 @@ use crate::diagnostic::{
     Diagnostic, DiagnosticCode, DiagnosticCoordinate, DiagnosticSet, RelatedCoordinate,
 };
 use crate::target::CodegenTarget;
+use crate::target::MAX_SCHEMA_BYTES;
 
+use super::SchemaCompatibilityMode;
 use super::canonical::{
     ArgumentDefinition, CanonicalSchema, CoordinateInventory, Deprecation, DirectiveApplication,
     DirectiveDefinition, EnumDefinition, EnumValueDefinition, FieldDefinition,
@@ -49,7 +51,27 @@ pub fn decode_and_validate(
     target: &CodegenTarget,
     schema_bytes: &[u8],
 ) -> Result<CanonicalSchema, DiagnosticSet> {
-    target.verify_schema(schema_bytes)?;
+    decode_and_validate_with_mode(target, schema_bytes, SchemaCompatibilityMode::ExactTarget)
+}
+
+/// Decodes a schema under either exact-target or manifest-backed extension policy.
+pub fn decode_and_validate_with_mode(
+    target: &CodegenTarget,
+    schema_bytes: &[u8],
+    mode: SchemaCompatibilityMode<'_>,
+) -> Result<CanonicalSchema, DiagnosticSet> {
+    match mode {
+        SchemaCompatibilityMode::ExactTarget => target.verify_schema(schema_bytes)?,
+        SchemaCompatibilityMode::ExactCoreWithExtensions(_) => {
+            if schema_bytes.len() > MAX_SCHEMA_BYTES {
+                return Err(DiagnosticSet::one(Diagnostic::new(
+                    DiagnosticCode::SchemaRootInvalid,
+                    Some(DiagnosticCoordinate::new("schema")),
+                    "visible schema exceeds its 8 MiB bound",
+                )));
+            }
+        }
+    }
     let response: IntrospectionResponse = serde_json::from_slice(schema_bytes).map_err(|_| {
         DiagnosticSet::one(Diagnostic::new(
             DiagnosticCode::SchemaRootInvalid,
@@ -58,12 +80,29 @@ pub fn decode_and_validate(
         ))
     })?;
 
-    validate_response(target, &response)
+    let schema = validate_response_mode(
+        target,
+        &response,
+        matches!(mode, SchemaCompatibilityMode::ExactTarget),
+    )?;
+    if let SchemaCompatibilityMode::ExactCoreWithExtensions(manifest) = mode {
+        manifest.verify(&schema)?;
+    }
+    Ok(schema)
 }
 
+#[cfg(test)]
 fn validate_response(
     target: &CodegenTarget,
     response: &IntrospectionResponse,
+) -> Result<CanonicalSchema, DiagnosticSet> {
+    validate_response_mode(target, response, true)
+}
+
+fn validate_response_mode(
+    target: &CodegenTarget,
+    response: &IntrospectionResponse,
+    exact_inventory: bool,
 ) -> Result<CanonicalSchema, DiagnosticSet> {
     let mut diagnostics = Vec::new();
     let container = match response {
@@ -105,7 +144,9 @@ fn validate_response(
     validate_interface_consistency(&types, &mut diagnostics);
 
     let inventory = inventory(&types, &directives, query.is_some());
-    validate_exact_inventory(inventory, &mut diagnostics);
+    if exact_inventory {
+        validate_exact_inventory(inventory, &mut diagnostics);
+    }
 
     if !diagnostics.is_empty() {
         return Err(diagnostic_set(diagnostics));

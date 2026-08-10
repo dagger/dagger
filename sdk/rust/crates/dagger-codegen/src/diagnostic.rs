@@ -23,6 +23,10 @@ pub enum DiagnosticCode {
     SchemaTypeUnsupported,
     /// A name, reference, or required schema member is invalid.
     SchemaReferenceInvalid,
+    /// A reviewed core coordinate is absent from an engine-visible schema.
+    SchemaCoreCoordinateMissing,
+    /// A reviewed core coordinate changed semantic shape in an engine-visible schema.
+    SchemaCoreCoordinateIncompatible,
     /// A recursive type wrapper is malformed or exceeds its bound.
     SchemaWrapperInvalid,
     /// A GraphQL default literal is malformed or has the wrong type.
@@ -79,6 +83,18 @@ pub enum DiagnosticCode {
     GeneratedOutputDrift,
     /// Atomic generated-output publication failed.
     GeneratedPublicationFailed,
+    /// A serialized engine operation selector is not part of the closed set.
+    OperationUnknown,
+    /// A selected operation is missing one of its required semantic inputs.
+    OperationInputMissing,
+    /// A selected operation received an input owned by a different operation.
+    OperationInputForbidden,
+    /// Two renderer outputs attempted to own the same normalized artifact path.
+    OperationArtifactCollision,
+    /// The private entrypoint TypeDef differs from the checked protocol probe.
+    EntrypointTypeDefInvalid,
+    /// Client-generation metadata contains an invalid or duplicate relative path.
+    RequiredHostFileInvalid,
 }
 
 impl fmt::Display for DiagnosticCode {

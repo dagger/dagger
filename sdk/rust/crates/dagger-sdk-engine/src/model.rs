@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+pub use dagger_codegen::engine::OperationKind;
+
 use crate::scalar::{
     CanonicalRegistry, CanonicalRepositoryUrl, ExactRustToolchain, ExactVersion, FormatVersion,
     FullRevision, RelativeOperationPath, RustTarget, SdkPackageName, Sha256Digest,
@@ -43,20 +45,6 @@ pub struct SchemaInput {
     pub path: RelativeOperationPath,
     /// Digest of the exact schema bytes.
     pub digest: Sha256Digest,
-}
-
-/// Closed set of engine code-generation operations.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum OperationKind {
-    /// Render reusable visible-schema library bindings.
-    GenerateLibrary,
-    /// Render module bindings and private module glue.
-    GenerateModule,
-    /// Render the bounded standalone-client baseline.
-    GenerateClient,
-    /// Render the private protocol-probe entrypoint.
-    GenerateEntrypoint,
 }
 
 /// Module configuration generation mode selected by the target engine.

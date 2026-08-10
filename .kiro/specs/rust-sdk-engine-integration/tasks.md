@@ -78,8 +78,8 @@
     the pre-change ledger to remain status-identical, every canonical model to reject
     ambiguous input, and the worktree to contain no generated engine content.
 
-- [ ] 3. Implement the pure visible-schema operation compiler and four renderer seams
-  - [ ] 3.1 Generalize Feature 4 validation to exact core plus visible extensions
+- [x] 3. Implement the pure visible-schema operation compiler and four renderer seams
+  - [x] 3.1 Generalize Feature 4 validation to exact core plus visible extensions
     - Add `ExactCoreWithExtensions` beside the existing exact-target mode, generated
       from the checked core-coordinate manifest rather than name prefixes.
     - Require every core semantic fingerprint, admit operation-scoped module/dependency
@@ -87,7 +87,7 @@
       reuse Feature 4 wrapper, default, directive, naming, collision, documentation,
       projection, and canonical-ordering policy unchanged.
     - _Requirements: 5.1-5.7, 6.18_
-  - [ ] 3.2 Add the closed operation selector and input matrix
+  - [x] 3.2 Add the closed operation selector and input matrix
     - Implement `OperationKind`, `OperationProjectionRequest`, and `OperationPlan` for
       GenerateLibrary, GenerateModule, GenerateClient, and GenerateEntrypoint.
     - Enforce required/forbidden module, schema, output, dependency, and TypeDef inputs
@@ -96,7 +96,7 @@
     - Keep the pure facade free of filesystem, process, Cargo, engine, network,
       completeness, and publication I/O.
     - _Requirements: 5.8-5.13, 6.1, 6.2, 6.5-6.7, 6.19_
-  - [ ] 3.3 Implement production library/module renderers and bounded hook baselines
+  - [x] 3.3 Implement production library/module renderers and bounded hook baselines
     - Render visible-schema library bindings and module extension bindings through the
       existing semantic projection/token pipeline, resolving core types through public
       `dagger-sdk` and never embedding transport code.
@@ -107,7 +107,7 @@
       domain and an entrypoint renderer that accepts only the checked private protocol
       probe TypeDef; neither renderer may claim sibling content completeness.
     - _Requirements: 4.13-4.16, 4.20, 6.3-6.7, 6.18, 7.2-7.6, 10.10-10.13_
-  - [ ] 3.4 Add Rust-owned client-generation metadata
+  - [x] 3.4 Add Rust-owned client-generation metadata
     - Derive canonical required-host-file metadata from renderer configuration, validate
       every entry as a normalized relative path, and emit the baseline empty set as
       `client-generation.json` input for engine packaging.
@@ -115,13 +115,13 @@
       normalization-equivalent required file sets; Go must consume this metadata rather
       than own a second client policy.
     - _Requirements: 7.3-7.7_
-  - [ ] 3.5 Property test: Property 10 — visible schema validation is compatible and order-invariant
+  - [x] 3.5 Property test: Property 10 — visible schema validation is compatible and order-invariant
     - Generate at least 256 exact-core/extension schemas, core mutations, unresolved
       references, collisions, and independent array permutations; compare admission,
       canonical projection, artifacts, and diagnostics to a reference closure model.
     - Test identifier: `property_10_visible_schema_compatible_order_invariant`.
     - _Requirements: 5.1-5.7, 6.18_
-  - [ ] 3.6 Property test: Property 12 — operation dispatch is total and lossless
+  - [x] 3.6 Property test: Property 12 — operation dispatch is total and lossless
     - Use recording renderers over at least 256 selector/input combinations; require
       exactly one matching invocation with byte/value-identical schema, module,
       dependency, TypeDef, output, artifacts, and operation-specific inputs, and zero
@@ -129,7 +129,7 @@
     - Test identifier: `property_12_operation_dispatch_total_lossless`.
     - _Requirements: 6.1-6.7_
 
-- [ ] 4. Checkpoint: pure engine code generation is green
+- [x] 4. Checkpoint: pure engine code generation is green
   - Run formatting, locked codegen/engine-tool tests, Properties 10 and 12, fixed
     operation-matrix and renderer fixtures, warning-denied clippy/rustdoc, cargo-deny,
     and `rust-sdk-dev engine-unit`.

@@ -28,6 +28,7 @@ fn exact_candidate_compiles_with_supported_features_and_warning_free_docs() {
         "dagger-bootstrap",
         "dagger-codegen",
         "dagger-sdk-completeness",
+        "dagger-sdk-engine",
     ] {
         copy_tree(
             &workspace.join("crates").join(package),

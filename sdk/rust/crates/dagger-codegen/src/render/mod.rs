@@ -4,7 +4,7 @@
 //! It cannot reopen schema bytes, mutate projection policy, publish files, or invoke a
 //! formatter. Filesystem and process authority remain with `dagger-bootstrap`.
 
-mod docs;
+pub(crate) mod docs;
 pub mod verification;
 
 use std::collections::{BTreeMap, BTreeSet};

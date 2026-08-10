@@ -1,5 +1,7 @@
 //! Shared valid-first generators and deterministic recording doubles for codegen tests.
 
+#![allow(dead_code)]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,9 +14,129 @@ use dagger_codegen::schema::raw::{
 use dagger_codegen::target::CodegenTarget;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence};
+use serde_json::{Value, json};
 
 pub(crate) const PURE_CASES: u32 = 256;
 pub(crate) const FILESYSTEM_CASES: u32 = 128;
+pub(crate) const TARGET_BYTES: &[u8] = include_bytes!("../../../../completeness/target.json");
+pub(crate) const CORE_SCHEMA_BYTES: &[u8] =
+    include_bytes!("../../../../completeness/snapshots/schema.json");
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum VisibleSchemaCase {
+    ExactCore,
+    CompatibleExtension,
+    CoreMutation,
+    CoreOmission,
+    UnresolvedReference,
+    RustNameCollision,
+}
+
+pub(crate) fn visible_schema(case: VisibleSchemaCase, permutation: u16) -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(CORE_SCHEMA_BYTES).expect("checked schema fixture must decode");
+    match case {
+        VisibleSchemaCase::ExactCore => {}
+        VisibleSchemaCase::CompatibleExtension => add_extension(&mut document, "RustMode", true),
+        VisibleSchemaCase::CoreMutation => {
+            let types = schema_array_mut(&mut document, "types");
+            let container = types
+                .iter_mut()
+                .find(|definition| definition["name"] == "Container")
+                .expect("checked schema must contain Container");
+            container["description"] = json!("incompatible reviewed core mutation");
+        }
+        VisibleSchemaCase::CoreOmission => {
+            let query = schema_array_mut(&mut document, "types")
+                .iter_mut()
+                .find(|definition| definition["name"] == "Query")
+                .expect("checked schema must contain Query");
+            query["fields"]
+                .as_array_mut()
+                .expect("Query fields must be an array")
+                .retain(|field| field["name"] != "address");
+        }
+        VisibleSchemaCase::UnresolvedReference => {
+            add_query_field(&mut document, "rustMode", "MissingRustMode")
+        }
+        VisibleSchemaCase::RustNameCollision => {
+            add_extension(&mut document, "RustMode", true);
+            add_extension(&mut document, "Rust_Mode", false);
+        }
+    }
+    permute_schema(&mut document, permutation);
+    serde_json::to_vec(&document).expect("schema fixture must encode")
+}
+
+fn add_extension(document: &mut Value, name: &str, add_field: bool) {
+    schema_array_mut(document, "types").push(json!({
+        "kind": "ENUM",
+        "name": name,
+        "description": "Operation-scoped Rust fixture enum.",
+        "enumValues": [{
+            "name": "READY",
+            "description": "Ready for the operation.",
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": []
+        }],
+        "interfaces": [],
+        "possibleTypes": [],
+        "directives": []
+    }));
+    if add_field {
+        add_query_field(document, "rustMode", name);
+    }
+}
+
+fn add_query_field(document: &mut Value, field_name: &str, type_name: &str) {
+    let query = schema_array_mut(document, "types")
+        .iter_mut()
+        .find(|definition| definition["name"] == "Query")
+        .expect("checked schema must contain Query");
+    query["fields"]
+        .as_array_mut()
+        .expect("Query fields must be an array")
+        .push(json!({
+            "name": field_name,
+            "description": "Operation-scoped Rust fixture field.",
+            "type": {"kind": "NON_NULL", "ofType": {"kind": "ENUM", "name": type_name}},
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": []
+        }));
+}
+
+fn permute_schema(document: &mut Value, permutation: u16) {
+    let types = schema_array_mut(document, "types");
+    if !types.is_empty() {
+        let offset = usize::from(permutation) % types.len();
+        types.rotate_left(offset);
+    }
+    for definition in types {
+        for collection in ["fields", "inputFields", "enumValues"] {
+            let Some(values) = definition.get_mut(collection).and_then(Value::as_array_mut) else {
+                continue;
+            };
+            if !values.is_empty() {
+                let offset = usize::from(permutation.rotate_left(3)) % values.len();
+                values.rotate_left(offset);
+            }
+        }
+    }
+    let directives = schema_array_mut(document, "directives");
+    if !directives.is_empty() {
+        let offset = usize::from(permutation.rotate_left(7)) % directives.len();
+        directives.rotate_left(offset);
+    }
+}
+
+fn schema_array_mut<'a>(document: &'a mut Value, name: &str) -> &'a mut Vec<Value> {
+    document["__schema"][name]
+        .as_array_mut()
+        .expect("checked schema collection must be an array")
+}
 
 pub(crate) fn pure_config() -> Config {
     Config {
