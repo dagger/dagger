@@ -313,7 +313,7 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 				{Name: "url", Value: dagql.String(remoteURL)},
 			},
 		},
-		dagql.Selector{Field: "latest"},
+		dagql.Selector{Field: "latestVersion"},
 	); err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("resolve latest git release for %q: %w", remoteURL, err)
 	}

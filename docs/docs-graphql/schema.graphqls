@@ -3334,9 +3334,6 @@ type GitRepository implements Node {
 
   This operation is pinned.
   """
-  latest: GitRef!
-
-  """Returns details for the latest semver tag."""
   latestVersion: GitRef!
 
   """Returns details of a ref."""
@@ -6258,4 +6255,3 @@ type WorkspaceSDK implements Node {
   """The module reference this SDK was installed from."""
   ref: String!
 }
-

@@ -9156,15 +9156,6 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 // Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
 //
 // This operation is pinned.
-func (r *GitRepository) Latest() *GitRef {
-	q := r.query.Select("latest")
-
-	return &GitRef{
-		query: q,
-	}
-}
-
-// Returns details for the latest semver tag.
 func (r *GitRepository) LatestVersion() *GitRef {
 	q := r.query.Select("latestVersion")
 

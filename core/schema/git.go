@@ -78,9 +78,6 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.GitRepository]{
 		dagql.NodeFunc("head", s.head).
 			Doc(`Returns details for HEAD.`),
-		dagql.NodeFunc("latest", s.latest).
-			View(AfterVersion("v1.0.0-beta.8")).
-			Doc(`Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.`, `This operation is pinned.`),
 		dagql.NodeFunc("ref", s.ref).
 			Doc(`Returns details of a ref.`).
 			Args(
@@ -112,8 +109,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				// TODO: id is normally a reserved word; we should probably rename this
 				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
 			),
-		dagql.NodeFunc("latestVersion", s.latestVersion).
+		dagql.NodeFunc("latestVersion", s.latestVersionLegacy).
+			View(BeforeVersion("v1.0.0-beta.10")).
 			Doc(`Returns details for the latest semver tag.`),
+		dagql.NodeFunc("latestVersion", s.latestVersion).
+			View(AfterVersion("v1.0.0-beta.10")).
+			Doc(`Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.`, `This operation is pinned.`),
 
 		dagql.Func("tags", s.tags).
 			Doc(`tags that match any of the given glob patterns.`).
@@ -1174,7 +1175,7 @@ func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	})
 }
 
-func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+func (s *gitSchema) latestVersionLegacy(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
 	remote, err := parent.Self().LoadRemote(ctx)
 	if err != nil {
 		return inst, err
@@ -2056,7 +2057,7 @@ func (s *gitSchema) log(
 	return commits, nil
 }
 
-func (s *gitSchema) latest(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], _ struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], _ struct{}) (inst dagql.Result[*core.GitRef], _ error) {
 	repo := parent.Self()
 	remoteRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
 	if !isRemote {

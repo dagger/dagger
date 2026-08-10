@@ -1297,6 +1297,34 @@ func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
 	require.Equal(t, v2commit, commit)
 }
 
+func (GitSuite) TestGitLatestVersionFallsBackToHead(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `touch file && git add file && git commit -m "initial"`})
+
+	headRef, err := ctr.WithExec([]string{"git", "symbolic-ref", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	headRef = strings.TrimSpace(headRef)
+
+	headCommit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	headCommit = strings.TrimSpace(headCommit)
+
+	latest := ctr.Directory(".").AsGit().LatestVersion()
+	ref, err := latest.Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, headRef, ref)
+
+	commit, err := latest.CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, headCommit, commit)
+}
+
 func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := c.Container().

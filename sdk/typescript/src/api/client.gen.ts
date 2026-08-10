@@ -9793,14 +9793,6 @@ export class GitRepository extends BaseClient {
    *
    * This operation is pinned.
    */
-  latest = (): GitRef => {
-    const ctx = this._ctx.select("latest")
-    return new GitRef(ctx)
-  }
-
-  /**
-   * Returns details for the latest semver tag.
-   */
   latestVersion = (): GitRef => {
     const ctx = this._ctx.select("latestVersion")
     return new GitRef(ctx)

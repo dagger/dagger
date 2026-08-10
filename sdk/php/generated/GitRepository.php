@@ -80,15 +80,6 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
      *
      * This operation is pinned.
      */
-    public function latest(): GitRef
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Returns details for the latest semver tag.
-     */
     public function latestVersion(): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latestVersion');

@@ -9161,15 +9161,6 @@ impl GitRepository {
     }
     /// Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
     /// This operation is pinned.
-    pub fn latest(&self) -> GitRef {
-        let query = self.selection.select("latest");
-        GitRef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Returns details for the latest semver tag.
     pub fn latest_version(&self) -> GitRef {
         let query = self.selection.select("latestVersion");
         GitRef {
