@@ -85,6 +85,41 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container {
 	}
 }
 
+// EngineDevContainerWithRustSdkcontentOpts contains options for EngineDev.ContainerWithRustSdkcontent
+type EngineDevContainerWithRustSdkcontentOpts struct {
+	Platform Platform
+
+	GpuSupport bool
+
+	Version string
+}
+
+// ContainerWithRustSDKContent builds the engine while reusing content produced by
+// RustSDKContent in the same top-level Dagger graph.
+func (r *EngineDev) ContainerWithRustSdkcontent(rustSdkcontent *EngineDevRustEngineContent, opts ...EngineDevContainerWithRustSdkcontentOpts) *Container {
+	assertNotNil("rustSdkcontent", rustSdkcontent)
+	q := r.query.Select("containerWithRustSdkcontent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+	q = q.Arg("rustSdkcontent", rustSdkcontent)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 func (r *EngineDev) Generate() *Changeset {
@@ -365,6 +400,33 @@ func (r *EngineDev) ReleaseDryRun(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
+// EngineDevRustSdkcontentOpts contains options for EngineDev.RustSdkcontent
+type EngineDevRustSdkcontentOpts struct {
+	Platform Platform
+
+	Version string
+}
+
+// RustSDKContent builds the Rust SDK integration once so focused engine cases can reuse
+// the same in-DAG content object instead of reconstructing its toolchain layer.
+func (r *EngineDev) RustSdkcontent(opts ...EngineDevRustSdkcontentOpts) *EngineDevRustEngineContent {
+	q := r.query.Select("rustSdkcontent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+
+	return &EngineDevRustEngineContent{
+		query: q,
+	}
+}
+
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
 	GpuSupport bool
@@ -397,6 +459,48 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 			q = q.Arg("version", opts[i].Version)
 		}
 	}
+	q = q.Arg("name", name)
+
+	return &Service{
+		query: q,
+	}
+}
+
+// EngineDevServiceWithRustSdkcontentOpts contains options for EngineDev.ServiceWithRustSdkcontent
+type EngineDevServiceWithRustSdkcontentOpts struct {
+	GpuSupport bool
+
+	SharedCache bool
+
+	Metrics bool
+
+	Version string
+}
+
+// ServiceWithRustSDKContent starts an engine from one previously built Rust SDK
+// content object, preserving its manifest and descriptor identities unchanged.
+func (r *EngineDev) ServiceWithRustSdkcontent(rustSdkcontent *EngineDevRustEngineContent, name string, opts ...EngineDevServiceWithRustSdkcontentOpts) *Service {
+	assertNotNil("rustSdkcontent", rustSdkcontent)
+	q := r.query.Select("serviceWithRustSdkcontent")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `gpuSupport` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GpuSupport) {
+			q = q.Arg("gpuSupport", opts[i].GpuSupport)
+		}
+		// `sharedCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SharedCache) {
+			q = q.Arg("sharedCache", opts[i].SharedCache)
+		}
+		// `metrics` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Metrics) {
+			q = q.Arg("metrics", opts[i].Metrics)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
+	}
+	q = q.Arg("rustSdkcontent", rustSdkcontent)
 	q = q.Arg("name", name)
 
 	return &Service{
@@ -616,6 +720,19 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev {
 	}
 }
 
+// WithGitSource replaces the injected workspace source with one immutable commit.
+// The resolved commit is also the provenance stamped into the engine and CLI, so a
+// caller cannot accidentally test one tree while advertising another revision.
+func (r *EngineDev) WithGitSource(repository string, revision string) *EngineDev {
+	q := r.query.Select("withGitSource")
+	q = q.Arg("repository", repository)
+	q = q.Arg("revision", revision)
+
+	return &EngineDev{
+		query: q,
+	}
+}
+
 func (r *EngineDev) WithLogLevel(level string) *EngineDev {
 	q := r.query.Select("withLogLevel")
 	q = q.Arg("level", level)
@@ -755,6 +872,102 @@ func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoad
 	return q.Execute(ctx)
 }
 
+// RustEngineContent is one reusable OCI layout and its exact engine manifest identity.
+type EngineDevRustEngineContent struct { // engine-dev (../../../../:0:0)
+	query *querybuilder.Selection
+
+	descriptorDigest *string
+	id               *ID
+	manifestDigest   *string
+}
+
+func (r *EngineDevRustEngineContent) WithGraphQLQuery(q *querybuilder.Selection) *EngineDevRustEngineContent {
+	return &EngineDevRustEngineContent{
+		query: q,
+	}
+}
+
+func (r *EngineDevRustEngineContent) Content() *Directory {
+	q := r.query.Select("content")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+func (r *EngineDevRustEngineContent) DescriptorDigest(ctx context.Context) (string, error) {
+	if r.descriptorDigest != nil {
+		return *r.descriptorDigest, nil
+	}
+	q := r.query.Select("descriptorDigest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineDevRustEngineContent.
+func (r *EngineDevRustEngineContent) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineDevRustEngineContent) XXX_GraphQLType() string {
+	return "EngineDevRustEngineContent"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineDevRustEngineContent) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineDevRustEngineContent) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineDevRustEngineContent) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EngineDevRustEngineContent) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = EngineDevRustEngineContent{query: selectNode(dag.query, id, "EngineDevRustEngineContent")}
+	return nil
+}
+
+func (r *EngineDevRustEngineContent) ManifestDigest(ctx context.Context) (string, error) {
+	if r.manifestDigest != nil {
+		return *r.manifestDigest, nil
+	}
+	q := r.query.Select("manifestDigest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // EngineDevOpts contains options for Query.EngineDev
 type EngineDevOpts struct {
 	// A configurable part of the IP subnet managed by the engine
@@ -765,6 +978,10 @@ type EngineDevOpts struct {
 	// A docker config file with credentials to install on clients,
 	// to ensure they can access private registries
 	ClientDockerConfig *Secret
+	// Credential-free HTTPS repository that owns the source revision.
+	//
+	// Default: "https://github.com/dagger/dagger"
+	VcsRepository string
 }
 
 func (r *Query) EngineDev(ws *Workspace, opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../:0:0)
@@ -778,6 +995,10 @@ func (r *Query) EngineDev(ws *Workspace, opts ...EngineDevOpts) *EngineDev { // 
 		// `clientDockerConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+		// `vcsRepository` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsRepository) {
+			q = q.Arg("vcsRepository", opts[i].VcsRepository)
 		}
 	}
 	q = q.Arg("ws", ws)

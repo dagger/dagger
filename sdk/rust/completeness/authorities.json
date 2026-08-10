@@ -898,7 +898,7 @@
       ],
       "repository": "github.com/dagger/dagger",
       "revision": "25300124ca110612edc09c43f89cb5fad6028170",
-      "source_digest": "sha256:48b8548f1626578029507664720c7c9efeaa0a18122e070c67f98b67054fedd1"
+      "source_digest": "sha256:c650e66eb2494d2f17e9ce634395a72fde7f84645e06885b9527f527463e7024"
     },
     "rust-policy": {
       "authority_class": "rust-policy",

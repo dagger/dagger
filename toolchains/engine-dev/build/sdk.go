@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strings"
 
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -17,20 +18,203 @@ import (
 )
 
 type sdkContent struct {
-	index   ocispecs.Index
-	sdkDir  *dagger.Directory
-	envName string
+	index    ocispecs.Index
+	sdkDir   *dagger.Directory
+	envName  string
+	extraEnv map[string]string
+}
+
+// Directory returns the complete OCI content-store layout.
+func (content *sdkContent) Directory() *dagger.Directory {
+	return content.sdkDir
+}
+
+// ManifestDigest returns the immutable manifest selected by the engine loader.
+func (content *sdkContent) ManifestDigest() string {
+	return content.index.Manifests[0].Digest.String()
+}
+
+// DescriptorDigest returns the domain-separated immutable source identity.
+func (content *sdkContent) DescriptorDigest() string {
+	return content.extraEnv[distconsts.RustSDKDescriptorDigestEnvName]
 }
 
 func (content *sdkContent) apply(ctr *dagger.Container) *dagger.Container {
 	manifest := content.index.Manifests[0]
 	manifestDgst := manifest.Digest.String()
 
-	return ctr.
+	ctr = ctr.
 		WithEnvVariable(content.envName, manifestDgst).
 		WithDirectory(distconsts.EngineContainerBuiltinContentDir, content.sdkDir, dagger.ContainerWithDirectoryOpts{
 			Include: []string{"blobs/"},
 		})
+	for name, value := range content.extraEnv {
+		ctr = ctr.WithEnvVariable(name, value)
+	}
+	return ctr
+}
+
+const (
+	rustSDKBuildImage         = "rust:1.97.1-bookworm@sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb"
+	canonicalDaggerRepository = "https://github.com/dagger/dagger"
+)
+
+type rustTargetDescriptor struct {
+	DaggerRevision string `json:"dagger_revision"`
+	EngineVersion  string `json:"engine_version"`
+	RustSDKVersion string `json:"rust_sdk_version"`
+	RustVersion    string `json:"rust_version"`
+	SchemaDigest   string `json:"schema_digest"`
+}
+
+// RustSDKContent builds and seals the module-backed Rust SDK content used by the
+// built-in loader. Private source and Cargo target state remain build inputs only.
+func (build *Builder) RustSDKContent(ctx context.Context) (*sdkContent, error) {
+	if err := validateDigestPinnedImage(rustSDKBuildImage); err != nil {
+		return nil, err
+	}
+	if len(build.vcsCommit) != 40 {
+		return nil, fmt.Errorf("Rust SDK provenance requires a full Dagger revision")
+	}
+	repository := canonicalEngineRepository(build.vcsRepository)
+	if repository == "" {
+		return nil, fmt.Errorf("Rust SDK provenance requires an immutable repository origin")
+	}
+
+	var target rustTargetDescriptor
+	targetContents, err := build.source.File("sdk/rust/completeness/target.json").Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read Rust SDK checked target: %w", err)
+	}
+	if err := json.Unmarshal([]byte(targetContents), &target); err != nil {
+		return nil, fmt.Errorf("decode Rust SDK checked target: %w", err)
+	}
+	if target.RustVersion != "1.97.1" || target.RustSDKVersion == "" || target.SchemaDigest == "" {
+		return nil, fmt.Errorf("Rust SDK checked target is incomplete or uses another toolchain")
+	}
+	requestedVersion := strings.TrimPrefix(build.version, "v")
+	targetVersion := strings.TrimPrefix(target.EngineVersion, "v")
+	if requestedVersion != "" && requestedVersion != targetVersion {
+		return nil, fmt.Errorf("Rust SDK target engine version %q differs from build version %q", targetVersion, requestedVersion)
+	}
+
+	rustWorkspace := build.source.Directory("sdk/rust").Filter(dagger.DirectoryFilterOpts{
+		Include: []string{
+			"Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
+			"completeness/target.json", "completeness/snapshots/schema.json",
+			"crates/**/Cargo.toml", "crates/**/src/**/*.rs", "crates/**/assets/**",
+		},
+	})
+	buildCtr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+		From(rustSDKBuildImage).
+		WithDirectory("/src", rustWorkspace).
+		WithWorkdir("/src").
+		WithExec([]string{
+			"cargo", "build", "--release", "--locked", "--package", "dagger-sdk-engine", "--bin", "dagger-rust-engine",
+		})
+
+	runtimeSource := build.source.Directory("sdk/rust/runtime").Filter(dagger.DirectoryFilterOpts{
+		Include: []string{
+			"dagger-module.toml", "go.mod", "go.sum", "main.go", "dagger.gen.go", "internal/**/*.go",
+		},
+		Exclude: []string{"**/*_test.go"},
+	})
+	rootfs := dag.Directory().
+		WithDirectory("runtime", runtimeSource).
+		WithFile("dist/dagger-rust-engine", buildCtr.File("/src/target/release/dagger-rust-engine"), dagger.DirectoryWithFileOpts{Permissions: 0o755}).
+		WithFile("dist/client-generation.json", build.source.File("sdk/rust/crates/dagger-codegen/assets/client-generation.json")).
+		WithFile("LICENSE", build.source.File("LICENSE"))
+
+	dependencyKind := "registry"
+	dependencyValue := target.RustSDKVersion
+	if repository != canonicalDaggerRepository {
+		dependencyKind = "git"
+		dependencyValue = build.vcsCommit
+	}
+	sealedCtr := buildCtr.
+		// A scratch mount makes the package tool's writes available as a clean
+		// directory output. Taking a subdirectory from the build container itself
+		// would retain builder layers and their original /content path in the OCI image.
+		WithMountedDirectory("/content", rootfs).
+		WithExec([]string{
+			"/src/target/release/dagger-rust-engine", "package-content",
+			"--root", "/content",
+			"--repository", repository,
+			"--dagger-revision", build.vcsCommit,
+			"--engine-version", targetVersion,
+			"--rust-sdk-version", target.RustSDKVersion,
+			"--rust-toolchain", target.RustVersion,
+			"--core-schema-digest", target.SchemaDigest,
+			"--dependency-kind", dependencyKind,
+			"--dependency-value", dependencyValue,
+		})
+	descriptorDigest, err := sealedCtr.Stdout(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("seal Rust SDK content: %w", err)
+	}
+	descriptorDigest = strings.TrimSpace(descriptorDigest)
+	if !isCanonicalDigest(descriptorDigest) {
+		return nil, fmt.Errorf("Rust SDK descriptor identity is absent or malformed")
+	}
+	sealedRoot := sealedCtr.Directory("/content")
+
+	sdkCtrTarball := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+		WithRootfs(sealedRoot).
+		AsTarball(dagger.ContainerAsTarballOpts{ForcedCompression: dagger.ImageLayerCompressionZstd})
+	sdkDir := unpackTar(sdkCtrTarball)
+	var index ocispecs.Index
+	indexContents, err := sdkDir.File("index.json").Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read Rust SDK OCI index: %w", err)
+	}
+	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
+		return nil, fmt.Errorf("decode Rust SDK OCI index: %w", err)
+	}
+	if len(index.Manifests) != 1 {
+		return nil, fmt.Errorf("Rust SDK OCI content must contain exactly one manifest")
+	}
+	return &sdkContent{
+		index:   index,
+		sdkDir:  sdkDir,
+		envName: distconsts.RustSDKManifestDigestEnvName,
+		extraEnv: map[string]string{
+			distconsts.RustSDKDescriptorDigestEnvName: descriptorDigest,
+		},
+	}, nil
+}
+
+func isCanonicalDigest(value string) bool {
+	algorithm, encoded, found := strings.Cut(value, ":")
+	if !found || algorithm != "sha256" || len(encoded) != 64 {
+		return false
+	}
+	for _, character := range encoded {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateDigestPinnedImage(reference string) error {
+	name, digest, found := strings.Cut(reference, "@sha256:")
+	if !found || name == "" || len(digest) != 64 {
+		return fmt.Errorf("image reference %q must include a complete sha256 digest", reference)
+	}
+	for _, character := range digest {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return fmt.Errorf("image reference %q has a non-canonical sha256 digest", reference)
+		}
+	}
+	return nil
+}
+
+func canonicalEngineRepository(repository string) string {
+	repository = strings.TrimSuffix(repository, ".git")
+	if strings.HasPrefix(repository, "github.com/") {
+		return "https://" + repository
+	}
+	return repository
 }
 
 type sdkContentF func(ctx context.Context) (*sdkContent, error)

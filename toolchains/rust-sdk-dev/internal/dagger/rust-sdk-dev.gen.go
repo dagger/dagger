@@ -17,6 +17,10 @@ type RustSDKDevOpts struct {
 	SourcePath string
 	// A docker config file with credentials to install on clients.
 	ClientDockerConfig *Secret
+	// Credential-free HTTPS repository that owns the engine source revision.
+	//
+	// Default: "https://github.com/dagger/dagger"
+	EngineRepository string
 }
 
 func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev (../../../../:0:0)
@@ -30,6 +34,10 @@ func (r *Query) RustSDKDev(workspace *Workspace, opts ...RustSDKDevOpts) *RustSD
 		// `clientDockerConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+		// `engineRepository` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineRepository) {
+			q = q.Arg("engineRepository", opts[i].EngineRepository)
 		}
 	}
 	q = q.Arg("workspace", workspace)
@@ -50,6 +58,7 @@ type RustSDKDev struct { // rust-sdk-dev (../../../../:0:0)
 	cargoFmt              *Void
 	completenessIntegrity *Void
 	coreConformance       *string
+	engineUnit            *Void
 	examples              *Void
 	generatedClientCheck  *Void
 	id                    *ID
@@ -219,6 +228,28 @@ func (r *RustSDKDev) DevContainer(opts ...RustSDKDevDevContainerOpts) *Container
 	}
 }
 
+// EngineContent builds the Rust SDK content once and returns its reusable graph object.
+func (r *RustSDKDev) EngineContent() *RustSDKDevRustEngineContent {
+	q := r.query.Select("engineContent")
+
+	return &RustSDKDevRustEngineContent{
+		query: q,
+	}
+}
+
+// Run the focused Rust engine-tool and adapter unit suite without constructing an engine.
+//
+// Tests are mounted only after dependency installation, so test-only edits do not invalidate the
+// compiler/toolchain and dependency layer shared by later engine-content checkpoints.
+func (r *RustSDKDev) EngineUnit(ctx context.Context) error {
+	if r.engineUnit != nil {
+		return nil
+	}
+	q := r.query.Select("engineUnit")
+
+	return q.Execute(ctx)
+}
+
 // Format and lint each standalone Rust SDK example.
 func (r *RustSDKDev) Examples(ctx context.Context) error {
 	if r.examples != nil {
@@ -362,4 +393,116 @@ func (r *RustSDKDev) WithGeneratedClient() *RustSDKDev {
 	return &RustSDKDev{
 		query: q,
 	}
+}
+
+// RustEngineContent retains one engine-dev content object with both identities
+// needed to prove the acyclic packaged-content boundary.
+type RustSDKDevRustEngineContent struct { // rust-sdk-dev (../../../../:0:0)
+	query *querybuilder.Selection
+
+	descriptorDigest *string
+	id               *ID
+	manifestDigest   *string
+	resolution       *string
+}
+
+func (r *RustSDKDevRustEngineContent) WithGraphQLQuery(q *querybuilder.Selection) *RustSDKDevRustEngineContent {
+	return &RustSDKDevRustEngineContent{
+		query: q,
+	}
+}
+
+func (r *RustSDKDevRustEngineContent) Content() *Directory {
+	q := r.query.Select("content")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+func (r *RustSDKDevRustEngineContent) DescriptorDigest(ctx context.Context) (string, error) {
+	if r.descriptorDigest != nil {
+		return *r.descriptorDigest, nil
+	}
+	q := r.query.Select("descriptorDigest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this RustSdkDevRustEngineContent.
+func (r *RustSDKDevRustEngineContent) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *RustSDKDevRustEngineContent) XXX_GraphQLType() string {
+	return "RustSdkDevRustEngineContent"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *RustSDKDevRustEngineContent) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *RustSDKDevRustEngineContent) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *RustSDKDevRustEngineContent) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *RustSDKDevRustEngineContent) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = RustSDKDevRustEngineContent{query: selectNode(dag.query, id, "RustSdkDevRustEngineContent")}
+	return nil
+}
+
+func (r *RustSDKDevRustEngineContent) ManifestDigest(ctx context.Context) (string, error) {
+	if r.manifestDigest != nil {
+		return *r.manifestDigest, nil
+	}
+	q := r.query.Select("manifestDigest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Resolution starts an exact-target engine from this object's content and exercises
+// the built-in loader and workspace install path without reconstructing that content.
+func (r *RustSDKDevRustEngineContent) Resolution(ctx context.Context) (string, error) {
+	if r.resolution != nil {
+		return *r.resolution, nil
+	}
+	q := r.query.Select("resolution")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }

@@ -17,6 +17,10 @@ const MAX_MESSAGE_BYTES: usize = 4 * 1024;
 pub enum EngineDiagnosticCode {
     /// The packaged engine descriptor is malformed or internally inconsistent.
     SdkManifestInvalid,
+    /// Packaged SDK content is incomplete, mutable, or has an invalid asset identity.
+    PackagedAssetInvalid,
+    /// A shipped dependency or asset is absent from the locked security audit inputs.
+    SecurityAuditIncomplete,
     /// Cargo could not locate the requested manifest.
     CargoManifestMissing,
     /// Cargo or the format-preserving editor rejected a manifest.

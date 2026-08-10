@@ -14,10 +14,11 @@ const (
 	PHP        = "php"
 	Elixir     = "elixir"
 	Java       = "java"
+	Rust       = "rust"
 )
 
 // Builtins lists every SDK runtime short name bundled in the engine.
-var Builtins = []string{Go, Dang, Python, Typescript, PHP, Elixir, Java}
+var Builtins = []string{Go, Dang, Python, Typescript, PHP, Elixir, Java, Rust}
 
 // InstallNamePrefix is prepended to the workspace install name of a known SDK
 // (e.g. "go" -> "dagger-go-sdk") to reduce the chance of colliding with an

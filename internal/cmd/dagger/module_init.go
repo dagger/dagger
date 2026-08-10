@@ -72,8 +72,14 @@ func sdkResolve(input string) (string, error) {
 // basename-derived behavior for third-party SDK refs. They also return an
 // empty SDK name so third-party refs can rely on the module entry name.
 func sdkResolveInstall(input string) (ref string, installName string, asSDKName string, _ error) {
+	if name, _, versioned := strings.Cut(input, "@"); name == sdkmeta.Rust && versioned {
+		return "", "", "", fmt.Errorf("the rust sdk does not currently support selecting a specific version")
+	}
 	if strings.ContainsAny(input, "/@") {
 		return input, "", "", nil
+	}
+	if input == sdkmeta.Rust {
+		return sdkmeta.Rust, sdkmeta.InstallNamePrefix + sdkmeta.Rust + "-sdk", sdkmeta.Rust, nil
 	}
 	entries, err := loadSDKRegistry()
 	if err != nil {

@@ -16,6 +16,8 @@ import (
 	"dagger/engine-dev/internal/dagger"
 )
 
+const defaultVCSRepository = "https://github.com/dagger/dagger"
+
 func New(
 	ctx context.Context,
 	ws *dagger.Workspace,
@@ -27,8 +29,14 @@ func New(
 	// to ensure they can access private registries
 	// +optional
 	clientDockerConfig *dagger.Secret,
+	// Credential-free HTTPS repository that owns the source revision.
+	// +default="https://github.com/dagger/dagger"
+	vcsRepository string,
 ) *EngineDev {
 	commit, dirty := vcsInfo(ctx, ws)
+	if vcsRepository == "" {
+		vcsRepository = defaultVCSRepository
+	}
 	return &EngineDev{
 		Ws: ws,
 		Source: ws.Directory("/", dagger.WorkspaceDirectoryOpts{
@@ -52,7 +60,7 @@ func New(
 				"!internal",
 				"!sdk",
 				"sdk/**/examples",
-				"!cmd",
+				"!LICENSE",
 				"!modules",
 				"!toolchains",
 				"!.changes",
@@ -60,6 +68,7 @@ func New(
 		}),
 		VCSCommit:          commit,
 		VCSDirty:           dirty,
+		VCSRepository:      canonicalEngineRepository(vcsRepository),
 		SubnetNumber:       subnetNumber,
 		ClientDockerConfig: clientDockerConfig,
 	}
@@ -91,8 +100,9 @@ type EngineDev struct {
 	// Resolved VCS info stamped into built engine/CLI binaries. Stored as
 	// scalars (not the source Workspace) so EngineDev's methods stay
 	// content-addressed and their build results survive an engine restart.
-	VCSCommit string // +private
-	VCSDirty  bool   // +private
+	VCSCommit     string // +private
+	VCSDirty      bool   // +private
+	VCSRepository string // +private
 
 	EngineConfig []string // +private
 	LogLevel     string   // +private
@@ -147,6 +157,7 @@ func (dev *EngineDev) WithGitSource(
 	// stamped into built artifacts; an absent object fails when the tree loads.
 	dev.VCSCommit = revision
 	dev.VCSDirty = false
+	dev.VCSRepository = canonicalEngineRepository(repository)
 	// Nested toolchains require an explicit workspace in module-runtime calls.
 	// Deriving it from the same immutable ref prevents ambient checkout state
 	// from entering the build while keeping those constructor calls valid.
@@ -203,6 +214,34 @@ func (dev *EngineDev) Container(
 	// +optional
 	version string,
 ) (*dagger.Container, error) {
+	return dev.container(ctx, platform, gpuSupport, version, nil)
+}
+
+// ContainerWithRustSDKContent builds the engine while reusing content produced by
+// RustSDKContent in the same top-level Dagger graph.
+func (dev *EngineDev) ContainerWithRustSDKContent(
+	ctx context.Context,
+	rustSDKContent *RustEngineContent,
+	// +optional
+	platform dagger.Platform,
+	// +optional
+	gpuSupport bool,
+	// +optional
+	version string,
+) (*dagger.Container, error) {
+	if rustSDKContent == nil {
+		return nil, fmt.Errorf("Rust SDK content is required")
+	}
+	return dev.container(ctx, platform, gpuSupport, version, rustSDKContent)
+}
+
+func (dev *EngineDev) container(
+	ctx context.Context,
+	platform dagger.Platform,
+	gpuSupport bool,
+	version string,
+	rustSDKContent *RustEngineContent,
+) (*dagger.Container, error) {
 	cfg, err := generateConfig(dev.LogLevel)
 	if err != nil {
 		return nil, err
@@ -216,11 +255,21 @@ func (dev *EngineDev) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, dev.Source, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
+	builder, err := build.NewBuilder(ctx, dev.Source, dev.VCSRepository, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
 	if err != nil {
 		return nil, err
 	}
 	builder = builder.WithRace(dev.Race)
+	if rustSDKContent != nil {
+		builder, err = builder.WithRustSDKContent(
+			rustSDKContent.Content,
+			rustSDKContent.ManifestDigest,
+			rustSDKContent.DescriptorDigest,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -255,6 +304,54 @@ func (dev *EngineDev) Container(
 	return ctr, nil
 }
 
+// RustEngineContent is one reusable OCI layout and its exact engine manifest identity.
+type RustEngineContent struct {
+	Content          *dagger.Directory
+	ManifestDigest   string
+	DescriptorDigest string
+}
+
+// RustSDKContent builds the Rust SDK integration once so focused engine cases can reuse
+// the same in-DAG content object instead of reconstructing its toolchain layer.
+func (dev *EngineDev) RustSDKContent(
+	ctx context.Context,
+	// +optional
+	platform dagger.Platform,
+	// +optional
+	version string,
+) (*RustEngineContent, error) {
+	builder, err := build.NewBuilder(ctx, dev.Source, dev.VCSRepository, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
+	if err != nil {
+		return nil, err
+	}
+	if platform != "" {
+		builder = builder.WithPlatform(platform)
+	}
+	content, err := builder.RustSDKContent(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &RustEngineContent{
+		Content:          content.Directory(),
+		ManifestDigest:   content.ManifestDigest(),
+		DescriptorDigest: content.DescriptorDigest(),
+	}, nil
+}
+
+func canonicalEngineRepository(repository string) string {
+	repository = strings.TrimSuffix(repository, ".git")
+	if path, found := strings.CutPrefix(repository, "git@github.com:"); found {
+		return "https://github.com/" + path
+	}
+	if path, found := strings.CutPrefix(repository, "ssh://git@github.com/"); found {
+		return "https://github.com/" + path
+	}
+	if strings.HasPrefix(repository, "github.com/") {
+		return "https://" + repository
+	}
+	return repository
+}
+
 // Create a test engine service
 func (dev *EngineDev) Service(
 	ctx context.Context,
@@ -266,6 +363,39 @@ func (dev *EngineDev) Service(
 	// +optional
 	metrics bool,
 	// +optional
+	version string,
+) (*dagger.Service, error) {
+	return dev.service(ctx, nil, name, gpuSupport, sharedCache, metrics, version)
+}
+
+// ServiceWithRustSDKContent starts an engine from one previously built Rust SDK
+// content object, preserving its manifest and descriptor identities unchanged.
+func (dev *EngineDev) ServiceWithRustSDKContent(
+	ctx context.Context,
+	rustSDKContent *RustEngineContent,
+	name string,
+	// +optional
+	gpuSupport bool,
+	// +optional
+	sharedCache bool,
+	// +optional
+	metrics bool,
+	// +optional
+	version string,
+) (*dagger.Service, error) {
+	if rustSDKContent == nil {
+		return nil, fmt.Errorf("Rust SDK content is required")
+	}
+	return dev.service(ctx, rustSDKContent, name, gpuSupport, sharedCache, metrics, version)
+}
+
+func (dev *EngineDev) service(
+	ctx context.Context,
+	rustSDKContent *RustEngineContent,
+	name string,
+	gpuSupport bool,
+	sharedCache bool,
+	metrics bool,
 	version string,
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
@@ -282,7 +412,7 @@ func (dev *EngineDev) Service(
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", gpuSupport, version)
+	devEngine, err := dev.container(ctx, "", gpuSupport, version, rustSDKContent)
 	if err != nil {
 		return nil, err
 	}

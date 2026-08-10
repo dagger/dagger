@@ -43,6 +43,13 @@ impl EngineSourceDescriptor {
                 }
             }
         }
+        if self.repository.as_str().ends_with(".git") {
+            return Err(EngineDiagnostic::new(
+                EngineDiagnosticCode::SdkManifestInvalid,
+                Some("descriptor.repository"),
+                "repository identity must omit the transport-only .git suffix",
+            ));
+        }
         Ok(())
     }
 }

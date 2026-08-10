@@ -22,6 +22,8 @@ const (
 	GoSDKManifestDigestEnvName         = "DAGGER_GO_SDK_MANIFEST_DIGEST"
 	PythonSDKManifestDigestEnvName     = "DAGGER_PYTHON_SDK_MANIFEST_DIGEST"
 	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
+	RustSDKManifestDigestEnvName       = "DAGGER_RUST_SDK_MANIFEST_DIGEST"
+	RustSDKDescriptorDigestEnvName     = "DAGGER_RUST_SDK_DESCRIPTOR_DIGEST"
 )
 
 const (

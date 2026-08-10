@@ -9,7 +9,12 @@ on:
       - ".github/dependabot.yml"
       - ".github/workflows/rust-sdk-security.yml"
       - "dagger.toml"
+      - "core/schema/workspace_install.go"
+      - "core/sdk/**"
+      - "engine/distconsts/consts.go"
+      - "internal/cmd/dagger/module_init.go"
       - "sdk/rust/**"
+      - "toolchains/engine-dev/**"
       - "toolchains/rust-sdk-dev/**"
   schedule:
     - cron: "17 6 * * 1"
@@ -52,10 +57,14 @@ jobs:
           cargo test -p dagger-sdk --test source_policy --all-features --locked
           cargo test -p dagger-bootstrap --test generation --locked
           cargo test -p dagger-codegen --test render --test projection --locked
+          cargo test -p dagger-sdk-engine --test packaging_properties --locked
           cargo test -p dagger-sdk --all-features --locked \
             public_error_rendering_is_redacted_while_sources_remain_inspectable
           cargo test -p dagger-sdk --all-features --locked \
             session_control_and_process_input_debug_never_render_credentials
+      - name: Check packaged runtime metadata boundary
+        working-directory: sdk/rust/runtime
+        run: go test ./internal/metadata
       - name: Verify the public SDK package
         run: |
           cargo package -p dagger-sdk --all-features --locked

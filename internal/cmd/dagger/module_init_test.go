@@ -149,6 +149,18 @@ func TestSDKResolveInstall(t *testing.T) {
 			wantAsSDKName:   "dang",
 		},
 		{
+			name:            "rust preserves the packaged builtin source",
+			input:           "rust",
+			wantRef:         "rust",
+			wantInstallName: "dagger-rust-sdk",
+			wantAsSDKName:   "rust",
+		},
+		{
+			name:    "versioned rust rejects before full ref fallback",
+			input:   "rust@v1.0.0-beta.10",
+			wantErr: "does not currently support selecting a specific version",
+		},
+		{
 			name:    "full ref keeps generic install naming",
 			input:   "github.com/acme/custom-go-sdk",
 			wantRef: "github.com/acme/custom-go-sdk",

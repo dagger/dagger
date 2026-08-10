@@ -16,6 +16,7 @@ const (
 	sdkPHP        sdk = sdkmeta.PHP
 	sdkElixir     sdk = sdkmeta.Elixir
 	sdkJava       sdk = sdkmeta.Java
+	sdkRust       sdk = sdkmeta.Rust
 )
 
 // The list of functions that may be implemented by a SDK module.

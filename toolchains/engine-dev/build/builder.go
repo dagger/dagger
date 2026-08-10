@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/containerd/platforms"
+	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 
@@ -28,8 +29,9 @@ type Builder struct {
 	// engine-dev as scalars. Storing the source Workspace here instead would
 	// taint the cache key of every build method and break disk-cache reuse
 	// across engine restarts.
-	vcsCommit string
-	vcsDirty  bool
+	vcsCommit     string
+	vcsDirty      bool
+	vcsRepository string
 
 	version string
 
@@ -40,25 +42,29 @@ type Builder struct {
 
 	race bool
 
+	rustSDKContent *sdkContent
+
 	ws *dagger.Workspace
 }
 
 func NewBuilder(
 	ctx context.Context,
 	source *dagger.Directory,
+	vcsRepository string,
 	version string,
 	vcsCommit string,
 	vcsDirty bool,
 	ws *dagger.Workspace,
 ) (*Builder, error) {
 	return &Builder{
-		source:       source,
-		vcsCommit:    vcsCommit,
-		vcsDirty:     vcsDirty,
-		platform:     dagger.Platform(platforms.DefaultString()),
-		platformSpec: platforms.DefaultSpec(),
-		version:      version,
-		ws:           ws,
+		source:        source,
+		vcsRepository: vcsRepository,
+		vcsCommit:     vcsCommit,
+		vcsDirty:      vcsDirty,
+		platform:      dagger.Platform(platforms.DefaultString()),
+		platformSpec:  platforms.DefaultSpec(),
+		version:       version,
+		ws:            ws,
 	}, nil
 }
 
@@ -81,10 +87,40 @@ func (build *Builder) WithGPUSupport() *Builder {
 	return &b
 }
 
+// WithRustSDKContent reuses a previously built OCI layout after validating both
+// identities which the engine will expose to the loader and operation adapter.
+func (build *Builder) WithRustSDKContent(
+	directory *dagger.Directory,
+	manifestDigest string,
+	descriptorDigest string,
+) (*Builder, error) {
+	if directory == nil || !isCanonicalDigest(manifestDigest) || !isCanonicalDigest(descriptorDigest) {
+		return nil, fmt.Errorf("reusable Rust SDK content requires canonical manifest and descriptor identities")
+	}
+	b := *build
+	b.rustSDKContent = &sdkContent{
+		index: ocispecs.Index{Manifests: []ocispecs.Descriptor{{
+			Digest: digest.Digest(manifestDigest),
+		}}},
+		sdkDir:  directory,
+		envName: distconsts.RustSDKManifestDigestEnvName,
+		extraEnv: map[string]string{
+			distconsts.RustSDKDescriptorDigestEnvName: descriptorDigest,
+		},
+	}
+	return &b, nil
+}
+
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
+	rustSDKContent := build.RustSDKContent
+	if build.rustSDKContent != nil {
+		rustSDKContent = func(context.Context) (*sdkContent, error) {
+			return build.rustSDKContent, nil
+		}
+	}
+	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent, rustSDKContent}
 	sdkContents := make([]*sdkContent, len(sdks))
 	for i, sdk := range sdks {
 		eg.Go(func() error {

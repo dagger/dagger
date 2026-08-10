@@ -268,8 +268,8 @@
     the initial tree unchanged, all child processes to be reaped, and no engine build to
     be required yet.
 
-- [ ] 8. Package the Rust integration and wire built-in engine resolution
-  - [ ] 8.1 Build acyclic, target-bound Rust SDK engine content
+- [x] 8. Package the Rust integration and wire built-in engine resolution
+  - [x] 8.1 Build acyclic, target-bound Rust SDK engine content
     - Add the Rust SDK content builder under `toolchains/engine-dev/build/sdk.go`; build
       `dagger-rust-engine` with Rust 1.97.1 from the locked workspace in a digest-pinned
       image and copy only the final executable into a fresh content root.
@@ -280,7 +280,7 @@
       in `engine-source.json`, then compute the complete OCI digest; bind OCI and
       descriptor digests separately to the engine image to avoid a hash cycle.
     - _Requirements: 2.5-2.8, 2.13, 2.14, 11.1-11.7_
-  - [ ] 8.2 Add the thin module-backed Go ABI adapter foundation
+  - [x] 8.2 Add the thin module-backed Go ABI adapter foundation
     - Add `sdk/rust/runtime` with generated Dagger bindings, required non-nil
       `sdkSourceDir`, immutable adapter state, descriptor/client-metadata access, and
       fixed private container paths.
@@ -292,7 +292,7 @@
       `moduleTypes` because runtime empty-call registration is the one selected
       strategy; expose `AsModule` through the ordinary module-backed SDK path.
     - _Requirements: 7.10-7.13, 7.16, 7.17_
-  - [ ] 8.3 Register Rust once in metadata, loader, distribution constants, and workspace mapping
+  - [x] 8.3 Register Rust once in metadata, loader, distribution constants, and workspace mapping
     - Add canonical `rust` metadata and the Rust manifest-digest environment constant;
       load bare Rust through `loadBuiltinSDK`, pass the complete packaged source to the
       adapter, and fail with provenance context for absent/malformed content.
@@ -304,7 +304,7 @@
       collision behavior, and rely on the running engine descriptor rather than adding
       a workspace provenance field.
     - _Requirements: 2.1-2.14, 3.1-3.3_
-  - [ ] 8.4 Derive the complete packaged/security audit graph
+  - [x] 8.4 Derive the complete packaged/security audit graph
     - Traverse publishable SDK, generator, engine tool, Go runtime adapter, packaged
       binaries, asset metadata, toolchain image, and dependency roots; require every
       reachable Rust subject in the locked cargo-deny and repository security inputs.
@@ -312,7 +312,7 @@
       crates remain unpublished build inputs, and that a fork engine's immutable Git
       descriptor is preserved without a local checkout dependency.
     - _Requirements: 11.1-11.12, 11.24, 13.34, 13.37_
-  - [ ] 8.5 Property test: Property 2 — deterministic Rust SDK resolution
+  - [x] 8.5 Property test: Property 2 — deterministic Rust SDK resolution
     - Use Rust `proptest` to generate at least 256 bare, versioned, immutable external,
       mutable external, unknown, and ambiguous loader registries and canonical replay
       cases; execute those cases through focused Go loader model tests and compare the
@@ -320,33 +320,33 @@
       model.
     - Test identifier: `property_02_deterministic_rust_sdk_resolution`.
     - _Requirements: 2.1-2.4, 2.9-2.12_
-  - [ ] 8.6 Property test: Property 3 — engine source provenance is complete and target-bound
+  - [x] 8.6 Property test: Property 3 — engine source provenance is complete and target-bound
     - Generate at least 256 descriptor/build/asset/target mutations; require complete
       compatible coordinates, digest sensitivity, acyclic asset closure, and rejection
       before SDK exposure for every absent or mismatched coordinate.
     - Test identifier: `property_03_engine_source_provenance_complete_target_bound`.
     - _Requirements: 2.5-2.8, 2.13, 2.14, 11.1-11.5_
-  - [ ] 8.7 Property test: Property 4 — workspace installation is collision-safe and reversible
+  - [x] 8.7 Property test: Property 4 — workspace installation is collision-safe and reversible
     - Use Rust `proptest` to generate at least 256 workspace SDK maps and install/
       reinstall/uninstall sequences as canonical replay cases; run the corresponding Go
       workspace model tests and compare the canonical Rust entry, no-op behavior,
       collision rejection, and ownership-only removal to an independent state machine.
     - Test identifier: `property_04_workspace_installation_collision_safe_reversible`.
     - _Requirements: 3.1-3.3, 3.14, 3.15_
-  - [ ] 8.8 Property test: Property 23 — packaged assets and public dependencies form a closed graph
+  - [x] 8.8 Property test: Property 23 — packaged assets and public dependencies form a closed graph
     - Generate at least 256 asset/dependency/publication graphs; require every runtime
       payload beneath the content digest, exactly one publishable crate, no private or
       checkout dependency in generated projects, and exact fork/canonical descriptors.
     - Test identifier: `property_23_packaged_assets_public_dependencies_closed_graph`.
     - _Requirements: 11.1-11.12_
-  - [ ] 8.9 Property test: Property 25 — security audit roots cover the shipped graph
+  - [x] 8.9 Property test: Property 25 — security audit roots cover the shipped graph
     - Generate at least 256 dependency and packaged-asset graphs with reachable,
       unreachable, duplicate, and omitted subjects; compare derived audit roots to an
       independent graph traversal and reject every missing locked security input.
     - Test identifier: `property_25_security_audit_roots_cover_shipped_graph`.
     - _Requirements: 11.24, 13.34, 13.37_
 
-- [ ] 9. Checkpoint: built-in resolution and reusable engine content are green
+- [x] 9. Checkpoint: built-in resolution and reusable engine content are green
   - Run formatting, locked Rust workspace tests, Properties 2-4/23/25, focused changed
     Go package tests, warning-denied clippy/rustdoc, cargo-deny, repository Rust security
     checks, `rust-sdk-dev engine-unit`, and `rust-sdk-dev engine-content`.

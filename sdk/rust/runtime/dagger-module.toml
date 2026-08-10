@@ -1,0 +1,8 @@
+name = "rust-sdk"
+engineVersion = "v1.0.0-beta.10"
+
+[runtime]
+  source = "go"
+
+[codegen]
+  automaticGitignore = false

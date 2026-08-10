@@ -15,6 +15,7 @@ require (
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/dagger/dagger/sdk/typescript/runtime v0.0.0-00010101000000-000000000000
 	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
+	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golang.org/x/mod v0.37.0
@@ -38,7 +39,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
-	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.33

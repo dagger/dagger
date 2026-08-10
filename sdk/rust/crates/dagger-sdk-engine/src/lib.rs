@@ -13,6 +13,7 @@ pub mod descriptor;
 pub mod diagnostic;
 pub mod initialization;
 pub mod model;
+pub mod packaging;
 pub mod post_work;
 pub mod project;
 pub mod publication;
@@ -25,5 +26,10 @@ pub use canonical::{
 };
 pub use diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 pub use model::*;
+pub use packaging::{
+    DESCRIPTOR_PATH, PACKAGED_ASSET_MANIFEST_PATH, PackageIdentity, SecurityAuditGraph,
+    SecuritySubject, SecuritySubjectKind, build_packaged_content, derive_shipped_audit_graph,
+    validate_packaged_distribution, validate_packaged_source,
+};
 pub use root::OperationRoot;
 pub use scalar::*;

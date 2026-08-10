@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	coresdk "github.com/dagger/dagger/core/sdk"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -128,6 +130,13 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return src, "", fmt.Errorf("dagql server: %w", err)
+	}
+	if ref == sdkmeta.Rust {
+		src, err := coresdk.LoadBuiltinSDKModuleSource(ctx, srv, ref)
+		if err != nil {
+			return src, "", err
+		}
+		return src, sdkmeta.Rust, nil
 	}
 
 	kind := core.FastModuleSourceKindCheck(ref, "")

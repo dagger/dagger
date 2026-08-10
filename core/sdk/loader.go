@@ -142,6 +142,15 @@ func (l *Loader) namedSDK(
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+	case sdkRust:
+		manifestDigest, err := rustSDKManifestDigest()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := rustSDKDescriptorDigest(); err != nil {
+			return nil, err
+		}
+		return l.loadBuiltinSDK(ctx, root, sdk, manifestDigest)
 	case sdkJava, sdkPHP, sdkElixir:
 		sdkMod, ok := workspaceModuleForBuiltinSDK(sdkNamedParsed, sdkSuffix)
 		if !ok {
@@ -273,7 +282,7 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	}
 
 	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
-	if slices.Contains([]sdk{sdkGo, sdkDang, sdkPython, sdkTypescript}, sdk(sdkNameParsed)) && hasVersion {
+	if slices.Contains([]sdk{sdkGo, sdkDang, sdkPython, sdkTypescript, sdkRust}, sdk(sdkNameParsed)) && hasVersion {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 
@@ -288,6 +297,22 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	}
 
 	return sdk(sdkNameParsed), sdkSuffix, nil
+}
+
+func rustSDKManifestDigest() (digest.Digest, error) {
+	manifestDigest := digest.Digest(os.Getenv(distconsts.RustSDKManifestDigestEnvName))
+	if err := manifestDigest.Validate(); err != nil {
+		return "", fmt.Errorf("rust SDK provenance: packaged manifest digest is absent or malformed: %w", err)
+	}
+	return manifestDigest, nil
+}
+
+func rustSDKDescriptorDigest() (digest.Digest, error) {
+	descriptorDigest := digest.Digest(os.Getenv(distconsts.RustSDKDescriptorDigestEnvName))
+	if err := descriptorDigest.Validate(); err != nil {
+		return "", fmt.Errorf("rust SDK provenance: packaged descriptor digest is absent or malformed: %w", err)
+	}
+	return descriptorDigest, nil
 }
 
 // IsBuiltinSDKName reports whether source names a built-in SDK/runtime bundled

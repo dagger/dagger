@@ -1,8 +1,8 @@
 //! Closed command-line boundary for private operation execution.
 //!
-//! Production exposes one fixed `execute` shape. Inputs are bounded regular files and
-//! strict canonical documents; there is no generic executable, argument, environment,
-//! renderer, or descriptor override hidden behind another flag.
+//! Production exposes fixed operation and build-time packaging shapes. Inputs are
+//! bounded typed values or strict canonical documents; there is no generic executable,
+//! argument, environment, renderer, or descriptor override hidden behind another flag.
 
 use std::ffi::OsString;
 use std::fs;
@@ -10,10 +10,16 @@ use std::path::{Path, PathBuf};
 
 use clap::{Arg, Command};
 
+use crate::DigestDomain;
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::post_work::Cancellation;
 use crate::runner::execute_operation;
-use crate::{EngineSourceDescriptor, OperationRequest, OperationRoot, decode_canonical};
+use crate::{
+    CanonicalRegistry, CanonicalRepositoryUrl, EngineSourceDescriptor, ExactRustToolchain,
+    ExactVersion, FullRevision, OperationRequest, OperationRoot, PackageIdentity,
+    PublishedSdkDependency, SdkPackageName, Sha256Digest, build_packaged_content, canonical_digest,
+    decode_canonical,
+};
 
 const MAX_CONTROL_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -30,6 +36,9 @@ where
             "command line does not match the fixed private operation interface",
         )
     })?;
+    if let Some(package) = matches.subcommand_matches("package-content") {
+        return package_content(package);
+    }
     let Some(execute) = matches.subcommand_matches("execute") else {
         return Ok(());
     };
@@ -74,6 +83,81 @@ pub fn command() -> Command {
                 .arg(required("descriptor"))
                 .arg(required("project")),
         )
+        .subcommand(
+            Command::new("package-content")
+                .about("Seal one Rust SDK content root with canonical provenance")
+                .arg(required("root"))
+                .arg(required("repository"))
+                .arg(required("dagger-revision"))
+                .arg(required("engine-version"))
+                .arg(required("rust-sdk-version"))
+                .arg(required("rust-toolchain"))
+                .arg(required("core-schema-digest"))
+                .arg(required("dependency-kind"))
+                .arg(required("dependency-value")),
+        )
+}
+
+fn package_content(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
+    let root = required_path(matches, "root")?;
+    let repository = scalar::<CanonicalRepositoryUrl>(matches, "repository")?;
+    let dagger_revision = scalar::<FullRevision>(matches, "dagger-revision")?;
+    let engine_version = scalar::<ExactVersion>(matches, "engine-version")?;
+    let rust_sdk_version = scalar::<ExactVersion>(matches, "rust-sdk-version")?;
+    let rust_toolchain = scalar::<ExactRustToolchain>(matches, "rust-toolchain")?;
+    let core_schema_digest = scalar::<Sha256Digest>(matches, "core-schema-digest")?;
+    let dependency_value = required_value(matches, "dependency-value")?;
+    let sdk_dependency = match required_value(matches, "dependency-kind")?.as_str() {
+        "registry" => PublishedSdkDependency::Registry {
+            registry: CanonicalRegistry::new("crates-io".to_owned())
+                .expect("the canonical registry constant is valid"),
+            package: SdkPackageName::new("dagger-sdk".to_owned())
+                .expect("the public SDK package constant is valid"),
+            exact_version: dependency_value.parse().map_err(|_| {
+                invalid(
+                    "dependency-value",
+                    "registry dependency must be an exact semantic version",
+                )
+            })?,
+        },
+        "git" => PublishedSdkDependency::Git {
+            url: repository.clone(),
+            revision: dependency_value.parse().map_err(|_| {
+                invalid(
+                    "dependency-value",
+                    "Git dependency must be a full immutable revision",
+                )
+            })?,
+            package: SdkPackageName::new("dagger-sdk".to_owned())
+                .expect("the public SDK package constant is valid"),
+        },
+        _ => {
+            return Err(invalid(
+                "dependency-kind",
+                "dependency kind must be registry or git",
+            ));
+        }
+    };
+    let (_, descriptor) = build_packaged_content(
+        &root,
+        PackageIdentity {
+            repository,
+            dagger_revision,
+            engine_version,
+            rust_sdk_version,
+            rust_toolchain,
+            sdk_dependency,
+            core_schema_digest,
+        },
+    )?;
+    let digest = canonical_digest(DigestDomain::EngineSource, &descriptor).map_err(|_| {
+        invalid(
+            "descriptor",
+            "engine source descriptor identity could not be computed",
+        )
+    })?;
+    println!("{digest}");
+    Ok(())
 }
 
 /// Serializes one bounded structured diagnostic for private stderr.
@@ -100,6 +184,28 @@ fn required_path(
         .get_one::<String>(name)
         .map(PathBuf::from)
         .ok_or_else(|| invalid("cli", "required fixed path argument is missing"))
+}
+
+fn required_value(
+    matches: &clap::ArgMatches,
+    name: &'static str,
+) -> Result<String, EngineDiagnostic> {
+    matches
+        .get_one::<String>(name)
+        .cloned()
+        .ok_or_else(|| invalid("cli", "required fixed value argument is missing"))
+}
+
+fn scalar<T>(matches: &clap::ArgMatches, name: &'static str) -> Result<T, EngineDiagnostic>
+where
+    T: std::str::FromStr,
+{
+    required_value(matches, name)?.parse().map_err(|_| {
+        invalid(
+            name,
+            "value does not satisfy the packaged identity contract",
+        )
+    })
 }
 
 fn read_control(path: &Path, coordinate: &str) -> Result<Vec<u8>, EngineDiagnostic> {

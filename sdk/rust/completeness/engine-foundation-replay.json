@@ -1,0 +1,58 @@
+{
+  "format_version": 1,
+  "resolution_cases": [
+    {
+      "kind": "bare-rust",
+      "source": "rust"
+    },
+    {
+      "kind": "versioned-rust",
+      "source": "rust@v1.0.0-beta.10"
+    },
+    {
+      "kind": "immutable-external",
+      "source": "github.com/acme/rust-sdk@0123456789abcdef0123456789abcdef01234567"
+    },
+    {
+      "kind": "mutable-external",
+      "source": "github.com/acme/rust-sdk@main"
+    },
+    {
+      "kind": "unknown",
+      "source": "acme-rust"
+    },
+    {
+      "kind": "ambiguous-registry",
+      "source": "rust"
+    }
+  ],
+  "workspace_sequences": [
+    [
+      "install",
+      "reinstall",
+      "uninstall"
+    ],
+    [
+      "install",
+      "reinstall",
+      "reinstall"
+    ],
+    [
+      "foreign-install",
+      "install"
+    ],
+    [
+      "install",
+      "foreign-install"
+    ],
+    [
+      "uninstall",
+      "install"
+    ],
+    [
+      "install",
+      "uninstall",
+      "uninstall"
+    ]
+  ]
+}

@@ -43,6 +43,30 @@ func TestEngineUnitGeneratedAdapterIsWired(t *testing.T) {
 	}
 }
 
+func TestReusableEngineContentBoundaryIsGenerated(t *testing.T) {
+	t.Parallel()
+
+	source := parseGoFile(t, "../../main.go")
+	engineContent := findFunction(t, source, "EngineContent")
+	if got := selectorCount(engineContent, "DaggerEngine"); got != 1 {
+		t.Fatalf("EngineContent must construct exactly one engine-dev graph, got %d", got)
+	}
+	resolution := findFunction(t, source, "Resolution")
+	if got := selectorCount(resolution, "RustSdkcontent"); got != 0 {
+		t.Fatalf("Resolution must reuse the retained content object, got %d rebuilds", got)
+	}
+
+	generated := parseGoFile(t, "../../dagger.gen.go")
+	for _, function := range []string{"EngineContent", "Resolution"} {
+		if got := selectorCount(generated, function); got != 1 {
+			t.Fatalf("generated adapter must dispatch %s exactly once, got %d", function, got)
+		}
+		if got := stringLiteralCount(generated, function); got != 2 {
+			t.Fatalf("generated adapter must expose and dispatch %s, got %d registrations", function, got)
+		}
+	}
+}
+
 func parseGoFile(t *testing.T, path string) *ast.File {
 	t.Helper()
 
