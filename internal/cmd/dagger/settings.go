@@ -174,15 +174,13 @@ func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, su
 			creates := false
 			if envWrite {
 				key = workspaceEnvSettingConfigKey(workspaceEnv, setting.Module, setting.Key)
-				// Only the suppressed retry can be creating the env: the first
-				// phase loaded with the env applied, so reaching here means it
-				// exists. --here still needs the check, since it can target a
-				// directory with no config of its own, where any env is new.
-				if suppressEnv || workspaceHere {
-					creates, target, err = workspaceEnvWriteCreates(ctx, state.Workspace, workspaceEnv, workspaceHere)
-					if err != nil {
-						return err
-					}
+				// Always check, even when the first phase loaded with the env
+				// applied: the env may exist only in the user-level overlay,
+				// in which case this write still creates the repo-side env
+				// section and should say so.
+				creates, target, err = workspaceEnvWriteCreates(ctx, state.Workspace, workspaceEnv, workspaceHere)
+				if err != nil {
+					return err
 				}
 			}
 			if err := target.

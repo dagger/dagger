@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -366,11 +365,36 @@ func workspaceEnvWriteCreates(ctx context.Context, ws *dagger.Workspace, name st
 			return true, staged, nil
 		}
 	}
-	names, err := ws.EnvList(ctx)
+	// Probe the repository config file itself: every read through the API is
+	// user-overlay-effective, and an env defined only in the user-level
+	// config must not suppress the notice for the repo-side env section this
+	// write creates. Env-scoped writes are host-local by definition, so the
+	// selected config file is readable directly.
+	configFile, err := ws.ConfigFile(ctx)
 	if err != nil {
 		return false, nil, err
 	}
-	return !slices.Contains(names, name), staged, nil
+	if configFile == "" {
+		// No repo config at all yet; the write creates it and the env.
+		return true, staged, nil
+	}
+	configPath, err := workspaceConfigHostPath(ctx, ws)
+	if err != nil {
+		return false, nil, err
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, staged, nil
+		}
+		return false, nil, err
+	}
+	cfg, err := workspacepkg.ParseConfig(data)
+	if err != nil {
+		return false, nil, err
+	}
+	_, defined := cfg.Env[name]
+	return !defined, staged, nil
 }
 
 func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {
