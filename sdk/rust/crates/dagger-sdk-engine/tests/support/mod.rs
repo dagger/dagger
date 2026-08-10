@@ -4,6 +4,8 @@
 //! keeps future properties on the same valid construction path while allowing them to
 //! mutate a single contract boundary after generation.
 
+#![allow(dead_code)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use dagger_sdk_engine::*;
@@ -46,6 +48,11 @@ pub fn model_corpus() -> impl Strategy<Value = ModelCorpus> {
         .prop_map(|(seed, use_registry, operation, content)| {
             build_corpus(seed, use_registry, operation, content)
         })
+}
+
+/// Builds one deterministic valid corpus for filesystem and identity properties.
+pub fn fixed_model_corpus(seed: u8, use_registry: bool, operation: u8) -> ModelCorpus {
+    build_corpus(seed, use_registry, operation, vec![seed])
 }
 
 fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -> ModelCorpus {
@@ -118,7 +125,7 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
     };
     let mut rust_files = BTreeSet::new();
     rust_files.insert(source_path.clone());
-    let post_work = PostWorkPlan::Rustfmt {
+    let post_work = PostWorkPlan::FormatRust {
         toolchain: value("1.97.1"),
         files: rust_files,
     };

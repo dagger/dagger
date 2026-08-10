@@ -137,8 +137,8 @@
     Feature 4 exact-target generation/check to remain byte-clean, and no pure crate to
     acquire an I/O or public-runtime dependency.
 
-- [ ] 5. Implement immutable dependency policy and Cargo project adoption
-  - [ ] 5.1 Validate engine source and published SDK dependency descriptors
+- [x] 5. Implement immutable dependency policy and Cargo project adoption
+  - [x] 5.1 Validate engine source and published SDK dependency descriptors
     - Decode strict engine repository/revision, engine/Rust SDK version, toolchain,
       schema, asset-manifest, and dependency coordinates; accept only exact registry
       `dagger-sdk` versions or HTTPS Git URLs with a full immutable revision.
@@ -146,7 +146,7 @@
       wrong package, incomplete provenance, and target mismatch before planning project
       changes.
     - _Requirements: 2.5-2.8, 2.13, 2.14, 4.6-4.10, 11.8-11.12_
-  - [ ] 5.2 Discover Cargo workspaces and packages through versioned metadata
+  - [x] 5.2 Discover Cargo workspaces and packages through versioned metadata
     - Run only the pinned `cargo metadata --format-version 1 --no-deps
       --manifest-path <candidate>` shape with cancellation, bounded output, and a
       narrow unknown-field-tolerant serde view.
@@ -157,7 +157,7 @@
       `RuntimeCargoProject` only after lockfile, exact toolchain, generated manifest,
       and engine-selected binary verification.
     - _Requirements: 4.1-4.5, 8.14-8.17_
-  - [ ] 5.3 Plan format-preserving Cargo manifest and exact toolchain amendments
+  - [x] 5.3 Plan format-preserving Cargo manifest and exact toolchain amendments
     - Use `toml_edit` to create a new edition-2024/MSRV package or semantically amend
       only the owning `dagger-sdk` dependency and generated `dagger-module` binary
       target in an existing package/workspace.
@@ -168,7 +168,7 @@
       default Rust 1.97.1; diagnose below-MSRV, moving, ambiguous, or unresolvable
       toolchains without rewriting caller policy.
     - _Requirements: 4.2, 4.6-4.12, 8.10-8.13, 11.8-11.12_
-  - [ ] 5.4 Plan narrow VCS and authored-file changes
+  - [x] 5.4 Plan narrow VCS and authored-file changes
     - Add line-preserving `.gitignore`/`.gitattributes` edits for only missing generated
       and ignored paths, retain every unrelated byte, and document the regeneration
       command for each owned generated artifact.
@@ -176,13 +176,13 @@
       authored Rust source to a renderer or formatter and never infer ownership from a
       filename/header/directory.
     - _Requirements: 4.13-4.16, 4.19, 4.20_
-  - [ ] 5.5 Property test: Property 7 — Cargo package selection has exactly-one semantics
+  - [x] 5.5 Property test: Property 7 — Cargo package selection has exactly-one semantics
     - Generate at least 256 Cargo metadata/workspace graphs, nested source paths,
       manifest hints, orderings, and zero/multiple match cases; compare to an
       independent normalized ownership model.
     - Test identifier: `property_07_cargo_package_selection_exactly_one`.
     - _Requirements: 4.1-4.5_
-  - [ ] 5.6 Property test: Property 8 — Cargo adoption preserves caller policy
+  - [x] 5.6 Property test: Property 8 — Cargo adoption preserves caller policy
     - Generate at least 256 compatible/incompatible manifests, workspace inheritance
       layouts, dependency forms, comments/decorations, editions, Rust versions, and
       toolchain declarations; require only approved semantic edits and exact immutable
@@ -190,8 +190,8 @@
     - Test identifier: `property_08_cargo_adoption_preserves_caller_policy`.
     - _Requirements: 4.2, 4.6-4.12, 11.8-11.12_
 
-- [ ] 6. Implement confined execution, post-work, ownership, and atomic publication
-  - [ ] 6.1 Add lexical and symlink-aware operation-root capabilities
+- [x] 6. Implement confined execution, post-work, ownership, and atomic publication
+  - [x] 6.1 Add lexical and symlink-aware operation-root capabilities
     - Implement canonical relative-path parsing separately from the private
       `OperationRoot` filesystem capability; reject absolute paths, empty-forbidden
       paths, dot/dot-dot, separator aliases, case-fold collisions, non-regular inputs,
@@ -200,7 +200,7 @@
       absolute/container paths out of canonical request, manifest, provenance, and
       diagnostic subjects.
     - _Requirements: 3.6, 3.7, 5.13-5.15, 7.4, 7.6, 7.7, 12.9_
-  - [ ] 6.2 Implement new/existing project initialization planning
+  - [x] 6.2 Implement new/existing project initialization planning
     - Compose Cargo, toolchain, starter source, initialization VCS, and lockfile plans
       into one SDK-owned candidate confined to the engine-selected module path; do not
       run or embed the generated renderer in the initialization Changeset.
@@ -208,7 +208,7 @@
       workspace/module bytes, leave the later scoped generation decision to the engine,
       and return no Changeset-capable result until dependency resolution succeeds.
     - _Requirements: 3.4-3.10, 3.13, 4.1-4.20_
-  - [ ] 6.3 Add the closed, bounded post-work executor
+  - [x] 6.3 Add the closed, bounded post-work executor
     - Implement only `FormatRust`, `GenerateLockfile`, and `VerifyLockedMetadata` with
       runner-authored argument vectors, fixed executable paths, allowlisted environment,
       secret mounts, cancellation/reaping, bounded redacted output, and no shell.
@@ -216,7 +216,7 @@
       require the second to converge, and diagnose any third candidate without
       publication.
     - _Requirements: 4.17, 4.18, 6.8-6.12, 12.13-12.15_
-  - [ ] 6.4 Add manifest-authorized ownership and failure-atomic publication
+  - [x] 6.4 Add manifest-authorized ownership and failure-atomic publication
     - Validate every prior owned path and current digest; compute the complete sorted
       add/change/remove set; reject unknown content, stale/incompatible manifests,
       generator-looking but unowned files, traversal, and symlink/path collisions.
@@ -226,7 +226,7 @@
     - Keep the operation manifest outside its own artifact map while recording target,
       mode, all semantic inputs, owned paths/digests, post-work, and generator identity.
     - _Requirements: 4.15-4.18, 5.16, 6.10, 6.13-6.17, 9.5, 9.8, 9.11, 12.11_
-  - [ ] 6.5 Add the closed operation CLI and stable private diagnostics
+  - [x] 6.5 Add the closed operation CLI and stable private diagnostics
     - Implement `dagger-rust-engine execute` with fixed request/schema/descriptor/project
       inputs, strict decoding, operation-specific validation, bounded sorted stderr,
       stable diagnostic codes, and no generic executable/argument or hidden production
@@ -235,32 +235,32 @@
       identify only stable operation/path coordinates; redact credentials, headers,
       environment secrets, session data, and response/source contents.
     - _Requirements: 6.1, 6.2, 6.16, 12.1-12.9, 12.13-12.16_
-  - [ ] 6.6 Property test: Property 9 — authored and generated ownership never cross
+  - [x] 6.6 Property test: Property 9 — authored and generated ownership never cross
     - Generate at least 256 authored trees, compatible/stale prior manifests, unknown
       collisions, generated sets, and VCS files; compare admitted replacements and
       narrow edits to a manifest-only ownership reference model.
     - Test identifier: `property_09_authored_generated_ownership_never_cross`.
     - _Requirements: 4.13-4.16, 4.19, 4.20, 9.5_
-  - [ ] 6.7 Property test: Property 11 — operation identities are complete and path-confined
+  - [x] 6.7 Property test: Property 11 — operation identities are complete and path-confined
     - Run at least 128 generated lexical/symlink filesystem trees and at least 256
       identity mutations; require exact identity retention/digest sensitivity and zero
       access outside the operation root for every rejected path.
     - Test identifier: `property_11_operation_identities_complete_path_confined`.
     - _Requirements: 5.8-5.16, 7.4, 7.6, 7.7, 13.20, 13.21_
-  - [ ] 6.8 Property test: Property 13 — post-work is closed, bounded, and convergent
+  - [x] 6.8 Property test: Property 13 — post-work is closed, bounded, and convergent
     - Generate at least 128 allowlisted/rejected post-work plans, argument mutations,
       output changes, failure points, and projection sequences; compare process events
       and fixed-point behavior to the closed two-pass model.
     - Test identifier: `property_13_post_work_closed_bounded_convergent`.
     - _Requirements: 6.8-6.12_
-  - [ ] 6.9 Property test: Property 14 — generation is deterministic and failure-atomic
+  - [x] 6.9 Property test: Property 14 — generation is deterministic and failure-atomic
     - Inject at least 128 generated renderer, enumeration, format, post-work, manifest,
       flush, rename, removal, and rollback schedules; require identical successful
       candidates and byte-identical prior trees after every rejected run.
     - Test identifier: `property_14_generation_deterministic_failure_atomic`.
     - _Requirements: 6.13-6.17, 6.19, 12.11, 12.15_
 
-- [ ] 7. Checkpoint: Cargo adoption and the private operation runner are green
+- [x] 7. Checkpoint: Cargo adoption and the private operation runner are green
   - Run formatting, locked engine-tool/codegen tests, Properties 7-9 and 11-14,
     metadata/TOML/VCS/diagnostic fixtures, cancellation and publication fault tests,
     warning-denied clippy/rustdoc, cargo-deny, and `rust-sdk-dev engine-unit`.

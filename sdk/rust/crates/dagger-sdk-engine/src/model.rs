@@ -168,19 +168,19 @@ pub enum ProjectionPassLimit {
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum PostWorkPlan {
     /// Format exactly the generator-owned Rust source set.
-    Rustfmt {
+    FormatRust {
         /// Exact selected toolchain.
         toolchain: ExactRustToolchain,
         /// Canonically ordered owned source paths.
         files: BTreeSet<RelativeOperationPath>,
     },
     /// Generate a lockfile for one engine-selected manifest.
-    CargoGenerateLockfile {
+    GenerateLockfile {
         /// Manifest selected by project discovery.
         manifest_path: RelativeOperationPath,
     },
     /// Verify one locked Cargo project through versioned metadata.
-    CargoMetadata {
+    VerifyLockedMetadata {
         /// Manifest selected by project discovery.
         manifest_path: RelativeOperationPath,
     },
