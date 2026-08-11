@@ -223,6 +223,10 @@ func addFlags(app *cli.App) {
 			Usage: "address range to use for networked containers",
 			Value: network.DefaultCIDR,
 		},
+		cli.StringFlag{
+			Name:  "network-cidr6",
+			Usage: "optional IPv6 address range to additionally assign to networked containers (dual-stack); empty disables IPv6",
+		},
 		cli.StringSliceFlag{
 			Name:  "oci-worker-labels",
 			Usage: "user-specific annotation labels (com.example.foo=bar)",
@@ -365,6 +369,7 @@ func main() { //nolint:gocyclo
 		netConf, err := setupNetwork(networkContext,
 			c.GlobalString("network-name"),
 			c.GlobalString("network-cidr"),
+			c.GlobalString("network-cidr6"),
 		)
 		if err != nil {
 			return err
@@ -914,11 +919,16 @@ func attrMap(sl []string) (map[string]string, error) {
 type networkConfig struct {
 	NetName       string
 	NetCIDR       string
+	NetCIDR6      string
 	Bridge        net.IP
 	CNIConfigPath string
 }
 
-func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig, error) {
+// setupNetwork configures the engine's container network. netCIDR6 is
+// optional: when set, containers additionally receive an address from it,
+// making the bridge dual-stack. The bridge address handed to resolv.conf
+// stays IPv4 so DNS is reachable either way.
+func setupNetwork(ctx context.Context, netName, netCIDR, netCIDR6 string) (*networkConfig, error) {
 	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("bridge from cidr: %w", err)
@@ -940,7 +950,7 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
-	cniConfigPath, err := netinst.InstallCNIConfig(ctx, netName, netCIDR)
+	cniConfigPath, err := netinst.InstallCNIConfig(ctx, netName, netCIDR, netCIDR6)
 	if err != nil {
 		return nil, fmt.Errorf("install cni: %w", err)
 	}
@@ -948,6 +958,7 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 	return &networkConfig{
 		NetName:       netName,
 		NetCIDR:       netCIDR,
+		NetCIDR6:      netCIDR6,
 		Bridge:        bridge,
 		CNIConfigPath: cniConfigPath,
 	}, nil

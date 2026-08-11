@@ -14,8 +14,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func InstallCNIConfig(ctx context.Context, name, subnet string) (string, error) {
-	cni, err := cniConfig(ctx, name, subnet)
+// InstallCNIConfig writes the engine's generated CNI config. subnets is
+// ordered; each entry becomes its own IPAM range set, so passing an IPv6
+// range alongside the IPv4 one yields a dual-stack bridge.
+func InstallCNIConfig(ctx context.Context, name string, subnets ...string) (string, error) {
+	cni, err := cniConfig(ctx, name, subnets...)
 	if err != nil {
 		return "", err
 	}
@@ -44,7 +47,15 @@ func detectIPMasqBackend() string {
 	return "iptables"
 }
 
-func cniConfig(ctx context.Context, name, subnet string) ([]byte, error) {
+func cniConfig(ctx context.Context, name string, subnets ...string) ([]byte, error) {
+	ranges := make([]any, 0, len(subnets))
+	for _, subnet := range subnets {
+		if subnet == "" {
+			continue
+		}
+		ranges = append(ranges, []any{map[string]any{"subnet": subnet}})
+	}
+
 	bridgePlugin := map[string]any{
 		"type":             "bridge",
 		"bridge":           name + "0",
@@ -52,10 +63,8 @@ func cniConfig(ctx context.Context, name, subnet string) ([]byte, error) {
 		"ipMasq":           true,
 		"hairpinMode":      true,
 		"ipam": map[string]any{
-			"type": "host-local",
-			"ranges": []any{
-				[]any{map[string]any{"subnet": subnet}},
-			},
+			"type":   "host-local",
+			"ranges": ranges,
 		},
 	}
 
