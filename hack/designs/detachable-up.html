@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detachable dagger up</title>
+<style>
+:root{color-scheme:light dark;--bg:#fbfaf7;--fg:#202124;--muted:#666;--card:#fff;--line:#d8d5ce;--accent:#5b3fd6;--code:#f0eee8;--warn:#fff4d6;--good:#e9f7ee} @media(prefers-color-scheme:dark){:root{--bg:#171717;--fg:#eee;--muted:#aaa;--card:#202020;--line:#444;--accent:#b7a7ff;--code:#292929;--warn:#3a311c;--good:#1c3526}} *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif} main{max-width:1120px;margin:auto;padding:3rem 2rem 6rem} h1{font-size:2.7rem;line-height:1.05;margin:.2rem 0} h2{margin-top:3rem;border-bottom:1px solid var(--line);padding-bottom:.35rem} h3{margin-top:2rem} a{color:var(--accent)} .lede{font-size:1.2rem;max-width:75ch}.meta,.note,.decision{border:1px solid var(--line);background:var(--card);padding:1rem 1.2rem;border-radius:8px;margin:1.2rem 0}.decision{border-left:5px solid var(--accent)}.warn{background:var(--warn)}.good{background:var(--good)} code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace} code{background:var(--code);padding:.1rem .3rem;border-radius:3px} pre{background:var(--code);padding:1rem;overflow:auto;border-radius:7px;line-height:1.35} table{border-collapse:collapse;width:100%;display:block;overflow:auto;margin:1rem 0} th,td{border:1px solid var(--line);padding:.55rem .7rem;text-align:left;vertical-align:top} th{background:var(--code)} nav{columns:2;max-width:850px} li{margin:.25rem 0}.small{font-size:.9rem;color:var(--muted)} svg{max-width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:8px}.state{font-weight:700}.yes{color:#17733d}.no{color:#a33}
+</style>
+</head>
+<body><main>
+<p class="small">Design for first review · 11 August 2026 · baseline <code>90136f800a9f</code> (draft PR #13851)</p>
+<h1>Detachable <code>dagger up</code></h1>
+<p class="lede">This design adds <code>dagger up --detach</code> as a production-quality vertical slice. The engine retains the selected services. A small, dedicated local publisher process owns the host listeners after the initiating command exits. Reattachment remains observation-only.</p>
+
+<div class="decision warn"><strong>Required narrow prerequisite.</strong> The current host publisher is an attachable running inside the initiating CLI. Closing that client necessarily closes every listener. The earlier umbrella design suggested publishing ports on a later attach, but PR #13851 deliberately makes attach observation-only and forbids callback rebinding. A useful detached web or database service therefore cannot be built solely from #13851. This design adds one <em>up-specific publisher role</em>, created before acknowledgement. It does not rebind source callbacks, accept GraphQL work, or republish after failure. If this prerequisite is not acceptable, the honest first slice can retain engine-internal/background services only and must not claim host accessibility.</div>
+
+<div class="meta"><strong>Status:</strong> proposed. <strong>Reviewer:</strong> Erik Sipsma. <strong>Implementation:</strong> not started. <strong>Dependency:</strong> <a href="detachable-sessions-p0-implementation.html">P0 detachable sessions</a>. Independent peer sessions are later context; their session-lifetime cache ownership decision is unchanged.</div>
+
+<nav><ol>
+<li><a href="#current">Current behavior</a></li><li><a href="#problem">Problem and scope</a></li><li><a href="#uses">Use cases</a></li><li><a href="#catalog">Dependencies and credentials</a></li><li><a href="#behavior">User behavior</a></li><li><a href="#lifecycle">Lifecycle and races</a></li><li><a href="#protocol">Protocol and types</a></li><li><a href="#plan">Implementation plan</a></li><li><a href="#tests">Tests</a></li><li><a href="#acceptance">Acceptance and risks</a></li></ol></nav>
+
+<h2 id="current">1. Current behavior</h2>
+<h3>CLI to healthy host listeners</h3>
+<ol>
+<li><a href="../../internal/cmd/dagger/up.go"><code>upCmd</code></a> opens an ordinary client with <code>LoadWorkspaceModules</code>, resolves <code>CurrentWorkspace().Services(include:)</code>, then calls <code>UpGroup.Run().ID(ctx)</code>. <code>--list</code> resolves metadata only. <code>runServices</code> makes the services span primary and treats command cancellation as success.</li>
+<li><a href="../../core/up.go"><code>UpGroup.Run</code></a> clones the group, checks duplicate fixed/native frontend ports, starts every <code>ModTreeNode.RunUp</code> concurrently, and waits for all starts. It then blocks until its context is canceled.</li>
+<li><a href="../../core/modtree.go"><code>ModTreeNode.runUpLocally</code></a> evaluates the <code>+up</code> function, creates <code>host.tunnel</code> with native or configured <code>PortForward</code> mappings, and starts that tunnel through the session service manager. Its ready span is emitted only after health and listener setup succeed.</li>
+<li><a href="../../core/schema/service.go"><code>Service.up</code></a>, used by module-level <code>dagger call … up</code>, follows the same tunnel path, prints actual ports, and blocks. It is not changed by this design.</li>
+<li><a href="../../core/service.go"><code>Service.startTunnel</code></a> starts the engine-side upstream and invokes <a href="../../engine/engineutil/client.go"><code>ListenHostToContainer</code></a> on the requesting physical client.</li>
+<li><a href="../../engine/session/h2c/h2c.go"><code>TunnelListenerAttachable.Listen</code></a> calls <code>net.Listen</code> in the CLI process. Connections are proxied over its gRPC stream. The listener is not in the engine host or container.</li>
+</ol>
+
+<svg viewBox="0 0 1040 275" role="img" aria-label="Current up call and ownership flow"><defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="currentColor"/></marker></defs><g fill="none" stroke="currentColor" marker-end="url(#a)"><path d="M180 70H315"/><path d="M475 70H610"/><path d="M770 70H900"/><path d="M900 110H770"/><path d="M610 110H475"/></g><g fill="var(--card)" stroke="var(--line)"><rect x="20" y="30" width="160" height="80" rx="7"/><rect x="315" y="30" width="160" height="80" rx="7"/><rect x="610" y="30" width="160" height="80" rx="7"/><rect x="860" y="30" width="160" height="80" rx="7"/><rect x="315" y="170" width="410" height="70" rx="7"/></g><g text-anchor="middle" fill="currentColor" font-family="system-ui" font-size="15"><text x="100" y="61">dagger up CLI</text><text x="100" y="85">UpGroup.run</text><text x="395" y="61">engine service</text><text x="395" y="85">manager</text><text x="690" y="61">client h2c</text><text x="690" y="85">attachable</text><text x="940" y="61">localhost</text><text x="940" y="85">listener</text><text x="520" y="198">One tunnel binding owns upstream + listener.</text><text x="520" y="220">CLI loss closes listener; shutdown detaches upstream.</text></g></svg>
+
+<h3>Disconnect and cleanup today</h3>
+<p>The tunnel registry in <a href="../../core/service.go"><code>core/service.go</code></a> publishes only listeners whose completion guards remain open. Listener failure, explicit stop, startup rollback, and upstream exit converge on one shutdown path. It removes the tunnel and detaches the upstream once. The race coverage is in <a href="../../core/service_tunnel_test.go"><code>core/service_tunnel_test.go</code></a> and <a href="../../engine/engineutil/client_tunnel_test.go"><code>engine/engineutil/client_tunnel_test.go</code></a>.</p>
+<p>For a detachable creator, <a href="../../engine/server/session_control.go"><code>serveSessionAttachmentClose</code></a> deregisters the creator’s exact attachables before releasing attachment ownership. <a href="../../engine/client/client.go"><code>Client.Close</code></a> closes the local gRPC server and transport. Abrupt loss is detected by attachable health in <a href="../../engine/server/session_attachables.go"><code>engine/server/session_attachables.go</code></a> and causes the same deregistration. Consequently, the creator cannot preserve its own publisher while detaching.</p>
+<p>The service manager is session-owned: <a href="../../core/services.go"><code>ServiceKey.SessionID</code></a> scopes starts and <code>StopSessionServices</code> cancels and stops them. Session termination in <a href="../../engine/server/session.go"><code>removeDaggerSession</code></a> then closes the resolver, drains DagQL, removes clients and containers, closes telemetry/analytics, releases the engine cache session, removes saved results, and publishes terminal state.</p>
+
+<h3>Ports</h3>
+<table><thead><tr><th>Declaration</th><th>Representation</th><th>Current result</th></tr></thead><tbody>
+<tr><td>Native</td><td><code>Frontend = Backend</code></td><td>Same host port and container port.</td></tr>
+<tr><td>Fixed mapping</td><td><code>PortForward.Frontend &gt; 0</code></td><td>Preflight catches duplicate declarations; <code>net.Listen</code> catches external conflicts.</td></tr>
+<tr><td>Random mapping</td><td>Frontend absent/zero</td><td>OS chooses a port; <code>ListenResponse.Addr</code> becomes <code>RunningService.Ports</code> and the displayed URL.</td></tr>
+</tbody></table>
+
+<h2 id="problem">2. Approved scope and invariants</h2>
+<div class="decision"><strong>Invariant:</strong> <code>dagger up --detach</code> exits zero only after all selected engine services are healthy and all requested host listeners are bound by the dedicated publisher. The existing primary-query <code>202 Accepted</code> is necessary but insufficient: it proves durable request storage and detached goroutine launch, not service readiness.</div>
+<ul>
+<li>The engine owns retained service bindings and one primary query. The publisher owns only host listeners and byte proxying.</li>
+<li>The creator may exit gracefully, lose its network, or crash after acknowledgement without ending retained services or listeners. This is possible because the publisher is a separate process and role from the creator.</li>
+<li>Publisher failure does not end the session. It changes publication to <code>lost</code>; host ports close, retained engine services remain, and inspect/attach report the failure.</li>
+<li>No later republishing exists. Recover with <code>sessions terminate</code> and a new <code>up --detach</code>.</li>
+<li>Ordinary <code>dagger up</code>, <code>--list</code>, module <code>… up</code>, and every command without <code>--detach</code> use the existing path unchanged.</li>
+<li>A session retains results it uses for its lifetime. Earlier release means a different independent peer session; this design adds no cache boundary.</li>
+</ul>
+
+<h2 id="uses">3. Use cases</h2>
+<ul><li>Start an HTTP API/database on fixed or random localhost ports, return the addresses, close the initiating command, and keep serving.</li><li>Observe retained progress and current publication state from another terminal.</li><li>Terminate explicitly and prove services, listeners, leases, telemetry, saved results, and session resources are released once.</li><li>Report a publisher crash without falsely declaring the engine service dead.</li></ul>
+<p>Not supported: engine restart survival; Cloud scale-out; names or TTL; shell, listen, check, or interactive input; new GraphQL work; host export after completed calls; generic callback rebinding; broad SDK detach APIs; republishing; nested clients; module-level <code>up --detach</code>.</p>
+
+<h2 id="catalog">4. Dependency and credential catalogue</h2>
+<p><a href="../../engine/client/client.go"><code>startSession</code></a> publishes Docker auth, secrets, sockets, host tunnel, Git, filesync, terminal, and optional image-store/prompt/pipe attachables under the physical source client. PR #13851 permits one source publication; observers publish health only. The up publisher is separate and exposes only h2c publication.</p>
+<table><thead><tr><th>Operation/data</th><th>Owner after creation</th><th>After creator loss</th><th>Required change</th></tr></thead><tbody>
+<tr><td>Explicit <code>Container.withRegistryAuth(address, username, secret)</code></td><td><a href="../../core/schema/container.go">GraphQL resolver</a> reads plaintext and stores username/secret in session <code>RegistryAuthProvider</code>.</td><td class="yes">Later pull/push challenges can use the copied credential.</td><td>Tests only.</td></tr>
+<tr><td>Default Docker credential helper</td><td><a href="../../engine/client/client.go">creator Docker auth attachable</a>, consulted lazily after session auth.</td><td class="no">A fresh challenge fails when source is unavailable. Per-operation authorizer caching is not a durable-copy guarantee.</td><td>No broad rebinding. Error the individual pull/push.</td></tr>
+<tr><td>Registry pull and <code>Container.publish</code></td><td>Engine resolver/content store; auth as above.</td><td>Works if layers and required auth are engine-owned/cached; otherwise that operation fails.</td><td>Tests only.</td></tr>
+<tr><td>Host image import; image load/export</td><td><a href="../../engine/engineutil/client.go"><code>ReadImage</code>/<code>WriteImage</code></a> call source image-store attachable during transfer.</td><td>Committed imported content remains engine-owned. A new local transfer cannot start.</td><td>None for up startup.</td></tr>
+<tr><td>HTTP Git credential helper</td><td><a href="../../engine/engineutil/client.go"><code>GetCredential</code></a> calls creator Git attachable, then setup copies returned values into an engine secret.</td><td>Completed setup works; a fresh helper lookup fails.</td><td>Tests only.</td></tr>
+<tr><td>Plaintext <code>setSecret</code></td><td>Session secret store.</td><td class="yes">Works.</td><td>Tests only.</td></tr>
+<tr><td>URI/command-backed secret</td><td><a href="../../core/secret.go"><code>Secret.SourceClientID</code></a>; callback on plaintext evaluation.</td><td class="no">Fresh evaluation fails.</td><td>No change; surface operation error.</td></tr>
+<tr><td>Host directory/file, Unix socket, SSH agent</td><td>Creator callback or socket attachable unless already copied into engine content.</td><td class="no">New callback use fails; source-backed running dependency may fail.</td><td>No generic rebinding.</td></tr>
+<tr><td>Container-to-host reverse tunnel</td><td>Creator socket attachable.</td><td class="no">Unavailable after creator loss.</td><td>Reject a detached service whose dependency is known to require it; otherwise report runtime failure.</td></tr>
+<tr><td>Host-to-container publication</td><td>New up-specific publisher h2c attachable.</td><td class="yes">Works while publisher lives, independent of creator.</td><td>New narrow publisher role.</td></tr>
+</tbody></table>
+<p>An unavailable callback fails only the operation that asks for it. It does not terminate the detachable session. If it causes a retained service dependency to exit, the up controller records the affected service as failed while the session remains inspectable.</p>
+
+<h2 id="behavior">5. Proposed user behavior</h2>
+<h3>Command and help</h3>
+<pre>dagger up [options] [pattern...]
+
+Options:
+      --detach   Keep services running and return after host ports are published
+  -l, --list     List available services</pre>
+<p><code>--detach</code> and <code>--list</code> are mutually exclusive and return usage exit code 2. Unsupported engine versions fail before starting work. Nested and Cloud scale-out transports return exit 1 with a specific unsupported message.</p>
+<pre>$ dagger up --detach web db
+Started detachable services
+Session:  q3h5…7m
+web:      http://127.0.0.1:8080
+db:       tcp://127.0.0.1:49173
+
+Observe:   dagger sessions attach q3h5…7m
+Inspect:   dagger sessions inspect q3h5…7m
+Stop:      dagger sessions terminate q3h5…7m</pre>
+<p>Machine-readable output is not added in this slice. Progress remains on the existing frontend; the final summary goes to stdout. A fixed-port conflict prints <code>cannot publish web port 8080/tcp on 127.0.0.1: bind: address already in use</code>, exits 1, terminates the not-yet-acknowledged session, and leaves no daemon. If service startup succeeds but publication fails, the same rollback contract applies.</p>
+
+<h3>Sessions commands</h3>
+<table><thead><tr><th>Command</th><th>Detached up behavior</th></tr></thead><tbody>
+<tr><td><code>sessions list</code></td><td>Adds <code>KIND</code> and <code>PUBLICATION</code>: <code>up</code> and <code>published</code>, <code>lost</code>, <code>starting</code>, or <code>-</code>. Existing rows remain representable.</td></tr>
+<tr><td><code>sessions inspect ID</code></td><td>Shows query status, kind, each service, backend status, requested and actual ports, publisher PID only when local/available, publication state, and last publication error. JSON exposes the same typed fields.</td></tr>
+<tr><td><code>sessions attach ID</code></td><td>Claims the ordinary observation-only attachment, replays telemetry, prints a one-time publication summary, and follows until Ctrl-C or termination. Ctrl-C detaches the observer with exit 130; it does not stop services or publisher. It never supplies listeners or callbacks.</td></tr>
+<tr><td><code>sessions terminate ID</code></td><td>Installs the existing tombstone, cancels retained up work, closes the publisher stream, waits for publisher acknowledgement within teardown bounds, stops session services, then completes existing session cleanup. Repeated/concurrent terminate remains idempotent.</td></tr>
+</tbody></table>
+<pre>ID        STATE    KIND  QUERY    STATUS   PUBLICATION  CREATED               ATTACHED
+q3h5…7m   active   up    primary  running  published    2026-08-11T12:00:00Z  -</pre>
+<p>The primary query intentionally remains <code>running</code> while up is retained. Its presentation kind is <code>up</code>. It finishes <code>canceled</code> on explicit termination, or <code>failed</code> only if retained service control itself reaches a terminal failure. Publication loss is metadata, not query completion.</p>
+
+<h2 id="lifecycle">6. Exact lifecycle and races</h2>
+<table><thead><tr><th>State</th><th>Entry</th><th>Exit</th></tr></thead><tbody>
+<tr><td class="state">accepted</td><td>P0 primary request stored; controller registered.</td><td>Start selected engine services.</td></tr>
+<tr><td class="state">services-ready</td><td>All <code>StartResult</code> calls and health checks succeeded.</td><td>Send desired backend/port descriptor to publisher.</td></tr>
+<tr><td class="state">published</td><td>Publisher has bound every listener and engine has recorded actual addresses.</td><td>Emit one durable readiness transition and acknowledge parent CLI.</td></tr>
+<tr><td class="state">publication-lost</td><td>Publisher stream/process disappears after readiness.</td><td>Remain retained and observable until terminate. No automatic republish.</td></tr>
+<tr><td class="state">terminating</td><td>Explicit DELETE wins lifecycle lock.</td><td>Cancel controller, close publisher, stop services, run session teardown.</td></tr>
+<tr><td class="state">terminal</td><td>Teardown complete and tombstone installed.</td><td>No transition; engine restart also drops the in-memory session.</td></tr>
+</tbody></table>
+
+<h3>Publisher process</h3>
+<p>The parent CLI creates an inherited private pipe, starts the same executable in a hidden <code>internal up-publisher</code> mode, and passes the engine connection parameters and a single-use publisher capability through that pipe, never argv or environment. The child connects only to the up-publisher route. It binds loopback listeners using the existing h2c implementation, reports actual addresses, then sends a ready frame. The parent does not close its creator attachment until the engine’s readiness endpoint confirms the same publisher generation and complete port set. The child is not daemonized before this handshake; any failure is synchronously rolled back.</p>
+<p>After acknowledgement, graceful parent exit, creator network loss, and creator crash do not affect the child. Publisher crash or its engine-network loss closes listeners and marks publication lost. The engine keeps independent backend bindings. This is the exact useful behavior without republishing.</p>
+
+<h3>Race rules</h3>
+<ul>
+<li><strong>Terminate vs acknowledgement:</strong> termination installs the tombstone first. Readiness rechecks lifecycle state under the controller lock. The parent cannot print success after termination begins.</li>
+<li><strong>Listener failure during publication:</strong> reuse <code>tunnelListenerCompletionGuard</code>. Any completion before the all-listeners commit rejects publication and rolls back every listener.</li>
+<li><strong>Publisher loss after commit:</strong> the committed generation changes once to <code>lost</code>; repeated close/health events are ignored by generation and <code>sync.Once</code>.</li>
+<li><strong>Service startup failure:</strong> cancel sibling starts, stop already-started backends, never launch or retain a publisher, complete the query failed, and terminate the pre-ack session.</li>
+<li><strong>Attach vs terminate:</strong> existing attachment generation and session tombstone rules decide. An admitted observer sees telemetry until the completion bound; a late observer receives session-not-found/terminated.</li>
+<li><strong>Random port vs inspect:</strong> actual port fields remain absent until the all-listeners commit. Inspect never reports a partly published set.</li>
+<li><strong>Creator disconnect before ready:</strong> P0 retained query may continue only if all required source data was already copied. Parent-side handshake loss instructs the publisher to close; the engine terminates the unacknowledged session after its bounded orphan timer.</li>
+</ul>
+
+<h2 id="protocol">7. Protocol, API, and CLI changes</h2>
+<p>Reuse #13851 session IDs, creator/observer attachment roles, primary-query request/result storage, control client, telemetry completion bounds, DELETE termination, source publication rules, and session descriptors. Do not add a public GraphQL field or generated SDK API. The CLI marks the retained query with a new presentation kind; the engine places an internal detached-up controller in that query context, and existing <code>UpGroup.Run</code> selects the detached branch only for that context.</p>
+<pre>// engine/session.go
+const QueryPresentationUp QueryPresentationKind = "up"
+
+type UpPublicationState string
+const (
+    UpPublicationStarting UpPublicationState = "starting"
+    UpPublicationPublished UpPublicationState = "published"
+    UpPublicationLost UpPublicationState = "lost"
+)
+
+type SessionUp struct {
+    State UpPublicationState `json:"state"`
+    Services []SessionUpService `json:"services"`
+    PublisherGeneration uint64 `json:"publisher_generation"`
+    Error string `json:"error,omitempty"`
+}
+type SessionUpService struct {
+    Name string `json:"name"`
+    State string `json:"state"`
+    Ports []SessionUpPort `json:"ports"`
+    Error string `json:"error,omitempty"`
+}
+type SessionUpPort struct {
+    Protocol string `json:"protocol"`
+    Backend int `json:"backend"`
+    Frontend int `json:"frontend,omitempty"` // zero while requested random
+    Address string `json:"address,omitempty"` // set only at atomic publish
+}
+type SessionDescriptor struct {
+    // existing fields
+    Up *SessionUp `json:"up,omitempty"`
+}</pre>
+<p>Add control routes scoped to the exact session and primary query:</p>
+<pre>POST /v1/sessions/{id}/up/publisher-claim   // creator only; returns one-use capability
+GET  /v1/sessions/{id}/up/publisher        // authenticated h2c upgrade for child
+GET  /v1/sessions/{id}/up/readiness        // creator waits for published or terminal
+</pre>
+<p>The capability is 256 random bits, stored only as a hash, consumed atomically, bound to session/query/publisher generation, and invalid after termination. The publisher route accepts no GraphQL, telemetry upload, source callbacks, session control, or attach ownership. The stream frames are <code>PublishRequest</code> (service identity, backend address, requested ports), existing h2c listen/connection frames, <code>Published</code> (complete actual addresses), <code>Stop</code>, and <code>Stopped</code>. Limits reuse existing maximum ports and message sizes.</p>
+<p>No persistent service record beyond <code>SessionDescriptor.Up</code> is needed. The primary query is the retained unit; <code>SessionUp</code> is minimal readiness/presentation metadata. Backend bindings remain in the existing session service manager.</p>
+
+<h2 id="plan">8. File-by-file implementation plan</h2>
+<table><thead><tr><th>File</th><th>Change</th><th>Classification</th></tr></thead><tbody>
+<tr><td><a href="../../internal/cmd/dagger/up.go"><code>internal/cmd/dagger/up.go</code></a></td><td>Add call-local <code>--detach</code>; reject list conflict; construct P0 detached primary query with <code>up</code> presentation; launch publisher; wait readiness; print summary.</td><td>Production</td></tr>
+<tr><td><code>internal/cmd/dagger/up_publisher.go</code> (new)</td><td>Hidden child entrypoint, inherited-pipe bootstrap, loopback listener ownership, h2c proxy, parent handshake, signal/engine-close behavior.</td><td>Production</td></tr>
+<tr><td><a href="../../internal/cmd/dagger/functions.go"><code>internal/cmd/dagger/functions.go</code></a></td><td>Generalize the existing detached-query submit helper for the up presentation without exposing <code>--detach</code> elsewhere.</td><td>Production</td></tr>
+<tr><td><a href="../../internal/cmd/dagger/sessions.go"><code>internal/cmd/dagger/sessions.go</code></a></td><td>Kind/publication columns, up inspect rows, and long-running observation semantics.</td><td>Production</td></tr>
+<tr><td><a href="../../engine/session.go"><code>engine/session.go</code></a></td><td>Add typed up metadata, presentation kind, endpoint constants, frame/error codes.</td><td>Production</td></tr>
+<tr><td><a href="../../engine/client/session_control.go"><code>engine/client/session_control.go</code></a></td><td>Claim publisher capability, wait readiness, and open restricted publisher stream.</td><td>Production</td></tr>
+<tr><td><a href="../../engine/client/client.go"><code>engine/client/client.go</code></a></td><td>Add an internal publisher connection mode that cannot initialize a Dagger client or publish normal attachables.</td><td>Production</td></tr>
+<tr><td><a href="../../engine/server/session_control.go"><code>engine/server/session_control.go</code></a></td><td>Register the three routes and role/auth checks.</td><td>Production</td></tr>
+<tr><td><code>engine/server/session_up.go</code> (new)</td><td>Session-scoped up controller, generation/capability state, atomic readiness metadata, loss and exactly-once shutdown.</td><td>Production</td></tr>
+<tr><td><a href="../../engine/server/session_query.go"><code>engine/server/session_query.go</code></a></td><td>Validate up presentation; install controller in detached execution context; leave query running through retained lifetime.</td><td>Production</td></tr>
+<tr><td><a href="../../engine/server/session.go"><code>engine/server/session.go</code></a></td><td>Snapshot up metadata and call controller stop before service/session resource teardown.</td><td>Production</td></tr>
+<tr><td><a href="../../core/up.go"><code>core/up.go</code></a></td><td>Add detached branch selected only by internal context: start engine backends, publish desired ports to controller, hold bindings until cancellation. Keep ordinary branch byte-for-byte.</td><td>Production</td></tr>
+<tr><td><a href="../../core/modtree.go"><code>core/modtree.go</code></a></td><td>Split evaluation/backend health from local host-tunnel construction so detached mode can retain the backend without binding it to creator h2c.</td><td>Production</td></tr>
+<tr><td><a href="../../core/services.go"><code>core/services.go</code></a></td><td>Add an internal retained-start handle with idempotent immediate release for partial rollback and controller shutdown. Preserve public <code>StartResult</code>.</td><td>Production</td></tr>
+<tr><td><a href="../../engine/session/h2c/h2c.go"><code>engine/session/h2c/h2c.go</code></a></td><td>Extract listener set setup/rollback so ordinary tunnel and publisher reuse identical binding and proxy behavior.</td><td>Production</td></tr>
+<tr><td><code>internal/cmd/dagger/up_test.go</code>, <a href="../../internal/cmd/dagger/sessions_test.go"><code>sessions_test.go</code></a></td><td>Flags, help, exact output/errors/exit codes, table/JSON, child handshake.</td><td>Tests</td></tr>
+<tr><td><code>engine/server/session_up_test.go</code>, <a href="../../engine/server/session_control_test.go"><code>session_control_test.go</code></a></td><td>Protocol authorization, state machine, races, capability consumption, termination.</td><td>Tests</td></tr>
+<tr><td><a href="../../core/service_tunnel_test.go"><code>core/service_tunnel_test.go</code></a>, <a href="../../core/services_internal_test.go"><code>services_internal_test.go</code></a></td><td>Shared listener extraction and retained handle race/rollback coverage. Existing listener tests describe already-correct behavior.</td><td>Tests</td></tr>
+<tr><td><a href="../../core/integration/detachable_session_test.go"><code>core/integration/detachable_session_test.go</code></a></td><td>Source-built vertical slice, credentials, creator/publisher failure, ports and termination cleanup.</td><td>Tests</td></tr>
+</tbody></table>
+
+<h2 id="tests">9. Tests and fault injection</h2>
+<h3>Already-correct behavior requiring regression tests</h3>
+<ul><li>Explicit registry auth survives source loss; default helper, fresh Git helper, URI secret, image-store transfer, host socket, and reverse tunnel do not.</li><li>Fixed/native/random port encoding and actual random address reporting.</li><li>Listener all-or-nothing publication and first-error/once-only shutdown.</li><li>Session DELETE idempotence, tombstones, observer generations, service/cache/session cleanup, and engine restart loss.</li></ul>
+<h3>New focused coverage</h3>
+<ul>
+<li>Unit/race: every pair of readiness, creator close, publisher close, service exit, observer attach, and terminate; run key tests repeatedly and under <code>-race</code> through engine-dev.</li>
+<li>CLI: exact help and conflicts; success text; fixed conflict; random port reachability; unsupported transport/version; SIGINT before and after acknowledgement; publisher spawn/pipe failure; exit codes 0, 1, 2, and 130.</li>
+<li>Engine lifecycle: service startup failure, second listener failure, publisher loss after commit, terminate during each test hook, no leaked service binding/client/attachment/goroutine, and one completion bound.</li>
+<li>Credentials: force registry challenge after creator loss with explicit and default auth; pull and push separately; fresh Git lookup; copied Git credential; plaintext and URI secrets; service with host socket/reverse tunnel dependency.</li>
+<li>Source-built integration: start HTTP and TCP services with fixed/random ports, receive acknowledgement, kill creator, verify localhost, attach from another CLI, kill publisher and inspect <code>lost</code>, terminate and verify ports close.</li>
+</ul>
+<p>Add deterministic hooks immediately before/after service-ready, publisher claim, each listener bind, atomic publication, parent acknowledgement, publisher stream close, controller stop, and service release. Hooks block on channels in tests; production builds keep only nil checks.</p>
+<div class="note good"><strong>Development-engine proof.</strong> Tests must follow <a href="../../skills/engine-debugging/SKILL.md"><code>skills/engine-debugging/SKILL.md</code></a>: use focused <code>dagger api call engine-dev test --pkg=… --run=…</code>, capture logs under <code>/tmp</code>, and scan for panic/failure markers. A completed investigation run uploaded this checkout into <code>engineDev</code> and passed 22 focused core tunnel/service tests. Trace: <code>96409995b0afc281e70bf3e443fcd0f3</code>. The source upload and <code>engineDev(...).test</code> nodes prove the development engine was used.</div>
+
+<h2 id="acceptance">10. Acceptance criteria, risks, and decisions</h2>
+<ul>
+<li><code>dagger up --detach</code> does not print success until backend health and an atomic complete listener set are confirmed.</li>
+<li>After success, killing the creator leaves fixed/random localhost ports reachable; killing the publisher closes ports but leaves an inspectable retained session marked <code>lost</code>.</li>
+<li>Attach is observation-only and cannot change publisher/source identity or submit work.</li>
+<li>Terminate wins every race, closes the publisher, releases every retained handle/service/tunnel/lease/result/telemetry/session resource once, and is idempotent.</li>
+<li>Credential tests establish copied versus callback-backed behavior for pull, push, Git, secrets, image store, sockets, and tunnels.</li>
+<li>Ordinary <code>up</code> and all non-opted-in commands pass existing output and lifecycle tests unchanged.</li>
+</ul>
+<h3>Risks</h3>
+<ul><li>A local helper process is an additional lifecycle surface. Private inherited bootstrap, one-use capability, parent-death-before-ready handling, bounded stop, and process-leak integration tests are mandatory.</li><li>Remote engine transports still require a stable network path from publisher to engine. Loss is reported, not repaired.</li><li>A module service can hide a source-backed dependency. Static rejection may be incomplete; runtime dependency exit must be visible and must not corrupt session state.</li><li>Keeping the primary query running means existing attach’s “wait then fetch result” path needs the explicit up behavior described above.</li></ul>
+<h3>Open decision for first review</h3>
+<p>Approve or reject the up-specific publisher role. It is the only scope expansion proposed. Rejecting it changes the product contract to engine-internal/background services with no localhost ports; the CLI help and examples must then state that limitation. Later republishing is explicitly not part of either choice.</p>
+
+<h3>Explicit non-goals</h3>
+<p>No shell, listen, check, interactive input, completed-call host export, generic callback rebinding, workflow history, new-work submission, broad SDK detach API, independent-peer implementation, cache ownership redesign, Cloud scale-out, engine restart survival, names, TTL, publisher restart, port republishing, or module-level detached up.</p>
+</main></body></html>
