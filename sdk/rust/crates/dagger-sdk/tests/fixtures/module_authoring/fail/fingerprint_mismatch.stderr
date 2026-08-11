@@ -10,7 +10,7 @@ note: expected this to be `dagger_sdk::__private::AuthoringFingerprint<0>`
  7 | #[dagger_sdk::object(root)]
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = note: expected struct `dagger_sdk::__private::AuthoringFingerprint<0>`
-              found struct `dagger_sdk::__private::AuthoringFingerprint<205305656173062163834133480713643102494>`
+              found struct `dagger_sdk::__private::AuthoringFingerprint<289501906214039910350026678554045189406>`
 note: required by a bound in `require_expected_fingerprint`
   --> tests/fixtures/module_authoring/fail/fingerprint_mismatch.rs:16:13
    |

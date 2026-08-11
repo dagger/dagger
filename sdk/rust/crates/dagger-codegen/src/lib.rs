@@ -1,4 +1,8 @@
 #![deny(warnings)]
+// Compiler diagnostics intentionally retain owned typed coordinates and safe source
+// chains. Boxing each single-phase error would add allocation and API noise without
+// reducing the aggregate diagnostic set retained at the public boundary.
+#![allow(clippy::result_large_err)]
 //! Pure schema-to-Rust code generation for the Dagger SDK.
 //!
 //! This crate accepts data and returns validated candidate source. It deliberately has

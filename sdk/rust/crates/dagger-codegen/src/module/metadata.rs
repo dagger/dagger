@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use convert_case::{Case, Casing};
 use quote::ToTokens;
+use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use syn::{Expr, GenericArgument, PathArguments, Type};
 
@@ -22,7 +23,8 @@ use super::types::{
 const MAX_CACHE_TTL_SECONDS: u64 = 7 * 24 * 60 * 60;
 
 /// Whether generated dispatch calls or directly awaits the authored bridge.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ExecutionKind {
     /// Direct synchronous invocation.
     Synchronous,
@@ -31,7 +33,8 @@ pub enum ExecutionKind {
 }
 
 /// Supported authored receiver model.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ReceiverKind {
     /// Associated function without a receiver.
     None,
@@ -40,7 +43,8 @@ pub enum ReceiverKind {
 }
 
 /// Exported function role in the local module surface.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum FunctionKind {
     /// Root construction entrypoint.
     Constructor,
@@ -49,7 +53,8 @@ pub enum FunctionKind {
 }
 
 /// Successful target result plus the authored fallible boundary, when present.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 pub enum FunctionReturn {
     /// Infallible value or target Void.
     Value(RustModuleType),
@@ -73,7 +78,8 @@ impl FunctionReturn {
 }
 
 /// Exact target cache behavior.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "seconds", rename_all = "kebab-case")]
 pub enum CachePolicy {
     /// Engine default caching without an explicit TTL.
     Default,
@@ -86,7 +92,8 @@ pub enum CachePolicy {
 }
 
 /// Target function role.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum FunctionRole {
     /// Ordinary module function.
     Ordinary,
@@ -99,7 +106,8 @@ pub enum FunctionRole {
 }
 
 /// Complete metadata for one projected data argument.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArgumentMetadata {
     /// Sanitized semantic documentation.
     pub documentation: Option<String>,
@@ -120,7 +128,8 @@ pub struct ArgumentMetadata {
 }
 
 /// Complete metadata for one projected function.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FunctionMetadata {
     /// Sanitized semantic documentation.
     pub documentation: Option<String>,
@@ -135,7 +144,8 @@ pub struct FunctionMetadata {
 }
 
 /// One projected data argument after context injection has been removed.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompiledArgument {
     /// Authored Rust identifier.
     pub rust_name: String,
@@ -148,7 +158,8 @@ pub struct CompiledArgument {
 }
 
 /// One complete exported function shape independent of dispatch execution.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompiledFunction {
     /// Authored Rust identifier.
     pub rust_name: String,
@@ -162,6 +173,8 @@ pub struct CompiledFunction {
     pub execution: ExecutionKind,
     /// Whether generated dispatch injects the active module context.
     pub inject_context: bool,
+    /// Authored parameter index occupied by the injected context.
+    pub context_index: Option<usize>,
     /// Every data argument in authored order.
     pub arguments: Vec<CompiledArgument>,
     /// Successful target result and optional error boundary.
@@ -254,9 +267,10 @@ impl<'a> FunctionCompiler<'a> {
         }
 
         let mut inject_context = false;
+        let mut context_index = None;
         let mut arguments = Vec::new();
         let mut seen = BTreeMap::<WireName, SourceCoordinate>::new();
-        for parameter in &function.parameters {
+        for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if parameter.metadata.contains_key("context") {
                 if inject_context
                     || final_type_segment(&parameter.rust_type) != Some("ModuleContext")
@@ -267,6 +281,7 @@ impl<'a> FunctionCompiler<'a> {
                     ));
                 }
                 inject_context = true;
+                context_index = Some(parameter_index);
                 continue;
             }
 
@@ -326,6 +341,7 @@ impl<'a> FunctionCompiler<'a> {
                 ExecutionKind::Synchronous
             },
             inject_context,
+            context_index,
             arguments,
             return_type,
             metadata,

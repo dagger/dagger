@@ -488,6 +488,7 @@ mod tests {
     use quote::{format_ident, quote};
 
     use super::object;
+    use crate::attribute::canonical_tokens;
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
@@ -571,14 +572,17 @@ mod tests {
         const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
         const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
 
-        let metadata = format!("6:rename=\"{rename}\"|4:root=true");
+        let rename_tokens = quote!(#rename);
+        let string_type =
+            syn::parse_str::<syn::Type>("String").expect("reference String type is valid Rust");
+        let metadata = format!("6:rename={}|4:root=true", canonical_tokens(&rename_tokens));
         let parts = [
             "object".to_owned(),
             type_name.to_owned(),
             metadata,
             "field".to_owned(),
             "value".to_owned(),
-            "String".to_owned(),
+            canonical_tokens(&string_type),
             "5:field=true".to_owned(),
         ];
         let mut value = OFFSET;

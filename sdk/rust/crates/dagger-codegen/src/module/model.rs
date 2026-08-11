@@ -7,6 +7,12 @@ use std::num::NonZeroU32;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest as _, Sha256};
 
+use super::metadata::CompiledFunction;
+use super::types::{
+    EnumContract, InterfaceContract, ObjectContract, ObjectFieldMode, ProjectedType,
+    RustModuleType, ScalarContract,
+};
+
 /// Current canonical module document format.
 pub const MODULE_FORMAT_VERSION: u32 = 1;
 /// Current procedural/source authoring ABI.
@@ -466,6 +472,56 @@ pub enum LocalTypeKind {
     Scalar { representation: RustSymbol },
 }
 
+/// Kind-specific compiled contract retained by the canonical descriptor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "contract", rename_all = "kebab-case")]
+pub enum LocalTypeContract {
+    /// Stateful object contract and construction policy.
+    Object(ObjectContract),
+    /// Closed interface methods and implementation relationships.
+    Interface(InterfaceContract),
+    /// Unit enum members and normalization policy.
+    Enum(EnumContract),
+    /// Transparent scalar representation.
+    Scalar(ScalarContract),
+}
+
+/// One authored object field retained with its state and projection policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldDescriptor {
+    /// Authored Rust field identifier.
+    pub rust_name: String,
+    /// Exact state and optional TypeDef wire name.
+    pub wire_name: WireName,
+    /// Closed recursive field type.
+    pub ty: RustModuleType,
+    /// Exposure and persistence policy.
+    pub mode: ObjectFieldMode,
+    /// Sanitized authored documentation.
+    pub documentation: Option<String>,
+    /// Optional authored deprecation reason.
+    pub deprecation: Option<String>,
+    /// Authored repair coordinate.
+    pub source: SourceCoordinate,
+}
+
+/// One authored enum member with its exact wire projection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnumValueDescriptor {
+    /// Authored Rust variant identifier.
+    pub rust_name: String,
+    /// Exact target enum member.
+    pub wire_name: WireName,
+    /// Sanitized authored documentation.
+    pub documentation: Option<String>,
+    /// Optional authored deprecation reason.
+    pub deprecation: Option<String>,
+    /// Authored repair coordinate.
+    pub source: SourceCoordinate,
+}
+
 /// One exported local type in the canonical descriptor.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -476,6 +532,18 @@ pub struct LocalTypeDescriptor {
     pub wire_name: WireName,
     /// Kind-specific shape.
     pub kind: LocalTypeKind,
+    /// Complete kind-specific type and state contract.
+    pub contract: LocalTypeContract,
+    /// Every persistent object field with authored metadata and coordinates.
+    pub fields: Vec<FieldDescriptor>,
+    /// Interface methods retained as descriptor-owned target shapes.
+    pub interface_functions: Vec<ProjectedFunction>,
+    /// Enum members retained with authored metadata and coordinates.
+    pub enum_values: Vec<EnumValueDescriptor>,
+    /// Sanitized authored documentation.
+    pub documentation: Option<String>,
+    /// Optional authored deprecation reason.
+    pub deprecation: Option<String>,
     /// Primary authored coordinate.
     pub source: SourceCoordinate,
     /// Shared-grammar fingerprint.
@@ -492,8 +560,8 @@ pub struct FunctionDescriptor {
     pub rust_symbol: RustSymbol,
     /// Exact projected function name.
     pub wire_name: WireName,
-    /// Canonically ordered argument wire names.
-    pub arguments: Vec<WireName>,
+    /// Complete typed function, argument, return, and metadata contract.
+    pub compiled: CompiledFunction,
     /// Shared-grammar fingerprint.
     pub fingerprint: AuthoringFingerprintValue,
     /// Primary authored coordinate.
@@ -501,13 +569,29 @@ pub struct FunctionDescriptor {
 }
 
 /// One closed parent/function dispatch coordinate.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DispatchCoordinate {
     /// Parent wire name.
     pub parent: WireName,
     /// Function wire name.
     pub function: WireName,
+}
+
+/// Exact immutable inputs that explain descriptor identity changes.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DescriptorProvenance {
+    /// Every reached source document and its content digest.
+    pub source_files: BTreeMap<ModuleSourcePath, Sha256Digest>,
+    /// Explicit cfg and feature environment used by discovery.
+    pub cfg: CfgEnvironment,
+    /// Visible Core/self/dependency schema identity.
+    pub visible_schema_digest: Sha256Digest,
+    /// Owning generator identity.
+    pub generator_digest: Sha256Digest,
+    /// Shared source/procedural authoring ABI.
+    pub authoring_abi: AuthoringAbi,
 }
 
 /// Canonical source-to-registration model.
@@ -522,6 +606,8 @@ pub struct ModuleDescriptor {
     pub target: ModuleTarget,
     /// Selected package.
     pub package: ModulePackage,
+    /// Exact module wire identity.
+    pub module: WireName,
     /// Root object symbol.
     pub root: RustSymbol,
     /// Types in canonical wire-name order.
@@ -534,8 +620,104 @@ pub struct ModuleDescriptor {
     pub source_digest: Sha256Digest,
     /// Generator identity.
     pub generator_digest: Sha256Digest,
+    /// Complete change-owning descriptor provenance.
+    pub provenance: DescriptorProvenance,
     /// Descriptor identity.
     pub digest: Sha256Digest,
+}
+
+/// Target type category shared by registration and introspection.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectedTypeKind {
+    /// Stateful object.
+    Object,
+    /// Closed interface.
+    Interface,
+    /// Unit enum.
+    Enum,
+    /// Transparent scalar.
+    Scalar,
+}
+
+/// One projected object field.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectedField {
+    /// Exact field wire name.
+    pub wire_name: WireName,
+    /// Recursive target type.
+    pub ty: ProjectedType,
+    /// Sanitized documentation.
+    pub documentation: Option<String>,
+    /// Optional deprecation reason.
+    pub deprecation: Option<String>,
+    /// Authored repair coordinate.
+    pub source: SourceCoordinate,
+}
+
+/// One projected function argument.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectedArgument {
+    /// Exact argument wire name.
+    pub wire_name: WireName,
+    /// Recursive target type.
+    pub ty: ProjectedType,
+    /// Whether omission is accepted.
+    pub optional: bool,
+    /// Canonical typed default, when present.
+    pub default: Option<serde_json::Value>,
+    /// Sanitized documentation.
+    pub documentation: Option<String>,
+    /// Optional deprecation reason.
+    pub deprecation: Option<String>,
+    /// Authored repair coordinate.
+    pub source: SourceCoordinate,
+}
+
+/// One projected constructor, object method, or interface method.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectedFunction {
+    /// Exact function wire name.
+    pub wire_name: WireName,
+    /// Ordered target-visible data arguments.
+    pub arguments: Vec<ProjectedArgument>,
+    /// Successful target result shape.
+    pub return_type: ProjectedType,
+    /// Whether this function is the root constructor.
+    pub constructor: bool,
+    /// Sanitized documentation.
+    pub documentation: Option<String>,
+    /// Optional deprecation reason.
+    pub deprecation: Option<String>,
+    /// Authored repair coordinate.
+    pub source: SourceCoordinate,
+}
+
+/// One complete structurally comparable TypeDef/introspection item.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectedTypeDef {
+    /// Exact type wire name.
+    pub wire_name: WireName,
+    /// Target type category.
+    pub kind: ProjectedTypeKind,
+    /// Exposed object fields.
+    pub fields: Vec<ProjectedField>,
+    /// Constructors and exported methods.
+    pub functions: Vec<ProjectedFunction>,
+    /// Exact enum wire members.
+    pub enum_values: Vec<WireName>,
+    /// Exact implemented interface names.
+    pub interfaces: Vec<WireName>,
+    /// Sanitized documentation.
+    pub documentation: Option<String>,
+    /// Optional deprecation reason.
+    pub deprecation: Option<String>,
+    /// Authored repair coordinate.
+    pub source: SourceCoordinate,
 }
 
 /// Engine registration projection derived from one descriptor.
@@ -547,7 +729,7 @@ pub struct RegistrationProjection {
     /// Source descriptor identity.
     pub descriptor_digest: Sha256Digest,
     /// Type definitions by wire name.
-    pub types: BTreeMap<WireName, serde_json::Value>,
+    pub types: BTreeMap<WireName, ProjectedTypeDef>,
 }
 
 /// Introspection projection derived from the same descriptor.
@@ -559,7 +741,45 @@ pub struct ModuleIntrospection {
     /// Source descriptor identity.
     pub descriptor_digest: Sha256Digest,
     /// Introspection types by wire name.
-    pub types: BTreeMap<WireName, serde_json::Value>,
+    pub types: BTreeMap<WireName, ProjectedTypeDef>,
+}
+
+/// Semantic owner of one generated module asset.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GeneratedAssetOwner {
+    /// Canonical descriptor source.
+    Descriptor,
+    /// Registration source.
+    Registration,
+    /// Introspection document.
+    Introspection,
+    /// Generated context and visible query roots.
+    Context,
+    /// Closed typed dispatch registry.
+    Dispatch,
+    /// Visible binding catalog.
+    BindingCatalog,
+    /// Checked Core, self, or dependency binding copied into the module tree.
+    VisibleBinding,
+    /// Generic private binary entrypoint.
+    Entrypoint,
+    /// Ownership manifest itself.
+    Manifest,
+}
+
+/// Input domain that invalidates one generated asset.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RegenerationClass {
+    /// Authored module source or cfg changed.
+    Authoring,
+    /// Checked visible Core/self/dependency schema changed.
+    VisibleSchema,
+    /// Exact target changed.
+    Target,
+    /// Owning generator implementation changed.
+    Generator,
 }
 
 /// One generated file owned by the module generator.
@@ -570,6 +790,12 @@ pub struct GeneratedAsset {
     pub path: GeneratedAssetPath,
     /// Content digest.
     pub digest: Sha256Digest,
+    /// Semantic renderer owning this path.
+    pub owner: GeneratedAssetOwner,
+    /// Digest of the narrow input domain consumed by this asset.
+    pub input_digest: Sha256Digest,
+    /// Narrow regeneration class used for change selection.
+    pub regeneration: RegenerationClass,
 }
 
 /// Complete generated ownership and provenance manifest.
@@ -582,6 +808,8 @@ pub struct GeneratedModuleAssets {
     pub target: ModuleTarget,
     /// Source descriptor identity.
     pub descriptor_digest: Sha256Digest,
+    /// Manifest path published after every other owned output.
+    pub manifest_path: GeneratedAssetPath,
     /// Assets keyed by the same canonical path.
     pub assets: BTreeMap<GeneratedAssetPath, GeneratedAsset>,
     /// Manifest identity.

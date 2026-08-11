@@ -9,6 +9,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 const CALL_FORMAT_VERSION: u32 = 1;
+const MAX_CALL_ID_BYTES: usize = 128;
 
 /// Validated Dagger parent, function, or argument wire name.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -85,6 +86,73 @@ impl ModuleJson {
     pub fn into_json(self) -> serde_json::Value {
         self.0
     }
+
+    /// Decodes exactly one complete JSON value.
+    pub fn decode(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(bytes).map(Self)
+    }
+}
+
+/// Typed registration or invocation selection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum CallSelector {
+    /// Empty engine function name requesting complete registration.
+    Registration,
+    /// Non-empty parent/function coordinate requesting typed invocation.
+    Invocation {
+        /// Exact selected parent wire name.
+        parent_wire_name: ModuleWireName,
+        /// Exact selected function wire name.
+        function_wire_name: ModuleWireName,
+    },
+}
+
+/// Call-local identity and its unambiguous selected branch.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CallIdentity {
+    call_id: String,
+    selector: CallSelector,
+}
+
+impl CallIdentity {
+    /// Constructs one bounded local identity.
+    pub fn new(call_id: impl Into<String>, selector: CallSelector) -> Result<Self, &'static str> {
+        let call_id = call_id.into();
+        if call_id.is_empty() || call_id.len() > MAX_CALL_ID_BYTES || call_id.contains('\0') {
+            return Err("module call identity is invalid");
+        }
+        Ok(Self { call_id, selector })
+    }
+
+    /// Borrows the call-local diagnostic identity.
+    #[must_use]
+    pub fn call_id(&self) -> &str {
+        &self.call_id
+    }
+
+    /// Borrows the typed branch and invocation coordinate.
+    #[must_use]
+    pub const fn selector(&self) -> &CallSelector {
+        &self.selector
+    }
+}
+
+impl<'de> Deserialize<'de> for CallIdentity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Raw {
+            call_id: String,
+            selector: CallSelector,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        Self::new(raw.call_id, raw.selector).map_err(serde::de::Error::custom)
+    }
 }
 
 /// One named input retained in engine order until duplicate validation completes.
@@ -101,10 +169,8 @@ pub struct NamedModuleArgument {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CallEnvelope {
     format_version: u32,
-    /// Optional parent wire name; constructors have no parent value.
-    pub parent_name: Option<ModuleWireName>,
-    /// Selected function wire name, or empty only for registration.
-    pub function_name: Option<ModuleWireName>,
+    /// Local identity and the already-decoded registration/invocation branch.
+    pub identity: CallIdentity,
     /// Exact parent JSON when an instance function is selected.
     pub parent: Option<ModuleJson>,
     /// Named arguments before completeness and duplicate validation.
@@ -115,15 +181,13 @@ impl CallEnvelope {
     /// Constructs a current-format call envelope.
     #[must_use]
     pub fn new(
-        parent_name: Option<ModuleWireName>,
-        function_name: Option<ModuleWireName>,
+        identity: CallIdentity,
         parent: Option<ModuleJson>,
         arguments: Vec<NamedModuleArgument>,
     ) -> Self {
         Self {
             format_version: CALL_FORMAT_VERSION,
-            parent_name,
-            function_name,
+            identity,
             parent,
             arguments,
         }
@@ -145,8 +209,7 @@ impl<'de> Deserialize<'de> for CallEnvelope {
         #[serde(deny_unknown_fields)]
         struct Raw {
             format_version: u32,
-            parent_name: Option<ModuleWireName>,
-            function_name: Option<ModuleWireName>,
+            identity: CallIdentity,
             parent: Option<ModuleJson>,
             arguments: Vec<NamedModuleArgument>,
         }
@@ -157,11 +220,6 @@ impl<'de> Deserialize<'de> for CallEnvelope {
                 "unsupported module call format version",
             ));
         }
-        Ok(Self::new(
-            raw.parent_name,
-            raw.function_name,
-            raw.parent,
-            raw.arguments,
-        ))
+        Ok(Self::new(raw.identity, raw.parent, raw.arguments))
     }
 }

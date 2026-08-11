@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use convert_case::{Case, Casing};
 use quote::ToTokens;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use syn::{GenericArgument, PathArguments, Type};
 
@@ -17,7 +18,8 @@ use super::model::{RustSymbol, SourceCoordinate, WireName};
 use super::source::{GeneratedTypeKind, ModuleDiscovery};
 
 /// Position-specific validation for the recursive Rust type algebra.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum TypePosition {
     /// Function or constructor data argument.
     Input,
@@ -28,7 +30,8 @@ pub enum TypePosition {
 }
 
 /// One lossless Rust type admitted by module authoring.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 pub enum RustModuleType {
     /// Owned UTF-8 string.
     String,
@@ -59,7 +62,8 @@ pub enum RustModuleType {
 }
 
 /// Canonical target TypeDef shape derived from the Rust algebra.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ProjectedType {
     /// Named scalar, object, interface, or enum.
     Named { name: String, nullable: bool },
@@ -484,7 +488,8 @@ pub enum ModuleValue {
 }
 
 /// Exposure and persistence policy for one object field.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ObjectFieldMode {
     /// Public TypeDef field and persistent state.
     Exposed,
@@ -495,7 +500,8 @@ pub enum ObjectFieldMode {
 }
 
 /// One descriptor-owned local object field policy.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObjectFieldContract {
     /// Rust field identifier used by generated access bridges.
     pub rust_name: String,
@@ -508,7 +514,8 @@ pub struct ObjectFieldContract {
 }
 
 /// The only safe root construction choices.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ConstructionPolicy {
     /// One explicit constructor; application failure remains observable.
     Explicit { fallible: bool },
@@ -517,7 +524,8 @@ pub enum ConstructionPolicy {
 }
 
 /// Complete local object state contract.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObjectContract {
     /// Canonical local object symbol.
     pub symbol: RustSymbol,
@@ -576,7 +584,8 @@ impl ObjectContract {
 }
 
 /// One interface method shape used for implementation compatibility checks.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceMethod {
     /// Canonical wire name.
     pub wire_name: WireName,
@@ -585,7 +594,8 @@ pub struct InterfaceMethod {
 }
 
 /// Closed local interface and its accepted concrete implementations.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceContract {
     /// Canonical interface symbol.
     pub symbol: RustSymbol,
@@ -631,7 +641,8 @@ impl InterfaceContract {
 }
 
 /// One unit enum variant and its optional explicit wire name.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EnumVariantContract {
     /// Authored Rust variant name.
     pub rust_name: String,
@@ -640,7 +651,8 @@ pub struct EnumVariantContract {
 }
 
 /// Exact unit enum contract.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EnumContract {
     /// Canonical enum symbol.
     pub symbol: RustSymbol,
@@ -702,7 +714,8 @@ impl EnumContract {
 }
 
 /// Transparent local scalar over one primitive representation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScalarContract {
     /// Canonical scalar symbol.
     pub symbol: RustSymbol,
@@ -733,7 +746,8 @@ impl ScalarContract {
 }
 
 /// Closed contract catalog required for local structured value codecs.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TypeCatalog {
     /// Local object contracts.
     pub objects: BTreeMap<RustSymbol, ObjectContract>,

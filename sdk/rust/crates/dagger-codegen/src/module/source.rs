@@ -194,24 +194,23 @@ impl SourceDiscovery {
                 Ok(functions) => detached_functions.extend(functions),
                 Err(errors) => diagnostics.extend(errors.diagnostics().iter().cloned()),
             }
-            match AuthoringParser::configured_file(&unit.path, &unit.contents, &snapshot.cfg) {
-                Ok(file) => {
-                    collect_scopes(
-                        &unit.path,
-                        &file.items,
-                        &unit.module_path,
-                        &mut scopes,
-                        &mut diagnostics,
-                    );
-                    collect_interface_implementations(
-                        &unit.path,
-                        &file.items,
-                        &unit.module_path,
-                        &mut pending_implementations,
-                        &mut diagnostics,
-                    );
-                }
-                Err(_) => {}
+            if let Ok(file) =
+                AuthoringParser::configured_file(&unit.path, &unit.contents, &snapshot.cfg)
+            {
+                collect_scopes(
+                    &unit.path,
+                    &file.items,
+                    &unit.module_path,
+                    &mut scopes,
+                    &mut diagnostics,
+                );
+                collect_interface_implementations(
+                    &unit.path,
+                    &file.items,
+                    &unit.module_path,
+                    &mut pending_implementations,
+                    &mut diagnostics,
+                );
             }
         }
 
@@ -315,6 +314,9 @@ struct SourceUnit {
     module_path: Vec<String>,
 }
 
+// Traversal state stays explicit so each mutable collection has one clear owner and
+// recursive calls cannot retain an opaque context with broader mutation authority.
+#[allow(clippy::too_many_arguments)]
 fn walk_document(
     snapshot: &ModuleSourceSnapshot,
     path: &ModuleSourcePath,

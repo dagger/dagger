@@ -12,6 +12,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest as _, Sha256};
 
+use dagger_codegen::module::{
+    GeneratedAssetPath, GeneratedModuleAssets, RenderedModuleAssets, validate_manifest,
+};
+
 use crate::canonical::canonical_bytes;
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::{
@@ -31,6 +35,15 @@ pub struct OperationCandidate {
     pub manifest: OperationManifest,
     /// Fixed operation-relative control-manifest destination.
     pub manifest_path: RelativeOperationPath,
+    /// Digest of current manifest bytes when a prior manifest was loaded.
+    pub previous_manifest_digest: Option<Sha256Digest>,
+}
+
+/// Complete generated-module tree before any filesystem mutation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModuleAssetCandidate {
+    /// Rendered files and the manifest that owns every non-manifest path.
+    pub rendered: RenderedModuleAssets,
     /// Digest of current manifest bytes when a prior manifest was loaded.
     pub previous_manifest_digest: Option<Sha256Digest>,
 }
@@ -257,6 +270,147 @@ pub fn verify_ownership(
     })
 }
 
+/// Validates generated-module ownership and computes a manifest-last transaction.
+///
+/// Target and generator changes are allowed: their effect is already reflected in the
+/// candidate bytes and per-asset input digests. Compatibility is limited to the strict
+/// manifest format and its fixed destination, which prevents an old manifest from
+/// silently authorizing a different ownership protocol.
+pub fn verify_module_ownership(
+    root: &OperationRoot,
+    previous: Option<&GeneratedModuleAssets>,
+    candidate: &ModuleAssetCandidate,
+) -> Result<PublicationPlan, EngineDiagnostic> {
+    let manifest = &candidate.rendered.manifest;
+    validate_manifest(manifest).map_err(|_| module_stale("generated-module-assets"))?;
+    let manifest_path = module_path(&manifest.manifest_path)?;
+    let manifest_bytes =
+        canonical_bytes(manifest).map_err(|_| module_stale("generated-module-assets"))?;
+    let Some(rendered_manifest) = candidate.rendered.files.get(&manifest.manifest_path) else {
+        return Err(module_stale(manifest.manifest_path.as_str()));
+    };
+    if rendered_manifest != &manifest_bytes
+        || candidate.rendered.files.len() != manifest.assets.len() + 1
+    {
+        return Err(module_stale("generated-module-assets.files"));
+    }
+
+    let mut artifacts = BTreeMap::new();
+    for (path, record) in &manifest.assets {
+        if path == &manifest.manifest_path {
+            return Err(module_stale(path.as_str()));
+        }
+        let Some(content) = candidate.rendered.files.get(path) else {
+            return Err(module_stale(path.as_str()));
+        };
+        if record.path != *path || record.digest.as_str() != digest(content).as_str() {
+            return Err(module_stale(path.as_str()));
+        }
+        artifacts.insert(
+            module_path(path)?,
+            CandidateArtifact {
+                kind: module_artifact_kind(path),
+                content: content.clone(),
+                ownership: crate::ArtifactOwnership::Generator,
+            },
+        );
+    }
+
+    let previous_records = if let Some(previous) = previous {
+        if previous.format_version != manifest.format_version
+            || previous.manifest_path != manifest.manifest_path
+        {
+            return Err(module_stale("generated-module-assets.compatibility"));
+        }
+        validate_manifest(previous)
+            .map_err(|_| module_stale("generated-module-assets.compatibility"))?;
+        let expected_manifest_digest = candidate
+            .previous_manifest_digest
+            .as_ref()
+            .ok_or_else(|| module_stale("generated-module-assets.previous-manifest-digest"))?;
+        let current_manifest = root
+            .read(&manifest_path)
+            .map_err(|_| module_stale(manifest.manifest_path.as_str()))?;
+        let previous_bytes =
+            canonical_bytes(previous).map_err(|_| module_stale("generated-module-assets"))?;
+        if &digest(&current_manifest) != expected_manifest_digest
+            || current_manifest != previous_bytes
+        {
+            return Err(module_stale(manifest.manifest_path.as_str()));
+        }
+        let mut records = BTreeMap::new();
+        for (path, record) in &previous.assets {
+            let path = module_path(path)?;
+            let current = root.read(&path).map_err(|_| module_stale(path.as_str()))?;
+            if digest(&current).as_str() != record.digest.as_str() {
+                return Err(module_stale(path.as_str()));
+            }
+            records.insert(path, record.digest.as_str().to_owned());
+        }
+        Some(records)
+    } else {
+        if root.exists(&manifest_path) {
+            return Err(ownership(
+                manifest_path.as_str(),
+                "unknown bytes occupy the generated-module manifest destination",
+            ));
+        }
+        None
+    };
+
+    let prior_paths = previous_records
+        .as_ref()
+        .map(|records| records.keys().cloned().collect::<BTreeSet<_>>())
+        .unwrap_or_default();
+    let mut writes = BTreeMap::new();
+    let mut changes = Vec::new();
+    for (path, artifact) in &artifacts {
+        if root.exists(path) && !prior_paths.contains(path) {
+            return Err(ownership(
+                path.as_str(),
+                "unknown bytes occupy a generated module asset destination",
+            ));
+        }
+        let kind = if prior_paths.contains(path) {
+            if root.read(path)? == artifact.content {
+                continue;
+            }
+            PublicationChangeKind::Change
+        } else {
+            PublicationChangeKind::Add
+        };
+        writes.insert(path.clone(), artifact.content.clone());
+        changes.push(PublicationChange {
+            path: path.clone(),
+            kind,
+        });
+    }
+    let mut removals = BTreeSet::new();
+    for path in prior_paths {
+        if !artifacts.contains_key(&path) {
+            removals.insert(path.clone());
+            changes.push(PublicationChange {
+                path,
+                kind: PublicationChangeKind::Remove,
+            });
+        }
+    }
+    OperationRoot::validate_distinct(
+        artifacts
+            .keys()
+            .chain(removals.iter())
+            .chain(std::iter::once(&manifest_path)),
+    )?;
+    changes.sort();
+    Ok(PublicationPlan {
+        writes,
+        removals,
+        manifest_path,
+        manifest_bytes,
+        changes,
+    })
+}
+
 /// Publishes one verified plan with the operation manifest last.
 pub fn publish(
     root: &OperationRoot,
@@ -460,6 +614,26 @@ fn require_compatible(
         ));
     }
     Ok(())
+}
+
+fn module_path(path: &GeneratedAssetPath) -> Result<RelativeOperationPath, EngineDiagnostic> {
+    RelativeOperationPath::parse(path.as_str()).map_err(|_| module_stale(path.as_str()))
+}
+
+fn module_artifact_kind(path: &GeneratedAssetPath) -> crate::ArtifactKind {
+    if path.as_str().ends_with(".rs") {
+        crate::ArtifactKind::RustSource
+    } else {
+        crate::ArtifactKind::ControlManifest
+    }
+}
+
+fn module_stale(coordinate: &str) -> EngineDiagnostic {
+    EngineDiagnostic::new(
+        EngineDiagnosticCode::OperationManifestStale,
+        Some(coordinate),
+        "generated module assets do not match their ownership manifest",
+    )
 }
 
 fn missing_parents(root: &OperationRoot, path: &RelativeOperationPath) -> BTreeSet<PathBuf> {

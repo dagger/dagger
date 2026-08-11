@@ -84,6 +84,11 @@ const PUBLIC_ITEM_SOURCES: &[(&str, &str)] = &[
     ("graphql", include_str!("graphql.rs")),
     ("runtime_errors", include_str!("runtime_errors.rs")),
     ("query", include_str!("query.rs")),
+    ("module_context", include_str!("module/context.rs")),
+    ("module_dispatch", include_str!("module/dispatch.rs")),
+    ("module_error", include_str!("module/error.rs")),
+    ("module_view", include_str!("module/view.rs")),
+    ("module_wire", include_str!("module/wire.rs")),
 ];
 
 fn manifest_lines(input: &str) -> Vec<&str> {
@@ -127,6 +132,11 @@ fn production_source_is_panic_free() -> bool {
         include_str!("transport.rs"),
         include_str!("compatibility.rs"),
         include_str!("runtime_errors.rs"),
+        include_str!("module/context.rs"),
+        include_str!("module/dispatch.rs"),
+        include_str!("module/error.rs"),
+        include_str!("module/view.rs"),
+        include_str!("module/wire.rs"),
     ]
     .into_iter()
     .all(|source| {

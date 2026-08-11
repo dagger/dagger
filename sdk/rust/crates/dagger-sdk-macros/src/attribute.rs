@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use quote::ToTokens;
 use syn::parse::Parser;
 use syn::{Attribute, Error, Result, Visibility};
@@ -129,7 +129,40 @@ pub(crate) fn require_export_visibility(visibility: &Visibility) -> Result<()> {
 }
 
 pub(crate) fn canonical_tokens(tokens: &impl ToTokens) -> String {
-    tokens.to_token_stream().to_string()
+    let mut canonical = String::new();
+    append_tokens(tokens.to_token_stream(), &mut canonical);
+    canonical
+}
+
+fn append_tokens(tokens: TokenStream, canonical: &mut String) {
+    for token in tokens {
+        match token {
+            TokenTree::Group(group) => {
+                canonical.push('g');
+                canonical.push(match group.delimiter() {
+                    Delimiter::Parenthesis => 'p',
+                    Delimiter::Brace => 'b',
+                    Delimiter::Bracket => 's',
+                    Delimiter::None => 'n',
+                });
+                append_tokens(group.stream(), canonical);
+                canonical.push('e');
+            }
+            TokenTree::Ident(ident) => append_framed('i', &ident.to_string(), canonical),
+            TokenTree::Punct(punct) => {
+                canonical.push('p');
+                canonical.push(punct.as_char());
+            }
+            TokenTree::Literal(literal) => append_framed('l', &literal.to_string(), canonical),
+        }
+    }
+}
+
+fn append_framed(kind: char, value: &str, canonical: &mut String) {
+    canonical.push(kind);
+    canonical.push_str(&value.len().to_string());
+    canonical.push(':');
+    canonical.push_str(value);
 }
 
 #[cfg(test)]

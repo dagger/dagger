@@ -202,7 +202,10 @@ pub use graphql::{
     GraphQlError, GraphQlLocation, GraphQlPathSegment, RawRequest, RawResponse, ResponseData,
 };
 pub use id_input::IdInput;
-pub use module::{ModuleError, ModuleErrorBuildError, ModuleErrorDetail};
+pub use module::{
+    CurrentCall, ModuleCancellation, ModuleError, ModuleErrorBuildError, ModuleErrorDetail,
+    TelemetryContext,
+};
 pub use runtime_errors::{
     CompatibilityError, CompatibilityErrorKind, CompatibilityEvidenceGap, ExecError,
     ProvisioningError, ProvisioningErrorKind, SessionStartupError, SessionStartupErrorKind,

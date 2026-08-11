@@ -7,8 +7,43 @@
 /// Hidden bridge ABI consumed by generated module support.
 #[doc(hidden)]
 pub mod __private {
+    use std::error::Error;
+    use std::fmt;
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use super::super::context::ModuleContextBase;
+    use super::super::wire::ModuleJson;
+
     /// Current syntactic contract shared by source analysis and procedural macros.
     pub const AUTHORING_ABI_VERSION: u32 = 1;
+
+    /// Boxed generated future whose lifetime remains tied to the active call.
+    pub type ModuleBoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+    /// Typed failure to decode one module boundary value.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct DecodeError;
+
+    impl fmt::Display for DecodeError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("module input decoding failed")
+        }
+    }
+
+    impl Error for DecodeError {}
+
+    /// Typed failure to encode one module boundary value.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct EncodeError;
+
+    impl fmt::Display for EncodeError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("module output encoding failed")
+        }
+    }
+
+    impl Error for EncodeError {}
 
     /// Const-generic witness for one normalized authoring declaration.
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -70,5 +105,219 @@ pub mod __private {
     pub trait ModuleMethodBridge<const VALUE: u128> {
         /// Returns the function declaration fingerprint expected by generated code.
         fn authoring_fingerprint() -> AuthoringFingerprint<VALUE>;
+    }
+
+    /// Generated input conversion for one exact descriptor type.
+    pub trait ModuleInputCodec: Sized {
+        /// Decodes one canonical input using the active session when handles re-enter.
+        fn decode_input(
+            value: &ModuleJson,
+            context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError>;
+    }
+
+    /// Generated output conversion for one exact descriptor type.
+    pub trait ModuleOutputCodec: Sized {
+        /// Encodes one value, resolving generated handle IDs on the active session.
+        fn encode_output<'a>(
+            self,
+            context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a;
+    }
+
+    /// Value with both exact input and output conversion.
+    pub trait ModuleValueCodec: ModuleInputCodec + ModuleOutputCodec {}
+
+    impl<T> ModuleValueCodec for T where T: ModuleInputCodec + ModuleOutputCodec {}
+
+    impl ModuleInputCodec for String {
+        fn decode_input(
+            value: &ModuleJson,
+            _context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            value
+                .as_json()
+                .as_str()
+                .map(str::to_owned)
+                .ok_or(DecodeError)
+        }
+    }
+
+    impl ModuleOutputCodec for String {
+        fn encode_output<'a>(
+            self,
+            _context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move { Ok(ModuleJson::new(serde_json::Value::String(self))) })
+        }
+    }
+
+    impl ModuleInputCodec for i64 {
+        fn decode_input(
+            value: &ModuleJson,
+            _context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            value.as_json().as_i64().ok_or(DecodeError)
+        }
+    }
+
+    impl ModuleOutputCodec for i64 {
+        fn encode_output<'a>(
+            self,
+            _context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move { Ok(ModuleJson::new(serde_json::Value::Number(self.into()))) })
+        }
+    }
+
+    impl ModuleInputCodec for bool {
+        fn decode_input(
+            value: &ModuleJson,
+            _context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            value.as_json().as_bool().ok_or(DecodeError)
+        }
+    }
+
+    impl ModuleOutputCodec for bool {
+        fn encode_output<'a>(
+            self,
+            _context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move { Ok(ModuleJson::new(serde_json::Value::Bool(self))) })
+        }
+    }
+
+    impl ModuleInputCodec for f64 {
+        fn decode_input(
+            value: &ModuleJson,
+            _context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            value.as_json().as_f64().ok_or(DecodeError)
+        }
+    }
+
+    impl ModuleOutputCodec for f64 {
+        fn encode_output<'a>(
+            self,
+            _context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move {
+                serde_json::Number::from_f64(self)
+                    .map(serde_json::Value::Number)
+                    .map(ModuleJson::new)
+                    .ok_or(EncodeError)
+            })
+        }
+    }
+
+    impl ModuleInputCodec for () {
+        fn decode_input(
+            value: &ModuleJson,
+            _context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            value.as_json().is_null().then_some(()).ok_or(DecodeError)
+        }
+    }
+
+    impl ModuleOutputCodec for () {
+        fn encode_output<'a>(
+            self,
+            _context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move { Ok(ModuleJson::new(serde_json::Value::Null)) })
+        }
+    }
+
+    impl<T> ModuleInputCodec for Vec<T>
+    where
+        T: ModuleInputCodec,
+    {
+        fn decode_input(
+            value: &ModuleJson,
+            context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            value
+                .as_json()
+                .as_array()
+                .ok_or(DecodeError)?
+                .iter()
+                .map(|value| T::decode_input(&ModuleJson::new(value.clone()), context))
+                .collect()
+        }
+    }
+
+    impl<T> ModuleOutputCodec for Vec<T>
+    where
+        T: ModuleOutputCodec + Send,
+    {
+        fn encode_output<'a>(
+            self,
+            context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move {
+                let mut encoded = Vec::with_capacity(self.len());
+                for value in self {
+                    encoded.push(value.encode_output(context).await?.into_json());
+                }
+                Ok(ModuleJson::new(serde_json::Value::Array(encoded)))
+            })
+        }
+    }
+
+    impl<T> ModuleInputCodec for Option<T>
+    where
+        T: ModuleInputCodec,
+    {
+        fn decode_input(
+            value: &ModuleJson,
+            context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            if value.as_json().is_null() {
+                Ok(None)
+            } else {
+                T::decode_input(value, context).map(Some)
+            }
+        }
+    }
+
+    impl<T> ModuleOutputCodec for Option<T>
+    where
+        T: ModuleOutputCodec + Send,
+    {
+        fn encode_output<'a>(
+            self,
+            context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move {
+                match self {
+                    Some(value) => value.encode_output(context).await,
+                    None => Ok(ModuleJson::new(serde_json::Value::Null)),
+                }
+            })
+        }
     }
 }

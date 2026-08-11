@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use quote::ToTokens;
 use syn::parse::Parser;
 use syn::spanned::Spanned;
@@ -668,7 +668,7 @@ fn parse_object(
         parts.extend([
             policy_name.to_owned(),
             name.clone(),
-            rust_type.clone(),
+            fingerprint_tokens(&field.ty),
             metadata.canonical(),
         ]);
         authored_fields.push(AuthoringField {
@@ -763,7 +763,7 @@ fn parse_interface(
         }
         parts.extend([
             function.sig.ident.to_string(),
-            canonical_tokens(&function.sig),
+            fingerprint_tokens(&function.sig),
             metadata.canonical(),
         ]);
         interface_methods.push(AuthoringInterfaceMethod {
@@ -878,7 +878,7 @@ fn parse_scalar(
         "scalar".to_owned(),
         item.ident.to_string(),
         outer.canonical(),
-        representation.clone(),
+        fingerprint_tokens(&field.ty),
         metadata.canonical(),
     ];
     Ok(Some(declaration(
@@ -975,7 +975,6 @@ fn parse_methods(
             .join("::"),
         _ => return Err(invalid_self_type(path, item.self_ty.span())),
     };
-    let self_type = canonical_tokens(item.self_ty.as_ref());
     let mut methods = Vec::new();
     for impl_item in &mut item.items {
         let ImplItem::Fn(function) = impl_item else {
@@ -1024,9 +1023,9 @@ fn parse_methods(
 
         let mut parts = vec![
             "method".to_owned(),
-            self_type.clone(),
+            fingerprint_tokens(item.self_ty.as_ref()),
             function.sig.ident.to_string(),
-            canonical_tokens(&function.sig),
+            fingerprint_tokens(&function.sig),
             metadata.canonical(),
         ];
         parts.extend(parameter_metadata.iter().map(Metadata::canonical));
@@ -1227,6 +1226,7 @@ fn take_outer(attributes: &mut Vec<Attribute>) -> Option<(String, AttributeInput
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Metadata {
     values: BTreeMap<String, String>,
+    fingerprint_values: BTreeMap<String, String>,
 }
 
 impl Metadata {
@@ -1268,25 +1268,28 @@ impl Metadata {
         {
             return Err(nested.error("a Dagger context parameter cannot carry value metadata"));
         }
-        let value = if MARKERS.contains(&name.as_str()) {
+        let (value, fingerprint_value) = if MARKERS.contains(&name.as_str()) {
             if nested.input.peek(syn::Token![=]) || nested.input.peek(syn::token::Paren) {
                 return Err(nested.error(format!("Dagger marker `{name}` accepts no value")));
             }
-            "true".to_owned()
+            ("true".to_owned(), "true".to_owned())
         } else if VALUES.contains(&name.as_str()) {
             if nested.input.peek(syn::Token![=]) {
-                canonical_tokens(&nested.value()?.parse::<syn::Expr>()?)
+                let value = nested.value()?.parse::<syn::Expr>()?;
+                (canonical_tokens(&value), fingerprint_tokens(&value))
             } else if nested.input.peek(syn::token::Paren) {
                 let content;
                 syn::parenthesized!(content in nested.input);
-                canonical_tokens(&content.parse::<TokenStream>()?)
+                let value = content.parse::<TokenStream>()?;
+                (canonical_tokens(&value), fingerprint_tokens(&value))
             } else {
                 return Err(nested.error(format!("Dagger metadata `{name}` requires a value")));
             }
         } else {
             return Err(nested.error(format!("unknown Dagger metadata `{name}`")));
         };
-        self.values.insert(name, value);
+        self.values.insert(name.clone(), value);
+        self.fingerprint_values.insert(name, fingerprint_value);
         Ok(())
     }
 
@@ -1295,7 +1298,7 @@ impl Metadata {
     }
 
     fn canonical(&self) -> String {
-        self.values
+        self.fingerprint_values
             .iter()
             .map(|(name, value)| format!("{}:{name}={value}", name.len()))
             .collect::<Vec<_>>()
@@ -1438,6 +1441,43 @@ fn coordinate(path: &ModuleSourcePath, span: Span) -> SourceCoordinate {
 
 fn canonical_tokens(tokens: &impl ToTokens) -> String {
     tokens.to_token_stream().to_string()
+}
+
+fn fingerprint_tokens(tokens: &impl ToTokens) -> String {
+    let mut canonical = String::new();
+    append_tokens(tokens.to_token_stream(), &mut canonical);
+    canonical
+}
+
+fn append_tokens(tokens: TokenStream, canonical: &mut String) {
+    for token in tokens {
+        match token {
+            TokenTree::Group(group) => {
+                canonical.push('g');
+                canonical.push(match group.delimiter() {
+                    Delimiter::Parenthesis => 'p',
+                    Delimiter::Brace => 'b',
+                    Delimiter::Bracket => 's',
+                    Delimiter::None => 'n',
+                });
+                append_tokens(group.stream(), canonical);
+                canonical.push('e');
+            }
+            TokenTree::Ident(ident) => append_framed('i', &ident.to_string(), canonical),
+            TokenTree::Punct(punct) => {
+                canonical.push('p');
+                canonical.push(punct.as_char());
+            }
+            TokenTree::Literal(literal) => append_framed('l', &literal.to_string(), canonical),
+        }
+    }
+}
+
+fn append_framed(kind: char, value: &str, canonical: &mut String) {
+    canonical.push(kind);
+    canonical.push_str(&value.len().to_string());
+    canonical.push(':');
+    canonical.push_str(value);
 }
 
 fn fingerprint(parts: impl IntoIterator<Item = String>) -> AuthoringFingerprintValue {

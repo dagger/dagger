@@ -7,15 +7,22 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use dagger_codegen::module::{
-    AuthoringAbi, AuthoringFieldPolicy, AuthoringFingerprintValue, AuthoringParser, CfgEnvironment,
-    DigestDomain as ModuleDigestDomain, DispatchCoordinate, FormatVersion, FunctionDescriptor,
-    GeneratedAsset, GeneratedAssetPath, GeneratedModuleAssets, LocalTypeDescriptor, LocalTypeKind,
-    ModuleDescriptor, ModuleIntrospection, ModulePackage, ModuleSourcePath, ModuleSourceSnapshot,
-    ModuleTarget, PackageName, RegistrationProjection, RustSymbol, Sha256Digest, SourceCoordinate,
-    SourceDocument, TargetValue, WireName, canonical_bytes as module_canonical_bytes,
-    canonical_digest as module_canonical_digest, decode_canonical as decode_module_canonical,
+    ArgumentMetadata, AuthoringAbi, AuthoringFieldPolicy, AuthoringFingerprintValue,
+    AuthoringParser, CachePolicy, CfgEnvironment, CompiledArgument, CompiledFunction,
+    ConstructionPolicy, DescriptorProvenance, DigestDomain as ModuleDigestDomain,
+    DispatchCoordinate, ExecutionKind, FormatVersion, FunctionDescriptor, FunctionKind,
+    FunctionMetadata, FunctionReturn, FunctionRole, GeneratedAsset, GeneratedAssetOwner,
+    GeneratedAssetPath, GeneratedModuleAssets, LocalTypeContract, LocalTypeDescriptor,
+    LocalTypeKind, ModuleDescriptor, ModuleIntrospection, ModulePackage, ModuleSourcePath,
+    ModuleSourceSnapshot, ModuleTarget, ObjectContract, PackageName, ProjectedTypeDef,
+    ProjectedTypeKind, ReceiverKind, RegenerationClass, RegistrationProjection, RustModuleType,
+    RustSymbol, Sha256Digest, SourceCoordinate, SourceDocument, TargetValue, WireName,
+    canonical_bytes as module_canonical_bytes, canonical_digest as module_canonical_digest,
+    decode_canonical as decode_module_canonical,
 };
-use dagger_sdk::__private::{CallEnvelope, ModuleJson, ModuleWireName, NamedModuleArgument};
+use dagger_sdk::__private::{
+    CallEnvelope, CallIdentity, CallSelector, ModuleJson, ModuleWireName, NamedModuleArgument,
+};
 use dagger_sdk_completeness::{
     CanonicalSet, Digest, EvidenceId, ModuleAuthoringFormatVersion, ModuleAuthority,
     ModuleEvidenceDomain, ModuleEvidenceObservation, ModuleEvidenceOutcome, TargetDigest,
@@ -147,10 +154,14 @@ proptest! {
             1 => "#[dagger(state)]",
             _ => "",
         };
-        let method = match callable_kind {
-            0 => "",
-            1 => "#[dagger(function)]",
-            _ => "#[dagger(constructor)]",
+        let callable = match callable_kind {
+            0 => "fn value(&self) -> String { self.value.clone() }",
+            1 => {
+                "#[dagger(function)]\nfn value(&self) -> String { self.value.clone() }"
+            }
+            _ => {
+                "#[dagger(constructor)]\nfn value(value: String) -> Self { Self { value } }"
+            }
         };
         let source = format!(r#"
             {outer}
@@ -161,8 +172,7 @@ proptest! {
 
             #[sdk_alias::methods]
             impl Item{seed} {{
-                {method}
-                fn value(&self) -> String {{ self.value.clone() }}
+                {callable}
             }}
 
             pub struct OrdinaryPublic;
@@ -504,11 +514,22 @@ fn descriptor(seed: u8) -> ModuleDescriptor {
         authoring_abi: AuthoringAbi::current(),
         target: target(seed),
         package: package(),
+        module: WireName::new(format!("FixtureModule{seed}")).unwrap(),
         root: root.clone(),
         types: vec![LocalTypeDescriptor {
             rust_symbol: root.clone(),
             wire_name: wire.clone(),
             kind: LocalTypeKind::Object { root: true },
+            contract: LocalTypeContract::Object(ObjectContract {
+                symbol: root.clone(),
+                fields: Vec::new(),
+                construction: Some(ConstructionPolicy::Default),
+            }),
+            fields: Vec::new(),
+            interface_functions: Vec::new(),
+            enum_values: Vec::new(),
+            documentation: Some("Fixture object.".to_owned()),
+            deprecation: None,
             source: coordinate(),
             fingerprint: AuthoringFingerprintValue::from_u128(u128::from(seed) + 1),
         }],
@@ -516,7 +537,38 @@ fn descriptor(seed: u8) -> ModuleDescriptor {
             parent: root.clone(),
             rust_symbol: RustSymbol::new(format!("crate::Fixture{seed}::hello")).unwrap(),
             wire_name: function.clone(),
-            arguments: vec![WireName::new("name").unwrap()],
+            compiled: CompiledFunction {
+                rust_name: "hello".to_owned(),
+                wire_name: function.clone(),
+                kind: FunctionKind::Function,
+                receiver: ReceiverKind::Shared,
+                execution: ExecutionKind::Synchronous,
+                inject_context: false,
+                context_index: None,
+                arguments: vec![CompiledArgument {
+                    rust_name: "name".to_owned(),
+                    wire_name: WireName::new("name").unwrap(),
+                    ty: RustModuleType::String,
+                    metadata: ArgumentMetadata {
+                        documentation: None,
+                        deprecation: None,
+                        default: None,
+                        default_path: None,
+                        default_address: None,
+                        ignore: Vec::new(),
+                        optional: false,
+                        source: coordinate(),
+                    },
+                }],
+                return_type: FunctionReturn::Value(RustModuleType::String),
+                metadata: FunctionMetadata {
+                    documentation: None,
+                    cache: CachePolicy::Default,
+                    role: FunctionRole::Ordinary,
+                    deprecation: None,
+                    source: coordinate(),
+                },
+            },
             fingerprint: AuthoringFingerprintValue::from_u128(u128::from(seed) + 2),
             source: coordinate(),
         }],
@@ -526,6 +578,19 @@ fn descriptor(seed: u8) -> ModuleDescriptor {
         }],
         source_digest: digest(seed, 3),
         generator_digest: digest(seed, 4),
+        provenance: DescriptorProvenance {
+            source_files: BTreeMap::from([(
+                ModuleSourcePath::new("src/lib.rs").unwrap(),
+                digest(seed, 3),
+            )]),
+            cfg: CfgEnvironment {
+                values: BTreeMap::new(),
+                features: BTreeSet::new(),
+            },
+            visible_schema_digest: digest(seed, 1),
+            generator_digest: digest(seed, 4),
+            authoring_abi: AuthoringAbi::current(),
+        },
         digest: digest(seed, 5),
     }
 }
@@ -534,10 +599,7 @@ fn registration(seed: u8) -> RegistrationProjection {
     RegistrationProjection {
         format_version: FormatVersion::current(),
         descriptor_digest: digest(seed, 5),
-        types: BTreeMap::from([(
-            WireName::new(format!("Fixture{seed}")).unwrap(),
-            json!({"kind": "object"}),
-        )]),
+        types: BTreeMap::from([projected_type(seed)]),
     }
 }
 
@@ -545,10 +607,7 @@ fn introspection(seed: u8) -> ModuleIntrospection {
     ModuleIntrospection {
         format_version: FormatVersion::current(),
         descriptor_digest: digest(seed, 5),
-        types: BTreeMap::from([(
-            WireName::new(format!("Fixture{seed}")).unwrap(),
-            json!({"kind": "OBJECT"}),
-        )]),
+        types: BTreeMap::from([projected_type(seed)]),
     }
 }
 
@@ -558,11 +617,16 @@ fn assets(seed: u8) -> GeneratedModuleAssets {
         format_version: FormatVersion::current(),
         target: target(seed),
         descriptor_digest: digest(seed, 5),
+        manifest_path: GeneratedAssetPath::new("src/dagger_generated/generated-module-assets.json")
+            .unwrap(),
         assets: BTreeMap::from([(
             path.clone(),
             GeneratedAsset {
                 path,
                 digest: digest(seed, 6),
+                owner: GeneratedAssetOwner::Descriptor,
+                input_digest: digest(seed, 3),
+                regeneration: RegenerationClass::Authoring,
             },
         )]),
         digest: digest(seed, 7),
@@ -571,13 +635,37 @@ fn assets(seed: u8) -> GeneratedModuleAssets {
 
 fn call(seed: u8) -> CallEnvelope {
     CallEnvelope::new(
-        Some(ModuleWireName::new(format!("Fixture{seed}")).unwrap()),
-        Some(ModuleWireName::new("hello").unwrap()),
+        CallIdentity::new(
+            format!("call-{seed}"),
+            CallSelector::Invocation {
+                parent_wire_name: ModuleWireName::new(format!("Fixture{seed}")).unwrap(),
+                function_wire_name: ModuleWireName::new("hello").unwrap(),
+            },
+        )
+        .unwrap(),
         Some(ModuleJson::new(json!({"value": seed}))),
         vec![NamedModuleArgument {
             name: ModuleWireName::new("name").unwrap(),
             value: ModuleJson::new(json!(format!("value-{seed}"))),
         }],
+    )
+}
+
+fn projected_type(seed: u8) -> (WireName, ProjectedTypeDef) {
+    let wire_name = WireName::new(format!("Fixture{seed}")).unwrap();
+    (
+        wire_name.clone(),
+        ProjectedTypeDef {
+            wire_name,
+            kind: ProjectedTypeKind::Object,
+            fields: Vec::new(),
+            functions: Vec::new(),
+            enum_values: Vec::new(),
+            interfaces: Vec::new(),
+            documentation: Some("Fixture object.".to_owned()),
+            deprecation: None,
+            source: coordinate(),
+        },
     )
 }
 
@@ -603,14 +691,18 @@ fn reference_object_fingerprint(type_name: &str, rename: &str) -> u128 {
     const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
     const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
 
-    let metadata = format!("6:rename=\"{rename}\"|4:root=true");
+    let quoted_rename = format!("\"{rename}\"");
+    let metadata = format!(
+        "6:rename=l{}:{quoted_rename}|4:root=true",
+        quoted_rename.len()
+    );
     let parts = [
         "object".to_owned(),
         type_name.to_owned(),
         metadata,
         "field".to_owned(),
         "value".to_owned(),
-        "String".to_owned(),
+        "i6:String".to_owned(),
         "5:field=true".to_owned(),
     ];
     let mut value = OFFSET;

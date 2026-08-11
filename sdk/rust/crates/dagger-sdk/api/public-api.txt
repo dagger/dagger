@@ -50,6 +50,12 @@ CloseError
 QueryBuildError
 QueryBuildErrorKind
 TimeoutPhase
+CurrentCall
+ModuleCancellation
+ModuleError
+ModuleErrorBuildError
+ModuleErrorDetail
+TelemetryContext
 IdInput
 Id
 Json

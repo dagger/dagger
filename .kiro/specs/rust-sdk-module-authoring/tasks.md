@@ -346,21 +346,21 @@
       network graph, module build script, module user code, Core regeneration, unrelated
       SDK build, or out-of-root access ran.
 
-- [ ] 9. Add the minimal stable module runtime surface and exact-version generated ABI
-  - [ ] 9.1 Complete query-to-module error conversion
+- [x] 9. Add the minimal stable module runtime surface and exact-version generated ABI
+  - [x] 9.1 Complete query-to-module error conversion
     - Complete the foundational `ModuleError` with bounds and safe deterministic detail
       ordering, then implement `From<QueryError>` with single-GraphQL-error message/
       extension preservation and already-redacted fallback behavior; never insert
       `Debug`, panic payloads, credentials, or opaque transport data automatically.
     - _Requirements: 11.6, 11.9, 12.7, 14.4, 14.6_
-  - [ ] 9.2 Implement call-scoped cancellation, telemetry, and current-call values
+  - [x] 9.2 Implement call-scoped cancellation, telemetry, and current-call values
     - Add clonable `ModuleCancellation` with `is_cancelled`/`cancelled`, SDK-owned
       `TelemetryContext`, and documented `CurrentCall` coordinates/operations.
     - Add `#[doc(hidden)]` clonable `ModuleContextBase` over one active `QueryBuilder`,
       cancellation signal, telemetry context, and current call; expose only the exact
       bridge accessors generated code needs and no connect/close/global behavior.
     - _Requirements: 12.1-12.8, 12.13-12.15, 13.3, 13.7-13.11_
-  - [ ] 9.3 Complete the hidden call, codec, registry, and sink ABI
+  - [x] 9.3 Complete the hidden call, codec, registry, and sink ABI
     - Complete the canonical models from Task 1 with exact-version, `#[doc(hidden)]`
       `ModuleJson`, `CallSelector`, `CallEnvelope`,
       arguments, prepared calls, descriptor/registration views, codec/access traits,
@@ -370,8 +370,8 @@
       values are stable author-facing extensions.
     - _Requirements: 2.5, 9.1-9.3, 9.11-9.12, 11.10, 12.1-12.15, 14.11-14.12_
 
-- [ ] 10. Build the canonical descriptor, registration, and introspection projections
-  - [ ] 10.1 Assemble and hash the complete canonical `ModuleDescriptor`
+- [x] 10. Build the canonical descriptor, registration, and introspection projections
+  - [x] 10.1 Assemble and hash the complete canonical `ModuleDescriptor`
     - Intern every type, field, implementation, function, argument, metadata item,
       source coordinate, Rust symbol, wire name, state/access bridge, dispatch
       coordinate, helper mapping, target, cfg, source, schema, generator, and macro ABI.
@@ -379,7 +379,7 @@
       retain change-owning provenance, and reject invariant/strict-decode failure before
       projection.
     - _Requirements: 8.1-8.4, 8.10-8.12_
-  - [ ] 10.2 Derive equivalent registration and module introspection
+  - [x] 10.2 Derive equivalent registration and module introspection
     - Project both views only from the descriptor; require structural equality for wire
       name, type/list/nullability, docs, deprecation, source map, metadata, arguments,
       defaults, and implementation relationships.
@@ -387,21 +387,21 @@
       schema before Feature 4 rendering, reject Core/dependency collisions, and return
       neither partial projection on failure.
     - _Requirements: 4.14, 8.5-8.9, 8.13, 9.2_
-  - [ ] 10.3 Property test: Property 11 — descriptor identity is canonical and change-sensitive
+  - [x] 10.3 Property test: Property 11 — descriptor identity is canonical and change-sensitive
     - Generate at least 256 valid requests, file/declaration/impl/container orderings,
       and single-domain mutations; require byte-identical equivalent descriptors and
       exact digest/provenance changes for every semantic input mutation.
     - Test identifier: `property_11_descriptor_identity_canonical_change_sensitive`.
     - _Requirements: 8.1-8.4, 8.10-8.12_
-  - [ ] 10.4 Property test: Property 12 — registration and introspection are equivalent projections
+  - [x] 10.4 Property test: Property 12 — registration and introspection are equivalent projections
     - Generate at least 256 descriptors, metadata/type shapes, implementation graphs,
       root counts, schema collisions, and projection failures; compare both views to an
       independent structural model and require all-or-nothing output.
     - Test identifier: `property_12_registration_introspection_equivalent_projections`.
     - _Requirements: 8.5-8.9, 8.13_
 
-- [ ] 11. Render typed module assets, registry, ownership, and scoped regeneration
-  - [ ] 11.1 Render the complete generator-owned module tree
+- [x] 11. Render typed module assets, registry, ownership, and scoped regeneration
+  - [x] 11.1 Render the complete generator-owned module tree
     - Replace the fixed probe content with descriptor, registration, introspection,
       concrete `ModuleContext`, concrete `ModuleQuery`, visible Core/self/dependency
       bindings, dispatch registry, crate-local support re-exports, generic entrypoint,
@@ -410,7 +410,7 @@
       rooted in `dagger_generated`, emit complete module/public docs, and keep authored
       source outside ownership.
     - _Requirements: 2.5, 8.5-8.8, 9.4-9.5, 12.3-12.6, 15.1-15.3_
-  - [ ] 11.2 Generate the closed typed dispatch registry
+  - [x] 11.2 Generate the closed typed dispatch registry
     - Emit exactly one parent/function match arm per callable descriptor item, typed
       fingerprint/signature assertions, receiver/argument/context bridge calls, async
       awaits, and typed success/application-error conversion.
@@ -418,39 +418,39 @@
       parent/function failures without reflection, dynamic downcast, or stringly typed
       fallback.
     - _Requirements: 9.4-9.12_
-  - [ ] 11.3 Extend manifest-owned failure-atomic publication
+  - [x] 11.3 Extend manifest-owned failure-atomic publication
     - Record each owned output, digest, semantic owner, input-domain digest, and
       regeneration class; preserve unknown/user bytes, remove only manifest-proven
       obsolete paths, stage complete candidates, and publish the manifest last.
     - Retain the prior valid tree for source/descriptor/render/format/publication
       failures and preserve the primary cause when rollback also fails.
     - _Requirements: 14.7-14.9, 15.1, 15.3-15.6_
-  - [ ] 11.4 Implement change-domain-scoped regeneration
+  - [x] 11.4 Implement change-domain-scoped regeneration
     - Make identical inputs a byte-identical no-op; map authoring, visible-schema,
       target, and generator changes to only their owning outputs and consumers.
     - Keep ordinary tests on checked assets, avoid complete Core regeneration and every
       unrelated SDK build, and render a stable scoped repair for missing/stale assets.
     - _Requirements: 15.2, 15.7-15.13_
-  - [ ] 11.5 Property test: Property 13 — dispatch registry is a total closed mapping
+  - [x] 11.5 Property test: Property 13 — dispatch registry is a total closed mapping
     - Generate at least 256 callable descriptors, duplicate/unknown coordinates, and
       source orders; require exact-one arms, exact typed bridge selection, distinct
       unknown errors, duplicate rejection, and zero reflection/fallback paths.
     - Test identifier: `property_13_dispatch_registry_total_closed_mapping`.
     - _Requirements: 9.4-9.8, 9.11, 9.12_
-  - [ ] 11.6 Property test: Property 24 — rejection and generation failure are atomic
+  - [x] 11.6 Property test: Property 24 — rejection and generation failure are atomic
     - Inject at least 128 discovery, descriptor, render, format, flush, rename, removal,
       manifest, and rollback failures across generated trees; require no partial view or
       asset and byte-identical prior valid state on rejection.
     - Test identifier: `property_24_rejection_generation_failure_atomic`.
     - _Requirements: 14.7-14.9, 15.1, 15.3-15.6_
-  - [ ] 11.7 Property test: Property 25 — regeneration is scoped, deterministic, and convergent
+  - [x] 11.7 Property test: Property 25 — regeneration is scoped, deterministic, and convergent
     - Generate at least 256 input-domain change sequences, owned/unknown paths, stale
       outputs, and repeated runs; compare selected outputs/removals to a domain graph
       and require byte convergence with zero Core-wide or other-SDK events.
     - Test identifier: `property_25_regeneration_scoped_deterministic_convergent`.
     - _Requirements: 15.2, 15.7-15.13_
 
-- [ ] 12. Checkpoint: descriptor projections and generated module assets are green
+- [x] 12. Checkpoint: descriptor projections and generated module assets are green
   - Run formatting and locked `dagger-codegen`, `dagger-sdk-macros`, `dagger-sdk`, and
     `dagger-sdk-engine` tests for Properties 11-13 and 24-25, fixed projection/collision
     cases, generated source checks, publication fault injection, and one checked
@@ -458,6 +458,35 @@
   - Compare checked Core bindings rather than regenerating them. Record commands,
     elapsed time, package selection, and generation-domain decision; require no engine,
     Dagger module, network graph, unrelated SDK build, or unowned diff.
+  - Checkpoint evidence (2026-08-11, warm local cache as executed, elapsed wall time):
+    - `cargo fmt --all -- --check` — 0.72s; package-scoped locked `cargo check` for
+      `dagger-sdk-macros`, `dagger-codegen`, `dagger-sdk`, and `dagger-sdk-engine` —
+      3.98s.
+    - `cargo test -p dagger-sdk-macros --locked` — 0.26s; all four exact-version
+      attribute/fingerprint ABI tests passed. `cargo test -p dagger-codegen --lib
+      --locked` — 22.70s; all 29 compiler unit/property tests passed, including
+      production rejection of malformed generated Rust before publication.
+    - `cargo test -p dagger-codegen --test module_authoring_assets --locked` — 13.50s;
+      Properties 11-13, 24, and 25 passed, including 256-case canonical/projection/
+      registry/regeneration models, actual pure-pipeline rejection paths, and the
+      offline representative generated-module compile.
+    - The focused `dagger-sdk` runtime, compile-fixture, source-policy, and stable public
+      API commands passed in 0.34s, 19.87s, 6.70s, and 1.72s respectively.
+    - `cargo test -p dagger-sdk-engine --test module_publication_properties --locked` —
+      19.00s; Property 24 passed across 128 publication fault schedules, successful
+      publication preserved unknown paths and converged, and an inconsistent prior
+      manifest could not authorize a different path.
+    - The six engine-free module-authoring completeness properties passed in 3.63s.
+      The changed Rust artifact digest was reconciled to
+      `sha256:981f04f71c822648be0c68388ef2f56f13f2d40960b66be8911eb4c8ff83e4a3`;
+      the root-independent byte-exact baseline guard passed in 35.53s with no inventory,
+      status, or evidence-claim change.
+    - Warning-denied package-scoped clippy and rustdoc passed in 6.28s and 4.48s.
+      No dependency or package-publication policy changed, so security and `cargo deny`
+      were not repeated.
+    - The generation domain was module-owned assets only. Checked Core bindings were
+      copied and compared, never regenerated; no Dagger command, engine process, module
+      build, network graph, unrelated SDK build, user code, or out-of-root access ran.
 
 - [ ] 13. Complete the concrete module context and definitive helper mapping
   - [ ] 13.1 Wire generated `ModuleContext` and `ModuleQuery` to the active session
