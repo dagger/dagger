@@ -61,6 +61,19 @@ func (n *NotificationBubble) Render(ctx tuist.Context) {
 	bgStyle := lipgloss.NewStyle().
 		Width(innerWidth)
 	for _, line := range contentLines {
+		// Clamp the line to the space between the borders before padding.
+		// lipgloss's Width WRAPS rather than truncates, so an over-long line
+		// comes back as a multi-row string — and tuist treats every ctx.Line
+		// entry as exactly one terminal row, so that desynchronizes the frame's
+		// line accounting: the diff renderer's relative cursor moves drift by
+		// the number of extra rows, duplicating and clobbering lines all over
+		// the screen, not just in this box. Tabs and carriage returns advance
+		// the cursor without contributing visible width, so they are neutralized
+		// too. Sidebar content comes from producers that may ignore the width
+		// they are handed (long host paths, unbounded error text), so the box
+		// clamps rather than trusting them. See TestNotificationBubbleOverlongContent.
+		line = strings.ReplaceAll(tuist.ExpandTabs(line, 8), "\r", "")
+		line = tuist.Truncate(line, innerWidth-1, "…")
 		// Apply background to the full inner width
 		padded := bgStyle.Render(" " + line)
 		ctx.Line(leftBorder + padded + rightBorder)
