@@ -74,6 +74,17 @@ proptest! {
         prop_assert_eq!(query.functions.len(), 1);
         prop_assert!(query.functions[0].constructor);
         prop_assert_eq!(compiled.registration.types.len(), compiled.descriptor.types.len() + 1);
+        let context_path = GeneratedAssetPath::new("src/dagger_generated/module_context.rs").unwrap();
+        let context = std::str::from_utf8(&compiled.assets.files[&context_path]).unwrap();
+        prop_assert!(context.contains("root: renamed_sdk::Query"));
+        prop_assert!(context.contains("generated_query_root"));
+        prop_assert!(context.contains("impl ::core::ops::Deref for ModuleQuery"));
+        prop_assert!(context.contains("pub fn current_function_call"));
+        prop_assert!(context.contains("pub fn current_module"));
+        prop_assert!(context.contains("pub fn current_node"));
+        for forbidden in ["connect()", "static mut", "Serialize for ModuleContext"] {
+            prop_assert!(!context.contains(forbidden));
+        }
 
         let root_name = compiled
             .descriptor
@@ -304,7 +315,7 @@ fn representative_generated_module_compiles_offline() {
     fs::write(
         root.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"generated-module-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[dependencies]\nrenamed_sdk = {{ package = \"dagger-sdk\", path = {:?}, default-features = false }}\n",
+            "[package]\nname = \"generated-module-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[dependencies]\nrenamed_sdk = {{ package = \"dagger-sdk\", path = {:?} }}\n",
             sdk
         ),
     )
@@ -379,7 +390,7 @@ impl Root {{
     pub(crate) fn new(child: child::Child) -> Root {{ Root {{ child }} }}
 
     #[dagger(function)]
-    pub(crate) fn greet(&self, name: String) -> String {{
+    pub(crate) fn greet(&self, #[dagger(default = "world")] name: String) -> String {{
         format!("{{}}-{{name}}-{seed}-{suffix}", self.child.value)
     }}
 }}

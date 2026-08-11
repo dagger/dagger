@@ -36,6 +36,8 @@ pub struct ArgumentView {
     pub wire_name: &'static str,
     /// Whether omission is rejected before invocation.
     pub required: bool,
+    /// Canonical JSON used when the argument is omitted, when one was declared.
+    pub default_json: Option<&'static str>,
 }
 
 /// One callable generated descriptor entry.
@@ -50,6 +52,8 @@ pub struct FunctionView {
     pub constructor: bool,
     /// Ordered data-argument coordinates.
     pub arguments: &'static [ArgumentView],
+    /// Canonical successful result type retained for encoding diagnostics.
+    pub result_type: &'static str,
 }
 
 /// Complete static descriptor view embedded in one generated module.

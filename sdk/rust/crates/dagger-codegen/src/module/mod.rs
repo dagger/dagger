@@ -8,6 +8,7 @@ pub mod canonical;
 pub mod compiler;
 pub mod descriptor;
 pub mod diagnostic;
+pub mod helpers;
 pub mod metadata;
 pub mod model;
 pub mod projection;
@@ -28,6 +29,10 @@ pub use compiler::{ModuleCompilation, ModuleCompilationRequest, ModuleCompiler};
 pub use descriptor::{DescriptorBuilder, DescriptorInput, descriptor_digest};
 pub use diagnostic::{
     ModuleDiagnostic, ModuleDiagnosticCode, ModuleDiagnosticSet, SafeDiagnosticSource,
+};
+pub use helpers::{
+    HelperMapping, HelperMappingError, HelperOwner, definitive_helper_mapping,
+    validate_definitive_helper_mapping,
 };
 pub use metadata::{
     ArgumentMetadata, CachePolicy, CompiledArgument, CompiledFunction, ExecutionKind,

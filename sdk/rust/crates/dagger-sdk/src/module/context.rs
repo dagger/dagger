@@ -186,7 +186,45 @@ impl ModuleContextBase {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleCancellation;
+    use async_trait::async_trait;
+    use proptest::prelude::*;
+
+    use super::{CurrentCall, ModuleCancellation, ModuleContextBase};
+    use crate::connection::{EngineConnection, EngineConnectionError};
+    use crate::graphql::{RawRequest, RawResponse, ResponseData};
+    use crate::lifecycle::SessionHandle;
+    use crate::module::wire::{CallSelector, ModuleWireName};
+    use crate::query::QueryBuilder;
+    use crate::test_support::proptest_config;
+
+    struct InertConnection;
+
+    #[async_trait]
+    impl EngineConnection for InertConnection {
+        async fn execute(
+            &self,
+            _request: RawRequest,
+        ) -> Result<RawResponse, EngineConnectionError> {
+            Ok(RawResponse::new(ResponseData::Null))
+        }
+
+        async fn close(&self) -> Result<(), EngineConnectionError> {
+            Ok(())
+        }
+
+        fn abort(&self) {}
+    }
+
+    fn query_builder() -> QueryBuilder {
+        QueryBuilder::new(SessionHandle::new(Box::new(InertConnection), None, None))
+    }
+
+    fn selector() -> CallSelector {
+        CallSelector::Invocation {
+            parent_wire_name: ModuleWireName::new("Fixture").expect("static name is valid"),
+            function_wire_name: ModuleWireName::new("run").expect("static name is valid"),
+        }
+    }
 
     #[tokio::test]
     async fn cancellation_is_monotonic_and_shared_only_by_clones() {
@@ -199,5 +237,49 @@ mod tests {
 
         assert!(first.is_cancelled());
         assert!(!sibling.is_cancelled());
+    }
+
+    proptest! {
+        #![proptest_config(proptest_config())]
+
+        #[test]
+        fn property_19_module_context_scoped_active_call(
+            call_id in "[a-zA-Z0-9-]{1,32}",
+            cancel in any::<bool>(),
+            choose_immediate in any::<bool>(),
+        ) {
+            let builder = query_builder();
+            let session_identity = builder.session_identity();
+            let cancellation = ModuleCancellation::default();
+            let context = ModuleContextBase::new(
+                builder,
+                cancellation.clone(),
+                opentelemetry::Context::new(),
+                CurrentCall::new(call_id.clone(), selector()).expect("generated identity is valid"),
+            );
+            let sibling = ModuleContextBase::new(
+                query_builder(),
+                ModuleCancellation::default(),
+                opentelemetry::Context::new(),
+                CurrentCall::new(format!("sibling-{call_id}"), selector()).expect("generated identity is valid"),
+            );
+
+            let root = context.query_builder().generated_query_root();
+            let observed_identity = if choose_immediate {
+                root.session.identity()
+            } else {
+                root.container().session.identity()
+            };
+            prop_assert_eq!(observed_identity, session_identity);
+            prop_assert_eq!(context.current_call().id(), call_id);
+            prop_assert_ne!(sibling.query_builder().session_identity(), session_identity);
+            prop_assert!(!sibling.cancellation().is_cancelled());
+
+            if cancel {
+                cancellation.cancel();
+                prop_assert!(context.cancellation().is_cancelled());
+                prop_assert!(!sibling.cancellation().is_cancelled());
+            }
+        }
     }
 }

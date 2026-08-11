@@ -296,9 +296,9 @@ fn render_context(alias: &str) -> Vec<u8> {
     format!(
         "//! Generated call-scoped context for the checked visible schema.\n\n\
          /// Call-scoped access to the active module session and runtime context.\n#[derive(Clone)]\npub struct ModuleContext {{\n    inner: {alias}::__private::ModuleContextBase,\n    query: ModuleQuery,\n}}\n\n\
-         /// Query root bound to the same active session as the current call.\n#[derive(Clone)]\npub struct ModuleQuery {{\n    builder: {alias}::QueryBuilder,\n}}\n\n\
-         impl ModuleContext {{\n    #[doc(hidden)]\n    pub fn from_base(inner: {alias}::__private::ModuleContextBase) -> Self {{\n        let query = ModuleQuery {{ builder: inner.query_builder() }};\n        Self {{ inner, query }}\n    }}\n\n    /// Borrows the generated query root for the active session.\n    pub fn query(&self) -> &ModuleQuery {{ &self.query }}\n    /// Borrows this call's monotonic cancellation signal.\n    pub fn cancellation(&self) -> &{alias}::ModuleCancellation {{ self.inner.cancellation() }}\n    /// Borrows the telemetry context inherited by this call.\n    pub fn telemetry_context(&self) -> &{alias}::TelemetryContext {{ self.inner.telemetry_context() }}\n    /// Borrows stable coordinates for the current call.\n    pub fn current_call(&self) -> &{alias}::CurrentCall {{ self.inner.current_call() }}\n}}\n\n\
-         impl ModuleQuery {{\n    #[doc(hidden)]\n    pub fn builder(&self) -> {alias}::QueryBuilder {{ self.builder.clone() }}\n}}\n"
+         /// Query root bound to the same active session as the current call.\n#[derive(Clone)]\npub struct ModuleQuery {{\n    root: {alias}::Query,\n}}\n\n\
+         impl ModuleContext {{\n    #[doc(hidden)]\n    pub fn from_base(inner: {alias}::__private::ModuleContextBase) -> Self {{\n        let query = ModuleQuery {{ root: inner.query_builder().generated_query_root() }};\n        Self {{ inner, query }}\n    }}\n\n    /// Borrows the generated query root for the active session.\n    pub fn query(&self) -> &ModuleQuery {{ &self.query }}\n    /// Returns the active engine function-call handle without reconnecting.\n    pub fn current_function_call(&self) -> {alias}::FunctionCall {{ self.query.current_function_call() }}\n    /// Returns the module currently served by this active session.\n    pub fn current_module(&self) -> {alias}::CurrentModule {{ self.query.current_module() }}\n    /// Returns the engine-held receiver for this instance call.\n    pub fn current_node(&self) -> {alias}::NodeClient {{ self.query.current_node() }}\n    /// Borrows this call's monotonic cancellation signal.\n    pub fn cancellation(&self) -> &{alias}::ModuleCancellation {{ self.inner.cancellation() }}\n    /// Borrows the telemetry context inherited by this call.\n    pub fn telemetry_context(&self) -> &{alias}::TelemetryContext {{ self.inner.telemetry_context() }}\n    /// Borrows stable coordinates for the current call.\n    pub fn current_call(&self) -> &{alias}::CurrentCall {{ self.inner.current_call() }}\n}}\n\n\
+         impl ::core::ops::Deref for ModuleQuery {{\n    type Target = {alias}::Query;\n\n    fn deref(&self) -> &Self::Target {{ &self.root }}\n}}\n"
     )
     .into_bytes()
 }
@@ -310,10 +310,16 @@ fn render_descriptor(descriptor: &ModuleDescriptor) -> Vec<u8> {
             "static ARGUMENTS_{index}: &[super::__private::ArgumentView] = &[\n"
         ));
         for argument in &function.compiled.arguments {
+            let default_json = argument
+                .metadata
+                .default
+                .as_ref()
+                .map(|value| format!("Some({:?})", value.to_string()))
+                .unwrap_or_else(|| "None".to_owned());
             output.push_str(&format!(
-                "    super::__private::ArgumentView {{ wire_name: {:?}, required: {} }},\n",
+                "    super::__private::ArgumentView {{ wire_name: {:?}, required: {}, default_json: {default_json} }},\n",
                 argument.wire_name.as_str(),
-                !argument.metadata.optional
+                !argument.metadata.optional && argument.metadata.default.is_none()
             ));
         }
         output.push_str("];\n");
@@ -339,9 +345,10 @@ fn render_descriptor(descriptor: &ModuleDescriptor) -> Vec<u8> {
             .find(|ty| ty.rust_symbol == function.parent)
             .map_or("", |ty| ty.wire_name.as_str());
         output.push_str(&format!(
-            "    super::__private::FunctionView {{ parent_wire_name: {parent:?}, function_wire_name: {:?}, constructor: {}, arguments: ARGUMENTS_{index} }},\n",
+            "    super::__private::FunctionView {{ parent_wire_name: {parent:?}, function_wire_name: {:?}, constructor: {}, arguments: ARGUMENTS_{index}, result_type: {:?} }},\n",
             function.wire_name.as_str(),
-            function.compiled.kind == FunctionKind::Constructor
+            function.compiled.kind == FunctionKind::Constructor,
+            rust_type(function.compiled.return_type.success())
         ));
     }
     let root = descriptor
@@ -467,7 +474,7 @@ fn tuple_expression(values: &[String]) -> String {
 
 fn render_dispatch(descriptor: &ModuleDescriptor) -> Result<Vec<u8>, ModuleDiagnosticSet> {
     let mut output = String::from(
-        "//! Generated closed typed dispatch registry.\n\n/// Exact descriptor-owned dispatch implementation.\npub struct GeneratedDispatchRegistry;\n\nimpl super::__private::DispatchRegistry for GeneratedDispatchRegistry {\n    fn descriptor(&self) -> &'static super::__private::ModuleDescriptorView { &super::module_descriptor::DESCRIPTOR }\n\n    fn invoke<'a>(&'a self, call: super::__private::PreparedCall, context: super::__private::ModuleContextBase) -> super::__private::ModuleBoxFuture<'a, Result<super::__private::ModuleJson, super::__private::InvocationError>> {\n        Box::pin(async move {\n            let super::__private::CallSelector::Invocation { parent_wire_name, function_wire_name } = call.identity.selector() else { return Err(super::__private::InvocationError::UnknownFunction); };\n            match parent_wire_name.as_str() {\n",
+        "//! Generated closed typed dispatch registry.\n\n/// Exact descriptor-owned dispatch implementation.\npub struct GeneratedDispatchRegistry;\n\nimpl super::__private::DispatchRegistry for GeneratedDispatchRegistry {\n    fn descriptor(&self) -> &'static super::__private::ModuleDescriptorView { &super::module_descriptor::DESCRIPTOR }\n\n    fn registration(&self) -> &'static super::__private::RegistrationView { &super::module_registration::REGISTRATION }\n\n    fn invoke<'a>(&'a self, call: super::__private::PreparedCall, context: super::__private::ModuleContextBase) -> super::__private::ModuleBoxFuture<'a, Result<super::__private::ModuleJson, super::__private::InvocationError>> {\n        Box::pin(async move {\n            let super::__private::CallSelector::Invocation { parent_wire_name, function_wire_name } = call.identity.selector() else { return Err(super::__private::InvocationError::UnknownFunction); };\n            let coordinate = super::__private::CallCoordinate { parent_wire_name: parent_wire_name.as_str().to_owned(), function_wire_name: function_wire_name.as_str().to_owned() };\n            match parent_wire_name.as_str() {\n",
     );
     let mut parents = BTreeMap::<String, Vec<_>>::new();
     for function in &descriptor.functions {
@@ -513,14 +520,16 @@ fn render_dispatch_arm(
     ));
     if function.compiled.receiver == ReceiverKind::Shared {
         output.push_str(&format!(
-            "                        let receiver = <{parent} as super::__private::ModuleInputCodec>::decode_input(call.parent.as_ref().ok_or(super::__private::InvocationError::Decode)?, &context).map_err(|_| super::__private::InvocationError::Decode)?;\n"
+            "                        let receiver = <{parent} as super::__private::ModuleInputCodec>::decode_input(call.parent.as_ref().ok_or_else(|| super::__private::InvocationError::ParentDecode(coordinate.clone()))?, &context).map_err(|_| super::__private::InvocationError::ParentDecode(coordinate.clone()))?;\n"
         ));
     }
     for (index, argument) in function.compiled.arguments.iter().enumerate() {
         output.push_str(&format!(
-            "                        let argument_{index}: {} = <{} as super::__private::ModuleInputCodec>::decode_input(call.arguments.get({index}).ok_or(super::__private::InvocationError::Decode)?, &context).map_err(|_| super::__private::InvocationError::Decode)?;\n",
+            "                        let argument_{index}: {} = <{} as super::__private::ModuleInputCodec>::decode_input(call.arguments.get({index}).ok_or_else(|| super::__private::InvocationError::ArgumentDecode {{ coordinate: coordinate.clone(), argument_wire_name: {:?}.to_owned() }})?, &context).map_err(|_| super::__private::InvocationError::ArgumentDecode {{ coordinate: coordinate.clone(), argument_wire_name: {:?}.to_owned() }})?;\n",
             rust_type(&argument.ty),
-            rust_type(&argument.ty)
+            rust_type(&argument.ty),
+            argument.wire_name.as_str(),
+            argument.wire_name.as_str()
         ));
     }
     let mut call_arguments = (0..function.compiled.arguments.len())
@@ -562,7 +571,8 @@ fn render_dispatch_arm(
     output.push_str(";\n");
     let success = function.compiled.return_type.success();
     output.push_str(&format!(
-        "                        <{} as super::__private::ModuleOutputCodec>::encode_output(value, &context).await.map_err(|_| super::__private::InvocationError::Encode)\n",
+        "                        <{} as super::__private::ModuleOutputCodec>::encode_output(value, &context).await.map_err(|_| super::__private::InvocationError::Encode {{ coordinate, result_type: {:?}.to_owned() }})\n",
+        rust_type(success),
         rust_type(success)
     ));
     Ok(())

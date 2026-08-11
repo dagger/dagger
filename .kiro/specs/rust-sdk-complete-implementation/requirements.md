@@ -79,6 +79,9 @@ The child specifications are:
   generation.
 - **Engine_Integrated_SDK:** An SDK that the Dagger engine can resolve by language
   name and use for development, code generation, execution, and client generation.
+- **Exact_Target_Signoff_Artifact:** An immutable, content-addressed engine artifact
+  for one Target_Revision, platform, engine/CLI input identity, engine-packaged Go SDK
+  runtime identity, Rust SDK manifest and descriptor identity, and toolchain identity.
 - **Existing_Session:** A Dagger engine session supplied through the standard session
   environment rather than started by the Rust process.
 - **Generated_Bindings:** Rust source emitted from engine introspection for GraphQL
@@ -87,6 +90,13 @@ The child specifications are:
   with Go.
 - **Idiomatic_Equivalence:** Rust API shape that preserves behaviour while following
   accepted Rust ownership, error, naming, async, and type-system conventions.
+- **Implementation_Closure_Evidence:** Immutable evidence that the canonical
+  engine-free Rust implementation, fixture, hygiene, and security gates passed for an
+  exact source and generated-asset identity.
+- **Installed_Rust_Baseline:** The immutable sign-off runner and workspace state
+  produced by one canonical Rust SDK installation, from which isolated cases branch;
+  a case that explicitly verifies installation semantics may perform further
+  case-local installation operations without reconstructing this baseline.
 - **Module_Dispatch:** Decoding an engine function call, invoking the matching Rust
   function against module state, and returning either its value or structured error.
 - **Module_SDK:** The code generator and runtime implementation used by the engine to
@@ -95,6 +105,9 @@ The child specifications are:
   closure and whose shutdown semantics are explicit and deterministic.
 - **Release_Gate:** A check that must pass before the Rust SDK can be presented as
   stable and Go-level complete.
+- **Rust_SDK_Signoff:** The bounded engine-backed evaluation that consumes matching
+  Implementation_Closure_Evidence, runs the complete Rust case inventory against one
+  Exact_Target_Signoff_Artifact, and emits one atomic verdict.
 - **Standalone_Client:** Generated Rust bindings and project metadata for consuming
   the Core_Schema, a module, or its dependencies outside a Dagger module runtime.
 - **Target_Revision:** The Dagger engine revision against which generated code and SDK
@@ -122,6 +135,14 @@ only on API-name comparison are not acceptable. Go-specific syntax, Go memory mo
 and Go package layout are outside scope. Changes to the engine protocol solely to
 imitate a Go API are outside scope unless the engine contract itself is incomplete for
 all SDKs.
+
+Rust_SDK_Signoff builds or imports one Exact_Target_Signoff_Artifact for each immutable
+target and platform identity, reuses one engine service and installed Rust baseline
+across the complete case inventory, and consumes matching Implementation_Closure_Evidence
+without replaying engine-free development checks. The sign-off graph contains only the
+engine, CLI, engine-packaged Go SDK runtime content required by the Rust adapter, Rust
+SDK content, and Rust-owned cases; behavioural authority from the Definitive_Go_SDK
+does not require its complete build or test suite to run inside Rust sign-off.
 
 ## Evidence From Current Code
 
@@ -162,6 +183,18 @@ All repository citations in this document refer to Target_Revision
   `sdk/rust/Cargo.toml`, has Cargo Deny policy in `sdk/rust/deny.toml`, and is covered
   by repository dependency and vulnerability automation. These controls are a
   foundation, not evidence of feature completeness.
+- **Current focused sign-off graph:** `toolchains/rust-sdk-dev/main.go:169-201`
+  excludes unrelated SDK sources; `toolchains/rust-sdk-dev/main.go:397-469` constructs
+  one digest-identified Rust SDK content object; and
+  `toolchains/rust-sdk-dev/main.go:568-672` reuses one focused service and installed
+  runner across a closed, bounded-concurrency case set.
+- **Current focused engine composition:** `toolchains/engine-dev/main.go:331-375`
+  retains one Rust OCI content identity, while
+  `toolchains/engine-dev/build/builder.go:234-273` overlays only the changing engine,
+  exact-target Go SDK content, and Rust SDK content on a digest-pinned baseline. The
+  current graph does not yet define the umbrella-wide import/retry contract,
+  Implementation_Closure_Evidence consumption, phase timings, or duplicate-build
+  rejection required by Rust_SDK_Signoff.
 - **Historical module evidence:** upstream pull request #12229, open and unmerged as
   of 2026-08-05, proposes Rust SDK registration, a Go-based module runtime,
   procedural-macro authoring, call dispatch, and nullable/Void fixes.
@@ -187,6 +220,7 @@ All repository citations in this document refer to Target_Revision
 | Module dispatch | No merged Rust invocation/return path | Feature 6 | Sync, async, stateful, dependency, and error tests |
 | Standalone clients | Rust generator is not wired to engine client generation | Feature 7 | Core, module, and dependency client fixtures |
 | Platform matrix | Rust-specific end-to-end platform coverage is incomplete | Feature 8 | Required CI matrix passes |
+| Reusable SDK sign-off | Focused content and one-service reuse exist, but no umbrella-wide artifact/retry/closure/timing contract | Feature 8 | One digest-bound artifact and atomic Rust-only sign-off verdict per target/platform identity |
 | Security gates | Strong baseline exists but must cover every new component | Feature 8 | Locked, denied, audited, and secret-safe checks pass |
 | Crate publication graph | `dagger-codegen` policy conflicts with SDK-only publication | Feature 9 | Validated public/private graph and publish rehearsal |
 | Version synchronization | Workspace and embedded engine versions differ | Feature 9 | Single release update and consistency checks |
@@ -617,6 +651,70 @@ safety.
    external artifact identities and checksums.
 7. WHEN tests, errors, traces, or snapshots are produced, THE verification pipeline
    SHALL detect disclosure of configured test secrets and session credentials.
+
+### Requirement 8.3: Bounded Reusable Exact-Target Sign-Off
+
+**User Story:** As a Rust SDK release reviewer, I want one reusable exact-target
+sign-off execution, so that complete engine-backed evidence is reproducible without
+rebuilding Dagger or unrelated SDKs for every case and retry.
+
+#### Acceptance Criteria
+
+1. WHEN Rust_SDK_Signoff begins for a Target_Revision and platform, THE verification
+   pipeline SHALL build or import exactly one Exact_Target_Signoff_Artifact.
+2. THE Exact_Target_Signoff_Artifact SHALL bind the immutable Target_Revision,
+   platform, engine and CLI input identity, engine-packaged Go SDK runtime identity,
+   Rust SDK manifest and descriptor identity, and toolchain identity.
+3. WHEN Rust_SDK_Signoff retries a case against unchanged bound identities, THE
+   verification pipeline SHALL reuse the same Exact_Target_Signoff_Artifact digest.
+4. WHEN the Exact_Target_Signoff_Artifact is built, THE verification pipeline SHALL
+   build the engine binary at most once for that artifact identity.
+5. WHEN the Exact_Target_Signoff_Artifact is built, THE verification pipeline SHALL
+   build the CLI binary at most once for that artifact identity.
+6. WHEN the Exact_Target_Signoff_Artifact is built, THE verification pipeline SHALL
+   build the mandatory engine-packaged Go SDK runtime content at most once for that
+   artifact identity.
+7. WHEN the Exact_Target_Signoff_Artifact is built, THE verification pipeline SHALL
+   build the Rust SDK content at most once for that artifact identity.
+8. THE Rust_SDK_Signoff graph SHALL exclude unrelated SDK builders.
+9. THE Rust_SDK_Signoff graph SHALL exclude unrelated SDK test suites.
+10. THE Rust_SDK_Signoff graph SHALL exclude unrelated SDK generation.
+11. THE Rust_SDK_Signoff graph SHALL exclude distribution-wide build paths.
+12. THE Rust_SDK_Signoff graph SHALL not run the complete Definitive_Go_SDK test
+    suite.
+13. WHEN Rust-specific Go adapter behaviour requires verification, THE
+   Implementation_Closure_Evidence SHALL identify the exact bounded Go packages and
+   tests that supplied that evidence.
+14. WHEN Rust_SDK_Signoff evaluates a source identity, THE verification pipeline SHALL
+   require matching Implementation_Closure_Evidence before starting an engine.
+15. THE Rust_SDK_Signoff graph SHALL not replay engine-free implementation, fixture,
+    hygiene, or security suites already admitted by matching
+    Implementation_Closure_Evidence.
+16. WHEN engine-backed cases execute, THE verification pipeline SHALL start exactly
+    one engine service for the Exact_Target_Signoff_Artifact.
+17. WHEN the Installed_Rust_Baseline is prepared, THE verification pipeline SHALL
+    materialize it exactly once before case fan-out.
+18. WHEN cases require isolated workspaces, THE verification pipeline SHALL branch
+    each workspace from the Installed_Rust_Baseline without constructing another
+    engine or artifact.
+19. WHEN Rust_SDK_Signoff completes, THE verification pipeline SHALL emit one atomic
+    verdict bound to the artifact digest, Target_Revision, platform, Rust SDK manifest
+    and descriptor identities, Implementation_Closure_Evidence digest, and complete
+    case outcomes.
+20. IF any required case is skipped, unknown, failed, or absent, THEN THE
+    Rust_SDK_Signoff verdict SHALL fail without admitting partial sign-off evidence.
+21. WHEN Rust_SDK_Signoff executes, THE verification pipeline SHALL record separate
+    durations for artifact build or import, engine startup, Rust SDK installation, and
+    every case.
+22. IF the observed sign-off graph constructs more than one target artifact, THEN THE
+    verification pipeline SHALL reject the run before admitting its verdict.
+23. IF the observed sign-off graph starts more than one engine service, THEN THE
+    verification pipeline SHALL reject the run before admitting its verdict.
+24. IF the observed sign-off graph constructs the Installed_Rust_Baseline more than
+    once, THEN THE verification pipeline SHALL reject the run before admitting its
+    verdict.
+25. IF the observed sign-off graph enters an unrelated SDK or distribution build path,
+    THEN THE verification pipeline SHALL reject the run before admitting its verdict.
 
 ---
 

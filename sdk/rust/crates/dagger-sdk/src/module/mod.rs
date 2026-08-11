@@ -22,8 +22,11 @@ pub mod __private {
     pub use super::codec::__private::*;
     pub use super::context::ModuleContextBase;
     pub use super::dispatch::{
-        CallOutcome, CallReceipt, DispatchRegistry, InvocationError, PreparedCall,
-        RegistrationError, RegistrationSink, ResultPublishError, ResultSink,
+        CallCoordinate, CallOutcome, CallPreparationError, CallReceipt, DispatchError,
+        DispatchRegistry, ErrorOutcomeKind, InvocationError, PreparedCall, PublishedOutcome,
+        RegistrationError, RegistrationSink, ResultElection, ResultElectionState,
+        ResultPublishError, ResultSink, apply_close_precedence, dispatch, handle_call,
+        prepare_call,
     };
     pub use super::error::ModuleError;
     pub use super::view::{

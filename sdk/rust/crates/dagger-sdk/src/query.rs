@@ -163,7 +163,7 @@ impl Selection {
     pub(crate) async fn execute_reentry<T, I>(
         &self,
         session: &SessionHandle,
-        concrete_type: &'static str,
+        concrete_type: &str,
     ) -> Result<I::Output, QueryError>
     where
         T: loadable::private::Sealed,
@@ -257,7 +257,7 @@ fn project_selection(data: Value, path: &[Selection]) -> Result<Value, serde_jso
     }
 }
 
-pub(crate) fn reenter<T>(session: &SessionHandle, id: Id, concrete_type: &'static str) -> T
+pub(crate) fn reenter<T>(session: &SessionHandle, id: Id, concrete_type: &str) -> T
 where
     T: loadable::private::Sealed,
 {
@@ -268,11 +268,7 @@ where
     T::from_query(session.clone(), selection)
 }
 
-pub(crate) fn reenter_lazy<T>(
-    session: &SessionHandle,
-    id: IdInput<T>,
-    concrete_type: &'static str,
-) -> T
+pub(crate) fn reenter_lazy<T>(session: &SessionHandle, id: IdInput<T>, concrete_type: &str) -> T
 where
     T: loadable::private::Sealed + 'static,
 {
@@ -289,7 +285,7 @@ where
 {
     type Output;
 
-    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output;
+    fn reenter(self, session: &SessionHandle, concrete_type: &str) -> Self::Output;
 }
 
 impl<T> ReentryIds<T> for Id
@@ -298,7 +294,7 @@ where
 {
     type Output = T;
 
-    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output {
+    fn reenter(self, session: &SessionHandle, concrete_type: &str) -> Self::Output {
         reenter(session, self, concrete_type)
     }
 }
@@ -310,7 +306,7 @@ where
 {
     type Output = Option<I::Output>;
 
-    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output {
+    fn reenter(self, session: &SessionHandle, concrete_type: &str) -> Self::Output {
         self.map(|ids| ids.reenter(session, concrete_type))
     }
 }
@@ -322,7 +318,7 @@ where
 {
     type Output = Vec<I::Output>;
 
-    fn reenter(self, session: &SessionHandle, concrete_type: &'static str) -> Self::Output {
+    fn reenter(self, session: &SessionHandle, concrete_type: &str) -> Self::Output {
         self.into_iter()
             .map(|ids| ids.reenter(session, concrete_type))
             .collect()
@@ -345,6 +341,35 @@ impl QueryBuilder {
             session,
             selection: query(),
         }
+    }
+
+    /// Reconstructs the generated root over this builder's existing session lease.
+    ///
+    /// Module code generation uses this exact-version bridge to expose the checked
+    /// typed root without connecting again or storing a process-global client.
+    #[cfg(feature = "gen")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn generated_query_root(&self) -> crate::Query {
+        crate::Query {
+            session: self.session.clone(),
+            selection: self.selection.clone(),
+        }
+    }
+
+    /// Re-enters a checked generated handle on this builder's existing session.
+    ///
+    /// `concrete_type` may be more specific than `T` for an interface value. Keeping
+    /// that inline-fragment identity prevents interface decoding from manufacturing an
+    /// untyped substitute while still returning the checked Rust interface client.
+    #[cfg(feature = "gen")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn reenter_generated_handle<T>(&self, id: Id, concrete_type: &str) -> T
+    where
+        T: crate::Loadable + 'static,
+    {
+        reenter(&self.session, id, concrete_type)
     }
 
     /// Returns a new builder selecting `field` below the current path.

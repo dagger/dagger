@@ -488,8 +488,8 @@
       copied and compared, never regenerated; no Dagger command, engine process, module
       build, network graph, unrelated SDK build, user code, or out-of-root access ran.
 
-- [ ] 13. Complete the concrete module context and definitive helper mapping
-  - [ ] 13.1 Wire generated `ModuleContext` and `ModuleQuery` to the active session
+- [x] 13. Complete the concrete module context and definitive helper mapping
+  - [x] 13.1 Wire generated `ModuleContext` and `ModuleQuery` to the active session
     - Construct the concrete generated context only from `ModuleContextBase`; clone the
       one active `QueryBuilder` into the generated query root and preserve cancellation,
       telemetry, and current-call state.
@@ -497,29 +497,29 @@
       node/engine/local-context operations, lazy handles, and immediate scalars without
       reconnecting, global mutable state, or context serialization.
     - _Requirements: 12.1-12.8, 12.13-12.15_
-  - [ ] 13.2 Map every definitive Go helper capability
+  - [x] 13.2 Map every definitive Go helper capability
     - Account for all 36 pinned helper capabilities exactly once as a generated
       `ModuleQuery` operation, scoped current-context operation, entrypoint-owned close,
       or reviewed target-bound Rust inapplicability.
     - Add exact fixed inventory tests and reject missing, added, duplicate, or unmapped
       helper rows without recreating a global client or Go symbol names unnecessarily.
     - _Requirements: 12.9-12.12_
-  - [ ] 13.3 Property test: Property 19 — module context is scoped to the active call
+  - [x] 13.3 Property test: Property 19 — module context is scoped to the active call
     - Generate at least 256 visible schemas, active sessions, call contexts, lazy/
       immediate operations, cancellation/telemetry values, and serialization attempts;
       require exact typed exposure, one-session reuse, no reconnect/global state, and
       typed context-state rejection.
     - Test identifier: `property_19_module_context_scoped_active_call`.
     - _Requirements: 12.1-12.8, 12.13-12.15_
-  - [ ] 13.4 Property test: Property 20 — definitive helper capabilities are exhaustively mapped
+  - [x] 13.4 Property test: Property 20 — definitive helper capabilities are exhaustively mapped
     - Generate at least 256 mutations of the fixed 36-helper inventory and mapping
       categories; accept only exact-once exhaustive assignments with reviewed rationale
       for every inapplicability.
     - Test identifier: `property_20_definitive_helper_capabilities_exhaustively_mapped`.
     - _Requirements: 12.9-12.12_
 
-- [ ] 14. Implement parent, argument, handle, and successful-result conversion
-  - [ ] 14.1 Implement total call preparation before user execution
+- [x] 14. Implement parent, argument, handle, and successful-result conversion
+  - [x] 14.1 Implement total call preparation before user execution
     - Select the generated parent/function coordinate, distinguish constructor and
       instance calls, decode compatible parent state, preserve argument input as a list
       until duplicate detection, and validate the complete named set before invocation.
@@ -527,39 +527,39 @@
       and report distinct malformed parent, missing/duplicate/unknown/invalid argument
       errors with callable and typed-value coordinates.
     - _Requirements: 9.9, 9.10, 10.1-10.11, 10.15_
-  - [ ] 14.2 Re-enter Core, self, dependency, and interface handles
+  - [x] 14.2 Re-enter Core, self, dependency, and interface handles
     - Decode target-compatible IDs into the exact checked generated handles on the
       active `QueryBuilder`, preserve interface concrete identity, and reject wrong/
       stale/malformed IDs without a new connection or untyped substitute.
     - _Requirements: 10.12-10.14, 12.2, 12.14_
-  - [ ] 14.3 Encode successful values through typed result codecs
+  - [x] 14.3 Encode successful values through typed result codecs
     - Encode primitives/lists/options/enums/scalars, unit as null, local object state,
       interfaces with concrete identity, and generated handles after resolving their IDs
       through the active session.
     - Keep selection/function/result-type coordinates on encoding/re-entry failure and
       produce no partial `CallOutcome`.
     - _Requirements: 11.1-11.5, 11.7, 11.10_
-  - [ ] 14.4 Property test: Property 15 — parent and argument validation precedes execution
+  - [x] 14.4 Property test: Property 15 — parent and argument validation precedes execution
     - Generate at least 256 selected callables, parent shapes, argument multisets,
       orderings, omissions/defaults, duplicates, unknowns, and invalid values; compare
       validation to a reference model and require zero user/sink events on rejection.
     - Test identifier: `property_15_parent_argument_validation_precedes_execution`.
     - _Requirements: 10.1-10.11, 10.15_
-  - [ ] 14.5 Property test: Property 16 — handle reconstruction retains identity and session
+  - [x] 14.5 Property test: Property 16 — handle reconstruction retains identity and session
     - Generate at least 256 valid/invalid Core/self/dependency/object/interface IDs,
       concrete identities, schemas, and active sessions; require exact typed re-entry on
       the same session or the matching typed error.
     - Test identifier: `property_16_handle_reconstruction_retains_identity_session`.
     - _Requirements: 10.12-10.14, 12.2, 12.14_
-  - [ ] 14.6 Property test: Property 17 — successful values encode exactly once
+  - [x] 14.6 Property test: Property 17 — successful values encode exactly once
     - Generate at least 256 supported values, units, local states, handles, interfaces,
       and injected encoding/ID failures; require one canonical value or no value with
       exact safe coordinates.
     - Test identifier: `property_17_successful_values_encode_exactly_once`.
     - _Requirements: 11.1-11.5, 11.7, 11.10_
 
-- [ ] 15. Implement the production dispatcher, result election, failure precedence, and isolation
-  - [ ] 15.1 Add application-error, panic, publication, and close handling
+- [x] 15. Implement the production dispatcher, result election, failure precedence, and isolation
+  - [x] 15.1 Add application-error, panic, publication, and close handling
     - Invoke exactly one typed generated bridge, await async functions without blocking,
       convert `Into<ModuleError>` values to target Error plus sorted `withValue`
       selections, and publish values/errors through one `ResultElection`.
@@ -567,40 +567,40 @@
       publication sources, attempt no second terminal kind, and retain primary operation
       failure over secondary close failure while making close primary after success.
     - _Requirements: 11.6-11.14_
-  - [ ] 15.2 Implement cancellation versus publication as one closed state machine
+  - [x] 15.2 Implement cancellation versus publication as one closed state machine
     - Race only the call-local user future, encoding, cancellation, and sink acceptance;
       prevent success when cancellation wins, preserve an accepted sink outcome when
       publication wins, and terminate or abandon SDK-owned child work before return.
     - Avoid sleeps and global result/cancellation state; expose deterministic hooks for
       `loom` and direct async tests.
     - _Requirements: 13.7-13.12_
-  - [ ] 15.3 Isolate overlapping calls and call-local leases
+  - [x] 15.3 Isolate overlapping calls and call-local leases
     - Allocate distinct contexts, receivers, argument maps, telemetry, cancellation,
       fixture roots, result elections, and session leases for every call; keep sibling
       execution usable after one error or contained panic and release all call-local
       resources on completion.
     - _Requirements: 13.1-13.6, 13.10-13.12_
-  - [ ] 15.4 Property test: Property 18 — failure and close precedence is deterministic
+  - [x] 15.4 Property test: Property 18 — failure and close precedence is deterministic
     - Generate at least 256 application/panic/cancel/encode/publish/close outcomes and
       orderings; compare selected primary, safe terminal kind, source retention, close
       fact, and publication count to the closed precedence model.
     - Test identifier: `property_18_failure_close_precedence_deterministic`.
     - _Requirements: 11.6-11.14_
-  - [ ] 15.5 Property test: Property 21 — concurrent calls remain isolated
+  - [x] 15.5 Property test: Property 21 — concurrent calls remain isolated
     - Generate at least 128 finite overlapping call sets with distinct state/context/
       outcome inputs; use deterministic barriers rather than sleeps and require each
       observation to remain attributable to exactly one call with all resources
       released.
     - Test identifier: `property_21_concurrent_calls_remain_isolated`.
     - _Requirements: 13.1-13.6, 13.10-13.12_
-  - [ ] 15.6 Property test: Property 22 — cancellation and publication have one winner
+  - [x] 15.6 Property test: Property 22 — cancellation and publication have one winner
     - Use `loom` to exhaust modeled scheduler interleavings and `proptest` for at least
       128 state/input combinations; require exactly one permitted terminal transition,
       immutable sink acceptance, and no successful value after cancellation wins.
     - Test identifier: `property_22_cancellation_publication_one_winner`.
     - _Requirements: 13.7-13.10_
 
-- [ ] 16. Checkpoint: call-scoped context, conversion, dispatch, and concurrency are green
+- [x] 16. Checkpoint: call-scoped context, conversion, dispatch, and concurrency are green
   - Run formatting and locked `dagger-sdk` plus generated-fixture tests for Properties
     15-22, ModuleError/QueryError conversion, context/helper inventory, call validation,
     result codecs, panic containment, close precedence, and loom concurrency models.
@@ -608,6 +608,41 @@
     commands and elapsed time, and require no engine, Dagger module, network graph,
     unrelated SDK build, leaked task/session, duplicate outcome, or credential-bearing
     diagnostic.
+  - Checkpoint evidence (2026-08-11, warm local cache as executed, elapsed wall time):
+    - `cargo fmt --all -- --check` passed. Locked package-scoped checks for
+      `dagger-sdk` and `dagger-codegen` passed in 4.54s; the additional
+      `dagger-sdk --no-default-features` check passed in 2.15s without widening the
+      existing feature-specific dead-code policy.
+    - `cargo test -p dagger-sdk --locked --lib module::` passed all 14 focused tests in
+      10.67s including 256-case Properties 15-19, 128-case Properties 21-22, the loom
+      scheduler model, structured source redaction, panic containment, close
+      precedence, and call-local lease release. The first property run exposed and the
+      implementation fixed an already-cancelled/immediately-ready invocation race.
+    - The exact 36-row helper inventory and 256 mutation cases for Property 20 passed
+      in 6.35s. The 256-case generated-context projection check passed in 2.49s.
+    - The checked representative generated module compiled offline once from copied
+      assets in 24.16s. `cargo test -p dagger-sdk --locked --test
+      module_authoring_compile` then passed all six pass/fail macro ABI fixtures in
+      20.31s; neither command regenerated Core bindings.
+    - Warning-denied package-scoped clippy passed in 6.32s and warning-denied rustdoc
+      passed in 3.55s. No dependency or publication policy changed, so security and
+      `cargo deny` were not repeated.
+    - Every command was direct Rust/Cargo work within `sdk/rust`. No Dagger command,
+      engine process, module build, network graph, other SDK build, Core regeneration,
+      credential-bearing diagnostic, duplicate outcome, leaked task, or unowned path
+      change occurred.
+    - PR security CI subsequently found that this checkpoint's production changes had
+      advanced the selected Rust artifact while its 18 harness subject bindings and
+      exact-baseline constant still named the prior digest. The bindings were
+      reconciled to
+      `sha256:88206e34c6c619e184e9cf695cd18ac473653e78f0370002b0f2a4f78285aa82`
+      without changing any capability status, evidence outcome, target, dependency,
+      publication rule, or security policy. `cargo test -p
+      dagger-sdk-completeness --test engine_integration --locked` then passed all eight
+      tests in 27.13s, and the corresponding `initial_baseline` target passed both
+      tests in 35.60s. The read-only locked `verify --gate integrity` command completed
+      in 22.09s with `Integrity: PASS` and no integrity diagnostics; its expected
+      feature-progress completeness verdict remained incomplete.
 
 - [ ] 17. Replace the fixed probe with the general registration/invocation adapter
   - [ ] 17.1 Generalize Feature 5 operation inputs behind the stable ABI

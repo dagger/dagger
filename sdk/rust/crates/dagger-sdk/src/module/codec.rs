@@ -320,4 +320,224 @@ pub mod __private {
             })
         }
     }
+
+    #[cfg(feature = "gen")]
+    impl<T> ModuleInputCodec for T
+    where
+        T: crate::Loadable + 'static,
+    {
+        fn decode_input(
+            value: &ModuleJson,
+            context: &ModuleContextBase,
+        ) -> Result<Self, DecodeError> {
+            let (id, concrete_type) = match value.as_json() {
+                serde_json::Value::String(id) => (
+                    id.as_str(),
+                    <T as crate::loadable::private::Sealed>::graphql_type(),
+                ),
+                serde_json::Value::Object(object)
+                    if object.keys().all(|key| key == "id" || key == "__typename") =>
+                {
+                    let id = object
+                        .get("id")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or(DecodeError)?;
+                    let concrete_type = object
+                        .get("__typename")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_else(|| <T as crate::loadable::private::Sealed>::graphql_type());
+                    (id, concrete_type)
+                }
+                _ => return Err(DecodeError),
+            };
+            if id.is_empty()
+                || id.len() > 16 * 1024
+                || id.contains('\0')
+                || concrete_type.is_empty()
+                || !concrete_type
+                    .chars()
+                    .all(|character| character == '_' || character.is_ascii_alphanumeric())
+            {
+                return Err(DecodeError);
+            }
+            Ok(context
+                .query_builder()
+                .reenter_generated_handle(crate::Id::new(id), concrete_type))
+        }
+    }
+
+    #[cfg(feature = "gen")]
+    impl<T> ModuleOutputCodec for T
+    where
+        T: crate::Loadable + crate::IntoID<crate::Id> + Send + 'static,
+    {
+        fn encode_output<'a>(
+            self,
+            _context: &'a ModuleContextBase,
+        ) -> ModuleBoxFuture<'a, Result<ModuleJson, EncodeError>>
+        where
+            Self: 'a,
+        {
+            Box::pin(async move {
+                let id = self.into_id().await.map_err(|_| EncodeError)?;
+                if id.as_str().is_empty() || id.as_str().contains('\0') {
+                    return Err(EncodeError);
+                }
+                Ok(ModuleJson::new(serde_json::Value::String(id.into_inner())))
+            })
+        }
+    }
+}
+
+#[cfg(all(test, feature = "gen"))]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+    use proptest::prelude::*;
+    use serde_json::json;
+
+    use super::__private::{ModuleInputCodec, ModuleOutputCodec};
+    use crate::connection::{EngineConnection, EngineConnectionError, EngineConnectionErrorKind};
+    use crate::graphql::{RawRequest, RawResponse, ResponseData};
+    use crate::lifecycle::SessionHandle;
+    use crate::module::context::{CurrentCall, ModuleCancellation, ModuleContextBase};
+    use crate::module::wire::{CallSelector, ModuleJson, ModuleWireName};
+    use crate::query::QueryBuilder;
+    use crate::test_support::proptest_config;
+
+    #[derive(Clone)]
+    struct RecordingConnection {
+        requests: Arc<AtomicUsize>,
+        id: String,
+        fail: bool,
+    }
+
+    #[async_trait]
+    impl EngineConnection for RecordingConnection {
+        async fn execute(
+            &self,
+            _request: RawRequest,
+        ) -> Result<RawResponse, EngineConnectionError> {
+            self.requests.fetch_add(1, Ordering::SeqCst);
+            if self.fail {
+                Err(EngineConnectionError::new(
+                    EngineConnectionErrorKind::Unavailable,
+                ))
+            } else {
+                Ok(RawResponse::new(ResponseData::Value(json!({
+                    "node": {"id": self.id}
+                }))))
+            }
+        }
+
+        async fn close(&self) -> Result<(), EngineConnectionError> {
+            Ok(())
+        }
+
+        fn abort(&self) {}
+    }
+
+    fn context(id: &str, fail: bool) -> (ModuleContextBase, Arc<AtomicUsize>) {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let connection = RecordingConnection {
+            requests: Arc::clone(&requests),
+            id: id.to_owned(),
+            fail,
+        };
+        let builder = QueryBuilder::new(SessionHandle::new(Box::new(connection), None, None));
+        let selector = CallSelector::Invocation {
+            parent_wire_name: ModuleWireName::new("Fixture").expect("static name is valid"),
+            function_wire_name: ModuleWireName::new("run").expect("static name is valid"),
+        };
+        (
+            ModuleContextBase::new(
+                builder,
+                ModuleCancellation::default(),
+                opentelemetry::Context::new(),
+                CurrentCall::new("call", selector).expect("static identity is valid"),
+            ),
+            requests,
+        )
+    }
+
+    proptest! {
+        #![proptest_config(proptest_config())]
+
+        #[test]
+        fn property_16_handle_reconstruction_retains_identity_session(
+            id in "[a-zA-Z0-9_=-]{1,64}",
+            interface in any::<bool>(),
+            invalid in any::<bool>(),
+        ) {
+            let (context, requests) = context(&id, false);
+            let session_identity = context.query_builder().session_identity();
+            let value = if invalid {
+                ModuleJson::new(serde_json::Value::String(String::new()))
+            } else if interface {
+                ModuleJson::new(json!({"id": id, "__typename": "Container"}))
+            } else {
+                ModuleJson::new(serde_json::Value::String(id.clone()))
+            };
+
+            if interface {
+                let decoded = <crate::ExportableClient as ModuleInputCodec>::decode_input(&value, &context);
+                if invalid {
+                    prop_assert!(decoded.is_err());
+                } else {
+                    let handle = decoded.expect("valid interface identifier re-enters");
+                    prop_assert_eq!(handle.session.identity(), session_identity);
+                    let document = futures::executor::block_on(handle.selection.build())
+                        .expect("re-entry selection is valid");
+                    prop_assert!(document.contains("... on Container"));
+                }
+            } else {
+                let decoded = <crate::Container as ModuleInputCodec>::decode_input(&value, &context);
+                if invalid {
+                    prop_assert!(decoded.is_err());
+                } else {
+                    let handle = decoded.expect("valid object identifier re-enters");
+                    prop_assert_eq!(handle.session.identity(), session_identity);
+                    let document = futures::executor::block_on(handle.selection.build())
+                        .expect("re-entry selection is valid");
+                    prop_assert!(document.contains("... on Container"));
+                }
+            }
+            prop_assert_eq!(requests.load(Ordering::SeqCst), 0);
+        }
+
+        #[test]
+        fn property_17_successful_values_encode_exactly_once(
+            values in proptest::collection::vec(any::<i64>(), 0..12),
+            optional in proptest::option::of("[a-zA-Z0-9 ]{0,32}"),
+            id in "[a-zA-Z0-9_=-]{1,64}",
+            fail_handle in any::<bool>(),
+        ) {
+            let (primitive_context, _) = context(&id, false);
+            let integers = futures::executor::block_on(values.clone().encode_output(&primitive_context))
+                .expect("integer lists encode");
+            prop_assert_eq!(integers.as_json(), &json!(values));
+            let optional_value = futures::executor::block_on(optional.clone().encode_output(&primitive_context))
+                .expect("optional strings encode");
+            prop_assert_eq!(optional_value.as_json(), &json!(optional));
+            let unit = futures::executor::block_on(().encode_output(&primitive_context))
+                .expect("unit encodes");
+            prop_assert_eq!(unit.as_json(), &serde_json::Value::Null);
+
+            let (handle_context, requests) = context(&id, fail_handle);
+            let handle = <crate::Container as ModuleInputCodec>::decode_input(
+                &ModuleJson::new(serde_json::Value::String(id.clone())),
+                &handle_context,
+            ).expect("valid handle input");
+            let encoded = futures::executor::block_on(handle.encode_output(&handle_context));
+            if fail_handle {
+                prop_assert!(encoded.is_err());
+            } else {
+                let encoded = encoded.expect("handle ID resolves");
+                prop_assert_eq!(encoded.as_json(), &json!(id));
+            }
+            prop_assert_eq!(requests.load(Ordering::SeqCst), 1);
+        }
+    }
 }
