@@ -40,11 +40,23 @@ impl Greeter {
         let _ = self.transient_counter;
         Ok(format!("{}, {name}", self.greeting))
     }
+
+    #[dagger(function)]
+    async fn greet_later(&self) -> String {
+        self.greeting.clone()
+    }
 }
 
 #[renamed_sdk::interface(rename = "named")]
 pub(crate) trait Named {
     fn name(&self) -> String;
+}
+
+#[renamed_sdk::methods]
+impl Named for Greeter {
+    fn name(&self) -> String {
+        self.greeting.clone()
+    }
 }
 
 #[renamed_sdk::enum_type(rename = "mood")]

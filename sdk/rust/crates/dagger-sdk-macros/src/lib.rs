@@ -47,7 +47,7 @@ pub fn scalar(args: TokenStream, item: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Exports explicitly marked constructors and functions from an inherent impl.
+/// Exports marked inherent functions or declares one interface implementation.
 #[proc_macro_attribute]
 pub fn methods(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as syn::ItemImpl);

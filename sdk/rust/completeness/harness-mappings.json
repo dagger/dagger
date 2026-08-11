@@ -35,7 +35,7 @@
       ],
       "source_fingerprint": "sha256:b584fd98e2f7de6766f49c3b338de1e2c287ebd7e7235e52778cb274d4f90400",
       "source_locator": "sdk-sdk.dang:190:depsListSucceeds",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "engine-required-reports-version": {
       "capability_ids": [
@@ -72,7 +72,7 @@
       ],
       "source_fingerprint": "sha256:6f80966086c2ba2176f8b7d76d3f474f40f205db4de7531d7b3266f95baae2ee",
       "source_locator": "sdk-sdk.dang:179:engineRequiredReportsVersion",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "generate-exposes-generator": {
       "capability_ids": [
@@ -109,7 +109,7 @@
       ],
       "source_fingerprint": "sha256:88cdda4213639ad6f6328250eea50bb62de8cc8585fe46cba438c1e339d928d0",
       "source_locator": "sdk-sdk.dang:277:generateExposesGenerator",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "generate-respects-cwd": {
       "capability_ids": [
@@ -146,7 +146,7 @@
       ],
       "source_fingerprint": "sha256:5aa59a2c7d1252ed935477bbbd6d5488d4ceac6a1930e2e6c560cafbad75c2ce",
       "source_locator": "sdk-sdk.dang:201:generateRespectsCwd",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "generate-succeeds": {
       "capability_ids": [
@@ -183,7 +183,7 @@
       ],
       "source_fingerprint": "sha256:960c1f3f017f2a3aa69481a37d6459483e4167ad4af24e37bd0536effc6187c8",
       "source_locator": "sdk-sdk.dang:152:generateSucceeds",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-module-does-not-remove-existing-files": {
       "capability_ids": [
@@ -220,7 +220,7 @@
       ],
       "source_fingerprint": "sha256:9cb56abdeb9fc64d77daf1e8af08a6bfc8e87f22b40c126242ac3f1a59411096",
       "source_locator": "sdk-sdk.dang:244:initModuleDoesNotRemoveExistingFiles",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-module-does-not-write-config": {
       "capability_ids": [
@@ -257,7 +257,7 @@
       ],
       "source_fingerprint": "sha256:e1d96a3dfbbde038f48fec6bac1e25c0785bcc32f97fc4b40fd761f84007da5c",
       "source_locator": "sdk-sdk.dang:225:initModuleDoesNotWriteConfig",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-module-honors-custom-path": {
       "capability_ids": [
@@ -294,7 +294,7 @@
       ],
       "source_fingerprint": "sha256:b0bc274152c5a728524bbf0a187a2bca3ef4b130786f0254a8ea95d9efeb47ea",
       "source_locator": "sdk-sdk.dang:254:initModuleHonorsCustomPath",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-module-renders-root-type": {
       "capability_ids": [],
@@ -329,7 +329,7 @@
       ],
       "source_fingerprint": "sha256:b5576912ccc21e53c34c8717bda9f5ba081a5cd17a21c6a966907dbae4112049",
       "source_locator": "sdk-sdk.dang:289:initModuleRendersRootType",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-module-seeds-files": {
       "capability_ids": [
@@ -366,7 +366,7 @@
       ],
       "source_fingerprint": "sha256:28cd07ec80956848881593956a1064b96d123b96db0b5a2fad3eabb2b1657def",
       "source_locator": "sdk-sdk.dang:215:initModuleSeedsFiles",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-records-authoring-sdk": {
       "capability_ids": [
@@ -403,7 +403,7 @@
       ],
       "source_fingerprint": "sha256:d9b0a8a6c1d46f9b89f4f0225d1e5e736d178dfd64d54d2c1fdf8c6496be8317",
       "source_locator": "sdk-sdk.dang:140:initRecordsAuthoringSdk",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-registers-module": {
       "capability_ids": [
@@ -440,7 +440,7 @@
       ],
       "source_fingerprint": "sha256:740faa8bade0ea1926fe254e0a5a87c56f0a038f4de4f0264a667f9e600c06ff",
       "source_locator": "sdk-sdk.dang:128:initRegistersModule",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-scaffolds-module": {
       "capability_ids": [
@@ -477,7 +477,7 @@
       ],
       "source_fingerprint": "sha256:86d31a494f3fcdbefb5e65ead1a0521b45cf7dc95fd4ace623418139fdda3856",
       "source_locator": "sdk-sdk.dang:109:initScaffoldsModule",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "init-writes-module-config": {
       "capability_ids": [
@@ -514,7 +514,7 @@
       ],
       "source_fingerprint": "sha256:3fcfdf6367ff7ab1fa88da1e2589816dcbee0bc300c40558ef5455773adbfad0",
       "source_locator": "sdk-sdk.dang:116:initWritesModuleConfig",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "install-marks-as-sdk": {
       "capability_ids": [
@@ -551,7 +551,7 @@
       ],
       "source_fingerprint": "sha256:eecbc03ff9aa5f63bab4ad6d9fd612a549e3635dda30b053224bbe834fc17546",
       "source_locator": "sdk-sdk.dang:98:installMarksAsSdk",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "install-registers-sdk": {
       "capability_ids": [
@@ -588,7 +588,7 @@
       ],
       "source_fingerprint": "sha256:57f0f512c333cc905bb01c6b723bf795bcb5932b32b32f8029c9d7169f5895af",
       "source_locator": "sdk-sdk.dang:91:installRegistersSdk",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "scaffolded-module-loads": {
       "capability_ids": [
@@ -625,7 +625,7 @@
       ],
       "source_fingerprint": "sha256:bed699394a56191e8edf2b48289c9068142395c677b88681bfd9b7d556c3a6c1",
       "source_locator": "sdk-sdk.dang:163:scaffoldedModuleLoads",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     },
     "sdk-reports-module-options": {
       "capability_ids": [
@@ -662,7 +662,7 @@
       ],
       "source_fingerprint": "sha256:bd9dcd46b39b4eccb6117353160ac7964edeb0a69f08c9eea4204f76ed800a45",
       "source_locator": "sdk-sdk.dang:171:sdkReportsModuleOptions",
-      "verified_artifact_digest": "sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848"
+      "verified_artifact_digest": "sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698"
     }
   }
 }

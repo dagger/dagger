@@ -34,5 +34,9 @@ pub use packaging::{
     SecuritySubject, SecuritySubjectKind, build_packaged_content, derive_shipped_audit_graph,
     validate_packaged_distribution, validate_packaged_source,
 };
+pub use project::source_snapshot::{
+    MAX_SOURCE_FILE_BYTES, MAX_SOURCE_FILES, MAX_SOURCE_TOTAL_BYTES, SourceSnapshotBuilder,
+    SourceSnapshotLimits, SourceSnapshotRequest,
+};
 pub use root::OperationRoot;
 pub use scalar::*;

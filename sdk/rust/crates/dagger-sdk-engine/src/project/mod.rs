@@ -5,6 +5,7 @@
 //! deterministic under metadata ordering and can be checked independently.
 
 pub mod manifest;
+pub mod source_snapshot;
 pub mod toolchain;
 pub mod vcs;
 

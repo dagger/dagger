@@ -29,6 +29,7 @@ fn exact_candidate_compiles_with_supported_features_and_warning_free_docs() {
         "dagger-codegen",
         "dagger-sdk-completeness",
         "dagger-sdk-engine",
+        "dagger-sdk-macros",
     ] {
         copy_tree(
             &workspace.join("crates").join(package),

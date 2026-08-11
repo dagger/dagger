@@ -92,6 +92,12 @@ pub(crate) fn object(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
 pub(crate) fn interface(args: TokenStream, mut item: ItemTrait) -> syn::Result<TokenStream> {
     require_export_visibility(&item.vis)?;
     reject_generics(&item.generics)?;
+    if !item.supertraits.is_empty() {
+        return Err(Error::new_spanned(
+            &item.supertraits,
+            "a Dagger interface does not support supertraits",
+        ));
+    }
     let outer = Metadata::parse_args(args)?;
     let mut parts = vec![
         "interface".to_owned(),
@@ -99,15 +105,53 @@ pub(crate) fn interface(args: TokenStream, mut item: ItemTrait) -> syn::Result<T
         outer.canonical(),
     ];
     for trait_item in &mut item.items {
-        if let syn::TraitItem::Fn(function) = trait_item {
-            let metadata = Metadata::take_from(&mut function.attrs)?;
-            strip_inputs(&mut function.sig.inputs)?;
-            parts.extend([
-                function.sig.ident.to_string(),
-                canonical_tokens(&function.sig),
-                metadata.canonical(),
-            ]);
+        let syn::TraitItem::Fn(function) = trait_item else {
+            return Err(Error::new_spanned(
+                trait_item,
+                "a Dagger interface supports only receiver methods",
+            ));
+        };
+        reject_generics(&function.sig.generics)?;
+        let Some(receiver) = function.sig.receiver() else {
+            return Err(Error::new_spanned(
+                &function.sig,
+                "a Dagger interface method requires `&self`",
+            ));
+        };
+        if receiver.reference.is_none()
+            || receiver.mutability.is_some()
+            || receiver.colon_token.is_some()
+            || function.sig.asyncness.is_some()
+            || function.sig.constness.is_some()
+            || function.sig.unsafety.is_some()
+            || function.sig.abi.is_some()
+            || function.sig.variadic.is_some()
+        {
+            return Err(Error::new_spanned(
+                &function.sig,
+                "a Dagger interface method requires one synchronous shared receiver signature",
+            ));
         }
+        let metadata = Metadata::take_from(&mut function.attrs)?;
+        let parameter_metadata = strip_inputs(&mut function.sig.inputs)?;
+        if parameter_metadata
+            .first()
+            .is_some_and(|metadata| !metadata.canonical().is_empty())
+            || parameter_metadata
+                .iter()
+                .skip(1)
+                .any(|metadata| metadata.has("context"))
+        {
+            return Err(Error::new_spanned(
+                &function.sig,
+                "a Dagger interface supports metadata only on ordinary data parameters",
+            ));
+        }
+        parts.extend([
+            function.sig.ident.to_string(),
+            canonical_tokens(&function.sig),
+            metadata.canonical(),
+        ]);
     }
     let ident = &item.ident;
     let value = fingerprint(parts);
@@ -207,17 +251,29 @@ pub(crate) fn methods(args: TokenStream, mut item: ItemImpl) -> syn::Result<Toke
     if !args.is_empty() {
         Metadata::parse_args(args)?;
     }
+    reject_generics(&item.generics)?;
     if item.trait_.is_some() {
-        return Err(Error::new_spanned(
-            &item,
-            "the Dagger methods attribute requires an inherent impl",
-        ));
-    }
-    if !item.generics.params.is_empty() {
-        return Err(Error::new_spanned(
-            &item.generics,
-            "generic Dagger impl blocks are not supported",
-        ));
+        for impl_item in &mut item.items {
+            let ImplItem::Fn(function) = impl_item else {
+                return Err(Error::new_spanned(
+                    impl_item,
+                    "a Dagger interface implementation supports only trait methods",
+                ));
+            };
+            let metadata = Metadata::take_from(&mut function.attrs)?;
+            let parameter_metadata = strip_inputs(&mut function.sig.inputs)?;
+            if !metadata.canonical().is_empty()
+                || parameter_metadata
+                    .iter()
+                    .any(|metadata| !metadata.canonical().is_empty())
+            {
+                return Err(Error::new_spanned(
+                    &function.sig,
+                    "a Dagger interface implementation inherits metadata from its trait",
+                ));
+            }
+        }
+        return Ok(quote!(#item));
     }
 
     let self_type = (*item.self_ty).clone();
@@ -242,6 +298,7 @@ pub(crate) fn methods(args: TokenStream, mut item: ItemImpl) -> syn::Result<Toke
             }
             continue;
         }
+        reject_exported_function(function, &metadata, &parameter_metadata)?;
 
         let value = method_fingerprint(&self_type, function, &metadata, &parameter_metadata);
         bridges.push(method_bridge(function, value)?);
@@ -260,6 +317,45 @@ pub(crate) fn methods(args: TokenStream, mut item: ItemImpl) -> syn::Result<Toke
         #item
         #(#witnesses)*
     })
+}
+
+fn reject_exported_function(
+    function: &ImplItemFn,
+    metadata: &Metadata,
+    parameter_metadata: &[Metadata],
+) -> syn::Result<()> {
+    reject_generics(&function.sig.generics)?;
+    if function.sig.constness.is_some()
+        || function.sig.unsafety.is_some()
+        || function.sig.abi.is_some()
+        || function.sig.variadic.is_some()
+    {
+        return Err(Error::new_spanned(
+            &function.sig,
+            "an exported Dagger function must use a concrete safe Rust signature",
+        ));
+    }
+    if let Some(receiver) = function.sig.receiver() {
+        let shared_reference = receiver.reference.is_some()
+            && receiver.mutability.is_none()
+            && receiver.colon_token.is_none();
+        if !shared_reference || metadata.has("constructor") {
+            return Err(Error::new_spanned(
+                receiver,
+                "an exported Dagger instance function supports only `&self`; constructors have no receiver",
+            ));
+        }
+        if parameter_metadata
+            .first()
+            .is_some_and(|metadata| !metadata.canonical().is_empty())
+        {
+            return Err(Error::new_spanned(
+                receiver,
+                "Dagger receiver metadata cannot be projected as an argument",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn method_fingerprint(

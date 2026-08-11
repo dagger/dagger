@@ -167,8 +167,8 @@
       network-backed graph, unrelated SDK build, code generation, or Core-binding
       regeneration ran.
 
-- [ ] 5. Build the immutable source snapshot and deterministic discovery compiler
-  - [ ] 5.1 Implement the confined I/O builder for the pure source snapshot model
+- [x] 5. Build the immutable source snapshot and deterministic discovery compiler
+  - [x] 5.1 Implement the confined I/O builder for the pure source snapshot model
     - Keep the canonical `ModuleSourceSnapshot`, `ModuleSourcePath`, documents, cfg,
       package identity, and digest defined by Task 1 in `dagger-codegen`; add the
       filesystem builder only in
@@ -179,7 +179,7 @@
     - Execute no build script, Cargo/rustc command, user code, network request, or
       engine operation during discovery.
     - _Requirements: 3.7, 3.13, 3.14, 14.2, 14.7_
-  - [ ] 5.2 Implement Rust module, cfg, import, and alias resolution
+  - [x] 5.2 Implement Rust module, cfg, import, and alias resolution
     - Follow inline and explicit `mod` declarations plus confined `#[path]`; evaluate
       standard target/features and explicit custom cfg while rejecting unresolved
       build-script cfg.
@@ -190,7 +190,7 @@
     - Preserve ordinary Rust privacy and avoid pretending to implement arbitrary macro
       expansion or all of rustc.
     - _Requirements: 2.4-2.6, 3.5-3.7, 3.11-3.14_
-  - [ ] 5.3 Implement root and transitive local-type closure
+  - [x] 5.3 Implement root and transitive local-type closure
     - Require exactly one explicit root, merge exported methods across impl blocks,
       traverse fields/signatures/interface implementations to a unique canonical local
       closure, and retain compatible checked generated Core/dependency references.
@@ -198,7 +198,7 @@
       provenance, and repeated incompatible symbols before descriptor construction;
       canonicalize independently of file, declaration, map, and traversal order.
     - _Requirements: 3.1-3.12_
-  - [ ] 5.4 Property test: Property 4 — source discovery is closed, deterministic, and inert
+  - [x] 5.4 Property test: Property 4 — source discovery is closed, deterministic, and inert
     - Generate at least 256 bounded module/import/type graphs and permutations plus at
       least 128 confined filesystem/symlink snapshots; compare closure, cfg/path
       resolution, diagnostics, and ordering to independent graph and containment
@@ -208,8 +208,8 @@
       for every accepted and rejected case.
     - _Requirements: 3.1-3.14_
 
-- [ ] 6. Implement the complete Rust type, object, interface, enum, and scalar policy
-  - [ ] 6.1 Add the exhaustive Rust-to-Dagger type-policy manifest and codecs
+- [x] 6. Implement the complete Rust type, object, interface, enum, and scalar policy
+  - [x] 6.1 Add the exhaustive Rust-to-Dagger type-policy manifest and codecs
     - Implement typed recursive mappings for `String`, `i64`, `bool`, `f64`, `()`,
       `Vec<T>`, representable `Option<T>`, local objects/interfaces/enums/scalars, and
       checked generated object/interface handles.
@@ -220,7 +220,7 @@
     - Preserve explicit false/zero/empty values, target numeric bounds, ID direction,
       recursive nullability/list shape, and Void as JSON null.
     - _Requirements: 6.1-6.16_
-  - [ ] 6.2 Generate descriptor-owned object state and root construction
+  - [x] 6.2 Generate descriptor-owned object state and root construction
     - Render object TypeDefs and codecs from the descriptor, using macro access bridges
       only to move persistent tuples across private fields; expose marked fields,
       persist marked private state, omit/default unmarked fields, and share explicit
@@ -230,14 +230,14 @@
       place the root constructor on Query, and generate no unsafe/zeroed/uninitialized
       state.
     - _Requirements: 4.1-4.15_
-  - [ ] 6.3 Implement interfaces and local implementation closure
+  - [x] 6.3 Implement interfaces and local implementation closure
     - Project exported trait docs, source maps, methods, and exact-once implementation
       relationships; validate object method shape against each interface.
     - Encode interface values as closed ID-plus-concrete-identity handles, reuse checked
       generated adapters for Core/dependency interfaces, and reject associated items,
       generics, and unsupported trait shapes.
     - _Requirements: 5.1-5.5_
-  - [ ] 6.4 Implement unit enums and transparent scalar newtypes
+  - [x] 6.4 Implement unit enums and transparent scalar newtypes
     - Project enum variants, docs, deprecation, source maps, explicit names, and the
       target common-prefix normalization; encode exact values and reject unknown wire
       values or payload variants.
@@ -245,33 +245,33 @@
       transparent one-field newtypes over supported scalar representations; reject
       transforming, multi-field, unit, or otherwise lossy declarations.
     - _Requirements: 5.6-5.12_
-  - [ ] 6.5 Property test: Property 5 — object state and construction are lossless and safe
+  - [x] 6.5 Property test: Property 5 — object state and construction are lossless and safe
     - Generate at least 256 object/field policies, values, identities, constructors,
       renames, and invalid state shapes; compare TypeDef/state projection and round-trip
       behavior to a field-policy reference model.
     - Test identifier: `property_05_object_state_construction_lossless_safe`.
     - _Requirements: 4.1-4.15_
-  - [ ] 6.6 Property test: Property 6 — interface projection and identity are closed
+  - [x] 6.6 Property test: Property 6 — interface projection and identity are closed
     - Generate at least 256 interface/object implementation graphs, method shapes,
       local/generated IDs, and unsupported associated items; require exact projection,
       unique relationships, identity round trips, and pre-projection rejection.
     - Test identifier: `property_06_interface_projection_identity_closed`.
     - _Requirements: 5.1-5.5_
-  - [ ] 6.7 Property test: Property 7 — enum and scalar codecs are exact
+  - [x] 6.7 Property test: Property 7 — enum and scalar codecs are exact
     - Generate at least 256 unit/payload enums, prefix/name layouts, transparent and
       invalid scalar shapes, valid values, and unknown wire values; require exact
       round trips or typed rejection without coercion.
     - Test identifier: `property_07_enum_scalar_codecs_exact`.
     - _Requirements: 5.6-5.12_
-  - [ ] 6.8 Property test: Property 8 — recursive type semantics preserve Rust distinctions
+  - [x] 6.8 Property test: Property 8 — recursive type semantics preserve Rust distinctions
     - Generate at least 256 recursive supported/unsupported type trees, typed defaults,
       valid/invalid JSON values, explicit zero/empty values, IDs, nullability, lists,
       and numeric boundaries; compare projection and codecs to the closed algebra.
     - Test identifier: `property_08_recursive_type_semantics_preserve_rust_distinctions`.
     - _Requirements: 6.1-6.16_
 
-- [ ] 7. Implement functions, typed defaults, and target metadata
-  - [ ] 7.1 Compile sync, async, value, unit, and fallible function shapes
+- [x] 7. Implement functions, typed defaults, and target metadata
+  - [x] 7.1 Compile sync, async, value, unit, and fallible function shapes
     - Merge explicit constructors and methods across impl blocks, preserve concrete
       receivers/arguments, classify sync versus async without blocking, expose only the
       successful side of `Result<T, E>`, and map unit success to target Void.
@@ -281,7 +281,7 @@
     - Reject generic functions and unsupported receiver/signature shapes before
       rendering.
     - _Requirements: 7.1-7.6, 7.15, 7.17_
-  - [ ] 7.2 Parse and canonicalize typed Rust default expressions
+  - [x] 7.2 Parse and canonicalize typed Rust default expressions
     - Accept only primitive literals, arrays, `None`/`Some(...)`, enum variants, and
       transparent scalar constructors; resolve their ordinary imports/aliases and check
       them against the declared argument type without execution.
@@ -289,27 +289,27 @@
       invalid enum members, and out-of-range numbers; store canonical JSON and decode it
       through the runtime input codec.
     - _Requirements: 6.7-6.9, 7.6, 7.16_
-  - [ ] 7.3 Project complete target function and argument metadata
+  - [x] 7.3 Project complete target function and argument metadata
     - Preserve rustdoc, source maps, cache/default policy, check/generator/up flags,
       deprecation, optionality, typed default, default path/address, ordered ignore
       patterns, and explicit wire names through typed target enums.
     - Reject required deprecated arguments, normalization collisions, unknown metadata,
       and target-invalid combinations at the narrowest authored coordinate.
     - _Requirements: 7.7-7.16_
-  - [ ] 7.4 Property test: Property 9 — function shape is independent of execution syntax
+  - [x] 7.4 Property test: Property 9 — function shape is independent of execution syntax
     - Generate at least 256 equivalent sync/async, value/unit,
       infallible/fallible/context/data-argument declarations and unsupported signatures;
       require equal target success shapes and exact typed bridge invocation semantics.
     - Test identifier: `property_09_function_shape_independent_execution_syntax`.
     - _Requirements: 7.1-7.6, 7.15, 7.17_
-  - [ ] 7.5 Property test: Property 10 — function and argument metadata is exact and target-valid
+  - [x] 7.5 Property test: Property 10 — function and argument metadata is exact and target-valid
     - Generate at least 256 valid/invalid metadata combinations, declaration orders,
       rename collisions, typed defaults, receivers, and generic shapes; compare exact
       canonical projection or source-located rejection to a typed policy model.
     - Test identifier: `property_10_function_argument_metadata_exact_target_valid`.
     - _Requirements: 7.7-7.16_
 
-- [ ] 8. Checkpoint: source discovery and the complete authoring type system are green
+- [x] 8. Checkpoint: source discovery and the complete authoring type system are green
   - Run formatting and locked tests for `dagger-codegen`, `dagger-sdk-macros`, and the
     source-snapshot slice of `dagger-sdk-engine`, Properties 4-10, fixed source/cfg/path
     diagnostics, and representative generated codec/function compile fixtures.
@@ -318,6 +318,33 @@
     again unless this checkpoint changed dependencies or public package policy.
   - Require no engine, network graph, user/build-script execution, Core regeneration,
     unrelated SDK build, or out-of-root access.
+  - Checkpoint evidence (2026-08-11, local cache state as executed, elapsed wall time):
+    - `cargo fmt --all -- --check` — 0.92s.
+    - `cargo test -p dagger-codegen --all-features --locked` — 261.03s. All 28 unit
+      tests, every integration test, and Properties 4-10 passed; the new discovery and
+      authoring-type unit slice completed in 15.73s, while the existing visible-schema
+      Property 10 accounted for 143.47s. The isolated generated-candidate compile and
+      warning-denied rustdoc fixture passed in 48.00s after its copied workspace was
+      corrected to include the exact-version local macro companion.
+    - `cargo test -p dagger-sdk-macros --locked` — 0.28s; all four unit tests passed.
+    - `cargo test -p dagger-sdk-engine project::source_snapshot::tests --locked` —
+      12.83s; both the 128-case confined snapshot property and fixed symlink rejection
+      passed.
+    - `cargo test -p dagger-sdk --test module_authoring_compile --locked` — 20.75s;
+      the renamed-dependency fixture, async function, explicit interface implementation,
+      and five representative compile-fail cases passed.
+    - `cargo check -p dagger-codegen -p dagger-sdk-macros -p dagger-sdk-engine -p
+      dagger-sdk --all-features --locked` — 4.53s.
+    - The Rust artifact digest changed only because the checked Rust source set changed,
+      from `sha256:3a60ac6ec8b62545e074da25092811bebab34c9d5dd2848509519b17ab72f848`
+      to `sha256:3b6a6fdd2647164f9ab33fc02370b078d99b40c0d3fa4a2051b6fc44a16d8698`.
+      The pinned baseline and all 18 harness evidence bindings were reconciled, and the
+      focused locked `initial_baseline` guard passed without inventory, ledger, status,
+      or evidence-claim changes.
+    - No dependencies or public package policy changed, so workspace clippy, rustdoc,
+      security, and `cargo deny` were not repeated. No Dagger command, engine process,
+      network graph, module build script, module user code, Core regeneration, unrelated
+      SDK build, or out-of-root access ran.
 
 - [ ] 9. Add the minimal stable module runtime surface and exact-version generated ABI
   - [ ] 9.1 Complete query-to-module error conversion
