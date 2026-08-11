@@ -543,20 +543,12 @@ func sdkInitFunctionExtraArgs(fn *modFunction, kind sdkInitKind) []*modFunctionA
 
 	extra := make([]*modFunctionArg, 0, len(fn.Args))
 	for _, arg := range fn.Args {
-		if standard[arg.Name] || sdkInitArgIsWorkspace(arg) {
+		if standard[arg.Name] || arg.IsWorkspace() {
 			continue
 		}
 		extra = append(extra, arg)
 	}
 	return extra
-}
-
-func sdkInitArgIsWorkspace(arg *modFunctionArg) bool {
-	typeDef := arg.TypeDef
-	if typeDef == nil || typeDef.Kind != dagger.TypeDefKindObjectKind || typeDef.AsObject == nil {
-		return false
-	}
-	return typeDef.AsObject.Name == "Workspace" && typeDef.AsObject.SourceModuleName == ""
 }
 
 func sdkInitArgsJSON(cmd *cobra.Command) (string, error) {

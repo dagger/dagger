@@ -257,12 +257,6 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 			return spec, fmt.Errorf("failed to resolve canonical typedef for arg %q: %w", argSelf.Name, err)
 		}
 
-		// Workspace arguments are always optional, regardless of how they're declared in code.
-		// They are automatically injected when not explicitly set.
-		if argSelf.IsWorkspace() {
-			argTypeDef.Self().Optional = true
-		}
-
 		input := argTypeDef.Self().ToInput()
 		var defaultVal dagql.Input
 		if argSelf.DefaultValue != nil {
@@ -686,7 +680,9 @@ func (arg *FunctionArg) isContextual() bool {
 }
 
 // IsWorkspace returns true if the argument is of type Workspace.
-// Workspace arguments are always optional and automatically injected when not set.
+// A Workspace argument declared optional is still auto-injected when unset; one
+// declared required must be passed by the caller, since dagql rejects a missing
+// non-null argument before the injection hook runs.
 func (arg *FunctionArg) IsWorkspace() bool {
 	typeDef := arg.TypeDef.Self()
 	return typeDef.Kind == TypeDefKindObject &&
