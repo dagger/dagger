@@ -72,7 +72,22 @@ func TestTelemetry(t *testing.T) {
 	})
 }
 
+const daggerBinEnv = "_EXPERIMENTAL_DAGGER_CLI_BIN"
+
+var daggerBin = os.Getenv(daggerBinEnv)
+
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
+	if daggerBin == "" {
+		t.Log(daggerBinEnv + "not set - skipping")
+		t.Log()
+		t.Logf(`NOTE: this test is explicitly opt-in because it takes quite a long
+time to run. It's more intended as a CI gate to catch regressions across
+the whole stack TUI/Telemetry stack, not for typical local iteration,
+so in most cases you should just let it skip.`)
+		t.SkipNow()
+		return
+	}
+
 	// setup a git repo so function call tests can pick up the right metadata
 
 	// Remove test-owned workspace files if they exist now too, since Cleanup
@@ -354,11 +369,6 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	if ex.Module == "" {
 		ex.Module = "./viztest"
-	}
-
-	daggerBin := "dagger" // $PATH
-	if bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"); bin != "" {
-		daggerBin = bin
 	}
 
 	var daggerArgs []string
