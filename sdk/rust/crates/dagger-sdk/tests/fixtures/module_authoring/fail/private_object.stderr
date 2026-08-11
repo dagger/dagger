@@ -1,0 +1,7 @@
+error: a Dagger-exported type must be `pub(crate)` or `pub`
+ --> tests/fixtures/module_authoring/fail/private_object.rs:8:1
+  |
+8 | #[dagger_sdk::object]
+  | ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `dagger_sdk::object` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,22 @@
+error[E0271]: type mismatch resolving `<Stateful as ModuleObjectBridge>::PersistentState == (u64,)`
+  --> tests/fixtures/module_authoring/fail/state_signature_mismatch.rs:20:30
+   |
+20 |     require_expected_state::<Stateful>();
+   |                              ^^^^^^^^ type mismatch resolving `<Stateful as ModuleObjectBridge>::PersistentState == (u64,)`
+   |
+note: expected this to be `(u64,)`
+  --> tests/fixtures/module_authoring/fail/state_signature_mismatch.rs:7:1
+   |
+ 7 | #[dagger_sdk::object(root)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: expected tuple `(u64,)`
+              found tuple `(String,)`
+note: required by a bound in `require_expected_state`
+  --> tests/fixtures/module_authoring/fail/state_signature_mismatch.rs:15:50
+   |
+13 | fn require_expected_state<T>()
+   |    ---------------------- required by a bound in this function
+14 | where
+15 |     T: dagger_sdk::__private::ModuleObjectBridge<PersistentState = (u64,)>,
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `require_expected_state`
+   = note: this error originates in the attribute macro `dagger_sdk::object` (in Nightly builds, run with -Z macro-backtrace for more info)

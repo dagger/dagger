@@ -19,6 +19,7 @@ pub mod harness;
 pub mod inventory;
 pub mod io;
 pub mod model;
+pub mod module_authoring;
 pub mod observation;
 pub mod ownership;
 pub mod report;
@@ -87,6 +88,13 @@ pub use io::{
     load_source_bundles,
 };
 pub use model::*;
+pub use module_authoring::{
+    ModuleAuthoringEvidenceAdmission, ModuleAuthoringFormatVersion, ModuleAuthoringMapping,
+    ModuleAuthoringScope, ModuleAuthoringScopeInput, ModuleAuthority, ModuleEvidenceDomain,
+    ModuleEvidenceObservation, ModuleEvidenceOutcome, ModuleImplementationSubject,
+    ModuleTerminalStatus, OwnershipCorrection, admit_module_authoring_evidence,
+    derive_module_authoring_scope, module_authoring_scope_input,
+};
 pub use observation::{
     ExactTargetRun, TransportAssertion, TransportObservationKind, TransportObservationMode,
     TransportObservationRecord, TransportObservationRegistry, validate_transport_observations,

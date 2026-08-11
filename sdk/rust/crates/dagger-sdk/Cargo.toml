@@ -16,6 +16,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+dagger-sdk-macros.workspace = true
 eyre = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

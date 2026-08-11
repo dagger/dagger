@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Establish the public package boundary and canonical module-authoring models
-  - [ ] 1.1 Add the exact-version procedural-macro companion
+- [x] 1. Establish the public package boundary and canonical module-authoring models
+  - [x] 1.1 Add the exact-version procedural-macro companion
     - Add `dagger-sdk-macros` as an edition-2024, Rust-1.97.1 proc-macro crate with
       matching version, repository, Apache-2.0 metadata, workspace lints, README, and
       no runtime dependency on `dagger-sdk`.
@@ -12,7 +12,7 @@
       `.github/workflows/rust-sdk-security.yml` from one publishable package to the
       approved two-package public graph without publishing either crate.
     - _Requirements: 2.3, 2.5, 17.3, 17.6_
-  - [ ] 1.2 Add the minimal public error and hidden authoring bridge ABI
+  - [x] 1.2 Add the minimal public error and hidden authoring bridge ABI
     - Add documented `ModuleError`/`ModuleErrorDetail` construction, inspection,
       `Display`, `std::error::Error`, and standard `Into` support needed by fallible
       macro bridges, without yet coupling it to call dispatch.
@@ -23,7 +23,7 @@
     - Add a minimal checked `crate::dagger_generated::__private` fixture prelude so
       macro expansion tests compile before the complete renderer exists.
     - _Requirements: 2.5, 4.3-4.6, 5.11-5.12, 11.6, 14.10-14.12_
-  - [ ] 1.3 Add strict canonical authoring wire models and shared strategies
+  - [x] 1.3 Add strict canonical authoring wire models and shared strategies
     - Add pure typed target, package, source path/document, cfg, source coordinate,
       Rust symbol, wire name, digest, descriptor, registration, introspection, call,
       generated-assets, scope, and evidence values in their owning crates.
@@ -34,7 +34,7 @@
     - Add valid-first `proptest` strategies with 256-case pure defaults and 128-case
       filesystem/concurrency defaults, both above the 100-case minimum.
     - _Requirements: 8.1-8.4, 14.1, 15.1, 15.2, 17.13-17.15_
-  - [ ] 1.4 Property test: Property 31 — public package graph is closed and version-coherent
+  - [x] 1.4 Property test: Property 31 — public package graph is closed and version-coherent
     - Generate at least 256 package graphs, dependency aliases, version/source
       mutations, feature sets, metadata variants, and private-crate reachability edges;
       admit only the exact-version two-package public graph with no runtime cycle or
@@ -43,7 +43,7 @@
     - Add fixed `cargo metadata` and `cargo package --list` cases separately; do not
       spawn Cargo once per generated property case.
     - _Requirements: 2.3, 2.5, 17.3, 17.6_
-  - [ ] 1.5 Property test: Property 32 — canonical wire models round-trip without semantic loss
+  - [x] 1.5 Property test: Property 32 — canonical wire models round-trip without semantic loss
     - Generate at least 256 valid and invalid snapshots, descriptors, projections, call
       envelopes, asset manifests, and evidence observations; require strict
       encode/decode equality and digest equality while rejecting unknown fields,
@@ -52,8 +52,8 @@
     - Test identifier: `property_32_canonical_wire_models_round_trip_without_semantic_loss`.
     - _Requirements: 8.1-8.4, 14.1, 15.1-15.2, 17.13-17.15_
 
-- [ ] 2. Register the exact capability scope and typed diagnostic foundation
-  - [ ] 2.1 Correct and register the module-authoring capability inventory
+- [x] 2. Register the exact capability scope and typed diagnostic foundation
+  - [x] 2.1 Correct and register the module-authoring capability inventory
     - Return the 17 lifecycle rows to Feature 5 or SDK sign-off ownership, retain the
       exact 79 existing module-authoring rows, and add all 32 approved Rust policy
       capabilities without changing status merely because source exists.
@@ -63,7 +63,7 @@
     - Reject missing, duplicate, moved, stale, delegated, name-only, catch-all,
       wrong-target, and out-of-domain mappings as a complete-set failure.
     - _Requirements: 1.1-1.10_
-  - [ ] 2.2 Add the closed compiler/runtime/evidence diagnostic taxonomy
+  - [x] 2.2 Add the closed compiler/runtime/evidence diagnostic taxonomy
     - Add typed discovery, cfg/path, export visibility, metadata, name, type, state,
       projection, dispatch, argument, handle, result, cancellation, publication,
       package, checkpoint, and evidence codes described by the design.
@@ -73,7 +73,7 @@
     - Establish panic/unwrap/unsafe source-policy checks before feature code grows; the
       exhaustive taxonomy property is completed after all producing layers exist.
     - _Requirements: 14.1-14.6, 14.10-14.12_
-  - [ ] 2.3 Property test: Property 1 — capability scope is exact and evidence-local
+  - [x] 2.3 Property test: Property 1 — capability scope is exact and evidence-local
     - Implement a reference-set PBT over at least 256 row, owner, authority, status,
       evidence-domain, target, ordering, correction, and omission mutations; admit only
       the approved 79/32 partition and keep all 17 corrected lifecycle rows outside the
@@ -83,8 +83,8 @@
       ledger state unchanged and every unclosed blocker visible.
     - _Requirements: 1.1-1.10_
 
-- [ ] 3. Implement the shared authoring grammar and thin procedural bridges
-  - [ ] 3.1 Implement the explicit authoring attribute grammar
+- [x] 3. Implement the shared authoring grammar and thin procedural bridges
+  - [x] 3.1 Implement the explicit authoring attribute grammar
     - Implement re-exported `object`, `interface`, `enum_type`, `scalar`, and `methods`
       attributes plus nested `field`, `state`, `constructor`, `function`, `context`,
       typed default, rename, documentation, deprecation, and target-metadata items.
@@ -94,7 +94,7 @@
     - Keep unmarked `pub` items absent, preserve private fields/methods/error types, and
       never ask authors for a parallel schema or manual dispatcher.
     - _Requirements: 2.1-2.5, 2.7-2.12_
-  - [ ] 3.2 Emit crate-local access, invocation, and fingerprint bridges
+  - [x] 3.2 Emit crate-local access, invocation, and fingerprint bridges
     - Generate `crate::dagger_generated::__private` bridge implementations rather than
       hardcoding the SDK dependency name or inspecting the macro environment.
     - For objects, expose only owned persistent-state tuples plus safe reconstruction;
@@ -105,7 +105,7 @@
       resolution, JSON, wire names, and all Dagger codecs to source compilation and
       descriptor-generated code.
     - _Requirements: 2.4-2.9, 4.3-4.6, 5.11-5.12, 11.6, 14.10-14.12_
-  - [ ] 3.3 Implement the source-side authoring parser over the same ABI
+  - [x] 3.3 Implement the source-side authoring parser over the same ABI
     - Parse the shared attribute grammar from immutable source documents, produce the
       same normalized fingerprints and source coordinates, and retain target/type
       validation as a compiler-only responsibility.
@@ -113,14 +113,14 @@
       source/parser and proc-macro tests; ensure a dependency rename still expands
       through the generated crate-local support module.
     - _Requirements: 2.6-2.9, 3.6, 14.10_
-  - [ ] 3.4 Property test: Property 2 — export is explicit and preserves Rust visibility
+  - [x] 3.4 Property test: Property 2 — export is explicit and preserves Rust visibility
     - Generate at least 256 marked/unmarked, public/crate/private type, field, method,
       constructor, and function combinations; export exactly marked accessible types
       and marked members, diagnose inaccessible marked types, and prove no bridge
       broadens authored visibility.
     - Test identifier: `property_02_export_explicit_preserves_rust_visibility`.
     - _Requirements: 2.1-2.5, 2.10-2.12_
-  - [ ] 3.5 Property test: Property 3 — source and macro interpretations converge
+  - [x] 3.5 Property test: Property 3 — source and macro interpretations converge
     - Generate at least 256 shared-grammar declarations, dependency aliases, metadata
       mutations, and fingerprint mismatches; require equal normalized models for valid
       grammar, equal coordinates for malformed shared metadata, source-only semantic
@@ -130,7 +130,7 @@
       representative rustc fixtures; do not spawn a compiler per PBT case.
     - _Requirements: 2.6-2.9, 3.6, 14.10_
 
-- [ ] 4. Checkpoint: package, scope, grammar, and bridge foundations are green
+- [x] 4. Checkpoint: package, scope, grammar, and bridge foundations are green
   - Run formatting, locked check/test for `dagger-sdk-macros`, the new module-authoring
     slices of `dagger-codegen`, `dagger-sdk`, and `dagger-sdk-completeness`, Properties
     1-3 and 31-32, representative macro compile fixtures, package-policy tests,
@@ -138,6 +138,34 @@
   - Record exact commands, elapsed time, package selection, and the no-generation
     decision. Require no Dagger command, engine process, module invocation,
     network-backed graph, unrelated SDK build, or Core-binding regeneration.
+  - Checkpoint evidence (2026-08-11, local cache state as executed, elapsed wall time):
+    - `cargo fmt --all --check` — 0.77s.
+    - `cargo check -p dagger-sdk-macros -p dagger-codegen -p dagger-sdk -p
+      dagger-sdk-completeness --all-features --locked` — 0.65s.
+    - Focused locked unit tests for `dagger-sdk-macros`, `dagger-codegen`, `dagger-sdk`,
+      and `dagger-sdk-completeness` — 0.31s, 0.22s, 9.85s, and 3.35s respectively.
+    - `cargo test -p dagger-sdk-completeness --test module_authoring_properties
+      --locked` — 3.66s; Properties 1-3 and 31-32 passed with the documented generated
+      case counts.
+    - `cargo test -p dagger-sdk --test module_authoring_compile --locked` — 2.87s;
+      the renamed-dependency pass fixture and five representative compile-fail fixtures
+      passed.
+    - Locked source-policy, package-policy, and engine packaging-graph tests — 0.90s,
+      0.96s, and 7.89s respectively.
+    - `cargo clippy -p dagger-sdk-macros -p dagger-codegen -p dagger-sdk -p
+      dagger-sdk-engine -p dagger-sdk-completeness --all-targets --all-features
+      --locked -- -D warnings` — 8.45s.
+    - `RUSTDOCFLAGS="-D warnings" cargo doc -p dagger-sdk-macros -p dagger-codegen -p
+      dagger-sdk -p dagger-sdk-engine -p dagger-sdk-completeness --all-features
+      --no-deps --locked` — 9.43s; `cargo deny check` — 1.46s.
+    - Offline package verification for `dagger-sdk-macros` and `dagger-sdk` — 0.54s
+      and 5.91s; the latter used only the local exact-version macro patch because the
+      companion has not been published yet. A locked no-default-features SDK check also
+      passed in 6.30s.
+    - Package selection remained confined to the five touched Rust packages and their
+      Cargo dependencies. No Dagger command, engine process, module invocation,
+      network-backed graph, unrelated SDK build, code generation, or Core-binding
+      regeneration ran.
 
 - [ ] 5. Build the immutable source snapshot and deterministic discovery compiler
   - [ ] 5.1 Implement the confined I/O builder for the pure source snapshot model

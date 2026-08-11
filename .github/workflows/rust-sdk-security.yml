@@ -46,11 +46,17 @@ jobs:
         run: |
           cargo metadata --no-deps --format-version 1 --locked |
             jq -e '
-              ([.packages[] | select(.publish != []) | .name] | sort) == ["dagger-sdk"] and
+              ([.packages[] | select(.publish != []) | .name] | sort) == ["dagger-sdk", "dagger-sdk-macros"] and
               (.packages[] | select(.name == "dagger-sdk") |
                 (.features == {"default": ["gen"], "gen": []}) and
+                ([.dependencies[] | select(.name == "dagger-sdk-macros" and .req == "=1.0.0-beta.10" and .kind == null)] | length) == 1 and
                 ([.dependencies[] | select(.req == "*")] | length == 0) and
                 ([.dependencies[] | select(.source != null and (.source | startswith("registry+https://github.com/rust-lang/crates.io-index") | not))] | length == 0)
+              ) and
+              (.packages[] | select(.name == "dagger-sdk-macros") |
+                (.edition == "2024") and
+                (.rust_version == "1.97.1") and
+                ([.dependencies[] | select(.name == "dagger-sdk")] | length) == 0
               )'
       - name: Check generated source and security boundaries
         run: |
@@ -71,7 +77,14 @@ jobs:
         run: go test ./internal/metadata
       - name: Verify the public SDK package
         run: |
-          cargo package -p dagger-sdk --all-features --locked
+          cargo package -p dagger-sdk-macros --locked
+          macro_files="$(cargo package -p dagger-sdk-macros --list --locked)"
+          grep -Fqx -- 'README.md' <<<"$macro_files"
+          grep -Fqx -- 'src/lib.rs' <<<"$macro_files"
+          # The local patch lets Cargo verify both halves before their first ordered
+          # release; the packaged SDK manifest still contains the exact registry edge.
+          cargo package -p dagger-sdk --all-features --locked \
+            --config 'patch.crates-io.dagger-sdk-macros.path="crates/dagger-sdk-macros"'
           package_files="$(cargo package -p dagger-sdk --list --locked)"
           grep -Fqx -- 'README.md' <<<"$package_files"
           grep -Fqx -- 'LICENSE' <<<"$package_files"

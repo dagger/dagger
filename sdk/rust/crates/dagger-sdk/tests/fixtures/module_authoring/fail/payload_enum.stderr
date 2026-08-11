@@ -1,0 +1,5 @@
+error: a Dagger enum supports only unit variants
+  --> tests/fixtures/module_authoring/fail/payload_enum.rs:10:16
+   |
+10 |     Unsupported(String),
+   |                ^^^^^^^^

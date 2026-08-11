@@ -26,6 +26,7 @@ pub enum DigestDomain {
     Artifact,
     RuleExpansion,
     Compatibility,
+    ModuleAuthoring,
 }
 
 impl DigestDomain {
@@ -37,6 +38,7 @@ impl DigestDomain {
             Self::Artifact => b"dagger-rust-sdk-artifact-v1\0",
             Self::RuleExpansion => b"dagger-rust-sdk-rule-expansion-v1\0",
             Self::Compatibility => b"dagger-rust-sdk-compatibility-v1\0",
+            Self::ModuleAuthoring => b"dagger-rust-sdk-module-authoring-v1\0",
         }
     }
 }

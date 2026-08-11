@@ -1,0 +1,27 @@
+[package]
+name = "dagger-sdk-macros"
+description = "Procedural authoring attributes for the Dagger Rust SDK"
+publish = true
+readme = "README.md"
+include = ["/src/**", "/README.md"]
+
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

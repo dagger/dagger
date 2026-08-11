@@ -57,6 +57,10 @@ dagger run cargo run
 See the crate documentation for raw GraphQL, typed execution errors, diagnostics,
 trace propagation, compatibility policy, injected connections, and shutdown details.
 
+Module authors use the `object`, `interface`, `enum_type`, `scalar`, and `methods`
+attributes re-exported from this crate. Their exact-version procedural implementation
+lives in `dagger-sdk-macros`; applications should not add that companion directly.
+
 ## Features
 
 | Cargo selection | Public surface | Intended use |

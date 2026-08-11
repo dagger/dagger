@@ -1,0 +1,22 @@
+error[E0271]: type mismatch resolving `<Fingerprinted as ModuleObjectBridge>::Fingerprint == AuthoringFingerprint<0>`
+  --> tests/fixtures/module_authoring/fail/fingerprint_mismatch.rs:22:36
+   |
+22 |     require_expected_fingerprint::<Fingerprinted>();
+   |                                    ^^^^^^^^^^^^^ type mismatch resolving `<Fingerprinted as ModuleObjectBridge>::Fingerprint == AuthoringFingerprint<0>`
+   |
+note: expected this to be `dagger_sdk::__private::AuthoringFingerprint<0>`
+  --> tests/fixtures/module_authoring/fail/fingerprint_mismatch.rs:7:1
+   |
+ 7 | #[dagger_sdk::object(root)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: expected struct `dagger_sdk::__private::AuthoringFingerprint<0>`
+              found struct `dagger_sdk::__private::AuthoringFingerprint<205305656173062163834133480713643102494>`
+note: required by a bound in `require_expected_fingerprint`
+  --> tests/fixtures/module_authoring/fail/fingerprint_mismatch.rs:16:13
+   |
+13 | fn require_expected_fingerprint<T>()
+   |    ---------------------------- required by a bound in this function
+...
+16 |             Fingerprint = dagger_sdk::__private::AuthoringFingerprint<0>,
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `require_expected_fingerprint`
+   = note: this error originates in the attribute macro `dagger_sdk::object` (in Nightly builds, run with -Z macro-backtrace for more info)

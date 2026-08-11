@@ -156,6 +156,7 @@ mod discovery;
 mod errors;
 mod graphql;
 mod id_input;
+mod module;
 #[allow(dead_code)]
 mod target;
 mod target_generated;
@@ -201,12 +202,25 @@ pub use graphql::{
     GraphQlError, GraphQlLocation, GraphQlPathSegment, RawRequest, RawResponse, ResponseData,
 };
 pub use id_input::IdInput;
+pub use module::{ModuleError, ModuleErrorBuildError, ModuleErrorDetail};
 pub use runtime_errors::{
     CompatibilityError, CompatibilityErrorKind, CompatibilityEvidenceGap, ExecError,
     ProvisioningError, ProvisioningErrorKind, SessionStartupError, SessionStartupErrorKind,
     ShutdownError, ShutdownFailureKind,
 };
 pub use scalar::{Id, Json, Platform};
+
+pub use dagger_sdk_macros::{enum_type, interface, methods, object, scalar};
+
+/// Version-locked implementation details used by generated module support.
+///
+/// This namespace is public only because generated code is compiled in a consumer
+/// crate. It is not a stable author-facing API and must match the exact macro
+/// companion version selected by `dagger-sdk`.
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::module::__private::*;
+}
 
 #[cfg(feature = "gen")]
 mod r#gen;

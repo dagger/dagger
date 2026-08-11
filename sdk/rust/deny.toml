@@ -1,5 +1,7 @@
 # cargo-deny policy for the Rust SDK's advisories, licenses, dependency graph, and
-# package sources. Run `cargo deny check`; CI enforces the same command.
+# package sources. The workspace audit includes both public roots (`dagger-sdk` and its
+# exact-version `dagger-sdk-macros` companion) plus every private build/runtime crate.
+# Run `cargo deny check`; CI enforces the same command.
 
 [advisories]
 # Every active RustSec advisory fails the check. Any future exception must name the

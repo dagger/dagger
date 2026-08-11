@@ -66,7 +66,7 @@ pub struct PackageIdentity {
 /// Stable class of one subject reachable from the Rust SDK distribution.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SecuritySubjectKind {
-    /// The one public Cargo package consumed by generated projects.
+    /// A public Cargo package in the SDK's exact-version pair.
     PublishableCrate,
     /// A private Cargo workspace build input.
     PrivateCrate,
@@ -232,6 +232,10 @@ pub fn derive_shipped_audit_graph(
 
     for (id, kind) in [
         ("cargo:dagger-sdk", SecuritySubjectKind::PublishableCrate),
+        (
+            "cargo:dagger-sdk-macros",
+            SecuritySubjectKind::PublishableCrate,
+        ),
         ("cargo:dagger-codegen", SecuritySubjectKind::PrivateCrate),
         ("cargo:dagger-bootstrap", SecuritySubjectKind::PrivateCrate),
         ("cargo:dagger-sdk-engine", SecuritySubjectKind::PrivateCrate),
@@ -289,12 +293,15 @@ pub fn validate_packaged_distribution(
     publishable_crates: &BTreeSet<StableCoordinate>,
     generated_dependency: &PublishedSdkDependency,
 ) -> Result<SecurityAuditGraph, EngineDiagnostic> {
-    let expected = BTreeSet::from([coordinate("cargo:dagger-sdk")?]);
+    let expected = BTreeSet::from([
+        coordinate("cargo:dagger-sdk")?,
+        coordinate("cargo:dagger-sdk-macros")?,
+    ]);
     if publishable_crates != &expected {
         return Err(packaging_error(
             EngineDiagnosticCode::PackagedAssetInvalid,
             "cargo-publication",
-            "dagger-sdk must be the sole publishable Rust workspace crate",
+            "dagger-sdk and its macro companion must be the complete public Rust workspace graph",
         ));
     }
     match generated_dependency {

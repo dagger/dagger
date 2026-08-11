@@ -1,0 +1,5 @@
+error: duplicate Dagger metadata `root`
+ --> tests/fixtures/module_authoring/fail/duplicate_metadata.rs:8:28
+  |
+8 | #[dagger_sdk::object(root, root)]
+  |                            ^^^^

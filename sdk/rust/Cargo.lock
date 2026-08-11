@@ -318,6 +318,7 @@ version = "1.0.0-beta.10"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
+ "dagger-sdk-macros",
  "derive_builder",
  "dirs",
  "eyre",
@@ -360,6 +361,7 @@ version = "1.0.0-beta.10"
 dependencies = [
  "clap",
  "dagger-codegen",
+ "dagger-sdk",
  "dagger-sdk-engine",
  "pretty_assertions",
  "proptest",
@@ -389,6 +391,16 @@ dependencies = [
  "tokio",
  "toml_edit",
  "url",
+]
+
+[[package]]
+name = "dagger-sdk-macros"
+version = "1.0.0-beta.10"
+dependencies = [
+ "proc-macro2",
+ "proptest",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

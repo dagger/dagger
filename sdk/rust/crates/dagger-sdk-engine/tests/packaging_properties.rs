@@ -204,7 +204,10 @@ proptest! {
             manifest.assets.remove(&path(REQUIRED_PAYLOADS[usize::from(seed) % REQUIRED_PAYLOADS.len()]));
         }
         let publishable = match publication_shape {
-            0 => BTreeSet::from([coordinate("cargo:dagger-sdk")]),
+            0 => BTreeSet::from([
+                coordinate("cargo:dagger-sdk"),
+                coordinate("cargo:dagger-sdk-macros"),
+            ]),
             1 => BTreeSet::new(),
             2 => BTreeSet::from([coordinate("cargo:dagger-codegen")]),
             _ => BTreeSet::from([
@@ -235,8 +238,14 @@ proptest! {
             let public = graph.subjects().values().filter(|subject| {
                 subject.kind == SecuritySubjectKind::PublishableCrate
             }).collect::<Vec<_>>();
-            prop_assert_eq!(public.len(), 1);
-            prop_assert_eq!(public[0].id.as_str(), "cargo:dagger-sdk");
+            prop_assert_eq!(public.len(), 2);
+            prop_assert_eq!(
+                public
+                    .iter()
+                    .map(|subject| subject.id.as_str())
+                    .collect::<BTreeSet<_>>(),
+                BTreeSet::from(["cargo:dagger-sdk", "cargo:dagger-sdk-macros"]),
+            );
             let digest_before = canonical_digest(DigestDomain::PackagedAssets, &manifest).unwrap();
             manifest.assets.values_mut().next().unwrap().digest = digest(seed, 204);
             prop_assert_ne!(digest_before, canonical_digest(DigestDomain::PackagedAssets, &manifest).unwrap());
@@ -287,6 +296,9 @@ fn repository_security_inputs_cover_derived_shipped_graph() {
     for subject in graph.subjects().values() {
         let covered = match subject.id.as_str() {
             "cargo:dagger-sdk" => CARGO_LOCK.contains("name = \"dagger-sdk\""),
+            "cargo:dagger-sdk-macros" => {
+                CARGO_LOCK.contains("name = \"dagger-sdk-macros\"")
+            }
             "cargo:dagger-codegen" => CARGO_LOCK.contains("name = \"dagger-codegen\""),
             "cargo:dagger-bootstrap" => CARGO_LOCK.contains("name = \"dagger-bootstrap\""),
             "cargo:dagger-sdk-engine" => {

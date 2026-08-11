@@ -14,6 +14,7 @@ license = "Apache-2.0"
 dagger-codegen = { version = "=1.0.0-beta.10", path = "crates/dagger-codegen" }
 dagger-bootstrap = { version = "=1.0.0-beta.10", path = "crates/dagger-bootstrap" }
 dagger-sdk = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk", default-features = false }
+dagger-sdk-macros = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-macros" }
 dagger-sdk-completeness = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-completeness" }
 dagger-sdk-engine = { version = "=1.0.0-beta.10", path = "crates/dagger-sdk-engine" }
 
@@ -51,7 +52,7 @@ reqwest = { version = "0.12.23", features = [
 rustix = { version = "1.1.4", features = ["fs"] }
 sha2 = "0.10.8"
 graphql-parser = "0.4.1"
-proc-macro2 = "1.0.106"
+proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
 quote = "1.0.45"
 syn = { version = "2.0.117", features = ["full", "extra-traits"] }
 semver = "1.0.28"
