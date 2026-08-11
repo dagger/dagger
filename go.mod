@@ -159,8 +159,8 @@ require (
 	github.com/vito/dang/v2 v2.1.3
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
-	github.com/vito/midterm v0.2.5-0.20260728152709-9f5888c96c1f
-	github.com/vito/tuist v0.0.10
+	github.com/vito/midterm v0.2.5
+	github.com/vito/tuist v0.0.11-0.20260811005514-1d38ff923562
 	github.com/vito/tuist/teav1 v0.0.0-20260728151937-82e472c0ece3
 	github.com/zeebo/xxh3 v1.1.0
 	go.etcd.io/bbolt v1.4.3

@@ -780,10 +780,10 @@ github.com/vito/go-interact v1.0.2 h1:viJuANio3WH9utUG4rKbJC9V3JR5JgYNS+i0efeA+G
 github.com/vito/go-interact v1.0.2/go.mod h1:s+y0jK9Z2etBYt5ZM6+DhpOsE5C7NNGC3jrJvW0BBpc=
 github.com/vito/go-sse v1.1.3 h1:tZOiC+xKmuRPoySTupO6liK7ciSX0B2NKXha5hEtUAE=
 github.com/vito/go-sse v1.1.3/go.mod h1:kMjgO+XCwBS0se2X/aS5T4aLBvHWAKOUqZOqXKdyrAg=
-github.com/vito/midterm v0.2.5-0.20260728152709-9f5888c96c1f h1:cPYDnZ3qjrMfup7p6mSkdScRzohRvla5nd0alNsHUjM=
-github.com/vito/midterm v0.2.5-0.20260728152709-9f5888c96c1f/go.mod h1:tY1HnZGargiJIhQC0DyMrUOa2Tlo1d4uz0UIDAKOaSE=
-github.com/vito/tuist v0.0.10 h1:Es0KRYYUFf82MZqHPLRkrnvC1MEcF3kpl0OG5rP8qjk=
-github.com/vito/tuist v0.0.10/go.mod h1:43TBITDgv8Rs2jqb1+zqVP9se44asloKoBW5S2lvxXw=
+github.com/vito/midterm v0.2.5 h1:cBx/lw5dKTYoUQB0q2B+MkfM3FOUQ7IYgUh3BNw2A2I=
+github.com/vito/midterm v0.2.5/go.mod h1:tY1HnZGargiJIhQC0DyMrUOa2Tlo1d4uz0UIDAKOaSE=
+github.com/vito/tuist v0.0.11-0.20260811005514-1d38ff923562 h1:R/HJ/xSWzGpV787Y1M9qo8f9shIsNGFfnzmE2GL/Spc=
+github.com/vito/tuist v0.0.11-0.20260811005514-1d38ff923562/go.mod h1:mkzO6GwRKQN/7AmTtL8QXJzHNAf4b3YjeeXSj9bPbnc=
 github.com/vito/tuist/teav1 v0.0.0-20260728151937-82e472c0ece3 h1:zQbfsYBz58qFI+fEfXxUJzLjcfhc0/E4WBykq/m9604=
 github.com/vito/tuist/teav1 v0.0.0-20260728151937-82e472c0ece3/go.mod h1:eD5acyvnjmQfdhnW7R0XWnr47zqX4JIjUm714uR2TIk=
 github.com/wk8/go-ordered-map/v2 v2.1.8 h1:5h/BUHu93oj4gIdvHHHGsScSTMijfx5PeYkE/fJgbpc=
