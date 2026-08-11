@@ -26,6 +26,8 @@ pub enum DirectivePolicy {
     Experimental,
     /// A schema enum spelling that aliases a canonical sibling value.
     EnumValueAlias,
+    /// Engine-authored module ownership metadata with no public client behaviour.
+    SourceMap,
     /// Definition-only metadata contained by the exact target.
     TargetInactive,
 }
@@ -49,6 +51,8 @@ pub enum DirectiveApplicationPolicy {
     Experimental { reason: String },
     /// Canonical enum value selected by an alias Wire_Name.
     EnumValueAlias { canonical: SchemaName },
+    /// Module identity attached by the engine's dynamic schema merger.
+    SourceMap { module: String },
 }
 
 /// One definition and all of its validated target applications.
@@ -152,8 +156,9 @@ pub(crate) fn project_directives(
             "deprecated" => DirectivePolicy::Deprecated,
             "experimental" => DirectivePolicy::Experimental,
             "enumValue" => DirectivePolicy::EnumValueAlias,
+            "sourceMap" => DirectivePolicy::SourceMap,
             "cache" | "check" | "defaultAddress" | "defaultPath" | "generate"
-            | "ignorePatterns" | "sourceMap" | "up" => DirectivePolicy::TargetInactive,
+            | "ignorePatterns" | "up" => DirectivePolicy::TargetInactive,
             _ => {
                 diagnostics.push(diagnostic(
                     DiagnosticCode::SchemaDirectiveUnmapped,
@@ -380,6 +385,14 @@ fn project_application(
             }
             Ok(DirectiveApplicationPolicy::EnumValueAlias { canonical })
         }
+        DirectivePolicy::SourceMap => Ok(DirectiveApplicationPolicy::SourceMap {
+            module: string_argument(
+                site,
+                "module",
+                None,
+                DiagnosticCode::SchemaDirectiveArgumentInvalid,
+            )?,
+        }),
         DirectivePolicy::TargetInactive => Err(diagnostic(
             DiagnosticCode::TargetInactiveDirectiveChanged,
             &site.coordinate,

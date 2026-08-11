@@ -145,7 +145,10 @@ pub fn plan_initialization(
         .into_iter()
         .map(|path| join(inputs.module_root, path.as_str()).map(|path| (path, "dagger generate")))
         .collect::<Result<BTreeMap<_, _>, _>>()?;
-    let post_work = vec![if inputs.lockfile_present && !manifest.dependency_changed {
+    let post_work = vec![if inputs.lockfile_present
+        && !manifest.dependency_changed
+        && !manifest.runtime_dependency_changed
+    {
         PostWorkPlan::VerifyLockedMetadata {
             manifest_path: manifest_path.clone(),
         }

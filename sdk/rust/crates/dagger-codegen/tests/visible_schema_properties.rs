@@ -13,12 +13,13 @@ use proptest::prelude::*;
 use support::{TARGET_BYTES, VisibleSchemaCase, pure_config, visible_schema};
 
 fn case(discriminant: u8) -> VisibleSchemaCase {
-    match discriminant % 6 {
+    match discriminant % 7 {
         0 => VisibleSchemaCase::ExactCore,
         1 => VisibleSchemaCase::CompatibleExtension,
-        2 => VisibleSchemaCase::CoreMutation,
-        3 => VisibleSchemaCase::CoreOmission,
-        4 => VisibleSchemaCase::UnresolvedReference,
+        2 => VisibleSchemaCase::EngineModuleExtension,
+        3 => VisibleSchemaCase::CoreMutation,
+        4 => VisibleSchemaCase::CoreOmission,
+        5 => VisibleSchemaCase::UnresolvedReference,
         _ => VisibleSchemaCase::RustNameCollision,
     }
 }
@@ -56,7 +57,9 @@ proptest! {
         let baseline = project(&visible_schema(case, 0));
         let permuted = project(&visible_schema(case, permutation));
         match case {
-            VisibleSchemaCase::ExactCore | VisibleSchemaCase::CompatibleExtension => {
+            VisibleSchemaCase::ExactCore
+            | VisibleSchemaCase::CompatibleExtension
+            | VisibleSchemaCase::EngineModuleExtension => {
                 prop_assert_eq!(
                     permuted.expect("compatible schema permutation must project"),
                     baseline.expect("compatible schema baseline must project"),

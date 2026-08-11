@@ -26,6 +26,7 @@ pub(crate) const CORE_SCHEMA_BYTES: &[u8] =
 pub(crate) enum VisibleSchemaCase {
     ExactCore,
     CompatibleExtension,
+    EngineModuleExtension,
     CoreMutation,
     CoreOmission,
     UnresolvedReference,
@@ -37,7 +38,12 @@ pub(crate) fn visible_schema(case: VisibleSchemaCase, permutation: u16) -> Vec<u
         serde_json::from_slice(CORE_SCHEMA_BYTES).expect("checked schema fixture must decode");
     match case {
         VisibleSchemaCase::ExactCore => {}
-        VisibleSchemaCase::CompatibleExtension => add_extension(&mut document, "RustMode", true),
+        VisibleSchemaCase::CompatibleExtension => {
+            add_extension(&mut document, "RustMode", true, None)
+        }
+        VisibleSchemaCase::EngineModuleExtension => {
+            add_extension(&mut document, "RustMode", true, Some("rust-probe"))
+        }
         VisibleSchemaCase::CoreMutation => {
             let types = schema_array_mut(&mut document, "types");
             let container = types
@@ -57,11 +63,11 @@ pub(crate) fn visible_schema(case: VisibleSchemaCase, permutation: u16) -> Vec<u
                 .retain(|field| field["name"] != "address");
         }
         VisibleSchemaCase::UnresolvedReference => {
-            add_query_field(&mut document, "rustMode", "MissingRustMode")
+            add_query_field(&mut document, "rustMode", "MissingRustMode", None)
         }
         VisibleSchemaCase::RustNameCollision => {
-            add_extension(&mut document, "RustMode", true);
-            add_extension(&mut document, "Rust_Mode", false);
+            add_extension(&mut document, "RustMode", true, None);
+            add_extension(&mut document, "Rust_Mode", false, None);
         }
     }
     permute_schema(&mut document, permutation);
@@ -177,7 +183,8 @@ fn scrub_field(document: &mut Value, hidden: &str) {
     }
 }
 
-fn add_extension(document: &mut Value, name: &str, add_field: bool) {
+fn add_extension(document: &mut Value, name: &str, add_field: bool, module: Option<&str>) {
+    let directives = module.map_or_else(|| json!([]), source_map_directives);
     schema_array_mut(document, "types").push(json!({
         "kind": "ENUM",
         "name": name,
@@ -191,14 +198,14 @@ fn add_extension(document: &mut Value, name: &str, add_field: bool) {
         }],
         "interfaces": [],
         "possibleTypes": [],
-        "directives": []
+        "directives": directives
     }));
     if add_field {
-        add_query_field(document, "rustMode", name);
+        add_query_field(document, "rustMode", name, module);
     }
 }
 
-fn add_query_field(document: &mut Value, field_name: &str, type_name: &str) {
+fn add_query_field(document: &mut Value, field_name: &str, type_name: &str, module: Option<&str>) {
     let query = schema_array_mut(document, "types")
         .iter_mut()
         .find(|definition| definition["name"] == "Query")
@@ -213,8 +220,18 @@ fn add_query_field(document: &mut Value, field_name: &str, type_name: &str) {
             "args": [],
             "isDeprecated": false,
             "deprecationReason": null,
-            "directives": []
+            "directives": module.map_or_else(|| json!([]), source_map_directives)
         }));
+}
+
+fn source_map_directives(module: &str) -> Value {
+    json!([{
+        "name": "sourceMap",
+        "args": [{
+            "name": "module",
+            "value": serde_json::to_string(module).expect("fixture module must encode")
+        }]
+    }])
 }
 
 fn permute_schema(document: &mut Value, permutation: u16) {

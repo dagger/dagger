@@ -149,6 +149,44 @@ func TestRustModuleSDKSurfaceReportsOnlyImplementedHooks(t *testing.T) {
 	require.False(t, moduleTypes)
 }
 
+func TestProperty15ModuleSDKSurfacesFollowExactCallablePresence(t *testing.T) {
+	t.Parallel()
+
+	hooks := []string{"codegen", "initModule", "generateClient", "moduleRuntime", "targetRuntime", "initClient", "moduleTypes"}
+	for seed := int64(0); seed < 256; seed++ {
+		rng := rand.New(rand.NewSource(seed)) //nolint:gosec // deterministic property schedule
+		functions := map[string]*core.Function{
+			"moduleRuntimePlaceholder": {},
+			"generateClientHelper":     {},
+		}
+		present := map[string]bool{}
+		for _, hook := range hooks {
+			present[hook] = rng.Intn(2) == 1
+			if present[hook] {
+				functions[hook] = &core.Function{Name: hook}
+			}
+		}
+		sdk := &module{funcs: functions}
+		_, codegen := sdk.AsCodeGenerator()
+		_, initializer := sdk.AsModuleInitializer()
+		_, client := sdk.AsClientGenerator()
+		_, runtime := sdk.AsRuntime()
+		_, runtimeTarget := sdk.AsRuntimeTarget()
+		_, clientInitializer := sdk.AsClientInitializer()
+		_, moduleTypes := sdk.AsModuleTypes()
+		_, asModule := sdk.AsModule()
+
+		require.Equal(t, present["codegen"], codegen, "seed %d", seed)
+		require.Equal(t, present["initModule"], initializer, "seed %d", seed)
+		require.Equal(t, present["generateClient"], client, "seed %d", seed)
+		require.Equal(t, present["moduleRuntime"], runtime, "seed %d", seed)
+		require.Equal(t, present["targetRuntime"], runtimeTarget, "seed %d", seed)
+		require.Equal(t, present["initClient"], clientInitializer, "seed %d", seed)
+		require.Equal(t, present["moduleTypes"], moduleTypes, "seed %d", seed)
+		require.True(t, asModule, "seed %d", seed)
+	}
+}
+
 func moduleSDKTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall {
 	return &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,

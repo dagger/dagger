@@ -323,11 +323,13 @@ pub fn validate_authority_sources(
             Ok(()) => {
                 match recompute_source_digest(source, bundle) {
                     Ok(observed) if observed == source.source_digest => {}
-                    Ok(_) => diagnostics.push(ContractDiagnostic::new(
+                    Ok(observed) => diagnostics.push(ContractDiagnostic::new(
                         DiagnosticCode::AuthorityDrift,
                         authority_id.to_string(),
                         None,
-                        "recorded source digest differs from normalized selected bytes",
+                        format!(
+                            "recorded source digest differs from normalized selected bytes; observed {observed}"
+                        ),
                     )),
                     Err(errors) => diagnostics.extend(errors.into_inner()),
                 }

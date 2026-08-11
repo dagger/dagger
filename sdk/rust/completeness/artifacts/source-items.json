@@ -90003,7 +90003,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:0250a48d07791988f562eb71b6e5b8bf09e1531d6e80b45e2a8af70f60063455",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:467",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:489",
       "semantic_signature": {
         "clause_id": "engine-bare-sdk-resolution",
         "text": "WHEN a module selects Bare_Rust_Reference, THE engine SDK loader SHALL resolve the\n   Builtin_Rust_SDK before attempting external module resolution."
@@ -90015,7 +90015,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:a75f305b0d59818d8b3911e83198101dfa002b73935b51d127b9470a2e4559a0",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:473",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:495",
       "semantic_signature": {
         "clause_id": "engine-build-provenance-selection",
         "text": "WHEN the Builtin_Rust_SDK loads, THE engine SHALL bind it to an\n   Engine_Source_Descriptor embedded by the engine build."
@@ -90027,7 +90027,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:41b317faef68dc2c4bd5a390b5251003ceb50955461cd216921d052b1ec685fe",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:754",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:784",
       "semantic_signature": {
         "clause_id": "engine-committed-generated-runtime",
         "text": "WHILE Checked_Generated_Mode is active, THE runtime builder SHALL consume committed\n   generated artifacts."
@@ -90039,7 +90039,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:dacebc229106c455aa64549365a13eea87c4f24bcf867ef0fddc3372d1b697b8",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:892",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:922",
       "semantic_signature": {
         "clause_id": "engine-credential-safe-diagnostics",
         "text": "WHEN a process exits unsuccessfully, THE Rust integration SHALL capture bounded\n    credential-safe diagnostics."
@@ -90051,7 +90051,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:f538564a036b3a20e579aaf585a861af74d1d1be8b09d35a0be163b58cc42c13",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:941",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:972",
       "semantic_signature": {
         "clause_id": "engine-exact-target-integration-evidence",
         "text": "WHEN exact-target observations pass, THE evidence producer SHALL bind their result\n    to the exact engine revision, engine version, schema digest, Rust SDK source digest,\n    toolchain, and packaged-asset digest."
@@ -90063,7 +90063,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:eef123c423162623c6a7ddb4656e17bb1f7536e8aa014da1a96a5f6872452f16",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:542",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:564",
       "semantic_signature": {
         "clause_id": "engine-existing-project-preservation",
         "text": "WHEN initialization finds one compatible package manifest, THE Rust initializer\n   SHALL preserve every unrelated semantic setting."
@@ -90075,7 +90075,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:0a2ef5b5daa1b2b548175a7f565f84e9a40c4b999e40e5edd17211a09acd02e9",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:833",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:863",
       "semantic_signature": {
         "clause_id": "engine-immutable-sdk-dependency-source",
         "text": "THE generated Cargo_Project SHALL depend on an exact registry version or immutable\n   Git revision of `dagger-sdk`."
@@ -90087,7 +90087,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:4b0063ec5b5f82925f552bed054d9aa88f4ee800d9ad05ba1c477ab0f8a1799f",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:511",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:533",
       "semantic_signature": {
         "clause_id": "engine-init-changeset-confinement",
         "text": "THE Rust_Initialization Changeset SHALL exclude paths outside the initialized\n   module root."
@@ -90099,7 +90099,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:8e07df598fb99751fa5e8e1b8f373bfc32c82657f8a5113a0962121065e5d1d1",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:764",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:794",
       "semantic_signature": {
         "clause_id": "engine-legacy-runtime-codegen-isolation",
         "text": "WHILE Legacy_Runtime_Codegen_Mode is active, THE runtime builder SHALL generate only\n   in private ephemeral container state."
@@ -90111,7 +90111,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:79b09dfbef5bd4ebafd49214256f3bc9fa195eba147f6c3b48a9214c3cb6ebb4",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:731",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:761",
       "semantic_signature": {
         "clause_id": "engine-locked-dependency-closure",
         "text": "WHEN a compatible Cargo.lock is present, THE runtime builder SHALL invoke Cargo\n    with `--locked`."
@@ -90123,7 +90123,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:407b2eb46c695c412a74a6414a42bb742803d21ceff00397b1ff597473f22397",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:648",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:678",
       "semantic_signature": {
         "clause_id": "engine-operation-determinism",
         "text": "WHEN identical Operation_Input is processed twice, THE Rust backend SHALL produce\n    byte-identical artifacts and Operation_Manifest bytes."
@@ -90135,7 +90135,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:b321e0b8be732ce0a37f14385ccf548ae7f8f0499945a1e86ebda3b87bf71150",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:603",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:627",
       "semantic_signature": {
         "clause_id": "engine-operation-input-completeness",
         "text": "THE Operation_Input SHALL include the exact engine target identity."
@@ -90147,7 +90147,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:2e688bd1bc4641ca0a9ae2d41b4f0220a97a0160ecaf009770e0401d3d0624a9",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:609",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:633",
       "semantic_signature": {
         "clause_id": "engine-operation-output-confinement",
         "text": "IF an output root escapes the engine-selected operation root, THEN THE Rust backend\n    SHALL return a path-confinement diagnostic."
@@ -90159,7 +90159,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:578f00e3d420571ef2c7f8cf5c455c7018604135e215dae8a20ee8808f0f618a",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:826",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:856",
       "semantic_signature": {
         "clause_id": "engine-packaged-asset-provenance",
         "text": "THE engine build SHALL bind the content digest to the produced engine image."
@@ -90171,7 +90171,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:1ae0166c36d2031b2b5c1198f66d4ddb7afa90a9aacbdfbb03478885b305e452",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:846",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:876",
       "semantic_signature": {
         "clause_id": "engine-runtime-cache-isolation",
         "text": "THE runtime builder SHALL key caches without secret values."
@@ -90183,7 +90183,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:fe672236587ea60d62685c2e5a85b2e07e285297850d152fafe398c66cdebd36",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:787",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:817",
       "semantic_signature": {
         "clause_id": "engine-runtime-protocol-boundary",
         "text": "WHEN the Runtime_Entrypoint starts under ModuleRuntime.Call, THE Rust process SHALL\n   connect through the supplied nested engine session."
@@ -90195,7 +90195,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:e83a8fbdb1d6c267249690b3297952aa3ac4f4a765d191ea4c560db6e49d520c",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:723",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:753",
       "semantic_signature": {
         "clause_id": "engine-runtime-toolchain-selection",
         "text": "WHEN a Cargo_Project declares one compatible exact toolchain, THE runtime builder\n    SHALL use that toolchain."
@@ -90207,7 +90207,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:a4b6640c92a999ac3f06e67df65e51aa4fab8c723078173055ec7e6062e496d1",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:448",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:470",
       "semantic_signature": {
         "clause_id": "engine-scope-drift-closure",
         "text": "IF a current or newly extracted engine SDK capability is absent from the scope\n   manifest, THEN THE completeness contract SHALL fail before status rendering."
@@ -90219,7 +90219,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:09597b9e05ac23a28e4b582a954b383bf63ae7482d64d7ef3cd37a5233a49b09",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:564",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:586",
       "semantic_signature": {
         "clause_id": "engine-user-generated-file-ownership",
         "text": "WHEN authored Rust source exists, THE Rust initializer SHALL preserve every authored\n    source file byte-for-byte."
@@ -90231,7 +90231,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:c13462c46986591a697b37445b60360da6c070523deb66890161b515d7e628f4",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:478",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:500",
       "semantic_signature": {
         "clause_id": "engine-version-shorthand-rejection",
         "text": "IF Versioned_Rust_Shorthand is supplied, THEN THE engine SHALL return\n   `the rust sdk does not currently support selecting a specific version`."
@@ -90241,12 +90241,12 @@
     },
     "source/rust-policy/rust-policy/engine-visible-schema-core-compatibility": {
       "authority_id": "rust-policy",
-      "fingerprint": "sha256:e8929b84e0ac8430233ba39939474d80e4e743c2b12190bbcf7504e2a11f4b65",
+      "fingerprint": "sha256:025464876e134fa0c82f55a904c4100767e69ef2934cb203afd0631a971c59d4",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:589",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:611",
       "semantic_signature": {
         "clause_id": "engine-visible-schema-core-compatibility",
-        "text": "THE Rust backend SHALL validate every Core_Schema coordinate in the Visible_Schema\n   against the Target_Revision compatibility policy."
+        "text": "THE Rust backend SHALL validate every Core_Schema coordinate required by the\n   operation's Target_Revision visibility policy against the reviewed semantic shape."
       },
       "source_item_id": "source/rust-policy/rust-policy/engine-visible-schema-core-compatibility",
       "state": "active"
@@ -90255,7 +90255,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:52fc4b88cdd56f65c00b34dcca0d0e7edfd786fd567ae32dc8dc7de3f395607a",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:499",
+      "locator": ".kiro/specs/rust-sdk-engine-integration/requirements.md:521",
       "semantic_signature": {
         "clause_id": "engine-workspace-sdk-installation",
         "text": "WHEN `dagger sdk install rust` succeeds, THE workspace SHALL contain one\n   Workspace_SDK_Installation named `dagger-rust-sdk`."

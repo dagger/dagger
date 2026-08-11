@@ -79,6 +79,7 @@ fn directive_projection_accounts_for_active_aliases_and_inactive_definitions() {
     let mut deprecations = 0;
     let mut experimental = 0;
     let mut aliases = 0;
+    let mut source_maps = 0;
     let mut inactive = 0;
     for record in plan.directives().records().values() {
         if record.policy == DirectivePolicy::TargetInactive {
@@ -97,6 +98,7 @@ fn directive_projection_accounts_for_active_aliases_and_inactive_definitions() {
                 DirectiveApplicationPolicy::Deprecated { .. } => deprecations += 1,
                 DirectiveApplicationPolicy::Experimental { .. } => experimental += 1,
                 DirectiveApplicationPolicy::EnumValueAlias { .. } => aliases += 1,
+                DirectiveApplicationPolicy::SourceMap { .. } => source_maps += 1,
             }
         }
     }
@@ -106,7 +108,8 @@ fn directive_projection_accounts_for_active_aliases_and_inactive_definitions() {
     assert_eq!(deprecations, 13);
     assert_eq!(experimental, 10);
     assert_eq!(aliases, 23);
-    assert_eq!(inactive, 8);
+    assert_eq!(source_maps, 0);
+    assert_eq!(inactive, 7);
 }
 
 #[test]

@@ -821,7 +821,7 @@
     {
       "allowed_terminal_status": "implemented",
       "blocking_owner": "feature-5",
-      "capability_fingerprint": "sha256:0df8734ec8554dee716fbec3209ef7556ef8c63808032452c4894269486a5d4e",
+      "capability_fingerprint": "sha256:f68155b658ee05b698df12e08d37cbc6d16e0d58d296040b639da733082f4c23",
       "capability_id": "policy/rust-policy/engine-visible-schema-core-compatibility",
       "current_status": "Missing",
       "delegated_content": [],

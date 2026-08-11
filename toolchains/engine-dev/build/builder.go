@@ -114,7 +114,9 @@ func (build *Builder) WithRustSDKContent(
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	rustSDKContent := build.RustSDKContent
+	rustSDKContent := func(ctx context.Context) (*sdkContent, error) {
+		return build.RustSDKContent(ctx, "", "")
+	}
 	if build.rustSDKContent != nil {
 		rustSDKContent = func(context.Context) (*sdkContent, error) {
 			return build.rustSDKContent, nil

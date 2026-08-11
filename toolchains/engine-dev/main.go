@@ -330,9 +330,10 @@ func (dev *EngineDev) configureContainer(
 
 // RustEngineContent is one reusable OCI layout and its exact engine manifest identity.
 type RustEngineContent struct {
-	Content          *dagger.Directory
-	ManifestDigest   string
-	DescriptorDigest string
+	Content              *dagger.Directory
+	ManifestDigest       string
+	DescriptorDigest     string
+	DependencyDescriptor string
 }
 
 // RustSDKContent builds the Rust SDK integration once so focused engine cases can reuse
@@ -343,6 +344,12 @@ func (dev *EngineDev) RustSDKContent(
 	platform dagger.Platform,
 	// +optional
 	version string,
+	// Credential-free repository containing the public dagger-sdk package.
+	// +optional
+	dependencyRepository string,
+	// Full reachable revision whose public dagger-sdk package matches this build.
+	// +optional
+	dependencyRevision string,
 ) (*RustEngineContent, error) {
 	builder, err := build.NewBuilder(ctx, dev.Source, dev.VCSRepository, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
 	if err != nil {
@@ -351,14 +358,19 @@ func (dev *EngineDev) RustSDKContent(
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
-	content, err := builder.RustSDKContent(ctx)
+	content, err := builder.RustSDKContent(ctx, dependencyRepository, dependencyRevision)
+	if err != nil {
+		return nil, err
+	}
+	dependencyDescriptor, err := content.DependencyDescriptor()
 	if err != nil {
 		return nil, err
 	}
 	return &RustEngineContent{
-		Content:          content.Directory(),
-		ManifestDigest:   content.ManifestDigest(),
-		DescriptorDigest: content.DescriptorDigest(),
+		Content:              content.Directory(),
+		ManifestDigest:       content.ManifestDigest(),
+		DescriptorDigest:     content.DescriptorDigest(),
+		DependencyDescriptor: dependencyDescriptor,
 	}, nil
 }
 

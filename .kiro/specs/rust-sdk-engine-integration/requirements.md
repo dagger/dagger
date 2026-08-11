@@ -85,7 +85,10 @@ template, and provisional procedural macros do not define this specification.
 - **Generated_Code_Result:** The engine `GeneratedCode` value containing generated
   code plus the declared VCS-generated and VCS-ignored path sets.
 - **Integration_Evidence:** Target-bound evidence produced by engine construction and
-  end-to-end SDK operations rather than source-name comparison.
+  end-to-end SDK operations during SDK_Signoff rather than source-name comparison.
+- **Implementation_Closure:** The Feature 5 boundary at which production Rust and ABI
+  adapter code is complete, focused pure contract evidence passes, canonical Rust
+  hygiene is green, and no exact-engine observation or status transition is claimed.
 - **Legacy_Runtime_Codegen_Mode:** The `dagger.json` compatibility contract in which
   runtime construction may generate into private ephemeral state before building.
 - **Locked_Dependency_Contract:** The rule that existing Cargo.lock resolution is
@@ -101,6 +104,9 @@ template, and provisional procedural macros do not define this specification.
 - **Operation_Manifest:** A canonical record of a Codegen_Operation's target, input
   identities, owned output paths, output digests, post-generation commands, and
   provenance.
+- **Pure_Rust_Contract_Harness:** Engine-free Rust tests that exercise the production
+  schema compiler, all four operation selectors and renderers, project/runtime plans,
+  protocol state machine, and negative boundaries against deterministic fixtures.
 - **Packaged_Integration_Assets:** Private code generator, templates, runtime support,
   and toolchain metadata made available to an engine build without publishing internal
   Rust crates.
@@ -116,6 +122,9 @@ template, and provisional procedural macros do not define this specification.
 - **Runtime_Target:** The canonical engine runtime reference recorded for a newly
   initialized module when the workspace-facing SDK implementation and execution runtime
   are separated.
+- **SDK_Signoff:** The later release-readiness gate that builds the exact target engine,
+  executes the complete positive and negative integration matrix, and admits
+  capability-local Integration_Evidence.
 - **Rust_Initialization:** SDK-owned workspace changes applied by `dagger module init
   rust <name>` before the scoped generator run.
 - **Rust_SDK_Config:** The engine SDK configuration associated with a Rust module,
@@ -180,11 +189,19 @@ the target protocol. That probe is not the Rust authoring API. Feature 6 replace
 fixed fixture behaviour with complete source discovery and dispatch without changing
 the Feature 5 runtime or engine-selection contract.
 
+Implementation_Closure does not execute a Dagger engine. It exercises the real
+production Rust compiler, selector, renderer, project, runtime-planning, protocol, and
+evidence-admission code through the Pure_Rust_Contract_Harness, and it compiles or
+statically checks the thin Go ABI adapter where that adapter changed. This boundary
+permits Feature 6 work to begin without presenting engine execution that has not
+occurred.
+
 All Feature 5 status changes remain evidence-derived. Source presence, a green Cargo
-build, or engine registration alone cannot close a capability. Exact-target engine
-integration, negative boundary tests, packaged-asset provenance, and capability-local
-evidence must all agree before the ledger records Implemented or
-Idiomatic_Equivalent.
+build, engine registration, or Implementation_Closure alone cannot close an
+engine-dependent capability. SDK_Signoff retains the complete exact-target engine
+matrix, negative boundary observations, packaged-asset provenance, and capability-local
+evidence admission; affected rows remain Partial until that evidence agrees and the
+Feature 1 transition policy records Implemented or Idiomatic_Equivalent.
 
 ## Evidence From Current Code
 
@@ -218,6 +235,11 @@ shown explicitly.
   `core/sdk/module_code_generator.go:17-67` and
   `core/sdk/module_client_generator.go:18-97` scope ModuleSource values and forward the
   exact introspection file and output directory into SDK operations.
+- **Dynamic module source-map shape (authoritative):** `dagql/server.go:412-457` and
+  `core/schema/module.go:41-86` declare all five `sourceMap` arguments non-null, while
+  `core/schematool.go:207-220` deliberately stamps merged module types and constructor
+  fields with the `module` argument alone. Rust must admit exactly that engine-authored
+  omission without weakening required arguments for any other directive.
 - **Runtime adaptation (authoritative):** `core/sdk/module_runtime.go:20-92` selects
   committed-file versus runtime-codegen behaviour and wraps the returned container in
   ContainerRuntime; `core/sdk.go:241-307` clones runtime container state before each
@@ -614,6 +636,12 @@ generate a plausible but incompatible project.
     THEN THE Rust backend SHALL return a path-confinement diagnostic.
 16. WHEN one Operation_Input field changes, THE Operation_Manifest SHALL change its
     canonical input identity.
+17. WHEN an engine-authored `sourceMap` application supplies `module` and omits only
+    `filename`, `line`, `column`, or `url`, THE Rust backend SHALL accept the
+    application as the Target_Revision's dynamic-module representation.
+18. IF a `sourceMap` application omits `module` or any other directive application
+    omits a required argument, THEN THE Rust backend SHALL return a
+    coordinate-bearing directive diagnostic.
 
 ### Requirement 6: Fallible and Deterministic Codegen Operations
 
@@ -898,48 +926,49 @@ an ambiguous half-state.
 16. THE production integration path SHALL avoid panic, unchecked unwrap, and unsafe
     Rust.
 
-### Requirement 13: Exact-Target Verification and Evidence Admission
+### Requirement 13: Implementation Closure, SDK Sign-off, and Evidence Admission
 
-**User Story:** As a Rust SDK consumer, I want engine integration claims backed by the
-actual target engine, so that a green unit suite cannot conceal an unusable SDK.
+**User Story:** As a Rust SDK consumer, I want implementation completion separated from
+engine sign-off, so that development can progress quickly without presenting a green
+unit suite as proof of an engine integration run.
 
 #### Acceptance Criteria
 
-1. THE Rust integration test suite SHALL build an engine from the exact Target_Revision.
-2. THE Rust integration test suite SHALL assert that canonical SDK metadata contains
+1. THE SDK_Signoff suite SHALL build an engine from the exact Target_Revision.
+2. THE SDK_Signoff suite SHALL assert that canonical SDK metadata contains
    `rust` exactly once.
-3. THE Rust integration test suite SHALL execute `dagger sdk install rust` against the
+3. THE SDK_Signoff suite SHALL execute `dagger sdk install rust` against the
    exact target engine.
-4. THE Rust integration test suite SHALL execute Rust initialization for an empty
+4. THE SDK_Signoff suite SHALL execute Rust initialization for an empty
    project.
-5. THE Rust integration test suite SHALL execute Rust initialization for an existing
+5. THE SDK_Signoff suite SHALL execute Rust initialization for an existing
    compatible Cargo project.
-6. THE Rust integration test suite SHALL prove that initialization preserves unrelated
+6. THE SDK_Signoff suite SHALL prove that initialization preserves unrelated
    workspace files.
-7. THE Rust integration test suite SHALL prove that automatic generation touches only
+7. THE SDK_Signoff suite SHALL prove that automatic generation touches only
    the initialized module.
-8. THE Rust integration test suite SHALL prove `--no-generate` omits generated output.
-9. THE Rust integration test suite SHALL exercise every Codegen_Operation through its
+8. THE SDK_Signoff suite SHALL prove `--no-generate` omits generated output.
+9. THE SDK_Signoff suite SHALL exercise every Codegen_Operation through its
    real operation selector.
-10. THE Rust integration test suite SHALL exercise the Generate_Client hook with a
+10. THE SDK_Signoff suite SHALL exercise the Generate_Client hook with a
     finite test renderer.
-11. THE Rust integration test suite SHALL exercise the Generate_Entrypoint hook with a
+11. THE SDK_Signoff suite SHALL exercise the Generate_Entrypoint hook with a
     finite test renderer.
-12. THE Rust integration test suite SHALL build one Runtime_Container under
+12. THE SDK_Signoff suite SHALL build one Runtime_Container under
     Checked_Generated_Mode.
-13. THE Rust integration test suite SHALL build one Runtime_Container under
+13. THE SDK_Signoff suite SHALL build one Runtime_Container under
     Legacy_Runtime_Codegen_Mode.
-14. THE Rust integration test suite SHALL execute Module_Protocol_Probe registration.
-15. THE Rust integration test suite SHALL execute Module_Protocol_Probe invocation.
-16. THE Rust integration test suite SHALL cover invalid Rust shorthand.
-17. THE Rust integration test suite SHALL cover missing generated files.
-18. THE Rust integration test suite SHALL cover a stale Cargo.lock.
-19. THE Rust integration test suite SHALL cover an incompatible Rust toolchain.
-20. THE Rust integration test suite SHALL cover an escaping output path.
-21. THE Rust integration test suite SHALL cover a symlink escaping its operation
+14. THE SDK_Signoff suite SHALL execute Module_Protocol_Probe registration.
+15. THE SDK_Signoff suite SHALL execute Module_Protocol_Probe invocation.
+16. THE SDK_Signoff suite SHALL cover invalid Rust shorthand.
+17. THE SDK_Signoff suite SHALL cover missing generated files.
+18. THE SDK_Signoff suite SHALL cover a stale Cargo.lock.
+19. THE SDK_Signoff suite SHALL cover an incompatible Rust toolchain.
+20. THE SDK_Signoff suite SHALL cover an escaping output path.
+21. THE SDK_Signoff suite SHALL cover a symlink escaping its operation
     boundary.
-22. THE Rust integration test suite SHALL cover an unknown ownership collision.
-23. THE Rust integration test suite SHALL cover credential redaction failures.
+22. THE SDK_Signoff suite SHALL cover an unknown ownership collision.
+23. THE SDK_Signoff suite SHALL cover credential redaction failures.
 24. WHEN exact-target observations pass, THE evidence producer SHALL bind their result
     to the exact engine revision, engine version, schema digest, Rust SDK source digest,
     toolchain, and packaged-asset digest.
@@ -953,17 +982,19 @@ actual target engine, so that a green unit suite cannot conceal an unusable SDK.
     that status through the Feature 1 transition policy.
 29. THE committed integration report SHALL identify remaining Feature 5 blockers
     without relabeling them for presentation.
-30. THE final Feature 5 checkpoint SHALL require a clean worktree after scoped engine
-    generation and all committed derived artifacts.
-31. THE final Feature 5 checkpoint SHALL require repository formatting checks for all
+30. THE Feature 5 Implementation_Closure SHALL require checked-in generated bindings
+    to remain unchanged unless their owning Dagger module API or schema changed and one
+    scoped refresh was reviewed.
+31. THE Feature 5 Implementation_Closure SHALL require repository formatting checks for all
     changed Rust and Go sources.
-32. THE final Feature 5 checkpoint SHALL require locked Rust checks and tests.
-33. THE final Feature 5 checkpoint SHALL require warning-denied clippy and rustdoc.
-34. THE final Feature 5 checkpoint SHALL require the repository cargo-deny gate.
-35. THE final Feature 5 checkpoint SHALL require tests for every changed Go package.
-36. THE final Feature 5 checkpoint SHALL require focused exact-target engine
-    integration tests.
-37. THE final Feature 5 checkpoint SHALL require the repository Rust security checks.
+32. THE Feature 5 Implementation_Closure SHALL require locked Rust checks and tests.
+33. THE Feature 5 Implementation_Closure SHALL require warning-denied clippy and rustdoc.
+34. THE Feature 5 Implementation_Closure SHALL require the repository cargo-deny gate.
+35. THE Feature 5 Implementation_Closure SHALL require compile or static tests for every
+    changed Go ABI-adapter package.
+36. THE Feature 5 Implementation_Closure SHALL require the complete
+    Pure_Rust_Contract_Harness without constructing or executing a Dagger engine.
+37. THE Feature 5 Implementation_Closure SHALL require the repository Rust security checks.
 
 ## Iteration and Feedback Notes
 
@@ -973,6 +1004,9 @@ actual target engine, so that a green unit suite cannot conceal an unusable SDK.
   `dagger module init rust <name>`.
 - The current 31-row Feature 5 scope is retained. Hook evidence is explicitly prevented
   from closing Feature 6 authoring/dispatch or Feature 7 standalone-project content.
+- Implementation closure and SDK sign-off are deliberately separate: exact-engine
+  requirements remain mandatory at sign-off, while engine-dependent ledger rows remain
+  Partial after Feature 5 implementation closes.
 - Historical PR #12229 informed the negative policies around Go-authored runtime
   coupling, unpublished path dependencies, mutable repository mounts, old edition
   templates, and premature macro commitment. It is not a behavioural authority.

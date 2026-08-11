@@ -1,0 +1,9 @@
+kind: Added
+body: |
+    Add target-pinned built-in engine integration for the Rust SDK.
+
+    The engine now packages private Rust initialization, generation, runtime, and protocol adapters with manifest-owned output, immutable dependency and toolchain policy, clean runtime construction, focused positive and negative verification, and capability-local completeness evidence. This establishes the engine hooks without claiming the separately scoped complete module-authoring or standalone-client surfaces.
+time: 2026-08-11T00:00:00Z
+custom:
+    Author: iw
+    PR: ""

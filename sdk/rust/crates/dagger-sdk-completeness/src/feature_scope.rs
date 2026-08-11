@@ -604,7 +604,7 @@ const FEATURE5_POLICIES: &[ReviewedPolicyClause] = &[
     ),
     clause(
         "engine-visible-schema-core-compatibility",
-        "THE Rust backend SHALL validate every Core_Schema coordinate in the Visible_Schema\n   against the Target_Revision compatibility policy.",
+        "THE Rust backend SHALL validate every Core_Schema coordinate required by the\n   operation's Target_Revision visibility policy against the reviewed semantic shape.",
         "idiomatic-rust",
     ),
     clause(

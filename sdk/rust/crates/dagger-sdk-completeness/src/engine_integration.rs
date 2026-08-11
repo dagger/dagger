@@ -13,8 +13,11 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{ContractDiagnostic, DiagnosticCode, DiagnosticCollector, Validation};
 use crate::feature_scope::FeatureScopePolicy;
 use crate::model::{
-    CanonicalSet, CapabilityId, Digest, EvidenceId, FeatureId, NonEmptyText, ResolvedLedger,
-    Status, TargetDigest,
+    CanonicalSet, CapabilityId, ClassificationValues, Digest, EvidenceId, EvidenceRegistry,
+    FeatureId, NonEmptyText, ResolvedLedger, Status, TargetDigest,
+};
+use crate::traceability::{
+    CandidateStatusChanges, FeatureScopeDeclaration, apply_feature_status_changes,
 };
 
 /// Closed Rust implementation owner for one engine-integration capability.
@@ -321,6 +324,25 @@ fn mapping_error(subject: &str, code: DiagnosticCode, detail: &'static str) -> C
 #[serde(transparent)]
 pub struct CaseId(NonEmptyText);
 
+impl CaseId {
+    /// Constructs a stable case identity after validating its durable spelling.
+    pub fn new(value: impl Into<String>) -> Result<Self, crate::model::ValueError> {
+        NonEmptyText::new(value).map(Self)
+    }
+
+    /// Borrows the validated case identity.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl std::fmt::Display for CaseId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// Result of one required exact-target integration case.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "kebab-case", deny_unknown_fields)]
@@ -356,6 +378,14 @@ pub struct EngineIntegrationManifest {
     pub engine_source_digest: Digest,
     /// Private packaged-asset digest.
     pub packaged_assets_digest: Digest,
+    /// Complete engine/runtime coordinates which every observation must equal.
+    pub expected_subject: EngineEvidenceSubject,
+    /// Complete case inventory required in every admitted observation.
+    pub required_cases: CanonicalSet<CaseId>,
+    /// Source evidence for each mapped Rust implementation subject.
+    pub implementation_evidence: BTreeMap<CapabilityId, EvidenceId>,
+    /// Reviewed mapping decisions for Rust-native terminal classifications.
+    pub decision_evidence: BTreeMap<CapabilityId, EvidenceId>,
     /// Exact capability mappings in canonical order.
     pub mappings: BTreeMap<CapabilityId, CapabilityMapping>,
 }
@@ -370,8 +400,396 @@ pub struct EngineIntegrationObservation {
     pub evidence_id: EvidenceId,
     /// Complete non-secret engine/runtime subject.
     pub subject: EngineEvidenceSubject,
+    /// Finite evidence domain observed by this record.
+    pub evidence_domain: EngineEvidenceDomain,
     /// Required cases keyed by stable identity.
     pub cases: BTreeMap<CaseId, CaseObservation>,
     /// Exact capability set this observation claims to prove.
     pub proved_capabilities: CanonicalSet<CapabilityId>,
+}
+
+/// Canonical exact-target evidence committed after the complete engine matrix passes.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EngineIntegrationEvidenceArtifact {
+    /// Wire-format revision.
+    pub format_version: u32,
+    /// Digest of the exact authored mapping bytes used by the run.
+    pub mapping_digest: Digest,
+    /// Complete immutable admission boundary.
+    pub manifest: EngineIntegrationManifest,
+    /// Domain-local observations emitted only after every required case passed.
+    pub observations: Vec<EngineIntegrationObservation>,
+}
+
+/// Capability-local result of atomically admitting engine observations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EngineIntegrationEvidenceClosure {
+    complete_capabilities: CanonicalSet<CapabilityId>,
+    verification_evidence: BTreeMap<CapabilityId, CanonicalSet<EvidenceId>>,
+    observed_domains: BTreeMap<CapabilityId, CanonicalSet<EngineEvidenceDomain>>,
+    missing_domains: BTreeMap<CapabilityId, CanonicalSet<EngineEvidenceDomain>>,
+}
+
+impl EngineIntegrationEvidenceClosure {
+    /// Returns capabilities for which every declared evidence domain was observed.
+    #[must_use]
+    pub const fn complete_capabilities(&self) -> &CanonicalSet<CapabilityId> {
+        &self.complete_capabilities
+    }
+
+    /// Returns the admitted verification identities for each claimed capability.
+    #[must_use]
+    pub const fn verification_evidence(&self) -> &BTreeMap<CapabilityId, CanonicalSet<EvidenceId>> {
+        &self.verification_evidence
+    }
+
+    /// Returns the exact observed evidence-domain projection.
+    #[must_use]
+    pub const fn observed_domains(
+        &self,
+    ) -> &BTreeMap<CapabilityId, CanonicalSet<EngineEvidenceDomain>> {
+        &self.observed_domains
+    }
+
+    /// Returns missing domain identities without relabelling the retained blockers.
+    #[must_use]
+    pub const fn missing_domains(
+        &self,
+    ) -> &BTreeMap<CapabilityId, CanonicalSet<EngineEvidenceDomain>> {
+        &self.missing_domains
+    }
+}
+
+/// Feature 1 transition result plus its exact remaining engine-evidence blockers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EngineIntegrationTransition {
+    /// Ledger produced by the existing completeness transition policy.
+    pub ledger: ResolvedLedger,
+    /// Candidate changes submitted to that policy.
+    pub candidate: CandidateStatusChanges,
+    /// Missing local evidence domains for rows that remained blocking.
+    pub remaining_domains: BTreeMap<CapabilityId, CanonicalSet<EngineEvidenceDomain>>,
+}
+
+/// Assembles the immutable boundary used to admit exact-target engine observations.
+pub fn assemble_engine_integration_manifest(
+    mappings: &ValidatedEngineIntegrationMappings,
+    policy: &FeatureScopePolicy,
+    expected_subject: EngineEvidenceSubject,
+    required_cases: CanonicalSet<CaseId>,
+    implementation_evidence: BTreeMap<CapabilityId, EvidenceId>,
+    decision_evidence: BTreeMap<CapabilityId, EvidenceId>,
+) -> Validation<EngineIntegrationManifest> {
+    let mut diagnostics = DiagnosticCollector::default();
+    let mapped_capabilities = CanonicalSet::new(mappings.mappings.keys().cloned());
+    let implementation_capabilities = CanonicalSet::new(implementation_evidence.keys().cloned());
+
+    if mapped_capabilities != policy.capability_ids() {
+        diagnostics.push(evidence_error(
+            "mappings",
+            DiagnosticCode::CapabilityMappingInvalid,
+            "manifest mappings differ from the approved engine-integration scope",
+        ));
+    }
+    if implementation_capabilities != mapped_capabilities {
+        diagnostics.push(evidence_error(
+            "implementation_evidence",
+            DiagnosticCode::ImplementationEvidenceMissing,
+            "implementation evidence must cover every mapped capability exactly",
+        ));
+    }
+    let idiomatic_capabilities = CanonicalSet::new(
+        mappings
+            .mappings
+            .iter()
+            .filter(|(_, mapping)| {
+                matches!(
+                    mapping.allowed_terminal_status,
+                    AllowedTerminalStatus::IdiomaticEquivalent
+                )
+            })
+            .map(|(capability_id, _)| capability_id.clone()),
+    );
+    if CanonicalSet::new(decision_evidence.keys().cloned()) != idiomatic_capabilities {
+        diagnostics.push(evidence_error(
+            "decision_evidence",
+            DiagnosticCode::DecisionEvidenceInvalid,
+            "reviewed decision evidence must cover exactly the idiomatic mappings",
+        ));
+    }
+    if required_cases.is_empty() {
+        diagnostics.push(evidence_error(
+            "required_cases",
+            DiagnosticCode::EvidenceOutcomeMissing,
+            "engine-integration manifest requires a non-empty exact case inventory",
+        ));
+    }
+
+    let engine_source_digest =
+        Digest::new(expected_subject.engine_source_digest.as_str()).expect("shared digest grammar");
+    let packaged_assets_digest = Digest::new(expected_subject.packaged_assets_digest.as_str())
+        .expect("shared digest grammar");
+    diagnostics.finish(EngineIntegrationManifest {
+        format_version: 1,
+        scope_digest: policy.existing_scope_digest.clone(),
+        target_digest: mappings.target_digest.clone(),
+        engine_source_digest,
+        packaged_assets_digest,
+        expected_subject,
+        required_cases,
+        implementation_evidence,
+        decision_evidence,
+        mappings: mappings.mappings.clone(),
+    })
+}
+
+/// Atomically admits exact-subject observations and derives capability-local closure.
+pub fn verify_engine_integration_evidence(
+    manifest: &EngineIntegrationManifest,
+    observations: &[EngineIntegrationObservation],
+) -> Validation<EngineIntegrationEvidenceClosure> {
+    let mut diagnostics = DiagnosticCollector::default();
+    validate_manifest_integrity(manifest, &mut diagnostics);
+    let required_cases = manifest.required_cases.clone();
+    let mut seen_evidence = std::collections::BTreeSet::new();
+    let mut evidence_by_capability = BTreeMap::<CapabilityId, Vec<EvidenceId>>::new();
+    let mut domains_by_capability = BTreeMap::<CapabilityId, Vec<EngineEvidenceDomain>>::new();
+
+    for observation in observations {
+        let subject = observation.evidence_id.as_str();
+        if observation.format_version != 1 {
+            diagnostics.push(evidence_error(
+                subject,
+                DiagnosticCode::FormatUnsupported,
+                "engine-integration observation format must equal 1",
+            ));
+        }
+        if !seen_evidence.insert(observation.evidence_id.clone()) {
+            diagnostics.push(evidence_error(
+                subject,
+                DiagnosticCode::CapabilityBindingDuplicate,
+                "engine-integration evidence identity is duplicated",
+            ));
+        }
+        if observation.subject != manifest.expected_subject {
+            diagnostics.push(evidence_error(
+                subject,
+                DiagnosticCode::EvidenceSubjectMismatch,
+                "observation subject differs from the complete manifest subject",
+            ));
+        }
+
+        let observed_cases = CanonicalSet::new(observation.cases.keys().cloned());
+        if observed_cases != required_cases
+            || observation
+                .cases
+                .values()
+                .any(|result| !matches!(result, CaseObservation::Passed { .. }))
+        {
+            diagnostics.push(evidence_error(
+                subject,
+                DiagnosticCode::EvidenceOutcomeMissing,
+                "observation must contain the complete passing case inventory",
+            ));
+        }
+        if observation.proved_capabilities.is_empty() {
+            diagnostics.push(evidence_error(
+                subject,
+                DiagnosticCode::CapabilityEvidenceIncomplete,
+                "observation must prove at least one mapped capability",
+            ));
+        }
+
+        for capability_id in observation.proved_capabilities.iter() {
+            let Some(mapping) = manifest.mappings.get(capability_id) else {
+                diagnostics.push(evidence_error(
+                    capability_id,
+                    DiagnosticCode::CapabilityMappingInvalid,
+                    "observation claims an out-of-scope capability",
+                ));
+                continue;
+            };
+            if !mapping
+                .evidence_domains
+                .contains(&observation.evidence_domain)
+            {
+                diagnostics.push(evidence_error(
+                    capability_id,
+                    DiagnosticCode::CapabilityEvidenceIncomplete,
+                    "observation domain is not declared for this capability",
+                ));
+                continue;
+            }
+            evidence_by_capability
+                .entry(capability_id.clone())
+                .or_default()
+                .push(observation.evidence_id.clone());
+            domains_by_capability
+                .entry(capability_id.clone())
+                .or_default()
+                .push(observation.evidence_domain.clone());
+        }
+    }
+
+    let mut verification_evidence = BTreeMap::new();
+    let mut observed_domains = BTreeMap::new();
+    let mut missing_domains = BTreeMap::new();
+    let mut complete_capabilities = Vec::new();
+    for (capability_id, mapping) in &manifest.mappings {
+        let evidence = CanonicalSet::new(
+            evidence_by_capability
+                .remove(capability_id)
+                .unwrap_or_default(),
+        );
+        let observed = CanonicalSet::new(
+            domains_by_capability
+                .remove(capability_id)
+                .unwrap_or_default(),
+        );
+        let missing = CanonicalSet::new(
+            mapping
+                .evidence_domains
+                .iter()
+                .filter(|domain| !observed.contains(domain))
+                .cloned(),
+        );
+        if missing.is_empty() {
+            complete_capabilities.push(capability_id.clone());
+        } else {
+            missing_domains.insert(capability_id.clone(), missing);
+        }
+        verification_evidence.insert(capability_id.clone(), evidence);
+        observed_domains.insert(capability_id.clone(), observed);
+    }
+
+    diagnostics.finish(EngineIntegrationEvidenceClosure {
+        complete_capabilities: CanonicalSet::new(complete_capabilities),
+        verification_evidence,
+        observed_domains,
+        missing_domains,
+    })
+}
+
+/// Builds only evidence-complete candidate rows for the existing transition policy.
+#[must_use]
+pub fn derive_engine_integration_status_changes(
+    manifest: &EngineIntegrationManifest,
+    closure: &EngineIntegrationEvidenceClosure,
+) -> CandidateStatusChanges {
+    let changes = closure
+        .complete_capabilities
+        .iter()
+        .map(|capability_id| {
+            let mapping = &manifest.mappings[capability_id];
+            let status = match mapping.allowed_terminal_status {
+                AllowedTerminalStatus::Implemented => Status::Implemented,
+                AllowedTerminalStatus::IdiomaticEquivalent => Status::IdiomaticEquivalent,
+            };
+            (
+                capability_id.clone(),
+                ClassificationValues {
+                    status,
+                    gap: None,
+                    owner_feature: None,
+                    implementation_evidence: CanonicalSet::new([manifest.implementation_evidence
+                        [capability_id]
+                        .clone()]),
+                    verification_evidence: closure.verification_evidence[capability_id].clone(),
+                    decision_evidence: manifest
+                        .decision_evidence
+                        .get(capability_id)
+                        .cloned()
+                        .map_or_else(CanonicalSet::default, |evidence_id| {
+                            CanonicalSet::new([evidence_id])
+                        }),
+                },
+            )
+        })
+        .collect();
+    CandidateStatusChanges { changes }
+}
+
+/// Applies admitted engine evidence exclusively through the Feature 1 transition API.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_engine_integration_statuses(
+    current: &ResolvedLedger,
+    declaration: &FeatureScopeDeclaration,
+    policy: &FeatureScopePolicy,
+    manifest: &EngineIntegrationManifest,
+    observations: &[EngineIntegrationObservation],
+    candidate_evidence: &EvidenceRegistry,
+    target: &TargetDigest,
+) -> Validation<EngineIntegrationTransition> {
+    let closure = verify_engine_integration_evidence(manifest, observations)?;
+    let candidate = derive_engine_integration_status_changes(manifest, &closure);
+    let ledger = apply_feature_status_changes(
+        current,
+        declaration,
+        policy,
+        &candidate,
+        candidate_evidence,
+        target,
+        &BTreeMap::new(),
+        false,
+    )?;
+    Ok(EngineIntegrationTransition {
+        ledger,
+        candidate,
+        remaining_domains: closure.missing_domains,
+    })
+}
+
+fn validate_manifest_integrity(
+    manifest: &EngineIntegrationManifest,
+    diagnostics: &mut DiagnosticCollector,
+) {
+    if manifest.format_version != 1 {
+        diagnostics.push(evidence_error(
+            "format_version",
+            DiagnosticCode::FormatUnsupported,
+            "engine-integration manifest format must equal 1",
+        ));
+    }
+    let expected_engine = manifest.expected_subject.engine_source_digest.as_str();
+    let expected_assets = manifest.expected_subject.packaged_assets_digest.as_str();
+    if manifest.engine_source_digest.as_str() != expected_engine
+        || manifest.packaged_assets_digest.as_str() != expected_assets
+    {
+        diagnostics.push(evidence_error(
+            "expected_subject",
+            DiagnosticCode::EvidenceSubjectMismatch,
+            "manifest digest projection differs from its complete expected subject",
+        ));
+    }
+    let mapped = CanonicalSet::new(manifest.mappings.keys().cloned());
+    let implemented = CanonicalSet::new(manifest.implementation_evidence.keys().cloned());
+    let idiomatic = CanonicalSet::new(
+        manifest
+            .mappings
+            .iter()
+            .filter(|(_, mapping)| {
+                matches!(
+                    mapping.allowed_terminal_status,
+                    AllowedTerminalStatus::IdiomaticEquivalent
+                )
+            })
+            .map(|(capability_id, _)| capability_id.clone()),
+    );
+    let decided = CanonicalSet::new(manifest.decision_evidence.keys().cloned());
+    if mapped != implemented || idiomatic != decided || manifest.required_cases.is_empty() {
+        diagnostics.push(evidence_error(
+            "manifest",
+            DiagnosticCode::CapabilityEvidenceIncomplete,
+            "manifest requires exact implementation evidence and a non-empty case set",
+        ));
+    }
+}
+
+fn evidence_error(
+    subject: impl ToString,
+    code: DiagnosticCode,
+    detail: &'static str,
+) -> ContractDiagnostic {
+    ContractDiagnostic::new(code, subject.to_string(), None, detail)
 }

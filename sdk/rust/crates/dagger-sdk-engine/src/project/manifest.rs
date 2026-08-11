@@ -16,6 +16,7 @@ use crate::{PublishedSdkDependency, RelativeOperationPath, Sha256Digest};
 
 const RUST_EDITION: &str = "2024";
 const RUST_MSRV: &str = "1.97.1";
+const TOKIO_RUNTIME_VERSION: &str = "1.35.1";
 
 /// Pure, format-preserving amendment proposed for one selected Cargo package.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +27,8 @@ pub struct CargoManifestPlan {
     pub rendered: Vec<u8>,
     /// Whether the plan adds the immutable public SDK dependency.
     pub dependency_changed: bool,
+    /// Whether the plan adds the direct runtime dependency named by generated code.
+    pub runtime_dependency_changed: bool,
     /// Whether the plan adds the engine-owned binary target.
     pub binary_target_changed: bool,
 }
@@ -64,11 +67,13 @@ pub fn plan_manifest(
         validate_existing_package(&document)?;
     }
     let dependency_changed = plan_dependency(&mut document, dependency)?;
+    let runtime_dependency_changed = plan_runtime_dependency(&mut document)?;
     let binary_target_changed = plan_binary(&mut document, generated_binary)?;
     Ok(CargoManifestPlan {
         original_digest,
         rendered: document.to_string().into_bytes(),
         dependency_changed,
+        runtime_dependency_changed,
         binary_target_changed,
     })
 }
@@ -93,6 +98,7 @@ pub fn plan_manifest_with_workspace(
     if !inherited {
         return Err(conflict());
     }
+    let runtime_dependency_changed = plan_runtime_dependency(&mut package_document)?;
     let binary_target_changed = plan_binary(&mut package_document, generated_binary)?;
 
     let workspace_source = std::str::from_utf8(workspace_current).map_err(|_| {
@@ -129,6 +135,7 @@ pub fn plan_manifest_with_workspace(
             original_digest: Some(digest(package_current)),
             rendered: package_document.to_string().into_bytes(),
             dependency_changed: false,
+            runtime_dependency_changed,
             binary_target_changed,
         },
         workspace_original_digest: digest(workspace_current),
@@ -209,6 +216,50 @@ fn dependency_item(dependency: &PublishedSdkDependency) -> Item {
             Item::Value(Value::InlineTable(table))
         }
     }
+}
+
+fn plan_runtime_dependency(document: &mut DocumentMut) -> Result<bool, EngineDiagnostic> {
+    let dependencies = document["dependencies"].or_insert(Item::Table(Table::new()));
+    let table = dependencies.as_table_mut().ok_or_else(|| {
+        invalid(
+            "manifest.dependencies",
+            "dependencies must be represented by a TOML table",
+        )
+    })?;
+    if let Some(existing) = table.get("tokio") {
+        validate_runtime_dependency(existing)?;
+        return Ok(false);
+    }
+
+    let mut runtime = InlineTable::new();
+    runtime.insert("version", Value::from(TOKIO_RUNTIME_VERSION));
+    runtime.insert("default-features", Value::from(false));
+    runtime.insert(
+        "features",
+        Value::Array(["rt", "net", "time"].into_iter().map(Value::from).collect()),
+    );
+    table.insert("tokio", Item::Value(Value::InlineTable(runtime)));
+    Ok(true)
+}
+
+fn validate_runtime_dependency(item: &Item) -> Result<(), EngineDiagnostic> {
+    if item.as_str().is_some() {
+        return Ok(());
+    }
+    let Some(table) = item.as_table_like() else {
+        return Err(runtime_dependency_conflict());
+    };
+    if table.get("path").is_some()
+        || table.get("branch").is_some()
+        || table.get("tag").is_some()
+        || (table.get("git").is_some() && table.get("rev").is_none())
+    {
+        return Err(runtime_dependency_conflict());
+    }
+    if table.get("version").is_none() && table.get("rev").is_none() {
+        return Err(runtime_dependency_conflict());
+    }
+    Ok(())
 }
 
 fn validate_dependency(
@@ -333,6 +384,14 @@ fn mutable_dependency() -> EngineDiagnostic {
         EngineDiagnosticCode::SdkDependencyMutable,
         "manifest.dependencies.dagger-sdk",
         "dagger-sdk dependency must use an exact registry version or immutable Git revision",
+    )
+}
+
+fn runtime_dependency_conflict() -> EngineDiagnostic {
+    diagnostic(
+        EngineDiagnosticCode::SdkDependencyMutable,
+        "manifest.dependencies.tokio",
+        "generated protocol code requires a direct immutable Tokio runtime dependency",
     )
 }
 

@@ -329,25 +329,6 @@ fn compiler_diagnostic(diagnostics: CompilerDiagnosticSet) -> EngineDiagnostic {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{digest, validate_schema_identity};
-    use crate::{RelativeOperationPath, SchemaInput};
-
-    #[test]
-    fn mounted_visible_schema_is_bound_by_digest_without_requiring_core_only_bytes() {
-        let schema = br#"{"__schema":{"types":[{"name":"ModuleExtension"}]}}"#;
-        let input = SchemaInput {
-            path: RelativeOperationPath::parse("schema.json").expect("fixture path must parse"),
-            digest: digest(schema),
-        };
-
-        validate_schema_identity(&input, schema)
-            .expect("named bytes must pass identity validation");
-        assert!(validate_schema_identity(&input, b"{}").is_err());
-    }
-}
-
 fn validate_compiler_target(
     request: &OperationRequest,
     compiler_target: &CodegenTarget,
@@ -477,4 +458,23 @@ fn generation_failed() -> EngineDiagnostic {
 
 fn diagnostic(code: EngineDiagnosticCode, coordinate: &str, message: &str) -> EngineDiagnostic {
     EngineDiagnostic::new(code, Some(coordinate), message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{digest, validate_schema_identity};
+    use crate::{RelativeOperationPath, SchemaInput};
+
+    #[test]
+    fn mounted_visible_schema_is_bound_by_digest_without_requiring_core_only_bytes() {
+        let schema = br#"{"__schema":{"types":[{"name":"ModuleExtension"}]}}"#;
+        let input = SchemaInput {
+            path: RelativeOperationPath::parse("schema.json").expect("fixture path must parse"),
+            digest: digest(schema),
+        };
+
+        validate_schema_identity(&input, schema)
+            .expect("named bytes must pass identity validation");
+        assert!(validate_schema_identity(&input, b"{}").is_err());
+    }
 }

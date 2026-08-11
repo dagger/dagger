@@ -153,6 +153,13 @@ pub struct EntrypointInput {
     result_json: String,
 }
 
+/// Canonical bytes of the sole private protocol probe accepted by the renderer.
+pub const CHECKED_ENTRYPOINT_JSON: &[u8] = include_bytes!("../../assets/protocol-probe.json");
+
+/// SHA-256 identity of [`CHECKED_ENTRYPOINT_JSON`].
+pub const CHECKED_ENTRYPOINT_SHA256: &str =
+    "sha256:ed6bc98ef581d820dc571a9c8dc52e1948f2f70651a7117f7ea507e705dbd374";
+
 #[derive(Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct EntrypointDocument {
@@ -190,13 +197,7 @@ impl EntrypointInput {
 
     /// Returns the canonical checked TypeDef bytes used by fixtures and packaging.
     pub fn checked_bytes() -> Result<Vec<u8>, DiagnosticSet> {
-        serde_json::to_vec(&checked_entrypoint_document()).map_err(|_| {
-            DiagnosticSet::one(operation_diagnostic(
-                DiagnosticCode::GeneratedProvenanceInvalid,
-                "operation.entrypoint",
-                "checked entrypoint TypeDef could not be encoded",
-            ))
-        })
+        Ok(CHECKED_ENTRYPOINT_JSON.to_vec())
     }
 
     #[must_use]

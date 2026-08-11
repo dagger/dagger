@@ -4,11 +4,13 @@ mod support;
 
 use dagger_codegen::diagnostic::DiagnosticCode;
 use dagger_codegen::engine::{
-    BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata, ContentDomain, EntrypointInput,
-    ModuleProjectionInput, OperationKind, OperationProjectionRequest, ProductionRenderers,
-    PublishedSdkDependency, RelativeOperationPath, project_operation, project_operation_with,
+    BASELINE_CLIENT_GENERATION_JSON, CHECKED_ENTRYPOINT_JSON, CHECKED_ENTRYPOINT_SHA256,
+    ClientGenerationMetadata, ContentDomain, EntrypointInput, ModuleProjectionInput, OperationKind,
+    OperationProjectionRequest, ProductionRenderers, PublishedSdkDependency, RelativeOperationPath,
+    project_operation, project_operation_with,
 };
 use dagger_codegen::target::CodegenTarget;
+use sha2::{Digest as _, Sha256};
 
 use support::{
     CORE_SCHEMA_BYTES, TARGET_BYTES, VisibleSchemaCase, module_visible_schema, visible_schema,
@@ -50,7 +52,7 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
     let dependency = dependency();
     let entrypoint = entrypoint();
     let output = RelativeOperationPath::parse("candidate").expect("fixture path must parse");
-    let schema = visible_schema(VisibleSchemaCase::CompatibleExtension, 0);
+    let schema = visible_schema(VisibleSchemaCase::EngineModuleExtension, 0);
 
     let cases = [
         (OperationKind::GenerateLibrary, None, None),
@@ -154,6 +156,64 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn source_map_required_argument_compatibility_is_engine_specific() {
+    let target = target();
+    let module = module();
+    let dependency = dependency();
+    let output = RelativeOperationPath::parse("candidate").expect("fixture path must parse");
+    let schema = visible_schema(VisibleSchemaCase::EngineModuleExtension, 0);
+
+    project_operation(OperationProjectionRequest {
+        target: &target,
+        operation: OperationKind::GenerateClient,
+        visible_schema_json: &schema,
+        module: Some(&module),
+        output: &output,
+        sdk_dependency: &dependency,
+        entrypoint: None,
+    })
+    .expect("engine-authored module-only source maps must project");
+
+    let mut invalid = Vec::new();
+    for mutation in 0..3 {
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&schema).expect("source-map fixture must decode");
+        let extension = document["__schema"]["types"]
+            .as_array_mut()
+            .expect("fixture types must be an array")
+            .iter_mut()
+            .find(|definition| definition["name"] == "RustMode")
+            .expect("fixture must contain the module extension");
+        match mutation {
+            0 => extension["directives"][0]["args"] = serde_json::json!([]),
+            1 => {
+                extension["directives"][0]["args"][0]["value"] = serde_json::Value::Null;
+            }
+            _ => {
+                extension["directives"] = serde_json::json!([{
+                    "name": "expectedType",
+                    "args": []
+                }])
+            }
+        }
+        invalid.push(serde_json::to_vec(&document).expect("source-map mutation must encode"));
+    }
+    for schema in invalid {
+        let diagnostics = project_operation(OperationProjectionRequest {
+            target: &target,
+            operation: OperationKind::GenerateClient,
+            visible_schema_json: &schema,
+            module: Some(&module),
+            output: &output,
+            sdk_dependency: &dependency,
+            entrypoint: None,
+        })
+        .expect_err("required directive arguments outside the engine exception must fail");
+        assert!(diagnostics.contains(DiagnosticCode::SchemaDirectiveArgumentInvalid));
     }
 }
 
@@ -347,4 +407,35 @@ fn unknown_operation_selector_is_rejected_as_typed_input() {
     let diagnostics = OperationKind::decode("generate-everything")
         .expect_err("unknown operation selector must fail");
     assert!(diagnostics.contains(DiagnosticCode::OperationUnknown));
+}
+
+#[test]
+fn private_protocol_probe_is_one_digest_bound_document() {
+    assert_eq!(
+        EntrypointInput::checked_bytes().expect("checked document must encode"),
+        CHECKED_ENTRYPOINT_JSON
+    );
+    assert_eq!(
+        format!("sha256:{:x}", Sha256::digest(CHECKED_ENTRYPOINT_JSON)),
+        CHECKED_ENTRYPOINT_SHA256
+    );
+    EntrypointInput::decode_checked(CHECKED_ENTRYPOINT_JSON)
+        .expect("committed checked document must decode");
+
+    let checked: serde_json::Value =
+        serde_json::from_slice(CHECKED_ENTRYPOINT_JSON).expect("fixture must be JSON");
+    for (field, replacement) in [
+        ("format_version", serde_json::json!(2)),
+        ("object_name", serde_json::json!("AnotherObject")),
+        ("function_name", serde_json::json!("anotherFunction")),
+        ("return_scalar", serde_json::json!("Int")),
+        ("result_json", serde_json::json!("null")),
+    ] {
+        let mut mutated = checked.clone();
+        mutated[field] = replacement;
+        let bytes = serde_json::to_vec(&mutated).expect("mutation must encode");
+        let diagnostics = EntrypointInput::decode_checked(&bytes)
+            .expect_err("every alternate protocol document must fail");
+        assert!(diagnostics.contains(DiagnosticCode::EntrypointTypeDefInvalid));
+    }
 }

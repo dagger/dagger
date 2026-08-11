@@ -73,6 +73,13 @@ approximation. `toml_edit` supplies format-preserving Cargo manifest mutation; i
 private engine-tool dependency and does not enter `dagger-sdk`'s public dependency
 graph.
 
+Implementation closure and SDK sign-off are separate gates. Ordinary Feature 5
+checkpoints execute the production Rust compiler, operation facade, project/runtime
+planners, protocol model, and evidence model through an engine-free contract harness.
+The packaged adapter and exact-engine matrix remain production code, but engine
+construction and execution occur only at SDK sign-off. Until that later matrix passes,
+engine-dependent completeness rows remain Partial.
+
 ## Dependencies and Non-Goals
 
 ### Owning relationships
@@ -750,6 +757,16 @@ module/dependency coordinates still pass the same reference resolution, wrapper,
 default, directive, naming, collision, documentation, and deterministic ordering
 checks.
 
+The target's dynamic schema merger has one authoritative directive-shape exception.
+`dagql/server.go:412-457` and `core/schema/module.go:41-86` declare all five
+`sourceMap` arguments non-null, while `core/schematool.go:207-220 @ Target_Revision`
+stamps module types and constructor fields with only `module`. The validator therefore
+admits omitted `filename`, `line`, `column`, and `url` only for that exact `sourceMap`
+application and only when a valued `module` argument is present. A missing `module`,
+an unknown argument, a malformed value, or any required omission on another directive
+retains the general directive diagnostic. This compatibility belongs in the shared
+Rust canonicalizer so all four production operations observe one rule.
+
 The target core manifest is generated from the same checked target snapshot used by
 Feature 4. It is not inferred by name prefixes from the incoming schema. An extension
 may reference a core coordinate; it cannot redefine it. The complete schema identity
@@ -1154,15 +1171,19 @@ rust-sdk-dev engine-integration --cases <name>[,<name>...]
 rust-sdk-dev engine-evidence
 ```
 
-`engine-unit` runs Rust operation properties and focused Go adapter tests without
-building an engine. `engine-content` returns a `RustEngineContent` Dagger object holding
+Local Feature 5 checkpoints invoke Cargo and Go directly; they do not require a Dagger
+engine or a `rust-sdk-dev` function. At SDK sign-off, `engine-unit` reproduces the Rust
+operation properties and compile/static Go adapter tests in the containerized Dagger
+graph, and `engine-content` returns a `RustEngineContent` object holding
 the OCI root, target-bound engine construction inputs, and their canonical digests.
 `engine-integration --cases` accepts one or more finite case selectors, constructs that
 object once in the same top-level Dagger DAG, and fans the selected cases out from the
 actual object. A singleton selector remains the focused development path.
 `engine-evidence` constructs the object once, runs the complete exact-target matrix in
 parallel branches, and writes the committed observation only after every required case
-passes.
+passes. All four functions are SDK-sign-off tools: an implementation
+checkpoint does not invoke them, substitute simulated success for them, or admit their
+evidence.
 
 The content digest is evidence and a cache identity; it is never treated as a transport
 for the content bytes. Correctness therefore does not depend on a fresh GitHub runner
@@ -1493,7 +1514,7 @@ coordinates remain compatible, whose operation-scoped module and dependency refe
 resolve, and whose Rust names do not collide; any permutation of otherwise equivalent
 schema arrays SHALL yield the same canonical projection, artifacts, and diagnostics.
 
-**Validates: Requirements 5.1–5.7, 6.18**
+**Validates: Requirements 5.1–5.7, 5.17, 5.18, 6.18**
 
 ### Property 11: Operation identities are complete and path-confined
 
@@ -1797,25 +1818,40 @@ Pure Rust tests run without an engine or network. Process tests use fixture exec
 that record argument vectors and model success, failure, cancellation, and redaction;
 they never depend on the developer's ambient Cargo configuration.
 
+The pure contract harness uses deterministic exact-core, module-visible, and
+engine-authored `sourceMap(module: ...)` fixtures. It runs the real production
+projection and renderer for Generate_Library, Generate_Module, Generate_Client, and
+Generate_Entrypoint, plus the project/runtime planners and protocol state machine. Its
+negative fixtures remove `sourceMap.module`, omit a required argument from another
+directive, mutate core coordinates, escape roots, cross symlinks, collide with authored
+files, stale locks/toolchains, and inject credential-shaped failures. This harness is
+the local integration boundary; it does not instantiate the production Dagger runner.
+
+Generated-binding verification is change-triggered rather than cyclical. Documentation,
+fixtures, Rust internals, and implementation-only Go edits do not run a Dagger generator.
+Only a reviewed change to the owning Dagger module API or schema authorizes one scoped
+refresh of that module's bindings; the resulting diff is inspected once, then direct
+compile/static checks guard it for the remainder of the checkpoint. SDK sign-off may
+perform its own reproducibility regeneration after the engine boundary is intentionally
+entered.
+
 ### Go adapter and engine-build tests
 
-Focused Go tests construct the module-backed adapter through the same reflection path
-as other packaged SDKs. They prove hook discovery, scoped ModuleSource cloning,
-Changeset mapping, required-file normalization, absence of `targetRuntime`, default
-installed-module runtime selection, generated result conversion, and stable propagation
-of structured Rust failures. Builder tests inspect the resulting content to prove the
-Rust binary, runtime adapter, descriptors, license, and digests are present exactly once
-and bound into the engine image.
+Focused Go tests compile and statically inspect the module-backed ABI adapter and its
+fixed reflected surface. Rust remains the sole behavioural implementation of schema,
+Cargo, ownership, rendering, runtime planning, protocol, and evidence policy. Go tests
+must not recreate those contracts as a second behavioural harness. Engine builder and
+live reflection observations are reserved for SDK sign-off.
 
-These tests are exposed through `rust-sdk-dev engine-unit` and `rust-sdk-dev
-engine-content`. The latter returns a reusable `RustEngineContent` object and exposes
-its digest for evidence. A top-level integration invocation passes the actual object to
-parallel case branches instead of rebuilding the Rust toolchain layer or assuming a
-digest string can recover bytes on another runner.
+Local tests run directly through Cargo and Go. At SDK sign-off, `engine-unit` reproduces
+that static boundary inside the Dagger graph, while `engine-content` returns a reusable
+`RustEngineContent` object and exposes its digest for evidence. A top-level sign-off
+invocation passes the actual object to parallel case branches instead of rebuilding the
+Rust toolchain layer or assuming a digest string can recover bytes on another runner.
 
-### Exact-target integration matrix
+### SDK sign-off exact-target integration matrix
 
-The exact-target suite builds revision
+The SDK-sign-off suite builds revision
 `25300124ca110612edc09c43f89cb5fad6028170` with the current Feature 5 patch and uses
 that engine for all cases. Requirements 13.1-13.23 are deliberately example-based
 end-to-end observations, because each names one fixed target behavior rather than a
@@ -1827,7 +1863,7 @@ variable invariant.
 | `init-empty` | empty Cargo project initializes and automatic generation is scoped | 13.4, 13.7 |
 | `init-existing` | compatible Cargo project is adopted and unrelated workspace bytes remain unchanged | 13.5, 13.6 |
 | `init-no-generate` | initialization succeeds while generated artifacts are absent | 13.8 |
-| `operations` | all four operation selectors traverse the real adapter; finite client and entrypoint renderers retain inputs | 13.9–13.11 |
+| `operations` | distinct library, module, client, and entrypoint selector observations are retained; module and client additionally traverse their real engine adapter hooks; finite client and entrypoint renderers retain inputs | 13.9–13.11 |
 | `runtime-checked` | committed generated artifacts produce a Runtime Container and private probe registration/invocation succeed | 13.12, 13.14, 13.15 |
 | `runtime-legacy` | private ephemeral generation produces a Runtime Container without host mutation | 13.13 |
 | `negative-generated-lock-toolchain` | missing generation, stale lock, and incompatible toolchain return their typed repairs | 13.17–13.19 |
@@ -1847,21 +1883,23 @@ invokes the Feature 1 admission and transition APIs. A skipped case is not succe
 Reports are regenerated and compared in the same clean-worktree checkpoint so derived
 counts cannot drift from admitted evidence.
 
-The final checkpoint runs, in order:
+Feature 5 implementation closure runs, in order:
 
 1. formatting checks for changed Rust and Go source;
 2. locked Rust checks and tests for all workspace crates;
 3. warning-denied clippy and rustdoc;
 4. the repository cargo-deny policy over the locked graph;
-5. tests for every changed Go package;
-6. the focused exact-target integration matrix using one shared engine content object
-   whose digest is recorded in every observation;
+5. compile or static tests for every changed Go ABI-adapter package;
+6. the complete pure Rust contract harness without constructing a Dagger engine;
 7. repository Rust security checks; and
-8. clean-worktree verification after all scoped generation and report rendering.
+8. clean-worktree verification after report rendering, with generated bindings compared
+   rather than regenerated unless their owning API/schema changed.
 
 This is the executable coverage for Requirements 13.30-13.37. Individual development
-checkpoints run their owning unit/property slice plus one focused integration case;
-only the final Feature 5 checkpoint runs the complete matrix. Build cache keys exclude
+checkpoints run their owning unit/property slice; implementation closure runs the
+complete engine-free contract once. SDK sign-off separately runs the exact-target
+matrix using one shared engine content object, admits its observations, regenerates the
+integration report, and verifies the clean derived result. Build cache keys exclude
 test-only source from the packaged Rust toolchain layer while retaining every source
 and provenance input that can affect shipped content.
 
@@ -1881,9 +1919,10 @@ and provenance input that can affect shipped content.
 - The packaged descriptor makes fork-built engines and future canonical release engines
   use the same mechanism: only their immutable `dagger-sdk` dependency coordinate
   differs. No ambient checkout path enters a user project.
-- Focused engine-unit, content, integration-case, and evidence functions are a design
-  requirement, not optional developer convenience. They keep ordinary checkpoints
-  reviewable while the final checkpoint still proves the complete exact-target matrix.
+- Direct Cargo and Go commands are the local gate. `engine-unit`, content,
+  integration-case, and evidence functions remain SDK-sign-off machinery; they do not
+  sit on the ordinary Feature checkpoint path and do not manufacture evidence before a
+  live run.
 - The current Rust guide's mandatory `// Feature: ...` property-test tag must be
   reconciled with the approved no-feature-label comment policy before implementation;
   stable property test names retain traceability without leaking planning vocabulary

@@ -1333,6 +1333,7 @@ fn canonicalize_applications(
                 && parsed_name
                     .as_ref()
                     .is_ok_and(|argument_name| !arguments.contains_key(argument_name))
+                && !allows_engine_source_map_omission(&name, argument_name, &arguments)
             {
                 diagnostics.push(schema_error(
                     DiagnosticCode::SchemaDirectiveArgumentInvalid,
@@ -1345,6 +1346,28 @@ fn canonicalize_applications(
     }
     applications.sort();
     applications
+}
+
+fn allows_engine_source_map_omission(
+    directive_name: &SchemaName,
+    argument_name: &str,
+    supplied: &BTreeMap<SchemaName, Option<String>>,
+) -> bool {
+    if directive_name.as_str() != "sourceMap"
+        || !matches!(argument_name, "filename" | "line" | "column" | "url")
+    {
+        return false;
+    }
+    let Ok(module) = SchemaName::try_from("module") else {
+        return false;
+    };
+
+    // The target declares every sourceMap input non-null, but its dynamic schema
+    // merger stamps module-owned types with only this discriminator
+    // (core/schematool.go @ 25300124ca110612edc09c43f89cb5fad6028170). Keeping the
+    // exception conditional on a valued module argument prevents it from weakening
+    // ordinary GraphQL required-argument validation.
+    supplied.get(&module).is_some_and(Option::is_some)
 }
 
 fn validate_deprecation(

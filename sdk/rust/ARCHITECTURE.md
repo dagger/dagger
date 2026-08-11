@@ -15,6 +15,9 @@ handle can outlive or bypass the client's lifecycle state.
   never edited by hand.
 - `crates/dagger-bootstrap` supports code-generation bootstrapping and is not a
   publishable application dependency.
+- `crates/dagger-sdk-engine` owns the private, data-only operation compiler, Cargo
+  adoption, generated ownership, descriptor, runtime, and protocol contracts used by
+  the engine adapter. It is deliberately absent from the public SDK dependency graph.
 - `crates/dagger-sdk-completeness` is workspace-private and derives the source
   inventory, ledger, evidence, and reports used to measure the Rust SDK against the
   pinned Go SDK, engine schema, common SDK harness, and Rust policy.
@@ -113,3 +116,24 @@ compile-fail fixtures, denied rustdoc warnings, source-policy tests, determinist
 properties, portable process/HTTP/archive/cache fixtures, and an isolated exact-target
 default-connector run. The completeness crate admits status changes only from
 machine-readable evidence with exact target and capability scope.
+
+## Built-in engine boundary
+
+The built-in Rust SDK is packaged as an acyclic OCI payload: the private operation
+binary and its canonical descriptor are built before the engine embeds their content
+digests. The Go layer under `core/sdk` is therefore an ABI adapter only. It translates
+engine calls into closed Rust operations and applies validated changesets; Cargo,
+schema interpretation, generated ownership, diagnostics, runtime provenance, and
+security policy remain Rust-owned.
+
+Operation manifests—not filenames or Go symbol names—own generated files. Unknown
+content is preserved or rejected, never silently adopted. Runtime provenance is
+two-phase so pre-build input validation cannot fabricate the post-strip binary digest,
+and the final container is rebuilt from a clean digest-pinned base without Cargo
+caches, source, credentials, or builder state.
+
+The private entrypoint proves registration and invocation hooks against the nested
+engine session. Those hooks cannot stand in for arbitrary module dispatch or complete
+standalone-client content, which remain separately scoped work. See
+[ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md) for the reproducible build audit,
+focused case workflow, and exact-target evidence rules.

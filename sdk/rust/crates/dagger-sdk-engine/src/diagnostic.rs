@@ -75,6 +75,14 @@ pub enum EngineDiagnosticCode {
     RuntimeTargetInvalid,
     /// Cargo compilation or post-build processing failed.
     RuntimeBuildFailed,
+    /// Nested session metadata is absent or malformed.
+    RuntimeSessionInvalid,
+    /// The current engine call context is malformed or unsupported.
+    RuntimeProtocolInvalid,
+    /// The engine rejected fixed module registration.
+    RuntimeProtocolFailed,
+    /// The engine rejected the fixed function result.
+    ResultReportFailed,
     /// A runtime diagnostic could not be proven free of credential material.
     DiagnosticRedactionFailed,
 }

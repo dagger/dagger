@@ -56,9 +56,12 @@ pub use diagnostic::{
 };
 pub use engine_integration::{
     AllowedTerminalStatus, CapabilityMapping, CaseId, CaseObservation, DelegatedContentDomain,
-    EngineEvidenceDomain, EngineIntegrationManifest, EngineIntegrationMappings,
-    EngineIntegrationObservation, EngineMappingDisposition, ImplementationSubject,
-    ValidatedEngineIntegrationMappings, validate_engine_integration_mappings,
+    EngineEvidenceDomain, EngineIntegrationEvidenceArtifact, EngineIntegrationEvidenceClosure,
+    EngineIntegrationManifest, EngineIntegrationMappings, EngineIntegrationObservation,
+    EngineIntegrationTransition, EngineMappingDisposition, ImplementationSubject,
+    ValidatedEngineIntegrationMappings, apply_engine_integration_statuses,
+    assemble_engine_integration_manifest, derive_engine_integration_status_changes,
+    validate_engine_integration_mappings, verify_engine_integration_evidence,
 };
 pub use evidence::{
     EvidenceAuditContext, EvidenceEligibility, EvidenceSource, EvidenceSourceRegistry,

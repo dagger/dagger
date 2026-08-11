@@ -44,6 +44,8 @@ or a better idiomatic Rust design.
   artifacts for the Go-level completeness programme.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the existing component overview.
+The focused built-in SDK build, case, and evidence procedure is in
+[ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md).
 The complete checked-target refresh and release procedure is in
 [MAINTAINING.md](MAINTAINING.md).
 

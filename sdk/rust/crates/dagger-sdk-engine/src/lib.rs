@@ -16,11 +16,13 @@ pub mod model;
 pub mod packaging;
 pub mod post_work;
 pub mod project;
+pub mod protocol;
 pub mod publication;
 pub mod root;
 pub mod runner;
 pub mod runtime;
 pub mod scalar;
+pub mod surface;
 
 pub use canonical::{
     CanonicalError, DigestDomain, canonical_bytes, canonical_digest, decode_canonical,

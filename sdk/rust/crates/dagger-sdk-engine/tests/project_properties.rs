@@ -120,6 +120,7 @@ proptest! {
             prop_assert!(preserves_comment);
             prop_assert!(package_rendered.contains("features = [\"tracing\"]"));
             prop_assert!(package_rendered.contains("serde = \"1\""));
+            assert_runtime_dependency(&package_rendered);
             prop_assert!(workspace_rendered.contains("# workspace-policy"));
             assert_dependency(&workspace_rendered, &dependency);
         } else {
@@ -132,6 +133,7 @@ proptest! {
                 prop_assert!(preserves_comment);
                 prop_assert!(rendered.contains("serde = \"1\""));
                 prop_assert!(rendered.contains("[profile.release]"));
+                assert_runtime_dependency(&rendered);
                 assert_dependency(&rendered, &dependency);
             }
         }
@@ -175,6 +177,11 @@ fn assert_dependency(rendered: &str, dependency: &PublishedSdkDependency) {
             assert!(!rendered.contains("tag ="));
         }
     }
+}
+
+fn assert_runtime_dependency(rendered: &str) {
+    assert!(rendered.contains("tokio"));
+    assert!(rendered.contains("features = [\"rt\", \"net\", \"time\"]"));
 }
 
 #[test]

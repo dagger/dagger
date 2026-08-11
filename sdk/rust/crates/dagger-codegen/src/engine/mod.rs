@@ -16,9 +16,10 @@ mod visible;
 
 pub use metadata::{BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata};
 pub use model::{
-    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ContentDomain, EntrypointInput,
-    ModuleProjectionInput, OperationKind, OperationPlan, OperationProjectionRequest, PostWorkPlan,
-    PublishedSdkDependency, RelativeOperationPath,
+    CHECKED_ENTRYPOINT_JSON, CHECKED_ENTRYPOINT_SHA256, CandidateArtifact, CandidateArtifactKind,
+    CargoBinaryTarget, ContentDomain, EntrypointInput, ModuleProjectionInput, OperationKind,
+    OperationPlan, OperationProjectionRequest, PostWorkPlan, PublishedSdkDependency,
+    RelativeOperationPath,
 };
 pub use renderers::{
     ClientRenderInput, EntrypointRenderInput, LibraryRenderInput, ModuleRenderInput,

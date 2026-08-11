@@ -57,7 +57,11 @@ jobs:
           cargo test -p dagger-sdk --test source_policy --all-features --locked
           cargo test -p dagger-bootstrap --test generation --locked
           cargo test -p dagger-codegen --test render --test projection --locked
+          cargo test -p dagger-codegen --test engine_operations --locked
           cargo test -p dagger-sdk-engine --test packaging_properties --locked
+          cargo test -p dagger-sdk-engine --test project_properties --locked
+          cargo test -p dagger-sdk-engine --test protocol_properties --locked
+          cargo test -p dagger-sdk-completeness --test engine_integration --locked
           cargo test -p dagger-sdk --all-features --locked \
             public_error_rendering_is_redacted_while_sources_remain_inspectable
           cargo test -p dagger-sdk --all-features --locked \
