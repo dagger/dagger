@@ -144,7 +144,8 @@ pub(crate) fn assemble(
                 | BindingKind::Enum
                 | BindingKind::EnumVariant
                 | BindingKind::InputObject
-                | BindingKind::InputField => "generated_public_reachability",
+                | BindingKind::InputField
+                | BindingKind::FieldOptions => "generated_public_reachability",
                 BindingKind::FieldOperation | BindingKind::Argument => "generated_query_projection",
                 BindingKind::EnumAlias
                 | BindingKind::TargetPrivateType

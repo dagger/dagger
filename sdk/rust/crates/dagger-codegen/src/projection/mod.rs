@@ -82,7 +82,18 @@ fn build_name_map(
 
     for definition in schema.types().values() {
         match definition {
-            TypeDefinition::Scalar(_) => {}
+            TypeDefinition::Scalar(scalar) => {
+                if ScalarKind::from_name(&scalar.name).is_none() {
+                    registry.reserve(
+                        &scalar.coordinate,
+                        &scalar.name,
+                        scalar.name.as_str(),
+                        NameContext::Type,
+                        "crate::types",
+                    );
+                    reserve_common_type_names(&mut registry, &scalar.coordinate, &scalar.name);
+                }
+            }
             TypeDefinition::Object(object) => {
                 if object.name.as_str().starts_with('_') {
                     continue;
@@ -299,11 +310,11 @@ fn build_catalog(
                 &mut diagnostics,
                 key(
                     &scalar.coordinate,
-                    scalar_symbol(scalar.scalar),
+                    scalar_symbol(scalar),
                     BindingKind::Scalar,
                 ),
                 CatalogDisposition::RuntimeProvided,
-                scalar_signature(scalar.scalar),
+                scalar_signature(scalar),
                 scalar,
                 evidence(&[
                     EvidenceScope::EngineSchema,
@@ -626,18 +637,19 @@ fn evidence(scopes: &[EvidenceScope]) -> BTreeSet<EvidenceScope> {
     scopes.iter().copied().collect()
 }
 
-fn scalar_symbol(kind: ScalarKind) -> Option<String> {
-    match kind {
+fn scalar_symbol(scalar: &types::ScalarProjection) -> Option<String> {
+    match scalar.scalar {
         ScalarKind::Boolean | ScalarKind::Float | ScalarKind::Int | ScalarKind::String => None,
         ScalarKind::Id => Some("crate::Id".to_owned()),
         ScalarKind::Json => Some("crate::Json".to_owned()),
         ScalarKind::Platform => Some("crate::Platform".to_owned()),
         ScalarKind::Void => Some("()".to_owned()),
+        ScalarKind::Custom => Some(format!("crate::gen::{}", scalar.wire_name)),
     }
 }
 
-fn scalar_signature(kind: ScalarKind) -> String {
-    match kind {
+fn scalar_signature(scalar: &types::ScalarProjection) -> String {
+    match scalar.scalar {
         ScalarKind::Boolean => "bool",
         ScalarKind::Float => "f64",
         ScalarKind::Int => "i64",
@@ -646,6 +658,7 @@ fn scalar_signature(kind: ScalarKind) -> String {
         ScalarKind::Json => "Json",
         ScalarKind::Platform => "Platform",
         ScalarKind::Void => "()",
+        ScalarKind::Custom => scalar.wire_name.as_str(),
     }
     .to_owned()
 }

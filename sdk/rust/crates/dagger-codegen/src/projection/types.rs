@@ -40,6 +40,8 @@ pub enum RustType {
     Enum(SchemaName),
     /// A generated owned input object.
     Input(SchemaName),
+    /// A generated transparent custom-scalar wrapper.
+    CustomScalar(SchemaName),
     /// A generated object handle.
     Handle(SchemaName),
     /// A generated interface client handle.
@@ -67,6 +69,7 @@ impl RustType {
             Self::Unit => "()".to_owned(),
             Self::Enum(name)
             | Self::Input(name)
+            | Self::CustomScalar(name)
             | Self::Handle(name)
             | Self::InterfaceHandle(name) => name.to_string(),
             Self::IdInput(name) => format!("IdInput<{}>", name.as_str()),
@@ -107,7 +110,7 @@ impl From<&TypeUse> for WrapperPlan {
     }
 }
 
-/// The eight scalar policies supported by the exact target.
+/// The built-in and module-defined scalar policies supported by the exact target.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum ScalarKind {
     /// GraphQL `Boolean`.
@@ -126,6 +129,8 @@ pub enum ScalarKind {
     Platform,
     /// GraphQL `Void`, represented by JSON null.
     Void,
+    /// Module-defined scalar represented by its exact GraphQL string value.
+    Custom,
 }
 
 impl ScalarKind {
@@ -153,6 +158,7 @@ impl ScalarKind {
             Self::Float => value.as_f64().is_some_and(f64::is_finite),
             Self::Int => value.as_i64().is_some(),
             Self::String | Self::Id | Self::Platform => value.is_string(),
+            Self::Custom => value.is_string(),
             Self::Json => value
                 .as_str()
                 .is_some_and(|encoded| serde_json::from_str::<serde_json::Value>(encoded).is_ok()),
@@ -170,6 +176,7 @@ impl ScalarKind {
             Self::Json => RustType::Json,
             Self::Platform => RustType::Platform,
             Self::Void => RustType::Unit,
+            Self::Custom => RustType::String,
         }
     }
 }
@@ -440,13 +447,7 @@ fn project_type(
     })?;
     let decode_leaf = match definition {
         TypeDefinition::Scalar(_) => {
-            DecodeLeaf::Scalar(ScalarKind::from_name(leaf).ok_or_else(|| {
-                projection_error(
-                    DiagnosticCode::SchemaTypeUnsupported,
-                    &SchemaCoordinate::named_type(leaf),
-                    "scalar has no registered Rust wire policy",
-                )
-            })?)
+            DecodeLeaf::Scalar(ScalarKind::from_name(leaf).unwrap_or(ScalarKind::Custom))
         }
         TypeDefinition::Enum(_) => DecodeLeaf::Enum(leaf.clone()),
         TypeDefinition::InputObject(_) => DecodeLeaf::Input(leaf.clone()),
@@ -521,15 +522,10 @@ fn project_named(
         return Ok(RustType::IdInput(target.clone()));
     }
     match schema.types().get(name) {
-        Some(TypeDefinition::Scalar(_)) => ScalarKind::from_name(name)
-            .map(ScalarKind::rust_type)
-            .ok_or_else(|| {
-                projection_error(
-                    DiagnosticCode::SchemaTypeUnsupported,
-                    &SchemaCoordinate::named_type(name),
-                    "scalar has no registered Rust wire policy",
-                )
-            }),
+        Some(TypeDefinition::Scalar(_)) => Ok(ScalarKind::from_name(name).map_or_else(
+            || RustType::CustomScalar(name.clone()),
+            ScalarKind::rust_type,
+        )),
         Some(TypeDefinition::Enum(_)) => Ok(RustType::Enum(name.clone())),
         Some(TypeDefinition::InputObject(_)) => Ok(RustType::Input(name.clone())),
         Some(TypeDefinition::Object(_)) => Ok(RustType::Handle(name.clone())),
@@ -621,21 +617,11 @@ pub(crate) fn project_named_types(
             continue;
         }
         let projection: Result<TypeProjection, Diagnostic> = (|| match definition {
-            TypeDefinition::Scalar(scalar) => ScalarKind::from_name(name)
-                .map(|kind| {
-                    TypeProjection::Scalar(ScalarProjection {
-                        coordinate: scalar.coordinate.clone(),
-                        wire_name: name.clone(),
-                        scalar: kind,
-                    })
-                })
-                .ok_or_else(|| {
-                    projection_error(
-                        DiagnosticCode::SchemaTypeUnsupported,
-                        &scalar.coordinate,
-                        "scalar has no registered Rust projection",
-                    )
-                }),
+            TypeDefinition::Scalar(scalar) => Ok(TypeProjection::Scalar(ScalarProjection {
+                coordinate: scalar.coordinate.clone(),
+                wire_name: name.clone(),
+                scalar: ScalarKind::from_name(name).unwrap_or(ScalarKind::Custom),
+            })),
             TypeDefinition::Object(object) => {
                 for interface in &object.interfaces {
                     implementations.push(InterfaceImplementationProjection {

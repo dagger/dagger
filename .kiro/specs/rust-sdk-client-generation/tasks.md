@@ -148,8 +148,8 @@
       build, or network resolution ran.
   - _Requirements: 1.1-1.12, 5.14, 8.1-8.14, 10.1-10.10_
 
-- [ ] 5. Implement the exact client-visible schema scope compiler
-  - [ ] 5.1 Validate complete Core and identify the optional selected-module root
+- [x] 5. Implement the exact client-visible schema scope compiler
+  - [x] 5.1 Validate complete Core and identify the optional selected-module root
     - Reuse `VisibleSchemaPlan` and the exact Feature 4 Core manifest to retain every
       target-visible Core coordinate, including `Host` and the `Engine*` family hidden
       only from module-facing schemas.
@@ -160,10 +160,11 @@
     - Reject missing/changed Core, promoted module functions, multiple or differently
       named roots, malformed wrappers, and extra Query extensions before rendering.
     - _Requirements: 3.4-3.8, 3.11-3.12_
-  - [ ] 5.2 Compute and validate the complete selected-module closure
+  - [x] 5.2 Compute and validate the complete selected-module closure
     - Traverse non-Core object/interface fields, arguments, interface implementations,
-      union members, enum values, custom scalars, input fields, and recursive wrappers
-      from the selected root using canonical graph order.
+      interface possible types, enum values, custom scalars, input fields, and
+      recursive wrappers from the selected root using canonical graph order. Public
+      unions remain rejected by the exact-target canonical schema policy.
     - Require every non-Core coordinate to be both reachable and owned by the exact
       selected-module namespace rule; reject dependency-root or dependency-type
       leakage, unreachable extensions, unsupported references, and cycles that exceed
@@ -171,7 +172,7 @@
     - Produce `ClientSchemaSurface`, `ModuleRoot`, and a canonical extension-coordinate
       set without filesystem, process, network, Cargo, or engine access.
     - _Requirements: 3.7-3.13_
-  - [ ] 5.3 Property test: Property 5 — client-visible schema is exactly Core plus one reachable module closure
+  - [x] 5.3 Property test: Property 5 — client-visible schema is exactly Core plus one reachable module closure
     - Implement `property_05_client_visible_schema_exact_core_one_module_closure` as a
       graph-reference PBT over at least 256 exact-Core mutations, hidden-Core rows,
       runtime-less cases, root/promoted fields, module/dependency graphs, wrappers,
@@ -180,15 +181,15 @@
       deterministic coordinate diagnostics for every invalid mutation.
     - _Requirements: 3.5-3.12_
 
-- [ ] 6. Project the complete idiomatic Rust module surface
-  - [ ] 6.1 Resolve every Core reference to the checked public SDK catalog
+- [x] 6. Project the complete idiomatic Rust module surface
+  - [x] 6.1 Resolve every Core reference to the checked public SDK catalog
     - Map every Core named type, field result/input, scalar, ID, error, lifecycle, and
       transport role to its exact Feature 4 catalog fingerprint and public
       `dagger_sdk` path; reject missing or mismatched fingerprints as target drift.
     - Prevent the client plan and artifact set from containing a local Core type,
       session, transport, error, scalar, or ID implementation.
     - _Requirements: 3.5-3.6, 4.1-4.3, 8.9-8.12_
-  - [ ] 6.2 Plan the collision-free selected-module namespace
+  - [x] 6.2 Plan the collision-free selected-module namespace
     - Derive the snake-case module namespace, `<Module>Ext` trait, namespaced root
       `Client`, and every object/interface/enum/input/scalar/helper path as one complete
       set before rendering.
@@ -197,7 +198,7 @@
       reject collisions with generated roles or other wire coordinates without
       order-dependent suffixes.
     - _Requirements: 4.4, 4.13-4.14_
-  - [ ] 6.3 Project typed fields, options, inputs, codecs, and handle re-entry
+  - [x] 6.3 Project typed fields, options, inputs, codecs, and handle re-entry
     - Reuse Feature 4 recursive wrapper, directive, documentation, deprecation,
       experimental, field-strategy, omission, and exact Wire_Name semantics while
       resolving leaves to Core or module-local paths.
@@ -209,26 +210,26 @@
       relations, untyped JSON fallback for supported types, and any public module
       coordinate without one semantic binding.
     - _Requirements: 4.5-4.12, 4.16-4.17, 9.7-9.10_
-  - [ ] 6.4 Property test: Property 6 — Core is reused by identity rather than regenerated
+  - [x] 6.4 Property test: Property 6 — Core is reused by identity rather than regenerated
     - Implement `property_06_core_reused_by_identity_not_regenerated` over at least 256
       valid and mutated Core catalog/extension plans; require a unique matching SDK
       fingerprint/path for every Core reference and prove no local Core/runtime/session
       artifact or unsafe/secret/host-path source can enter the result.
     - _Requirements: 4.1-4.3, 8.9-8.12_
-  - [ ] 6.5 Property test: Property 8 — generated module surface is an exhaustive typed closure
+  - [x] 6.5 Property test: Property 8 — generated module surface is an exhaustive typed closure
     - Implement `property_08_generated_module_surface_exhaustive_typed_closure` over at
       least 256 object, interface, implementation, enum, scalar, input, metadata, and
       public-coordinate graph variants; compare emitted/catalog bindings with the
       reachable reference set and reject missing, duplicate, or untyped substitutions.
     - _Requirements: 4.5-4.8, 4.17_
-  - [ ] 6.6 Add the pure wrapper, omission, and re-entry reference model
+  - [x] 6.6 Add the pure wrapper, omission, and re-entry reference model
     - Generate nested wrapper trees, argument states, explicit false/zero/empty/null
       values, IDs, response shapes, and schema-order permutations, and expose a small
       independent model shared by projection and the later recording-transport PBT.
     - Add focused projection examples now; defer Property 9 until Task 10 can compare
       the emitted runtime request, request-admission boundary, and same-session handle.
     - _Requirements: 4.9-4.12, 9.7-9.10_
-  - [ ] 6.7 Property test: Property 10 — module-local public naming is deterministic and collision-free
+  - [x] 6.7 Property test: Property 10 — module-local public naming is deterministic and collision-free
     - Implement `property_10_module_public_naming_deterministic_collision_free` over at
       least 256 module names, keywords, prefix-removal candidates, generated/helper
       roles, wire-name collisions, and declaration permutations.
@@ -236,8 +237,8 @@
       diagnostics independently of input order, with no symbol in the Core namespace.
     - _Requirements: 4.13-4.14_
 
-- [ ] 7. Render the standalone generated subtree and exhaustive semantic catalog
-  - [ ] 7.1 Replace the hook baseline renderer with the production client renderer
+- [x] 7. Render the standalone generated subtree and exhaustive semantic catalog
+  - [x] 7.1 Replace the hook baseline renderer with the production client renderer
     - Move client-specific pure logic under `dagger-codegen/src/client`, retain the
       existing `OperationRenderer` seam as a thin adapter, and change the content
       domain from `EngineHookBaseline` to `StandaloneClient`.
@@ -248,7 +249,7 @@
     - Parse every rendered Rust file with `syn`, attach semantic rustdoc to every public
       generated item, and request pinned formatting only for the exact owned Rust set.
     - _Requirements: 4.4-4.17, 5.1-5.4, 6.1-6.5, 9.4-9.6, 9.11-9.12_
-  - [ ] 7.2 Emit lifecycle/Core composition and the local extension-trait plan
+  - [x] 7.2 Emit lifecycle/Core composition and the local extension-trait plan
     - Re-export exact `dagger-sdk` connection/client configuration at
       `dagger_client`, expose it as `core`, re-export one module namespace, and render
       a local `<Module>Ext` trait for both `dagger_sdk::Client` and `QueryBuilder` plus
@@ -257,7 +258,7 @@
       performs no I/O, and carries enough semantic catalog identity for Task 10 to
       prove the runtime bridge.
     - _Requirements: 4.1-4.4, 4.13, 4.15-4.17_
-  - [ ] 7.3 Add fixed renderer shape, documentation, and drift tests
+  - [x] 7.3 Add fixed renderer shape, documentation, and drift tests
     - Pin representative Core-only, local-module, and dependency-bound artifact trees,
       public paths, catalog counts/digests, quickstart imports, generated header
       provenance, and absence of transitive dependency namespaces.
@@ -266,7 +267,7 @@
       blocks, placeholder prose, or the obsolete hook-baseline claim.
     - _Requirements: 3.9-3.13, 4.13-4.17, 6.1-6.5, 8.7-8.13_
 
-- [ ] 8. Checkpoint: pure client schema, projection, naming, and rendering are green
+- [x] 8. Checkpoint: pure client schema, projection, naming, and rendering are green
   - Run formatting, locked `dagger-codegen` client schema/API/renderer tests,
     Properties 5, 6, 8, and 10, fixed source-policy and drift cases, and focused
     warning-denied Clippy/rustdoc for `dagger-codegen` only.
@@ -278,6 +279,28 @@
     decision, and the engine-free boundary.
   - Require no Dagger command, engine process, module invocation, Cargo project
     compilation, another SDK, distribution build, or network resolution.
+  - Checkpoint evidence (2026-08-12, warm local cache as executed, elapsed wall time):
+    - `cargo fmt --all -- --check && cargo check -p dagger-codegen --all-features
+      --locked` passed in 4.58s. Only `dagger-codegen` and its existing locked
+      dependency graph were checked.
+    - The eight focused test targets (`client_models`, `diagnostics`,
+      `projection_properties`, `client_compiler_properties`, `client_renderer`,
+      `client_source_policy`, `engine_operations`, and
+      `operation_dispatch_properties`) passed in 32.75s: 33 tests total. Properties
+      5, 6, 8, and 10 each ran 256 pure cases; bounded fixed cases covered exact Core
+      mutations, schema/name permutations, interface relations, custom scalars,
+      omission versus explicit null/false, artifact drift, and shared-renderer
+      totality.
+    - Warning-denied `cargo clippy -p dagger-codegen --all-targets --all-features
+      --locked -- -D warnings` passed in 6.34s. Warning-denied no-dependency rustdoc
+      passed in 3.36s.
+    - The checked target, Core schema, and packaged client-metadata inputs did not
+      change, so their existing bindings and assets were reused without regeneration.
+      No Cargo manifest, lockfile, dependency, or security-policy input changed, so
+      `cargo deny check` was not repeated.
+    - No Dagger command, engine process, module invocation, generated-client Cargo
+      project compilation, another SDK, repository-wide generation, distribution
+      build, or network resolution ran.
   - _Requirements: 3.4-3.13, 4.1-4.17, 6.1-6.5, 8.7-8.13, 10.1-10.10_
 
 - [ ] 9. Add the exact-version external generated-code bridge to `dagger-sdk`

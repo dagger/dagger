@@ -130,6 +130,7 @@ proptest! {
             ScalarKind::Json,
             ScalarKind::Platform,
             ScalarKind::Void,
+            ScalarKind::Custom,
         ];
         let scalar = scalars[scalar_index % scalars.len()];
         let value = if valid {
@@ -137,7 +138,10 @@ proptest! {
                 ScalarKind::Boolean => serde_json::json!(boolean),
                 ScalarKind::Float => serde_json::json!(integer as f64 / 2.0),
                 ScalarKind::Int => serde_json::json!(integer),
-                ScalarKind::String | ScalarKind::Id | ScalarKind::Platform => {
+                ScalarKind::String
+                | ScalarKind::Id
+                | ScalarKind::Platform
+                | ScalarKind::Custom => {
                     serde_json::Value::String(text.clone())
                 }
                 ScalarKind::Json => serde_json::Value::String(
@@ -151,7 +155,10 @@ proptest! {
                 ScalarKind::Boolean => serde_json::json!("false"),
                 ScalarKind::Float => serde_json::json!("1.5"),
                 ScalarKind::Int => serde_json::json!(1.5),
-                ScalarKind::String | ScalarKind::Id | ScalarKind::Platform => {
+                ScalarKind::String
+                | ScalarKind::Id
+                | ScalarKind::Platform
+                | ScalarKind::Custom => {
                     serde_json::json!({"not": "a string"})
                 }
                 ScalarKind::Json => serde_json::json!("{") ,

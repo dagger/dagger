@@ -218,6 +218,8 @@ pub enum ContentDomain {
     ModuleOperation,
     /// Hook-valid baseline that does not claim sibling client-content completeness.
     EngineHookBaseline,
+    /// Complete standalone-client generated subtree and semantic catalog.
+    StandaloneClient,
     /// Generic descriptor-bound module entrypoint content only.
     ModuleEntrypoint,
 }

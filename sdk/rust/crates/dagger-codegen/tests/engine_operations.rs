@@ -12,8 +12,8 @@ use dagger_codegen::engine::{
 use dagger_codegen::target::CodegenTarget;
 
 use support::{
-    CORE_SCHEMA_BYTES, TARGET_BYTES, VisibleSchemaCase, module_authoring_input,
-    module_visible_schema, visible_schema,
+    CORE_SCHEMA_BYTES, ClientSchemaCase, TARGET_BYTES, VisibleSchemaCase, client_visible_schema,
+    module_authoring_input, module_visible_schema, visible_schema,
 };
 
 fn target() -> CodegenTarget {
@@ -38,38 +38,54 @@ fn dependency() -> PublishedSdkDependency {
     }
 }
 
+fn client_module() -> ModuleProjectionInput {
+    ModuleProjectionInput {
+        name: "minimal".to_owned(),
+        original_name: "Minimal".to_owned(),
+        source_subpath: RelativeOperationPath::parse("modules/minimal")
+            .expect("fixture path must parse"),
+        source_digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            .to_owned(),
+    }
+}
+
 #[test]
 fn production_renderers_emit_bounded_operation_specific_artifacts() {
     let target = target();
     let module = module();
+    let client_module = client_module();
     let dependency = dependency();
     let authoring = module_authoring_input();
     let output = RelativeOperationPath::parse("candidate").expect("fixture path must parse");
-    let schema = visible_schema(VisibleSchemaCase::EngineModuleExtension, 0);
-
-    let cases = [
-        (OperationKind::GenerateLibrary, None, None),
-        (
-            OperationKind::GenerateModule,
-            Some(&module),
-            Some(&authoring),
-        ),
-        (OperationKind::GenerateClient, Some(&module), None),
-        (
-            OperationKind::GenerateEntrypoint,
-            Some(&module),
-            Some(&authoring),
-        ),
-    ];
-    for (operation, module, authoring) in cases {
+    for operation in [
+        OperationKind::GenerateLibrary,
+        OperationKind::GenerateModule,
+        OperationKind::GenerateClient,
+        OperationKind::GenerateEntrypoint,
+    ] {
+        let schema = if operation == OperationKind::GenerateClient {
+            client_visible_schema(ClientSchemaCase::Valid, 0)
+        } else {
+            visible_schema(VisibleSchemaCase::EngineModuleExtension, 0)
+        };
+        let selected_module = match operation {
+            OperationKind::GenerateLibrary => None,
+            OperationKind::GenerateClient => Some(&client_module),
+            OperationKind::GenerateModule | OperationKind::GenerateEntrypoint => Some(&module),
+        };
+        let selected_authoring = matches!(
+            operation,
+            OperationKind::GenerateModule | OperationKind::GenerateEntrypoint
+        )
+        .then_some(&authoring);
         let plan = project_operation(OperationProjectionRequest {
             target: &target,
             operation,
             visible_schema_json: &schema,
-            module,
+            module: selected_module,
             output: &output,
             sdk_dependency: &dependency,
-            authoring,
+            authoring: selected_authoring,
         })
         .expect("valid operation fixture must render");
 
@@ -134,18 +150,16 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
                 assert_eq!(binary.path.as_str(), "src/bin/dagger-module.rs");
             }
             OperationKind::GenerateClient => {
-                assert_eq!(plan.content_domain(), ContentDomain::EngineHookBaseline);
-                let manifest = plan
-                    .artifacts()
-                    .get(
-                        &RelativeOperationPath::parse("candidate/Cargo.toml")
-                            .expect("expected path must parse"),
-                    )
-                    .expect("client baseline must contain Cargo.toml");
-                let manifest =
-                    std::str::from_utf8(&manifest.content).expect("Cargo manifest must be UTF-8");
-                assert!(manifest.contains("content-domain = \"engine-hook-baseline\""));
-                assert!(manifest.contains("version = \"=1.0.0-beta.10\""));
+                assert_eq!(plan.content_domain(), ContentDomain::StandaloneClient);
+                assert!(plan.artifacts().keys().any(|path| {
+                    path.as_str() == "candidate/src/dagger_client/generated/binding-catalog.json"
+                }));
+                assert!(
+                    !plan
+                        .artifacts()
+                        .keys()
+                        .any(|path| path.as_str().ends_with("Cargo.toml"))
+                );
                 assert_eq!(
                     plan.client_generation()
                         .expect("client output must carry metadata")
@@ -181,16 +195,15 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
 #[test]
 fn source_map_required_argument_compatibility_is_engine_specific() {
     let target = target();
-    let module = module();
     let dependency = dependency();
     let output = RelativeOperationPath::parse("candidate").expect("fixture path must parse");
     let schema = visible_schema(VisibleSchemaCase::EngineModuleExtension, 0);
 
     project_operation(OperationProjectionRequest {
         target: &target,
-        operation: OperationKind::GenerateClient,
+        operation: OperationKind::GenerateLibrary,
         visible_schema_json: &schema,
-        module: Some(&module),
+        module: None,
         output: &output,
         sdk_dependency: &dependency,
         authoring: None,
@@ -224,9 +237,9 @@ fn source_map_required_argument_compatibility_is_engine_specific() {
     for schema in invalid {
         let diagnostics = project_operation(OperationProjectionRequest {
             target: &target,
-            operation: OperationKind::GenerateClient,
+            operation: OperationKind::GenerateLibrary,
             visible_schema_json: &schema,
-            module: Some(&module),
+            module: None,
             output: &output,
             sdk_dependency: &dependency,
             authoring: None,

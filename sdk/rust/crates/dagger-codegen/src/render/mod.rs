@@ -187,9 +187,67 @@ fn render_named_type(
             module_name: input.module_name.clone(),
             tokens: render_input_object(plan, input)?,
         },
+        TypeProjection::Scalar(scalar) if scalar.scalar == ScalarKind::Custom => {
+            RenderedNamedType {
+                wire_name: scalar.wire_name.clone(),
+                module_name: module_name(plan, &scalar.coordinate)?,
+                tokens: render_custom_scalar(plan, scalar)?,
+            }
+        }
         TypeProjection::Scalar(_) | TypeProjection::TargetPrivate(_) => return Ok(None),
     };
     Ok(Some(rendered.into()))
+}
+
+fn render_custom_scalar(
+    plan: &ProjectionPlan,
+    scalar: &crate::projection::types::ScalarProjection,
+) -> Result<TokenStream, Diagnostic> {
+    let name = plan
+        .names()
+        .get(&scalar.coordinate, crate::naming::NameContext::Type)
+        .ok_or_else(|| render_error(&scalar.coordinate, "custom scalar lost its Rust name"))?;
+    let name = source_ident(&name.identifier, &scalar.coordinate)?;
+    let definition = match plan.schema().types().get(&scalar.wire_name) {
+        Some(TypeDefinition::Scalar(definition)) => definition,
+        _ => {
+            return Err(render_error(
+                &scalar.coordinate,
+                "custom-scalar projection lost its canonical definition",
+            ));
+        }
+    };
+    let attributes = public_attributes(
+        &scalar.coordinate,
+        definition.description.as_deref(),
+        &format!(
+            "Exact string wire value for custom GraphQL scalar `{}`.",
+            scalar.wire_name
+        ),
+        None,
+        None,
+    )?;
+    Ok(quote! {
+        #attributes
+        #[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
+        #[serde(transparent)]
+        pub struct #name(
+            /// Exact string retained for GraphQL request and response encoding.
+            pub String,
+        );
+
+        impl From<String> for #name {
+            fn from(value: String) -> Self {
+                Self(value)
+            }
+        }
+
+        impl From<&str> for #name {
+            fn from(value: &str) -> Self {
+                Self(value.to_owned())
+            }
+        }
+    })
 }
 
 fn module_name(plan: &ProjectionPlan, coordinate: &SchemaCoordinate) -> Result<String, Diagnostic> {
@@ -1179,7 +1237,10 @@ fn rust_type_tokens(
         RustType::Json => Ok(quote! { crate::Json }),
         RustType::Platform => Ok(quote! { crate::Platform }),
         RustType::Unit => Ok(quote! { () }),
-        RustType::Enum(name) | RustType::Input(name) | RustType::Handle(name) => {
+        RustType::Enum(name)
+        | RustType::Input(name)
+        | RustType::CustomScalar(name)
+        | RustType::Handle(name) => {
             let name = handle_or_value_type_ident(plan, name)?;
             Ok(quote! { super::#name })
         }
@@ -1299,6 +1360,18 @@ fn handle_or_value_type_ident(
         TypeProjection::Interface(interface) => &interface.client_name,
         TypeProjection::Enum(enumeration) => &enumeration.rust_name,
         TypeProjection::InputObject(input) => &input.rust_name,
+        TypeProjection::Scalar(scalar) if scalar.scalar == ScalarKind::Custom => {
+            return plan
+                .names()
+                .get(&scalar.coordinate, crate::naming::NameContext::Type)
+                .ok_or_else(|| {
+                    render_error(
+                        &scalar.coordinate,
+                        "custom scalar lost its generated Rust name",
+                    )
+                })
+                .and_then(|name| source_ident(&name.identifier, &scalar.coordinate));
+        }
         TypeProjection::Scalar(_) | TypeProjection::TargetPrivate(_) => {
             return Err(render_error(
                 &SchemaCoordinate::named_type(name),
@@ -1440,7 +1513,8 @@ fn collect_public_symbols(
                 | ScalarKind::Float
                 | ScalarKind::Int
                 | ScalarKind::String
-                | ScalarKind::Void => {}
+                | ScalarKind::Void
+                | ScalarKind::Custom => {}
             }
         }
     }
@@ -1519,9 +1593,13 @@ fn render_reachability(
         let result = match projection {
             TypeProjection::Scalar(scalar) => {
                 let name = match scalar.scalar {
-                    ScalarKind::Id => Some("Id"),
-                    ScalarKind::Json => Some("Json"),
-                    ScalarKind::Platform => Some("Platform"),
+                    ScalarKind::Id => Some("Id".to_owned()),
+                    ScalarKind::Json => Some("Json".to_owned()),
+                    ScalarKind::Platform => Some("Platform".to_owned()),
+                    ScalarKind::Custom => plan
+                        .names()
+                        .get(&scalar.coordinate, crate::naming::NameContext::Type)
+                        .map(|name| name.identifier.clone()),
                     ScalarKind::Boolean
                     | ScalarKind::Float
                     | ScalarKind::Int
@@ -1529,7 +1607,7 @@ fn render_reachability(
                     | ScalarKind::Void => None,
                 };
                 if let Some(name) = name {
-                    match source_ident(name, &scalar.coordinate) {
+                    match source_ident(&name, &scalar.coordinate) {
                         Ok(name) => {
                             symbols.insert(format!("dagger_sdk::{name}"));
                             assertions.push(quote! { let _ = core::mem::size_of::<#name>(); });

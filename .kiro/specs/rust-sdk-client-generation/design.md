@@ -530,9 +530,12 @@ pub fn compile_client(
 `compile_client` is a total pure function. It first requires that the target and
 `VisibleSchemaPlan` agree. It then validates `Query` extension fields and constructs
 the reachable closure. Reachability follows named references through object and
-interface fields, arguments, union members, implemented interfaces, input fields, and
-recursive list/non-null wrappers. Core references end traversal because their source
-is `dagger-sdk`; every non-Core reference must remain in the module closure. Directives
+interface fields, arguments, interface possible types, implemented interfaces, input
+fields, and recursive list/non-null wrappers. The exact target and Dagger module
+TypeDef surface have no public union kind; existing canonical validation rejects a
+public union before client compilation rather than inventing a Rust representation.
+Core references end traversal because their source is `dagger-sdk`; every non-Core
+reference must remain in the module closure. Directives
 and applied metadata are included in semantic fingerprints but do not create an
 independent module root.
 

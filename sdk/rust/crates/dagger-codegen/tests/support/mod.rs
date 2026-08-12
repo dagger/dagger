@@ -85,6 +85,379 @@ pub(crate) enum VisibleSchemaCase {
     RustNameCollision,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum ClientSchemaCase {
+    CoreOnly,
+    Valid,
+    CoreMutation,
+    CoreOmission,
+    WrongRootName,
+    PromotedFunction,
+    MultipleRoots,
+    NullableRoot,
+    DependencyLeakage,
+    UnreachableExtension,
+}
+
+pub(crate) fn client_visible_schema(case: ClientSchemaCase, permutation: u16) -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(CORE_SCHEMA_BYTES).expect("checked schema fixture must decode");
+    if case == ClientSchemaCase::CoreOnly {
+        permute_schema(&mut document, permutation);
+        return serde_json::to_vec(&document).expect("schema fixture must encode");
+    }
+
+    add_client_module_types(&mut document);
+    match case {
+        ClientSchemaCase::CoreOnly | ClientSchemaCase::Valid => {}
+        ClientSchemaCase::CoreMutation => {
+            let container = schema_array_mut(&mut document, "types")
+                .iter_mut()
+                .find(|definition| definition["name"] == "Container")
+                .expect("checked schema must contain Container");
+            container["description"] = json!("incompatible checked-Core mutation");
+        }
+        ClientSchemaCase::CoreOmission => {
+            let query = schema_array_mut(&mut document, "types")
+                .iter_mut()
+                .find(|definition| definition["name"] == "Query")
+                .expect("checked schema must contain Query");
+            query["fields"]
+                .as_array_mut()
+                .expect("Query fields must be an array")
+                .retain(|field| field["name"] != "address");
+        }
+        ClientSchemaCase::WrongRootName => {
+            rename_query_field(&mut document, "minimal", "different")
+        }
+        ClientSchemaCase::PromotedFunction => {
+            let query = schema_array_mut(&mut document, "types")
+                .iter_mut()
+                .find(|definition| definition["name"] == "Query")
+                .expect("checked schema must contain Query");
+            let field = query["fields"]
+                .as_array_mut()
+                .and_then(|fields| fields.iter_mut().find(|field| field["name"] == "minimal"))
+                .expect("client fixture must contain module root");
+            field["type"] = scalar_type("String", false);
+        }
+        ClientSchemaCase::MultipleRoots => {
+            add_query_object_field(&mut document, "second", "Minimal")
+        }
+        ClientSchemaCase::NullableRoot => {
+            let query = schema_array_mut(&mut document, "types")
+                .iter_mut()
+                .find(|definition| definition["name"] == "Query")
+                .expect("checked schema must contain Query");
+            let field = query["fields"]
+                .as_array_mut()
+                .and_then(|fields| fields.iter_mut().find(|field| field["name"] == "minimal"))
+                .expect("client fixture must contain module root");
+            field["type"] = json!({"kind": "OBJECT", "name": "Minimal"});
+        }
+        ClientSchemaCase::DependencyLeakage => {
+            add_object_type(
+                &mut document,
+                "DependencyThing",
+                vec![object_field("id", scalar_type("ID", false), vec![])],
+            );
+            add_object_field_to_type(
+                &mut document,
+                "Minimal",
+                object_field("dependency", object_type("DependencyThing", false), vec![]),
+            );
+        }
+        ClientSchemaCase::UnreachableExtension => {
+            add_object_type(
+                &mut document,
+                "MinimalUnused",
+                vec![object_field("id", scalar_type("ID", false), vec![])],
+            );
+        }
+    }
+    permute_schema(&mut document, permutation);
+    serde_json::to_vec(&document).expect("schema fixture must encode")
+}
+
+pub(crate) fn named_client_visible_schema(
+    module_name: &str,
+    root_name: &str,
+    permutation: u16,
+) -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&client_visible_schema(ClientSchemaCase::Valid, 0))
+            .expect("client schema fixture must decode");
+    rewrite_client_fixture_names(&mut document, module_name, root_name);
+    permute_schema(&mut document, permutation);
+    serde_json::to_vec(&document).expect("named client schema fixture must encode")
+}
+
+fn rewrite_client_fixture_names(value: &mut Value, module_name: &str, root_name: &str) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                rewrite_client_fixture_names(value, module_name, root_name);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values_mut() {
+                rewrite_client_fixture_names(value, module_name, root_name);
+            }
+        }
+        Value::String(value) if value == "minimal" => *value = module_name.to_owned(),
+        Value::String(value) if value.starts_with("Minimal") => {
+            *value = format!("{root_name}{}", &value["Minimal".len()..]);
+        }
+        _ => {}
+    }
+}
+
+fn add_client_module_types(document: &mut Value) {
+    add_scalar_type(document, "MinimalToken");
+    add_enum_type(document, "MinimalState", &["READY", "BUSY"]);
+    add_input_type(
+        document,
+        "MinimalConfig",
+        vec![input_field(
+            "enabled",
+            scalar_type("Boolean", true),
+            Some("true"),
+        )],
+    );
+    add_object_type(
+        document,
+        "MinimalItem",
+        vec![
+            object_field("id", scalar_type("ID", false), vec![]),
+            object_field("state", enum_type("MinimalState", false), vec![]),
+        ],
+    );
+    add_object_type(
+        document,
+        "MinimalClient",
+        vec![object_field("id", scalar_type("ID", false), vec![])],
+    );
+    add_interface_to_object(document, "MinimalItem", "MinimalNode");
+    add_interface_type(document, "MinimalNode", "MinimalItem");
+    add_object_type(
+        document,
+        "Minimal",
+        vec![
+            object_field("id", scalar_type("ID", false), vec![]),
+            object_field("message", scalar_type("String", false), vec![]),
+            object_field("type", scalar_type("String", false), vec![]),
+            object_field("token", scalar_type("MinimalToken", false), vec![]),
+            object_field("helper", object_type("MinimalClient", false), vec![]),
+            object_field("node", interface_type("MinimalNode", false), vec![]),
+            object_field(
+                "item",
+                object_type("MinimalItem", true),
+                vec![argument(
+                    "config",
+                    input_object_type("MinimalConfig", true),
+                    None,
+                )],
+            ),
+            object_field(
+                "items",
+                list_type(object_type("MinimalItem", true), false),
+                vec![],
+            ),
+        ],
+    );
+    add_query_object_field(document, "minimal", "Minimal");
+}
+
+fn add_interface_to_object(document: &mut Value, object: &str, interface: &str) {
+    let object = schema_array_mut(document, "types")
+        .iter_mut()
+        .find(|definition| definition["name"] == object)
+        .expect("client fixture object must exist");
+    object["interfaces"]
+        .as_array_mut()
+        .expect("object interfaces must be an array")
+        .push(json!({"kind": "INTERFACE", "name": interface}));
+}
+
+fn add_interface_type(document: &mut Value, name: &str, possible_type: &str) {
+    schema_array_mut(document, "types").push(json!({
+        "kind": "INTERFACE",
+        "name": name,
+        "description": format!("Client fixture interface {name}."),
+        "fields": [
+            object_field("id", scalar_type("ID", false), vec![]),
+            object_field("message", scalar_type("String", false), vec![])
+        ],
+        "inputFields": [],
+        "interfaces": [],
+        "enumValues": [],
+        "possibleTypes": [{"kind": "OBJECT", "name": possible_type}],
+        "directives": []
+    }));
+}
+
+fn add_scalar_type(document: &mut Value, name: &str) {
+    schema_array_mut(document, "types").push(json!({
+        "kind": "SCALAR",
+        "name": name,
+        "description": format!("Client fixture scalar {name}."),
+        "fields": [],
+        "inputFields": [],
+        "interfaces": [],
+        "enumValues": [],
+        "possibleTypes": [],
+        "directives": []
+    }));
+}
+
+fn add_query_object_field(document: &mut Value, field: &str, object: &str) {
+    let query = schema_array_mut(document, "types")
+        .iter_mut()
+        .find(|definition| definition["name"] == "Query")
+        .expect("checked schema must contain Query");
+    query["fields"]
+        .as_array_mut()
+        .expect("Query fields must be an array")
+        .push(object_field(field, object_type(object, false), vec![]));
+}
+
+fn rename_query_field(document: &mut Value, from: &str, to: &str) {
+    let query = schema_array_mut(document, "types")
+        .iter_mut()
+        .find(|definition| definition["name"] == "Query")
+        .expect("checked schema must contain Query");
+    let field = query["fields"]
+        .as_array_mut()
+        .and_then(|fields| fields.iter_mut().find(|field| field["name"] == from))
+        .expect("client fixture must contain module root");
+    field["name"] = json!(to);
+}
+
+fn add_object_field_to_type(document: &mut Value, owner: &str, field: Value) {
+    let object = schema_array_mut(document, "types")
+        .iter_mut()
+        .find(|definition| definition["name"] == owner)
+        .expect("client fixture object must exist");
+    object["fields"]
+        .as_array_mut()
+        .expect("object fields must be an array")
+        .push(field);
+}
+
+fn add_object_type(document: &mut Value, name: &str, fields: Vec<Value>) {
+    schema_array_mut(document, "types").push(json!({
+        "kind": "OBJECT",
+        "name": name,
+        "description": format!("Client fixture object {name}."),
+        "fields": fields,
+        "inputFields": [],
+        "interfaces": [],
+        "enumValues": [],
+        "possibleTypes": [],
+        "directives": []
+    }));
+}
+
+fn add_enum_type(document: &mut Value, name: &str, values: &[&str]) {
+    schema_array_mut(document, "types").push(json!({
+        "kind": "ENUM",
+        "name": name,
+        "description": format!("Client fixture enum {name}."),
+        "fields": [],
+        "inputFields": [],
+        "interfaces": [],
+        "enumValues": values.iter().map(|value| json!({
+            "name": value,
+            "description": format!("Client fixture value {value}."),
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": []
+        })).collect::<Vec<_>>(),
+        "possibleTypes": [],
+        "directives": []
+    }));
+}
+
+fn add_input_type(document: &mut Value, name: &str, fields: Vec<Value>) {
+    schema_array_mut(document, "types").push(json!({
+        "kind": "INPUT_OBJECT",
+        "name": name,
+        "description": format!("Client fixture input {name}."),
+        "fields": [],
+        "inputFields": fields,
+        "interfaces": [],
+        "enumValues": [],
+        "possibleTypes": [],
+        "directives": []
+    }));
+}
+
+fn object_field(name: &str, type_ref: Value, args: Vec<Value>) -> Value {
+    json!({
+        "name": name,
+        "description": format!("Client fixture field {name}."),
+        "type": type_ref,
+        "args": args,
+        "isDeprecated": false,
+        "deprecationReason": null,
+        "directives": []
+    })
+}
+
+fn argument(name: &str, type_ref: Value, default: Option<&str>) -> Value {
+    json!({
+        "name": name,
+        "description": format!("Client fixture argument {name}."),
+        "type": type_ref,
+        "defaultValue": default,
+        "isDeprecated": false,
+        "deprecationReason": null,
+        "directives": []
+    })
+}
+
+fn input_field(name: &str, type_ref: Value, default: Option<&str>) -> Value {
+    argument(name, type_ref, default)
+}
+
+fn scalar_type(name: &str, nullable: bool) -> Value {
+    named_type("SCALAR", name, nullable)
+}
+
+fn enum_type(name: &str, nullable: bool) -> Value {
+    named_type("ENUM", name, nullable)
+}
+
+fn object_type(name: &str, nullable: bool) -> Value {
+    named_type("OBJECT", name, nullable)
+}
+
+fn interface_type(name: &str, nullable: bool) -> Value {
+    named_type("INTERFACE", name, nullable)
+}
+
+fn input_object_type(name: &str, nullable: bool) -> Value {
+    named_type("INPUT_OBJECT", name, nullable)
+}
+
+fn named_type(kind: &str, name: &str, nullable: bool) -> Value {
+    let leaf = json!({"kind": kind, "name": name});
+    if nullable {
+        leaf
+    } else {
+        json!({"kind": "NON_NULL", "ofType": leaf})
+    }
+}
+
+fn list_type(element: Value, nullable: bool) -> Value {
+    let list = json!({"kind": "LIST", "ofType": element});
+    if nullable {
+        list
+    } else {
+        json!({"kind": "NON_NULL", "ofType": list})
+    }
+}
+
 pub(crate) fn visible_schema(case: VisibleSchemaCase, permutation: u16) -> Vec<u8> {
     let mut document: Value =
         serde_json::from_slice(CORE_SCHEMA_BYTES).expect("checked schema fixture must decode");

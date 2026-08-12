@@ -87,6 +87,8 @@ pub enum BindingKind {
     TargetPrivateField,
     /// A generated field operation.
     FieldOperation,
+    /// A generated owned options type for omittable field arguments.
+    FieldOptions,
     /// A generated field argument.
     Argument,
     /// A directive definition policy.

@@ -664,6 +664,7 @@ fn catalog_policy_id(kind: CatalogBindingKind) -> PolicyId {
         | CatalogBindingKind::InputObject
         | CatalogBindingKind::InputField
         | CatalogBindingKind::FieldOperation
+        | CatalogBindingKind::FieldOptions
         | CatalogBindingKind::Argument => "policy/core-codegen/private-runtime-strategy",
     };
     PolicyId::new(value).expect("static catalog policy IDs must be canonical")
@@ -679,7 +680,8 @@ fn required_evidence(kind: CatalogBindingKind) -> BTreeSet<EvidenceDomain> {
         | CatalogBindingKind::Enum
         | CatalogBindingKind::EnumVariant
         | CatalogBindingKind::InputObject
-        | CatalogBindingKind::InputField => [
+        | CatalogBindingKind::InputField
+        | CatalogBindingKind::FieldOptions => [
             Implementation,
             Property,
             Compile,

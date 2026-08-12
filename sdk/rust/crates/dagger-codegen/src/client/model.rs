@@ -1,11 +1,16 @@
 //! Canonical data-only records for standalone-client projection.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::schema::canonical::{SchemaCoordinate, SchemaName};
+use crate::directive::DirectiveProjection;
+use crate::projection::catalog::{BindingDescriptor, BindingKey, SemanticDigest};
+use crate::projection::fields::FieldProjection;
+use crate::projection::types::{InterfaceImplementationProjection, TypeProjection};
+use crate::schema::canonical::{CanonicalSchema, SchemaCoordinate, SchemaName};
+use crate::target::CodegenTarget;
 
 macro_rules! validated_client_string {
     ($name:ident, $doc:literal, $validator:ident) => {
@@ -83,8 +88,11 @@ fn validate_cargo_package(value: &str) -> Result<(), String> {
 }
 
 fn validate_rust_identifier(value: &str) -> Result<(), String> {
-    let mut bytes = value.bytes();
-    let valid_shape = value.len() <= 64
+    let (raw, spelling) = value
+        .strip_prefix("r#")
+        .map_or((false, value), |spelling| (true, spelling));
+    let mut bytes = spelling.bytes();
+    let valid_shape = value.len() <= 66
         && bytes
             .next()
             .is_some_and(|first| first == b'_' || first.is_ascii_alphabetic())
@@ -93,7 +101,7 @@ fn validate_rust_identifier(value: &str) -> Result<(), String> {
         return Err("Rust identifier must be 1-64 ASCII identifier bytes".to_owned());
     }
     if matches!(
-        value,
+        spelling,
         "Self"
             | "as"
             | "async"
@@ -146,7 +154,13 @@ fn validate_rust_identifier(value: &str) -> Result<(), String> {
             | "while"
             | "yield"
     ) {
-        return Err("Rust identifier must not be a reserved keyword".to_owned());
+        if raw && !matches!(spelling, "Self" | "crate" | "self" | "super") {
+            return Ok(());
+        }
+        return Err("Rust identifier must not be a reserved path keyword".to_owned());
+    }
+    if raw {
+        return Err("raw Rust identifier must escape a reserved keyword".to_owned());
     }
     Ok(())
 }
@@ -158,9 +172,70 @@ validated_client_string!(
 );
 validated_client_string!(
     RustIdentifier,
-    "A bounded, non-keyword ASCII Rust identifier.",
+    "A bounded ASCII Rust identifier, including `r#keyword` when required.",
     validate_rust_identifier
 );
+
+/// Semantic role of one generated identifier in the selected-module namespace.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClientNameRole {
+    /// Generated transparent custom-scalar wrapper.
+    CustomScalar,
+    /// Generated object handle.
+    Object,
+    /// Generated interface trait.
+    InterfaceTrait,
+    /// Generated interface client handle.
+    InterfaceClient,
+    /// Generated enum.
+    Enum,
+    /// Generated input object.
+    InputObject,
+    /// Generated field-options type.
+    Options,
+}
+
+/// Stable coordinate/role key for one planned generated identifier.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientNameKey {
+    /// Schema coordinate whose public API owns the identifier.
+    pub coordinate: SchemaCoordinate,
+    /// Namespace role that distinguishes multiple identifiers for one coordinate.
+    pub role: ClientNameRole,
+}
+
+/// Complete collision-checked public naming decision for one selected module.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientNamePlan {
+    /// Exact selected Query field Wire_Name.
+    pub module_wire_name: SchemaName,
+    /// Public module namespace beneath `dagger_client`.
+    pub namespace: RustIdentifier,
+    /// Local extension trait implemented for the shared SDK client and query builder.
+    pub extension_trait: RustIdentifier,
+    /// Namespaced root handle, always `Client`.
+    pub root_type: RustIdentifier,
+    /// Every type-level generated identifier in stable coordinate/role order.
+    pub bindings: BTreeMap<ClientNameKey, RustIdentifier>,
+}
+
+impl ClientNamePlan {
+    /// Returns one planned identifier without falling back to a name-only lookup.
+    #[must_use]
+    pub fn get(
+        &self,
+        coordinate: &SchemaCoordinate,
+        role: ClientNameRole,
+    ) -> Option<&RustIdentifier> {
+        self.bindings.get(&ClientNameKey {
+            coordinate: coordinate.clone(),
+            role,
+        })
+    }
+}
 
 /// Cargo identity selected before generated source is rendered.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -223,4 +298,80 @@ pub enum ClientSchemaSurface {
     CoreOnly,
     /// Complete Core bindings plus exactly one selected-module closure.
     BoundModule(ModuleSurfacePlan),
+}
+
+/// Exact checked Core binding reused from the public `dagger-sdk` catalog.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CoreBindingReference {
+    /// Original checked-Core semantic key.
+    pub key: BindingKey,
+    /// Public `dagger_sdk` path or primitive spelling supplied by the checked SDK.
+    pub public_path: Option<String>,
+    /// Exact checked-Core implementation fingerprint.
+    pub implementation_fingerprint: SemanticDigest,
+}
+
+/// Ownership domain of one standalone-client catalog binding.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClientBindingSource {
+    /// Reused by identity from the checked public SDK.
+    CoreSdk,
+    /// Emitted into the selected module namespace.
+    SelectedModule,
+}
+
+/// One semantic binding in the standalone-client catalog.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ClientBindingDescriptor {
+    /// Whether the checked SDK or the generated module subtree owns the binding.
+    pub source: ClientBindingSource,
+    /// Complete semantic descriptor and implementation fingerprint.
+    pub binding: BindingDescriptor,
+}
+
+/// Exhaustive catalog paired with one rendered standalone client.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ClientBindingCatalog {
+    /// Exact target owning both Core and selected-module bindings.
+    pub target: CodegenTarget,
+    /// Semantic identity of the complete visible schema.
+    pub visible_schema_digest: SemanticDigest,
+    /// Every checked Core binding in its original catalog order.
+    pub core: Vec<CoreBindingReference>,
+    /// Every selected-module binding in generated public-path order.
+    pub generated: Vec<ClientBindingDescriptor>,
+    /// Domain-separated identity of all preceding catalog fields.
+    pub digest: SemanticDigest,
+}
+
+/// Complete pure compiler result consumed by the standalone-client renderer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientBindingPlan {
+    /// Exact checked target.
+    pub target: CodegenTarget,
+    /// Semantic identity of the complete visible schema.
+    pub visible_schema_digest: SemanticDigest,
+    /// Complete canonical schema retained for documentation and exact field rendering.
+    pub schema: CanonicalSchema,
+    /// Checked directive policies retained for public stability documentation.
+    pub directives: DirectiveProjection,
+    /// Cargo/crate identity selected before rendering.
+    pub project: ClientProjectIdentity,
+    /// Observable Core-only or Core-plus-module schema surface.
+    pub surface: ClientSchemaSurface,
+    /// Exact checked Core catalog reused by identity.
+    pub core_bindings: BTreeMap<BindingKey, CoreBindingReference>,
+    /// Collision-checked selected-module names, absent for Core-only clients.
+    pub names: Option<ClientNamePlan>,
+    /// Selected-module type projections in Wire_Name order.
+    pub module_types: BTreeMap<SchemaName, TypeProjection>,
+    /// Selected-module field projections in coordinate order.
+    pub module_fields: BTreeMap<SchemaCoordinate, FieldProjection>,
+    /// Selected-module interface edges in canonical order.
+    pub module_implementations: Vec<InterfaceImplementationProjection>,
+    /// Re-keyed module bindings whose paths belong to this generated project.
+    pub generated_bindings: BTreeMap<BindingKey, ClientBindingDescriptor>,
+    /// Exhaustive Core-plus-module semantic catalog.
+    pub catalog: ClientBindingCatalog,
 }
