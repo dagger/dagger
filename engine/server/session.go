@@ -437,6 +437,11 @@ type clientRuntime struct {
 	// load failures by moduleProgressName; failed modules stay pending to keep
 	// reporting their error
 	failedModules map[string]error
+	// configErr is a workspace config that could not be made effective — a
+	// failed [[include]], or a module left without a source — for a client
+	// that does not auto-load modules. The workspace still binds, so a config
+	// edit can repair it, and EnsureWorkspaceModules returns it.
+	configErr error
 	// whether an entrypoint module has been served (extras outrank ambient)
 	entrypointServed bool
 	// resolved identities already served, for cross-batch deduplication
@@ -516,6 +521,7 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.extraModulesLoaded = false
 	client.extraModulesErr = nil
 	client.failedModules = nil
+	client.configErr = nil
 	client.entrypointServed = false
 	client.servedModuleKeys = nil
 	client.servedWorkspaceModuleNames = nil

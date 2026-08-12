@@ -436,31 +436,38 @@ const (
 
 const maxParallelModuleResolves = 8
 
+// loadWorkspaceConfig parses the workspace config and returns the keys the file
+// spells out alongside it. Merging an included config needs that presence information,
+// and re-reading the file to compute it later would be a second host round trip.
 func loadWorkspaceConfig(
 	ctx context.Context,
 	readFile func(context.Context, string) ([]byte, error),
 	ws *workspace.Workspace,
-) (*workspace.Config, error) {
+) (*workspace.Config, map[string]bool, error) {
 	if ws.ConfigFile == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	configPath := filepath.Join(ws.Root, ws.ConfigFile)
 	data, err := readFile(ctx, configPath)
 	if err != nil {
 		if isWorkspaceNotFound(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
+		return nil, nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
 	}
 
 	cfg, err := workspace.ParseConfigAt(ctx, data, filepath.Dir(ws.ConfigFile))
 	if err != nil {
-		return nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
+		return nil, nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
 	}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
-	return cfg, nil
+	explicitKeys, err := workspace.ExplicitConfigKeys(data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
+	}
+	return cfg, explicitKeys, nil
 }
 
 func workspaceConfigPendingModules(
@@ -638,8 +645,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	var wsConfig *workspace.Config
+	var wsConfigKeys map[string]bool
 	if ws != nil && ws.ConfigFile != "" {
-		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
+		wsConfig, wsConfigKeys, err = loadWorkspaceConfig(ctx, readFile, ws)
 		if err != nil {
 			return err
 		}
@@ -733,9 +741,29 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	client.workspace = coreWS
 
+	// An included config is the bottom layer: it applies before the user-level
+	// overlay and the env overlay, so the current workspace always wins.
+	//
+	// Resolving here, after client.workspace is set, is what makes a git
+	// include's pin land in this workspace's dagger.lock: the lock binding
+	// reads the client's workspace.
+	includeSource := core.IncludeSource{
+		Dag:       client.dag,
+		ConfigDir: filepath.Dir(ws.ConfigFile),
+		ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
+			return readFile(ctx, filepath.Join(ws.Root, wsPath))
+		},
+	}
+	effective, configErr := core.ApplyIncludes(ctx, includeSource, wsConfig, wsConfigKeys)
+	if configErr == nil {
+		wsConfig = effective
+	}
+
 	// User-level overrides merge over the repository config before any env
-	// overlay so that user-defined environments are selectable.
-	if overlay := coreWS.UserConfigOverlay(); overlay != nil {
+	// overlay so that user-defined environments are selectable. Neither applies
+	// over a failed include: they may name modules only it provides, and the
+	// include failure is the error to report.
+	if overlay := coreWS.UserConfigOverlay(); overlay != nil && configErr == nil {
 		wsConfig, err = workspace.ApplyUserOverlay(wsConfig, overlay)
 		if err != nil {
 			return err
@@ -750,7 +778,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// open an "applying env" span that would only be marked failed. Clients
 	// that auto-load modules still need the env to resolve, and every other
 	// overlay error (e.g. an unknown module alias) still fails for both.
-	if hasWorkspaceEnv && (workspace.HasEnv(wsConfig, workspaceEnv) || client.autoLoadWorkspaceModules()) {
+	if configErr == nil && hasWorkspaceEnv && (workspace.HasEnv(wsConfig, workspaceEnv) || client.autoLoadWorkspaceModules()) {
 		if wsConfig == nil {
 			return fmt.Errorf("workspace env %q requires dagger.toml", workspaceEnv)
 		}
@@ -762,6 +790,15 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}(); err != nil {
 			return err
 		}
+	}
+
+	// Completeness is checked on the config the modules load from: an env
+	// overlay can still supply a source the base entry leaves out.
+	if configErr == nil {
+		configErr = workspace.ValidateEffectiveConfig(wsConfig)
+	}
+	if configErr != nil && client.autoLoadWorkspaceModules() {
+		return configErr
 	}
 
 	// Keep module definitions available for explicit Workspace API calls,
@@ -816,6 +853,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	//     They go through the same loadModule chokepoint in ensureModulesLoaded.
 
 	client.pendingModules = pending
+	client.configErr = configErr
 
 	return nil
 }
@@ -1307,6 +1345,12 @@ func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string,
 	client, err := srv.workspaceRuntimeFromContext(ctx)
 	if err != nil {
 		return nil, err
+	}
+	client.modulesMu.Lock()
+	configErr := client.configErr
+	client.modulesMu.Unlock()
+	if configErr != nil {
+		return nil, configErr
 	}
 	return srv.ensureModulesLoadedMode(ctx, client, func(mods []pendingModule) []pendingModule {
 		// runs under client.modulesMu, which also guards servedWorkspaceModuleNames
