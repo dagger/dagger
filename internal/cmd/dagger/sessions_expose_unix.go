@@ -331,9 +331,11 @@ func (server *exposeControlServer) Close() error {
 }
 
 type exposeServerHooks struct {
-	BeforeReady <-chan struct{}
-	Connect     func(context.Context, client.Params) (exposePortSession, error)
-	WriteRecord func(string, exposeRecord) error
+	BeforeReady    <-chan struct{}
+	CommitReceived func()
+	BeforeAccepted <-chan struct{}
+	Connect        func(context.Context, client.Params) (exposePortSession, error)
+	WriteRecord    func(string, exposeRecord) error
 }
 
 func runExposePortServer(ctx context.Context, encodedConfig string) error {
@@ -493,9 +495,6 @@ func serveExposePortServer(
 		if commit.value != exposeCommitByte {
 			return fmt.Errorf("invalid expose commit byte %d", commit.value)
 		}
-		if err := monitor.commit(); err != nil {
-			return err
-		}
 	case <-monitor.notify:
 		return monitor.loss()
 	case <-session.Done():
@@ -506,11 +505,32 @@ func serveExposePortServer(
 		return context.Cause(serverCtx)
 	}
 
-	control.ready(ports)
-	if err := writeExposeChildStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseAccepted}); err != nil {
-		return fmt.Errorf("report expose server commit acceptance: %w", err)
+	if hooks.CommitReceived != nil {
+		hooks.CommitReceived()
 	}
-	acceptedSent = true
+	if hooks.BeforeAccepted != nil {
+		select {
+		case <-hooks.BeforeAccepted:
+		case <-monitor.notify:
+			return monitor.loss()
+		case <-session.Done():
+			return errors.New("session ended before expose server commit acceptance")
+		case <-control.stop:
+			return errors.New("expose server stopped before commit acceptance")
+		case <-serverCtx.Done():
+			return context.Cause(serverCtx)
+		}
+	}
+	if err := monitor.commitWith(func() error {
+		control.ready(ports)
+		if err := writeExposeChildStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseAccepted}); err != nil {
+			return fmt.Errorf("report expose server commit acceptance: %w", err)
+		}
+		acceptedSent = true
+		return nil
+	}); err != nil {
+		return err
+	}
 	if err := writeRecord(paths.Record, exposeRecord{
 		PID: os.Getpid(), State: exposeStateReady, Request: config.Request,
 	}); err != nil {

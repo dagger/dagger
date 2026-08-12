@@ -304,6 +304,10 @@ func (monitor *exposeListenerMonitor) listenerEnded(addr string, err error) {
 }
 
 func (monitor *exposeListenerMonitor) commit() error {
+	return monitor.commitWith(func() error { return nil })
+}
+
+func (monitor *exposeListenerMonitor) commitWith(accept func() error) error {
 	monitor.mu.Lock()
 	defer monitor.mu.Unlock()
 	if monitor.testCommitLocked != nil {
@@ -312,7 +316,7 @@ func (monitor *exposeListenerMonitor) commit() error {
 	if monitor.lost != nil {
 		return monitor.lost
 	}
-	return nil
+	return accept()
 }
 
 func (monitor *exposeListenerMonitor) loss() error {
@@ -352,7 +356,11 @@ func (startup *exposeStartup) Commit(ctx context.Context) error {
 	if _, err := startup.lifecycle.Write([]byte{exposeCommitByte}); err != nil {
 		return fmt.Errorf("commit expose server: %w", err)
 	}
-	if _, err := readExposeChildStatus(ctx, startup.status, exposeChildPhaseAccepted); err != nil {
+	// The child may irrevocably accept the commit as soon as the byte is
+	// written. From this point the status pipe, not caller cancellation, is the
+	// sole outcome authority: accepted commits, while an explicit error or EOF
+	// means the child rejected or exited and rollback may safely join it.
+	if _, err := decodeExposeChildStatus(startup.status, exposeChildPhaseAccepted); err != nil {
 		return fmt.Errorf("accept expose server commit: %w", err)
 	}
 	startup.committed = true
@@ -394,30 +402,34 @@ func readExposeChildStatus(ctx context.Context, r io.Reader, expectedPhase strin
 	}
 	resultCh := make(chan result, 1)
 	go func() {
-		var status exposeChildStatus
-		err := json.NewDecoder(r).Decode(&status)
+		status, err := decodeExposeChildStatus(r, expectedPhase)
 		resultCh <- result{status: status, err: err}
 	}()
 	select {
 	case result := <-resultCh:
-		if result.err != nil {
-			return exposeChildStatus{}, fmt.Errorf("read expose server status: %w", result.err)
-		}
-		if result.status.Error != "" {
-			return exposeChildStatus{}, &exposeChildError{
-				Code: result.status.ErrorCode, Message: result.status.Error,
-			}
-		}
-		if result.status.Phase != expectedPhase {
-			return exposeChildStatus{}, fmt.Errorf(
-				"unexpected expose server status phase %q, expected %q",
-				result.status.Phase, expectedPhase,
-			)
-		}
-		return result.status, nil
+		return result.status, result.err
 	case <-ctx.Done():
 		return exposeChildStatus{}, context.Cause(ctx)
 	}
+}
+
+func decodeExposeChildStatus(r io.Reader, expectedPhase string) (exposeChildStatus, error) {
+	var status exposeChildStatus
+	if err := json.NewDecoder(r).Decode(&status); err != nil {
+		return exposeChildStatus{}, fmt.Errorf("read expose server status: %w", err)
+	}
+	if status.Error != "" {
+		return exposeChildStatus{}, &exposeChildError{
+			Code: status.ErrorCode, Message: status.Error,
+		}
+	}
+	if status.Phase != expectedPhase {
+		return exposeChildStatus{}, fmt.Errorf(
+			"unexpected expose server status phase %q, expected %q",
+			status.Phase, expectedPhase,
+		)
+	}
+	return status, nil
 }
 
 func formatExposedPorts(ports []exposedPort) string {

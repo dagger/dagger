@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -399,6 +400,134 @@ func TestExposeCommitCanceledBeforeLinearization(t *testing.T) {
 	require.NoError(t, startup.Abort())
 }
 
+func TestExposeCommitIgnoresCancellationAfterByte(t *testing.T) {
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-postcommit-cancel-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	paths, err := makeExposePaths(stateDir, testCLIValidSessionID())
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	commitReceived := make(chan struct{})
+	allowAccepted := make(chan struct{})
+	session := &fakeExposePortSession{
+		fakeExposeQueryClient: &fakeExposeQueryClient{t: t}, done: make(chan struct{}),
+	}
+	hooks := exposeServerHooks{
+		Connect: func(context.Context, client.Params) (exposePortSession, error) {
+			return session, nil
+		},
+		CommitReceived: func() { close(commitReceived) },
+		BeforeAccepted: allowAccepted,
+	}
+	startup, err := spawnExposeServerWith(
+		t.Context(),
+		exposeServerConfig{SessionID: testCLIValidSessionID(), StateDir: stateDir, Request: exposeRequest{
+			Mappings: []exposePortMapping{{Service: "web", ServiceID: "backend-id", Backend: 80, Protocol: sessionwire.NetworkProtocolTCP}},
+		}},
+		paths, lock, realExposeProcessStarter(t, hooks),
+	)
+	require.NoError(t, err)
+
+	commitCtx, cancelCommit := context.WithCancelCause(t.Context())
+	commitDone := make(chan error, 1)
+	go func() { commitDone <- startup.Commit(commitCtx) }()
+	<-commitReceived
+	cancelCommit(errors.New("cancel after commit byte"))
+	select {
+	case err := <-commitDone:
+		t.Fatalf("commit returned from caller cancellation after the byte write: %v", err)
+	default:
+	}
+	abortDone := make(chan error, 1)
+	go func() { abortDone <- startup.Abort() }()
+	select {
+	case err := <-abortDone:
+		t.Fatalf("abort resolved before the unique commit outcome: %v", err)
+	default:
+	}
+	close(allowAccepted)
+	require.NoError(t, <-commitDone)
+	require.ErrorContains(t, context.Cause(commitCtx), "cancel after commit byte")
+	require.True(t, startup.committed)
+	require.True(t, startup.finished)
+	require.EqualError(t, <-abortDone, "cannot abort committed expose server")
+
+	close(session.done)
+	require.NoError(t, <-startup.wait)
+}
+
+func TestExposeCommitStatusEOFAfterByteAllowsRollback(t *testing.T) {
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-postcommit-eof-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	paths, err := makeExposePaths(stateDir, testCLIValidSessionID())
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	childExited := errors.New("child exited after commit byte")
+	starter := func(
+		_ string,
+		lock *os.File,
+		statusW *os.File,
+		lifecycleR *os.File,
+		_ *os.File,
+	) (<-chan error, error) {
+		lockChild, err := duplicateExposeFile(lock, "eof-child-lock")
+		if err != nil {
+			return nil, err
+		}
+		statusChild, err := duplicateExposeFile(statusW, "eof-child-status")
+		if err != nil {
+			return nil, err
+		}
+		lifecycleChild, err := duplicateExposeFile(lifecycleR, "eof-child-lifecycle")
+		if err != nil {
+			return nil, err
+		}
+		wait := make(chan error, 1)
+		go func() {
+			defer lockChild.Close()
+			defer statusChild.Close()
+			defer lifecycleChild.Close()
+			if err := writeExposeChildStatus(statusChild, exposeChildStatus{Phase: exposeChildPhaseReady}); err != nil {
+				wait <- fmt.Errorf("write child ready status: %w", err)
+				return
+			}
+			var commit [1]byte
+			if _, err := io.ReadFull(lifecycleChild, commit[:]); err != nil {
+				wait <- fmt.Errorf("read child commit byte: %w", err)
+				return
+			}
+			if commit[0] != exposeCommitByte {
+				wait <- fmt.Errorf("unexpected child commit byte %d", commit[0])
+				return
+			}
+			wait <- childExited
+		}()
+		return wait, nil
+	}
+
+	startup, err := spawnExposeServerWith(
+		t.Context(), exposeServerConfig{SessionID: testCLIValidSessionID(), StateDir: stateDir},
+		paths, lock, starter,
+	)
+	require.NoError(t, err)
+	commitErr := startup.Commit(t.Context())
+	require.ErrorContains(t, commitErr, "read expose server status: EOF")
+	require.False(t, startup.committed)
+	abortErr := startup.Abort()
+	require.ErrorIs(t, abortErr, childExited)
+	contender, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.NoError(t, contender.Close())
+}
+
 func TestExposeServerRejectsListenerLossAfterReady(t *testing.T) {
 	harness := newExposeServerHarness(t)
 	var listenerCompleted func(h2c.TunnelListenerCompletion)
@@ -582,6 +711,48 @@ func fakeExposeProcessStarter(
 			<-serverExit
 			_ = cleanupExposeState(paths)
 			wait <- nil
+		}()
+		return wait, nil
+	}
+}
+
+func realExposeProcessStarter(t *testing.T, hooks exposeServerHooks) exposeProcessStarter {
+	t.Helper()
+	return func(
+		encodedConfig string,
+		lock *os.File,
+		statusW *os.File,
+		lifecycleR *os.File,
+		_ *os.File,
+	) (<-chan error, error) {
+		config, err := decodeExposeServerConfig(encodedConfig)
+		if err != nil {
+			return nil, err
+		}
+		paths, err := makeExposePaths(config.StateDir, config.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		lockChild, err := duplicateExposeFile(lock, "real-child-lock")
+		if err != nil {
+			return nil, err
+		}
+		statusChild, err := duplicateExposeFile(statusW, "real-child-status")
+		if err != nil {
+			return nil, err
+		}
+		lifecycleChild, err := duplicateExposeFile(lifecycleR, "real-child-lifecycle")
+		if err != nil {
+			return nil, err
+		}
+		wait := make(chan error, 1)
+		go func() {
+			defer lockChild.Close()
+			defer statusChild.Close()
+			defer lifecycleChild.Close()
+			wait <- serveExposePortServer(
+				t.Context(), config, paths, lockChild, statusChild, lifecycleChild, hooks,
+			)
 		}()
 		return wait, nil
 	}
