@@ -2884,6 +2884,11 @@ With one argument and --unset, removes the value at the given key.
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
 
+When the workspace includes another config, reads show the merged view — the
+included configuration with this workspace's own on top — while writes still
+only touch this workspace's dagger.toml. Reading the include key itself reports
+this workspace's own value.
+
 Local module source values are stored relative to dagger.toml.
 
 ```

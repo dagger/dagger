@@ -106,6 +106,43 @@ source = "modules/debugger"
 
 Write settings overlays with `dagger settings --env <name> <module> <key> <value>` (or `dagger workspace config --env <name> …` for raw access). Reads with `--env` show the effective view — the base configuration with the overlay applied — and the base is what every environment inherits.
 
+## Including another config: `[[include]]`
+
+A workspace can inherit configuration from another config file, so a team can publish one base config (shared tool versions, settings, environments) and point many repositories at it instead of copying it into each one:
+
+```toml
+[[include]]
+source = "github.com/acme/dagger-base@v1.2.0"
+
+# Only the difference from the included config:
+[modules.go.settings]
+goVersion = "1.24"
+```
+
+`source` addresses a config **file**, either way it is written:
+
+- a path relative to the including config's directory — `common/base.toml`, `../../shared/dagger.toml`. A source naming a directory reaches the `dagger.toml` inside it.
+- a Git ref — `github.com/acme/base@v1`, `https://host/repo.git#main:dagger/common/app-base.toml`. A Git source needs a scheme or a `#` fragment; without one there is no way to tell where the repository ends and the path to the file begins, so it reads as a path.
+
+The included config is merged **underneath** this one, so this workspace wins every conflict. The effective configuration is merged in a fixed order: the included config, then this repository's `dagger.toml`, then the matching user-level overrides, then the selected `--env` overlay.
+
+:::note
+Only one `[[include]]` is resolved for now — a config with more is an error. The shape is an array so several can be expressed later, without changing what people write today.
+:::
+
+**A module entry may omit `source`.** With an include, `[modules.go]` above overrides one setting of a module the included config installs and inherits its ref. An entry with no source that the include doesn't provide is an error, not a silently unloadable module.
+
+**Merging is per key.** Module settings merge key by key; a `source` you set replaces the inherited one and its pin travels with it; an explicit `false` or `[]` overrides an inherited value, and an absent key inherits. `[ports.<host>]` replaces the inherited mapping as a unit. An included module's `as-sdk` state and `legacy-default-path` flag are never inherited: they describe the tree that config came from.
+
+**Two deliberate limits:**
+
+- **One level, no chain.** If the included config includes something in turn, that's an error. Includes do not compose.
+- **Configuration, not code.** Module entries in the included config whose source is a local path are dropped, with a warning naming them: a local path there means a directory next to *that* config, which is not where this workspace would look for it. Its remote module refs come through normally.
+
+**Reads are effective, writes are local.** `dagger workspace config` prints the merged configuration as a standalone snapshot, with a `# included: <source>` comment in place of the `[[include]]` block (`dagger workspace config include` still reports it). Every write — `dagger install`, `dagger settings`, `dagger workspace config <key> <value>` — only ever touches this workspace's own `dagger.toml`. An inherited entry can be overridden but not deleted: uninstalling a module the include provides, or unsetting a value it supplies, tells you where the value comes from instead.
+
+**Pinning.** A Git include's ref is resolved and recorded in `dagger.lock` like any other Git reference — refreshed by `dagger update` or `--lock=live`, replayed by `--lock=frozen`. See [Lockfile](#lockfile). A path include is read from the workspace as it is on disk, so there is nothing to pin.
+
 ## User-level configuration
 
 Personal overrides that shouldn't be committed — private account profiles, local paths, personal environments — live in the user-level Dagger config file: `~/.config/dagger/config.toml`, or the file named by `$DAGGER_CONFIG`. The file is shared with other Dagger subsystems (such as `[llm]`); workspace overrides sit in a `[workspaces.*]` section keyed by the workspace's Git remote:
@@ -143,6 +180,7 @@ dagger workspace config -g modules.eslint.settings.packageManager pnpm
 
 | Key | Description |
 | --- | --- |
+| `[[include]]` | Config files whose contents are merged underneath this one (see [Including another config](#including-another-config-include)). |
 | `ignore` | Path patterns excluded when loading the workspace. |
 | `defaults_from_dotenv` | When `true`, module constructor defaults are read from a `.env` file. |
 | `[ports.<name>]` | Maps a host port to a service backend (`backendService`, `backendPort`) for services exposed by `dagger up`. |
