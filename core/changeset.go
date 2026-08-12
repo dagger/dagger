@@ -293,7 +293,7 @@ func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*Ch
 	return &ChangesetPaths{
 		Added:      added,
 		Modified:   fc.Modified,
-		Removed:    collapseChildPaths(allRemoved),
+		Removed:    CollapseChildPaths(allRemoved),
 		AllRemoved: allRemoved,
 		Renamed:    fc.Renamed,
 	}, nil
