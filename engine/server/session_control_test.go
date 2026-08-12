@@ -1156,6 +1156,36 @@ func TestAttachedClientPublicationMarksSourcePublished(t *testing.T) {
 	}
 }
 
+func TestAttachedRoleCanInitAfterPublication(t *testing.T) {
+	t.Parallel()
+	srv, sess, _ := newDetachableLifecycleTestSession(t, 0)
+	attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+	metadata := &engine.ClientMetadata{
+		SessionID: testSessionID, ClientID: testObserverID,
+		ClientSecretToken: "observer-token", AttachSession: true,
+		AttachmentID: attachmentID,
+	}
+	attached := &daggerClient{
+		state: clientStateInitialized, daggerSession: sess,
+		clientID: testObserverID, secretToken: metadata.ClientSecretToken,
+		clientMetadata: metadata, observerClient: true, shutdownCh: make(chan struct{}),
+	}
+	sess.clientMu.Lock()
+	sess.clients[attached.clientID] = attached
+	sess.clientMu.Unlock()
+	sess.currentAttachment = &sessionAttachment{
+		ID: attachmentID, Generation: 2, ClientID: attached.clientID, Ready: true,
+	}
+	sess.markSourceClientPublished(attached.clientID)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "http://dagger"+engine.InitEndpoint, nil)
+	require.NoError(t, srv.serveHTTPToClient(recorder, request, &ClientInitOpts{ClientMetadata: metadata}))
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	require.True(t, sess.sourceClientPublished(attached.clientID))
+	require.Same(t, attached, sess.clients[attached.clientID])
+}
+
 func TestDelayedDetachableRegistrationRechecksPublicationAfterReservation(t *testing.T) {
 	t.Parallel()
 	srv, sess, creator := newDetachableLifecycleTestSession(t, 0)

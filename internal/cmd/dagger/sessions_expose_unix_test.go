@@ -91,6 +91,69 @@ func TestPrepareExposePortsRejectsRemoteHolderAndReleasesLock(t *testing.T) {
 	require.NoError(t, lock.Close())
 }
 
+func TestPrepareExposePortsReadyIdempotenceAndDifference(t *testing.T) {
+	t.Parallel()
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-ready-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	sessionID := testCLIValidSessionID()
+	paths, err := makeExposePaths(stateDir, sessionID)
+	require.NoError(t, err)
+	holder, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	t.Cleanup(func() { require.NoError(t, holder.Close()) })
+	frontend := 8080
+	served := exposeRequest{Mappings: []exposePortMapping{{
+		Service: "web", ServiceID: "web-id", Frontend: &frontend,
+		Backend: 80, Protocol: core.NetworkProtocolTCP,
+	}}}
+	control, err := newExposeControlServer(paths, served)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, control.Close()) })
+	control.ready([]exposedPort{{
+		Service: "web", Frontend: frontend, Backend: 80, Protocol: core.NetworkProtocolTCP,
+	}})
+
+	differentFrontend := 9090
+	different := exposeRequest{Mappings: []exposePortMapping{{
+		Service: "web", ServiceID: "web-id", Frontend: &differentFrontend,
+		Backend: 80, Protocol: core.NetworkProtocolTCP,
+	}}}
+	preparation, err := prepareExposePorts(
+		t.Context(), sessionID, stateDir, different, true, false, "", nil,
+	)
+	require.NoError(t, err)
+	require.Nil(t, preparation.Startup)
+	require.True(t, preparation.Request.equal(served), "plain expose did not adopt the served request")
+
+	preparation, err = prepareExposePorts(
+		t.Context(), sessionID, stateDir, served, false, false, "", nil,
+	)
+	require.NoError(t, err)
+	require.Nil(t, preparation.Startup)
+	require.True(t, preparation.Request.equal(served))
+
+	_, err = prepareExposePorts(
+		t.Context(), sessionID, stateDir, different, false, false, "", nil,
+	)
+	require.ErrorContains(t, err, "already served with a different port set; use --replace")
+}
+
+func TestStopLocalExposeWithoutHolderIsIdempotent(t *testing.T) {
+	t.Parallel()
+	paths, err := makeExposePaths(t.TempDir(), testCLIValidSessionID())
+	require.NoError(t, err)
+	require.NoError(t, writeExposeRecord(paths.Record, exposeRecord{PID: 999, State: exposeStateReady}))
+	require.NoError(t, os.WriteFile(paths.Socket, []byte("stale"), 0o600))
+	require.NoError(t, stopLocalExpose(t.Context(), paths))
+	require.NoError(t, stopLocalExpose(t.Context(), paths))
+	_, err = os.Stat(paths.Record)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(paths.Socket)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 func TestExposeControlStopRequest(t *testing.T) {
 	t.Parallel()
 	paths, err := makeExposePaths(t.TempDir(), testCLIValidSessionID())
