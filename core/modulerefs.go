@@ -177,7 +177,7 @@ func (p *ParsedGitRefString) GitRef(
 	}
 	repoSelector = withCommitArg(repoSelector)
 
-	refSelector := dagql.Selector{Field: "head"}
+	refSelector := dagql.Selector{Field: "latestVersion"}
 	switch {
 	case modTag != "":
 		refSelector = withCommitArg(dagql.Selector{
@@ -200,6 +200,8 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(pinCommitRef)},
 			},
 		}
+	case pinIsSHA:
+		refSelector = dagql.Selector{Field: "head"}
 	}
 	var gitRef dagql.ObjectResult[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef, repoSelector, refSelector)
