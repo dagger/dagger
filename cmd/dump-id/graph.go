@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
+
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
@@ -235,7 +238,10 @@ func (g *graph) litDisplay(lit *callpbv1.Literal, o formatOpts) string {
 	case *callpbv1.Literal_String_:
 		return strconv.Quote(o.clip(v.String_))
 	case *callpbv1.Literal_DigestedString:
-		return "<digested-string " + short(v.DigestedString.GetDigest()) + ">"
+		return call.DisplayDigestedString(
+			v.DigestedString.GetValue(),
+			digest.Digest(v.DigestedString.GetDigest()),
+		)
 	case *callpbv1.Literal_List:
 		parts := make([]string, 0, len(v.List.GetValues()))
 		for _, e := range v.List.GetValues() {

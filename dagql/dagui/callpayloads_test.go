@@ -2,13 +2,17 @@ package dagui
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -165,6 +169,61 @@ func TestCallIDRebuildsFromLogPayloads(t *testing.T) {
 				t.Errorf("rebuilt ID lost the ID-literal argument's frame: %s", display)
 			}
 		})
+	}
+}
+
+func TestDigestedCallPayloadIsOpaqueButRebuildable(t *testing.T) {
+	const canary = "CHECKPOINT-CANARY-dagui-raw-only"
+	payloadDigest := digest.FromString("checkpoint-chunk")
+	recipe := call.New().Append(
+		&ast.Type{NamedType: "WorkspaceCheckpointChunk", NonNull: true},
+		"workspaceCheckpointChunk",
+		call.WithArgs(call.NewArgument(
+			"data",
+			call.NewLiteralDigestedString(canary, payloadDigest),
+			false,
+		)),
+	)
+	rawCall := recipe.Call()
+	rawLiteral := rawCall.GetArgs()[0].GetValue()
+	if got := rawLiteral.GetDigestedString().GetValue(); got != canary {
+		t.Fatalf("raw call payload = %q, want canary", got)
+	}
+
+	db := NewDB()
+	exportCallPayloads(t, db, spanID(1), rawCall)
+	rebuilt, err := db.CallIDForDigest(recipe.Digest().String())
+	if err != nil {
+		t.Fatalf("rebuild call ID from payload: %v", err)
+	}
+	rebuiltLiteral, ok := rebuilt.Arg("data").Value().(*call.LiteralDigestedString)
+	if !ok {
+		t.Fatalf("rebuilt data literal has type %T", rebuilt.Arg("data").Value())
+	}
+	if got := rebuiltLiteral.Value(); got != canary {
+		t.Fatalf("rebuilt data literal = %q, want canary", got)
+	}
+
+	want := call.DisplayDigestedString(canary, payloadDigest)
+	for name, rendered := range map[string]string{
+		"error detail": frameDetail(rawCall),
+		"grep line":    renderCallLine(rawCall),
+		"dot label":    displayLit(rawLiteral),
+	} {
+		if strings.Contains(rendered, canary) {
+			t.Errorf("%s exposed digested value: %q", name, rendered)
+		}
+		if !strings.Contains(rendered, want) {
+			t.Errorf("%s = %q, want opaque label %q", name, rendered, want)
+		}
+	}
+
+	if matches := db.GrepCalls(regexp.MustCompile(regexp.QuoteMeta(canary)), 10); len(matches) != 0 {
+		t.Fatalf("content search exposed canary: %q", matches)
+	}
+	matches := db.GrepCalls(regexp.MustCompile(regexp.QuoteMeta(payloadDigest.String())), 10)
+	if len(matches) != 1 || strings.Contains(matches[0], canary) || !strings.Contains(matches[0], want) {
+		t.Fatalf("digest search did not return opaque call: %q", matches)
 	}
 }
 

@@ -7,6 +7,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/opencontainers/go-digest"
+
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
@@ -302,6 +305,11 @@ func displayLit(lit *callpbv1.Literal) string {
 		return val.Enum
 	case *callpbv1.Literal_Null:
 		return "null"
+	case *callpbv1.Literal_DigestedString:
+		return call.DisplayDigestedString(
+			val.DigestedString.GetValue(),
+			digest.Digest(val.DigestedString.GetDigest()),
+		)
 	case *callpbv1.Literal_List:
 		s := "["
 		for i, item := range val.List.GetValues() {

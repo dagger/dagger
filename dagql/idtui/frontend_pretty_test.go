@@ -18,12 +18,37 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestRenderDigestedLiteralIsOpaque(t *testing.T) {
+	const canary = "CHECKPOINT-CANARY-tui-raw-only"
+	payloadDigest := digest.FromString("checkpoint-chunk")
+	lit := &callpbv1.Literal{Value: &callpbv1.Literal_DigestedString{
+		DigestedString: &callpbv1.DigestedString{
+			Value:  canary,
+			Digest: payloadDigest.String(),
+		},
+	}}
+
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	newRenderer(dagui.NewDB(), 0, dagui.FrontendOpts{}, true).renderLiteral(out, lit)
+	rendered := buf.String()
+	if strings.Contains(rendered, canary) {
+		t.Fatalf("TUI exposed digested value: %q", rendered)
+	}
+	for _, want := range []string{"digested-string", payloadDigest.String(), fmt.Sprintf("size=%dB", len(canary))} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("TUI rendering %q missing %q", rendered, want)
+		}
+	}
+}
 
 func TestSortErrorOriginsUsesCurrentSpanData(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {

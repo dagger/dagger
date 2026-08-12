@@ -401,12 +401,18 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 		return nil, err
 	}
 	// Resolve the bound object's type from its ID without evaluating it, so the
-	// toolset can be built lazily. The object itself is loaded only when a tool
-	// is actually invoked on it (see MCP.boundToolObject). This is what lets a
+	// toolset can be built lazily. For a user-module type absent from the current
+	// bootstrap schema, ObjectTypeForID rebuilds its defining schema from the
+	// call's module provenance. The object itself is loaded only when a tool is
+	// actually invoked on it (see MCP.boundToolObject). This is what lets a
 	// persisted session restore a binding whose object has side effects or is no
 	// longer reproducible without re-running its construction.
 	if id.Type() != nil {
-		if objType, ok := srv.ObjectType(id.Type().NamedType()); ok {
+		objType, ok, err := srv.ObjectTypeForID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			return llm.WithLazyTools(id, objType, args.Except), nil
 		}
 	}

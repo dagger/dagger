@@ -7,21 +7,24 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
+
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
-// GrepCalls searches every call payload this client has ingested by CONTENT:
+// GrepCalls searches every call payload this client has ingested by content:
 // each call is rendered as one line — digest, field, arguments, return type,
-// receiver digest — with literals UNTRUNCATED, and the lines matching re are
-// returned (sorted, capped at max, with a note when the cap bites).
+// receiver digest — with ordinary literals untruncated and digested strings
+// opaque. Matching lines are returned sorted and capped at max.
 //
 // This is the discovery half of the digest→ID path: an engine error names
 // bare digests ("load xxh3:…: inputs: …"), and CallIDForDigest can rebuild a
 // handle from one — but nothing else answers "which call mentions this path /
 // image / module?". Truncation would defeat exactly that: a host path baked
-// deep into an argument must be greppable even though every DISPLAY path
-// truncates literals (extract.go's literalLabel), so this renderer is a
-// deliberate full-fidelity sibling, not a reuse of the display one.
+// deep into an ordinary argument must be greppable even though every display
+// path truncates literals (extract.go's literalLabel). Digested strings are
+// deliberately opaque in both paths.
 func (db *DB) GrepCalls(re *regexp.Regexp, max int) []string {
 	var lines []string
 	for dig := range db.CallPayloads {
@@ -74,9 +77,8 @@ func renderCallLine(call *callpbv1.Call) string {
 	return b.String()
 }
 
-// fullLiteral is literalLabel without the truncation, for search rather than
-// display. Kept in lockstep with extract.go's literalLabel by hand: the two
-// diverge ONLY on truncation.
+// fullLiteral is literalLabel without ordinary-string truncation. Digested
+// strings stay opaque in both renderers.
 func fullLiteral(lit *callpbv1.Literal) string {
 	switch v := lit.GetValue().(type) {
 	case *callpbv1.Literal_CallDigest:
@@ -94,7 +96,10 @@ func fullLiteral(lit *callpbv1.Literal) string {
 	case *callpbv1.Literal_String_:
 		return strconv.Quote(v.String_)
 	case *callpbv1.Literal_DigestedString:
-		return strconv.Quote(v.DigestedString.GetValue())
+		return call.DisplayDigestedString(
+			v.DigestedString.GetValue(),
+			digest.Digest(v.DigestedString.GetDigest()),
+		)
 	case *callpbv1.Literal_List:
 		vals := v.List.GetValues()
 		parts := make([]string, 0, len(vals))
