@@ -434,7 +434,7 @@ func TestExposeCommitIgnoresCancellationAfterByte(t *testing.T) {
 	commitCtx, cancelCommit := context.WithCancelCause(t.Context())
 	commitDone := make(chan error, 1)
 	go func() { commitDone <- startup.Commit(commitCtx) }()
-	<-commitReceived
+	receiveExposeTest(t, commitReceived, "child receiving commit byte")
 	cancelCommit(errors.New("cancel after commit byte"))
 	select {
 	case err := <-commitDone:
@@ -449,14 +449,142 @@ func TestExposeCommitIgnoresCancellationAfterByte(t *testing.T) {
 	default:
 	}
 	close(allowAccepted)
-	require.NoError(t, <-commitDone)
+	require.NoError(t, receiveExposeTest(t, commitDone, "commit acceptance"))
 	require.ErrorContains(t, context.Cause(commitCtx), "cancel after commit byte")
 	require.True(t, startup.committed)
 	require.True(t, startup.finished)
-	require.EqualError(t, <-abortDone, "cannot abort committed expose server")
+	require.EqualError(t, receiveExposeTest(t, abortDone, "abort observing committed state"), "cannot abort committed expose server")
 
 	close(session.done)
-	require.NoError(t, <-startup.wait)
+	require.NoError(t, receiveExposeTest(t, startup.wait, "committed child exit"))
+}
+
+func TestExposeAcceptedWriteFailureNeverAdvertisesReady(t *testing.T) {
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-accept-write-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	paths, err := makeExposePaths(stateDir, testCLIValidSessionID())
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	acceptedWrite := make(chan struct{})
+	allowWriteFailure := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-allowWriteFailure:
+		default:
+			close(allowWriteFailure)
+		}
+	})
+	session := &fakeExposePortSession{
+		fakeExposeQueryClient: &fakeExposeQueryClient{t: t}, done: make(chan struct{}),
+	}
+	hooks := exposeServerHooks{
+		Connect: func(context.Context, client.Params) (exposePortSession, error) {
+			return session, nil
+		},
+		WriteStatus: func(w io.Writer, status exposeChildStatus) error {
+			if status.Phase != exposeChildPhaseAccepted {
+				return writeExposeChildStatus(w, status)
+			}
+			if status.Error == "" {
+				close(acceptedWrite)
+				<-allowWriteFailure
+			}
+			return unix.EPIPE
+		},
+	}
+	startup, err := spawnExposeServerWith(
+		t.Context(),
+		exposeServerConfig{SessionID: testCLIValidSessionID(), StateDir: stateDir, Request: exposeRequest{
+			Mappings: []exposePortMapping{{Service: "web", ServiceID: "backend-id", Backend: 80, Protocol: sessionwire.NetworkProtocolTCP}},
+		}},
+		paths, lock, realExposeProcessStarter(t, hooks),
+	)
+	require.NoError(t, err)
+
+	commitDone := make(chan error, 1)
+	go func() { commitDone <- startup.Commit(t.Context()) }()
+	receiveExposeTest(t, acceptedWrite, "accepted status write")
+	response, err := exchangeExposeControl(t.Context(), paths.Socket, exposeControlRequest{Action: exposeControlStatus})
+	require.NoError(t, err)
+	require.NotNil(t, response.Status)
+	require.Equal(t, exposeStateStarting, response.Status.State, "failed acceptance was advertised as ready")
+	close(allowWriteFailure)
+
+	commitErr := receiveExposeTest(t, commitDone, "commit rejection after accepted write failure")
+	require.ErrorContains(t, commitErr, "read expose server status: EOF")
+	require.False(t, startup.committed)
+	abortDone := make(chan error, 1)
+	go func() { abortDone <- startup.Abort() }()
+	require.ErrorIs(t, receiveExposeTest(t, abortDone, "failed-acceptance rollback"), unix.EPIPE)
+	_, err = os.Stat(paths.Socket)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	successor, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired, "successor could not proceed after failed acceptance cleanup")
+	require.NoError(t, successor.Close())
+}
+
+func TestExposeListenerLossAfterCommitByteIsExplicitRejection(t *testing.T) {
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-postcommit-loss-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	paths, err := makeExposePaths(stateDir, testCLIValidSessionID())
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	commitReceived := make(chan struct{})
+	listenerCallbacks := make(chan func(h2c.TunnelListenerCompletion), 1)
+	session := &fakeExposePortSession{
+		fakeExposeQueryClient: &fakeExposeQueryClient{t: t}, done: make(chan struct{}),
+	}
+	hooks := exposeServerHooks{
+		Connect: func(_ context.Context, params client.Params) (exposePortSession, error) {
+			listenerCallbacks <- params.OnTunnelListenerCompleted
+			return session, nil
+		},
+		CommitReceived: func() { close(commitReceived) },
+		BeforeAccepted: make(chan struct{}),
+	}
+	startup, err := spawnExposeServerWith(
+		t.Context(),
+		exposeServerConfig{SessionID: testCLIValidSessionID(), StateDir: stateDir, Request: exposeRequest{
+			Mappings: []exposePortMapping{{Service: "web", ServiceID: "backend-id", Backend: 80, Protocol: sessionwire.NetworkProtocolTCP}},
+		}},
+		paths, lock, realExposeProcessStarter(t, hooks),
+	)
+	require.NoError(t, err)
+	listenerCompleted := receiveExposeTest(t, listenerCallbacks, "listener completion callback")
+	require.NotNil(t, listenerCompleted)
+
+	commitDone := make(chan error, 1)
+	go func() { commitDone <- startup.Commit(t.Context()) }()
+	receiveExposeTest(t, commitReceived, "child receiving commit byte")
+	response, err := exchangeExposeControl(t.Context(), paths.Socket, exposeControlRequest{Action: exposeControlStatus})
+	require.NoError(t, err)
+	require.NotNil(t, response.Status)
+	require.Equal(t, exposeStateStarting, response.Status.State)
+	listenerCompleted(h2c.TunnelListenerCompletion{
+		Addr: "127.0.0.1:8080", Err: errors.New("injected loss after commit byte"),
+	})
+
+	commitErr := receiveExposeTest(t, commitDone, "explicit listener-loss rejection")
+	require.ErrorContains(t, commitErr, "injected loss after commit byte")
+	require.False(t, startup.committed)
+	abortDone := make(chan error, 1)
+	go func() { abortDone <- startup.Abort() }()
+	require.ErrorContains(t, receiveExposeTest(t, abortDone, "listener-loss rollback"), "injected loss after commit byte")
+	_, err = exchangeExposeControl(t.Context(), paths.Socket, exposeControlRequest{Action: exposeControlStatus})
+	require.Error(t, err, "rejected child control socket remained ready")
+	successor, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.NoError(t, successor.Close())
 }
 
 func TestExposeCommitStatusEOFAfterByteAllowsRollback(t *testing.T) {
@@ -764,6 +892,18 @@ func duplicateExposeFile(file *os.File, name string) (*os.File, error) {
 		return nil, err
 	}
 	return os.NewFile(uintptr(fd), name), nil
+}
+
+func receiveExposeTest[T any](t *testing.T, ch <-chan T, stage string) T {
+	t.Helper()
+	select {
+	case value := <-ch:
+		return value
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out after 5s waiting for %s", stage)
+		var zero T
+		return zero
+	}
 }
 
 func TestExposeMalformedSocketResponseRetriesLock(t *testing.T) {

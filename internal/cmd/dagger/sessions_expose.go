@@ -82,18 +82,26 @@ func exposeDetachableSession(
 	replace bool,
 	stop bool,
 ) error {
-	if err := validateDetachablePortServerEngineTarget("sessions expose"); err != nil {
-		return err
-	}
-	return withSessionControlClient(cmd.Context(), func(ctx context.Context, control *client.ControlClient) error {
-		stateDir, err := exposeStateDirectory()
-		if err != nil {
+	return withSessionsExposeEngineTarget(stop, func() error {
+		return withSessionControlClient(cmd.Context(), func(ctx context.Context, control *client.ControlClient) error {
+			stateDir, err := exposeStateDirectory()
+			if err != nil {
+				return err
+			}
+			return exposeDetachableSessionWithControl(
+				ctx, cmd, control, sessionID, stateDir, portSpecs, replace, stop,
+			)
+		})
+	})
+}
+
+func withSessionsExposeEngineTarget(stop bool, proceed func() error) error {
+	if !stop {
+		if err := validateDetachablePortServerEngineTarget("sessions expose"); err != nil {
 			return err
 		}
-		return exposeDetachableSessionWithControl(
-			ctx, cmd, control, sessionID, stateDir, portSpecs, replace, stop,
-		)
-	})
+	}
+	return proceed()
 }
 
 func exposeDetachableSessionWithControl(
@@ -501,6 +509,10 @@ func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exp
 		for _, port := range service.Ports {
 			protocol := sessionwire.NetworkProtocol(strings.ToUpper(port.Protocol))
 			mappingIndex := -1
+			// Canonical aliases on one retained key name the same upstream. If
+			// random mappings otherwise have identical backend/protocol identity,
+			// assigning either alias is behaviorally equivalent: both frontends
+			// serve the same traffic.
 			for i, mapping := range request.Mappings {
 				if used[i] || mapping.Protocol != protocol || mapping.Backend != port.Backend ||
 					!containsString(aliases, mapping.Service) {

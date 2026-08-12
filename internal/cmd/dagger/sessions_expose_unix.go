@@ -336,6 +336,7 @@ type exposeServerHooks struct {
 	BeforeAccepted <-chan struct{}
 	Connect        func(context.Context, client.Params) (exposePortSession, error)
 	WriteRecord    func(string, exposeRecord) error
+	WriteStatus    func(io.Writer, exposeChildStatus) error
 }
 
 func runExposePortServer(ctx context.Context, encodedConfig string) error {
@@ -398,6 +399,10 @@ func serveExposePortServer(
 		}{value: commit[0], err: err}
 	}()
 
+	writeStatus := hooks.WriteStatus
+	if writeStatus == nil {
+		writeStatus = writeExposeChildStatus
+	}
 	readySent := false
 	acceptedSent := false
 	defer func() {
@@ -411,7 +416,7 @@ func serveExposePortServer(
 			if errors.As(rerr, &protocolErr) {
 				status.ErrorCode = protocolErr.Code
 			}
-			_ = writeExposeChildStatus(statusW, status)
+			_ = writeStatus(statusW, status)
 		}
 	}()
 	writeRecord := hooks.WriteRecord
@@ -481,7 +486,7 @@ func serveExposePortServer(
 			return context.Cause(serverCtx)
 		}
 	}
-	if err := writeExposeChildStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseReady, Ports: ports}); err != nil {
+	if err := writeStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseReady, Ports: ports}); err != nil {
 		return fmt.Errorf("report expose server readiness: %w", err)
 	}
 	readySent = true
@@ -522,11 +527,11 @@ func serveExposePortServer(
 		}
 	}
 	if err := monitor.commitWith(func() error {
-		control.ready(ports)
-		if err := writeExposeChildStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseAccepted}); err != nil {
+		if err := writeStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseAccepted}); err != nil {
 			return fmt.Errorf("report expose server commit acceptance: %w", err)
 		}
 		acceptedSent = true
+		control.ready(ports)
 		return nil
 	}); err != nil {
 		return err

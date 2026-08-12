@@ -325,6 +325,50 @@ func TestExposeStopValidatesSessionKindAndCleansMissingSessionState(t *testing.T
 	}
 }
 
+func TestSessionsExposeCloudGuardAllowsLocalStop(t *testing.T) {
+	oldCloud, oldRunnerHost := useCloudEngine, RunnerHost
+	t.Cleanup(func() {
+		useCloudEngine, RunnerHost = oldCloud, oldRunnerHost
+	})
+	useCloudEngine = true
+	RunnerHost = "docker-container://local"
+
+	stateDir, err := os.MkdirTemp("/tmp", "du-cloud-stop-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	sessionID := testCLIValidSessionID()
+	paths, err := makeExposePaths(stateDir, sessionID)
+	require.NoError(t, err)
+	require.NoError(t, writeExposeRecord(paths.Record, exposeRecord{State: exposeStateReady}))
+	require.NoError(t, os.WriteFile(paths.Socket, []byte("stale"), 0o600))
+	control := &fakeExposeSessionControl{descriptors: []engine.SessionDescriptor{{
+		Query: &engine.SessionQuery{Presentation: engine.QueryPresentation{Kind: "up"}},
+	}}}
+	cmd := &cobra.Command{}
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	proceedCalls := 0
+	err = withSessionsExposeEngineTarget(true, func() error {
+		proceedCalls++
+		return exposeDetachableSessionWithControl(
+			t.Context(), cmd, control, sessionID, stateDir, nil, false, true,
+		)
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, proceedCalls)
+	require.Contains(t, output.String(), "Stopped local ports")
+	_, err = os.Stat(paths.Record)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	proceedCalls = 0
+	err = withSessionsExposeEngineTarget(false, func() error {
+		proceedCalls++
+		return errors.New("publish path reached connection")
+	})
+	require.ErrorContains(t, err, "sessions expose is not supported with a Dagger Cloud Engine")
+	require.Zero(t, proceedCalls, "Cloud publish reached connection or spawn path")
+}
+
 type fakeExposeSessionControl struct {
 	descriptors  []engine.SessionDescriptor
 	inspectErr   error
