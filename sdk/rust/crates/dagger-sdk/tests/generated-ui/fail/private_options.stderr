@@ -1,0 +1,13 @@
+error[E0451]: fields `enabled`, `count`, `label` and `item` of struct `client::SearchOpts` are private
+  --> tests/generated-ui/fail/private_options.rs:7:9
+   |
+ 6 |     let _ = dagger_client::minimal::SearchOpts {
+   |             ---------------------------------- in this type
+ 7 |         enabled: Some(Some(false)),
+   |         ^^^^^^^ private field
+ 8 |         count: Some(Some(0)),
+   |         ^^^^^ private field
+ 9 |         label: Some(Some(String::new())),
+   |         ^^^^^ private field
+10 |         item: None,
+   |         ^^^^ private field

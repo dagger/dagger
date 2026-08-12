@@ -1,0 +1,11 @@
+error[E0603]: module `generated` is private
+ --> tests/generated-ui/fail/private_generated_index.rs:5:20
+  |
+5 | use dagger_client::generated;
+  |                    ^^^^^^^^^ private module
+  |
+note: the module `generated` is defined here
+ --> tests/generated-ui/fail/../../fixtures/generated_client/mod.rs
+  |
+  | mod generated;
+  | ^^^^^^^^^^^^^^

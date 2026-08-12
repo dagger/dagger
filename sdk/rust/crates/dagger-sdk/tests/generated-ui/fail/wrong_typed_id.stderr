@@ -1,0 +1,70 @@
+error[E0277]: the trait bound `IdInput<item::Item>: From<minimal_client::MinimalClient>` is not satisfied
+ --> tests/generated-ui/fail/wrong_typed_id.rs:6:27
+  |
+6 |     let _ = root.use_item(root.helper()).await;
+  |                  -------- ^^^^^^^^^^^^^ the trait `From<minimal_client::MinimalClient>` is not implemented for `IdInput<item::Item>`
+  |                  |
+  |                  required by a bound introduced by this call
+  |
+help: the trait `From<minimal_client::MinimalClient>` is not implemented for `IdInput<item::Item>`
+      but trait `From<item::Item>` is implemented for it
+ --> tests/generated-ui/fail/../../fixtures/generated_client/generated/minimal/item.rs
+  |
+  | impl From<Item> for dagger_sdk::IdInput<Item> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `item::Item`, found `minimal_client::MinimalClient`
+  = note: required for `minimal_client::MinimalClient` to implement `Into<IdInput<item::Item>>`
+note: required by a bound in `client::Client::use_item`
+ --> tests/generated-ui/fail/../../fixtures/generated_client/generated/minimal/client.rs
+  |
+  |     pub async fn use_item(
+  |                  -------- required by a bound in this associated function
+  |         &self,
+  |         item: impl Into<dagger_sdk::IdInput<super::Item>>,
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Client::use_item`
+
+error[E0277]: the trait bound `IdInput<item::Item>: From<minimal_client::MinimalClient>` is not satisfied
+ --> tests/generated-ui/fail/wrong_typed_id.rs:6:13
+  |
+6 |     let _ = root.use_item(root.helper()).await;
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `From<minimal_client::MinimalClient>` is not implemented for `IdInput<item::Item>`
+  |
+help: the trait `From<minimal_client::MinimalClient>` is not implemented for `IdInput<item::Item>`
+      but trait `From<item::Item>` is implemented for it
+ --> tests/generated-ui/fail/../../fixtures/generated_client/generated/minimal/item.rs
+  |
+  | impl From<Item> for dagger_sdk::IdInput<Item> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `item::Item`, found `minimal_client::MinimalClient`
+  = note: required for `minimal_client::MinimalClient` to implement `Into<IdInput<item::Item>>`
+note: required by a bound in `client::Client::use_item`
+ --> tests/generated-ui/fail/../../fixtures/generated_client/generated/minimal/client.rs
+  |
+  |     pub async fn use_item(
+  |                  -------- required by a bound in this associated function
+  |         &self,
+  |         item: impl Into<dagger_sdk::IdInput<super::Item>>,
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Client::use_item`
+
+error[E0277]: the trait bound `IdInput<item::Item>: From<minimal_client::MinimalClient>` is not satisfied
+ --> tests/generated-ui/fail/wrong_typed_id.rs:6:42
+  |
+6 |     let _ = root.use_item(root.helper()).await;
+  |                                          ^^^^^ the trait `From<minimal_client::MinimalClient>` is not implemented for `IdInput<item::Item>`
+  |
+help: the trait `From<minimal_client::MinimalClient>` is not implemented for `IdInput<item::Item>`
+      but trait `From<item::Item>` is implemented for it
+ --> tests/generated-ui/fail/../../fixtures/generated_client/generated/minimal/item.rs
+  |
+  | impl From<Item> for dagger_sdk::IdInput<Item> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `item::Item`, found `minimal_client::MinimalClient`
+  = note: required for `minimal_client::MinimalClient` to implement `Into<IdInput<item::Item>>`
+note: required by a bound in `client::Client::use_item`
+ --> tests/generated-ui/fail/../../fixtures/generated_client/generated/minimal/client.rs
+  |
+  |     pub async fn use_item(
+  |                  -------- required by a bound in this associated function
+  |         &self,
+  |         item: impl Into<dagger_sdk::IdInput<super::Item>>,
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Client::use_item`

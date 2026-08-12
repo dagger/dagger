@@ -209,6 +209,10 @@ fn client_foundations_have_no_unchecked_or_process_global_escape_hatches() {
         .iter()
         .flat_map(|root| rust_sources(root))
         .collect::<Vec<_>>();
+    sources.extend([
+        crates.join("dagger-sdk/src/id_input.rs"),
+        crates.join("dagger-sdk/src/query.rs"),
+    ]);
     sources.push(crates.join("dagger-sdk-completeness/src/client_generation.rs"));
     sources.sort();
 

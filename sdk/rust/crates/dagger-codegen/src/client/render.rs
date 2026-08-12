@@ -166,8 +166,8 @@ fn render_top_module(plan: &ClientBindingPlan) -> Result<String, DiagnosticSet> 
         "Standalone Dagger client composed over the shared public Rust SDK runtime.",
     )?;
     source.push_str(
-        "pub use dagger_sdk::{Client, ClientConfig, connect, connect_with};\n\
-         pub use dagger_sdk as core;\n\
+        "pub use dagger_sdk as core;\n\
+         pub use dagger_sdk::{Client, ClientConfig, connect, connect_with};\n\
          mod generated;\n",
     );
     match (&plan.surface, &plan.names) {
@@ -303,7 +303,7 @@ fn render_object(
     let mut source = format!(
         "{attributes}#[derive(Clone)]\npub struct {name} {{ query: dagger_sdk::QueryBuilder }}\n{support}\
          impl {name} {{\n\
-         #[doc(hidden)]\n#[must_use]\npub fn from_query(query: dagger_sdk::QueryBuilder) -> Self {{ Self {{ query }} }}\n\
+         #[must_use]\npub(in crate::dagger_client) fn from_query(query: dagger_sdk::QueryBuilder) -> Self {{ Self {{ query }} }}\n\
          /// Borrows the immutable query represented by this handle.\n#[must_use]\npub fn selection(&self) -> &dagger_sdk::QueryBuilder {{ &self.query }}\n\
          {methods}}}\n"
     );
@@ -400,7 +400,7 @@ fn render_interface(
          }}\n\
          {client_attributes}#[derive(Clone)]\npub struct {client_name} {{ query: dagger_sdk::QueryBuilder }}\n{support}\
          impl {client_name} {{\n\
-         #[doc(hidden)]\n#[must_use]\npub fn from_query(query: dagger_sdk::QueryBuilder) -> Self {{ Self {{ query }} }}\n\
+         #[must_use]\npub(in crate::dagger_client) fn from_query(query: dagger_sdk::QueryBuilder) -> Self {{ Self {{ query }} }}\n\
          {methods}}}\n\
          impl {trait_name} for {client_name} {{ fn selection(&self) -> &dagger_sdk::QueryBuilder {{ &self.query }} }}\n"
     );
@@ -636,8 +636,13 @@ fn render_field(
     let query = render_query(field, &required, None)?;
     let body = render_execution(plan, names, field, &query)?;
     let (async_token, result) = method_result(plan, names, field)?;
+    let must_use = if matches!(field.strategy, FieldStrategy::LazyHandle { .. }) {
+        "#[must_use]\n"
+    } else {
+        ""
+    };
     methods.push_str(&format!(
-        "{attributes}#[must_use]\npub {async_token}fn {}(&self{parameters}) -> {result} {{\n{body}}}\n",
+        "{attributes}{must_use}pub {async_token}fn {}(&self{parameters}) -> {result} {{\n{body}}}\n",
         field.rust_name
     ));
 
@@ -709,7 +714,7 @@ fn render_field(
     let query = render_query(field, &required, Some((&omittable, options_name)))?;
     let body = render_execution(plan, names, field, &query)?;
     methods.push_str(&format!(
-        "{attributes}#[must_use]\npub {async_token}fn {options_method}(&self{parameters}, opts: {options_name}) -> {result} {{\n{body}}}\n"
+        "{attributes}{must_use}pub {async_token}fn {options_method}(&self{parameters}, opts: {options_name}) -> {result} {{\n{body}}}\n"
     ));
     Ok(())
 }
@@ -743,7 +748,7 @@ fn render_query(
             argument.rust_name.clone()
         };
         let operation = if argument.encoder.contains_lazy_id() {
-            "generated_argument_id"
+            "generated_argument_id_shape"
         } else {
             "argument"
         };
@@ -756,7 +761,7 @@ fn render_query(
         let _ = options_name;
         for argument in arguments {
             let operation = if argument.encoder.contains_lazy_id() {
-                "generated_argument_id"
+                "generated_argument_id_shape"
             } else {
                 "argument"
             };
@@ -775,7 +780,10 @@ fn method_result(
     names: &ClientNamePlan,
     field: &FieldProjection,
 ) -> Result<(&'static str, String), DiagnosticSet> {
-    let output = rust_type(plan, names, &field.return_type)?;
+    let output = match &field.strategy {
+        FieldStrategy::ExpectedTypeSelf { parent, .. } => named_handle(plan, names, parent)?,
+        _ => rust_type(plan, names, &field.return_type)?,
+    };
     if matches!(field.strategy, FieldStrategy::LazyHandle { .. }) {
         Ok(("", output))
     } else {
@@ -805,17 +813,17 @@ fn render_execution(
         FieldStrategy::ExecuteValue { .. } => body.push_str("query.execute().await\n"),
         FieldStrategy::NullableHandle { target, .. }
         | FieldStrategy::ReenterList { target, .. } => {
-            let output = rust_type(plan, names, &field.return_type)?;
+            let ids = id_shape_type(&field.return_type)?;
+            let reentered =
+                render_reentry_expression(plan, names, target, &field.return_type, "ids", 0)?;
             body.push_str(&format!(
-                "query.generated_reenter_shape::<{output}>({}).await\n",
-                rust_literal(target.as_str())?
+                "let ids: {ids} = query.select(\"id\").execute().await?;\nOk({reentered})\n"
             ));
         }
         FieldStrategy::ExpectedTypeSelf { parent, .. } => {
-            let output = rust_type(plan, names, &field.return_type)?;
+            let reentered = render_reentry_leaf(plan, names, parent, "id")?;
             body.push_str(&format!(
-                "query.generated_reenter_shape::<{output}>({}).await\n",
-                rust_literal(parent.as_str())?
+                "let id: dagger_sdk::Id = query.execute().await?;\nOk({reentered})\n"
             ));
         }
         FieldStrategy::TargetPrivate => {
@@ -827,6 +835,73 @@ fn render_execution(
         }
     }
     Ok(body)
+}
+
+fn id_shape_type(ty: &RustType) -> Result<String, DiagnosticSet> {
+    match ty {
+        RustType::Handle(_) | RustType::InterfaceHandle(_) => Ok("dagger_sdk::Id".to_owned()),
+        RustType::Option(inner) => Ok(format!("Option<{}>", id_shape_type(inner)?)),
+        RustType::Vec(inner) => Ok(format!("Vec<{}>", id_shape_type(inner)?)),
+        _ => Err(render_error(
+            DiagnosticCode::SchemaFieldUnmapped,
+            &ty.signature(),
+            "handle re-entry strategy contains a non-handle output leaf",
+        )),
+    }
+}
+
+fn render_reentry_expression(
+    plan: &ClientBindingPlan,
+    names: &ClientNamePlan,
+    target: &SchemaName,
+    ty: &RustType,
+    value: &str,
+    depth: usize,
+) -> Result<String, DiagnosticSet> {
+    match ty {
+        RustType::Handle(actual) | RustType::InterfaceHandle(actual) if actual == target => {
+            render_reentry_leaf(plan, names, target, value)
+        }
+        RustType::Option(inner) => {
+            let nested = format!("value_{depth}");
+            let expression =
+                render_reentry_expression(plan, names, target, inner, &nested, depth + 1)?;
+            Ok(format!("{value}.map(|{nested}| {expression})"))
+        }
+        RustType::Vec(inner) => {
+            let nested = format!("value_{depth}");
+            let expression =
+                render_reentry_expression(plan, names, target, inner, &nested, depth + 1)?;
+            Ok(format!(
+                "{value}.into_iter().map(|{nested}| {expression}).collect()"
+            ))
+        }
+        _ => Err(render_error(
+            DiagnosticCode::SchemaFieldUnmapped,
+            &ty.signature(),
+            "handle re-entry strategy disagrees with its projected target",
+        )),
+    }
+}
+
+fn render_reentry_leaf(
+    plan: &ClientBindingPlan,
+    names: &ClientNamePlan,
+    target: &SchemaName,
+    id: &str,
+) -> Result<String, DiagnosticSet> {
+    let target_type = named_handle(plan, names, target)?;
+    let builder = format!(
+        "query.generated_reentry_builder({id}, {})",
+        rust_literal(target.as_str())?
+    );
+    if plan.module_types.contains_key(target) {
+        Ok(format!("{target_type}::from_query({builder})"))
+    } else {
+        Ok(format!(
+            "{builder}.generated_core_handle::<{target_type}>()"
+        ))
+    }
 }
 
 fn rust_type(

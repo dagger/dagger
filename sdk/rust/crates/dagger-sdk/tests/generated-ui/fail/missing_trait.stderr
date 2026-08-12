@@ -1,0 +1,11 @@
+error[E0599]: no method named `minimal` found for reference `&dagger_sdk::Client` in the current scope
+ --> tests/generated-ui/fail/missing_trait.rs:6:20
+  |
+6 |     let _ = client.minimal();
+  |                    ^^^^^^^ method not found in `&dagger_sdk::Client`
+  |
+  = help: items from traits can only be used if the trait is in scope
+help: trait `MinimalExt` which provides `minimal` is implemented but not in scope; perhaps you want to import it
+  |
+1 + use crate::dagger_client::MinimalExt;
+  |

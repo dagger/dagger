@@ -1,0 +1,27 @@
+error[E0603]: module `query` is private
+ --> tests/generated-ui/fail/private_runtime_state.rs:2:46
+  |
+2 |     let _ = core::mem::size_of::<dagger_sdk::query::Selection>();
+  |                                              ^^^^^  --------- struct `Selection` is not publicly re-exported
+  |                                              |
+  |                                              private module
+  |
+note: the module `query` is defined here
+ --> src/lib.rs
+  |
+  | mod query;
+  | ^^^^^^^^^
+
+error[E0603]: module `lifecycle` is private
+ --> tests/generated-ui/fail/private_runtime_state.rs:3:46
+  |
+3 |     let _ = core::mem::size_of::<dagger_sdk::lifecycle::SessionHandle>();
+  |                                              ^^^^^^^^^  ------------- struct `SessionHandle` is not publicly re-exported
+  |                                              |
+  |                                              private module
+  |
+note: the module `lifecycle` is defined here
+ --> src/lib.rs
+  |
+  | mod lifecycle;
+  | ^^^^^^^^^^^^^

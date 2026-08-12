@@ -3,6 +3,8 @@
 mod support;
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::Path;
 
 use dagger_codegen::client::{
     CargoPackageName, ClientCompilationInput, ClientProjectIdentity, RustIdentifier,
@@ -118,7 +120,18 @@ fn generated_sources_are_documented_safe_and_credential_free() {
             "authorization",
             "/Users/",
             "SessionHandle",
+            "EngineConnection",
             "unsafe {",
+            "#![allow(",
+            "dagger_codegen",
+            "dagger_sdk_engine",
+            "dagger_sdk_completeness",
+            "dagger_bootstrap",
+            "std::fs",
+            "std::process",
+            "tokio::process",
+            "todo!(",
+            "unimplemented!(",
             "EngineHookBaseline",
             "engine-hook-baseline",
             "TODO",
@@ -144,6 +157,14 @@ fn generated_sources_are_documented_safe_and_credential_free() {
     );
     assert!(client.contains("pub async fn r#type"));
     assert!(client.contains("pub fn helper(&self) -> super::MinimalClient"));
+    assert!(client.contains("pub(in crate::dagger_client) fn from_query"));
+    assert!(client.contains("generated_core_handle::<dagger_sdk::Container>()"));
+    assert!(client.contains("query.select(\"id\").execute().await?"));
+    assert!(client.contains("generated_reentry_builder"));
+    assert!(client.contains("generated_argument_id_shape(\"item\", item.into())"));
+    assert!(client.contains("generated_argument_id_shape(\"items\", items.into())"));
+    assert!(client.contains("pub async fn sync(&self) -> Result<super::Client"));
+    assert!(!client.contains("generated_reenter_shape"));
     let quickstart = source(&rendered, "client/examples/dagger-client-quickstart.rs");
     assert!(quickstart.contains("use adopted_client::dagger_client;"));
     let config = source(
@@ -161,6 +182,108 @@ fn generated_sources_are_documented_safe_and_credential_free() {
         "client/src/dagger_client/generated/minimal/token.rs",
     );
     assert!(scalar.contains("pub struct Token("));
+    let item = source(
+        &rendered,
+        "client/src/dagger_client/generated/minimal/item.rs",
+    );
+    assert!(item.contains("dagger_sdk::IdInput::generated_lazy(value)"));
+    assert!(item.contains("pub(in crate::dagger_client) fn from_query"));
+}
+
+#[test]
+fn checked_runtime_fixture_matches_the_production_renderer() {
+    let rendered = render(0);
+    let fixture_root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../dagger-sdk/tests/fixtures/generated_client");
+    let mut expected = BTreeSet::new();
+    for (path, artifact) in &rendered.artifacts {
+        let Some(relative) = path
+            .as_str()
+            .strip_prefix("client/src/dagger_client/")
+            .filter(|relative| relative.ends_with(".rs"))
+        else {
+            continue;
+        };
+        expected.insert(relative.to_owned());
+        let fixture = fixture_root.join(relative);
+        if std::env::var_os("DAGGER_UPDATE_GENERATED_CLIENT_FIXTURE").is_some() {
+            fs::create_dir_all(
+                fixture
+                    .parent()
+                    .expect("generated fixture source has a parent"),
+            )
+            .expect("generated fixture directory is writable");
+            fs::write(&fixture, &artifact.content).expect("generated fixture is writable");
+        }
+        let actual = fs::read_to_string(&fixture).expect("checked generated fixture must exist");
+        let expected_source = std::str::from_utf8(&artifact.content)
+            .expect("production renderer emits UTF-8 Rust source");
+        assert_eq!(
+            actual.lines().take(2).collect::<Vec<_>>(),
+            expected_source.lines().take(2).collect::<Vec<_>>(),
+            "{} provenance drifted from the production renderer",
+            fixture.display()
+        );
+        assert_eq!(
+            format_insensitive_tokens(&actual),
+            format_insensitive_tokens(expected_source),
+            "{} semantics drifted from the production renderer",
+            fixture.display()
+        );
+    }
+
+    let mut actual = Vec::new();
+    collect_fixture_sources(&fixture_root, &fixture_root, &mut actual);
+    assert_eq!(actual.into_iter().collect::<BTreeSet<_>>(), expected);
+}
+
+fn format_insensitive_tokens(source: &str) -> Vec<String> {
+    fn flatten(stream: proc_macro2::TokenStream, tokens: &mut Vec<String>) {
+        for token in stream {
+            match token {
+                proc_macro2::TokenTree::Group(group) => flatten(group.stream(), tokens),
+                proc_macro2::TokenTree::Punct(punctuation) if punctuation.as_char() == ',' => {}
+                token => tokens.push(token.to_string()),
+            }
+        }
+    }
+
+    let stream = source
+        .parse::<proc_macro2::TokenStream>()
+        .expect("generated fixture tokenizes");
+    let mut tokens = Vec::new();
+    flatten(stream, &mut tokens);
+    tokens
+}
+
+fn collect_fixture_sources(root: &Path, directory: &Path, files: &mut Vec<String>) {
+    let mut entries = fs::read_dir(directory)
+        .expect("generated fixture directory is readable")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("generated fixture entries are readable");
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .expect("generated fixture type is readable");
+        assert!(
+            !file_type.is_symlink(),
+            "generated fixture cannot be a symlink"
+        );
+        if file_type.is_dir() {
+            collect_fixture_sources(root, &path, files);
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            files.push(
+                path.strip_prefix(root)
+                    .expect("fixture remains below its root")
+                    .components()
+                    .map(|component| component.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            );
+        }
+    }
 }
 
 fn assert_public_docs(items: &[syn::Item], path: &str) {

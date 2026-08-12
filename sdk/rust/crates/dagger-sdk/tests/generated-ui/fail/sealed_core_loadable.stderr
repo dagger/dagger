@@ -1,0 +1,37 @@
+error[E0277]: the trait bound `ForeignHandle: dagger_sdk::loadable::private::Sealed` is not satisfied
+ --> tests/generated-ui/fail/sealed_core_loadable.rs:3:31
+  |
+3 | impl dagger_sdk::Loadable for ForeignHandle {}
+  |                               ^^^^^^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `dagger_sdk::loadable::private::Sealed` is not implemented for `ForeignHandle`
+ --> tests/generated-ui/fail/sealed_core_loadable.rs:1:1
+  |
+1 | struct ForeignHandle;
+  | ^^^^^^^^^^^^^^^^^^^^
+  = help: the following other types implement trait `dagger_sdk::loadable::private::Sealed`:
+            Address
+            CacheVolume
+            Changeset
+            Check
+            CheckGroup
+            ClientFilesyncMirror
+            Cloud
+            Container
+          and $N others
+note: required by a bound in `Loadable`
+ --> src/lib.rs
+  |
+  |     pub trait Loadable: private::Sealed {}
+  |                         ^^^^^^^^^^^^^^^ required by this bound in `Loadable`
+  = note: `Loadable` is a "sealed trait", because to implement it you also need to implement `dagger_sdk::loadable::private::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+  = help: the following types implement the trait:
+            dagger_sdk::Address
+            dagger_sdk::CacheVolume
+            dagger_sdk::Changeset
+            dagger_sdk::Check
+            dagger_sdk::CheckGroup
+            dagger_sdk::ClientFilesyncMirror
+            dagger_sdk::Cloud
+            dagger_sdk::Container
+          and $N others

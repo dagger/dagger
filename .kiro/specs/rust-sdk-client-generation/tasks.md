@@ -303,8 +303,8 @@
       build, or network resolution ran.
   - _Requirements: 3.4-3.13, 4.1-4.17, 6.1-6.5, 8.7-8.13, 10.1-10.10_
 
-- [ ] 9. Add the exact-version external generated-code bridge to `dagger-sdk`
-  - [ ] 9.1 Expose only the hidden serde and query operations generated clients need
+- [x] 9. Add the exact-version external generated-code bridge to `dagger-sdk`
+  - [x] 9.1 Expose only the hidden serde and query operations generated clients need
     - Re-export the exact SDK serde implementation under `dagger_sdk::__private` and
       add the version-locked bridge for constructing a sealed Core handle from the
       current selection, creating a root `node(id:)` re-entry builder on the same
@@ -315,7 +315,7 @@
     - Document why each hidden operation preserves selection/session identity and why
       it is not a stable author-facing API.
     - _Requirements: 4.1-4.3, 4.9-4.12, 4.15-4.17, 8.12_
-  - [ ] 9.2 Generalize target-typed lazy ID inputs without exposing their resolver
+  - [x] 9.2 Generalize target-typed lazy ID inputs without exposing their resolver
     - Add the hidden constructor used by generated local handles and a sealed recursive
       `GeneratedIdInputShape` for `IdInput<T>`, `Option<S>`, and `Vec<S>` so every
       supported wrapper resolves before the containing request is admitted.
@@ -323,7 +323,7 @@
       target-type separation, no partial request on failure, and credential-safe
       `Debug`; add no blanket conversion between unrelated generated handle types.
     - _Requirements: 4.9-4.12, 8.7-8.9, 9.7-9.10_
-  - [ ] 9.3 Add source-policy and fixed bridge invariants
+  - [x] 9.3 Add source-policy and fixed bridge invariants
     - Prove external code cannot name or manufacture a session/selection, implement
       Core's sealed loadable contract, splice a handle onto another session, or access
       raw lazy resolver state.
@@ -332,8 +332,8 @@
       injected connector and recording transport.
     - _Requirements: 4.2-4.3, 4.12, 4.15-4.16, 8.7-8.12_
 
-- [ ] 10. Complete and prove the generated Rust client API on the public runtime
-  - [ ] 10.1 Wire rendered handles and extension traits to the runtime bridge
+- [x] 10. Complete and prove the generated Rust client API on the public runtime
+  - [x] 10.1 Wire rendered handles and extension traits to the runtime bridge
     - Generate immutable module object/interface handles around `QueryBuilder`, exact
       typed method return paths for Core and local values, local `IntoID` implementations,
       enum/input/scalar codecs, and complete ID-shape reconstruction.
@@ -343,7 +343,7 @@
     - Ensure `dagger_client::core`, explicit lifecycle exports, module namespace, and
       `prelude::*` compile together without shadowing or a global helper.
     - _Requirements: 4.1-4.17, 9.7-9.12_
-  - [ ] 10.2 Property test: Property 7 — module-root composition preserves one shared Rust client
+  - [x] 10.2 Property test: Property 7 — module-root composition preserves one shared Rust client
     - Implement `property_07_module_root_composition_preserves_shared_client` over at
       least 128 generated selection/clone/drop/close schedules, Core/module branches,
       and extension-import states using the real generated plan and recording
@@ -352,7 +352,7 @@
       public async/lifecycle behavior, no mutable global state, and semantic rustdoc for
       every non-obvious public generated item.
     - _Requirements: 4.4, 4.15-4.17_
-  - [ ] 10.3 Property test: Property 9 — wrappers, omission, Wire_Names, and ID re-entry are faithful
+  - [x] 10.3 Property test: Property 9 — wrappers, omission, Wire_Names, and ID re-entry are faithful
     - Implement `property_09_wrappers_omission_wire_names_id_reentry_faithful` over at
       least 256 wrapper/argument/schema-order cases from Task 6's reference model plus
       at least 128 runtime response and lazy-ID cases.
@@ -360,7 +360,7 @@
       exact omission versus explicit values, complete response/ID shapes, same-session
       re-entry, and zero containing request or partial collection after ID failure.
     - _Requirements: 4.9-4.12, 9.7-9.10_
-  - [ ] 10.4 Add fixed Core/module coexistence and public API tests
+  - [x] 10.4 Add fixed Core/module coexistence and public API tests
     - Cover a module returning/accepting Core objects, a Core query beside a module
       query, interface values, custom scalars, nested optional/list inputs and outputs,
       reused options, explicit `false` against a `true` engine default, and lifecycle
@@ -369,8 +369,8 @@
       protect the supported Rust API without freezing implementation-only modules.
     - _Requirements: 4.1-4.17, 9.7-9.12_
 
-- [ ] 11. Establish compile-time API and generated-source compatibility fixtures
-  - [ ] 11.1 Add bounded `trybuild` pass and compile-fail cases
+- [x] 11. Establish compile-time API and generated-source compatibility fixtures
+  - [x] 11.1 Add bounded `trybuild` pass and compile-fail cases
     - Pass fixtures cover the extension prelude, explicit trait import, Core and module
       use, objects/interfaces/enums/inputs/scalars, required/optional/list IDs, async
       results, an adopted crate name, and a custom library root.
@@ -380,7 +380,7 @@
     - Keep representative compiler processes bounded; do not spawn rustc once per
       property-generated case.
     - _Requirements: 3.9-3.12, 4.4-4.17, 8.12, 9.1-9.6, 9.11-9.12_
-  - [ ] 11.2 Add generated public-surface and documentation policy tests
+  - [x] 11.2 Add generated public-surface and documentation policy tests
     - Parse generated source to require module-level ownership/purpose documentation,
       semantic rustdoc for every public item, exact wire/omission notes where needed,
       and absence of narrated control-flow comments, placeholder text, spec/task labels,
@@ -390,7 +390,7 @@
       another SDK.
     - _Requirements: 4.15-4.17, 8.9-8.13, 9.5-9.6_
 
-- [ ] 12. Checkpoint: exact-version bridge and generated public API are green
+- [x] 12. Checkpoint: exact-version bridge and generated public API are green
   - Run formatting, locked focused tests for `dagger-sdk` generated bridge/query
     behavior and `dagger-codegen` client rendering, Properties 7 and 9, the bounded
     `trybuild` corpus, public-source policy, and warning-denied Clippy/rustdoc only for
@@ -403,6 +403,42 @@
     checkpoint.
   - Require no Dagger command, engine process, module invocation, project publication,
     another SDK, distribution build, unscoped generation, or network resolution.
+  - Checkpoint evidence (2026-08-12, warm local cache as executed, elapsed wall time):
+    - `cargo fmt --all -- --check` passed in 0.92s. Locked `dagger-sdk` query unit
+      tests passed 9/9 in 11.60s, and the production-generated recording-transport
+      target passed 4/4 in 3.53s. Properties 7 and 9 exhaustively exercised 128
+      lifecycle/session schedules, 256 omission/value/order schedules, and 128
+      response/lazy-ID schedules.
+    - The bounded `generated_client_compile` target passed in 7.64s with exactly ten
+      compiler fixtures: two pass cases and eight compile-fail cases. It covered the
+      prelude and explicit trait paths, the adopting crate's custom test root,
+      Core/module/interface/enum/input/scalar/async use, wrong IDs, missing imports,
+      restricted constructors/options/generated namespaces, private runtime state,
+      inaccessible lazy resolution, and sealed Core loading.
+    - `client_renderer` passed 6/6 in 3.03s, `client_compiler_properties` passed 8/8
+      in 12.67s, and `dagger-sdk` source policy passed 4/4 in 0.41s. The checked
+      generated fixture is produced by the production renderer, formatted once, and
+      guarded by provenance, token-order, path-set, source-policy, and compiler drift
+      checks; property schedules do not invoke a compiler or regenerate it.
+    - Warning-denied `cargo clippy --locked -p dagger-sdk -p dagger-codegen
+      --all-targets --all-features -- -D warnings` passed in 7.77s. Warning-denied
+      no-dependency rustdoc for the same two selected packages passed in 7.37s. The
+      successful checkpoint phases totalled 54.94s.
+    - Core generation was not run. Existing Core assets retained target revision
+      `25300124ca110612edc09c43f89cb5fad6028170`, schema digest
+      `sha256:7d6f61426d0c65454a32059732deed8927471c92e906f4ac7b31dd8ff8214306`,
+      retained-scope digest
+      `sha256:2b46180b54356faf2071a91198afd1a0e40a757b57a1686f579d2f9ab6ed583f`,
+      and projection fingerprint
+      `sha256:55ac56ce5186829195465c3f20adf04255c39f640c85a47a1137277084afe3c7`.
+      One scoped pure refresh updated only the new generated-client test fixture at
+      schema digest
+      `sha256:9ee1f1eeccf3db6eacb6690f6c097fe6ff27d366c4598025d7df1ddc99134787`.
+    - Cargo test, Clippy, and rustdoc phases set `CARGO_NET_OFFLINE=true` and used the
+      checked lockfile. No Cargo manifest, lockfile, dependency, or security-policy
+      input changed, so `cargo deny check` was not repeated. No Dagger command, engine
+      process, module invocation, project publication, another SDK, distribution
+      build, repository-wide generation, or network resolution ran.
   - _Requirements: 4.1-4.17, 8.7-8.13, 9.5-9.12, 10.1-10.10_
 
 - [ ] 13. Implement conservative Cargo, library-root, documentation, and toolchain adoption

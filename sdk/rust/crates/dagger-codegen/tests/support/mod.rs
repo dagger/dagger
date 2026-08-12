@@ -205,6 +205,13 @@ fn rewrite_client_fixture_names(value: &mut Value, module_name: &str, root_name:
             }
         }
         Value::String(value) if value == "minimal" => *value = module_name.to_owned(),
+        Value::String(value) if value.starts_with("\"Minimal") && value.ends_with('"') => {
+            let suffix = value
+                .strip_prefix("\"Minimal")
+                .and_then(|value| value.strip_suffix('"'))
+                .expect("matched directive value retains its quotes");
+            *value = format!("\"{root_name}{suffix}\"");
+        }
         Value::String(value) if value.starts_with("Minimal") => {
             *value = format!("{root_name}{}", &value["Minimal".len()..]);
         }
@@ -244,10 +251,13 @@ fn add_client_module_types(document: &mut Value) {
         "Minimal",
         vec![
             object_field("id", scalar_type("ID", false), vec![]),
+            expected_type_field("sync", "Minimal"),
             object_field("message", scalar_type("String", false), vec![]),
             object_field("type", scalar_type("String", false), vec![]),
             object_field("token", scalar_type("MinimalToken", false), vec![]),
             object_field("helper", object_type("MinimalClient", false), vec![]),
+            object_field("container", object_type("Container", false), vec![]),
+            object_field("maybeContainer", object_type("Container", true), vec![]),
             object_field("node", interface_type("MinimalNode", false), vec![]),
             object_field(
                 "item",
@@ -262,6 +272,26 @@ fn add_client_module_types(document: &mut Value) {
                 "items",
                 list_type(object_type("MinimalItem", true), false),
                 vec![],
+            ),
+            object_field(
+                "useItem",
+                scalar_type("String", false),
+                vec![typed_id_argument("item", "MinimalItem", false)],
+            ),
+            object_field(
+                "useItems",
+                scalar_type("String", false),
+                vec![typed_id_list_argument("items", "MinimalItem")],
+            ),
+            object_field(
+                "search",
+                scalar_type("String", false),
+                vec![
+                    argument("enabled", scalar_type("Boolean", true), Some("true")),
+                    argument("count", scalar_type("Int", true), None),
+                    argument("label", scalar_type("String", true), None),
+                    typed_id_argument("item", "MinimalItem", true),
+                ],
             ),
         ],
     );
@@ -404,6 +434,15 @@ fn object_field(name: &str, type_ref: Value, args: Vec<Value>) -> Value {
     })
 }
 
+fn expected_type_field(name: &str, target: &str) -> Value {
+    let mut field = object_field(name, scalar_type("ID", false), vec![]);
+    field["directives"] = json!([{
+        "name": "expectedType",
+        "args": [{"name": "name", "value": format!("\"{target}\"")}]
+    }]);
+    field
+}
+
 fn argument(name: &str, type_ref: Value, default: Option<&str>) -> Value {
     json!({
         "name": name,
@@ -414,6 +453,24 @@ fn argument(name: &str, type_ref: Value, default: Option<&str>) -> Value {
         "deprecationReason": null,
         "directives": []
     })
+}
+
+fn typed_id_argument(name: &str, target: &str, nullable: bool) -> Value {
+    let mut argument = argument(name, scalar_type("ID", nullable), None);
+    argument["directives"] = json!([{
+        "name": "expectedType",
+        "args": [{"name": "name", "value": format!("\"{target}\"")}]
+    }]);
+    argument
+}
+
+fn typed_id_list_argument(name: &str, target: &str) -> Value {
+    let mut argument = argument(name, list_type(scalar_type("ID", true), false), None);
+    argument["directives"] = json!([{
+        "name": "expectedType",
+        "args": [{"name": "name", "value": format!("\"{target}\"")}]
+    }]);
+    argument
 }
 
 fn input_field(name: &str, type_ref: Value, default: Option<&str>) -> Value {

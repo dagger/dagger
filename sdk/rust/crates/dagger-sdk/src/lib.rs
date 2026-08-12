@@ -222,7 +222,9 @@ pub use dagger_sdk_macros::{enum_type, interface, methods, object, scalar};
 /// companion version selected by `dagger-sdk`.
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::id_input::GeneratedIdInputShape;
     pub use crate::module::__private::*;
+    pub use serde;
 }
 
 #[cfg(feature = "gen")]

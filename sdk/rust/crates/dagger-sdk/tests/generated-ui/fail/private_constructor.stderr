@@ -1,0 +1,10 @@
+error[E0624]: associated function `from_query` is private
+ --> tests/generated-ui/fail/private_constructor.rs:6:45
+  |
+6 |     let _ = dagger_client::minimal::Client::from_query(query);
+  |                                             ^^^^^^^^^^ private associated function
+  |
+ ::: tests/generated-ui/fail/../../fixtures/generated_client/generated/minimal/client.rs
+  |
+  |     pub(in crate::dagger_client) fn from_query(query: dagger_sdk::QueryBuilder) -> Self {
+  |     ----------------------------------------------------------------------------------- private associated function defined here

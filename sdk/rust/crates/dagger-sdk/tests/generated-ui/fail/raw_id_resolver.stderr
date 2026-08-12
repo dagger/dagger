@@ -1,0 +1,10 @@
+error[E0624]: method `resolve` is private
+ --> tests/generated-ui/fail/raw_id_resolver.rs:2:19
+  |
+2 |     let _ = value.resolve();
+  |                   ^^^^^^^ private method
+  |
+ ::: src/id_input.rs
+  |
+  |     fn resolve(&self) -> ResolutionFuture<'_, Self::Resolved>;
+  |     ---------------------------------------------------------- private method defined here

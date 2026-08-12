@@ -15,10 +15,10 @@ use crate::errors::{
     ResponseDecodingErrorKind,
 };
 use crate::graphql::{RawRequest, RawResponse, ResponseData};
-use crate::id_input::ResolveIdInput;
+use crate::id_input::{GeneratedIdInputShape, ResolveIdInput};
 use crate::lifecycle::SessionHandle;
 use crate::runtime_errors::ExecError;
-use crate::{Id, IdInput, loadable};
+use crate::{Id, IdInput, IntoID, loadable};
 
 type LazyFuture = Pin<Box<dyn Future<Output = Result<String, QueryBuildError>> + Send>>;
 type LazyFunction = dyn Fn() -> LazyFuture + Send + Sync;
@@ -370,6 +370,69 @@ impl QueryBuilder {
         T: crate::Loadable + 'static,
     {
         reenter(&self.session, id, concrete_type)
+    }
+
+    /// Constructs a Core SDK handle from this builder's current selection.
+    ///
+    /// The sealed [`crate::Loadable`] constructor is invoked inside `dagger-sdk`, so
+    /// standalone generated code never receives the session or selection values it
+    /// would need to manufacture or splice a Core handle.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn generated_core_handle<T>(&self) -> T
+    where
+        T: crate::Loadable,
+    {
+        T::from_query(self.session.clone(), self.selection.clone())
+    }
+
+    /// Starts a `node(id:)` selection on this builder's existing session.
+    ///
+    /// Standalone bindings use the returned public builder to construct their own
+    /// private handle types. Resetting the selection while cloning the same session is
+    /// what makes identifier re-entry independent of the field which produced it,
+    /// without reconnecting or allowing a cross-session splice.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn generated_reentry_builder(&self, id: Id, concrete_type: &'static str) -> Self {
+        Self {
+            session: self.session.clone(),
+            selection: query()
+                .select("node")
+                .arg("id", id)
+                .inline_fragment(concrete_type),
+        }
+    }
+
+    /// Records one direct target-typed identifier argument for deferred resolution.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn generated_argument_id<H>(&self, name: &'static str, value: H) -> Self
+    where
+        H: IntoID<Id>,
+    {
+        Self {
+            session: self.session.clone(),
+            selection: self
+                .selection
+                .arg_id_input(name, IdInput::<Id>::generated_lazy(value)),
+        }
+    }
+
+    /// Records a recursive target-typed identifier shape for deferred resolution.
+    ///
+    /// Resolution remains internal to request construction. Lists are resolved in
+    /// caller order and the containing request is not admitted when any element fails.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn generated_argument_id_shape<S>(&self, name: &'static str, value: S) -> Self
+    where
+        S: GeneratedIdInputShape,
+    {
+        Self {
+            session: self.session.clone(),
+            selection: self.selection.arg_id_input(name, value),
+        }
     }
 
     /// Returns a new builder selecting `field` below the current path.
