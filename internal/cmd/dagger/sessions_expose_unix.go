@@ -111,6 +111,14 @@ func stopLocalExpose(ctx context.Context, paths exposePaths) error {
 }
 
 func stopAndAcquireLocalExpose(ctx context.Context, paths exposePaths) (*os.File, error) {
+	return stopAndAcquireLocalExposeWith(ctx, paths, nil)
+}
+
+func stopAndAcquireLocalExposeWith(
+	ctx context.Context,
+	paths exposePaths,
+	afterStop func(),
+) (*os.File, error) {
 	for {
 		lock, status, err := inspectLocalExpose(ctx, paths)
 		if err != nil {
@@ -123,6 +131,9 @@ func stopAndAcquireLocalExpose(ctx context.Context, paths exposePaths) (*os.File
 			continue
 		}
 		_, _ = exchangeExposeControl(ctx, paths.Socket, exposeControlRequest{Action: exposeControlStop})
+		if afterStop != nil {
+			afterStop()
+		}
 		// Acquisition, rather than the stop response, linearizes completion. If
 		// a fresh contender wins, the next loop stops that holder as well.
 	}

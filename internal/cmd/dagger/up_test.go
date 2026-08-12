@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -89,7 +90,7 @@ func TestDetachedUpRejectsEffectiveCloudEngineBeforeConnect(t *testing.T) {
 	require.NoError(t, validateDetachedUpEngineTarget())
 }
 
-func TestDetachedUpRollbackOwnership(t *testing.T) {
+func TestDetachedUpTransactionRollbackOrdering(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name      string
@@ -131,6 +132,143 @@ func TestDetachedUpRollbackOwnership(t *testing.T) {
 			require.Equal(t, test.wantTerm, terminateCalls)
 		})
 	}
+}
+
+func TestRunDetachedServicesRollbackSeams(t *testing.T) {
+	tests := []struct {
+		name       string
+		configure  func(*detachedUpRunTestState, *detachedUpRunOps, *cobra.Command)
+		wantErr    string
+		wantExit   int
+		wantClose  int
+		wantAbort  int
+		wantCommit int
+		wantTerm   int
+	}{
+		{
+			name: "cancellation while polling after 202",
+			configure: func(state *detachedUpRunTestState, ops *detachedUpRunOps, _ *cobra.Command) {
+				state.cancel(errors.New("poll canceled"))
+				ops.inspectPrimary = func(ctx context.Context) (engine.SessionQuery, error) {
+					return engine.SessionQuery{}, context.Cause(ctx)
+				}
+			},
+			wantErr: "poll canceled", wantExit: 130, wantTerm: 1,
+		},
+		{
+			name: "creator closed before child ready",
+			configure: func(state *detachedUpRunTestState, ops *detachedUpRunOps, _ *cobra.Command) {
+				ops.prepare = func(context.Context, string, string, exposeRequest, func(string)) (exposePreparation, error) {
+					return exposePreparation{}, errors.New("child failed before ready")
+				}
+			},
+			wantErr: "child failed before ready", wantClose: 1, wantTerm: 1,
+		},
+		{
+			name: "child ready before commit",
+			configure: func(state *detachedUpRunTestState, ops *detachedUpRunOps, _ *cobra.Command) {
+				ops.prepare = func(context.Context, string, string, exposeRequest, func(string)) (exposePreparation, error) {
+					return exposePreparation{Startup: &exposeStartup{}}, nil
+				}
+				ops.commit = func(context.Context, *exposeStartup) error {
+					state.commitCalls++
+					return errors.New("commit rejected")
+				}
+			},
+			wantErr: "commit rejected", wantClose: 1, wantAbort: 1, wantCommit: 1, wantTerm: 1,
+		},
+		{
+			name: "summary failure after commit",
+			configure: func(_ *detachedUpRunTestState, ops *detachedUpRunOps, cmd *cobra.Command) {
+				ops.prepare = func(context.Context, string, string, exposeRequest, func(string)) (exposePreparation, error) {
+					return exposePreparation{Startup: &exposeStartup{}}, nil
+				}
+				cmd.SetOut(failingWriter{})
+			},
+			wantErr: "summary write failed", wantClose: 1, wantCommit: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state, ops := newDetachedUpRunTestOps(t)
+			cmd := &cobra.Command{}
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			test.configure(state, &ops, cmd)
+			err := runDetachedServicesWith(state.ctx, testCLIValidSessionID(), ops, cmd)
+			require.ErrorContains(t, err, test.wantErr)
+			if test.wantExit != 0 {
+				var exitErr idtui.ExitError
+				require.ErrorAs(t, err, &exitErr)
+				require.Equal(t, test.wantExit, exitErr.OriginalCode)
+			}
+			require.Equal(t, test.wantClose, state.closeCalls)
+			require.Equal(t, test.wantAbort, state.abortCalls)
+			require.Equal(t, test.wantCommit, state.commitCalls)
+			require.Equal(t, test.wantTerm, state.terminateCalls)
+		})
+	}
+}
+
+type detachedUpRunTestState struct {
+	ctx            context.Context
+	cancel         context.CancelCauseFunc
+	closeCalls     int
+	abortCalls     int
+	commitCalls    int
+	terminateCalls int
+}
+
+func newDetachedUpRunTestOps(t *testing.T) (*detachedUpRunTestState, detachedUpRunOps) {
+	t.Helper()
+	ctx, cancel := context.WithCancelCause(t.Context())
+	state := &detachedUpRunTestState{ctx: ctx, cancel: cancel}
+	presentation := engine.QueryPresentation{
+		Kind: "up", ResponsePath: []string{"node", "_startDetached"},
+	}
+	const resultBody = `{"data":{"node":{"_startDetached":"{\"services\":[{\"name\":\"web\",\"serviceId\":\"svc_web\",\"native\":true,\"backendPorts\":[{\"port\":8080,\"protocol\":\"TCP\"}]}]}"}}}`
+	ops := detachedUpRunOps{
+		listServices: func(context.Context) (int, error) { return 1, nil },
+		groupID:      func(context.Context) (dagger.ID, error) { return dagger.ID("up-group-id"), nil },
+		submit: func(context.Context, json.RawMessage, engine.QueryPresentation) (engine.SubmitPrimaryQueryResponse, error) {
+			return engine.SubmitPrimaryQueryResponse{
+				SessionID: testCLIValidSessionID(), QueryID: "qry_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+			}, nil
+		},
+		afterAcknowledged: func(string, string) error { return nil },
+		inspectPrimary: func(context.Context) (engine.SessionQuery, error) {
+			return engine.SessionQuery{Status: engine.SessionQueryStateSucceeded, Presentation: presentation}, nil
+		},
+		primaryResult: func(context.Context) (client.SessionResult, error) {
+			return client.SessionResult{Body: []byte(resultBody)}, nil
+		},
+		closeAttachment: func(context.Context) error {
+			state.closeCalls++
+			return nil
+		},
+		stateDirectory: func() (string, error) { return "/tmp", nil },
+		prepare: func(context.Context, string, string, exposeRequest, func(string)) (exposePreparation, error) {
+			return exposePreparation{Startup: &exposeStartup{}}, nil
+		},
+		inspectSession: func(context.Context) (engine.SessionDescriptor, error) {
+			return engine.SessionDescriptor{}, errors.New("unexpected session inspection")
+		},
+		commit: func(context.Context, *exposeStartup) error {
+			state.commitCalls++
+			return nil
+		},
+		abort: func(*exposeStartup) error {
+			state.abortCalls++
+			return nil
+		},
+		acknowledged: func() bool { return true },
+		terminate: func(ctx context.Context) error {
+			state.terminateCalls++
+			require.NoError(t, ctx.Err(), "rollback inherited command cancellation")
+			return nil
+		},
+	}
+	return state, ops
 }
 
 type failingWriter struct{}

@@ -92,6 +92,13 @@ func TestExposePortParserAndMerge(t *testing.T) {
 			}
 			_, err := normalizeExposeRequest(input, test.specs)
 			require.ErrorContains(t, err, test.want)
+			var usageErr *exposeUsageError
+			if test.name == "explicit udp" {
+				require.ErrorAs(t, err, &usageErr)
+			}
+			if test.name == "saved native udp" {
+				require.NotErrorAs(t, err, &usageErr)
+			}
 		})
 	}
 }
@@ -170,17 +177,30 @@ func TestExposedPortsIgnoreStaleAttachmentOwner(t *testing.T) {
 func TestAttachmentHolderDiagnostics(t *testing.T) {
 	t.Parallel()
 	cause := &exposeChildError{Code: engine.SessionErrorAlreadyAttached, Message: "already attached"}
-	descriptor := engine.SessionDescriptor{Attachment: &engine.SessionAttachment{
-		ClientID: "holder-client", Hostname: "builder.example",
-	}}
-	err := attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
-	require.ErrorContains(t, err, "session is attached by client holder-client on builder.example")
-	require.NotContains(t, err.Error(), "ports are being served")
+	for _, test := range []struct {
+		name  string
+		ready bool
+	}{
+		{name: "zero-port starting holder", ready: false},
+		{name: "sessions attach holder", ready: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			descriptor := engine.SessionDescriptor{Attachment: &engine.SessionAttachment{
+				ClientID: "holder-client", Hostname: "builder.example", Ready: test.ready,
+			}}
+			err := attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
+			require.ErrorContains(t, err, "session is attached by client holder-client on builder.example")
+			require.NotContains(t, err.Error(), "ports are being served")
+		})
+	}
 
+	descriptor := engine.SessionDescriptor{Attachment: &engine.SessionAttachment{
+		ClientID: "holder-client", Hostname: "builder.example", Ready: true,
+	}}
 	descriptor.Services = []engine.SessionService{{
 		TunnelUpstream: &engine.SessionServiceKey{}, Ports: []engine.SessionPort{{Port: 8080}},
 	}}
-	err = attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
+	err := attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
 	require.ErrorContains(t, err, "ports are being served by client holder-client on builder.example")
 }
 
@@ -190,9 +210,31 @@ func TestLateAttachmentConflictReinspectsCurrentHolder(t *testing.T) {
 		Attachment: &engine.SessionAttachment{ClientID: "late-holder"},
 	}}}
 	cause := &exposeChildError{Code: engine.SessionErrorAlreadyAttached, Message: "already attached"}
-	err := inspectAttachmentHolderConflict(t.Context(), control, testCLIValidSessionID(), cause)
+	err := inspectAttachmentHolderConflict(t.Context(), control, testCLIValidSessionID(), nil, cause)
 	require.ErrorContains(t, err, "session is attached by client late-holder")
 	require.Equal(t, 1, control.inspectCalls)
+}
+
+func TestAttachmentTransportFailureNamesOnlySameObservedHolder(t *testing.T) {
+	t.Parallel()
+	initial := &engine.SessionAttachment{
+		ID: "att_aaaaaaaaaaaaaaaaaaaaaaaaaa", Generation: 2, ClientID: "initial-holder",
+	}
+	cause := errors.New("attach transport failed")
+
+	t.Run("same holder", func(t *testing.T) {
+		control := &fakeExposeSessionControl{descriptors: []engine.SessionDescriptor{{Attachment: initial}}}
+		err := inspectAttachmentHolderConflict(t.Context(), control, testCLIValidSessionID(), initial, cause)
+		require.ErrorContains(t, err, "session is attached by client initial-holder")
+	})
+	t.Run("holder changed", func(t *testing.T) {
+		control := &fakeExposeSessionControl{descriptors: []engine.SessionDescriptor{{Attachment: &engine.SessionAttachment{
+			ID: "att_bbbbbbbbbbbbbbbbbbbbbbbbbb", Generation: 3, ClientID: "new-holder",
+		}}}}
+		err := inspectAttachmentHolderConflict(t.Context(), control, testCLIValidSessionID(), initial, cause)
+		require.ErrorIs(t, err, cause)
+		require.NotContains(t, err.Error(), "new-holder")
+	})
 }
 
 func TestExposeStopValidatesSessionKindAndCleansMissingSessionState(t *testing.T) {

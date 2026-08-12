@@ -1,6 +1,9 @@
 package server
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 const (
 	sessionHookSessionPublished               = "session_published"
@@ -35,6 +38,7 @@ type sessionTestEvent struct {
 	AttachmentID string
 	Generation   uint64
 	Resource     string
+	Context      context.Context
 }
 
 // sessionTestHooks is package-private deterministic fault injection. Production

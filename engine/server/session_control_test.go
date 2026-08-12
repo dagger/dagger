@@ -19,6 +19,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -1192,6 +1193,136 @@ func TestAttachedRoleCanInitAfterPublication(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, recorder.Code)
 	require.True(t, sess.sourceClientPublished(attached.clientID))
 	require.Same(t, attached, sess.clients[attached.clientID])
+}
+
+func TestFullAttachmentInitQueryDetachRestoresResources(t *testing.T) {
+	srv, sess, creator := newDetachedQuerySubmitTestSession(t)
+	srv.engineUtilOpts = &engineutil.Opts{}
+	require.True(t, srv.detachAttachment(sess, testAttachmentID, 1))
+	baselineClients := len(sess.clients)
+	baselineCallers := len(sess.attachables.callers)
+	baselineReservations := len(sess.attachables.reservations)
+
+	attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+	metadata := &engine.ClientMetadata{
+		SessionID: testSessionID, ClientID: testObserverID, ClientVersion: engine.Version,
+		ClientSecretToken: "observer-token", AttachSession: true, AttachmentID: attachmentID,
+	}
+	opts := &ClientInitOpts{ClientMetadata: metadata}
+	claim, err := srv.claimSessionAttachment(opts)
+	require.NoError(t, err)
+	initCtx := dagql.ContextWithCache(t.Context(), srv.engineCache)
+	initCtx = engine.ContextWithClientMetadata(initCtx, metadata)
+	attached, cleanup, err := srv.getOrInitClient(initCtx, opts)
+	require.NoError(t, err)
+	require.True(t, attached.attachmentClient)
+	require.Equal(t, claim.Generation, attached.attachmentGeneration)
+	// This focused server test provides the attachables transport handshake but
+	// not a filesync implementation. Skip workspace detection so /query reaches
+	// the real initialized core schema without attempting an unrelated callback.
+	attached.workspaceLoaded = true
+
+	requestCtx, cancel := context.WithCancel(t.Context())
+	request := httptest.NewRequest(http.MethodGet, "http://dagger"+engine.SessionAttachablesEndpoint, nil).WithContext(requestCtx)
+	serverConn, peerConn := net.Pipe()
+	closedPeer := false
+	t.Cleanup(func() {
+		cancel()
+		if !closedPeer {
+			_ = peerConn.Close()
+		}
+	})
+	handshake := make(chan error, 1)
+	go func() {
+		response, readErr := http.ReadResponse(bufio.NewReader(peerConn), request)
+		if readErr == nil {
+			readErr = response.Body.Close()
+		}
+		if readErr == nil {
+			_, readErr = peerConn.Write([]byte{1})
+		}
+		handshake <- readErr
+		<-requestCtx.Done()
+		_ = peerConn.Close()
+	}()
+	serveResult := make(chan error, 1)
+	go func() {
+		serveResult <- srv.serveSessionAttachables(
+			&attachmentFaultWriter{conn: serverConn}, request,
+			sessionAttachablesRequest{client: attached, claim: claim},
+		)
+	}()
+	require.NoError(t, <-handshake)
+	require.Eventually(t, func() bool {
+		sess.attachmentMu.Lock()
+		defer sess.attachmentMu.Unlock()
+		return sess.currentAttachment != nil && sess.currentAttachment.Ready
+	}, time.Second, time.Millisecond)
+
+	initRecorder := httptest.NewRecorder()
+	initRequest := httptest.NewRequest(http.MethodPost, "http://dagger"+engine.InitEndpoint, nil)
+	require.NoError(t, srv.serveHTTPToClient(
+		initRecorder, initRequest, &ClientInitOpts{ClientMetadata: metadata},
+	))
+	require.Equal(t, http.StatusNoContent, initRecorder.Code)
+
+	queryRecorder := httptest.NewRecorder()
+	queryRequest := httptest.NewRequest(
+		http.MethodPost, "http://dagger"+engine.QueryEndpoint,
+		strings.NewReader(`{"query":"{ version }"}`),
+	)
+	queryRequest.Header.Set("Content-Type", "application/json")
+	require.NoError(t, srv.serveHTTPToClient(
+		queryRecorder, queryRequest, &ClientInitOpts{ClientMetadata: metadata},
+	))
+	require.Equal(t, http.StatusOK, queryRecorder.Code, queryRecorder.Body.String())
+	require.Contains(t, queryRecorder.Body.String(), engine.FullVersion())
+
+	hooks := &sessionTestHooks{Events: make(chan sessionTestEvent, 8)}
+	queryBarrier := make(chan struct{})
+	hooks.setBarrier(sessionHookGraphQLEntered, queryBarrier)
+	srv.sessionTestHooks = hooks
+	blockedRecorder := httptest.NewRecorder()
+	blockedRequest := httptest.NewRequest(
+		http.MethodPost, "http://dagger"+engine.QueryEndpoint,
+		strings.NewReader(`{"query":"{ version }"}`),
+	)
+	blockedRequest.Header.Set("Content-Type", "application/json")
+	blockedResult := make(chan error, 1)
+	go func() {
+		blockedResult <- srv.serveHTTPToClient(
+			blockedRecorder, blockedRequest, &ClientInitOpts{ClientMetadata: metadata},
+		)
+	}()
+	queryEvent := <-hooks.Events
+	require.Equal(t, sessionHookGraphQLEntered, queryEvent.Name)
+	require.NotNil(t, queryEvent.Context)
+	attachmentCtx := sess.currentAttachment.ctx
+	detached := make(chan bool, 1)
+	go func() { detached <- srv.detachAttachment(sess, claim.ID, claim.Generation) }()
+	select {
+	case <-queryEvent.Context.Done():
+		require.ErrorContains(t, context.Cause(queryEvent.Context), "generation 2 detached")
+	case <-time.After(time.Second):
+		t.Fatal("in-flight query context was not canceled before attachment cleanup")
+	}
+	require.ErrorContains(t, context.Cause(attachmentCtx), "generation 2 detached")
+	close(queryBarrier)
+	require.NoError(t, <-blockedResult)
+	require.True(t, <-detached)
+
+	cancel()
+	closedPeer = true
+	require.NoError(t, <-serveResult)
+	require.NoError(t, cleanup())
+	require.Nil(t, sess.currentAttachment)
+	require.Nil(t, attached.keepAliveTelemetryDB)
+	sess.clientMu.RLock()
+	require.Len(t, sess.clients, baselineClients)
+	require.Same(t, creator, sess.clients[creator.clientID])
+	sess.clientMu.RUnlock()
+	require.Len(t, sess.attachables.callers, baselineCallers)
+	require.Len(t, sess.attachables.reservations, baselineReservations)
 }
 
 func TestAttachedRoleWorkRequiresCurrentReadyGeneration(t *testing.T) {

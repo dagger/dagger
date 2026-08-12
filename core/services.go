@@ -40,10 +40,14 @@ const (
 // Services manages the lifecycle of services, ensuring the same service only
 // runs once per client.
 type Services struct {
-	starting        map[ServiceKey]*startingService
-	running         map[ServiceKey]*RunningService
-	bindings        map[ServiceKey]int
-	retained        map[ServiceKey]map[string]struct{}
+	starting map[ServiceKey]*startingService
+	running  map[ServiceKey]*RunningService
+	bindings map[ServiceKey]int
+	retained map[ServiceKey]map[string]struct{}
+	// Services is allocated per engine session. A session ID enters this set
+	// only during that manager's terminal teardown, and the whole manager is
+	// discarded with the session; entries are therefore intentionally never
+	// removed or reused.
 	stoppingSession map[string]struct{}
 	l               sync.Mutex
 

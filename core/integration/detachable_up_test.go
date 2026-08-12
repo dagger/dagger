@@ -65,7 +65,7 @@ func (DetachableUpSuite) TestDetachExposeStopAndTerminate(ctx context.Context, t
 	require.NotEmpty(t, descriptor.Attachment.Hostname)
 	otherStateHome := t.TempDir()
 	_, conflictErr := detachableUpCLIOutput(ctx, t, workspace, otherStateHome, "sessions", "expose", sessionID)
-	require.ErrorContains(t, conflictErr, "ports are being served from")
+	require.ErrorContains(t, conflictErr, "ports are being served by client")
 	require.Equal(t, 1, detachableUpExitCode(t, conflictErr))
 
 	recordPath := filepath.Join(stateHome, "dagger", "expose", sessionID+".pid")
@@ -109,11 +109,17 @@ func (DetachableUpSuite) TestDetachExposeStopAndTerminate(ctx context.Context, t
 		return countRetainedUpNames(descriptor) == 2 && countTunnelPorts(descriptor) == 0
 	}, 20*time.Second, 200*time.Millisecond)
 
-	attachOutput, err := detachableUpCLIOutput(ctx, t, workspace, stateHome, "sessions", "attach", sessionID)
-	require.NoError(t, err)
-	require.Contains(t, string(attachOutput), "SERVICE")
-	require.Contains(t, string(attachOutput), "hello-with-services:web")
-	require.Contains(t, string(attachOutput), "hello-with-services:infra:database")
+	for range 3 {
+		attachOutput, err := detachableUpCLIOutput(ctx, t, workspace, stateHome, "sessions", "attach", sessionID)
+		require.NoError(t, err)
+		require.Contains(t, string(attachOutput), "SERVICE")
+		require.Contains(t, string(attachOutput), "hello-with-services:web")
+		require.Contains(t, string(attachOutput), "hello-with-services:infra:database")
+		descriptor := inspectDetachableUpSession(ctx, t, workspace, stateHome, sessionID)
+		require.Nil(t, descriptor.Attachment, "full attachment did not restore the free slot")
+		require.Equal(t, 2, countRetainedUpNames(descriptor))
+		require.Zero(t, countTunnelPorts(descriptor))
+	}
 
 	randomSpec := fmt.Sprintf("hello-with-services:web=:%d", nativePort)
 	randomOutput, err := detachableUpCLIOutput(
@@ -192,9 +198,39 @@ func (DetachableUpSuite) TestAttachedUpBehaviorUnchanged(ctx context.Context, t 
 		t.Fatalf("attached up did not exit after interrupt\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 	require.NoError(t, waitErr, stderr.String()+stdout.String())
+	require.Contains(t, stderr.String(), "services")
+	require.NotContains(t, stdout.String()+stderr.String(), "Detached session")
+	require.NotContains(t, stdout.String()+stderr.String(), "background process")
 	require.Eventually(t, func() bool {
 		return !detachableUpPortAccepts(nativePort) && !detachableUpPortAccepts(fixedFrontend)
 	}, 15*time.Second, 100*time.Millisecond)
+}
+
+func (DetachableUpSuite) TestZeroMatchingServicesCleansSession(ctx context.Context, t *testctx.T) {
+	workspace := writeDetachableUpModule(
+		t, reserveDetachableUpPort(t), reserveDetachableUpPort(t), reserveDetachableUpPort(t),
+	)
+	stateHome := shortDetachableUpStateHome(t)
+	before := detachableUpSessionIDs(ctx, t, workspace, stateHome)
+
+	_, err := detachableUpCLIOutput(ctx, t, workspace, stateHome, "up", "--detach", "does-not-match")
+	require.ErrorContains(t, err, "no services matched")
+	require.Equal(t, 1, detachableUpExitCode(t, err))
+	require.Eventually(t, func() bool {
+		current := detachableUpSessionIDs(ctx, t, workspace, stateHome)
+		if len(current) != len(before) {
+			return false
+		}
+		for id := range before {
+			if _, ok := current[id]; !ok {
+				return false
+			}
+		}
+		return true
+	}, 20*time.Second, 200*time.Millisecond)
+	records, globErr := filepath.Glob(filepath.Join(stateHome, "dagger", "expose", "*.pid"))
+	require.NoError(t, globErr)
+	require.Empty(t, records)
 }
 
 func (DetachableUpSuite) TestBackendExitRestartsThroughExpose(ctx context.Context, t *testctx.T) {
@@ -312,6 +348,61 @@ func (DetachableUpSuite) TestCreatorKillAfterAcknowledgement(ctx context.Context
 	require.Equal(t, engine.SessionQueryStateSucceeded, descriptor.Query.Status)
 	require.Equal(t, 1, countRetainedUpNames(descriptor))
 	require.Equal(t, 1, countTunnelPorts(descriptor))
+}
+
+func (DetachableUpSuite) TestRejectedSavedServiceErrorSurvivesCreatorDeath(ctx context.Context, t *testctx.T) {
+	workspace := writeDetachableUpDelayedFailureModule(t, reserveDetachableUpPort(t), 8*time.Second)
+	stateHome := shortDetachableUpStateHome(t)
+	before := detachableUpSessionIDs(ctx, t, workspace, stateHome)
+
+	commandCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	cmd := hostDaggerCommand(commandCtx, t, workspace, "up", "--detach")
+	setCommandEnv(cmd, "XDG_STATE_HOME", stateHome)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &stderr)
+	require.NoError(t, cmd.Start())
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+	finished := false
+	t.Cleanup(func() {
+		if !finished {
+			_ = cmd.Process.Kill()
+			<-waitDone
+		}
+	})
+
+	var sessionID string
+	require.Eventually(t, func() bool {
+		for id := range detachableUpSessionIDs(ctx, t, workspace, stateHome) {
+			if _, existed := before[id]; existed {
+				continue
+			}
+			descriptor := inspectDetachableUpSession(ctx, t, workspace, stateHome, id)
+			if descriptor.Query != nil && descriptor.Query.Status == engine.SessionQueryStateRunning {
+				sessionID = id
+				return true
+			}
+		}
+		return false
+	}, 45*time.Second, 100*time.Millisecond, "rejected detachable service query was never accepted")
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 70*time.Second)
+		defer cleanupCancel()
+		_, _ = detachableUpCLIOutput(cleanupCtx, t, workspace, stateHome, "sessions", "terminate", sessionID)
+	})
+	require.NoError(t, cmd.Process.Kill())
+	require.Error(t, <-waitDone)
+	finished = true
+
+	_, exposeErr := detachableUpCLIOutput(ctx, t, workspace, stateHome, "sessions", "expose", sessionID)
+	require.ErrorContains(t, exposeErr, "exit code: 42")
+	require.Equal(t, 1, detachableUpExitCode(t, exposeErr))
+	descriptor := inspectDetachableUpSession(ctx, t, workspace, stateHome, sessionID)
+	require.NotNil(t, descriptor.Query)
+	require.Equal(t, engine.SessionQueryStateFailed, descriptor.Query.Status)
+	require.Zero(t, countTunnelPorts(descriptor))
 }
 
 func (DetachableUpSuite) TestSetSecretBackendRestarts(ctx context.Context, t *testctx.T) {
@@ -668,6 +759,14 @@ func (m *HelloWithServices) Sibling() *dagger.Service {
 }
 
 func writeDetachableUpDelayedModule(t testing.TB, port int, delay time.Duration) string {
+	return writeDetachableUpDelayedModuleMode(t, port, delay, false)
+}
+
+func writeDetachableUpDelayedFailureModule(t testing.TB, port int, delay time.Duration) string {
+	return writeDetachableUpDelayedModuleMode(t, port, delay, true)
+}
+
+func writeDetachableUpDelayedModuleMode(t testing.TB, port int, delay time.Duration, fail bool) string {
 	t.Helper()
 	workspace := t.TempDir()
 	gitInit := exec.Command("git", "init", workspace)
@@ -701,6 +800,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 http.server.HTTPServer(("0.0.0.0", %d), Handler).serve_forever()
 `, delay.Seconds(), port)
+	if fail {
+		server = fmt.Sprintf(`import sys
+import time
+
+time.sleep(%f)
+print("saved rejected detached service", file=sys.stderr)
+sys.exit(42)
+`, delay.Seconds())
+	}
 	source := fmt.Sprintf(`// fixture %s
 package main
 

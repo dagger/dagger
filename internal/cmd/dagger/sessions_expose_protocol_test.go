@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/stretchr/testify/require"
 )
@@ -123,9 +124,14 @@ func TestExposeChildStatusProtocol(t *testing.T) {
 	require.Equal(t, 8080, status.Ports[0].Frontend)
 
 	var failed bytes.Buffer
-	require.NoError(t, writeExposeChildStatus(&failed, exposeChildStatus{Phase: exposeChildPhaseReady, Error: "bind failed"}))
+	require.NoError(t, writeExposeChildStatus(&failed, exposeChildStatus{
+		Phase: exposeChildPhaseReady, ErrorCode: engine.SessionErrorAlreadyAttached, Error: "bind failed",
+	}))
 	_, err = readExposeChildStatus(t.Context(), &failed, exposeChildPhaseReady)
 	require.EqualError(t, err, "bind failed")
+	var childErr *exposeChildError
+	require.ErrorAs(t, err, &childErr)
+	require.Equal(t, engine.SessionErrorAlreadyAttached, childErr.Code)
 
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(errors.New("status canceled"))

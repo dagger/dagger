@@ -4,6 +4,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -141,6 +142,84 @@ func TestStopLocalExposeWithoutHolderIsIdempotent(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestStopAndReplaceLinearizationStopsRivalWinner(t *testing.T) {
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-stop-race-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	paths, err := makeExposePaths(stateDir, testCLIValidSessionID())
+	require.NoError(t, err)
+
+	firstLock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	firstControl, err := newExposeControlServer(paths, exposeRequest{})
+	require.NoError(t, err)
+
+	firstStopped := make(chan struct{})
+	secondStopped := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	releaseSecond := make(chan struct{})
+	stopCount := 0
+	afterStop := func() {
+		stopCount++
+		switch stopCount {
+		case 1:
+			close(firstStopped)
+			<-releaseFirst
+		case 2:
+			close(secondStopped)
+			<-releaseSecond
+		}
+	}
+	type stopResult struct {
+		lock *os.File
+		err  error
+	}
+	resultCh := make(chan stopResult, 1)
+	go func() {
+		lock, err := stopAndAcquireLocalExposeWith(t.Context(), paths, afterStop)
+		resultCh <- stopResult{lock: lock, err: err}
+	}()
+
+	<-firstStopped
+	select {
+	case <-firstControl.stop:
+	default:
+		t.Fatal("first holder did not receive stop")
+	}
+	require.NoError(t, firstControl.Close())
+	if err := os.Remove(paths.Socket); err != nil {
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
+	require.NoError(t, firstLock.Close())
+
+	rivalLock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired, "stopper acquired before the injected rival")
+	rivalControl, err := newExposeControlServer(paths, exposeRequest{})
+	require.NoError(t, err)
+	close(releaseFirst)
+
+	<-secondStopped
+	select {
+	case <-rivalControl.stop:
+	default:
+		t.Fatal("rival winner did not receive stop")
+	}
+	require.NoError(t, rivalControl.Close())
+	if err := os.Remove(paths.Socket); err != nil {
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
+	require.NoError(t, rivalLock.Close())
+	close(releaseSecond)
+
+	result := <-resultCh
+	require.NoError(t, result.err)
+	require.NotNil(t, result.lock)
+	require.Equal(t, 2, stopCount)
+	require.NoError(t, result.lock.Close())
+}
+
 func TestExposeControlStopRequest(t *testing.T) {
 	t.Parallel()
 	paths, err := makeExposePaths(t.TempDir(), testCLIValidSessionID())
@@ -209,6 +288,90 @@ func TestExposeReadyCommitLivenessAndLockHandoff(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExposePrecommitChildFailureRetainsCleanupOwnershipAgainstContender(t *testing.T) {
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-precommit-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	paths, err := makeExposePaths(stateDir, testCLIValidSessionID())
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	childReported := make(chan struct{})
+	childExit := make(chan struct{})
+	starter := func(
+		_ string,
+		lock *os.File,
+		statusW *os.File,
+		_ *os.File,
+		_ *os.File,
+	) (<-chan error, error) {
+		childLock, err := duplicateExposeFile(lock, "failing-child-lock")
+		if err != nil {
+			return nil, err
+		}
+		childStatus, err := duplicateExposeFile(statusW, "failing-child-status")
+		if err != nil {
+			return nil, err
+		}
+		wait := make(chan error, 1)
+		go func() {
+			defer childLock.Close()
+			defer childStatus.Close()
+			_ = writeExposeRecord(paths.Record, exposeRecord{PID: 123, State: exposeStateStarting})
+			_ = os.WriteFile(paths.Socket, []byte("failing child"), 0o600)
+			_ = writeExposeChildStatus(childStatus, exposeChildStatus{
+				Phase: exposeChildPhaseReady, Error: "injected precommit failure",
+			})
+			close(childReported)
+			<-childExit
+			wait <- errors.New("injected child exit")
+		}()
+		return wait, nil
+	}
+
+	type spawnResult struct {
+		startup *exposeStartup
+		err     error
+	}
+	spawned := make(chan spawnResult, 1)
+	go func() {
+		startup, err := spawnExposeServerWith(
+			t.Context(),
+			exposeServerConfig{SessionID: testCLIValidSessionID(), StateDir: stateDir},
+			paths, lock, starter,
+		)
+		spawned <- spawnResult{startup: startup, err: err}
+	}()
+	<-childReported
+	contender, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.False(t, acquired, "contender acquired before failed-child cleanup")
+	require.Nil(t, contender)
+
+	close(childExit)
+	result := <-spawned
+	require.Nil(t, result.startup)
+	require.ErrorContains(t, result.err, "injected precommit failure")
+	contender, acquired, err = tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.NoError(t, writeExposeRecord(paths.Record, exposeRecord{PID: 456, State: exposeStateStarting}))
+	require.NoError(t, os.WriteFile(paths.Socket, []byte("successor"), 0o600))
+
+	recordBytes, err := os.ReadFile(paths.Record)
+	require.NoError(t, err)
+	var record exposeRecord
+	require.NoError(t, json.Unmarshal(recordBytes, &record))
+	require.Equal(t, 456, record.PID, "predecessor cleanup deleted successor record")
+	contents, err := os.ReadFile(paths.Socket)
+	require.NoError(t, err)
+	require.Equal(t, "successor", string(contents), "predecessor cleanup deleted successor socket")
+	require.NoError(t, cleanupExposeState(paths))
+	require.NoError(t, contender.Close())
 }
 
 func TestExposeCommitCanceledBeforeLinearization(t *testing.T) {

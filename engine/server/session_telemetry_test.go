@@ -9,6 +9,8 @@ import (
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestSessionTelemetryStopsAtCompletionBoundWhileLaterRowsAppend(t *testing.T) {
@@ -119,4 +121,67 @@ func TestSessionTelemetryBoundCanBecomeVisibleAfterSubscription(t *testing.T) {
 	close(queryDone)
 	require.NoError(t, <-errCh)
 	require.Contains(t, recorder.Body.String(), "id: 1\n")
+}
+
+func TestFullAttachmentTelemetryStaysOutOfCreatorHistory(t *testing.T) {
+	t.Parallel()
+
+	dbs := clientdb.NewDBs(t.TempDir())
+	creatorDB, err := dbs.Open(t.Context(), "creator")
+	require.NoError(t, err)
+	attachmentDB, err := dbs.Open(t.Context(), "attachment")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, creatorDB.Close())
+		require.NoError(t, attachmentDB.Close())
+	})
+
+	srv := &Server{clientDBs: dbs}
+	pubsub := NewPubSub(srv)
+	srv.telemetryPubSub = pubsub
+	sess := &daggerSession{sessionID: "session", telemetryPubSub: pubsub}
+	creator := &daggerClient{clientID: "creator", daggerSession: sess, keepAliveTelemetryDB: creatorDB}
+	attachment := &daggerClient{clientID: "attachment", daggerSession: sess, keepAliveTelemetryDB: attachmentDB}
+
+	metric := func(name string) *metricdata.ResourceMetrics {
+		return &metricdata.ResourceMetrics{ScopeMetrics: []metricdata.ScopeMetrics{{
+			Scope: instrumentation.Scope{Name: "detachable-up-test"},
+			Metrics: []metricdata.Metrics{{
+				Name: name,
+				Data: metricdata.Gauge[int64]{DataPoints: []metricdata.DataPoint[int64]{{Value: 1}}},
+			}},
+		}}}
+	}
+	require.NoError(t, pubsub.Metrics(creator).Export(t.Context(), metric("creator-history")))
+	completionBound := creatorDB.LastIDs().Metrics
+	require.EqualValues(t, 1, completionBound)
+	require.NoError(t, pubsub.Metrics(attachment).Export(t.Context(), metric("attached-work")))
+	require.EqualValues(t, completionBound, creatorDB.LastIDs().Metrics)
+	require.EqualValues(t, 1, attachmentDB.LastIDs().Metrics)
+
+	queryDone := make(chan struct{})
+	close(queryDone)
+	creatorRecorder := httptest.NewRecorder()
+	require.NoError(t, pubsub.metricsSubscribeHandler(
+		creatorRecorder,
+		httptest.NewRequest(http.MethodGet, "/telemetry/metrics", nil),
+		creator,
+		sessionSSEOptions{
+			terminating: queryDone,
+			maxID:       func() (int64, bool) { return completionBound, true },
+		},
+	))
+	require.Contains(t, creatorRecorder.Body.String(), "creator-history")
+	require.NotContains(t, creatorRecorder.Body.String(), "attached-work")
+
+	attachmentDone := make(chan struct{})
+	close(attachmentDone)
+	attachmentRecorder := httptest.NewRecorder()
+	require.NoError(t, pubsub.metricsSubscribeHandler(
+		attachmentRecorder,
+		httptest.NewRequest(http.MethodGet, "/v1/metrics", nil),
+		attachment,
+		sessionSSEOptions{terminating: attachmentDone},
+	))
+	require.Contains(t, attachmentRecorder.Body.String(), "attached-work")
 }

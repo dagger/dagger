@@ -2282,7 +2282,10 @@ func (srv *Server) executeGraphQL(ctx context.Context, client *daggerClient, w h
 		r = r.WithContext(queryCtx)
 	}
 
-	srv.hitSessionHook(sessionTestEvent{Name: sessionHookGraphQLEntered, SessionID: sess.sessionID, ClientID: client.clientID})
+	srv.hitSessionHook(sessionTestEvent{
+		Name: sessionHookGraphQLEntered, SessionID: sess.sessionID,
+		ClientID: client.clientID, Context: ctx,
+	})
 	gqlSrv.ServeHTTP(w, r)
 	return nil
 }

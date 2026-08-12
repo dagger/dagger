@@ -169,7 +169,14 @@ func exposeDetachableSessionWithControl(
 	})
 	if err != nil {
 		if isExposeAttachmentConflict(err) {
-			return inspectAttachmentHolderConflict(ctx, control, sessionID, err)
+			return inspectAttachmentHolderConflict(ctx, control, sessionID, nil, err)
+		}
+		// A live holder can make the attach transport fail before it returns the
+		// coded conflict (for example while routing attachables). Only replace
+		// that transport error when the exact holder observed before startup is
+		// still current; otherwise preserve the child's actual startup failure.
+		if descriptor.Attachment != nil {
+			return inspectAttachmentHolderConflict(ctx, control, sessionID, descriptor.Attachment, err)
 		}
 		return err
 	}
@@ -295,16 +302,30 @@ func inspectAttachmentHolderConflict(
 	ctx context.Context,
 	control exposeSessionControl,
 	sessionID string,
+	expected *engine.SessionAttachment,
 	cause error,
 ) error {
 	latest, err := control.InspectSession(ctx, sessionID)
 	if err != nil {
 		return cause
 	}
+	if expected != nil && !sameSessionAttachment(expected, latest.Attachment) {
+		return cause
+	}
 	if conflict := attachmentHolderConflict(latest, sessionID, cause); conflict != nil {
 		return conflict
 	}
 	return cause
+}
+
+func sameSessionAttachment(expected, actual *engine.SessionAttachment) bool {
+	if expected == nil || actual == nil {
+		return expected == actual
+	}
+	if expected.ID != "" || actual.ID != "" {
+		return expected.ID == actual.ID
+	}
+	return expected.ClientID == actual.ClientID && expected.Generation == actual.Generation
 }
 
 func parseExposePortSpec(spec string) (exposePortMapping, error) {

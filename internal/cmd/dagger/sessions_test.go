@@ -84,6 +84,11 @@ func TestSessionListAndInspectOutput(t *testing.T) {
 	require.Contains(t, output.String(), "web   container   running   declared 80/tcp")
 	require.Contains(t, output.String(), "Published ports")
 	require.Contains(t, output.String(), "0.0.0.0:8080/tcp   → web   (served from erikbox)")
+
+	descriptor.Attachment.Hostname = ""
+	output.Reset()
+	require.NoError(t, writeSessionInspect(&output, descriptor))
+	require.Contains(t, output.String(), "Attached   att_aaaaaaaaaaaaaaaaaaaaaaaaaa (publisher)")
 }
 
 func TestSessionsHelpJSONAndEmptyOutput(t *testing.T) {

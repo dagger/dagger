@@ -93,9 +93,59 @@ func runDetachedServices(
 	upGroup *dagger.UpGroup,
 	cmd *cobra.Command,
 ) (rerr error) {
-	transaction := &detachedUpTransaction{
+	return runDetachedServicesWith(ctx, engineClient.SessionID, detachedUpRunOps{
+		listServices: func(ctx context.Context) (int, error) {
+			services, err := upGroup.List(ctx)
+			return len(services), err
+		},
+		groupID:           upGroup.ID,
+		submit:            engineClient.SubmitPrimaryQuery,
+		afterAcknowledged: waitAtDetachedQueryAcknowledgedTestBarrier,
+		inspectPrimary:    engineClient.InspectPrimaryQuery,
+		primaryResult:     engineClient.PrimaryQueryResult,
+		closeAttachment:   engineClient.CloseAttachment,
+		stateDirectory:    exposeStateDirectory,
+		prepare: func(ctx context.Context, sessionID, stateDir string, request exposeRequest, notify func(string)) (exposePreparation, error) {
+			return prepareExposePorts(ctx, sessionID, stateDir, request, true, false, notify)
+		},
+		inspectSession: engineClient.InspectSession,
+		commit: func(ctx context.Context, startup *exposeStartup) error {
+			return startup.Commit(ctx)
+		},
+		abort: func(startup *exposeStartup) error {
+			return startup.Abort()
+		},
 		acknowledged: engineClient.DetachedQueryAcknowledged,
 		terminate:    engineClient.Terminate,
+	}, cmd)
+}
+
+type detachedUpRunOps struct {
+	listServices      func(context.Context) (int, error)
+	groupID           func(context.Context) (dagger.ID, error)
+	submit            func(context.Context, json.RawMessage, engine.QueryPresentation) (engine.SubmitPrimaryQueryResponse, error)
+	afterAcknowledged func(string, string) error
+	inspectPrimary    inspectPrimaryQueryFunc
+	primaryResult     func(context.Context) (client.SessionResult, error)
+	closeAttachment   func(context.Context) error
+	stateDirectory    func() (string, error)
+	prepare           func(context.Context, string, string, exposeRequest, func(string)) (exposePreparation, error)
+	inspectSession    func(context.Context) (engine.SessionDescriptor, error)
+	commit            func(context.Context, *exposeStartup) error
+	abort             func(*exposeStartup) error
+	acknowledged      func() bool
+	terminate         func(context.Context) error
+}
+
+func runDetachedServicesWith(
+	ctx context.Context,
+	sessionID string,
+	ops detachedUpRunOps,
+	cmd *cobra.Command,
+) (rerr error) {
+	transaction := &detachedUpTransaction{
+		acknowledged: ops.acknowledged,
+		terminate:    ops.terminate,
 	}
 	defer func() {
 		if rerr != nil && ctx.Err() != nil {
@@ -109,14 +159,14 @@ func runDetachedServices(
 		rerr = errors.Join(rerr, transaction.rollback())
 	}()
 
-	services, err := upGroup.List(ctx)
+	serviceCount, err := ops.listServices(ctx)
 	if err != nil {
 		return err
 	}
-	if len(services) == 0 {
+	if serviceCount == 0 {
 		return errors.New("no services matched")
 	}
-	groupID, err := upGroup.ID(ctx)
+	groupID, err := ops.groupID(ctx)
 	if err != nil {
 		return err
 	}
@@ -124,20 +174,20 @@ func runDetachedServices(
 	if err != nil {
 		return err
 	}
-	response, err := engineClient.SubmitPrimaryQuery(ctx, request, engine.QueryPresentation{
+	response, err := ops.submit(ctx, request, engine.QueryPresentation{
 		Kind: "up", ResponsePath: []string{"node", "_startDetached"},
 	})
 	if err != nil {
 		return err
 	}
-	if err := waitAtDetachedQueryAcknowledgedTestBarrier(response.SessionID, response.QueryID); err != nil {
+	if err := ops.afterAcknowledged(response.SessionID, response.QueryID); err != nil {
 		return err
 	}
-	query, err := waitForPrimaryQuery(ctx, engineClient.InspectPrimaryQuery)
+	query, err := waitForPrimaryQuery(ctx, ops.inspectPrimary)
 	if err != nil {
 		return err
 	}
-	result, err := engineClient.PrimaryQueryResult(ctx)
+	result, err := ops.primaryResult(ctx)
 	if err != nil {
 		return err
 	}
@@ -149,24 +199,24 @@ func runDetachedServices(
 	if !ok {
 		return fmt.Errorf("saved up result is %T", value)
 	}
-	if err := engineClient.CloseAttachment(ctx); err != nil {
+	if err := ops.closeAttachment(ctx); err != nil {
 		return fmt.Errorf("close creator attachment: %w", err)
 	}
 	requestPorts, err := normalizeExposeRequest(upResult, nil)
 	if err != nil {
 		return err
 	}
-	stateDir, err := exposeStateDirectory()
+	stateDir, err := ops.stateDirectory()
 	if err != nil {
 		return err
 	}
-	preparation, err := prepareExposePorts(ctx, engineClient.SessionID, stateDir, requestPorts, true, false, func(message string) {
+	preparation, err := ops.prepare(ctx, sessionID, stateDir, requestPorts, func(message string) {
 		fmt.Fprintln(cmd.ErrOrStderr(), message)
 	})
 	if err != nil {
 		if isExposeAttachmentConflict(err) {
-			if descriptor, inspectErr := engineClient.InspectSession(ctx); inspectErr == nil {
-				if conflict := attachmentHolderConflict(descriptor, engineClient.SessionID, err); conflict != nil {
+			if descriptor, inspectErr := ops.inspectSession(ctx); inspectErr == nil {
+				if conflict := attachmentHolderConflict(descriptor, sessionID, err); conflict != nil {
 					return conflict
 				}
 			}
@@ -174,17 +224,17 @@ func runDetachedServices(
 		return err
 	}
 	if preparation.Startup != nil {
-		transaction.abort = preparation.Startup.Abort
-		if err := preparation.Startup.Commit(ctx); err != nil {
+		transaction.abort = func() error { return ops.abort(preparation.Startup) }
+		if err := ops.commit(ctx, preparation.Startup); err != nil {
 			return err
 		}
 		transaction.committed = true
 		return writeDetachedUpSummary(
-			cmd.OutOrStdout(), engineClient.SessionID, preparation.Startup.Ports, preparation.Paths.Log,
+			cmd.OutOrStdout(), sessionID, preparation.Startup.Ports, preparation.Paths.Log,
 		)
 	}
 
-	descriptor, err := engineClient.InspectSession(ctx)
+	descriptor, err := ops.inspectSession(ctx)
 	if err != nil {
 		return err
 	}
@@ -194,7 +244,7 @@ func runDetachedServices(
 		return err
 	}
 	return writeDetachedUpSummary(
-		cmd.OutOrStdout(), engineClient.SessionID,
+		cmd.OutOrStdout(), sessionID,
 		ports, preparation.Paths.Log,
 	)
 }
