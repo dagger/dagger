@@ -440,6 +440,25 @@ func TestClientDoneSignalsOnLocalClose(t *testing.T) {
 	client.signalDone()
 }
 
+func TestClientCloseAfterTransportEndSkipsRemoteAttachmentClose(t *testing.T) {
+	t.Parallel()
+	internalCtx, internalCancel := context.WithCancelCause(context.Background())
+	closeCtx, closeRequests := context.WithCancelCause(context.Background())
+	group, internalCtx := errgroup.WithContext(internalCtx)
+	client := &Client{
+		Params:         Params{SessionID: "sess_aaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		connectionMode: connectionModeObserver,
+		attachmentID:   "att_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+		eg:             group,
+		internalCtx:    internalCtx,
+		internalCancel: internalCancel,
+		closeCtx:       closeCtx,
+		closeRequests:  closeRequests,
+	}
+	client.signalDone()
+	require.NoError(t, client.Close())
+}
+
 func TestOrdinaryTelemetryConsumerIgnoresLocalRequestCancellation(t *testing.T) {
 	t.Parallel()
 	closeCtx, closeRequests := context.WithCancelCause(context.Background())

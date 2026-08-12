@@ -106,6 +106,11 @@ type Params struct {
 	// or live current attachment to clear.
 	OnAttachWait func()
 
+	// OnTunnelListenerCompleted observes the end of successfully bound host
+	// tunnel listeners. It is used by internal clients that publish an
+	// all-or-nothing listener set.
+	OnTunnelListenerCompleted func(h2c.TunnelListenerCompletion)
+
 	Version string
 
 	SecretToken string
@@ -684,7 +689,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		// registry auth
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
-		h2c.NewTunnelListenerAttachable(ctx),
+		h2c.NewTunnelListenerAttachable(ctx, c.OnTunnelListenerCompleted),
 		// terminal
 		terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git attachable
@@ -920,11 +925,13 @@ func (c *Client) Close() (rerr error) {
 	// their attachment; control-only clients have no remote session to close.
 	switch c.connectionMode {
 	case connectionModeDetachableCreator, connectionModeObserver:
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), 10*time.Second)
-		if err := c.CloseAttachment(ctx); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("close attachment: %w", err))
+		if !c.doneSignaled() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(c.internalCtx), 10*time.Second)
+			if err := c.CloseAttachment(ctx); err != nil {
+				rerr = errors.Join(rerr, fmt.Errorf("close attachment: %w", err))
+			}
+			cancel()
 		}
-		cancel()
 	case connectionModeOrdinary:
 		if err := c.shutdownServer(); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
@@ -942,6 +949,15 @@ func (c *Client) Done() <-chan struct{} {
 func (c *Client) signalDone() {
 	done := c.doneChannel()
 	c.doneOnce.Do(func() { close(done) })
+}
+
+func (c *Client) doneSignaled() bool {
+	select {
+	case <-c.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *Client) runSessionAttachables(ctx context.Context) error {

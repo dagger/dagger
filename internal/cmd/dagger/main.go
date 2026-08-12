@@ -430,6 +430,8 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
+	flags.StringVar(&serveExposeConfig, "_serve-expose", "", "Run the internal detached-up port server")
+	flags.Lookup("_serve-expose").Hidden = true
 
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
@@ -813,6 +815,13 @@ func Main() {
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
 	parseGlobalFlags(os.Args[1:])
+	if serveExposeConfig != "" {
+		if err := runExposePortServer(context.Background(), serveExposeConfig); err != nil {
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			os.Exit(1)
+		}
+		return
+	}
 	resolvedWorkdir, err := NormalizeWorkdir(workdir)
 	if err != nil {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
