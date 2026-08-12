@@ -37,7 +37,10 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 	// Use the OAuth access token as the API key (sets Authorization: Bearer <token>)
 	opts = append(opts, option.WithAPIKey(endpoint.AuthToken))
 
-	// Extract chatgpt_account_id from JWT for required header
+	// Extract chatgpt_account_id from JWT for required header. Both this and
+	// the bearer token above are only the values observed at construction:
+	// when the endpoint carries a credential source, credentialTransport
+	// recomputes both from the current token on every request.
 	if accountID := extractChatGPTAccountID(endpoint.AuthToken); accountID != "" {
 		opts = append(opts, option.WithHeader("chatgpt-account-id", accountID))
 	}
@@ -54,6 +57,11 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 
 var _ LLMClient = (*OpenAICodexClient)(nil)
 
+// IsRetryable reports whether a failed turn is worth resending. The ChatGPT
+// backend gives no reliable signal to key off, so nothing is retried here; a
+// rejected credential is the one exception and is handled centrally, since
+// resending only helps once the credential has been re-resolved (see
+// sendQueryWithRetry).
 func (c *OpenAICodexClient) IsRetryable(err error) bool {
 	return false
 }
@@ -456,10 +464,25 @@ func codexAPIError(err error) error {
 		}
 	}
 	if msg := llmErrorMessage([]byte(body)); msg != "" {
-		return fmt.Errorf("codex API error (HTTP %d): %s", aerr.StatusCode, msg)
+		return &codexError{statusCode: aerr.StatusCode, message: msg, err: err}
 	}
 	return err
 }
+
+// codexError carries the backend's own explanation as the message while
+// keeping the SDK error reachable underneath, so status-based classification
+// (isAuthFailure) still works on it.
+type codexError struct {
+	statusCode int
+	message    string
+	err        error
+}
+
+func (e *codexError) Error() string {
+	return fmt.Sprintf("codex API error (HTTP %d): %s", e.statusCode, e.message)
+}
+
+func (e *codexError) Unwrap() error { return e.err }
 
 // extractChatGPTAccountID extracts the chatgpt_account_id from a JWT token.
 func extractChatGPTAccountID(token string) string {
