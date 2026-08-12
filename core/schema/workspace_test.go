@@ -966,6 +966,27 @@ func TestPlanWorkspaceEnvInstallConfig(t *testing.T) {
 	})
 }
 
+func TestPlanWorkspaceInstallConfigOverSourcelessOverride(t *testing.T) {
+	cfg := &workspace.Config{
+		Include: []workspace.IncludeEntry{{Source: "github.com/acme/base@v1"}},
+		Modules: map[string]workspace.ModuleEntry{
+			"dep": {
+				Pin:      "1111111111111111111111111111111111111111",
+				Settings: map[string]any{"region": "eu"},
+			},
+		},
+	}
+
+	plan, err := planWorkspaceInstallConfig(cfg, workspaceInstallArgs{}, "dep", "github.com/acme/dep@v2")
+	require.NoError(t, err)
+	require.True(t, plan.Changed)
+
+	entry := cfg.Modules["dep"]
+	require.Equal(t, "github.com/acme/dep@v2", entry.Source)
+	require.Empty(t, entry.Pin, "a pin recorded for the inherited ref must not travel to a different source")
+	require.Equal(t, map[string]any{"region": "eu"}, entry.Settings, "the overrides survive the install")
+}
+
 func TestEnvScopedConfigKeyMissingEnv(t *testing.T) {
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{

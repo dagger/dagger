@@ -451,6 +451,46 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 	if err != nil {
 		return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
 	}
+	// This path reads dagger.toml directly rather than through the Workspace
+	// object, so it has to apply the includes itself; without it a module an
+	// included config contributes would not resolve by name.
+	if len(cfg.Include) > 0 {
+		if err := workspace.ValidateIncludes(cfg); err != nil {
+			return inst, false, err
+		}
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, false, err
+		}
+		configDir := filepath.Dir(configPath)
+		source := core.IncludeSource{
+			Dag: dag,
+			ReadRelative: func(ctx context.Context, relPath string) ([]byte, error) {
+				return bk.ReadCallerHostFile(ctx, filepath.Join(configDir, relPath))
+			},
+			StatRelative: func(ctx context.Context, relPath string) (*core.Stat, error) {
+				_, stat, err := statFS.Stat(ctx, filepath.Join(configDir, relPath))
+				return stat, err
+			},
+		}
+		included, err := core.LoadIncludedConfig(ctx, source, cfg.Include[0].Source)
+		if err != nil {
+			return inst, false, err
+		}
+		explicitKeys, err := workspace.ExplicitConfigKeys(contents)
+		if err != nil {
+			return inst, false, fmt.Errorf("failed to parse workspace config: %w", err)
+		}
+		cfg, err = workspace.MergeIncludedConfig(included, cfg, explicitKeys)
+		if err != nil {
+			return inst, false, err
+		}
+	}
+	// Without this, a config every other read path rejects would be reported
+	// here as a plain "not found".
+	if err := workspace.ValidateEffectiveConfig(cfg); err != nil {
+		return inst, false, err
+	}
 	entry, ok := cfg.Modules[name]
 	if !ok || entry.Source == "" {
 		return inst, false, nil
