@@ -29,9 +29,10 @@ func TestUpdateGitLatestLockEntryValidatesInputs(t *testing.T) {
 		wantErr string
 	}{
 		{name: "missing inputs", wantErr: "invalid git.latest inputs"},
-		{name: "invalid remote type", inputs: []any{42}, wantErr: "invalid git.latest remote"},
-		{name: "empty remote", inputs: []any{""}, wantErr: "invalid git.latest remote"},
-		{name: "extra input", inputs: []any{"https://example.com/repo.git", false}, wantErr: "invalid git.latest inputs"},
+		{name: "invalid remote type", inputs: []any{42, false}, wantErr: "invalid git.latest remote"},
+		{name: "empty remote", inputs: []any{"", false}, wantErr: "invalid git.latest remote"},
+		{name: "invalid policy", inputs: []any{"https://example.com/repo.git", "false"}, wantErr: "invalid git.latest includeSubreleases"},
+		{name: "extra input", inputs: []any{"https://example.com/repo.git", false, "extra"}, wantErr: "invalid git.latest inputs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -120,9 +121,30 @@ func TestContainerFromLatestInputsRequireBareRepository(t *testing.T) {
 			context.Background(),
 			nil,
 			workspace.LookupEntry{
-				Inputs: []any{ref, "linux/amd64"},
+				Inputs: []any{ref, "linux/amd64", false},
 			},
 		)
 		require.ErrorContains(t, err, "expected an image repository without a tag or digest")
 	}
+}
+
+func TestParseContainerFromLatestLockInputs(t *testing.T) {
+	t.Parallel()
+
+	got, err := parseContainerFromLockInputs(
+		lockContainerFromLatestOperation,
+		[]any{"docker.io/library/alpine", "linux/amd64", true, "https", "insecureSkipTLSVerify"},
+	)
+	require.NoError(t, err)
+	require.True(t, got.latestIncludeSubreleases)
+	require.Equal(t, serverresolver.RegistryTransport{
+		Protocol:              serverresolver.RegistryProtocolHTTPS,
+		InsecureSkipTLSVerify: true,
+	}, got.registryTransport)
+
+	_, err = parseContainerFromLockInputs(
+		lockContainerFromLatestOperation,
+		[]any{"docker.io/library/alpine", "linux/amd64", "false"},
+	)
+	require.ErrorContains(t, err, "invalid container.from.latest latestIncludeSubreleases")
 }

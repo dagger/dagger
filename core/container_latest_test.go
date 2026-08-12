@@ -10,9 +10,10 @@ func TestSelectLatestContainerTag(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name string
-		tags []string
-		want string
+		name               string
+		tags               []string
+		includeSubreleases bool
+		want               string
 	}{
 		{
 			name: "stable release",
@@ -30,13 +31,19 @@ func TestSelectLatestContainerTag(t *testing.T) {
 			want: "latest",
 		},
 		{
+			name:               "include prereleases",
+			tags:               []string{"2.0.0", "v3.0.0-alpha.2", "v3.0.0-beta.1"},
+			includeSubreleases: true,
+			want:               "v3.0.0-beta.1",
+		},
+		{
 			name: "no tags",
 			want: "latest",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.want, SelectLatestContainerTag(tc.tags))
+			require.Equal(t, tc.want, SelectLatestContainerTag(tc.tags, tc.includeSubreleases))
 		})
 	}
 }
@@ -46,9 +53,10 @@ func TestParseContainerLatestPin(t *testing.T) {
 
 	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	for _, tc := range []struct {
-		name    string
-		pin     string
-		wantErr string
+		name               string
+		pin                string
+		includeSubreleases bool
+		wantErr            string
 	}{
 		{name: "stable", pin: "docker.io/library/alpine:3.22.1@" + digest},
 		{name: "stable with v", pin: "docker.io/library/alpine:v3.22.1@" + digest},
@@ -57,11 +65,16 @@ func TestParseContainerLatestPin(t *testing.T) {
 		{name: "missing tag", pin: "docker.io/library/alpine@" + digest, wantErr: "has no tag"},
 		{name: "wrong repository", pin: "docker.io/library/busybox:1.0.0@" + digest, wantErr: "does not match"},
 		{name: "prerelease", pin: "docker.io/library/alpine:v4.0.0-rc.1@" + digest, wantErr: "not a stable semantic version"},
-		{name: "non-semver", pin: "docker.io/library/alpine:edge@" + digest, wantErr: "not a stable semantic version"},
+		{name: "included prerelease", pin: "docker.io/library/alpine:v4.0.0-rc.1@" + digest, includeSubreleases: true},
+		{name: "non-semver", pin: "docker.io/library/alpine:edge@" + digest, wantErr: "not a semantic version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ref, err := ParseContainerLatestPin(tc.pin, "docker.io/library/alpine")
+			ref, err := ParseContainerLatestPin(
+				tc.pin,
+				"docker.io/library/alpine",
+				tc.includeSubreleases,
+			)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				return

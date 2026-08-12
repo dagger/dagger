@@ -81,6 +81,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
 					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("latestIncludeSubreleases").Doc(`Include prerelease tags when selecting the latest release.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("build", s.build).
 			View(BeforeVersion("v0.19.0")).
@@ -1027,10 +1029,11 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 }
 
 type containerFromArgs struct {
-	Address               string
-	RegistryService       dagql.Optional[core.ServiceID]
-	Protocol              dagql.Optional[core.RegistryProtocol]
-	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	Address                  string
+	RegistryService          dagql.Optional[core.ServiceID]
+	Protocol                 dagql.Optional[core.RegistryProtocol]
+	InsecureSkipTLSVerify    bool `name:"insecureSkipTLSVerify" default:"false"`
+	LatestIncludeSubreleases bool `name:"latestIncludeSubreleases" default:"false"`
 }
 
 func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], insecureSkipTLSVerify bool) (serverresolver.RegistryTransport, error) {
@@ -1135,6 +1138,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		refName = reference.TrimNamed(refName)
 		lockOperation = lockContainerFromLatestOperation
 	} else {
+		if args.LatestIncludeSubreleases {
+			return inst, errors.New(
+				"latestIncludeSubreleases requires an image address without a tag or digest",
+			)
+		}
 		// TagNameOnly is deliberately called after testing IsNameOnly so an
 		// implicit tag remains distinguishable from an explicit latest tag.
 		refName = reference.TagNameOnly(refName)
@@ -1250,8 +1258,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 	}
 
-	lockInputsFor := func(ref reference.Named) []any {
+	lockInputsFor := func(ref reference.Named, latest bool) []any {
 		inputs := []any{ref.String(), platform.Format()}
+		if latest {
+			inputs = append(inputs, args.LatestIncludeSubreleases)
+		}
 		if registryTransport.Protocol != "" {
 			inputs = append(inputs, registryTransport.Protocol)
 		}
@@ -1266,11 +1277,19 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	// tag. When the lockfile has such an entry and no container.from.latest
 	// entry, keep resolving through it so existing workspaces don't break
 	// after an engine upgrade.
-	if latestRelease && lookupLock != nil {
+	if latestRelease && !args.LatestIncludeSubreleases && lookupLock != nil {
 		rawLock := lookupLock.lock
-		if _, ok, _ := rawLock.GetLookup(lockCoreNamespace, lockOperation, lockInputsFor(refName)); !ok {
+		if _, ok, _ := rawLock.GetLookup(
+			lockCoreNamespace,
+			lockOperation,
+			lockInputsFor(refName, true),
+		); !ok {
 			legacyRef := reference.TagNameOnly(refName)
-			if _, ok, err := rawLock.GetLookup(lockCoreNamespace, lockContainerFromOperation, lockInputsFor(legacyRef)); err == nil && ok {
+			if _, ok, err := rawLock.GetLookup(
+				lockCoreNamespace,
+				lockContainerFromOperation,
+				lockInputsFor(legacyRef, false),
+			); err == nil && ok {
 				latestRelease = false
 				lockOperation = lockContainerFromOperation
 				refName = legacyRef
@@ -1278,7 +1297,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 	}
 
-	lockInputs := lockInputsFor(refName)
+	lockInputs := lockInputsFor(refName, latestRelease)
 	lockResolution, err := resolveLookupFromLoadedLock(
 		lookupLock,
 		lockOperation,
@@ -1295,7 +1314,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, fmt.Errorf("invalid %s lock value %v", lockOperation, lockResolution.Pin)
 		}
 		if latestRelease {
-			refName, err = core.ParseContainerLatestPin(pin, refName.String())
+			refName, err = core.ParseContainerLatestPin(
+				pin,
+				refName.String(),
+				args.LatestIncludeSubreleases,
+			)
 			if err != nil {
 				return inst, fmt.Errorf("%s lock value: %w", lockOperation, err)
 			}
@@ -1336,7 +1359,10 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			if err != nil {
 				return inst, fmt.Errorf("failed to list image tags for %q: %w", refName.String(), err)
 			}
-			refName, err = reference.WithTag(refName, core.SelectLatestContainerTag(tags))
+			refName, err = reference.WithTag(
+				refName,
+				core.SelectLatestContainerTag(tags, args.LatestIncludeSubreleases),
+			)
 			if err != nil {
 				return inst, fmt.Errorf("failed to select latest release for image %q: %w", refName.String(), err)
 			}

@@ -84,8 +84,8 @@ type GitRefBackend interface {
 }
 
 // SelectLatestGitRef selects the greatest semantic-version tag in remote,
-// falling back to HEAD when the remote has no release tags.
-func SelectLatestGitRef(remote *gitutil.Remote) (*gitutil.Ref, error) {
+// falling back to HEAD when the remote has no eligible release tags.
+func SelectLatestGitRef(remote *gitutil.Remote, includeSubreleases bool) (*gitutil.Ref, error) {
 	if remote == nil {
 		return nil, fmt.Errorf("select latest git ref: nil remote")
 	}
@@ -102,7 +102,7 @@ func SelectLatestGitRef(remote *gitutil.Remote) (*gitutil.Ref, error) {
 		if !semver.IsValid(version) {
 			continue
 		}
-		if semver.Prerelease(version) != "" {
+		if !includeSubreleases && semver.Prerelease(version) != "" {
 			continue
 		}
 
@@ -161,7 +161,7 @@ func DecodeGitRefPin(pin string) (*gitutil.Ref, error) {
 
 // DecodeGitLatestRefPin decodes and validates a pin produced by the latest Git
 // release selector. Only semantic-version tags and the HEAD fallback are valid.
-func DecodeGitLatestRefPin(pin string) (*gitutil.Ref, error) {
+func DecodeGitLatestRefPin(pin string, includeSubreleases bool) (*gitutil.Ref, error) {
 	ref, err := DecodeGitRefPin(pin)
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func DecodeGitLatestRefPin(pin string) (*gitutil.Ref, error) {
 		if !semver.IsValid(version) {
 			return nil, fmt.Errorf("invalid git.latest tag %q: not a semantic version", tag)
 		}
-		if semver.Prerelease(version) != "" {
+		if !includeSubreleases && semver.Prerelease(version) != "" {
 			return nil, fmt.Errorf("invalid git.latest tag %q: prerelease tags are not supported", tag)
 		}
 		return ref, nil

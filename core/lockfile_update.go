@@ -60,14 +60,21 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 }
 
 type containerFromLockInputs struct {
-	ref               string
-	platform          string
-	registryTransport serverresolver.RegistryTransport
+	ref                      string
+	platform                 string
+	latestIncludeSubreleases bool
+	registryTransport        serverresolver.RegistryTransport
 }
 
 func parseContainerFromLockInputs(operation string, inputs []any) (containerFromLockInputs, error) {
 	var parsed containerFromLockInputs
-	if len(inputs) < 2 || len(inputs) > 4 {
+	minInputs, maxInputs := 2, 4
+	transportOffset := 2
+	if operation == lockContainerFromLatestOperation {
+		minInputs, maxInputs = 3, 5
+		transportOffset = 3
+	}
+	if len(inputs) < minInputs || len(inputs) > maxInputs {
 		return parsed, fmt.Errorf("invalid %s inputs %v", operation, inputs)
 	}
 
@@ -83,10 +90,26 @@ func parseContainerFromLockInputs(operation string, inputs []any) (containerFrom
 	}
 	parsed.platform = platform
 
-	if len(inputs) >= 3 {
-		protocol, ok := inputs[2].(string)
+	if operation == lockContainerFromLatestOperation {
+		includeSubreleases, ok := inputs[2].(bool)
 		if !ok {
-			return parsed, fmt.Errorf("invalid %s registry protocol %v", operation, inputs[2])
+			return parsed, fmt.Errorf(
+				"invalid %s latestIncludeSubreleases %v",
+				operation,
+				inputs[2],
+			)
+		}
+		parsed.latestIncludeSubreleases = includeSubreleases
+	}
+
+	if len(inputs) > transportOffset {
+		protocol, ok := inputs[transportOffset].(string)
+		if !ok {
+			return parsed, fmt.Errorf(
+				"invalid %s registry protocol %v",
+				operation,
+				inputs[transportOffset],
+			)
 		}
 		switch serverresolver.RegistryProtocol(protocol) {
 		case serverresolver.RegistryProtocolHTTP, serverresolver.RegistryProtocolHTTPS:
@@ -96,13 +119,21 @@ func parseContainerFromLockInputs(operation string, inputs []any) (containerFrom
 		}
 	}
 
-	if len(inputs) == 4 {
-		marker, ok := inputs[3].(string)
+	if len(inputs) == transportOffset+2 {
+		marker, ok := inputs[transportOffset+1].(string)
 		if !ok || marker != "insecureSkipTLSVerify" {
-			return parsed, fmt.Errorf("invalid %s registry transport option %v", operation, inputs[3])
+			return parsed, fmt.Errorf(
+				"invalid %s registry transport option %v",
+				operation,
+				inputs[transportOffset+1],
+			)
 		}
 		if parsed.registryTransport.Protocol != serverresolver.RegistryProtocolHTTPS {
-			return parsed, fmt.Errorf("invalid %s registry transport options %v", operation, inputs[2:])
+			return parsed, fmt.Errorf(
+				"invalid %s registry transport options %v",
+				operation,
+				inputs[transportOffset:],
+			)
 		}
 		parsed.registryTransport.InsecureSkipTLSVerify = true
 	}
@@ -161,7 +192,10 @@ func updateContainerFromLatestLockEntry(ctx context.Context, query *Query, entry
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("list image tags for %q: %w", refName.String(), err)
 	}
-	refName, err = reference.WithTag(refName, SelectLatestContainerTag(tags))
+	refName, err = reference.WithTag(
+		refName,
+		SelectLatestContainerTag(tags, inputs.latestIncludeSubreleases),
+	)
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("select latest release for image %q: %w", inputs.ref, err)
 	}
@@ -278,12 +312,19 @@ func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remo
 }
 
 func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	if len(entry.Inputs) != 1 {
+	if len(entry.Inputs) != 2 {
 		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest inputs %v", entry.Inputs)
 	}
 	remoteURL, ok := entry.Inputs[0].(string)
 	if !ok || remoteURL == "" {
 		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest remote %v", entry.Inputs[0])
+	}
+	includeSubreleases, ok := entry.Inputs[1].(bool)
+	if !ok {
+		return workspace.LookupResult{}, fmt.Errorf(
+			"invalid git.latest includeSubreleases %v",
+			entry.Inputs[1],
+		)
 	}
 
 	// Resolve through the schema's git resolver rather than a bare
@@ -313,7 +354,12 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 				{Name: "url", Value: dagql.String(remoteURL)},
 			},
 		},
-		dagql.Selector{Field: "latestVersion"},
+		dagql.Selector{
+			Field: "latestVersion",
+			Args: []dagql.NamedInput{
+				{Name: "includeSubreleases", Value: dagql.Boolean(includeSubreleases)},
+			},
+		},
 	); err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("resolve latest git release for %q: %w", remoteURL, err)
 	}

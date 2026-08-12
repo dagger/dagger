@@ -26,7 +26,7 @@ func TestSelectLatestGitRef(t *testing.T) {
 		Symrefs: map[string]string{"HEAD": "refs/heads/main"},
 	}
 
-	ref, err := SelectLatestGitRef(remote)
+	ref, err := SelectLatestGitRef(remote, false)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/2.0.0", ref.Name)
 	require.Equal(t, stableCommit, ref.SHA)
@@ -45,7 +45,7 @@ func TestSelectLatestGitRefFallsBackToHead(t *testing.T) {
 		Symrefs: map[string]string{"HEAD": "refs/heads/trunk"},
 	}
 
-	ref, err := SelectLatestGitRef(remote)
+	ref, err := SelectLatestGitRef(remote, false)
 	require.NoError(t, err)
 	require.Equal(t, "refs/heads/trunk", ref.Name)
 	require.Equal(t, headCommit, ref.SHA)
@@ -62,7 +62,7 @@ func TestSelectLatestGitRefAnnotatedTag(t *testing.T) {
 		},
 	}
 
-	ref, err := SelectLatestGitRef(remote)
+	ref, err := SelectLatestGitRef(remote, false)
 	require.NoError(t, err)
 	require.Equal(t, "refs/tags/v1.2.3", ref.Name)
 	require.Equal(t, commit, ref.SHA)
@@ -81,10 +81,26 @@ func TestSelectLatestGitRefOnlyPrereleasesFallsBackToHead(t *testing.T) {
 		Symrefs: map[string]string{"HEAD": "refs/heads/main"},
 	}
 
-	ref, err := SelectLatestGitRef(remote)
+	ref, err := SelectLatestGitRef(remote, false)
 	require.NoError(t, err)
 	require.Equal(t, "refs/heads/main", ref.Name)
 	require.Equal(t, headCommit, ref.SHA)
+}
+
+func TestSelectLatestGitRefIncludesSubreleases(t *testing.T) {
+	t.Parallel()
+
+	const betaCommit = "2222222222222222222222222222222222222222"
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "refs/tags/v2.0.0", SHA: "0000000000000000000000000000000000000001"},
+		{Name: "refs/tags/v3.0.0-alpha.2", SHA: "1111111111111111111111111111111111111111"},
+		{Name: "refs/tags/v3.0.0-beta.1", SHA: betaCommit},
+	}}
+
+	ref, err := SelectLatestGitRef(remote, true)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v3.0.0-beta.1", ref.Name)
+	require.Equal(t, betaCommit, ref.SHA)
 }
 
 func TestSelectLatestGitRefEquivalentVersionsDeterministic(t *testing.T) {
@@ -102,7 +118,7 @@ func TestSelectLatestGitRefEquivalentVersionsDeterministic(t *testing.T) {
 		},
 	} {
 		remote := &gitutil.Remote{Refs: refs}
-		ref, err := SelectLatestGitRef(remote)
+		ref, err := SelectLatestGitRef(remote, false)
 		require.NoError(t, err)
 		require.Equal(t, "refs/tags/v1.2.3", ref.Name)
 		require.Equal(t, commit, ref.SHA)
@@ -159,9 +175,10 @@ func TestDecodeGitLatestRefPinValidatesSelectedRef(t *testing.T) {
 
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	for _, tc := range []struct {
-		name    string
-		ref     string
-		wantErr string
+		name               string
+		ref                string
+		includeSubreleases bool
+		wantErr            string
 	}{
 		{name: "stable tag", ref: "refs/tags/v1.2.3"},
 		{name: "stable tag without v", ref: "refs/tags/1.2.3"},
@@ -169,13 +186,17 @@ func TestDecodeGitLatestRefPinValidatesSelectedRef(t *testing.T) {
 		{name: "default branch", ref: "refs/heads/main"},
 		{name: "non-semver tag", ref: "refs/tags/latest", wantErr: "not a semantic version"},
 		{name: "prerelease tag", ref: "refs/tags/v2.0.0-rc.1", wantErr: "prerelease tags are not supported"},
+		{name: "included prerelease tag", ref: "refs/tags/v2.0.0-rc.1", includeSubreleases: true},
 		{name: "arbitrary ref", ref: "refs/pull/1/head", wantErr: "invalid git.latest ref"},
 		{name: "empty branch", ref: "refs/heads/", wantErr: "invalid git.latest ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ref, err := DecodeGitLatestRefPin(tc.ref + "@" + commit)
+			ref, err := DecodeGitLatestRefPin(
+				tc.ref+"@"+commit,
+				tc.includeSubreleases,
+			)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				return

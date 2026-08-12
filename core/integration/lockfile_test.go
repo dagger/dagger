@@ -734,7 +734,7 @@ func writeGitLatestLockForRemote(
 	t.Helper()
 
 	lock := workspace.NewLock()
-	require.NoError(t, lock.SetLookup("", "git.latest", []any{remoteURL}, workspace.LookupResult{
+	require.NoError(t, lock.SetLookup("", "git.latest", []any{remoteURL, false}, workspace.LookupResult{
 		Value:  pin,
 		Policy: workspace.PolicyPin,
 	}))
@@ -755,7 +755,7 @@ func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte) {
 		if entry.Namespace != "" || entry.Operation != "git.latest" {
 			continue
 		}
-		require.Equal(t, []any{lockTestGitRepoURL}, entry.Inputs)
+		require.Equal(t, []any{lockTestGitRepoURL, false}, entry.Inputs)
 		require.Equal(t, string(workspace.PolicyPin), entry.Policy)
 		value, ok := entry.Value.(string)
 		require.True(t, ok)
@@ -844,7 +844,7 @@ func writeContainerFromLatestLock(t *testctx.T, workdir, platform, pin string) {
 	require.NoError(t, lock.SetLookup(
 		"",
 		"container.from.latest",
-		[]any{"docker.io/library/alpine", platform},
+		[]any{"docker.io/library/alpine", platform, false},
 		workspace.LookupResult{
 			Value:  pin,
 			Policy: workspace.PolicyPin,
@@ -869,8 +869,9 @@ func assertContainerFromLatestLockEntry(t *testctx.T, lockBytes []byte) string {
 		if entry.Namespace != "" || entry.Operation != "container.from.latest" {
 			continue
 		}
-		require.Len(t, entry.Inputs, 2)
+		require.Len(t, entry.Inputs, 3)
 		require.Equal(t, "docker.io/library/alpine", entry.Inputs[0])
+		require.Equal(t, false, entry.Inputs[2])
 		require.Equal(t, string(workspace.PolicyPin), entry.Policy)
 
 		value, ok := entry.Value.(string)

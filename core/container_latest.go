@@ -8,16 +8,16 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// SelectLatestContainerTag returns the greatest stable semantic-version tag.
-// If tags contains no stable release, it returns the literal latest tag.
-func SelectLatestContainerTag(tags []string) string {
+// SelectLatestContainerTag returns the greatest eligible semantic-version tag.
+// If tags contains no eligible release, it returns the literal latest tag.
+func SelectLatestContainerTag(tags []string, includeSubreleases bool) string {
 	var bestTag, bestVersion string
 	for _, tag := range tags {
 		version := tag
 		if !strings.HasPrefix(version, "v") {
 			version = "v" + version
 		}
-		if !semver.IsValid(version) || semver.Prerelease(version) != "" {
+		if !semver.IsValid(version) || (!includeSubreleases && semver.Prerelease(version) != "") {
 			continue
 		}
 
@@ -34,7 +34,7 @@ func SelectLatestContainerTag(tags []string) string {
 }
 
 // ParseContainerLatestPin validates a full tag-and-digest pin for repository.
-func ParseContainerLatestPin(pin, repository string) (reference.Named, error) {
+func ParseContainerLatestPin(pin, repository string, includeSubreleases bool) (reference.Named, error) {
 	ref, err := reference.ParseNormalizedNamed(pin)
 	if err != nil {
 		return nil, fmt.Errorf("parse container.from.latest pin %q: %w", pin, err)
@@ -67,7 +67,13 @@ func ParseContainerLatestPin(pin, repository string) (reference.Named, error) {
 	if !strings.HasPrefix(version, "v") {
 		version = "v" + version
 	}
-	if !semver.IsValid(version) || semver.Prerelease(version) != "" {
+	if !semver.IsValid(version) {
+		return nil, fmt.Errorf(
+			"container.from.latest pin tag %q is not a semantic version",
+			tag,
+		)
+	}
+	if !includeSubreleases && semver.Prerelease(version) != "" {
 		return nil, fmt.Errorf(
 			"container.from.latest pin tag %q is not a stable semantic version",
 			tag,
