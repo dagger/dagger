@@ -467,34 +467,71 @@ func loadTraceLogs(ctx context.Context, clientDB *clientdb.DB, logExporter sdklo
 //
 // A report that's already within both limits is returned byte-identical.
 func guardTraceReport(report string) string {
-	if len(report) <= traceReportMaxBytes && !anyLineTooLong(report) {
-		return report
+	return guardText(report, textGuard{
+		maxBytes:   traceReportMaxBytes,
+		maxLineLen: traceReportMaxLineLen,
+		headBytes:  traceReportHeadBytes,
+		marker: func(lines, bytes int) string {
+			return fmt.Sprintf("... %d lines (%d bytes) omitted from the middle of this report ...",
+				lines, bytes)
+		},
+	})
+}
+
+// textGuard parameterises guardText: the total byte budget, the per-line byte
+// clamp, how much of the budget the head keeps when the middle has to go, and
+// the marker line that stands in for what went.
+//
+// It exists because two readers need the same bounding with different numbers
+// and different advice: a rendered trace report (guardTraceReport, above) and
+// every LLM tool result (guardToolResult, in mcp.go).
+type textGuard struct {
+	maxBytes   int
+	maxLineLen int
+	headBytes  int
+	// marker renders the elision marker, given the count of lines and bytes
+	// dropped from the middle. It is a whole line of its own, and counts
+	// against maxBytes like any other.
+	marker func(lines, bytes int) string
+}
+
+// guardText bounds text to a guard's limits: every line is clamped to
+// maxLineLen bytes (on a rune boundary, marked inline), and the whole text to
+// maxBytes, dropping the MIDDLE on line boundaries rather than the tail so
+// both ends survive -- the head and the conclusion of a report, the first and
+// last lines of a file, both carry signal.
+//
+// Text already within both limits is returned byte-identical, without
+// allocating.
+func guardText(text string, g textGuard) string {
+	if len(text) <= g.maxBytes && !anyLineTooLong(text, g.maxLineLen) {
+		return text
 	}
 
-	lines := strings.Split(report, "\n")
+	lines := strings.Split(text, "\n")
 	total := 0
 	for i, line := range lines {
-		lines[i] = clampLineBytes(line, traceReportMaxLineLen)
+		lines[i] = clampLineBytes(line, g.maxLineLen)
 		total += len(lines[i]) + 1 // +1 for the newline that rejoins it
 	}
 	if total > 0 {
 		total-- // the last line isn't followed by a newline
 	}
-	if total <= traceReportMaxBytes {
+	if total <= g.maxBytes {
 		return strings.Join(lines, "\n")
 	}
 
 	// Truncate on line boundaries, keeping a generous head and tail. The
 	// marker line itself counts against the budget, so reserve room for it.
 	const markerReserve = 128
-	headBudget := traceReportHeadBytes
+	headBudget := g.headBytes
 
 	head, headBytes := 0, 0
 	for head < len(lines) && headBytes+len(lines[head])+1 <= headBudget {
 		headBytes += len(lines[head]) + 1
 		head++
 	}
-	tailBudget := traceReportMaxBytes - headBytes - markerReserve
+	tailBudget := g.maxBytes - headBytes - markerReserve
 	tail, tailBytes := len(lines), 0
 	for tail > head && tailBytes+len(lines[tail-1])+1 <= tailBudget {
 		tailBytes += len(lines[tail-1]) + 1
@@ -509,23 +546,22 @@ func guardTraceReport(report string) string {
 
 	out := make([]string, 0, head+1+(len(lines)-tail))
 	out = append(out, lines[:head]...)
-	out = append(out, fmt.Sprintf("... %d lines (%d bytes) omitted from the middle of this report ...",
-		droppedLines, droppedBytes))
+	out = append(out, g.marker(droppedLines, droppedBytes))
 	out = append(out, lines[tail:]...)
 	return strings.Join(out, "\n")
 }
 
-// anyLineTooLong reports whether report contains a line over the per-line
-// byte clamp, without allocating a split.
-func anyLineTooLong(report string) bool {
-	for len(report) > 0 {
-		line := report
-		if i := strings.IndexByte(report, '\n'); i >= 0 {
-			line, report = report[:i], report[i+1:]
+// anyLineTooLong reports whether text contains a line over the per-line byte
+// clamp, without allocating a split.
+func anyLineTooLong(text string, maxLineLen int) bool {
+	for len(text) > 0 {
+		line := text
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			line, text = text[:i], text[i+1:]
 		} else {
-			report = ""
+			text = ""
 		}
-		if len(line) > traceReportMaxLineLen {
+		if len(line) > maxLineLen {
 			return true
 		}
 	}
