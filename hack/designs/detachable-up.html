@@ -53,15 +53,18 @@ svg{max-width:100%;height:auto;background:var(--card);border:1px solid var(--lin
 <p><strong>The design in one paragraph.</strong> Detached <code>up</code> is a real detached session doing real detached work. The invoking CLI creates the detachable session, submits one stored primary query (the existing #13851 machinery), and that query — running in the engine, independent of any client connection — starts the backend services and pins them for the session's lifetime. Ports are deliberately not part of that retained work. A local port is a per-client, per-machine attachment to a running engine service: any client attached to the session can create a fresh <code>host.tunnel</code> against the retained backends at any time, using public API that already exists. <code>up --detach</code> spawns one background port-serving process by default; losing it costs you the ports and nothing else. One gate is lifted to make this work: a client that attaches to a detachable session may now submit work, not just observe.</p>
 </div>
 
-<p>Decisions Erik made in review of the previous draft, treated as settled here:</p>
+<p>Decisions Erik has made in review, treated as settled here:</p>
 <ul>
 <li><span class="tag settled">SETTLED</span> Lift the observation-only gate: the session's attached client may submit GraphQL work.</li>
 <li><span class="tag settled">SETTLED</span> Concurrent port publishing from several clients at once is phased out of this slice, and must not be ruled out by the design.</li>
 <li><span class="tag settled">SETTLED</span> The re-publish command is <code>dagger sessions expose</code>.</li>
 <li><span class="tag settled">SETTLED</span> Published ports must be visible in the <code>sessions</code> commands.</li>
+<li><span class="tag settled">SETTLED</span> Both engine additions are ratified: the internal <code>UpGroup._startDetached</code> field (section 5) and the <code>SessionDescriptor</code> services exposure (section 9).</li>
+<li><span class="tag settled">SETTLED</span> Windows support is deferred: this slice returns a clear "not yet supported on Windows" error and adds no Windows handle-inheritance plumbing.</li>
+<li><span class="tag settled">SETTLED</span> Names and defaults stand as documented: the <code>--port SERVICE=F:B/PROTO</code> syntax, the <code>--replace</code> and <code>--stop</code> flags, and the state-directory pid/log locations.</li>
 </ul>
 
-<p>Fact labels: <span class="tag code">CODE</span> verified in the baseline source · <span class="tag settled">SETTLED</span> decided by Erik, not reopened · <span class="tag new">NEW</span> proposed change · <span class="tag rec">REC</span> recommendation with evidence, vetoable but not left open.</p>
+<p>Fact labels: <span class="tag code">CODE</span> verified in the baseline source · <span class="tag settled">SETTLED</span> decided by Erik, not reopened · <span class="tag new">NEW</span> proposed change.</p>
 
 <h3>Contents</h3>
 <nav class="toc"><ol>
@@ -84,7 +87,7 @@ svg{max-width:100%;height:auto;background:var(--card);border:1px solid var(--lin
 <li><a href="#tests">Tests and fault injection</a></li>
 <li><a href="#accept">Acceptance criteria</a></li>
 <li><a href="#phasing">Phasing and non-goals</a></li>
-<li><a href="#decisions">Remaining decisions for Erik</a></li>
+<li><a href="#decisions">Decision record</a></li>
 <li><a href="#verification">Verification record</a></li>
 </ol></nav>
 
@@ -277,7 +280,7 @@ Idempotent: if ports are already being served here, prints them and exits.</code
 <li>Write the ready message (name → urls/ports per service) to the status pipe. From then on: serve. Exit paths: <code>Client.Done()</code> — a small new accessor closed when the client's engine-side session connection ends (termination, engine stop, network loss) — log and exit 0; SIGTERM/SIGINT — close the attachment (its tunnels die engine-side through the existing shutdown path) and exit 0, leaving the session and backends untouched. A pre-ready failure writes the error to the pipe and exits nonzero.</li>
 </ol>
 
-<p>Operating-system assumptions: one — a <code>setsid</code> child survives its parent and its terminal, which POSIX guarantees. <span class="tag rec">REC</span> Windows is deferred: the pipe handshake needs Windows-specific handle inheritance; <code>--detach</code> and <code>expose</code> return a clear "not yet supported on Windows" error in this slice.</p>
+<p>Operating-system assumptions: one — a <code>setsid</code> child survives its parent and its terminal, which POSIX guarantees. <span class="tag settled">SETTLED</span> Windows is deferred: the pipe handshake needs Windows-specific handle inheritance; <code>--detach</code> and <code>expose</code> return a clear "not yet supported on Windows" error in this slice, and no Windows handle-inheritance support is added or tested now.</p>
 
 <p>No credential crosses the pipes, argv, or environment. The port server is a normal client: it generated its own client ID and secret, and its right to serve these ports is the attachment claim plus the fact that it created the tunnels it serves — both existing, exact checks.</p>
 
@@ -466,15 +469,17 @@ Published ports
 <li><strong>Non-goals, unchanged from settled scope:</strong> engine-restart survival, TTLs, names, Cloud scale-out, callback rebinding, new auth machinery of any kind, workflow history.</li>
 </ul>
 
-<h2 id="decisions">20. Remaining decisions for Erik</h2>
+<h2 id="decisions">20. Decision record</h2>
+
+<p>Every product decision for this slice is settled. None remain open.</p>
 
 <ol>
-<li><strong>Ratify the two engine additions:</strong> the internal <code>_startDetached</code> field (section 5) and the descriptor/services exposure (section 9). Both are small; both are the load-bearing surface.</li>
-<li><strong>Windows deferral</strong> for the background spawn (clear error now, follow-up later). Veto means adding Windows handle-inheritance plumbing to this slice.</li>
-<li><strong>Bikeshed-level namings</strong> flagged for convenience, defaults chosen: <code>--port SERVICE=F:B/PROTO</code> syntax, <code>--replace</code>/<code>--stop</code> flags, pid/log locations under the state directory.</li>
+<li><span class="tag settled">SETTLED</span> Engine additions ratified: the internal <code>UpGroup._startDetached</code> field (section 5) and the <code>SessionDescriptor</code> services exposure (section 9) are approved and part of the implementation plan.</li>
+<li><span class="tag settled">SETTLED</span> Windows deferred: this slice returns a clear "not yet supported on Windows" error; no Windows handle-inheritance support is added or tested now.</li>
+<li><span class="tag settled">SETTLED</span> Names and defaults stand as documented: <code>--port SERVICE=F:B/PROTO</code>, <code>--replace</code>, <code>--stop</code>, and the state-directory pid/log locations.</li>
+<li><span class="tag settled">SETTLED</span> From the prior review round: the attach work gate is lifted (section 6); concurrent publishers are phased out but not precluded (section 19); the re-publish command is <code>sessions expose</code>; published ports are visible in the sessions UX (section 9).</li>
+<li><span class="tag settled">SETTLED</span> Standing doctrine, unchanged: no new authentication, capability, claim, token, or lease machinery; no callback rebinding; one sequential attachment; explicit termination only; engine restart terminal; no TTL; session-lifetime cache ownership; compatibility is a hard cut.</li>
 </ol>
-
-<p>Previously open items now settled by Erik and reflected above: the attach work gate (lifted), sequential-then-concurrent phasing, the <code>sessions expose</code> command shape, and port visibility in the sessions UX.</p>
 
 <h2 id="verification">21. Verification record</h2>
 
