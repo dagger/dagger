@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
@@ -352,18 +353,16 @@ func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 }
 
 // newTeardownTestServer builds a Server with just enough real state for
-// removeDaggerSession to run: an empty in-memory dagql cache, a live wcprof
-// counter, and a stubbed GC callback (scheduled via time.AfterFunc at the end
-// of teardown).
+// removeDaggerSession to run: an empty in-memory dagql cache and a stubbed GC
+// callback (scheduled via time.AfterFunc at the end of teardown).
 func newTeardownTestServer(t *testing.T) *Server {
 	t.Helper()
 	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
 	require.NoError(t, err)
 	return &Server{
-		daggerSessions:  map[string]*daggerSession{},
-		engineCache:     cache,
-		wcprofSpanCount: newWcprofSpanCounter(),
-		throttledGC:     func() {},
+		daggerSessions: map[string]*daggerSession{},
+		engineCache:    cache,
+		throttledGC:    func() {},
 	}
 }
 
