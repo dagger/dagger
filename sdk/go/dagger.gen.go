@@ -5436,6 +5436,10 @@ type EngineCachePruneOpts struct {
 	MinFreeSpace string
 	// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
 	TargetSpace string
+	// Override the maximum structural metadata estimate in absolute bytes. The configured/default value is used when omitted.
+	MaxEstimatedBytes int
+	// Override the structural metadata estimate to target in absolute bytes. The configured/default value is used when omitted.
+	TargetEstimatedBytes int
 }
 
 // Prune the cache of releaseable entries
@@ -5464,6 +5468,14 @@ func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) e
 		// `targetSpace` optional argument
 		if !querybuilder.IsZeroValue(opts[i].TargetSpace) {
 			q = q.Arg("targetSpace", opts[i].TargetSpace)
+		}
+		// `maxEstimatedBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxEstimatedBytes) {
+			q = q.Arg("maxEstimatedBytes", opts[i].MaxEstimatedBytes)
+		}
+		// `targetEstimatedBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TargetEstimatedBytes) {
+			q = q.Arg("targetEstimatedBytes", opts[i].TargetEstimatedBytes)
 		}
 	}
 

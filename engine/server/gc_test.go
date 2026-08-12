@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,7 +42,36 @@ func (v gcTestSizedInt) CacheUsageSize(context.Context, dagql.CacheUsageSizeProv
 	return v.sizeBytes, true, nil
 }
 
+type gcTestTrackedInt struct {
+	dagql.Int
+	sizeBytes  int64
+	identity   string
+	sizeCalls  *atomic.Int32
+	releaseErr error
+}
+
+func (v gcTestTrackedInt) CacheUsageIdentities() []string {
+	return []string{v.identity}
+}
+
+func (v gcTestTrackedInt) CacheUsageSize(context.Context, dagql.CacheUsageSizeProvider, string) (int64, bool, error) {
+	if v.sizeCalls != nil {
+		v.sizeCalls.Add(1)
+	}
+	return v.sizeBytes, true, nil
+}
+
+func (v gcTestTrackedInt) OnRelease(context.Context) error {
+	return v.releaseErr
+}
+
 func addGCTestPersistable(t *testing.T, cache *dagql.Cache, sessionID, name string, value dagql.Typed) context.Context {
+	t.Helper()
+	ctx, _ := addGCTestPersistableResult(t, cache, sessionID, name, value)
+	return ctx
+}
+
+func addGCTestPersistableResult(t *testing.T, cache *dagql.Cache, sessionID, name string, value dagql.Typed) (context.Context, dagql.AnyResult) {
 	t.Helper()
 	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
 		ClientID:  sessionID,
@@ -51,14 +82,14 @@ func addGCTestPersistable(t *testing.T, cache *dagql.Cache, sessionID, name stri
 		Type:  dagql.NewResultCallType(value.Type()),
 		Field: name,
 	}
-	_, err := cache.GetOrInitCall(ctx, sessionID, gcTestTypeResolver{}, &dagql.CallRequest{
+	res, err := cache.GetOrInitCall(ctx, sessionID, gcTestTypeResolver{}, &dagql.CallRequest{
 		ResultCall:    frame,
 		IsPersistable: true,
 	}, func(context.Context) (dagql.AnyResult, error) {
 		return dagql.NewResultForCall(value, frame)
 	})
 	require.NoError(t, err)
-	return ctx
+	return ctx, res
 }
 
 func newGCTestCache(t *testing.T) *dagql.Cache {
@@ -164,6 +195,306 @@ func TestResolveEngineLocalCachePrunePoliciesUsesAvailableSpaceForMinFree(t *tes
 	require.Equal(t, dstat.Available, prunePolicies[0].CurrentFreeSpace)
 	require.Less(t, prunePolicies[0].CurrentFreeSpace, prunePolicies[0].MinFreeSpace)
 	require.GreaterOrEqual(t, dstat.Free, prunePolicies[0].MinFreeSpace)
+}
+
+func TestEngineLocalCachePruneModes(t *testing.T) {
+	maximum := int64(100)
+	target := int64(50)
+
+	for _, tc := range []struct {
+		name         string
+		opts         core.EngineCachePruneOptions
+		automaticGC  bool
+		wantDisk     bool
+		wantMetadata bool
+	}{
+		{name: "no options", wantDisk: true},
+		{
+			name:     "disk only",
+			opts:     core.EngineCachePruneOptions{MaxUsedSpace: "1GB"},
+			wantDisk: true,
+		},
+		{
+			name: "metadata only",
+			opts: core.EngineCachePruneOptions{
+				MaxEstimatedBytes:    &maximum,
+				TargetEstimatedBytes: &target,
+			},
+			wantMetadata: true,
+		},
+		{
+			name: "combined",
+			opts: core.EngineCachePruneOptions{
+				MaxUsedSpace:         "1GB",
+				MaxEstimatedBytes:    &maximum,
+				TargetEstimatedBytes: &target,
+			},
+			wantDisk:     true,
+			wantMetadata: true,
+		},
+		{
+			name:         "enabled default policy",
+			opts:         core.EngineCachePruneOptions{UseDefaultPolicy: true},
+			automaticGC:  true,
+			wantDisk:     true,
+			wantMetadata: true,
+		},
+		{
+			name:     "disabled default policy",
+			opts:     core.EngineCachePruneOptions{UseDefaultPolicy: true},
+			wantDisk: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			disk, metadata := engineLocalCachePruneModes(tc.opts, tc.automaticGC)
+			require.Equal(t, tc.wantDisk, disk)
+			require.Equal(t, tc.wantMetadata, metadata)
+		})
+	}
+}
+
+func TestResolveEngineLocalCacheMetadataPruneOptions(t *testing.T) {
+	const (
+		defaultMaximum = int64(1000)
+		defaultTarget  = int64(700)
+	)
+
+	maximumOverride := int64(1200)
+	targetOverride := int64(600)
+	zero := int64(0)
+	conflictingMaximum := int64(600)
+	conflictingTarget := int64(1000)
+
+	for _, tc := range []struct {
+		name        string
+		opts        core.EngineCachePruneOptions
+		wantMaximum int64
+		wantTarget  int64
+		wantError   string
+	}{
+		{
+			name:        "default policy",
+			opts:        core.EngineCachePruneOptions{UseDefaultPolicy: true},
+			wantMaximum: defaultMaximum,
+			wantTarget:  defaultTarget,
+		},
+		{
+			name:        "maximum only inherits target",
+			opts:        core.EngineCachePruneOptions{MaxEstimatedBytes: &maximumOverride},
+			wantMaximum: maximumOverride,
+			wantTarget:  defaultTarget,
+		},
+		{
+			name:        "target only inherits maximum",
+			opts:        core.EngineCachePruneOptions{TargetEstimatedBytes: &targetOverride},
+			wantMaximum: defaultMaximum,
+			wantTarget:  targetOverride,
+		},
+		{
+			name: "explicit pair overrides defaults",
+			opts: core.EngineCachePruneOptions{
+				MaxEstimatedBytes:    &maximumOverride,
+				TargetEstimatedBytes: &targetOverride,
+			},
+			wantMaximum: maximumOverride,
+			wantTarget:  targetOverride,
+		},
+		{
+			name:      "zero maximum",
+			opts:      core.EngineCachePruneOptions{MaxEstimatedBytes: &zero},
+			wantError: "maxEstimatedBytes must be positive",
+		},
+		{
+			name:      "zero target",
+			opts:      core.EngineCachePruneOptions{TargetEstimatedBytes: &zero},
+			wantError: "targetEstimatedBytes must be positive and lower",
+		},
+		{
+			name:      "partial maximum conflicts with inherited target",
+			opts:      core.EngineCachePruneOptions{MaxEstimatedBytes: &conflictingMaximum},
+			wantError: "targetEstimatedBytes must be positive and lower",
+		},
+		{
+			name:      "partial target conflicts with inherited maximum",
+			opts:      core.EngineCachePruneOptions{TargetEstimatedBytes: &conflictingTarget},
+			wantError: "targetEstimatedBytes must be positive and lower",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			maximum, target, err := resolveEngineLocalCacheMetadataPruneOptions(
+				defaultMaximum,
+				defaultTarget,
+				tc.opts,
+			)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantMaximum, maximum)
+			require.Equal(t, tc.wantTarget, target)
+		})
+	}
+}
+
+func TestManualMetadataPruneOnlySkipsDiskAndProtectsRoots(t *testing.T) {
+	cache := newGCTestCache(t)
+	sizeCalls := &atomic.Int32{}
+	activeCtx := addGCTestPersistable(t, cache, "manual-metadata-active", "manualMetadataActive", gcTestTrackedInt{
+		Int:       dagql.NewInt(1),
+		sizeBytes: 100,
+		identity:  "manual-metadata-active",
+		sizeCalls: sizeCalls,
+	})
+	coldCtx := addGCTestPersistable(t, cache, "manual-metadata-cold", "manualMetadataCold", dagql.NewInt(2))
+	require.NoError(t, cache.ReleaseSession(coldCtx, "manual-metadata-cold"))
+	unpruneableCtx, unpruneable := addGCTestPersistableResult(t, cache, "manual-metadata-unpruneable", "manualMetadataUnpruneable", dagql.NewInt(3))
+	require.NoError(t, cache.MakeResultUnpruneable(unpruneableCtx, unpruneable))
+	require.NoError(t, cache.ReleaseSession(unpruneableCtx, "manual-metadata-unpruneable"))
+
+	before := cache.MetadataEstimate()
+	maximum := before.EstimatedBytes - 1
+	target := int64(1)
+	srv := &Server{
+		rootDir:                        t.TempDir(),
+		engineCache:                    cache,
+		localCacheGCEnabled:            false,
+		dagqlCacheMaxEstimatedBytes:    1000,
+		dagqlCacheTargetEstimatedBytes: 700,
+	}
+	set, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
+		MaxEstimatedBytes:    &maximum,
+		TargetEstimatedBytes: &target,
+	})
+	require.NoError(t, err)
+	require.Zero(t, set.EntryCount)
+	require.Zero(t, sizeCalls.Load(), "metadata-only pruning must not measure physical disk usage")
+	require.Equal(t, 2, cache.EntryStats().RetainedCalls, "active and unpruneable roots must survive while the cold root is removed")
+	require.Less(t, cache.MetadataEstimate().EstimatedBytes, before.EstimatedBytes)
+	require.NoError(t, cache.ReleaseSession(activeCtx, "manual-metadata-active"))
+}
+
+func TestManualCombinedDiskAndMetadataPrune(t *testing.T) {
+	cache := newGCTestCache(t)
+	sizeCalls := &atomic.Int32{}
+	diskCtx := addGCTestPersistable(t, cache, "manual-combined-disk", "manualCombinedDisk", gcTestTrackedInt{
+		Int:       dagql.NewInt(1),
+		sizeBytes: 100,
+		identity:  "manual-combined-disk",
+		sizeCalls: sizeCalls,
+	})
+	require.NoError(t, cache.ReleaseSession(diskCtx, "manual-combined-disk"))
+	metadataCtx := addGCTestPersistable(t, cache, "manual-combined-metadata", "manualCombinedMetadata", dagql.NewInt(2))
+	require.NoError(t, cache.ReleaseSession(metadataCtx, "manual-combined-metadata"))
+
+	maximum := int64(2)
+	target := int64(1)
+	srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+	set, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
+		MaxUsedSpace:         "1",
+		TargetSpace:          "1",
+		MaxEstimatedBytes:    &maximum,
+		TargetEstimatedBytes: &target,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, set.EntryCount, "the detailed response contains only the disk-stage removal")
+	require.Greater(t, sizeCalls.Load(), int32(0), "the disk stage must run before the structural stage")
+	require.Zero(t, cache.EntryStats().RetainedCalls, "both stages must complete before the manual call returns")
+}
+
+func TestManualUseDefaultPolicyIncludesMetadata(t *testing.T) {
+	cache := newGCTestCache(t)
+	ctx := addGCTestPersistable(t, cache, "manual-default-metadata", "manualDefaultMetadata", dagql.NewInt(1))
+	require.NoError(t, cache.ReleaseSession(ctx, "manual-default-metadata"))
+
+	srv := &Server{
+		rootDir:                        t.TempDir(),
+		engineCache:                    cache,
+		workerGCPolicies:               []dagqlCachePrunePolicy{{All: true, MaxUsedSpace: 1 << 40}},
+		localCacheGCEnabled:            true,
+		dagqlCacheMaxEstimatedBytes:    2,
+		dagqlCacheTargetEstimatedBytes: 1,
+	}
+	_, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{UseDefaultPolicy: true})
+	require.NoError(t, err)
+	require.Zero(t, cache.EntryStats().RetainedCalls, "configured structural pruning must occur in the same manual call")
+}
+
+func TestManualNoOptionPrunePreservesDiskPruneAll(t *testing.T) {
+	cache := newGCTestCache(t)
+	sizeCalls := &atomic.Int32{}
+	ctx := addGCTestPersistable(t, cache, "manual-no-options", "manualNoOptions", gcTestTrackedInt{
+		Int:       dagql.NewInt(1),
+		sizeBytes: 100,
+		identity:  "manual-no-options",
+		sizeCalls: sizeCalls,
+	})
+	require.NoError(t, cache.ReleaseSession(ctx, "manual-no-options"))
+
+	srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+	set, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 1, set.EntryCount)
+	require.Greater(t, sizeCalls.Load(), int32(0))
+	require.Zero(t, cache.EntryStats().RetainedCalls)
+}
+
+func TestManualMetadataPruneCancellationAndReleaseError(t *testing.T) {
+	t.Run("cancellation", func(t *testing.T) {
+		cache := newGCTestCache(t)
+		ctx := addGCTestPersistable(t, cache, "manual-metadata-canceled", "manualMetadataCanceled", dagql.NewInt(1))
+		require.NoError(t, cache.ReleaseSession(ctx, "manual-metadata-canceled"))
+		maximum := cache.MetadataEstimate().EstimatedBytes - 1
+		target := int64(1)
+		canceled, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+		_, err := srv.PruneEngineLocalCacheEntries(canceled, core.EngineCachePruneOptions{
+			MaxEstimatedBytes:    &maximum,
+			TargetEstimatedBytes: &target,
+		})
+		require.ErrorIs(t, err, context.Canceled)
+		require.Equal(t, 1, cache.EntryStats().RetainedCalls)
+	})
+
+	t.Run("release error", func(t *testing.T) {
+		cache := newGCTestCache(t)
+		releaseErr := errors.New("manual metadata release failed")
+		ctx := addGCTestPersistable(t, cache, "manual-metadata-release-error", "manualMetadataReleaseError", gcTestTrackedInt{
+			Int:        dagql.NewInt(1),
+			identity:   "manual-metadata-release-error",
+			releaseErr: releaseErr,
+		})
+		require.NoError(t, cache.ReleaseSession(ctx, "manual-metadata-release-error"))
+		maximum := cache.MetadataEstimate().EstimatedBytes - 1
+		target := int64(1)
+
+		srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+		_, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
+			MaxEstimatedBytes:    &maximum,
+			TargetEstimatedBytes: &target,
+		})
+		require.ErrorIs(t, err, releaseErr)
+		require.Zero(t, cache.EntryStats().RetainedCalls, "the underlying release error must be returned after the root is cut")
+	})
+}
+
+func TestManualCombinedPruneValidatesBeforeMutation(t *testing.T) {
+	cache := newGCTestCache(t)
+	ctx := addGCTestPersistable(t, cache, "manual-combined-invalid", "manualCombinedInvalid", dagql.NewInt(1))
+	require.NoError(t, cache.ReleaseSession(ctx, "manual-combined-invalid"))
+	maximum := cache.MetadataEstimate().EstimatedBytes - 1
+	target := int64(1)
+
+	srv := &Server{rootDir: t.TempDir(), engineCache: cache}
+	_, err := srv.PruneEngineLocalCacheEntries(t.Context(), core.EngineCachePruneOptions{
+		MaxUsedSpace:         "not-a-size",
+		MaxEstimatedBytes:    &maximum,
+		TargetEstimatedBytes: &target,
+	})
+	require.ErrorContains(t, err, "invalid maxUsedSpace value")
+	require.Equal(t, 1, cache.EntryStats().RetainedCalls, "neither stage may mutate before the complete request validates")
 }
 
 func TestLocalCacheDiskPressureGCNeeded(t *testing.T) {

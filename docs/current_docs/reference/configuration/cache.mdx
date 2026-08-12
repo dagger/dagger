@@ -49,8 +49,32 @@ dagger -m core api call engine local-cache prune
 
 That will remove *all* cache entries not currently being used by connected clients from the disk.
 
-To instead trigger a prune that follows the same rules as specified in the engine's [configured cache garbage collection policy](./engine.mdx), use the following command:
+To instead trigger a prune that follows the enabled disk and structural
+metadata rules in the engine's [configured cache garbage collection
+policy](./engine.mdx), use the following command:
 
 ```shell
 dagger -m core api call engine local-cache prune --use-default-policy
 ```
+
+If automatic garbage collection is disabled, `--use-default-policy` does not
+re-enable its policies.
+
+Structural metadata can also be pruned explicitly with absolute byte limits:
+
+```shell
+dagger -m core api call engine local-cache prune \
+  --max-estimated-bytes=4294967296 \
+  --target-estimated-bytes=3221225472
+```
+
+Supplying either structural option enables structural pruning for that request,
+even when automatic garbage collection is disabled. An omitted option inherits
+the engine's resolved configured/default value. Explicit values must be
+positive, and the resolved target must be lower than the resolved maximum.
+Percentages and size strings are not accepted.
+
+A request containing only structural options does not prune disk cache entries.
+Disk options and structural options can be combined; the disk stage runs first,
+followed by the structural stage in the same serialized request. Active session
+closures and engine-lifetime unpruneable roots remain protected in both stages.

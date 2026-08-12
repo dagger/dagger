@@ -43,6 +43,12 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 				dagql.Arg("reservedSpace").Doc("Override the minimum disk space to retain during pruning (e.g. \"500GB\" or \"10%\")."),
 				dagql.Arg("minFreeSpace").Doc("Override the minimum free disk space target during pruning (e.g. \"20GB\" or \"20%\")."),
 				dagql.Arg("targetSpace").Doc("Override the target disk space to keep after pruning (e.g. \"200GB\" or \"50%\")."),
+				dagql.Arg("maxEstimatedBytes").
+					Doc("Override the maximum structural metadata estimate in absolute bytes. The configured/default value is used when omitted.").
+					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("targetEstimatedBytes").
+					Doc("Override the structural metadata estimate to target in absolute bytes. The configured/default value is used when omitted.").
+					View(AfterVersion("v1.0.0-0")),
 			),
 	}.Install(srv)
 
@@ -131,11 +137,13 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectRes
 }
 
 func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct {
-	UseDefaultPolicy bool   `default:"false"`
-	MaxUsedSpace     string `default:""`
-	ReservedSpace    string `default:""`
-	MinFreeSpace     string `default:""`
-	TargetSpace      string `default:""`
+	UseDefaultPolicy     bool   `default:"false"`
+	MaxUsedSpace         string `default:""`
+	ReservedSpace        string `default:""`
+	MinFreeSpace         string `default:""`
+	TargetSpace          string `default:""`
+	MaxEstimatedBytes    dagql.Optional[dagql.Int]
+	TargetEstimatedBytes dagql.Optional[dagql.Int]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 	query, err := core.CurrentQuery(ctx)
@@ -147,17 +155,27 @@ func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache,
 	}
 
 	_, err = query.PruneEngineLocalCacheEntries(ctx, core.EngineCachePruneOptions{
-		UseDefaultPolicy: args.UseDefaultPolicy,
-		MaxUsedSpace:     args.MaxUsedSpace,
-		ReservedSpace:    args.ReservedSpace,
-		MinFreeSpace:     args.MinFreeSpace,
-		TargetSpace:      args.TargetSpace,
+		UseDefaultPolicy:     args.UseDefaultPolicy,
+		MaxUsedSpace:         args.MaxUsedSpace,
+		ReservedSpace:        args.ReservedSpace,
+		MinFreeSpace:         args.MinFreeSpace,
+		TargetSpace:          args.TargetSpace,
+		MaxEstimatedBytes:    optionalInt64(args.MaxEstimatedBytes),
+		TargetEstimatedBytes: optionalInt64(args.TargetEstimatedBytes),
 	})
 	if err != nil {
 		return void, fmt.Errorf("failed to prune cache entries: %w", err)
 	}
 
 	return void, nil
+}
+
+func optionalInt64(value dagql.Optional[dagql.Int]) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	resolved := value.Value.Int64()
+	return &resolved
 }
 
 func (s *engineSchema) cacheEntrySetEntries(ctx context.Context, parent *core.EngineCacheEntrySet, args struct{}) (dagql.Array[*core.EngineCacheEntry], error) {

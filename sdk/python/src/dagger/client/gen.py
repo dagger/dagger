@@ -5466,6 +5466,8 @@ class EngineCache(Type):
         reserved_space: str | None = "",
         min_free_space: str | None = "",
         target_space: str | None = "",
+        max_estimated_bytes: int | None = None,
+        target_estimated_bytes: int | None = None,
     ) -> Void | None:
         """Prune the cache of releaseable entries
 
@@ -5486,6 +5488,12 @@ class EngineCache(Type):
         target_space:
             Override the target disk space to keep after pruning (e.g. "200GB"
             or "50%").
+        max_estimated_bytes:
+            Override the maximum structural metadata estimate in absolute
+            bytes. The configured/default value is used when omitted.
+        target_estimated_bytes:
+            Override the structural metadata estimate to target in absolute
+            bytes. The configured/default value is used when omitted.
 
         Returns
         -------
@@ -5506,6 +5514,8 @@ class EngineCache(Type):
             Arg("reservedSpace", reserved_space, ""),
             Arg("minFreeSpace", min_free_space, ""),
             Arg("targetSpace", target_space, ""),
+            Arg("maxEstimatedBytes", max_estimated_bytes, None),
+            Arg("targetEstimatedBytes", target_estimated_bytes, None),
         ]
         _ctx = self._select("prune", _args)
         await _ctx.execute()

@@ -29,11 +29,13 @@ type EngineCache struct {
 }
 
 type EngineCachePruneOptions struct {
-	UseDefaultPolicy bool
-	MaxUsedSpace     string
-	ReservedSpace    string
-	MinFreeSpace     string
-	TargetSpace      string
+	UseDefaultPolicy     bool
+	MaxUsedSpace         string
+	ReservedSpace        string
+	MinFreeSpace         string
+	TargetSpace          string
+	MaxEstimatedBytes    *int64
+	TargetEstimatedBytes *int64
 }
 
 func (*EngineCache) Type() *ast.Type {

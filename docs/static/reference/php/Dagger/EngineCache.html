@@ -186,7 +186,7 @@
                     void
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_prune">prune</a>(bool|null $useDefaultPolicy = false, string|null $maxUsedSpace = &#039;&#039;, string|null $reservedSpace = &#039;&#039;, string|null $minFreeSpace = &#039;&#039;, string|null $targetSpace = &#039;&#039;)
+                    <a href="#method_prune">prune</a>(bool|null $useDefaultPolicy = false, string|null $maxUsedSpace = &#039;&#039;, string|null $reservedSpace = &#039;&#039;, string|null $minFreeSpace = &#039;&#039;, string|null $targetSpace = &#039;&#039;, int|null $maxEstimatedBytes = null, int|null $targetEstimatedBytes = null)
         
                                             <p><p>Prune the cache of releaseable entries</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -448,7 +448,7 @@
                     <h3 id="method_prune">
         <div class="location">at line 58</div>
         <code>                    void
-    <strong>prune</strong>(bool|null $useDefaultPolicy = false, string|null $maxUsedSpace = &#039;&#039;, string|null $reservedSpace = &#039;&#039;, string|null $minFreeSpace = &#039;&#039;, string|null $targetSpace = &#039;&#039;)
+    <strong>prune</strong>(bool|null $useDefaultPolicy = false, string|null $maxUsedSpace = &#039;&#039;, string|null $reservedSpace = &#039;&#039;, string|null $minFreeSpace = &#039;&#039;, string|null $targetSpace = &#039;&#039;, int|null $maxEstimatedBytes = null, int|null $targetEstimatedBytes = null)
         </code>
     </h3>
     <div class="details">    
@@ -487,6 +487,16 @@
                 <td>$targetSpace</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>int|null</td>
+                <td>$maxEstimatedBytes</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>int|null</td>
+                <td>$targetEstimatedBytes</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -508,7 +518,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_reservedSpace">
-        <div class="location">at line 87</div>
+        <div class="location">at line 95</div>
         <code>                    int
     <strong>reservedSpace</strong>()
         </code>
@@ -540,7 +550,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_targetSpace">
-        <div class="location">at line 96</div>
+        <div class="location">at line 104</div>
         <code>                    int
     <strong>targetSpace</strong>()
         </code>

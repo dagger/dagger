@@ -72,7 +72,9 @@ defmodule Dagger.EngineCache do
           {:max_used_space, String.t() | nil},
           {:reserved_space, String.t() | nil},
           {:min_free_space, String.t() | nil},
-          {:target_space, String.t() | nil}
+          {:target_space, String.t() | nil},
+          {:max_estimated_bytes, integer() | nil},
+          {:target_estimated_bytes, integer() | nil}
         ]) :: :ok | {:error, term()}
   def prune(%__MODULE__{} = engine_cache, optional_args \\ []) do
     query_builder =
@@ -83,6 +85,8 @@ defmodule Dagger.EngineCache do
       |> QB.maybe_put_arg("reservedSpace", optional_args[:reserved_space])
       |> QB.maybe_put_arg("minFreeSpace", optional_args[:min_free_space])
       |> QB.maybe_put_arg("targetSpace", optional_args[:target_space])
+      |> QB.maybe_put_arg("maxEstimatedBytes", optional_args[:max_estimated_bytes])
+      |> QB.maybe_put_arg("targetEstimatedBytes", optional_args[:target_estimated_bytes])
 
     case Client.execute(engine_cache.client, query_builder) do
       {:ok, _} -> :ok

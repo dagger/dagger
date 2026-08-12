@@ -752,6 +752,22 @@ sleep 30`,
 	require.NotEmpty(t, strings.TrimSpace(version))
 }
 
+func (LocalCacheSuite) TestLocalCacheManualMetadataPruneCLI(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	devEngine := devEngineContainerAsService(engine)
+
+	_, err := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{
+			"dagger", "-m", "core", "api", "call",
+			"engine", "local-cache", "prune",
+			"--max-estimated-bytes=4294967296",
+			"--target-estimated-bytes=3221225472",
+		}).
+		Sync(ctx)
+	require.NoError(t, err, "explicit structural pruning must remain available when automatic GC is disabled")
+}
+
 func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	setup := func(ctx context.Context, t *testctx.T) (endpoint string, c2 *dagger.Client, addCacheBlock func(*testctx.T, string, int), getUsedBytes func(*testctx.T) int) {

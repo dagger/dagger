@@ -1415,6 +1415,16 @@ export type EngineCachePruneOpts = {
    * Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
    */
   targetSpace?: string
+
+  /**
+   * Override the maximum structural metadata estimate in absolute bytes. The configured/default value is used when omitted.
+   */
+  maxEstimatedBytes?: number
+
+  /**
+   * Override the structural metadata estimate to target in absolute bytes. The configured/default value is used when omitted.
+   */
+  targetEstimatedBytes?: number
 }
 
 export type EnvFileGetOpts = {
@@ -6861,6 +6871,8 @@ export class EngineCache extends BaseClient {
    * @param opts.reservedSpace Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
    * @param opts.minFreeSpace Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
    * @param opts.targetSpace Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+   * @param opts.maxEstimatedBytes Override the maximum structural metadata estimate in absolute bytes. The configured/default value is used when omitted.
+   * @param opts.targetEstimatedBytes Override the structural metadata estimate to target in absolute bytes. The configured/default value is used when omitted.
    */
   prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {

@@ -284,10 +284,10 @@ That layer:
 So `dagql` owns the prune implementation, while `engine/server` owns policy
 construction and triggering.
 
-The automatic structural-memory pass does not create another policy language.
-It always uses `KeepDuration=0`, no filters, and the current deterministic
-candidate order. Its only controls are an absolute maximum estimate and a lower
-target estimate.
+The structural-memory pass does not create another policy language. It always
+uses `KeepDuration=0`, no filters, and the current deterministic candidate
+order. Its only controls are an absolute maximum estimate and a lower target
+estimate.
 
 ## Local-Cache GC Scheduling
 
@@ -312,8 +312,33 @@ pressure or disk policies. Session completion and other explicit lifecycle
 entries bypass or clear it, and any successful removal or return below maximum
 clears it.
 
-`gc.enabled=false` disables both disk and structural pruning. Legacy BuildKit GC
-disablement has the same effect.
+`gc.enabled=false` disables automatic disk and structural pruning. Legacy
+BuildKit GC disablement has the same effect on automatic scheduling. An explicit
+manual structural request remains allowed.
+
+## Manual Pruning Modes
+
+`Engine.localCache.prune` selects disk and structural stages independently while
+holding the existing server `gcmu` for the complete request:
+
+- no options preserves the legacy all-eligible disk prune
+- disk options run disk pruning
+- structural `maxEstimatedBytes` or `targetEstimatedBytes` options run
+  structural pruning without an implicit disk prune
+- combined disk and structural controls run disk first and structural second,
+  matching automatic GC ordering
+- `useDefaultPolicy=true` runs both configured stages when automatic GC is
+  enabled
+
+When automatic GC is disabled, `useDefaultPolicy` does not enable the disabled
+structural policy. Explicit structural options still run because they are a
+direct operator action rather than automatic scheduling.
+
+Manual structural options are optional absolute byte integers. Each omitted
+member of the pair inherits the server's already-resolved configured/default
+value. An explicitly supplied value must be positive, and the resulting target
+must be lower than the resulting maximum. The server validates the complete
+request before either stage mutates cache state.
 
 ## High-Level Disk Prune Algorithm
 
@@ -333,7 +358,7 @@ At a high level, the prune implementation in `dagql/cache_prune.go` does this:
 
 This is absolutely a best-effort pruning pass, not an optimal solver.
 
-## Structural Estimate And Automatic Memory Pruning
+## Structural Estimate And Memory Pruning
 
 The cache exposes an O(1) estimate from cardinalities already protected by
 `egraphMu`:
@@ -387,10 +412,10 @@ When the estimate exceeds the maximum, `PruneMetadataEstimate`:
 
 Structural snapshot mode skips physical size measurement, usage-identity
 details, call labels, cloned call frames, digest derivation, and per-root report
-entries. Automatic output is one aggregate INFO record, emitted only after the
+entries. Structural output is one aggregate INFO record, emitted only after the
 maximum is actually exceeded, plus aggregate trace events when e-graph tracing
-is enabled. Explicit user prune retains the existing detailed disk-oriented
-response.
+is enabled. A manual request retains the existing detailed response for its disk
+stage; its structural stage remains aggregate-only.
 
 ## Stop-The-World Avoidance
 
@@ -604,7 +629,7 @@ The current logic is still policy-shaped rather than deeply semantic:
 If thresholds are not triggered but the policy is effectively "prune matching
 things anyway" (`All` or filters), the target becomes effectively unlimited.
 
-That is how explicit user prune requests can still remove matching entries even
+That is how explicit disk-prune requests can still remove matching entries even
 without disk pressure.
 
 ## Applying The Plan To Live State
@@ -704,10 +729,10 @@ Structural pruning has one separate Prometheus gauge:
 used by the trigger. There are no per-type, per-field, or per-root structural
 metrics.
 
-An automatic structural pass returns and logs only aggregate counts, estimates,
-compaction slot counts, outcome, and duration. A below-threshold call emits no
-INFO start/finish record. Explicit user prune remains compatible with its
-existing detailed response.
+A structural pass returns and logs only aggregate counts, estimates, compaction
+slot counts, outcome, and duration. A below-threshold call emits no INFO
+start/finish record. Manual pruning remains compatible with its existing
+detailed response for disk-stage removals.
 
 ## Persistence And Restart
 
@@ -822,8 +847,8 @@ ownership model.
 
 The current dagql prune model treats persisted edges as prunable retention roots
 and protects live session closure and unpruneable roots. Disk mode uses measured
-physical size and worker policies. Structural mode independently triggers from
-an O(1) `R/T/C` estimate, force-compacts class slots, and uses equal coarse
-credit without physical details. Both modes reuse the same graph snapshot,
-greedy ownership simulation, live unpruneable recheck, persisted-edge cuts,
-normal ownership cascade, and containerd lease cleanup.
+physical size and worker policies. Structural mode triggers automatically or
+manually from an O(1) `R/T/C` estimate, force-compacts class slots, and uses
+equal coarse credit without physical details. Both modes reuse the same graph
+snapshot, greedy ownership simulation, live unpruneable recheck, persisted-edge
+cuts, normal ownership cascade, and containerd lease cleanup.

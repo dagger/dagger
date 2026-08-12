@@ -61,6 +61,8 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
         ?string $reservedSpace = '',
         ?string $minFreeSpace = '',
         ?string $targetSpace = '',
+        ?int $maxEstimatedBytes = null,
+        ?int $targetEstimatedBytes = null,
     ): void {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('prune');
         if (null !== $useDefaultPolicy) {
@@ -77,6 +79,12 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $targetSpace) {
         $leafQueryBuilder->setArgument('targetSpace', $targetSpace);
+        }
+        if (null !== $maxEstimatedBytes) {
+        $leafQueryBuilder->setArgument('maxEstimatedBytes', $maxEstimatedBytes);
+        }
+        if (null !== $targetEstimatedBytes) {
+        $leafQueryBuilder->setArgument('targetEstimatedBytes', $targetEstimatedBytes);
         }
         $this->queryLeaf($leafQueryBuilder, 'prune');
     }
