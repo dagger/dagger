@@ -15,6 +15,11 @@ import (
 
 // Config represents a parsed dagger.toml workspace configuration.
 type Config struct {
+	// Include lists the workspace configs this one builds on: each entry's
+	// config is merged underneath this one. The shape allows several, but only
+	// one is accepted for now, and an included config's own includes are never
+	// followed.
+	Include            []IncludeEntry         `json:"include,omitempty" toml:"include,omitempty"`
 	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
 	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
 	DefaultsFromDotEnv bool                   `json:"defaults_from_dotenv,omitempty" toml:"defaults_from_dotenv,omitempty"`
@@ -35,9 +40,26 @@ type PortMapping struct {
 	BackendPort    int    `json:"backendPort" toml:"backendPort"`
 }
 
+// IncludeEntry is one included workspace config. Source addresses the config
+// file itself — not the workspace holding it — either as a path relative to the
+// including config's directory, or as a git ref with the file as its subpath:
+//
+//	[[include]]
+//	source = "../../common/dagger.toml"
+//
+//	[[include]]
+//	source = "https://github.com/acme/platform#:dagger/common/app-base.toml"
+type IncludeEntry struct {
+	Source string `json:"source" toml:"source"`
+}
+
 // ModuleEntry represents a single module entry in the workspace config.
+//
+// Source is optional in the file: with a top-level import, an entry may carry
+// only overrides and inherit its source from the blueprint config. Every entry
+// in an *effective* config still needs one — see ValidateEffectiveConfig.
 type ModuleEntry struct {
-	Source            string         `json:"source" toml:"source"`
+	Source            string         `json:"source,omitempty" toml:"source"`
 	Pin               string         `json:"pin,omitempty" toml:"pin,omitempty"`
 	Settings          map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
 	Entrypoint        bool           `json:"entrypoint,omitempty" toml:"entrypoint,omitempty"`
@@ -424,6 +446,12 @@ func SerializeConfig(cfg *Config) []byte {
 		fmt.Fprintf(&b, "check-generated = %t\n\n", *cfg.CheckGenerated)
 	}
 
+	// After the top-level scalars: every bare key in a TOML document has to
+	// precede the first table header, and [[include]] is one.
+	for _, include := range cfg.Include {
+		fmt.Fprintf(&b, "[[include]]\nsource = %q\n\n", include.Source)
+	}
+
 	wroteModules := writeModuleEntries(&b, cfg.Modules)
 	if wroteModules && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
 		b.WriteString("\n")
@@ -442,6 +470,7 @@ func cloneConfig(cfg *Config) *Config {
 	}
 
 	cloned := &Config{
+		Include:            append([]IncludeEntry(nil), cfg.Include...),
 		Ignore:             append([]string(nil), cfg.Ignore...),
 		DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
 	}
@@ -554,7 +583,11 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		entry := modules[name]
 		modulePath := "modules." + formatConfigPathSegment(name)
 		fmt.Fprintf(b, "[%s]\n", modulePath)
-		fmt.Fprintf(b, "source = %q\n", entry.Source)
+		// An entry with no source is an override of an blueprint module; writing
+		// source = "" back would turn it into an entry that names nothing.
+		if entry.Source != "" {
+			fmt.Fprintf(b, "source = %q\n", entry.Source)
+		}
 		if entry.Pin != "" {
 			fmt.Fprintf(b, "pin = %q\n", entry.Pin)
 		}
@@ -1171,6 +1204,15 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 	}
 
 	switch parts[0] {
+	case "include":
+		// The config shape is an array of tables, but only one include is
+		// accepted for now, so the CLI addresses it as a single value: setting
+		// it replaces whatever was there.
+		if len(parts) == 2 && parts[1] == "source" || len(parts) == 1 {
+			cfg.Include = []IncludeEntry{{Source: fmt.Sprint(value)}}
+			return nil
+		}
+		return fmt.Errorf("invalid key %q; expected include or include.source", strings.Join(parts, "."))
 	case "ignore":
 		if len(parts) != 1 {
 			return fmt.Errorf("invalid key %q; ignore does not have sub-keys", strings.Join(parts, "."))
