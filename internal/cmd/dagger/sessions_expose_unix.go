@@ -357,6 +357,7 @@ func runExposePortServerWithHooks(
 	if lock == nil || statusW == nil || lifecycleR == nil {
 		return errors.New("expose server inherited descriptors are unavailable")
 	}
+	fmt.Fprintf(os.Stderr, "starting port server for detached session %s\n", config.SessionID)
 	defer lock.Close()
 	defer statusW.Close()
 	defer lifecycleR.Close()
@@ -407,6 +408,7 @@ func runExposePortServerWithHooks(
 	}()
 
 	monitor := newExposeListenerMonitor()
+	fmt.Fprintln(os.Stderr, "attaching to detached session")
 	params := client.Params{
 		AttachSessionID: config.SessionID,
 		RunnerHost:      RunnerHost,
@@ -418,6 +420,7 @@ func runExposePortServerWithHooks(
 	if err != nil {
 		return fmt.Errorf("attach expose server: %w", err)
 	}
+	fmt.Fprintln(os.Stderr, "publishing detached service ports")
 	defer func() {
 		monitor.shutdown()
 		if err := session.Close(); err != nil {
@@ -447,6 +450,7 @@ func runExposePortServerWithHooks(
 		return fmt.Errorf("report expose server readiness: %w", err)
 	}
 	readySent = true
+	fmt.Fprintln(os.Stderr, "all detached service ports are ready; awaiting commit")
 
 	select {
 	case commit := <-commitRead:
@@ -475,6 +479,7 @@ func runExposePortServerWithHooks(
 		return err
 	}
 	control.ready(ports)
+	fmt.Fprintln(os.Stderr, "detached service ports committed")
 
 	select {
 	case <-session.Done():
@@ -490,7 +495,7 @@ func runExposePortServerWithHooks(
 
 func publishExposePorts(
 	ctx context.Context,
-	session *client.Client,
+	session exposeQueryClient,
 	request exposeRequest,
 ) ([]exposedPort, error) {
 	byService := map[string][]exposePortMapping{}
@@ -516,31 +521,47 @@ func publishExposePorts(
 			}
 			inputs[i] = input
 		}
-		var data struct {
+		var started struct {
 			Host struct {
 				Tunnel struct {
-					Start struct {
-						Ports []struct {
-							Port     int                  `json:"port"`
-							Protocol core.NetworkProtocol `json:"protocol"`
-						} `json:"ports"`
-					} `json:"start"`
+					Start string `json:"start"`
 				} `json:"tunnel"`
 			} `json:"host"`
 		}
-		const query = `query ExposeService($service: ID!, $ports: [PortForward!]!) {
+		const startQuery = `query StartExposeService($service: ID!, $ports: [PortForward!]!) {
   host {
     tunnel(service: $service, ports: $ports, native: false) {
-      start { ports { port protocol } }
+      start
     }
   }
 }`
-		if err := session.Do(ctx, query, "ExposeService", map[string]any{
+		if err := session.Do(ctx, startQuery, "StartExposeService", map[string]any{
 			"service": mappings[0].ServiceID, "ports": inputs,
+		}, &started); err != nil {
+			return nil, fmt.Errorf("start port tunnel for %s: %w", name, err)
+		}
+		if started.Host.Tunnel.Start == "" {
+			return nil, fmt.Errorf("start port tunnel for %s: engine returned an empty service ID", name)
+		}
+		var data struct {
+			Node struct {
+				Ports []struct {
+					Port     int                  `json:"port"`
+					Protocol core.NetworkProtocol `json:"protocol"`
+				} `json:"ports"`
+			} `json:"node"`
+		}
+		const portsQuery = `query ExposeServicePorts($service: ID!) {
+  node(id: $service) {
+    ... on Service { ports { port protocol } }
+  }
+}`
+		if err := session.Do(ctx, portsQuery, "ExposeServicePorts", map[string]any{
+			"service": started.Host.Tunnel.Start,
 		}, &data); err != nil {
 			return nil, fmt.Errorf("publish ports for %s: %w", name, err)
 		}
-		actual := data.Host.Tunnel.Start.Ports
+		actual := data.Node.Ports
 		if len(actual) != len(mappings) {
 			return nil, fmt.Errorf(
 				"publish ports for %s: engine returned %d ports for %d mappings",
@@ -555,4 +576,8 @@ func publishExposePorts(
 		}
 	}
 	return published, nil
+}
+
+type exposeQueryClient interface {
+	Do(context.Context, string, string, map[string]any, any) error
 }

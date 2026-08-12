@@ -2,7 +2,9 @@ package daggercmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -122,6 +124,52 @@ func TestExposedPortsFromSessionDescriptor(t *testing.T) {
 	require.Equal(t, []exposedPort{{
 		Service: "web", Frontend: 8080, Backend: 80, Protocol: core.NetworkProtocolTCP,
 	}}, ports)
+}
+
+func TestPublishExposePortsStartsBeforeReadingPorts(t *testing.T) {
+	t.Parallel()
+	frontend := 8080
+	request := exposeRequest{Mappings: []exposePortMapping{{
+		Service: "web", ServiceID: "backend-id", Frontend: &frontend,
+		Backend: 80, Protocol: core.NetworkProtocolTCP,
+	}}}
+	fake := &fakeExposeQueryClient{t: t}
+	ports, err := publishExposePorts(t.Context(), fake, request)
+	require.NoError(t, err)
+	require.Equal(t, []exposedPort{{
+		Service: "web", Frontend: 8080, Backend: 80, Protocol: core.NetworkProtocolTCP,
+	}}, ports)
+	require.Equal(t, []string{"StartExposeService", "ExposeServicePorts"}, fake.operations)
+}
+
+type fakeExposeQueryClient struct {
+	t          *testing.T
+	operations []string
+}
+
+func (fake *fakeExposeQueryClient) Do(
+	_ context.Context,
+	query string,
+	operation string,
+	variables map[string]any,
+	data any,
+) error {
+	fake.t.Helper()
+	fake.operations = append(fake.operations, operation)
+	var response string
+	switch operation {
+	case "StartExposeService":
+		require.NotContains(fake.t, query, "start {")
+		require.Equal(fake.t, "backend-id", variables["service"])
+		response = `{"host":{"tunnel":{"start":"tunnel-id"}}}`
+	case "ExposeServicePorts":
+		require.True(fake.t, strings.Contains(query, "... on Service"))
+		require.Equal(fake.t, "tunnel-id", variables["service"])
+		response = `{"node":{"ports":[{"port":8080,"protocol":"TCP"}]}}`
+	default:
+		fake.t.Fatalf("unexpected operation %q", operation)
+	}
+	return json.Unmarshal([]byte(response), data)
 }
 
 func mappingFor(t *testing.T, request exposeRequest, service string, backend int) exposePortMapping {
