@@ -8,7 +8,7 @@ status: draft
 
 | Field | Value |
 | --- | --- |
-| Phase | 3 — plan review, round 2 applied |
+| Phase | 5 — implemented and reviewed; `TestWorkspaceImport` green locally (18 subtests) |
 | Branch | `feature-dev-a451d460` |
 | Base | `upstream/main` @ `49a8726ee` |
 | PR | _not opened yet_ |
@@ -135,10 +135,13 @@ Consumers of the merged config:
    `currentModule.asSDK` and the SDK-ownership lookup in `modulesource.go`.
 3. `core/schema/workspace_config.go:configRead` — **its base path too**.
    `configRead` only calls `readWorkspaceConfig` in its env-selected and
-   user-overlay branches; with neither overlay it returns raw
-   `readConfigBytes` output (`core/schema/workspace_config.go:234`). Patching
-   only `readWorkspaceConfig` would leave plain `dagger workspace config`
-   unmerged, which is the headline surface.
+   user-overlay branches; with neither overlay it returns raw `readConfigBytes`
+   output. Patching only `readWorkspaceConfig` would leave plain
+   `dagger workspace config` unmerged, which is the headline surface. The
+   `import` key is the one exception, and it is handled **above** the branch
+   split: every effective view strips it, so answering it from a merged view
+   would report "key is not set" under `--env` or a user overlay — and would
+   resolve the import over the network to return a local scalar.
 4. `core/schema/modulesource.go:workspaceModuleSourceByName` — a separate raw
    read of `dagger.toml` from the caller's cwd, used to resolve
    `--load-module <installed-name>`.
@@ -181,7 +184,7 @@ not absences.
 | `modules.<name>.as-sdk` | **Never inherited** — marker, `name`, `modules` and `clients` are all dropped from the import. `modules`/`clients` are workspace-root-relative paths into the base repo; keeping the marker alone would advertise an SDK that no init flow can use, since init writes SDK-managed paths and reads only the local config. A current entry keeps its own `as-sdk` wholesale. |
 | `env.<name>` | Merged per env name; an env that only the import defines is selectable downstream. |
 | `env.<name>.modules.<mod>` | Same field rules as `modules.<name>` (source/pin coupling, settings key by key). |
-| `ports.<host>` | Merged per field (`backendService`, `backendPort`), like module entries. Wholesale replacement was considered and rejected: config addressing sets the two keys independently, so a partial current `[ports.3000]` would blank the other half of a complete inherited mapping. Per-field merge cannot produce a half-written mapping either, because `ValidateEffectiveConfig` rejects a port entry missing either field. |
+| `ports.<host>` | Current replaces **wholesale** per host port. Per-field merge was tried and reverted: `writePortEntries` always serializes both keys, so setting one through `dagger workspace config` writes `backendPort = 0` into the file, which a presence-aware merge would then read as an explicit override to port 0. A service and its port are one unit; overriding one means repeating the other. Completeness is deliberately **not** validated — `dagger workspace config ports.3000.backendService web` writes one key at a time, so a partial mapping is a state the CLI itself produces and configs that load today would start failing on every read. Ports keep their pre-existing behavior. |
 
 ### Module entries become patches, and validation moves after the merge
 
@@ -200,11 +203,11 @@ config contract, not an implementation detail:
   key that the schema change just made unnecessary.
 - **`ValidateEffectiveConfig(cfg) error`** takes over what the schema no longer
   guarantees, and it runs **unconditionally on every effective config**, not only
-  when an import is present:
-  - every module entry has a non-empty source (a patch entry whose import was
-    removed, or that names a module the base does not provide, is an error
-    naming the module — not a `pendingModule` with an empty `Ref`);
-  - every port entry has both a service and a port.
+  when an import is present: every module entry has a non-empty source (a patch
+  entry whose import was removed, or that names a module the base does not
+  provide, is an error naming the module — not a `pendingModule` with an empty
+  `Ref`). Port completeness is **not** checked, for the reason in the merge
+  table's `ports.<host>` row.
 
   Running it only inside the import branch would be worse than not relaxing the
   schema at all: unsetting `import` would silently turn a valid patch into an
@@ -218,8 +221,10 @@ against the raw local config:
   source and reports a conflict when they differ; an empty source must read as
   "not installed locally" so `dagger install` fills it in instead of failing.
 - `withoutModule` deleting a source-less patch entry removes an **override**,
-  not an installation — the inherited module comes back. The message must say
-  that rather than "Uninstalled module".
+  not an installation — the inherited module comes back, and no managed-module
+  directory is removed with it, because there is no local module. The CLI checks
+  whether the module is still listed after the write and says the overrides were
+  removed, rather than "Uninstalled module".
 
 ### Limitation 1 — one import, no chain
 
@@ -245,11 +250,20 @@ as an import target because of a `ci` module the downstream user never asked
 for. Dropping enforces the limitation just as hard — the entry does not exist
 downstream, so it can never resolve — while keeping the import usable.
 
-The warning is emitted **inside the shared loader**, deduplicated per session
-and import ref, through the same `console(ctx, …)` + `slog.Warn` path the legacy
-compat notice uses. Not in the load path: `dagger workspace config` connects
-with `SkipWorkspaceModules`, so a warning wired into module loading would never
-fire on exactly the surface where the modules appear to be missing.
+The warning is emitted **inside the shared loader**, deduplicated per **client**
+and import ref through the query's telemetry seen-key store (the mechanism
+`shouldRecordWorkspaceMigrationProgress` already uses), and written through the
+same global-writer + `slog.Warn` path the legacy compat notice uses. Per client,
+not per session: a nested CLI shares its parent's session, so session scope
+would silence every command after the first. Without a store to dedup against it
+warns rather than risk swallowing the only warning a run gets. Not in the load
+path: `dagger workspace config` connects with `SkipWorkspaceModules`, so a
+warning wired into module loading would never fire on exactly the surface where
+the modules appear to be missing.
+
+The warning names entries as the config spells them, so a dropped env overlay
+appears as a dotted path (`env.ci.modules.local-ci`) rather than a bare module
+name.
 
 **Classification is a two-step rule against the imported tree, not a string
 heuristic and not `ParseRefString`.** For each imported entry, with an **empty
@@ -264,9 +278,8 @@ Why each part:
 - the empty pin is required — `FastKindCheck` returns `KindGit` for _any_ ref
   that carries a pin (`core/gitref/gitref.go:82`), so classifying with the
   entry's own pin would let `source = "./ci", pin = "…"` pass as remote, while
-  the loader (which classifies with an empty pin,
-  `engine/server/session_workspaces.go:559`) would then resolve it as a local
-  path;
+  the loader (`workspaceConfigPendingModules`, which classifies with an empty
+  pin) would then resolve it as a local path;
 - statting the **imported** tree is what resolves `KindUnknown` correctly. A
   dotted path such as `modules/foo.bar` is `KindUnknown` and would otherwise be
   resolved by statting the **importing** workspace — the exact mis-resolution
@@ -281,11 +294,19 @@ Why each part:
   endpoint discovery is unavailable. Classification must not depend on network
   reachability.
 
-The residual hole is an imported source that is `KindUnknown`, absent from the
-imported tree, and present as a directory in the _importing_ tree — i.e. a
-downstream directory named like a git ref. It is kept and would resolve locally
-downstream. Accepted: unreachable without deliberately naming a directory
-`github.com/…`.
+**Residual hole, accepted and stated rather than closed.** An imported source
+that is `KindUnknown`, absent from the imported tree, and present as a directory
+in the _importing_ tree is kept by sanitization and then resolved locally
+downstream, because `moduleSource` resolution stats the caller's filesystem
+(`core/modulerefs.go:80`). Reaching it needs both halves: the base declares a
+dotted, schemeless source that does not exist in its own tree — so the base
+cannot load that module either — and the importing repo happens to hold a
+directory at exactly that path. Closing it properly means teaching
+`pendingModule` a "resolve remotely only" hint and threading it through
+`moduleSource`, which is a resolution-pipeline change well outside a config
+import. Routing sanitization through `ParseRefString` would close this one case
+only by opening a worse one (a remote dropped as local whenever endpoint
+discovery is unavailable), so it is not the trade to make.
 
 Dropping cascades, so no orphan state survives:
 
@@ -301,8 +322,8 @@ Dropping cascades, so no orphan state survives:
 
 Without this, an inherited `source = "modules/ci"` would be resolved by
 `workspace.ResolveModuleEntrySource(configDir, …)` against the **importing**
-workspace's config dir (`engine/server/session_workspaces.go:528`), loading a
-different module or failing with a path the user never wrote.
+workspace's config dir (`workspaceConfigPendingModules`), loading a different
+module or failing with a path the user never wrote.
 
 ### Inherited entries cannot be removed
 
@@ -314,11 +335,17 @@ What this must _not_ do is fail confusingly:
 
 - `dagger uninstall <name>` for a module that exists only in the import reports
   that the module comes from the import and cannot be uninstalled locally,
-  instead of "module is not installed in the workspace".
+  instead of "module is not installed in the workspace". When the workspace does
+  have a source-less entry for it, that entry is an override rather than an
+  install, so uninstalling removes it and says the module is still provided by
+  the import.
 - `dagger workspace config <key> --unset` on an inherited-only value says the
   value comes from the import instead of "key is not set". The check lives in
-  the schema wrapper (`withoutConfigValue`), which already has the merged
-  config; `core/workspace`'s document editor stays import-free.
+  the schema wrapper (`unsetImportedValueError` in
+  `core/schema/workspace_builders.go`, called from `withoutConfigValue`), which
+  re-reads the effective config to decide — writers only ever hold the local
+  one; `core/workspace`'s document editor stays import-free. A key the local
+  file does spell out is never blamed on the import.
 
 ### Lockfile
 
@@ -425,12 +452,12 @@ to be right for module loading, which is engine-side anyway.
 | `core/workspace/config_document.go` | `configDocumentMap` entry for `import`; explicit-key presence helper |
 | `core/workspace/import.go` (new) | pure merge + post-merge validation |
 | `core/workspace_import.go` (new, package `core`) | resolve the ref, load and sanitize the imported config |
-| `engine/server/session_workspaces.go` | `parseWorkspaceRemoteRef` / `cloneGitTree` delegate to the new `core` helpers; resolve and merge during workspace load |
-| `core/schema/workspace_config.go` | merge in `readWorkspaceConfig` **and** in `configRead`'s base path; strip `import` from the effective view; owner-client context; import-aware `--unset` |
-| `core/schema/modulesource.go` | merge in `workspaceModuleSourceByName` |
-| `core/schema/workspace_builders.go` | patch-entry-aware uninstall message; import-aware error for uninstalling an inherited module |
+| `engine/server/session_workspaces.go` | `parseWorkspaceRemoteRef` and `normalizeWorkspaceRemoteSubdir` **move** to `core` (only `cloneGitTree` stays as a delegating wrapper), with their tests moving from `engine/server/session_test.go` to `core/workspace_import_test.go`; resolve and merge during workspace load |
+| `core/schema/workspace_config.go` | merge in `readWorkspaceConfig` **and** in `configRead`'s base path; answer `import` from the local file whatever is layered on; strip `import` from the effective view; owner-client context |
+| `core/schema/modulesource.go` | merge **and validate** in `workspaceModuleSourceByName` |
+| `core/schema/workspace_builders.go` | uninstalling a source-less override removes the override; import-aware errors for uninstalling an inherited module and for `--unset` of an inherited value |
 | `core/schema/workspace_install.go` | an empty source reads as "not installed locally" when planning an install |
-| `internal/cmd/dagger/workspace.go` | `dagger workspace config --help` text |
+| `internal/cmd/dagger/workspace.go` | `dagger workspace config --help` text; `dagger uninstall` reports the override case instead of "Uninstalled module" |
 | `core/integration/workspace_import_test.go` (new) | multi-workspace fixture over a git service |
 | `docs/current_docs/reference/configuration/workspace.mdx` | the `import` key and merge order |
 | `docs/static/reference/dagger-workspace.schema.json` | regenerated |
@@ -448,10 +475,10 @@ Unit (`core/workspace`), on the pure merge:
 - explicit-zero overrides: `entrypoint = false`, `ignore = []`,
   `defaults_from_dotenv = false`, `check.skip = []` each beat an inherited value;
 - `legacy-default-path` and `as-sdk` never inherited;
-- ports merge per field;
+- ports replace wholesale per host port;
 - imported config declaring `import` → error;
 - `ValidateEffectiveConfig`: a module entry with no source errors **with and
-  without** an import present, and a port entry missing either field errors;
+  without** an import present, and a partial port mapping is accepted;
 - config round trip: `Import` survives `SerializeConfig` → `ParseConfig`,
   `WriteConfigValue` / `ReadConfigValue` / `DeleteConfigValue` on `import`, and
   a document-preserving update over a source-less patch entry that neither
@@ -465,50 +492,59 @@ Unit (`core`), on sanitization, with a `StatFS` over a fake imported tree:
 - `source = "modules/foo.bar"` existing in the imported tree → dropped;
 - `source = "github.com/acme/toolchain"` → kept, **and still kept when the git
   endpoint is unreachable**, pinning the reason `ParseRefString` is not used;
+- `source = "php"` — the bare short name `dagger setup` writes for a migrated
+  SDK — → dropped, which is the reasoning the `setupResolveMigratedSDKs` risk
+  below rests on;
 - dropping cascades to the module's imported env overlays and to ports whose
   `backendService` prefix is the module's kebab-cased name (covered with a
-  non-canonical module key such as `MyTool`).
+  non-canonical module key such as `MyTool`, and for a module an env overlay
+  alone installs).
 
 Integration (`core/integration/workspace_import_test.go`), with the base
 workspace served by `gitSmartHTTPServiceDirAuth` at an IP-addressable URL — the
 pattern `workspaceSelectionRemoteRef` already uses, which is reachable from the
 engine that resolves the import itself (no `ExperimentalServiceHost`):
 
-1. **Merge**: importing workspace declares `import` plus one setting override
-   with no `source`; `dagger workspace config` shows the base's modules with the
-   override applied, and `dagger call <imported-module>` runs.
+1. **Merge**: the importing workspace declares `import` plus one setting
+   override with no `source`; `dagger workspace config` shows the base's module
+   with its ref inherited and the override applied, the output names the import
+   in a comment instead of carrying the key, `dagger workspace config import`
+   still reports the local value, and the module the import contributes loads.
 2. **Conflict**: same module name in both → the current workspace's `source`
-   wins; settings merge key-wise; `entrypoint = false` downstream beats an
-   inherited `entrypoint = true`.
+   wins and the inherited pin goes with the ref it belonged to; `ignore`
+   replaces; `entrypoint = false` downstream beats an inherited
+   `entrypoint = true`.
 3. **Local module blocked**: the base declares a local module _and_ the
    importing repo contains a same-named directory. The module does not appear in
-   the merged config, the warning names it — including under plain
-   `dagger workspace config`, which skips workspace modules — and nothing
-   resolves to the importing repo's directory.
+   the merged config, and the warning names it under plain
+   `dagger workspace config`, which skips workspace modules entirely.
 4. **No chain**: base config itself declares `import` → explicit error.
-5. **Lockfile round trip**: a first run writes a `git.ref`/`git.head` entry for
-   the import into `dagger.lock`; a second run under `--lock=frozen` reproduces
-   the same merged config; removing that entry makes frozen fail.
-6. **Lock refresh**: the served base branch moves to a second commit;
-   `dagger update` and `--lock=live` both change the recorded import pin and the
-   merged config, while a plain `--lock=frozen` run does not.
+5. **Legacy import target**: the base repo has only `dagger.json` → error
+   telling the user to run `dagger setup` in the imported workspace.
+6. **Dangling override**: a `[modules.x]` patch entry with no source and an
+   import that does not provide `x` → clear error.
 7. **Env from import**: an env defined only in the base config is selectable
    with `--env` downstream.
-8. **Dangling override**: a `[modules.x]` patch entry with no source and an
-   import that does not provide `x` → clear error; the same config with `import`
-   unset errors the same way.
-9. **Patch entry write flows**: `dagger install` over a source-less patch entry
-   fills in the source instead of reporting a conflict; `dagger uninstall` on it
-   says the override was removed and the inherited module is still there.
-10. **Legacy import target**: the base repo has only `dagger.json` → error
-    telling the user to run `dagger setup` in the imported workspace.
-11. **Remote importing workspace**: `dagger -W <base-consumer-ref>` where that
-    remote workspace declares its own import → the merge applies. Lock behavior
-    there is the inherited remote-workspace behavior and is not re-asserted.
+8. **Writes stay local**: a setting write records only the override — no
+   inherited ref, no `source = ""` — and uninstalling a module the import
+   provides names the import.
+9. **Lockfile**: a run under `--lock=pinned` records a `git.ref` entry naming
+   the imported repository, and a `--lock=frozen` run reproduces the same merged
+   config from that pin.
 
-Error-message assertions (stable substrings) are part of cases 3, 4, 8, 9 and
-10; a merged view assertion in case 1 pins that `import` is stripped from the
-no-argument output and that the `# imported from` comment names the ref.
+Two cases from the plan are deliberately absent:
+
+- **Lock refresh** (`dagger update` / `--lock=live` after the base branch moves)
+  is not expressible with this fixture: the git service serves a fixed tree, and
+  re-serving moves the URL, which changes the lock inputs. The entry is the
+  ordinary `git.ref` entry whose refresh `core/integration/lockfile_test.go`
+  already covers.
+- **"Frozen fails with no entry"** turned out to assert engine behavior this
+  feature does not own: with the tree already resolved in the same engine, the
+  dagql cache can satisfy `git().ref()` without the resolver — and therefore
+  without the frozen check — running at all.
+
+Error-message assertions use stable substrings.
 
 ## Risks
 
@@ -523,8 +559,17 @@ no-argument output and that the `# imported from` comment names the ref.
   still report it properly. Accepted; noted in the PR.
 - **`dagger workspace config` becomes an effective view** for the base case as
   well, which may surprise someone expecting a `cat` of the file. Mitigated by
-  the `import` line staying visible, by the same behavior already existing for
-  `--env` and user overlays, and by `dagger workspace config-file`.
+  the same behavior already existing for `--env` and user overlays, and by
+  `dagger workspace config-file`.
+- **The uninstall and unset error paths re-resolve the import** to decide what
+  to say: they run in a writer, which only holds the local config, so naming the
+  import costs another effective read. Only on the error and override paths, and
+  the resolution is dagql-cached within the session.
+- **`ValidateEffectiveConfig` rejects a source-less module entry in a workspace
+  with no import.** Such a config loads on `main` today — the entry becomes a
+  `pendingModule` with an empty `Ref` — and now fails every read with an error
+  naming the module. That is the point of moving the check off the JSON schema,
+  but it is a behavior change for a config nobody writes deliberately.
 - **One CLI path writes from what `configRead` returned**:
   `setupResolveMigratedSDKs` (`internal/cmd/dagger/setup.go`) parses
   `Workspace.configRead` and writes fixups back. It only rewrites entries whose
@@ -575,7 +620,7 @@ no-argument output and that the `# imported from` comment names the ref.
 | 2 | `workspace-import-resolve` | `core`: shared remote-workspace ref parsing/cloning, imported-config loader and sanitization, unit tests |
 | 3 | `workspace-import-load` | `engine/server`: resolve and merge during workspace load |
 | 4 | `workspace-import-reads` | `core/schema`: merge in the read paths, effective view, patch-entry-aware install/uninstall |
-| 5 | `workspace-import-tests` | `core/integration`: multi-workspace fixture and the eleven cases |
+| 5 | `workspace-import-tests` | `core/integration`: multi-workspace fixture and the nine cases |
 | 6 | `workspace-import-docs` | docs page, CLI help, regenerated JSON schema, changelog entry |
 
 Each patch builds and tests on its own. 1 and 2 carry their own unit tests; 3
@@ -638,9 +683,11 @@ error types, and the config round trips.
 
 `core/workspace_import.go` (package `core`):
 
-- `ParseWorkspaceRemoteRef` and `CloneWorkspaceGitTree` moved verbatim from
+- `ParseWorkspaceRemoteRef`, `NormalizeWorkspaceRemoteSubdir` and
+  `CloneWorkspaceGitTree` moved verbatim from
   `engine/server/session_workspaces.go` (`parseWorkspaceRemoteRef`,
-  `cloneGitTree`), which then delegates. One implementation, no behavior change;
+  `normalizeWorkspaceRemoteSubdir`, `cloneGitTree`), along with their tests;
+  only `cloneGitTree` stays behind as a delegating wrapper. One implementation, no behavior change;
   the move is what lets `core/schema` and `engine/server` share it. There is no
   drop-in alternative: `ParsedGitRefString.GitRef` carries module-oriented
   semver/subdir behavior, and `GitRef.asWorkspace` is schema-private and
@@ -658,7 +705,7 @@ error types, and the config round trips.
      [Limitation 2](#limitation-2--no-local-modules-from-the-import). A dropped
      entry cascades to its env overlays and to ports whose `backendService`
      prefix matches its kebab-cased name;
-  5. warn once per session and import ref, here rather than in any caller — the
+  5. warn once per client and import ref, here rather than in any caller — the
      warning has to reach `dagger workspace config`, which skips module loading;
   6. all of it inside a span named `importing workspace config: <ref>`.
 
@@ -689,8 +736,8 @@ Placement is load-bearing:
 - before the user overlay and the env overlay, so the layering is
   import → repo → user → env.
 
-`loadWorkspaceConfig` returns the raw bytes alongside the parsed config so the
-explicit-key set can be computed without re-reading.
+`loadWorkspaceConfig` returns the explicit-key set alongside the parsed config,
+computed from the bytes it already read, so nothing re-reads the file.
 
 ### Patch 4 — `core/schema`
 
@@ -701,33 +748,35 @@ explicit-key set can be computed without re-reading.
   present, with `Import` cleared and a `# imported from <ref>` comment prepended
   (the env branch already clears `Env` the same way). With no import it keeps
   returning the file verbatim, so nothing changes for workspaces that do not use
-  the feature. An explicit `import` key read returns the local scalar.
-- `workspace_config.go:withoutConfigValue` — when the unset target is absent
-  locally but present in the merged config, name the import instead of "key is
-  not set".
-- `modulesource.go:workspaceModuleSourceByName` — same merge, so
-  `--load-module <name>` resolves a module the import contributes.
+  the feature. A read of the `import` key short-circuits to the local file
+  **before** the env / user-overlay / base branch split, since every one of
+  those views strips it.
+- `workspace_builders.go:withoutConfigValue` — when the unset target is absent
+  locally but present in the merged config, `unsetImportedValueError` names the
+  import instead of "key is not set". It re-reads the effective config to
+  decide, and leaves the original error alone when the key _is_ present locally.
+- `modulesource.go:workspaceModuleSourceByName` — same merge, plus
+  `ValidateEffectiveConfig`, so `--load-module <name>` resolves a module the
+  import contributes and reports a broken config as broken rather than missing.
 - `workspace_builders.go:withoutModule` — three cases instead of one: installed
-  locally (unchanged), a source-less patch entry (removes the override, says the
-  inherited module remains), and inherited only (cannot be uninstalled locally).
+  locally (unchanged), a source-less patch entry the effective config still
+  provides (removes the override, no managed-module directory removal), and no
+  local entry at all (cannot be uninstalled locally). `dagger uninstall` reports
+  the override case honestly.
 - `workspace_install.go:planWorkspaceInstallConfig` — an existing entry with an
-  empty source is not a conflicting install; the new ref fills it in.
+  empty source is not a conflicting install; the new ref fills it in and clears
+  any pin recorded for the inherited ref, per the source/pin coupling.
 - `loadWorkspaceConfigForOverlay` is deliberately **not** touched: writes stay
   local. A comment states that.
 
 ### Patch 5 — `core/integration/workspace_import_test.go`
 
-Fixture helper following `workspaceSelectionRemoteRef`:
-
-```go
-func workspaceImportBaseRef(ctx, t, c, base *dagger.Directory) string
-```
-
-serving the base workspace over `gitSmartHTTPServiceDirAuth` and returning an
-IP-addressed `http://…/repo.git@main`, plus a second helper that re-serves the
-base at a later commit for the refresh case. The eleven cases from
-[Testing](#testing) run as `t.Run` subtests against a container workspace whose
-`dagger.toml` carries the import.
+The base workspace is served by `workspaceSelectionRemoteRef`, which stands up
+`gitSmartHTTPServiceDirAuth` and returns an IP-addressed
+`http://…/repo.git@main` — reachable from the engine, which resolves the import
+itself. The nine cases from [Testing](#testing) run against a container
+workspace whose `dagger.toml` carries the import, with `t.Run` subtests where
+one fixture answers several questions.
 
 ### Patch 6 — docs
 
@@ -766,5 +815,9 @@ dagger call engine-dev test --pkg="./core/integration" --run='^TestWorkspaceImpo
 - **The effective no-argument view strips `import`** and names it in a comment,
   so the output is a standalone snapshot rather than a config that re-imports
   itself.
+- **Ports replace wholesale**, and completeness is deliberately not validated:
+  per-field merge is unrepresentable while the serializer writes both keys
+  unconditionally, and a partial mapping is a state `dagger workspace config`
+  itself writes, so rejecting it would break configs that load today.
 - **Sanitization does not use `ParseRefString`**, whose `EndpointError` fallback
   would misclassify a remote as local when the network is down.
