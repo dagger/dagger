@@ -15,11 +15,10 @@ import (
 	"sort"
 	"sync"
 	"syscall"
-	"time"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"golang.org/x/sys/unix"
 )
 
@@ -70,17 +69,6 @@ func inspectLocalExpose(ctx context.Context, paths exposePaths) (*os.File, *expo
 		if err := waitExposeRetry(ctx); err != nil {
 			return nil, nil, err
 		}
-	}
-}
-
-func waitExposeRetry(ctx context.Context) error {
-	timer := time.NewTimer(25 * time.Millisecond)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return context.Cause(ctx)
 	}
 }
 
@@ -546,8 +534,8 @@ func publishExposePorts(
 		var data struct {
 			Node struct {
 				Ports []struct {
-					Port     int                  `json:"port"`
-					Protocol core.NetworkProtocol `json:"protocol"`
+					Port     int                         `json:"port"`
+					Protocol sessionwire.NetworkProtocol `json:"protocol"`
 				} `json:"ports"`
 			} `json:"node"`
 		}

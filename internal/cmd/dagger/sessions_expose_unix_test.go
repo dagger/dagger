@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
@@ -24,7 +24,7 @@ func TestExposeSocketIsSoleStatusAuthority(t *testing.T) {
 	require.True(t, acquired)
 	t.Cleanup(func() { _ = holder.Close() })
 	require.NoError(t, writeExposeRecord(paths.Record, exposeRecord{PID: 999, State: exposeStateReady}))
-	request := exposeRequest{Mappings: []exposePortMapping{{Service: "web", ServiceID: "id", Backend: 80, Protocol: core.NetworkProtocolTCP}}}
+	request := exposeRequest{Mappings: []exposePortMapping{{Service: "web", ServiceID: "id", Backend: 80, Protocol: sessionwire.NetworkProtocolTCP}}}
 	control, err := newExposeControlServer(paths, request)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = control.Close() })
@@ -33,7 +33,7 @@ func TestExposeSocketIsSoleStatusAuthority(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, lock)
 	require.Equal(t, exposeStateStarting, status.State, "diagnostic ready record was trusted")
-	control.ready([]exposedPort{{Service: "web", Frontend: 8080, Backend: 80, Protocol: core.NetworkProtocolTCP}})
+	control.ready([]exposedPort{{Service: "web", Frontend: 8080, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP}})
 	_, status, err = inspectLocalExpose(t.Context(), paths)
 	require.NoError(t, err)
 	require.Equal(t, exposeStateReady, status.State)
@@ -106,19 +106,19 @@ func TestPrepareExposePortsReadyIdempotenceAndDifference(t *testing.T) {
 	frontend := 8080
 	served := exposeRequest{Mappings: []exposePortMapping{{
 		Service: "web", ServiceID: "web-id", Frontend: &frontend,
-		Backend: 80, Protocol: core.NetworkProtocolTCP,
+		Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}}
 	control, err := newExposeControlServer(paths, served)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, control.Close()) })
 	control.ready([]exposedPort{{
-		Service: "web", Frontend: frontend, Backend: 80, Protocol: core.NetworkProtocolTCP,
+		Service: "web", Frontend: frontend, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}})
 
 	differentFrontend := 9090
 	different := exposeRequest{Mappings: []exposePortMapping{{
 		Service: "web", ServiceID: "web-id", Frontend: &differentFrontend,
-		Backend: 80, Protocol: core.NetworkProtocolTCP,
+		Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}}
 	preparation, err := prepareExposePorts(
 		t.Context(), sessionID, stateDir, different, true, false, "", nil,

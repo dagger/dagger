@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -262,7 +262,7 @@ func TestDetachedUpResultDecodeAndFormatting(t *testing.T) {
 	const body = `{"data":{"node":{"_startDetached":"{\"services\":[{\"name\":\"web\",\"serviceId\":\"svc_web\",\"native\":true,\"portMappings\":[],\"backendPorts\":[{\"port\":8080,\"protocol\":\"TCP\"}]},{\"name\":\"db\",\"serviceId\":\"svc_db\",\"native\":false,\"portMappings\":[{\"frontend\":15432,\"backend\":5432,\"protocol\":\"TCP\"}],\"backendPorts\":[{\"port\":5432,\"protocol\":\"TCP\"}]}]}"}}}`
 	value, err := decodeDetachedResult([]byte(body), presentation)
 	require.NoError(t, err)
-	result, ok := value.(core.DetachedUpResult)
+	result, ok := value.(sessionwire.DetachedUpResult)
 	require.True(t, ok)
 	require.Len(t, result.Services, 2)
 	require.True(t, result.Services[0].Native)

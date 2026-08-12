@@ -7,26 +7,26 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/stretchr/testify/require"
 )
 
 func TestExposePortParserAndMerge(t *testing.T) {
 	t.Parallel()
 	frontend := 15432
-	result := core.DetachedUpResult{Services: []core.DetachedUpService{
+	result := sessionwire.DetachedUpResult{Services: []sessionwire.DetachedUpService{
 		{
 			Name: "web", ServiceID: "web-id", Native: true,
-			BackendPorts: []core.DetachedUpPort{
-				{Port: 80, Protocol: core.NetworkProtocolTCP},
-				{Port: 443, Protocol: core.NetworkProtocolTCP},
+			BackendPorts: []sessionwire.DetachedUpPort{
+				{Port: 80, Protocol: sessionwire.NetworkProtocolTCP},
+				{Port: 443, Protocol: sessionwire.NetworkProtocolTCP},
 			},
 		},
 		{
 			Name: "db", ServiceID: "db-id", Native: false,
-			PortMappings: []core.PortForward{{Frontend: &frontend, Backend: 5432, Protocol: core.NetworkProtocolTCP}},
+			PortMappings: []sessionwire.PortForward{{Frontend: &frontend, Backend: 5432, Protocol: sessionwire.NetworkProtocolTCP}},
 		},
 	}}
 
@@ -62,7 +62,7 @@ func TestExposePortParserAndMerge(t *testing.T) {
 	tests := []struct {
 		name  string
 		specs []string
-		alter func(*core.DetachedUpResult)
+		alter func(*sessionwire.DetachedUpResult)
 		want  string
 	}{
 		{name: "missing equals", specs: []string{"web=80"}, want: "expected SERVICE"},
@@ -73,15 +73,15 @@ func TestExposePortParserAndMerge(t *testing.T) {
 		{name: "bad protocol", specs: []string{"web=8080:80/sctp"}, want: "invalid protocol"},
 		{name: "explicit udp", specs: []string{"web=8080:80/udp"}, want: "UDP port forwarding"},
 		{name: "merged collision", specs: []string{"db=80:5432"}, want: "requested by both"},
-		{name: "saved native udp", alter: func(result *core.DetachedUpResult) {
-			result.Services[0].BackendPorts[0].Protocol = core.NetworkProtocolUDP
+		{name: "saved native udp", alter: func(result *sessionwire.DetachedUpResult) {
+			result.Services[0].BackendPorts[0].Protocol = sessionwire.NetworkProtocolUDP
 		}, want: "UDP port forwarding"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			input := result
-			input.Services = append([]core.DetachedUpService(nil), result.Services...)
-			input.Services[0].BackendPorts = append([]core.DetachedUpPort(nil), result.Services[0].BackendPorts...)
+			input.Services = append([]sessionwire.DetachedUpService(nil), result.Services...)
+			input.Services[0].BackendPorts = append([]sessionwire.DetachedUpPort(nil), result.Services[0].BackendPorts...)
 			if test.alter != nil {
 				test.alter(&input)
 			}
@@ -118,11 +118,11 @@ func TestExposedPortsFromSessionDescriptor(t *testing.T) {
 		},
 	}}
 	request := exposeRequest{Mappings: []exposePortMapping{{
-		Service: "web", ServiceID: "web-id", Frontend: &frontend, Backend: 80, Protocol: core.NetworkProtocolTCP,
+		Service: "web", ServiceID: "web-id", Frontend: &frontend, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}}
 	ports := exposedPortsFromDescriptor(descriptor, request)
 	require.Equal(t, []exposedPort{{
-		Service: "web", Frontend: 8080, Backend: 80, Protocol: core.NetworkProtocolTCP,
+		Service: "web", Frontend: 8080, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}, ports)
 }
 
@@ -131,13 +131,13 @@ func TestPublishExposePortsStartsBeforeReadingPorts(t *testing.T) {
 	frontend := 8080
 	request := exposeRequest{Mappings: []exposePortMapping{{
 		Service: "web", ServiceID: "backend-id", Frontend: &frontend,
-		Backend: 80, Protocol: core.NetworkProtocolTCP,
+		Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}}
 	fake := &fakeExposeQueryClient{t: t}
 	ports, err := publishExposePorts(t.Context(), fake, request)
 	require.NoError(t, err)
 	require.Equal(t, []exposedPort{{
-		Service: "web", Frontend: 8080, Backend: 80, Protocol: core.NetworkProtocolTCP,
+		Service: "web", Frontend: 8080, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}, ports)
 	require.Equal(t, []string{"StartExposeService", "ExposeServicePorts"}, fake.operations)
 }

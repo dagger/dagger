@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +20,7 @@ func TestExposeServerConfigAndSocketPath(t *testing.T) {
 	config := exposeServerConfig{
 		SessionID: testCLIValidSessionID(), StateDir: t.TempDir(),
 		Request: exposeRequest{Mappings: []exposePortMapping{
-			{Service: "web", ServiceID: "service-id", Frontend: &frontend, Backend: 80, Protocol: core.NetworkProtocolTCP},
+			{Service: "web", ServiceID: "service-id", Frontend: &frontend, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP},
 		}},
 	}
 	encoded, err := config.encode()
@@ -46,8 +46,8 @@ func TestExposeRequestEqualityPreservesRandomFrontends(t *testing.T) {
 	t.Parallel()
 	fixed := 8080
 	left := exposeRequest{Mappings: []exposePortMapping{
-		{Service: "db", ServiceID: "db-id", Frontend: nil, Backend: 5432, Protocol: core.NetworkProtocolTCP},
-		{Service: "web", ServiceID: "web-id", Frontend: &fixed, Backend: 80, Protocol: core.NetworkProtocolTCP},
+		{Service: "db", ServiceID: "db-id", Frontend: nil, Backend: 5432, Protocol: sessionwire.NetworkProtocolTCP},
+		{Service: "web", ServiceID: "web-id", Frontend: &fixed, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP},
 	}}
 	right := exposeRequest{Mappings: []exposePortMapping{left.Mappings[1], left.Mappings[0]}}
 	require.True(t, left.equal(right))

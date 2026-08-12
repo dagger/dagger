@@ -13,11 +13,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -139,7 +139,7 @@ func runDetachedServices(
 	if err != nil {
 		return err
 	}
-	upResult, ok := value.(core.DetachedUpResult)
+	upResult, ok := value.(sessionwire.DetachedUpResult)
 	if !ok {
 		return fmt.Errorf("saved up result is %T", value)
 	}

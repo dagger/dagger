@@ -15,7 +15,6 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/charmbracelet/huh"
-	"github.com/dagger/dagger/core"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -28,6 +27,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
@@ -1016,7 +1016,7 @@ func decodeDetachedResult(body []byte, presentation engine.QueryPresentation) (a
 	if !ok {
 		return nil, fmt.Errorf("saved up result is %T, not a JSON string", value)
 	}
-	var result core.DetachedUpResult
+	var result sessionwire.DetachedUpResult
 	if err := json.Unmarshal([]byte(encoded), &result); err != nil {
 		return nil, fmt.Errorf("decode saved up result: %w", err)
 	}
@@ -1062,7 +1062,7 @@ func pollPrimaryQuery(
 
 func formatDetachedResult(w io.Writer, value any, presentation engine.QueryPresentation) error {
 	if presentation.Kind == "up" {
-		result, ok := value.(core.DetachedUpResult)
+		result, ok := value.(sessionwire.DetachedUpResult)
 		if !ok {
 			return fmt.Errorf("saved up result is %T", value)
 		}
@@ -1093,7 +1093,7 @@ func formatDetachedResult(w io.Writer, value any, presentation engine.QueryPrese
 	return nil
 }
 
-func formatDetachedUpResult(w io.Writer, result core.DetachedUpResult) error {
+func formatDetachedUpResult(w io.Writer, result sessionwire.DetachedUpResult) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintln(tw, "SERVICE\tPORTS")
 	for _, service := range result.Services {

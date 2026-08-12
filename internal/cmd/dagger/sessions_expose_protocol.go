@@ -13,9 +13,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sessionwire"
 )
 
 const (
@@ -35,11 +36,11 @@ const (
 var serveExposeConfig string
 
 type exposePortMapping struct {
-	Service   string               `json:"service"`
-	ServiceID string               `json:"service_id"`
-	Frontend  *int                 `json:"frontend"`
-	Backend   int                  `json:"backend"`
-	Protocol  core.NetworkProtocol `json:"protocol"`
+	Service   string                      `json:"service"`
+	ServiceID string                      `json:"service_id"`
+	Frontend  *int                        `json:"frontend"`
+	Backend   int                         `json:"backend"`
+	Protocol  sessionwire.NetworkProtocol `json:"protocol"`
 }
 
 type exposeRequest struct {
@@ -83,10 +84,10 @@ func (request exposeRequest) equal(other exposeRequest) bool {
 }
 
 type exposedPort struct {
-	Service  string               `json:"service"`
-	Frontend int                  `json:"frontend"`
-	Backend  int                  `json:"backend"`
-	Protocol core.NetworkProtocol `json:"protocol"`
+	Service  string                      `json:"service"`
+	Frontend int                         `json:"frontend"`
+	Backend  int                         `json:"backend"`
+	Protocol sessionwire.NetworkProtocol `json:"protocol"`
 }
 
 func (port exposedPort) URL() string {
@@ -248,6 +249,17 @@ func cleanupExposeState(paths exposePaths) error {
 		}
 	}
 	return rerr
+}
+
+func waitExposeRetry(ctx context.Context) error {
+	timer := time.NewTimer(25 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
 }
 
 type exposeListenerMonitor struct {

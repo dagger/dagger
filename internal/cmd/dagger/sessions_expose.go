@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/spf13/cobra"
 )
 
@@ -116,7 +116,7 @@ func exposeDetachableSession(
 		if err != nil {
 			return err
 		}
-		upResult, ok := value.(core.DetachedUpResult)
+		upResult, ok := value.(sessionwire.DetachedUpResult)
 		if !ok {
 			return fmt.Errorf("saved up result is %T", value)
 		}
@@ -249,10 +249,10 @@ func parseExposePortSpec(spec string) (exposePortMapping, error) {
 		hasProtocol = true
 		protocolPart = "invalid"
 	}
-	protocol := core.NetworkProtocolTCP
+	protocol := sessionwire.NetworkProtocolTCP
 	if hasProtocol {
-		protocol = core.NetworkProtocol(strings.ToUpper(protocolPart))
-		if protocol != core.NetworkProtocolTCP && protocol != core.NetworkProtocolUDP {
+		protocol = sessionwire.NetworkProtocol(strings.ToUpper(protocolPart))
+		if protocol != sessionwire.NetworkProtocolTCP && protocol != sessionwire.NetworkProtocolUDP {
 			return exposePortMapping{}, &exposeUsageError{fmt.Errorf("invalid protocol %q in --port %q", protocolPart, spec)}
 		}
 	}
@@ -289,8 +289,8 @@ func parseExposePortNumber(kind, value, spec string) (int, error) {
 	return port, nil
 }
 
-func normalizeExposeRequest(result core.DetachedUpResult, specs []string) (exposeRequest, error) {
-	services := make(map[string]core.DetachedUpService, len(result.Services))
+func normalizeExposeRequest(result sessionwire.DetachedUpResult, specs []string) (exposeRequest, error) {
+	services := make(map[string]sessionwire.DetachedUpService, len(result.Services))
 	mappings := map[string]exposePortMapping{}
 	order := make([]string, 0)
 	put := func(mapping exposePortMapping) {
@@ -306,7 +306,7 @@ func normalizeExposeRequest(result core.DetachedUpResult, specs []string) (expos
 			for _, port := range service.BackendPorts {
 				protocol := port.Protocol
 				if protocol == "" {
-					protocol = core.NetworkProtocolTCP
+					protocol = sessionwire.NetworkProtocolTCP
 				}
 				frontend := port.Port
 				put(exposePortMapping{
@@ -318,7 +318,7 @@ func normalizeExposeRequest(result core.DetachedUpResult, specs []string) (expos
 			for _, port := range service.PortMappings {
 				protocol := port.Protocol
 				if protocol == "" {
-					protocol = core.NetworkProtocolTCP
+					protocol = sessionwire.NetworkProtocolTCP
 				}
 				put(exposePortMapping{
 					Service: service.Name, ServiceID: service.ServiceID, Frontend: port.Frontend,
@@ -344,12 +344,12 @@ func normalizeExposeRequest(result core.DetachedUpResult, specs []string) (expos
 	fixed := map[string]exposePortMapping{}
 	for _, key := range order {
 		mapping := mappings[key]
-		if mapping.Protocol == core.NetworkProtocolUDP {
+		if mapping.Protocol == sessionwire.NetworkProtocolUDP {
 			return exposeRequest{}, &exposeUsageError{fmt.Errorf(
 				"UDP port forwarding is not supported (%s:%d/udp)", mapping.Service, mapping.Backend,
 			)}
 		}
-		if mapping.Protocol != core.NetworkProtocolTCP {
+		if mapping.Protocol != sessionwire.NetworkProtocolTCP {
 			return exposeRequest{}, fmt.Errorf("unsupported saved network protocol %q", mapping.Protocol)
 		}
 		if mapping.Frontend != nil {
@@ -385,7 +385,7 @@ func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exp
 		}
 		aliases := namesByKey[*service.TunnelUpstream]
 		for _, port := range service.Ports {
-			protocol := core.NetworkProtocol(strings.ToUpper(port.Protocol))
+			protocol := sessionwire.NetworkProtocol(strings.ToUpper(port.Protocol))
 			mappingIndex := -1
 			for i, mapping := range request.Mappings {
 				if used[i] || mapping.Protocol != protocol || !containsString(aliases, mapping.Service) {
