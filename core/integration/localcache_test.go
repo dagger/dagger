@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -666,11 +667,13 @@ func (LocalCacheSuite) TestDagqlMetadataGCProtectsActiveZeroDiskResults(ctx cont
 	queryBody, err := json.Marshal(map[string]string{"query": query.String()})
 	require.NoError(t, err)
 
+	// Main renamed this v0.21 command to `dagger api with-session`. Both forms
+	// keep the engine session open for the lifetime of the wrapped process.
 	workloadCtr := engineClientContainer(ctx, t, c, devEngine).
 		WithExec([]string{"apk", "add", "curl", "jq"}).
 		WithNewFile("/tmp/query.json", string(queryBody)).
 		WithExec([]string{
-			"dagger", "api", "with-session", "sh", "-ec",
+			"dagger", "run", "sh", "-ec",
 			`curl --fail --silent --show-error \
   -u "$DAGGER_SESSION_TOKEN:" \
   -H "content-type: application/json" \

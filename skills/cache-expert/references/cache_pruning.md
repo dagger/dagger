@@ -711,10 +711,10 @@ existing detailed response.
 
 ## Persistence And Restart
 
-Structural pruning uses graph state already stored by persistence schema 17.
+Structural pruning uses graph state already stored by persistence schema 16 on v0.21.
 It does not change `cachePersistenceSchemaVersion` or add persisted fields.
 
-A schema-17 cache imports normally. The startup GC scheduled after one second
+A schema-16 cache imports normally. The startup GC scheduled after one second
 can then trim cold roots if the imported estimate exceeds the maximum. The
 oversized graph is necessarily loaded before that pass, so an upgrade can have
 a temporary import-memory peak. This is a known limitation, not a schema hard
@@ -790,7 +790,7 @@ well below the current disk-mode baseline. All full passes completed inside the
 1,073,741,824-byte maximum-to-target gap. The no-match fixture's 27.318-second
 pass is close to that gate and should be watched when these structures change.
 
-The unchanged schema-17 import benchmark preserved all `R`, `T`, and `C` counts.
+The source PR's unchanged schema-17 import benchmark preserved all `R`, `T`, and `C` counts.
 At 200,000 results it imported an 85,123,128-byte database in 3.543 s, with
 826,048,512 B sampled peak additional `HeapInuse`. At one million results it
 imported a 426,000,440-byte database in 25.982 s, with 4,432,961,536 B sampled
