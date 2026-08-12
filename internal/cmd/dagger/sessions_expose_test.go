@@ -127,7 +127,7 @@ func TestExposedPortsFromSessionDescriptor(t *testing.T) {
 			Key:  engine.SessionServiceKey{Digest: "tunnel", SessionID: testCLIValidSessionID(), ClientID: "publisher", RuntimeKind: "tunnel"},
 			Kind: "tunnel", TunnelUpstream: &backendKey,
 			OwnerClientID: "publisher",
-			Ports:         []engine.SessionPort{{Port: 8080, Protocol: "TCP"}},
+			Ports:         []engine.SessionPort{{Port: 8080, Backend: 80, Protocol: "TCP"}},
 		},
 	}, Attachment: &engine.SessionAttachment{ClientID: "publisher"}}
 	request := exposeRequest{Mappings: []exposePortMapping{{
@@ -147,12 +147,12 @@ func TestExposedPortsIgnoreStaleAttachmentOwner(t *testing.T) {
 	oldTunnel := engine.SessionService{
 		Key:            engine.SessionServiceKey{Digest: "old", ClientID: "old-client", RuntimeKind: "tunnel"},
 		TunnelUpstream: &backendKey, OwnerClientID: "old-client",
-		Ports: []engine.SessionPort{{Port: 8080, Protocol: "TCP"}},
+		Ports: []engine.SessionPort{{Port: 8080, Backend: 80, Protocol: "TCP"}},
 	}
 	newTunnel := engine.SessionService{
 		Key:            engine.SessionServiceKey{Digest: "new", ClientID: "new-client", RuntimeKind: "tunnel"},
 		TunnelUpstream: &backendKey, OwnerClientID: "new-client",
-		Ports: []engine.SessionPort{{Port: frontend, Protocol: "TCP"}},
+		Ports: []engine.SessionPort{{Port: frontend, Backend: 80, Protocol: "TCP"}},
 	}
 	descriptor := engine.SessionDescriptor{
 		Attachment: &engine.SessionAttachment{ClientID: "new-client"},
@@ -172,6 +172,40 @@ func TestExposedPortsIgnoreStaleAttachmentOwner(t *testing.T) {
 	descriptor.Services = descriptor.Services[:2]
 	_, err = exposedPortsFromDescriptor(descriptor, request)
 	require.ErrorContains(t, err, "not yet available from attachment client new-client")
+}
+
+func TestExposedPortsMatchSharedAliasesByBackendInReversedOrder(t *testing.T) {
+	t.Parallel()
+	backendKey := engine.SessionServiceKey{
+		Digest: "shared-backend", SessionID: testCLIValidSessionID(), RuntimeKind: "container",
+	}
+	descriptor := engine.SessionDescriptor{
+		Attachment: &engine.SessionAttachment{ClientID: "publisher"},
+		Services: []engine.SessionService{
+			{Key: backendKey, Names: []string{"admin", "web"}, Retained: true},
+			{
+				Key:            engine.SessionServiceKey{Digest: "tunnel", ClientID: "publisher", RuntimeKind: "tunnel"},
+				TunnelUpstream: &backendKey, OwnerClientID: "publisher",
+				Ports: []engine.SessionPort{
+					{Port: 45432, Backend: 5432, Protocol: "TCP"},
+					{Port: 48080, Backend: 8080, Protocol: "TCP"},
+				},
+			},
+		},
+	}
+	request := exposeRequest{Mappings: []exposePortMapping{
+		{Service: "web", Backend: 8080, Protocol: sessionwire.NetworkProtocolTCP},
+		{Service: "admin", Backend: 5432, Protocol: sessionwire.NetworkProtocolTCP},
+	}}
+
+	ports, err := exposedPortsFromDescriptor(descriptor, request)
+	require.NoError(t, err)
+	require.Equal(t, []exposedPort{
+		{Service: "admin", Frontend: 45432, Backend: 5432, Protocol: sessionwire.NetworkProtocolTCP},
+		{Service: "web", Frontend: 48080, Backend: 8080, Protocol: sessionwire.NetworkProtocolTCP},
+	}, ports)
+	require.Equal(t, "tcp://localhost:45432", ports[0].URL())
+	require.Equal(t, "http://localhost:48080", ports[1].URL())
 }
 
 func TestAttachmentHolderDiagnostics(t *testing.T) {
@@ -198,10 +232,19 @@ func TestAttachmentHolderDiagnostics(t *testing.T) {
 		ClientID: "holder-client", Hostname: "builder.example", Ready: true,
 	}}
 	descriptor.Services = []engine.SessionService{{
-		TunnelUpstream: &engine.SessionServiceKey{}, Ports: []engine.SessionPort{{Port: 8080}},
+		TunnelUpstream: &engine.SessionServiceKey{}, OwnerClientID: "holder-client",
+		Ports: []engine.SessionPort{{Port: 8080}},
 	}}
 	err := attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
 	require.ErrorContains(t, err, "ports are being served by client holder-client on builder.example")
+
+	descriptor.Services = []engine.SessionService{{
+		TunnelUpstream: &engine.SessionServiceKey{}, OwnerClientID: "old-client",
+		Ports: []engine.SessionPort{{Port: 8080}},
+	}}
+	err = attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
+	require.ErrorContains(t, err, "session is attached by client holder-client on builder.example")
+	require.NotContains(t, err.Error(), "ports are being served")
 }
 
 func TestLateAttachmentConflictReinspectsCurrentHolder(t *testing.T) {

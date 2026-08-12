@@ -383,14 +383,18 @@ func (srv *Server) snapshotDetachableSession(sess *daggerSession) (engine.Sessio
 				upstream := sessionServiceKey(*service.TunnelUpstream)
 				descriptorService.TunnelUpstream = &upstream
 			}
-			for _, port := range service.Ports {
+			for i, port := range service.Ports {
 				description := ""
 				if port.Description != nil {
 					description = *port.Description
 				}
-				descriptorService.Ports = append(descriptorService.Ports, engine.SessionPort{
+				descriptorPort := engine.SessionPort{
 					Port: port.Port, Protocol: port.Protocol.Network(), Description: description,
-				})
+				}
+				if i < len(service.TunnelPortBackends) {
+					descriptorPort.Backend = service.TunnelPortBackends[i]
+				}
+				descriptorService.Ports = append(descriptorService.Ports, descriptorPort)
 			}
 			descriptor.Services = append(descriptor.Services, descriptorService)
 		}

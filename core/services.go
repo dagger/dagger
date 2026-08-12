@@ -123,6 +123,9 @@ type RunningService struct {
 	// TunnelUpstream is the structured key of a tunnel's backend service.
 	// It is nil for non-tunnel services.
 	TunnelUpstream *ServiceKey
+	// TunnelPortBackends is parallel to Ports for tunnel services and records
+	// each listener's exact backend port. It is empty for non-tunnel services.
+	TunnelPortBackends []int
 
 	refsMu                sync.Mutex
 	refs                  []bkcache.Ref
@@ -181,14 +184,15 @@ type ServiceKey struct {
 // Names is populated from the authoritative retention alias set when the
 // service is a detached-up backend; unmarked services fall back to Host.
 type ServiceDescription struct {
-	Key            ServiceKey
-	Names          []string
-	Kind           RunningServiceKind
-	Host           string
-	Ports          []Port
-	OwnerClientID  string
-	TunnelUpstream *ServiceKey
-	Retained       bool
+	Key                ServiceKey
+	Names              []string
+	Kind               RunningServiceKind
+	Host               string
+	Ports              []Port
+	OwnerClientID      string
+	TunnelUpstream     *ServiceKey
+	TunnelPortBackends []int
+	Retained           bool
 }
 
 // NewServices returns a new Services.
@@ -222,13 +226,14 @@ func (ss *Services) Describe(sessionID string) []ServiceDescription {
 			names = []string{running.Host}
 		}
 		description := ServiceDescription{
-			Key:           key,
-			Names:         names,
-			Kind:          running.Kind,
-			Host:          running.Host,
-			Ports:         slices.Clone(running.Ports),
-			OwnerClientID: key.ClientID,
-			Retained:      retained,
+			Key:                key,
+			Names:              names,
+			Kind:               running.Kind,
+			Host:               running.Host,
+			Ports:              slices.Clone(running.Ports),
+			OwnerClientID:      key.ClientID,
+			TunnelPortBackends: slices.Clone(running.TunnelPortBackends),
+			Retained:           retained,
 		}
 		if running.TunnelUpstream != nil {
 			upstream := *running.TunnelUpstream

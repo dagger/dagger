@@ -82,6 +82,9 @@ func exposeDetachableSession(
 	replace bool,
 	stop bool,
 ) error {
+	if err := validateDetachablePortServerEngineTarget("sessions expose"); err != nil {
+		return err
+	}
 	return withSessionControlClient(cmd.Context(), func(ctx context.Context, control *client.ControlClient) error {
 		stateDir, err := exposeStateDirectory()
 		if err != nil {
@@ -292,7 +295,7 @@ func attachmentHolderConflict(descriptor engine.SessionDescriptor, sessionID str
 	if attachment.Hostname != "" {
 		holder += " on " + attachment.Hostname
 	}
-	if sessionPortCount(descriptor) > 0 {
+	if sessionPortCountForOwner(descriptor, attachment.ClientID) > 0 {
 		return fmt.Errorf("ports are being served by %s; see dagger sessions inspect %s: %w", holder, sessionID, cause)
 	}
 	return fmt.Errorf("session is attached by %s; see dagger sessions inspect %s: %w", holder, sessionID, cause)
@@ -499,7 +502,8 @@ func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exp
 			protocol := sessionwire.NetworkProtocol(strings.ToUpper(port.Protocol))
 			mappingIndex := -1
 			for i, mapping := range request.Mappings {
-				if used[i] || mapping.Protocol != protocol || !containsString(aliases, mapping.Service) {
+				if used[i] || mapping.Protocol != protocol || mapping.Backend != port.Backend ||
+					!containsString(aliases, mapping.Service) {
 					continue
 				}
 				if mapping.Frontend != nil && *mapping.Frontend == port.Port {

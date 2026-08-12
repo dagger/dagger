@@ -56,6 +56,7 @@ type SessionServiceKey struct {
 
 type SessionPort struct {
 	Port        int    `json:"port"`
+	Backend     int    `json:"backend,omitempty"`
 	Protocol    string `json:"protocol"`
 	Description string `json:"description,omitempty"`
 }

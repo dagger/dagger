@@ -537,8 +537,9 @@ func TestRetainedAliasesAndServiceDescriptionsAreStructured(t *testing.T) {
 	services.l.Lock()
 	services.running[tunnelKey] = &RunningService{
 		Key: tunnelKey, Host: "127.0.0.1", Kind: RunningServiceKindTunnel,
-		Ports:          []Port{{Port: 8080, Protocol: NetworkProtocolTCP, Description: &frontendDescription}},
-		TunnelUpstream: &key,
+		Ports:              []Port{{Port: 8080, Protocol: NetworkProtocolTCP, Description: &frontendDescription}},
+		TunnelPortBackends: []int{80},
+		TunnelUpstream:     &key,
 	}
 	services.bindings[tunnelKey] = 1
 	services.l.Unlock()
@@ -561,6 +562,7 @@ func TestRetainedAliasesAndServiceDescriptionsAreStructured(t *testing.T) {
 	require.Equal(t, "publisher", tunnelDescription.OwnerClientID)
 	require.Equal(t, key, *tunnelDescription.TunnelUpstream)
 	require.Equal(t, 8080, tunnelDescription.Ports[0].Port)
+	require.Equal(t, []int{80}, tunnelDescription.TunnelPortBackends)
 }
 
 func TestRetentionCannotRaceSessionStop(t *testing.T) {

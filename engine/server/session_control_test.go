@@ -490,6 +490,7 @@ type descriptorServiceStartable struct {
 	kind     core.RunningServiceKind
 	host     string
 	ports    []core.Port
+	backends []int
 	upstream *core.ServiceKey
 	done     chan struct{}
 	stopOnce sync.Once
@@ -504,6 +505,7 @@ func (startable *descriptorServiceStartable) Start(
 	running.Kind = startable.kind
 	running.Host = startable.host
 	running.Ports = slices.Clone(startable.ports)
+	running.TunnelPortBackends = slices.Clone(startable.backends)
 	if startable.upstream != nil {
 		upstream := *startable.upstream
 		running.TunnelUpstream = &upstream
@@ -565,6 +567,7 @@ func TestSessionSnapshotIncludesLiveServicesAndHostnames(t *testing.T) {
 	tunnel := &descriptorServiceStartable{
 		kind: core.RunningServiceKindTunnel, host: "127.0.0.1", done: make(chan struct{}),
 		ports:    []core.Port{{Port: 18080, Protocol: core.NetworkProtocolTCP, Description: &frontendDescription}},
+		backends: []int{8080},
 		upstream: &backendKey,
 	}
 	publisherCtx := engine.ContextWithClientMetadata(t.Context(), publisher.clientMetadata)
@@ -596,6 +599,7 @@ func TestSessionSnapshotIncludesLiveServicesAndHostnames(t *testing.T) {
 	require.Equal(t, "publisher-host", tunnelSnapshot.OwnerClientHostname)
 	require.Equal(t, backendSnapshot.Key, *tunnelSnapshot.TunnelUpstream)
 	require.Equal(t, 18080, tunnelSnapshot.Ports[0].Port)
+	require.Equal(t, 8080, tunnelSnapshot.Ports[0].Backend)
 }
 
 func TestNestedMetadataClearsDetachableRoles(t *testing.T) {

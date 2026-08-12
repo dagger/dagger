@@ -88,6 +88,10 @@ func TestDetachedUpRejectsEffectiveCloudEngineBeforeConnect(t *testing.T) {
 
 	RunnerHost = "docker-container://local"
 	require.NoError(t, validateDetachedUpEngineTarget())
+
+	RunnerHost = engine.DefaultCloudRunnerHost
+	err = validateDetachablePortServerEngineTarget("sessions expose")
+	require.ErrorContains(t, err, "sessions expose is not supported with a Dagger Cloud Engine")
 }
 
 func TestDetachedUpTransactionRollbackOrdering(t *testing.T) {

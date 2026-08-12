@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,6 +51,39 @@ func detachedUpServiceResultForTest(
 	serviceResult, ok := serviceAny.(dagql.ObjectResult[*Service])
 	require.True(t, ok)
 	return serviceResult
+}
+
+func TestDetachedUpCorePayloadDecodesAsSessionWire(t *testing.T) {
+	t.Parallel()
+	frontend := 15432
+	encoded, err := json.Marshal(DetachedUpResult{Services: []DetachedUpService{
+		{
+			Name: "web", ServiceID: "svc_web", Native: true,
+			PortMappings: []PortForward{},
+			BackendPorts: []DetachedUpPort{{Port: 8080, Protocol: NetworkProtocolTCP}},
+		},
+		{
+			Name: "db", ServiceID: "svc_db",
+			PortMappings: []PortForward{{Frontend: &frontend, Backend: 5432, Protocol: NetworkProtocolTCP}},
+			BackendPorts: []DetachedUpPort{},
+		},
+	}})
+	require.NoError(t, err)
+
+	var decoded sessionwire.DetachedUpResult
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.Equal(t, sessionwire.DetachedUpResult{Services: []sessionwire.DetachedUpService{
+		{
+			Name: "web", ServiceID: "svc_web", Native: true,
+			PortMappings: []sessionwire.PortForward{},
+			BackendPorts: []sessionwire.DetachedUpPort{{Port: 8080, Protocol: sessionwire.NetworkProtocolTCP}},
+		},
+		{
+			Name: "db", ServiceID: "svc_db", Native: false,
+			PortMappings: []sessionwire.PortForward{{Frontend: &frontend, Backend: 5432, Protocol: sessionwire.NetworkProtocolTCP}},
+			BackendPorts: []sessionwire.DetachedUpPort{},
+		},
+	}}, decoded)
 }
 
 func TestPrepareDetachedUpServiceExactPayloadAndRoundTrip(t *testing.T) {

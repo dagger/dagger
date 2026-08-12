@@ -250,12 +250,16 @@ func runDetachedServicesWith(
 }
 
 func validateDetachedUpEngineTarget() error {
+	return validateDetachablePortServerEngineTarget("up --detach")
+}
+
+func validateDetachablePortServerEngineTarget(operation string) error {
 	runnerHost := RunnerHost
 	if useCloudEngine {
 		runnerHost = engine.DefaultCloudRunnerHost
 	}
 	if strings.HasPrefix(runnerHost, engine.CloudRunnerHostPrefix) {
-		return errors.New("up --detach is not supported with a Dagger Cloud Engine because the background port server cannot reconnect to that engine")
+		return fmt.Errorf("%s is not supported with a Dagger Cloud Engine because the background port server cannot reconnect to that engine", operation)
 	}
 	return nil
 }

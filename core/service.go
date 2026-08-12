@@ -1368,6 +1368,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	go monitorTunnelUpstream(svcCtx, upstream, shutdown)
 
 	ports := make([]Port, len(svc.TunnelPorts))
+	backends := make([]int, len(svc.TunnelPorts))
 
 	for i, forward := range svc.TunnelPorts {
 		var frontend int
@@ -1416,10 +1417,12 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 			Protocol:    forward.Protocol,
 			Description: &desc,
 		}
+		backends[i] = forward.Backend
 	}
 
 	running.Host = dialHost
 	running.Ports = ports
+	running.TunnelPortBackends = backends
 	running.Stop = func(_ context.Context, _ bool) error {
 		return shutdown(stopErr)
 	}

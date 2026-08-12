@@ -429,3 +429,13 @@ func sessionPortCount(descriptor engine.SessionDescriptor) int {
 	}
 	return count
 }
+
+func sessionPortCountForOwner(descriptor engine.SessionDescriptor, ownerClientID string) int {
+	count := 0
+	for _, service := range descriptor.Services {
+		if service.TunnelUpstream != nil && service.OwnerClientID == ownerClientID {
+			count += len(service.Ports)
+		}
+	}
+	return count
+}
