@@ -5,6 +5,8 @@
 //! and call-scoped dispatch access needed by generated code. It cannot create or close
 //! a connection, adopt process-global state, or erase values into a fallback codec.
 
+#[cfg(feature = "gen")]
+mod adapter;
 mod codec;
 mod context;
 mod dispatch;
@@ -19,6 +21,8 @@ pub use error::{ModuleError, ModuleErrorBuildError, ModuleErrorDetail};
 pub mod __private {
     pub use serde_json;
 
+    #[cfg(feature = "gen")]
+    pub use super::adapter::{ModuleEntrypointError, run_module_entrypoint};
     pub use super::codec::__private::*;
     pub use super::context::ModuleContextBase;
     pub use super::dispatch::{
@@ -34,6 +38,7 @@ pub mod __private {
         RegistrationView,
     };
     pub use super::wire::{
-        CallEnvelope, CallIdentity, CallSelector, ModuleJson, ModuleWireName, NamedModuleArgument,
+        CallEnvelope, CallIdentity, CallSelector, ModuleFunctionName, ModuleJson, ModuleWireName,
+        NamedModuleArgument,
     };
 }

@@ -40,7 +40,7 @@ fn project(
         module: None,
         output: &output,
         sdk_dependency: &dependency,
-        entrypoint: None,
+        authoring: None,
     })
 }
 

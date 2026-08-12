@@ -91,8 +91,6 @@ pub enum DiagnosticCode {
     OperationInputForbidden,
     /// Two renderer outputs attempted to own the same normalized artifact path.
     OperationArtifactCollision,
-    /// The private entrypoint TypeDef differs from the checked protocol probe.
-    EntrypointTypeDefInvalid,
     /// Client-generation metadata contains an invalid or duplicate relative path.
     RequiredHostFileInvalid,
 }

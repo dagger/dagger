@@ -128,6 +128,53 @@ proptest! {
     }
 
     #[test]
+    fn property_27_compile_fixtures_fence_public_authoring_contract(
+        seed in any::<u16>(),
+        category in 0_u8..7,
+    ) {
+        let source = compile_contract_source(seed, category);
+        let target = target(digest(format!("compile-contract-schema-{seed}")));
+        let generator = digest(format!("compile-contract-generator-{seed}"));
+        let first = compile(&source, &target, &generator, BTreeSet::new());
+        let second = compile(&source, &target, &generator, BTreeSet::new());
+        let expected_pass = category == 0;
+
+        prop_assert_eq!(first.is_ok(), expected_pass);
+        prop_assert_eq!(second.is_ok(), expected_pass);
+        match (first, second) {
+            (Ok(left), Ok(right)) => {
+                prop_assert_eq!(left.descriptor.digest, right.descriptor.digest);
+                prop_assert_eq!(left.assets, right.assets);
+            }
+            (Err(left), Err(right)) => {
+                prop_assert_eq!(&left, &right);
+                if category >= 2 {
+                    prop_assert!(left.diagnostics().iter().any(|diagnostic| diagnostic.source_coordinate().is_some()));
+                }
+            }
+            _ => prop_assert!(false, "classification changed between identical in-memory compiles"),
+        }
+
+        // Every in-memory family is paired with the one bounded trybuild batch rather
+        // than spawning Cargo for randomized cases.
+        let real_compile_fixture = match category {
+            0 => "pass/foundations.rs",
+            1 => "fail/duplicate_metadata.rs",
+            2 => "fail/private_object.rs",
+            3 => "fail/state_signature_mismatch.rs",
+            4 => "fail/fingerprint_mismatch.rs",
+            5 => "fail/payload_enum.rs",
+            _ => "fail/duplicate_metadata.rs",
+        };
+        let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("codegen and SDK crates share a parent")
+            .join("dagger-sdk/tests/fixtures/module_authoring")
+            .join(real_compile_fixture);
+        prop_assert!(fixture_root.is_file());
+    }
+
+    #[test]
     fn property_25_regeneration_scoped_deterministic_convergent(
         seed in any::<u16>(),
         missing_index in any::<usize>(),
@@ -287,7 +334,7 @@ proptest! {
 }
 
 #[test]
-fn representative_generated_module_compiles_offline() {
+fn representative_generated_module_executes_directly_offline() {
     let source = source_snapshot(7, false, false);
     let target = target(digest("checked-schema"));
     let compiled = compile(
@@ -315,7 +362,7 @@ fn representative_generated_module_compiles_offline() {
     fs::write(
         root.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"generated-module-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[dependencies]\nrenamed_sdk = {{ package = \"dagger-sdk\", path = {:?} }}\n",
+            "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[dependencies]\nrenamed_sdk = {{ package = \"dagger-sdk\", path = {:?} }}\ntokio = {{ version = \"1\", features = [\"rt\"] }}\nasync-trait = \"0.1\"\n",
             sdk
         ),
     )
@@ -340,9 +387,15 @@ fn representative_generated_module_compiles_offline() {
             .expect("asset parent must be created");
         fs::write(destination, bytes).expect("generated source must write");
     }
+    fs::create_dir_all(root.join("tests")).expect("fixture test root must be created");
+    fs::write(
+        root.join("tests/direct_harness.rs"),
+        direct_harness_source(),
+    )
+    .expect("direct harness must write");
     let target_dir = temporary.path().join("target");
     let output = Command::new(env!("CARGO"))
-        .args(["check", "--all-targets", "--offline", "--quiet"])
+        .args(["test", "--all-targets", "--offline", "--quiet"])
         .env("CARGO_TARGET_DIR", &target_dir)
         .current_dir(root)
         .output()
@@ -352,6 +405,211 @@ fn representative_generated_module_compiles_offline() {
         "generated fixture failed:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn direct_harness_source() -> &'static str {
+    r#"
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use fixture::dagger_generated::GeneratedDispatchRegistry;
+use renamed_sdk::{
+    Client, ClientConfig, CurrentCall, EngineConnection, EngineConnectionError, ModuleCancellation,
+    RawRequest, RawResponse, ResponseData,
+};
+use renamed_sdk::__private::{
+    CallEnvelope, CallIdentity, CallOutcome, CallSelector, ModuleBoxFuture, ModuleContextBase,
+    ModuleFunctionName, ModuleJson, ModuleWireName, NamedModuleArgument, RegistrationError,
+    RegistrationSink,
+    RegistrationView, ResultPublishError, ResultSink, handle_call, serde_json,
+};
+
+#[derive(Clone)]
+struct NoEngine(Arc<Mutex<Vec<String>>>);
+
+#[async_trait]
+impl EngineConnection for NoEngine {
+    async fn execute(&self, request: RawRequest) -> Result<RawResponse, EngineConnectionError> {
+        self.0.lock().expect("event lock").push(request.query().to_owned());
+        Ok(RawResponse::new(ResponseData::Null))
+    }
+
+    async fn close(&self) -> Result<(), EngineConnectionError> { Ok(()) }
+
+    fn abort(&self) {}
+}
+
+struct RegistrationRecorder(Arc<Mutex<Vec<String>>>);
+
+impl RegistrationSink for RegistrationRecorder {
+    fn serve<'a>(
+        &'a self,
+        registration: &'a RegistrationView,
+    ) -> ModuleBoxFuture<'a, Result<(), RegistrationError>> {
+        Box::pin(async move {
+            self.0
+                .lock()
+                .expect("registration lock")
+                .push(registration.descriptor_digest.to_owned());
+            Ok(())
+        })
+    }
+}
+
+struct ResultRecorder(Arc<Mutex<Vec<CallOutcome>>>);
+
+impl ResultSink for ResultRecorder {
+    fn publish<'a>(
+        &'a self,
+        outcome: CallOutcome,
+    ) -> ModuleBoxFuture<'a, Result<(), ResultPublishError>> {
+        Box::pin(async move {
+            self.0.lock().expect("result lock").push(outcome);
+            Ok(())
+        })
+    }
+}
+
+fn selector(function: &str) -> CallSelector {
+    CallSelector::Invocation {
+        parent_wire_name: ModuleWireName::new("FixtureRoot").expect("parent name"),
+        function_wire_name: ModuleFunctionName::new(function).expect("function name"),
+    }
+}
+
+fn envelope(
+    call_id: &str,
+    function: &str,
+    parent: Option<serde_json::Value>,
+    arguments: &[(&str, serde_json::Value)],
+) -> CallEnvelope {
+    let selector = selector(function);
+    CallEnvelope::new(
+        CallIdentity::new(call_id, selector).expect("call identity"),
+        parent.map(ModuleJson::new),
+        arguments
+            .iter()
+            .map(|(name, value)| NamedModuleArgument {
+                name: ModuleWireName::new(*name).expect("argument name"),
+                value: ModuleJson::new(value.clone()),
+            })
+            .collect(),
+    )
+}
+
+fn context(client: &Client, envelope: &CallEnvelope) -> ModuleContextBase {
+    ModuleContextBase::new(
+        client.query_builder(),
+        ModuleCancellation::default(),
+        Default::default(),
+        CurrentCall::new(
+            envelope.identity.call_id(),
+            envelope.identity.selector().clone(),
+        )
+        .expect("current call"),
+    )
+}
+
+#[test]
+fn generated_registry_runs_through_the_production_wrapper_without_an_engine() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    runtime.block_on(async {
+        let engine_events = Arc::new(Mutex::new(Vec::new()));
+        let client = renamed_sdk::connect_with(
+            ClientConfig::builder()
+                .connection(Box::new(NoEngine(Arc::clone(&engine_events))))
+                .build()
+                .expect("client config"),
+        )
+        .await
+        .expect("injected client");
+        let registrations = Arc::new(Mutex::new(Vec::new()));
+        let outcomes = Arc::new(Mutex::new(Vec::new()));
+        let registration_sink = RegistrationRecorder(Arc::clone(&registrations));
+        let result_sink = ResultRecorder(Arc::clone(&outcomes));
+
+        let registration = CallEnvelope::new(
+            CallIdentity::new("registration", CallSelector::Registration).expect("identity"),
+            None,
+            Vec::new(),
+        );
+        handle_call(
+            &GeneratedDispatchRegistry,
+            registration.clone(),
+            context(&client, &registration),
+            &registration_sink,
+            &result_sink,
+        )
+        .await
+        .expect("registration");
+
+        let constructor = envelope(
+            "constructor",
+            "new",
+            None,
+            &[("child", serde_json::json!({"value": "hello"}))],
+        );
+        handle_call(
+            &GeneratedDispatchRegistry,
+            constructor.clone(),
+            context(&client, &constructor),
+            &registration_sink,
+            &result_sink,
+        )
+        .await
+        .expect("constructor");
+        let parent = match outcomes.lock().expect("result lock").pop().expect("state") {
+            CallOutcome::Value(value) => value.into_json(),
+            outcome => panic!("unexpected constructor outcome: {outcome:?}"),
+        };
+
+        for (call_id, arguments, expected) in [
+            ("default", Vec::new(), "hello-world-7-stable"),
+            (
+                "explicit",
+                vec![("name", serde_json::json!("friend"))],
+                "hello-friend-7-stable",
+            ),
+        ] {
+            let invocation = envelope(call_id, "greet", Some(parent.clone()), &arguments);
+            handle_call(
+                &GeneratedDispatchRegistry,
+                invocation.clone(),
+                context(&client, &invocation),
+                &registration_sink,
+                &result_sink,
+            )
+            .await
+            .expect("invocation");
+            let value = match outcomes.lock().expect("result lock").pop().expect("value") {
+                CallOutcome::Value(value) => value.into_json(),
+                outcome => panic!("unexpected invocation outcome: {outcome:?}"),
+            };
+            assert_eq!(value, serde_json::json!(expected));
+        }
+
+        let unknown = envelope("unknown", "absent", Some(parent), &[]);
+        assert!(
+            handle_call(
+                &GeneratedDispatchRegistry,
+                unknown.clone(),
+                context(&client, &unknown),
+                &registration_sink,
+                &result_sink,
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(registrations.lock().expect("registration lock").len(), 1);
+        assert!(outcomes.lock().expect("result lock").is_empty());
+        assert!(engine_events.lock().expect("event lock").is_empty());
+        client.close().await.expect("fixture client close");
+    });
+}
+"#
 }
 
 fn compile(
@@ -378,6 +636,15 @@ fn source_snapshot(seed: u16, reverse: bool, changed: bool) -> ModuleSourceSnaps
         r#"
 mod child;
 
+#[renamed_sdk::enum_type]
+pub(crate) enum Mood {{
+    /// Ready for execution.
+    Ready,
+    /// Retained only for compatibility.
+    #[deprecated(note = "use Ready")]
+    Waiting,
+}}
+
 #[renamed_sdk::object(root, rename = "FixtureRoot")]
 pub(crate) struct Root {{
     #[dagger(field)]
@@ -389,7 +656,7 @@ impl Root {{
     #[dagger(constructor)]
     pub(crate) fn new(child: child::Child) -> Root {{ Root {{ child }} }}
 
-    #[dagger(function)]
+    #[dagger(function, cache = "never", role = "check")]
     pub(crate) fn greet(&self, #[dagger(default = "world")] name: String) -> String {{
         format!("{{}}-{{name}}-{seed}-{suffix}", self.child.value)
     }}
@@ -409,6 +676,56 @@ pub(crate) struct Child {
         entries.reverse();
     }
     snapshot(entries)
+}
+
+fn compile_contract_source(seed: u16, category: u8) -> ModuleSourceSnapshot {
+    let mut snapshot = source_snapshot(seed, false, false);
+    let root_path = ModuleSourcePath::new("src/lib.rs").expect("fixture root path is valid");
+    let document = snapshot
+        .documents
+        .get_mut(&root_path)
+        .expect("fixture root exists");
+    match category {
+        0 => {}
+        1 => {
+            document.contents.push_str(
+                r#"
+#[renamed_sdk::methods]
+impl Root {
+    #[dagger(function, rename = "greet")]
+    pub(crate) fn duplicate(&self) -> String { String::new() }
+}
+"#,
+            );
+        }
+        2 => {
+            document.contents = document
+                .contents
+                .replace("pub(crate) struct Root", "struct Root")
+        }
+        3 => {
+            document.contents = document
+                .contents
+                .replace("child: child::Child", "#[dagger(state)]\n    child: usize")
+        }
+        4 => document.contents = document.contents.replace("name: String", "name: u64"),
+        5 => {
+            document.contents = document
+                .contents
+                .replace("#[dagger(default = \"world\")]", "#[dagger(default = 7)]")
+        }
+        _ => {
+            document.contents.push_str(
+                r#"
+#[renamed_sdk::object(root)]
+pub(crate) struct OtherRoot;
+"#,
+            );
+        }
+    }
+    document.digest = Sha256Digest::hash_bytes(document.contents.as_bytes());
+    snapshot.digest = source_snapshot_digest(&snapshot).expect("fixture snapshot must hash");
+    snapshot
 }
 
 fn snapshot(entries: Vec<(&str, String)>) -> ModuleSourceSnapshot {

@@ -265,10 +265,13 @@ coordinate. Repair generated ownership with scoped generation; do not delete
 caller-authored Cargo, source, VCS, or workspace files. Missing or stale locks are
 repaired by generation, never by an unlocked runtime build.
 
-The private protocol probe has one registration branch and one scalar invocation. It
-proves the nested-session boundary only; it is not a public module authoring API. The
-standalone client renderer likewise proves the engine hook without claiming complete
-client content.
+The generated module binary adapts one existing nested-session call into the same
+engine-independent envelope used by the direct Rust harness. Empty parent names publish
+the descriptor-derived registration; non-empty parent names enter the generated typed
+registry, where an empty function name selects construction.
+Local checkpoints prove those semantics without an engine, while exact-target sign-off
+retains the final nested-session observation. The standalone client renderer likewise
+proves the engine hook without claiming complete client content.
 
 Before evidence or release review, inspect the runtime image for exactly the installed
 binary and provenance additions, confirm that Cargo homes/caches/source are absent, run

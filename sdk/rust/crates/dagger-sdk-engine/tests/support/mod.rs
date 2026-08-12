@@ -114,12 +114,6 @@ fn build_corpus(seed: u8, use_registry: bool, operation: u8, content: Vec<u8>) -
         module: Some(module.clone()),
         sdk_dependency: dependency.clone(),
         output_root: output_root.clone(),
-        entrypoint_type_defs: (operation == OperationKind::GenerateEntrypoint).then(|| {
-            SchemaInput {
-                path: path(&format!("{root}/entrypoint-type-defs.json")),
-                digest: digest(seed, 4),
-            }
-        }),
     };
     let candidate = CandidateArtifact {
         kind: ArtifactKind::RustSource,

@@ -63,8 +63,8 @@ impl ModuleCancellation {
 /// Stable coordinates for the module call currently being executed.
 ///
 /// The call ID is local diagnostic identity rather than an engine wire field. The
-/// selector retains registration versus invocation without relying on an empty string
-/// after the adapter boundary.
+/// selector retains registration versus invocation without confusing the engine's
+/// empty parent-name registration signal with its empty function-name constructor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CurrentCall {
     call_id: String,
@@ -102,7 +102,7 @@ impl CurrentCall {
         }
     }
 
-    /// Returns the selected function wire name for an invocation.
+    /// Returns the selected function wire name; an empty value identifies a constructor.
     #[must_use]
     pub fn function_wire_name(&self) -> Option<&str> {
         match &self.selector {
@@ -193,7 +193,7 @@ mod tests {
     use crate::connection::{EngineConnection, EngineConnectionError};
     use crate::graphql::{RawRequest, RawResponse, ResponseData};
     use crate::lifecycle::SessionHandle;
-    use crate::module::wire::{CallSelector, ModuleWireName};
+    use crate::module::wire::{CallSelector, ModuleFunctionName, ModuleWireName};
     use crate::query::QueryBuilder;
     use crate::test_support::proptest_config;
 
@@ -222,7 +222,7 @@ mod tests {
     fn selector() -> CallSelector {
         CallSelector::Invocation {
             parent_wire_name: ModuleWireName::new("Fixture").expect("static name is valid"),
-            function_wire_name: ModuleWireName::new("run").expect("static name is valid"),
+            function_wire_name: ModuleFunctionName::new("run").expect("static name is valid"),
         }
     }
 

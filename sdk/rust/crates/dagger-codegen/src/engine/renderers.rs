@@ -7,9 +7,10 @@ use crate::target::CodegenTarget;
 
 use super::metadata::ClientGenerationMetadata;
 use super::model::{
-    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ContentDomain, EntrypointInput,
-    ModuleProjectionInput, OperationKind, OperationPlan, OperationProjectionRequest, PostWorkPlan,
-    PublishedSdkDependency, RelativeOperationPath, operation_diagnostic,
+    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ContentDomain,
+    ModuleAuthoringInput, ModuleProjectionInput, OperationKind, OperationPlan,
+    OperationProjectionRequest, PostWorkPlan, PublishedSdkDependency, RelativeOperationPath,
+    operation_diagnostic,
 };
 use super::visible::VisibleSchemaPlan;
 
@@ -39,8 +40,8 @@ pub struct ModuleRenderInput<'a> {
     pub output: &'a RelativeOperationPath,
     /// Immutable public SDK dependency planned for Cargo adoption.
     pub sdk_dependency: &'a PublishedSdkDependency,
-    /// Optional checked probe document admitted only for the private fixture.
-    pub entrypoint: Option<&'a EntrypointInput>,
+    /// Closed source, generator, and dependency-alias authoring inputs.
+    pub authoring: &'a ModuleAuthoringInput,
 }
 
 /// Inputs required by the bounded standalone-client baseline.
@@ -57,7 +58,7 @@ pub struct ClientRenderInput<'a> {
     pub sdk_dependency: &'a PublishedSdkDependency,
 }
 
-/// Inputs required by the checked private protocol entrypoint.
+/// Inputs required by the generic descriptor-bound module entrypoint.
 pub struct EntrypointRenderInput<'a> {
     /// Exact target inherited from the visible-schema plan.
     pub target: &'a CodegenTarget,
@@ -69,8 +70,8 @@ pub struct EntrypointRenderInput<'a> {
     pub output: &'a RelativeOperationPath,
     /// Immutable public SDK dependency available to entrypoint policy.
     pub sdk_dependency: &'a PublishedSdkDependency,
-    /// Strictly checked private protocol TypeDef.
-    pub entrypoint: &'a EntrypointInput,
+    /// Closed source, generator, and dependency-alias authoring inputs.
+    pub authoring: &'a ModuleAuthoringInput,
 }
 
 /// Deterministic renderer output before an operation plan is assembled.
@@ -143,7 +144,7 @@ pub trait OperationRenderer {
     /// Renders the bounded standalone-client baseline.
     fn render_client(&self, input: ClientRenderInput<'_>) -> Result<RendererOutput, DiagnosticSet>;
 
-    /// Renders the checked private protocol-probe entrypoint.
+    /// Renders the generic descriptor-bound module entrypoint.
     fn render_entrypoint(
         &self,
         input: EntrypointRenderInput<'_>,
@@ -164,8 +165,8 @@ pub struct PreparedOperationRequest<'a> {
     pub output: &'a RelativeOperationPath,
     /// Immutable public SDK dependency.
     pub sdk_dependency: &'a PublishedSdkDependency,
-    /// Checked TypeDef input where permitted or required.
-    pub entrypoint: Option<&'a EntrypointInput>,
+    /// Rust-owned authoring input where permitted or required.
+    pub authoring: Option<&'a ModuleAuthoringInput>,
 }
 
 /// Validates visible schema and dispatches through the supplied renderer exactly once.
@@ -173,7 +174,7 @@ pub fn project_operation_with<R: OperationRenderer>(
     renderer: &R,
     request: OperationProjectionRequest<'_>,
 ) -> Result<OperationPlan, DiagnosticSet> {
-    validate_operation_inputs(request.operation, request.module, request.entrypoint)?;
+    validate_operation_inputs(request.operation, request.module, request.authoring)?;
     let schema = super::visible::project_operation_visible_schema(
         request.target,
         request.operation,
@@ -188,7 +189,7 @@ pub fn project_operation_with<R: OperationRenderer>(
             module: request.module,
             output: request.output,
             sdk_dependency: request.sdk_dependency,
-            entrypoint: request.entrypoint,
+            authoring: request.authoring,
         },
     )
 }
@@ -198,7 +199,7 @@ pub fn dispatch_prepared_operation<R: OperationRenderer>(
     renderer: &R,
     request: PreparedOperationRequest<'_>,
 ) -> Result<OperationPlan, DiagnosticSet> {
-    validate_operation_inputs(request.operation, request.module, request.entrypoint)?;
+    validate_operation_inputs(request.operation, request.module, request.authoring)?;
     if request.schema.projection().target() != request.target {
         return Err(DiagnosticSet::one(operation_diagnostic(
             DiagnosticCode::TargetIdentityInvalid,
@@ -220,7 +221,7 @@ pub fn dispatch_prepared_operation<R: OperationRenderer>(
             module: required_module(request.module)?,
             output: request.output,
             sdk_dependency: request.sdk_dependency,
-            entrypoint: request.entrypoint,
+            authoring: required_authoring(request.authoring)?,
         })?,
         OperationKind::GenerateClient => renderer.render_client(ClientRenderInput {
             target: request.target,
@@ -235,7 +236,7 @@ pub fn dispatch_prepared_operation<R: OperationRenderer>(
             module: required_module(request.module)?,
             output: request.output,
             sdk_dependency: request.sdk_dependency,
-            entrypoint: required_entrypoint(request.entrypoint)?,
+            authoring: required_authoring(request.authoring)?,
         })?,
     };
     validate_renderer_metadata(request.operation, &output)?;
@@ -246,7 +247,7 @@ pub fn dispatch_prepared_operation<R: OperationRenderer>(
         module: request.module.cloned(),
         output: request.output.clone(),
         sdk_dependency: request.sdk_dependency.clone(),
-        entrypoint: request.entrypoint.cloned(),
+        authoring: request.authoring.cloned(),
         artifacts: output.artifacts,
         post_work: output.post_work,
         vcs_generated: output.vcs_generated,
@@ -261,7 +262,7 @@ pub fn dispatch_prepared_operation<R: OperationRenderer>(
 fn validate_operation_inputs(
     operation: OperationKind,
     module: Option<&ModuleProjectionInput>,
-    entrypoint: Option<&EntrypointInput>,
+    authoring: Option<&ModuleAuthoringInput>,
 ) -> Result<(), DiagnosticSet> {
     let module_required = !matches!(operation, OperationKind::GenerateLibrary);
     if module_required && module.is_none() {
@@ -271,23 +272,22 @@ fn validate_operation_inputs(
             "selected operation requires module input",
         )));
     }
-    let entrypoint_required = operation == OperationKind::GenerateEntrypoint;
-    let entrypoint_allowed = matches!(
+    let authoring_required = matches!(
         operation,
         OperationKind::GenerateModule | OperationKind::GenerateEntrypoint
     );
-    if entrypoint_required && entrypoint.is_none() {
+    if authoring_required && authoring.is_none() {
         return Err(DiagnosticSet::one(operation_diagnostic(
             DiagnosticCode::OperationInputMissing,
-            &format!("operation.{}.entrypoint", operation.as_str()),
-            "selected operation requires checked entrypoint input",
+            &format!("operation.{}.authoring", operation.as_str()),
+            "selected operation requires Rust authoring input",
         )));
     }
-    if !entrypoint_allowed && entrypoint.is_some() {
+    if !authoring_required && authoring.is_some() {
         return Err(DiagnosticSet::one(operation_diagnostic(
             DiagnosticCode::OperationInputForbidden,
-            &format!("operation.{}.entrypoint", operation.as_str()),
-            "selected operation forbids entrypoint input",
+            &format!("operation.{}.authoring", operation.as_str()),
+            "selected operation forbids Rust authoring input",
         )));
     }
     Ok(())
@@ -339,14 +339,14 @@ fn required_module(
     })
 }
 
-fn required_entrypoint(
-    entrypoint: Option<&EntrypointInput>,
-) -> Result<&EntrypointInput, DiagnosticSet> {
-    entrypoint.ok_or_else(|| {
+fn required_authoring(
+    authoring: Option<&ModuleAuthoringInput>,
+) -> Result<&ModuleAuthoringInput, DiagnosticSet> {
+    authoring.ok_or_else(|| {
         DiagnosticSet::one(operation_diagnostic(
             DiagnosticCode::OperationInputMissing,
-            "operation.entrypoint",
-            "selected operation requires checked entrypoint input",
+            "operation.authoring",
+            "selected operation requires Rust authoring input",
         ))
     })
 }

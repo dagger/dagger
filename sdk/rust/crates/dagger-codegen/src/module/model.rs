@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest as _, Sha256};
 
-use super::metadata::CompiledFunction;
+use super::metadata::{CachePolicy, CompiledFunction, FunctionRole};
 use super::types::{
     EnumContract, InterfaceContract, ObjectContract, ObjectFieldMode, ProjectedType,
     RustModuleType, ScalarContract,
@@ -668,6 +668,12 @@ pub struct ProjectedArgument {
     pub optional: bool,
     /// Canonical typed default, when present.
     pub default: Option<serde_json::Value>,
+    /// Context-relative default path, when present.
+    pub default_path: Option<String>,
+    /// Context-relative default address, when present.
+    pub default_address: Option<String>,
+    /// Ordered contextual-load ignore patterns.
+    pub ignore: Vec<String>,
     /// Sanitized documentation.
     pub documentation: Option<String>,
     /// Optional deprecation reason.
@@ -688,6 +694,24 @@ pub struct ProjectedFunction {
     pub return_type: ProjectedType,
     /// Whether this function is the root constructor.
     pub constructor: bool,
+    /// Exact target cache behavior.
+    pub cache: CachePolicy,
+    /// Exact target function role.
+    pub role: FunctionRole,
+    /// Sanitized documentation.
+    pub documentation: Option<String>,
+    /// Optional deprecation reason.
+    pub deprecation: Option<String>,
+    /// Authored repair coordinate.
+    pub source: SourceCoordinate,
+}
+
+/// One projected enum member with complete target-visible metadata.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectedEnumValue {
+    /// Exact target member name.
+    pub wire_name: WireName,
     /// Sanitized documentation.
     pub documentation: Option<String>,
     /// Optional deprecation reason.
@@ -708,8 +732,8 @@ pub struct ProjectedTypeDef {
     pub fields: Vec<ProjectedField>,
     /// Constructors and exported methods.
     pub functions: Vec<ProjectedFunction>,
-    /// Exact enum wire members.
-    pub enum_values: Vec<WireName>,
+    /// Exact enum members and their target-visible metadata.
+    pub enum_values: Vec<ProjectedEnumValue>,
     /// Exact implemented interface names.
     pub interfaces: Vec<WireName>,
     /// Sanitized documentation.

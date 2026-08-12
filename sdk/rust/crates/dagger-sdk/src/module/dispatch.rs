@@ -743,7 +743,7 @@ mod tests {
     use crate::lifecycle::SessionHandle;
     use crate::module::context::{CurrentCall, ModuleCancellation};
     use crate::module::view::{ArgumentView, FunctionView};
-    use crate::module::wire::{ModuleWireName, NamedModuleArgument};
+    use crate::module::wire::{ModuleFunctionName, ModuleWireName, NamedModuleArgument};
     use crate::query::QueryBuilder;
     use crate::test_support::{io_proptest_config, proptest_config};
 
@@ -764,13 +764,22 @@ mod tests {
             default_json: Some("true"),
         },
     ];
-    static FUNCTIONS: &[FunctionView] = &[FunctionView {
-        parent_wire_name: "Fixture",
-        function_wire_name: "run",
-        constructor: false,
-        arguments: ARGUMENTS,
-        result_type: "String",
-    }];
+    static FUNCTIONS: &[FunctionView] = &[
+        FunctionView {
+            parent_wire_name: "Fixture",
+            function_wire_name: "",
+            constructor: true,
+            arguments: &[],
+            result_type: "Fixture",
+        },
+        FunctionView {
+            parent_wire_name: "Fixture",
+            function_wire_name: "run",
+            constructor: false,
+            arguments: ARGUMENTS,
+            result_type: "String",
+        },
+    ];
     static DESCRIPTOR: ModuleDescriptorView = ModuleDescriptorView {
         digest: "sha256:fixture",
         root_wire_name: "Fixture",
@@ -838,15 +847,21 @@ mod tests {
             Box::pin(async move {
                 let coordinate = CallCoordinate::from_selector(call.identity.selector())
                     .expect("fixture calls are invocations");
-                let Some(name) = call
-                    .arguments
-                    .first()
-                    .and_then(|value| value.as_json().as_str())
-                else {
-                    return Err(InvocationError::ArgumentDecode {
-                        coordinate,
-                        argument_wire_name: "name".to_owned(),
-                    });
+                let constructor = coordinate.function_wire_name.is_empty();
+                let name = if constructor {
+                    "constructed"
+                } else {
+                    let Some(name) = call
+                        .arguments
+                        .first()
+                        .and_then(|value| value.as_json().as_str())
+                    else {
+                        return Err(InvocationError::ArgumentDecode {
+                            coordinate,
+                            argument_wire_name: "name".to_owned(),
+                        });
+                    };
+                    name
                 };
                 if let Some(barrier) = &self.barrier {
                     barrier.wait().await;
@@ -931,10 +946,32 @@ mod tests {
         }
     }
 
+    struct FailingRegistrationRecorder {
+        events: Arc<AtomicUsize>,
+        fail: bool,
+    }
+
+    impl RegistrationSink for FailingRegistrationRecorder {
+        fn serve<'a>(
+            &'a self,
+            registration: &'a RegistrationView,
+        ) -> ModuleBoxFuture<'a, Result<(), RegistrationError>> {
+            Box::pin(async move {
+                assert_eq!(registration, &REGISTRATION);
+                self.events.fetch_add(1, Ordering::SeqCst);
+                if self.fail {
+                    Err(RegistrationError::new())
+                } else {
+                    Ok(())
+                }
+            })
+        }
+    }
+
     fn selector() -> CallSelector {
         CallSelector::Invocation {
             parent_wire_name: ModuleWireName::new("Fixture").expect("static name is valid"),
-            function_wire_name: ModuleWireName::new("run").expect("static name is valid"),
+            function_wire_name: ModuleFunctionName::new("run").expect("static name is valid"),
         }
     }
 
@@ -1044,6 +1081,85 @@ mod tests {
 
     proptest! {
         #![proptest_config(proptest_config())]
+
+        #[test]
+        fn property_14_registration_invocation_branches_disjoint(
+            registration in any::<bool>(),
+            constructor in any::<bool>(),
+            registration_fails in any::<bool>(),
+            publication_fails in any::<bool>(),
+            call_suffix in any::<u64>(),
+        ) {
+            let selector = if registration {
+                CallSelector::Registration
+            } else if constructor {
+                CallSelector::Invocation {
+                    parent_wire_name: ModuleWireName::new("Fixture").expect("static name is valid"),
+                    function_wire_name: ModuleFunctionName::new("").expect("constructor name is valid"),
+                }
+            } else {
+                selector()
+            };
+            let call_id = format!("branch-{call_suffix}");
+            let identity = CallIdentity::new(&call_id, selector.clone()).expect("generated identity is bounded");
+            let envelope = if registration || constructor {
+                CallEnvelope::new(identity, None, Vec::new())
+            } else {
+                CallEnvelope::new(
+                    identity,
+                    Some(ModuleJson::new(json!({}))),
+                    vec![argument("name", json!("value"))],
+                )
+            };
+            let aborts = Arc::new(AtomicUsize::new(0));
+            let context = ModuleContextBase::new(
+                QueryBuilder::new(SessionHandle::new(
+                    Box::new(CountingConnection(aborts)),
+                    None,
+                    None,
+                )),
+                ModuleCancellation::default(),
+                opentelemetry::Context::new(),
+                CurrentCall::new(&call_id, selector).expect("generated current call is bounded"),
+            );
+            let user_events = Arc::new(AtomicUsize::new(0));
+            let registry = Registry {
+                behavior: Behavior::Value,
+                user_events: Arc::clone(&user_events),
+                barrier: None,
+            };
+            let registration_events = Arc::new(AtomicUsize::new(0));
+            let registration_sink = FailingRegistrationRecorder {
+                events: Arc::clone(&registration_events),
+                fail: registration_fails,
+            };
+            let outcomes = Arc::new(Mutex::new(Vec::new()));
+            let result_sink = Sink {
+                outcomes: Arc::clone(&outcomes),
+                fail: publication_fails,
+            };
+
+            let result = futures::executor::block_on(handle_call(
+                &registry,
+                envelope,
+                context,
+                &registration_sink,
+                &result_sink,
+            ));
+
+            if registration {
+                prop_assert_eq!(registration_events.load(Ordering::SeqCst), 1);
+                prop_assert_eq!(user_events.load(Ordering::SeqCst), 0);
+                prop_assert!(outcomes.lock().expect("outcome lock").is_empty());
+                prop_assert_eq!(result.is_err(), registration_fails);
+            } else {
+                prop_assert_eq!(registration_events.load(Ordering::SeqCst), 0);
+                prop_assert_eq!(user_events.load(Ordering::SeqCst), 1);
+                let published = outcomes.lock().expect("outcome lock").len();
+                prop_assert_eq!(published, usize::from(!publication_fails));
+                prop_assert_eq!(result.is_err(), publication_fails);
+            }
+        }
 
         #[test]
         fn property_15_parent_argument_validation_precedes_execution(

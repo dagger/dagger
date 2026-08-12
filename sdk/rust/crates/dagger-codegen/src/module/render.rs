@@ -11,13 +11,16 @@ use serde::Serialize;
 
 use super::canonical::{DigestDomain, canonical_bytes, canonical_digest};
 use super::diagnostic::{ModuleDiagnostic, ModuleDiagnosticCode, ModuleDiagnosticSet};
-use super::metadata::{ExecutionKind, FunctionKind, FunctionReturn, ReceiverKind};
+use super::metadata::{
+    CachePolicy, ExecutionKind, FunctionKind, FunctionReturn, FunctionRole, ReceiverKind,
+};
 use super::model::{
     GeneratedAsset, GeneratedAssetOwner, GeneratedAssetPath, GeneratedModuleAssets,
-    LocalTypeContract, LocalTypeKind, ModuleDescriptor, ModuleIntrospection, RegenerationClass,
-    RegistrationProjection, RustSymbol, Sha256Digest,
+    LocalTypeContract, LocalTypeKind, ModuleDescriptor, ModuleIntrospection, ProjectedArgument,
+    ProjectedFunction, ProjectedTypeDef, ProjectedTypeKind, RegenerationClass,
+    RegistrationProjection, RustSymbol, Sha256Digest, SourceCoordinate,
 };
-use super::types::RustModuleType;
+use super::types::{ProjectedType, RustModuleType};
 
 const MANIFEST_PATH: &str = "src/dagger_generated/generated-module-assets.json";
 
@@ -70,7 +73,10 @@ impl ModuleRenderer {
             &mut files,
             &mut metadata,
             "src/dagger_generated/mod.rs",
-            generated_source(request.descriptor, render_mod(request.sdk_dependency_alias))?,
+            generated_source(
+                request.descriptor,
+                render_mod(request.sdk_dependency_alias, request.checked_bindings),
+            )?,
             GeneratedAssetOwner::Descriptor,
             request.descriptor.source_digest.clone(),
             RegenerationClass::Authoring,
@@ -102,7 +108,11 @@ impl ModuleRenderer {
             "src/dagger_generated/module_registration.rs",
             generated_source(
                 request.descriptor,
-                render_registration(request.registration)?,
+                render_registration(
+                    request.descriptor,
+                    request.registration,
+                    request.sdk_dependency_alias,
+                )?,
             )?,
             GeneratedAssetOwner::Registration,
             request.descriptor.digest.clone(),
@@ -148,10 +158,7 @@ impl ModuleRenderer {
             &mut files,
             &mut metadata,
             "src/bin/dagger-module.rs",
-            generated_source(
-                request.descriptor,
-                render_entrypoint(request.sdk_dependency_alias),
-            )?,
+            generated_source(request.descriptor, render_entrypoint(request.descriptor))?,
             GeneratedAssetOwner::Entrypoint,
             request.descriptor.generator_digest.clone(),
             RegenerationClass::Generator,
@@ -281,15 +288,36 @@ fn checked_source(source: String) -> Result<Vec<u8>, ModuleDiagnosticSet> {
     Ok(source.into_bytes())
 }
 
-fn render_mod(alias: &str) -> Vec<u8> {
-    format!(
+fn render_mod(alias: &str, checked_bindings: &BTreeMap<GeneratedAssetPath, Vec<u8>>) -> Vec<u8> {
+    let mut source = format!(
         "//! Generated module support for the checked authoring descriptor.\n\n\
          #[doc(hidden)]\npub mod __private {{\n    pub use {alias}::__private::*;\n}}\n\n\
          mod module_codec;\nmod module_context;\nmod module_descriptor;\nmod module_dispatch;\nmod module_registration;\n\n\
+         #[doc(hidden)]\npub use module_dispatch::GeneratedDispatchRegistry;\n\
+         #[doc(hidden)]\npub use module_registration::GeneratedRegistrationSink;\n\n\
          pub use {alias}::{{CurrentCall, ModuleCancellation, ModuleError, ModuleErrorDetail, TelemetryContext}};\n\
          pub use module_context::{{ModuleContext, ModuleQuery}};\n"
-    )
-    .into_bytes()
+    );
+    for path in checked_bindings.keys().filter(|path| {
+        path.as_str().starts_with("src/dagger_generated/")
+            && path.as_str().ends_with(".rs")
+            && path.as_str() != "src/dagger_generated/mod.rs"
+    }) {
+        let file = path
+            .as_str()
+            .rsplit_once('/')
+            .map_or(path.as_str(), |(_, file)| file);
+        let module = file.strip_suffix(".rs").unwrap_or(file);
+        let module = if syn::parse_str::<syn::Ident>(module).is_ok() {
+            module.to_owned()
+        } else {
+            format!("r#{module}")
+        };
+        source.push_str(&format!(
+            "#[path = {file:?}]\nmod {module};\npub use {module}::*;\n"
+        ));
+    }
+    source.into_bytes()
 }
 
 fn render_context(alias: &str) -> Vec<u8> {
@@ -364,18 +392,452 @@ fn render_descriptor(descriptor: &ModuleDescriptor) -> Vec<u8> {
 }
 
 fn render_registration(
+    descriptor: &ModuleDescriptor,
     registration: &RegistrationProjection,
+    alias: &str,
 ) -> Result<Vec<u8>, ModuleDiagnosticSet> {
     let json = String::from_utf8(
         canonical_bytes(registration).map_err(|_| singleton(generation_error()))?,
     )
     .map_err(|_| singleton(generation_error()))?;
-    Ok(format!(
-        "//! Generated complete registration projection.\n\npub static REGISTRATION: super::__private::RegistrationView = super::__private::RegistrationView {{ descriptor_digest: {:?}, canonical_json: {:?} }};\n",
+    let mut output = format!(
+        "//! Generated complete registration projection and active-session sink.\n\n\
+         pub static REGISTRATION: super::__private::RegistrationView = super::__private::RegistrationView {{ descriptor_digest: {:?}, canonical_json: {:?} }};\n\n\
+         /// Descriptor-specific registration publisher bound to one active query root.\n\
+         pub struct GeneratedRegistrationSink {{ query: {alias}::Query }}\n\n\
+         impl GeneratedRegistrationSink {{\n    /// Binds registration to the existing module session.\n    pub fn new(query: {alias}::Query) -> Self {{ Self {{ query }} }}\n}}\n\n\
+         impl super::__private::RegistrationSink for GeneratedRegistrationSink {{\n    fn serve<'a>(&'a self, registration: &'a super::__private::RegistrationView) -> super::__private::ModuleBoxFuture<'a, Result<(), super::__private::RegistrationError>> {{\n        Box::pin(async move {{\n            if registration.descriptor_digest != REGISTRATION.descriptor_digest {{\n                return Err(super::__private::RegistrationError::new());\n            }}\n            let query = self.query.clone();\n            let mut module = query.module();\n",
         registration.descriptor_digest.as_str(),
         json
+    );
+
+    let root_wire_name = descriptor
+        .types
+        .iter()
+        .find(|ty| ty.rust_symbol == descriptor.root)
+        .map(|ty| ty.wire_name.as_str())
+        .ok_or_else(|| singleton(generation_error()))?;
+    let query_type = registration
+        .types
+        .values()
+        .find(|ty| ty.wire_name.as_str() == "Query")
+        .ok_or_else(|| singleton(generation_error()))?;
+    let constructor = query_type
+        .functions
+        .iter()
+        .find(|function| function.constructor)
+        .ok_or_else(|| singleton(generation_error()))?;
+
+    for ty in registration
+        .types
+        .values()
+        .filter(|ty| ty.wire_name.as_str() != "Query")
+    {
+        let variable = format!("type_{}", ty.wire_name.as_str().to_ascii_lowercase());
+        output.push_str(&format!(
+            "            let mut {variable} = {};\n",
+            render_type_definition(ty, alias)
+        ));
+        for field in &ty.fields {
+            let options = render_field_options(field, alias);
+            output.push_str(&format!(
+                "            {variable} = {variable}.with_field_opts({:?}, {}, &{options});\n",
+                field.wire_name.as_str(),
+                render_projected_type(&field.ty, descriptor, alias)?
+            ));
+        }
+        for function in &ty.functions {
+            if !function.constructor {
+                output.push_str(&render_function(
+                    &variable, function, descriptor, alias, false,
+                )?);
+            }
+        }
+        if ty.wire_name.as_str() == root_wire_name {
+            output.push_str(&render_function(
+                &variable,
+                constructor,
+                descriptor,
+                alias,
+                true,
+            )?);
+        }
+        let attach = match ty.kind {
+            ProjectedTypeKind::Object => "with_object",
+            ProjectedTypeKind::Interface => "with_interface",
+            ProjectedTypeKind::Enum => "with_enum",
+            ProjectedTypeKind::Scalar => continue,
+        };
+        output.push_str(&format!(
+            "            module = module.{attach}({variable});\n"
+        ));
+    }
+    output.push_str(
+        "            module.serve().await.map_err(super::__private::RegistrationError::with_source)\n        })\n    }\n}\n",
+    );
+    Ok(output.into_bytes())
+}
+
+fn render_type_definition(ty: &ProjectedTypeDef, alias: &str) -> String {
+    let query = "query";
+    let source = render_source_map(query, &ty.source);
+    match ty.kind {
+        ProjectedTypeKind::Object => {
+            let mut options = format!("{alias}::TypeDefWithObjectOpts::default()");
+            append_string_option(
+                &mut options,
+                "with_description",
+                ty.documentation.as_deref(),
+            );
+            append_string_option(&mut options, "with_deprecated", ty.deprecation.as_deref());
+            options.push_str(&format!(".with_source_map({source}.into())"));
+            format!(
+                "{query}.type_def().with_object_opts({:?}, &{options})",
+                ty.wire_name.as_str()
+            )
+        }
+        ProjectedTypeKind::Interface => {
+            let mut options = format!("{alias}::TypeDefWithInterfaceOpts::default()");
+            append_string_option(
+                &mut options,
+                "with_description",
+                ty.documentation.as_deref(),
+            );
+            options.push_str(&format!(".with_source_map({source}.into())"));
+            format!(
+                "{query}.type_def().with_interface_opts({:?}, &{options})",
+                ty.wire_name.as_str()
+            )
+        }
+        ProjectedTypeKind::Enum => {
+            let mut options = format!("{alias}::TypeDefWithEnumOpts::default()");
+            append_string_option(
+                &mut options,
+                "with_description",
+                ty.documentation.as_deref(),
+            );
+            options.push_str(&format!(".with_source_map({source}.into())"));
+            let mut expression = format!(
+                "{query}.type_def().with_enum_opts({:?}, &{options})",
+                ty.wire_name.as_str()
+            );
+            for value in &ty.enum_values {
+                let mut member_options = format!("{alias}::TypeDefWithEnumMemberOpts::default()");
+                append_string_option(
+                    &mut member_options,
+                    "with_description",
+                    value.documentation.as_deref(),
+                );
+                append_string_option(
+                    &mut member_options,
+                    "with_deprecated",
+                    value.deprecation.as_deref(),
+                );
+                member_options.push_str(&format!(
+                    ".with_source_map({}.into())",
+                    render_source_map(query, &value.source)
+                ));
+                expression.push_str(&format!(
+                    ".with_enum_member_opts({:?}, &{member_options})",
+                    value.wire_name.as_str()
+                ));
+            }
+            expression
+        }
+        ProjectedTypeKind::Scalar => {
+            let mut options = format!("{alias}::TypeDefWithScalarOpts::default()");
+            append_string_option(
+                &mut options,
+                "with_description",
+                ty.documentation.as_deref(),
+            );
+            format!(
+                "{query}.type_def().with_scalar_opts({:?}, &{options})",
+                ty.wire_name.as_str()
+            )
+        }
+    }
+}
+
+fn render_field_options(field: &super::model::ProjectedField, alias: &str) -> String {
+    let mut options = format!("{alias}::TypeDefWithFieldOpts::default()");
+    append_string_option(
+        &mut options,
+        "with_description",
+        field.documentation.as_deref(),
+    );
+    append_string_option(
+        &mut options,
+        "with_deprecated",
+        field.deprecation.as_deref(),
+    );
+    options.push_str(&format!(
+        ".with_source_map({}.into())",
+        render_source_map("query", &field.source)
+    ));
+    options
+}
+
+fn render_function(
+    owner: &str,
+    function: &ProjectedFunction,
+    descriptor: &ModuleDescriptor,
+    alias: &str,
+    constructor: bool,
+) -> Result<String, ModuleDiagnosticSet> {
+    let variable = if constructor {
+        "function_constructor".to_owned()
+    } else {
+        format!(
+            "function_{}",
+            function.wire_name.as_str().to_ascii_lowercase()
+        )
+    };
+    let name = if constructor {
+        ""
+    } else {
+        function.wire_name.as_str()
+    };
+    let return_type = if constructor {
+        format!("{owner}.clone()")
+    } else {
+        render_projected_type(&function.return_type, descriptor, alias)?
+    };
+    let mut output =
+        format!("            let mut {variable} = query.function({name:?}, {return_type});\n");
+    if let Some(documentation) = &function.documentation {
+        output.push_str(&format!(
+            "            {variable} = {variable}.with_description({documentation:?});\n"
+        ));
+    }
+    if let Some(deprecation) = &function.deprecation {
+        output.push_str(&format!(
+            "            {variable} = {variable}.with_deprecated_opts(&{alias}::FunctionWithDeprecatedOpts::default().with_reason({deprecation:?}));\n"
+        ));
+    }
+    match function.cache {
+        CachePolicy::Default => {}
+        CachePolicy::Never => output.push_str(&format!(
+            "            {variable} = {variable}.with_cache_policy({alias}::FunctionCachePolicy::Never);\n"
+        )),
+        CachePolicy::PerSession => output.push_str(&format!(
+            "            {variable} = {variable}.with_cache_policy({alias}::FunctionCachePolicy::PerSession);\n"
+        )),
+        CachePolicy::TimeToLive(seconds) => output.push_str(&format!(
+            "            {variable} = {variable}.with_cache_policy_opts({alias}::FunctionCachePolicy::Default, &{alias}::FunctionWithCachePolicyOpts::default().with_time_to_live({:?}));\n",
+            format!("{seconds}s")
+        )),
+    }
+    let role_method = match function.role {
+        FunctionRole::Ordinary => None,
+        FunctionRole::Check => Some("with_check"),
+        FunctionRole::Generator => Some("with_generator"),
+        FunctionRole::Up => Some("with_up"),
+    };
+    if let Some(role_method) = role_method {
+        output.push_str(&format!(
+            "            {variable} = {variable}.{role_method}();\n"
+        ));
+    }
+    output.push_str(&format!(
+        "            {variable} = {variable}.with_source_map({});\n",
+        render_source_map("query", &function.source)
+    ));
+    for argument in &function.arguments {
+        output.push_str(&render_argument(&variable, argument, descriptor, alias)?);
+    }
+    let attach = if constructor {
+        "with_constructor"
+    } else {
+        "with_function"
+    };
+    output.push_str(&format!(
+        "            {owner} = {owner}.{attach}({variable});\n"
+    ));
+    Ok(output)
+}
+
+fn render_argument(
+    function: &str,
+    argument: &ProjectedArgument,
+    descriptor: &ModuleDescriptor,
+    alias: &str,
+) -> Result<String, ModuleDiagnosticSet> {
+    let mut options = format!("{alias}::FunctionWithArgOpts::default()");
+    if let Some(default) = &argument.default {
+        let encoded = serde_json::to_string(default).map_err(|_| singleton(generation_error()))?;
+        options.push_str(&format!(
+            ".with_default_value({alias}::Json::new({encoded:?}))"
+        ));
+    }
+    append_string_option(
+        &mut options,
+        "with_default_path",
+        argument.default_path.as_deref(),
+    );
+    append_string_option(
+        &mut options,
+        "with_default_address",
+        argument.default_address.as_deref(),
+    );
+    if !argument.ignore.is_empty() {
+        options.push_str(&format!(".with_ignore(vec!{:?})", argument.ignore));
+    }
+    append_string_option(
+        &mut options,
+        "with_description",
+        argument.documentation.as_deref(),
+    );
+    append_string_option(
+        &mut options,
+        "with_deprecated",
+        argument.deprecation.as_deref(),
+    );
+    options.push_str(&format!(
+        ".with_source_map({}.into())",
+        render_source_map("query", &argument.source)
+    ));
+    Ok(format!(
+        "            {function} = {function}.with_arg_opts({:?}, {}, &{options});\n",
+        argument.wire_name.as_str(),
+        render_argument_type(argument, descriptor, alias)?
+    ))
+}
+
+fn render_argument_type(
+    argument: &ProjectedArgument,
+    descriptor: &ModuleDescriptor,
+    alias: &str,
+) -> Result<String, ModuleDiagnosticSet> {
+    let rendered = render_projected_type(&argument.ty, descriptor, alias)?;
+    Ok(
+        if argument.optional && !projected_type_is_optional(&argument.ty) {
+            format!("{rendered}.with_optional(true)")
+        } else {
+            rendered
+        },
     )
-    .into_bytes())
+}
+
+fn projected_type_is_optional(ty: &ProjectedType) -> bool {
+    match ty {
+        ProjectedType::Void => true,
+        ProjectedType::List { nullable, .. } | ProjectedType::Named { nullable, .. } => *nullable,
+    }
+}
+
+fn render_projected_type(
+    ty: &ProjectedType,
+    descriptor: &ModuleDescriptor,
+    alias: &str,
+) -> Result<String, ModuleDiagnosticSet> {
+    let query = "query";
+    let (base, nullable) = match ty {
+        ProjectedType::Void => (
+            format!("{query}.type_def().with_kind({alias}::TypeDefKind::VoidKind)"),
+            true,
+        ),
+        ProjectedType::List { element, nullable } => (
+            format!(
+                "{query}.type_def().with_list_of({})",
+                render_projected_type(element, descriptor, alias)?
+            ),
+            *nullable,
+        ),
+        ProjectedType::Named { name, nullable } => {
+            let base = match name.as_str() {
+                "String" => {
+                    format!("{query}.type_def().with_kind({alias}::TypeDefKind::StringKind)")
+                }
+                "Integer" => {
+                    format!("{query}.type_def().with_kind({alias}::TypeDefKind::IntegerKind)")
+                }
+                "Boolean" => {
+                    format!("{query}.type_def().with_kind({alias}::TypeDefKind::BooleanKind)")
+                }
+                "Float" => format!("{query}.type_def().with_kind({alias}::TypeDefKind::FloatKind)"),
+                name => match projected_named_kind(name, descriptor)? {
+                    ProjectedTypeKind::Object => {
+                        format!("{query}.type_def().with_object({name:?})")
+                    }
+                    ProjectedTypeKind::Interface => {
+                        format!("{query}.type_def().with_interface({name:?})")
+                    }
+                    ProjectedTypeKind::Enum => {
+                        format!("{query}.type_def().with_enum({name:?})")
+                    }
+                    ProjectedTypeKind::Scalar => {
+                        format!("{query}.type_def().with_scalar({name:?})")
+                    }
+                },
+            };
+            (base, *nullable)
+        }
+    };
+    Ok(if nullable {
+        format!("{base}.with_optional(true)")
+    } else {
+        base
+    })
+}
+
+fn projected_named_kind(
+    name: &str,
+    descriptor: &ModuleDescriptor,
+) -> Result<ProjectedTypeKind, ModuleDiagnosticSet> {
+    if let Some(local) = descriptor
+        .types
+        .iter()
+        .find(|ty| ty.wire_name.as_str() == name)
+    {
+        return Ok(match local.kind {
+            LocalTypeKind::Object { .. } => ProjectedTypeKind::Object,
+            LocalTypeKind::Interface => ProjectedTypeKind::Interface,
+            LocalTypeKind::Enum => ProjectedTypeKind::Enum,
+            LocalTypeKind::Scalar { .. } => ProjectedTypeKind::Scalar,
+        });
+    }
+    for function in &descriptor.functions {
+        for argument in &function.compiled.arguments {
+            if let Some(kind) = generated_type_kind(name, &argument.ty) {
+                return Ok(kind);
+            }
+        }
+        if let Some(kind) = generated_type_kind(name, function.compiled.return_type.success()) {
+            return Ok(kind);
+        }
+    }
+    Err(singleton(generation_error()))
+}
+
+fn generated_type_kind(name: &str, ty: &RustModuleType) -> Option<ProjectedTypeKind> {
+    match ty {
+        RustModuleType::GeneratedObject(candidate) if candidate == name => {
+            Some(ProjectedTypeKind::Object)
+        }
+        RustModuleType::GeneratedInterface(candidate) if candidate == name => {
+            Some(ProjectedTypeKind::Interface)
+        }
+        RustModuleType::List(inner) | RustModuleType::Optional(inner) => {
+            generated_type_kind(name, inner)
+        }
+        _ => None,
+    }
+}
+
+fn append_string_option(output: &mut String, method: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        output.push_str(&format!(".{method}({value:?})"));
+    }
+}
+
+fn render_source_map(query: &str, source: &SourceCoordinate) -> String {
+    format!(
+        "{query}.source_map({}, {:?}, {})",
+        source.column.get(),
+        source.path.as_str(),
+        source.line.get()
+    )
 }
 
 fn render_codecs(descriptor: &ModuleDescriptor) -> Result<Vec<u8>, ModuleDiagnosticSet> {
@@ -595,9 +1057,11 @@ fn render_binding_catalog(descriptor: &ModuleDescriptor) -> Result<Vec<u8>, Modu
     canonical_bytes(&bindings).map_err(|_| singleton(generation_error()))
 }
 
-fn render_entrypoint(alias: &str) -> Vec<u8> {
+fn render_entrypoint(descriptor: &ModuleDescriptor) -> Vec<u8> {
+    let crate_name = descriptor.package.name.as_str().replace('-', "_");
     format!(
-        "//! Generic private module entrypoint generated for the checked descriptor.\n\nfn main() {{\n    let _ = ::core::any::TypeId::of::<{alias}::ModuleError>();\n}}\n"
+        "//! Generic private module entrypoint generated for the checked descriptor.\n\n\
+         fn main() -> Result<(), Box<dyn ::std::error::Error + Send + Sync>> {{\n    let runtime = ::tokio::runtime::Builder::new_current_thread().enable_all().build()?;\n    runtime.block_on(async {{\n        {crate_name}::dagger_generated::__private::run_module_entrypoint(\n            {crate_name}::dagger_generated::GeneratedDispatchRegistry,\n            {crate_name}::dagger_generated::GeneratedRegistrationSink::new,\n        ).await?;\n        Ok(())\n    }})\n}}\n"
     )
     .into_bytes()
 }

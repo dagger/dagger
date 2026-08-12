@@ -644,8 +644,8 @@
       in 22.09s with `Integrity: PASS` and no integrity diagnostics; its expected
       feature-progress completeness verdict remained incomplete.
 
-- [ ] 17. Replace the fixed probe with the general registration/invocation adapter
-  - [ ] 17.1 Generalize Feature 5 operation inputs behind the stable ABI
+- [x] 17. Replace the fixed probe with the general registration/invocation adapter
+  - [x] 17.1 Generalize Feature 5 operation inputs behind the stable ABI
     - Replace fixed-probe `EntrypointInput`/protocol content with target-bound source
       snapshot, descriptor, registration, generated-assets, and generic-entrypoint
       inputs while preserving Generate_Module/Generate_Entrypoint operation selectors,
@@ -653,31 +653,33 @@
     - Keep schema/source semantics in Rust; make the Go adapter marshal closed inputs
       and apply returned changesets only.
     - _Requirements: 8.4, 9.1-9.3, 9.11, 15.1-15.2_
-  - [ ] 17.2 Wire every real call through one engine-independent envelope
+  - [x] 17.2 Wire every real call through one engine-independent envelope
     - Have the generated binary connect once to the existing nested session, read name,
       parent name/state, and the complete argument list, derive registration only from
-      an empty name, and create one `CallEnvelope` for both branches.
+      an empty parent name, retain an empty function name as constructor selection, and
+      create one `CallEnvelope` for both branches.
     - Route registration through the descriptor `RegistrationSink`, invocation through
       the production dispatcher/`ResultSink`, then close once with the approved failure
       precedence; re-enter all IDs through the active query builder.
     - _Requirements: 9.1-9.3, 9.9-9.11, 10.1-10.14, 11.10-11.13_
-  - [ ] 17.3 Add direct Rust and static Go adapter fixtures
+  - [x] 17.3 Add direct Rust and static Go adapter fixtures
     - Exercise closed operation decoding, complete input forwarding, registration and
       invocation branch selection, query/transport sources, and Go ABI shape with
       recording Rust adapters and direct Go tests only.
     - Assert that Go contains no Rust authoring grammar, descriptor, codec, dispatch,
       default, state, metadata, or evidence policy and that tests construct no engine.
     - _Requirements: 9.1-9.12, 14.4, 16.6, 17.8_
-  - [ ] 17.4 Property test: Property 14 — registration and invocation branches are disjoint
+  - [x] 17.4 Property test: Property 14 — registration and invocation branches are disjoint
     - Generate at least 256 call names, parent/function coordinates, constructor/
-      instance shapes, registration plans, and adapter failures; require the empty name
-      to serve only complete registration, nonempty names to invoke only dispatch, and
+      instance shapes, registration plans, and adapter failures; require an empty parent
+      name to serve only complete registration, a nonempty parent to invoke only
+      dispatch, an empty invocation function name to select construction, and
       production/harness use of the same registry.
     - Test identifier: `property_14_registration_invocation_branches_disjoint`.
     - _Requirements: 9.1-9.3, 9.9-9.11_
 
-- [ ] 18. Fence the public authoring contract with bounded compile fixtures
-  - [ ] 18.1 Add the reusable compile-fixture project and dependency cache
+- [x] 18. Fence the public authoring contract with bounded compile fixtures
+  - [x] 18.1 Add the reusable compile-fixture project and dependency cache
     - Build checked fixture crates from the same generated asset inputs and exact
       dependency alias policy as production; isolate Cargo target/cache state from
       package source while reusing it across cases.
@@ -685,19 +687,19 @@
       rendering in memory while representative rustc/trybuild cases compile by semantic
       category rather than spawning one Cargo build per random case.
     - _Requirements: 16.9-16.11_
-  - [ ] 18.2 Add representative compile-pass coverage
+  - [x] 18.2 Add representative compile-pass coverage
     - Cover public/crate-private exports, private fields/methods/errors, multiple impls,
       nested modules/imports/aliases, renamed SDK dependency, constructors/state,
       interfaces/enums/scalars, every type-policy row, sync/async/result/unit, typed
       defaults/metadata, context/query/error conversion, and fingerprint convergence.
     - _Requirements: 2.1-2.12, 4.1-4.15, 5.1-5.12, 6.1-6.16, 7.1-7.17, 16.9_
-  - [ ] 18.3 Add source-coordinate compile-fail coverage
+  - [x] 18.3 Add source-coordinate compile-fail coverage
     - Pin stable diagnostic codes and authored coordinates for roots, visibility,
       metadata, cfg/import/alias/name/type/state/interface/enum/scalar/default/function/
       context/fingerprint failures while normalizing only toolchain decoration and
       temporary absolute roots.
     - _Requirements: 2.7-2.9, 3.7-3.12, 4.9-4.15, 5.5, 5.8, 5.10-5.12, 6.13-6.16, 7.11, 7.14-7.16, 14.2-14.6, 16.10_
-  - [ ] 18.4 Property test: Property 27 — compile fixtures fence the public authoring contract
+  - [x] 18.4 Property test: Property 27 — compile fixtures fence the public authoring contract
     - Generate at least 128 fixture models across every supported/rejected authoring
       category, require deterministic pass/fail classification and source-coordinate
       rendering, and cross-check each category against at least one real batched
@@ -707,8 +709,8 @@
       this property cannot recreate the previous multi-hour build loop.
     - _Requirements: 16.9-16.11_
 
-- [ ] 19. Build the complete engine-free production module harness
-  - [ ] 19.1 Add recording registration, result, transport, and session fixtures
+- [x] 19. Build the complete engine-free production module harness
+  - [x] 19.1 Add recording registration, result, transport, and session fixtures
     - Drive the real `Client`, `QueryBuilder`, generated handles, context, descriptor,
       registry, codecs, cancellation, dispatcher, and sinks through Rust fixture values
       with deterministic ID/query responses and failure injection.
@@ -716,7 +718,7 @@
       module invocation, network-backed engine graph, Go behavioral model, or unrelated
       SDK build is requested.
     - _Requirements: 16.1-16.6, 16.12-16.15_
-  - [ ] 19.2 Exercise the complete positive and negative direct matrix
+  - [x] 19.2 Exercise the complete positive and negative direct matrix
     - Cover registration, constructors, state, Core/self/dependency handles, interfaces,
       enums, scalars, optional/default/zero values, sync/async/unit/value/error/panic,
       context/current-node, malformed source/metadata/name/state/argument/ID/result,
@@ -725,7 +727,7 @@
     - Reuse checked generated assets and one compiled fixture set; do not regenerate
       between cases.
     - _Requirements: 16.1-16.11_
-  - [ ] 19.3 Property test: Property 26 — the direct harness exercises production semantics
+  - [x] 19.3 Property test: Property 26 — the direct harness exercises production semantics
     - Generate at least 128 fixture descriptors and call sequences spanning every
       required execution/result/failure class; assert that observations traverse the
       production compiler, projections, registry, codecs, context, dispatcher, and sink
@@ -733,7 +735,7 @@
     - Test identifier: `property_26_direct_harness_exercises_production_semantics`.
     - _Requirements: 16.1-16.8_
 
-- [ ] 20. Checkpoint: general adapter, compile contract, and direct harness are green
+- [x] 20. Checkpoint: general adapter, compile contract, and direct harness are green
   - Run formatting; locked focused tests for `dagger-sdk-macros`, `dagger-codegen`,
     `dagger-sdk`, `dagger-sdk-engine`, and `dagger-sdk-completeness`; Properties 14 and
     26-27; the bounded compile-pass/fail corpus; the full direct production matrix; and
@@ -742,6 +744,51 @@
     elapsed time, package selection, and no-generation decision; require no engine,
     Dagger module, network graph, other SDK build, continuous regeneration, or
     unaccounted generated diff.
+  - Checkpoint evidence (2026-08-12, warm local cache as executed, elapsed wall time):
+    - `cargo fmt --all -- --check` passed, and the locked package-scoped check for
+      `dagger-sdk`, `dagger-codegen`, and `dagger-sdk-engine` passed in 4.71s.
+      `cargo check -p dagger-sdk --no-default-features --locked` passed in 2.01s;
+      the generated-Core-dependent entrypoint adapter remains correctly gated behind
+      `gen` without widening the existing minimal-feature dead-code policy.
+    - `cargo test -p dagger-sdk-macros --locked` passed all four exact-version ABI
+      tests in 1.01s. The final `cargo test -p dagger-sdk --locked --lib module::`
+      rerun compiled in 9.75s and passed all 17 focused module tests in 0.07s, including
+      256-case Property 14, 128-case Property 26 across ten adapter outcome classes,
+      and Properties 15-22. The production adapter fixture read every call field through
+      one recording session, distinguished registration's empty parent name from the
+      constructor's empty function name, and observed exactly one close.
+    - `cargo test -p dagger-sdk --locked --test module_authoring_compile` passed the
+      single bounded trybuild batch of one representative pass fixture and five
+      source-located failure categories in 20.21s wall time. Random compile-contract
+      models remained in memory rather than spawning Cargo per case.
+    - The complete locked `dagger-codegen` suite passed in about 3m46s, including all
+      30 compiler unit/property tests, Property 27 with 256 cases, operation and visible
+      schema projection, warning-free candidate compilation, UI fixtures, and one
+      18.32s offline generated-module fixture build. That one isolated Cargo target
+      then executed registration, constructor/state, omitted-default, explicit-value,
+      unknown-dispatch, context, generated-registry, codec, dispatcher, and result-sink
+      cases against the same compiled assets; the final focused rerun passed in 23.39s.
+      Registration additionally preserved cache/role, contextual argument, enum-member,
+      documentation, deprecation, and source-map metadata through the shared projection.
+    - The complete locked `dagger-sdk-engine` package suite passed in about 41s. Static
+      and direct Go adapter tests passed from cache in 0.80s with an isolated Go cache
+      and inert generated-client session coordinates; no request or network dial occurred.
+    - The changed Rust artifact identity advanced to
+      `sha256:99a688bac97281995bbc0ca460a47b95db2559f57d1d99614b2a124d9e10215c`.
+      All 18 existing harness subject bindings and the exact-baseline constant were
+      reconciled without changing capability status, evidence outcome, target, source,
+      dependency, or security policy. The eight focused engine-integration tests passed
+      in 26.83s, the two root-independent baseline tests passed in 35.55s, and the
+      read-only locked Integrity gate completed in 9.70s with `Integrity: PASS` and
+      the expected incomplete completeness verdict.
+    - Warning-denied package-scoped Clippy passed in 6.46s and warning-denied rustdoc
+      passed in 4.30s. No dependency or publication policy changed, so `cargo deny`
+      and dependency advisory resolution were not repeated.
+    - No generated Core or module asset was refreshed: checked inputs were compiled
+      and compared directly. Every command was confined to the Rust SDK packages or
+      `sdk/rust/runtime`; no Dagger command, engine process, Dagger module invocation,
+      network-backed graph, unrelated SDK build, continuous regeneration, credential
+      exposure, or unaccounted generated diff occurred.
 
 - [ ] 21. Make engine-free checkpoints and implementation closure executable evidence
   - [ ] 21.1 Add a closed Rust-only checkpoint planner and recorder

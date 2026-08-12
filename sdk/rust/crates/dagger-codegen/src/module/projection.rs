@@ -11,8 +11,8 @@ use super::diagnostic::{ModuleDiagnostic, ModuleDiagnosticCode, ModuleDiagnostic
 use super::metadata::FunctionKind;
 use super::model::{
     FunctionDescriptor, LocalTypeContract, LocalTypeDescriptor, LocalTypeKind, ModuleDescriptor,
-    ModuleIntrospection, ProjectedArgument, ProjectedField, ProjectedFunction, ProjectedTypeDef,
-    ProjectedTypeKind, RegistrationProjection, RustSymbol, WireName,
+    ModuleIntrospection, ProjectedArgument, ProjectedEnumValue, ProjectedField, ProjectedFunction,
+    ProjectedTypeDef, ProjectedTypeKind, RegistrationProjection, RustSymbol, WireName,
 };
 use super::types::ObjectFieldMode;
 
@@ -169,7 +169,12 @@ fn project_local_type(
         enum_values: local
             .enum_values
             .iter()
-            .map(|variant| variant.wire_name.clone())
+            .map(|variant| ProjectedEnumValue {
+                wire_name: variant.wire_name.clone(),
+                documentation: variant.documentation.clone(),
+                deprecation: variant.deprecation.clone(),
+                source: variant.source.clone(),
+            })
             .collect(),
         interfaces,
         documentation: local.documentation.clone(),
@@ -193,6 +198,9 @@ fn project_function(
                 ty: project_type(&argument.ty, local_names),
                 optional: argument.metadata.optional,
                 default: argument.metadata.default.clone(),
+                default_path: argument.metadata.default_path.clone(),
+                default_address: argument.metadata.default_address.clone(),
+                ignore: argument.metadata.ignore.clone(),
                 documentation: argument.metadata.documentation.clone(),
                 deprecation: argument.metadata.deprecation.clone(),
                 source: argument.metadata.source.clone(),
@@ -200,6 +208,8 @@ fn project_function(
             .collect(),
         return_type: project_type(function.compiled.return_type.success(), local_names),
         constructor: function.compiled.kind == FunctionKind::Constructor,
+        cache: function.compiled.metadata.cache,
+        role: function.compiled.metadata.role,
         documentation: function.compiled.metadata.documentation.clone(),
         deprecation: function.compiled.metadata.deprecation.clone(),
         source: function.source.clone(),

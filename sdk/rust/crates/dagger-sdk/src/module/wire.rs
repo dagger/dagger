@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 const CALL_FORMAT_VERSION: u32 = 1;
 const MAX_CALL_ID_BYTES: usize = 128;
 
-/// Validated Dagger parent, function, or argument wire name.
+/// Validated non-empty Dagger parent or argument wire name.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ModuleWireName(String);
 
@@ -63,6 +63,62 @@ impl<'de> Deserialize<'de> for ModuleWireName {
     }
 }
 
+/// Validated Dagger function wire name, including the constructor sentinel.
+///
+/// The engine represents a constructor invocation with an empty function name. Keeping
+/// that value in a distinct type prevents registration's empty parent name from being
+/// confused with constructor selection after the adapter boundary.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ModuleFunctionName(String);
+
+impl ModuleFunctionName {
+    /// Validates an ordinary function name or the empty constructor sentinel.
+    pub fn new(value: impl Into<String>) -> Result<Self, &'static str> {
+        let value = value.into();
+        if value.is_empty() || ModuleWireName::new(value.clone()).is_ok() {
+            Ok(Self(value))
+        } else {
+            Err("module function name is invalid")
+        }
+    }
+
+    /// Borrows the exact function spelling; empty means constructor invocation.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Returns whether the engine selected the constructor.
+    #[must_use]
+    pub fn is_constructor(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl fmt::Display for ModuleFunctionName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl Serialize for ModuleFunctionName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ModuleFunctionName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
 /// One number-preserving JSON value crossing the module call boundary.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -97,14 +153,14 @@ impl ModuleJson {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum CallSelector {
-    /// Empty engine function name requesting complete registration.
+    /// Empty engine parent name requesting complete registration.
     Registration,
-    /// Non-empty parent/function coordinate requesting typed invocation.
+    /// Non-empty parent plus an ordinary function or constructor invocation.
     Invocation {
         /// Exact selected parent wire name.
         parent_wire_name: ModuleWireName,
-        /// Exact selected function wire name.
-        function_wire_name: ModuleWireName,
+        /// Exact selected function name; empty means the constructor.
+        function_wire_name: ModuleFunctionName,
     },
 }
 

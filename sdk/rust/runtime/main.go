@@ -420,6 +420,18 @@ func (sdk *RustSDK) generationRequest(
 		return nil, nil, fmt.Errorf("read visible schema: %w", err)
 	}
 	schemaBytes := []byte(contents)
+	return generationRequestDocument(descriptor, operation, module, schemaBytes, outputRoot), schemaBytes, nil
+}
+
+// generationRequestDocument is deliberately data-only: Rust owns source discovery,
+// descriptor construction, registration, codecs, dispatch, and evidence semantics.
+func generationRequestDocument(
+	descriptor metadata.EngineSource,
+	operation string,
+	module scopedModuleIdentity,
+	schemaBytes []byte,
+	outputRoot string,
+) map[string]any {
 	return map[string]any{
 		"request_kind": "generate",
 		"request": map[string]any{
@@ -437,11 +449,10 @@ func (sdk *RustSDK) generationRequest(
 				"config_format":  module.ConfigFormat,
 				"source_digest":  module.SourceDigest,
 			},
-			"sdk_dependency":       descriptor.SDKDependency,
-			"output_root":          outputRoot,
-			"entrypoint_type_defs": nil,
+			"sdk_dependency": descriptor.SDKDependency,
+			"output_root":    outputRoot,
 		},
-	}, schemaBytes, nil
+	}
 }
 
 func (sdk *RustSDK) descriptorMetadata(ctx context.Context) (metadata.EngineSource, error) {

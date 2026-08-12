@@ -228,10 +228,11 @@ Rust citations describe `main` after Feature 5.
   docs, deprecation and source maps, and rejects unknown serialized members.
 - **Constructor and dispatch evidence:**
   `cmd/codegen/generator/go/templates/modules.go` treats `New` as the root constructor,
-  emits registration on the empty call name, reconstructs parents, decodes named
-  inputs, dispatches by parent and function, and supports void, error-only, value-only,
-  and value-plus-error returns. Rust preserves those outcomes without copying generated
-  reflection or panic helpers.
+  emits registration on the empty parent name, reserves the empty function name for a
+  constructor invocation, reconstructs parents, decodes named inputs, dispatches by
+  parent and function, and supports void, error-only, value-only, and value-plus-error
+  returns. Rust preserves those outcomes without copying generated reflection or panic
+  helpers.
 - **Function metadata evidence:**
   `cmd/codegen/generator/go/templates/module_funcs.go:171-296,318-542` emits
   descriptions, cache policies, source maps, deprecation, check/generator/up flags,
@@ -440,7 +441,7 @@ Rust shape by silently flattening a distinction or substituting `serde_json::Val
 |---|---|---|---|
 | Source analysis | Cargo project, Exact_Target, Visible_Schema, declared authoring inputs | Canonical Module_Descriptor | Typed source diagnostic; no partial descriptor |
 | Registration projection | Module_Descriptor | Module TypeDefs and equivalent Module_Introspection | Structural diagnostic; no engine call locally |
-| Engine registration | Empty `FunctionCall.name` | Serve the complete projected module definition | Engine adapter error at SDK_Signoff |
+| Engine registration | Empty `FunctionCall.parentName` | Serve the complete projected module definition | Engine adapter error at SDK_Signoff |
 | Invocation selection | Parent wire name plus function wire name | Exactly one Dispatch_Registry entry | Unknown/ambiguous dispatch diagnostic |
 | Parent decode | Parent JSON plus selected local object codec | One reconstructed receiver or an empty root constructor input | Parent-state diagnostic |
 | Argument decode | Named JSON arguments plus selected signature | One typed argument set | Missing, duplicate, unknown, or invalid-value diagnostic |
@@ -757,7 +758,8 @@ Rust function, so that malformed or unknown calls never fall through unpredictab
 #### Acceptance Criteria
 
 1. THE generated entrypoint SHALL distinguish registration from invocation using the
-   target empty-name contract.
+   target empty-parent-name contract while retaining an empty function name as a
+   constructor invocation.
 2. WHEN registration is requested, THE generated entrypoint SHALL serve the complete
    TypeDef_Projection.
 3. WHEN invocation is requested, THE Engine_Call_Adapter SHALL construct one

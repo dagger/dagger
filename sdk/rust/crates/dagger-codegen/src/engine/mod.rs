@@ -5,7 +5,6 @@
 //! sessions, publication, and completeness transitions remain outside this crate.
 
 mod client;
-mod entrypoint;
 mod library;
 mod metadata;
 mod model;
@@ -16,10 +15,9 @@ mod visible;
 
 pub use metadata::{BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata};
 pub use model::{
-    CHECKED_ENTRYPOINT_JSON, CHECKED_ENTRYPOINT_SHA256, CandidateArtifact, CandidateArtifactKind,
-    CargoBinaryTarget, ContentDomain, EntrypointInput, ModuleProjectionInput, OperationKind,
-    OperationPlan, OperationProjectionRequest, PostWorkPlan, PublishedSdkDependency,
-    RelativeOperationPath,
+    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ContentDomain,
+    ModuleAuthoringInput, ModuleProjectionInput, OperationKind, OperationPlan,
+    OperationProjectionRequest, PostWorkPlan, PublishedSdkDependency, RelativeOperationPath,
 };
 pub use renderers::{
     ClientRenderInput, EntrypointRenderInput, LibraryRenderInput, ModuleRenderInput,
@@ -70,22 +68,7 @@ impl OperationRenderer for ProductionRenderers {
         &self,
         input: EntrypointRenderInput<'_>,
     ) -> Result<RendererOutput, DiagnosticSet> {
-        let mut output = RendererOutput::new(ContentDomain::ProtocolProbe);
-        let path = input.output.join("src/bin/dagger-module.rs")?;
-        output.insert_artifact(
-            path.clone(),
-            CandidateArtifactKind::RustSource,
-            entrypoint::render_source(input.module, input.entrypoint)?,
-        )?;
-        output.vcs_generated.insert(path.clone());
-        output.post_work.push(PostWorkPlan::FormatRust {
-            files: std::collections::BTreeSet::from([path]),
-        });
-        output.cargo_binary = Some(CargoBinaryTarget {
-            name: "dagger-module".to_owned(),
-            path: RelativeOperationPath::parse("src/bin/dagger-module.rs")?,
-        });
-        Ok(output)
+        module::render_entrypoint(input)
     }
 }
 

@@ -17,6 +17,7 @@ use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::post_work::{
     Cancellation, current_allowlisted_environment, execute, require_convergence,
 };
+use crate::project::source_snapshot::{SourceSnapshotBuilder, SourceSnapshotRequest};
 use crate::publication::{OperationCandidate, publish, verify_ownership};
 use crate::root::validate_path_sets;
 use crate::{
@@ -61,27 +62,14 @@ pub async fn execute_operation(
         .transpose()?;
     let output = compiler_path(&request.output_root)?;
     let dependency = compiler_dependency(&request.sdk_dependency);
-    let entrypoint = request
-        .entrypoint_type_defs
-        .as_ref()
-        .map(|input| {
-            let bytes = root.read(&input.path)?;
-            if digest(&bytes) != input.digest {
-                return Err(diagnostic(
-                    EngineDiagnosticCode::OperationInputInvalid,
-                    input.path.as_str(),
-                    "entrypoint TypeDef bytes differ from the request digest",
-                ));
-            }
-            compiler::EntrypointInput::decode_checked(&bytes).map_err(|_| {
-                diagnostic(
-                    EngineDiagnosticCode::OperationInputInvalid,
-                    input.path.as_str(),
-                    "entrypoint TypeDef differs from the checked protocol input",
-                )
-            })
-        })
-        .transpose()?;
+    let authoring = if matches!(
+        request.operation,
+        compiler::OperationKind::GenerateModule | compiler::OperationKind::GenerateEntrypoint
+    ) {
+        Some(module_authoring_input(root, request, descriptor)?)
+    } else {
+        None
+    };
     let projected = compiler::project_operation(compiler::OperationProjectionRequest {
         target: &target,
         operation: request.operation,
@@ -89,7 +77,7 @@ pub async fn execute_operation(
         module: module.as_ref(),
         output: &output,
         sdk_dependency: &dependency,
-        entrypoint: entrypoint.as_ref(),
+        authoring: authoring.as_ref(),
     })
     .map_err(compiler_diagnostic)?;
     let mut vcs_generated = projected
@@ -384,14 +372,6 @@ pub fn validate_request(
             "operation has a missing or forbidden module input",
         ));
     }
-    let entrypoint_required = request.operation == compiler::OperationKind::GenerateEntrypoint;
-    if request.entrypoint_type_defs.is_some() != entrypoint_required {
-        return Err(diagnostic(
-            EngineDiagnosticCode::OperationInputInvalid,
-            "request.entrypoint_type_defs",
-            "operation has a missing or forbidden entrypoint TypeDef input",
-        ));
-    }
     Ok(())
 }
 
@@ -424,6 +404,144 @@ fn compiler_dependency(dependency: &PublishedSdkDependency) -> compiler::Publish
             }
         }
     }
+}
+
+fn module_authoring_input(
+    root: &OperationRoot,
+    request: &OperationRequest,
+    descriptor: &EngineSourceDescriptor,
+) -> Result<compiler::ModuleAuthoringInput, EngineDiagnostic> {
+    let module = request.module.as_ref().ok_or_else(|| {
+        diagnostic(
+            EngineDiagnosticCode::OperationInputInvalid,
+            "request.module",
+            "module authoring requires one selected module source",
+        )
+    })?;
+    let manifest_path = child_path(&module.source_subpath, "Cargo.toml")?;
+    let manifest_bytes = root.read(&manifest_path)?;
+    let manifest_text = std::str::from_utf8(&manifest_bytes).map_err(|_| {
+        diagnostic(
+            EngineDiagnosticCode::CargoManifestInvalid,
+            manifest_path.as_str(),
+            "selected Cargo manifest is not UTF-8",
+        )
+    })?;
+    let manifest = manifest_text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|_| {
+            diagnostic(
+                EngineDiagnosticCode::CargoManifestInvalid,
+                manifest_path.as_str(),
+                "selected Cargo manifest is invalid TOML",
+            )
+        })?;
+    let package = manifest
+        .get("package")
+        .and_then(toml_edit::Item::as_table_like)
+        .ok_or_else(|| {
+            diagnostic(
+                EngineDiagnosticCode::CargoManifestInvalid,
+                manifest_path.as_str(),
+                "selected Cargo manifest has no package table",
+            )
+        })?;
+    let package_name = package
+        .get("name")
+        .and_then(toml_edit::Item::as_str)
+        .ok_or_else(|| {
+            diagnostic(
+                EngineDiagnosticCode::CargoManifestInvalid,
+                manifest_path.as_str(),
+                "selected Cargo package has no name",
+            )
+        })?;
+    let edition = package
+        .get("edition")
+        .and_then(toml_edit::Item::as_str)
+        .ok_or_else(|| {
+            diagnostic(
+                EngineDiagnosticCode::CargoManifestInvalid,
+                manifest_path.as_str(),
+                "selected Cargo package has no explicit edition",
+            )
+        })?;
+    let crate_root_suffix = manifest
+        .get("lib")
+        .and_then(toml_edit::Item::as_table_like)
+        .and_then(|library| library.get("path"))
+        .and_then(toml_edit::Item::as_str)
+        .unwrap_or("src/lib.rs");
+    let crate_root = child_path(&module.source_subpath, crate_root_suffix)?;
+    let sdk_dependency_alias = sdk_dependency_alias(&manifest).ok_or_else(|| {
+        diagnostic(
+            EngineDiagnosticCode::CargoManifestInvalid,
+            manifest_path.as_str(),
+            "selected Cargo package has no dagger-sdk dependency",
+        )
+    })?;
+    let cargo_package = crate::CargoPackage {
+        package_id: crate::StableCoordinate::new(format!(
+            "{package_name}@{}",
+            module.source_subpath.as_str()
+        ))
+        .map_err(|_| generation_failed())?,
+        name: crate::StableCoordinate::new(package_name).map_err(|_| generation_failed())?,
+        manifest_path,
+        package_root: module.source_subpath.clone(),
+    };
+    let source = SourceSnapshotBuilder::new().build(
+        root,
+        SourceSnapshotRequest {
+            package: &cargo_package,
+            crate_root: &crate_root,
+            edition,
+            // The absence of selected cfg values is itself explicit; build-script and
+            // ambient host cfgs cannot silently enter authoring semantics.
+            cfg: dagger_codegen::module::CfgEnvironment {
+                values: BTreeMap::new(),
+                features: BTreeSet::new(),
+            },
+        },
+    )?;
+    let generator_digest = dagger_codegen::module::Sha256Digest::new(
+        descriptor.packaged_asset_manifest_digest.as_str(),
+    )
+    .map_err(|_| generation_failed())?;
+    Ok(compiler::ModuleAuthoringInput {
+        source,
+        generator_digest,
+        sdk_dependency_alias,
+    })
+}
+
+fn child_path(
+    root: &RelativeOperationPath,
+    suffix: &str,
+) -> Result<RelativeOperationPath, EngineDiagnostic> {
+    RelativeOperationPath::parse(&format!(
+        "{}/{}",
+        root.as_str().trim_end_matches('/'),
+        suffix.trim_start_matches('/')
+    ))
+    .map_err(|_| {
+        diagnostic(
+            EngineDiagnosticCode::OutputPathEscape,
+            root.as_str(),
+            "module authoring path is not confined",
+        )
+    })
+}
+
+fn sdk_dependency_alias(manifest: &toml_edit::DocumentMut) -> Option<String> {
+    let dependencies = manifest.get("dependencies")?.as_table_like()?;
+    dependencies.iter().find_map(|(alias, dependency)| {
+        let package = dependency
+            .get("package")
+            .and_then(toml_edit::Item::as_str)
+            .unwrap_or(alias);
+        (package == "dagger-sdk").then(|| alias.replace('-', "_"))
+    })
 }
 
 fn digest_path_set(

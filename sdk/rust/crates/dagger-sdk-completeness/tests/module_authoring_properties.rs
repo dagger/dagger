@@ -21,7 +21,8 @@ use dagger_codegen::module::{
     decode_canonical as decode_module_canonical,
 };
 use dagger_sdk::__private::{
-    CallEnvelope, CallIdentity, CallSelector, ModuleJson, ModuleWireName, NamedModuleArgument,
+    CallEnvelope, CallIdentity, CallSelector, ModuleFunctionName, ModuleJson, ModuleWireName,
+    NamedModuleArgument,
 };
 use dagger_sdk_completeness::{
     CanonicalSet, Digest, EvidenceId, ModuleAuthoringFormatVersion, ModuleAuthority,
@@ -639,7 +640,7 @@ fn call(seed: u8) -> CallEnvelope {
             format!("call-{seed}"),
             CallSelector::Invocation {
                 parent_wire_name: ModuleWireName::new(format!("Fixture{seed}")).unwrap(),
-                function_wire_name: ModuleWireName::new("hello").unwrap(),
+                function_wire_name: ModuleFunctionName::new("hello").unwrap(),
             },
         )
         .unwrap(),

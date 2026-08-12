@@ -403,7 +403,7 @@ mod tests {
     use crate::graphql::{RawRequest, RawResponse, ResponseData};
     use crate::lifecycle::SessionHandle;
     use crate::module::context::{CurrentCall, ModuleCancellation, ModuleContextBase};
-    use crate::module::wire::{CallSelector, ModuleJson, ModuleWireName};
+    use crate::module::wire::{CallSelector, ModuleFunctionName, ModuleJson, ModuleWireName};
     use crate::query::QueryBuilder;
     use crate::test_support::proptest_config;
 
@@ -449,7 +449,7 @@ mod tests {
         let builder = QueryBuilder::new(SessionHandle::new(Box::new(connection), None, None));
         let selector = CallSelector::Invocation {
             parent_wire_name: ModuleWireName::new("Fixture").expect("static name is valid"),
-            function_wire_name: ModuleWireName::new("run").expect("static name is valid"),
+            function_wire_name: ModuleFunctionName::new("run").expect("static name is valid"),
         };
         (
             ModuleContextBase::new(

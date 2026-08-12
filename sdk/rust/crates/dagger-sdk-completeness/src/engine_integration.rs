@@ -34,7 +34,7 @@ pub enum ImplementationSubject {
     CargoProjectAdoption,
     /// Runtime reproducibility and container construction policy.
     RuntimeConstruction,
-    /// Private runtime protocol probe.
+    /// Generic generated module runtime protocol.
     RuntimeProtocol,
     /// Engine-packaged Rust assets and build provenance.
     EnginePackaging,
@@ -60,7 +60,7 @@ pub enum EngineEvidenceDomain {
     EntrypointHook,
     /// Runtime project/build/container observations.
     RuntimeConstruction,
-    /// Nested engine protocol-probe observations.
+    /// Nested engine module-protocol observations.
     RuntimeProtocol,
     /// Packaged asset and immutable dependency observations.
     Packaging,

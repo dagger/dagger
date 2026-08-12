@@ -4,16 +4,15 @@ mod support;
 
 use dagger_codegen::diagnostic::DiagnosticCode;
 use dagger_codegen::engine::{
-    BASELINE_CLIENT_GENERATION_JSON, CHECKED_ENTRYPOINT_JSON, CHECKED_ENTRYPOINT_SHA256,
-    ClientGenerationMetadata, ContentDomain, EntrypointInput, ModuleProjectionInput, OperationKind,
-    OperationProjectionRequest, ProductionRenderers, PublishedSdkDependency, RelativeOperationPath,
-    project_operation, project_operation_with,
+    BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata, ContentDomain,
+    ModuleProjectionInput, OperationKind, OperationProjectionRequest, ProductionRenderers,
+    PublishedSdkDependency, RelativeOperationPath, project_operation, project_operation_with,
 };
 use dagger_codegen::target::CodegenTarget;
-use sha2::{Digest as _, Sha256};
 
 use support::{
-    CORE_SCHEMA_BYTES, TARGET_BYTES, VisibleSchemaCase, module_visible_schema, visible_schema,
+    CORE_SCHEMA_BYTES, TARGET_BYTES, VisibleSchemaCase, module_authoring_input,
+    module_visible_schema, visible_schema,
 };
 
 fn target() -> CodegenTarget {
@@ -38,33 +37,30 @@ fn dependency() -> PublishedSdkDependency {
     }
 }
 
-fn entrypoint() -> EntrypointInput {
-    EntrypointInput::decode_checked(
-        &EntrypointInput::checked_bytes().expect("checked TypeDef must encode"),
-    )
-    .expect("checked TypeDef must decode")
-}
-
 #[test]
 fn production_renderers_emit_bounded_operation_specific_artifacts() {
     let target = target();
     let module = module();
     let dependency = dependency();
-    let entrypoint = entrypoint();
+    let authoring = module_authoring_input();
     let output = RelativeOperationPath::parse("candidate").expect("fixture path must parse");
     let schema = visible_schema(VisibleSchemaCase::EngineModuleExtension, 0);
 
     let cases = [
         (OperationKind::GenerateLibrary, None, None),
-        (OperationKind::GenerateModule, Some(&module), None),
+        (
+            OperationKind::GenerateModule,
+            Some(&module),
+            Some(&authoring),
+        ),
         (OperationKind::GenerateClient, Some(&module), None),
         (
             OperationKind::GenerateEntrypoint,
             Some(&module),
-            Some(&entrypoint),
+            Some(&authoring),
         ),
     ];
-    for (operation, module, entrypoint) in cases {
+    for (operation, module, authoring) in cases {
         let plan = project_operation(OperationProjectionRequest {
             target: &target,
             operation,
@@ -72,7 +68,7 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
             module,
             output: &output,
             sdk_dependency: &dependency,
-            entrypoint,
+            authoring,
         })
         .expect("valid operation fixture must render");
 
@@ -108,6 +104,28 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
                         .keys()
                         .any(|path| { path.as_str().ends_with("operation-manifest.json") })
                 );
+                let registration = plan
+                    .artifacts()
+                    .get(
+                        &RelativeOperationPath::parse(
+                            "candidate/src/dagger_generated/module_registration.rs",
+                        )
+                        .expect("registration path must parse"),
+                    )
+                    .expect("module operation must contain active registration");
+                let registration = std::str::from_utf8(&registration.content)
+                    .expect("registration source must be UTF-8");
+                for expected in [
+                    "with_cache_policy(dagger_sdk::FunctionCachePolicy::Never)",
+                    ".with_check()",
+                    ".with_default_path(\".\")",
+                    ".with_ignore(vec![\"target\"])",
+                ] {
+                    assert!(
+                        registration.contains(expected),
+                        "registration omitted {expected}"
+                    );
+                }
                 let binary = plan
                     .cargo_binary()
                     .expect("module operation must declare its Cargo target");
@@ -136,7 +154,7 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
                 );
             }
             OperationKind::GenerateEntrypoint => {
-                assert_eq!(plan.content_domain(), ContentDomain::ProtocolProbe);
+                assert_eq!(plan.content_domain(), ContentDomain::ModuleEntrypoint);
                 assert_eq!(plan.artifacts().len(), 1);
                 let source = &plan
                     .artifacts()
@@ -146,8 +164,8 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
                     .content;
                 let source = std::str::from_utf8(source).expect("entrypoint must be UTF-8");
                 assert!(source.contains("Builder::new_current_thread"));
-                assert!(source.contains("current_function_call"));
-                assert!(source.contains("return_value"));
+                assert!(source.contains("run_module_entrypoint"));
+                assert!(source.contains("GeneratedDispatchRegistry"));
                 assert_eq!(
                     plan.cargo_binary()
                         .expect("entrypoint operation must declare its Cargo target")
@@ -174,7 +192,7 @@ fn source_map_required_argument_compatibility_is_engine_specific() {
         module: Some(&module),
         output: &output,
         sdk_dependency: &dependency,
-        entrypoint: None,
+        authoring: None,
     })
     .expect("engine-authored module-only source maps must project");
 
@@ -210,7 +228,7 @@ fn source_map_required_argument_compatibility_is_engine_specific() {
             module: Some(&module),
             output: &output,
             sdk_dependency: &dependency,
-            entrypoint: None,
+            authoring: None,
         })
         .expect_err("required directive arguments outside the engine exception must fail");
         assert!(diagnostics.contains(DiagnosticCode::SchemaDirectiveArgumentInvalid));
@@ -232,7 +250,7 @@ fn module_visibility_accepts_only_the_target_introspection_scrub() {
         module: Some(&module),
         output: &output,
         sdk_dependency: &dependency,
-        entrypoint: None,
+        authoring: Some(&module_authoring_input()),
     })
     .expect("the exact target module scrub must remain compatible");
     for (path, artifact) in plan.artifacts() {
@@ -280,7 +298,7 @@ fn module_visibility_accepts_only_the_target_introspection_scrub() {
         module: Some(&module),
         output: &output,
         sdk_dependency: &dependency,
-        entrypoint: None,
+        authoring: None,
     })
     .expect_err("client generation requires the complete client-visible core");
     assert!(
@@ -308,7 +326,7 @@ fn module_visibility_accepts_only_the_target_introspection_scrub() {
         module: Some(&module),
         output: &output,
         sdk_dependency: &dependency,
-        entrypoint: None,
+        authoring: Some(&module_authoring_input()),
     })
     .expect_err("an unrelated module-schema omission must remain incompatible");
     assert!(diagnostics.contains(DiagnosticCode::SchemaCoreCoordinateMissing));
@@ -319,11 +337,11 @@ fn operation_matrix_rejects_missing_and_forbidden_inputs_before_rendering() {
     let target = target();
     let module = module();
     let dependency = dependency();
-    let entrypoint = entrypoint();
+    let authoring = module_authoring_input();
     let output = RelativeOperationPath::parse("candidate").expect("fixture path must parse");
     let renderer = ProductionRenderers::baseline();
 
-    for (operation, module, entrypoint, expected) in [
+    for (operation, module, authoring, expected) in [
         (
             OperationKind::GenerateModule,
             None,
@@ -345,7 +363,7 @@ fn operation_matrix_rejects_missing_and_forbidden_inputs_before_rendering() {
         (
             OperationKind::GenerateLibrary,
             None,
-            Some(&entrypoint),
+            Some(&authoring),
             DiagnosticCode::OperationInputForbidden,
         ),
     ] {
@@ -358,7 +376,7 @@ fn operation_matrix_rejects_missing_and_forbidden_inputs_before_rendering() {
                 module,
                 output: &output,
                 sdk_dependency: &dependency,
-                entrypoint,
+                authoring,
             },
         )
         .expect_err("invalid operation matrix entry must fail");
@@ -407,35 +425,4 @@ fn unknown_operation_selector_is_rejected_as_typed_input() {
     let diagnostics = OperationKind::decode("generate-everything")
         .expect_err("unknown operation selector must fail");
     assert!(diagnostics.contains(DiagnosticCode::OperationUnknown));
-}
-
-#[test]
-fn private_protocol_probe_is_one_digest_bound_document() {
-    assert_eq!(
-        EntrypointInput::checked_bytes().expect("checked document must encode"),
-        CHECKED_ENTRYPOINT_JSON
-    );
-    assert_eq!(
-        format!("sha256:{:x}", Sha256::digest(CHECKED_ENTRYPOINT_JSON)),
-        CHECKED_ENTRYPOINT_SHA256
-    );
-    EntrypointInput::decode_checked(CHECKED_ENTRYPOINT_JSON)
-        .expect("committed checked document must decode");
-
-    let checked: serde_json::Value =
-        serde_json::from_slice(CHECKED_ENTRYPOINT_JSON).expect("fixture must be JSON");
-    for (field, replacement) in [
-        ("format_version", serde_json::json!(2)),
-        ("object_name", serde_json::json!("AnotherObject")),
-        ("function_name", serde_json::json!("anotherFunction")),
-        ("return_scalar", serde_json::json!("Int")),
-        ("result_json", serde_json::json!("null")),
-    ] {
-        let mut mutated = checked.clone();
-        mutated[field] = replacement;
-        let bytes = serde_json::to_vec(&mutated).expect("mutation must encode");
-        let diagnostics = EntrypointInput::decode_checked(&bytes)
-            .expect_err("every alternate protocol document must fail");
-        assert!(diagnostics.contains(DiagnosticCode::EntrypointTypeDefInvalid));
-    }
 }

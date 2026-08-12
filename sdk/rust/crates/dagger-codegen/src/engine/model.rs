@@ -10,6 +10,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticCoordinate, DiagnosticSet};
+use crate::module::{ModuleSourceSnapshot, Sha256Digest as ModuleSha256Digest};
 use crate::target::CodegenTarget;
 
 use super::metadata::ClientGenerationMetadata;
@@ -25,7 +26,7 @@ pub enum OperationKind {
     GenerateModule,
     /// Render the bounded standalone client baseline.
     GenerateClient,
-    /// Render the checked private protocol-probe entrypoint.
+    /// Render the generic descriptor-bound module entrypoint.
     GenerateEntrypoint,
 }
 
@@ -144,91 +145,15 @@ pub enum PublishedSdkDependency {
     },
 }
 
-/// The one private TypeDef accepted by the bounded entrypoint renderer.
+/// Closed Rust-owned inputs to descriptor and generated-asset compilation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EntrypointInput {
-    object_name: String,
-    function_name: String,
-    return_scalar: String,
-    result_json: String,
-}
-
-/// Canonical bytes of the sole private protocol probe accepted by the renderer.
-pub const CHECKED_ENTRYPOINT_JSON: &[u8] = include_bytes!("../../assets/protocol-probe.json");
-
-/// SHA-256 identity of [`CHECKED_ENTRYPOINT_JSON`].
-pub const CHECKED_ENTRYPOINT_SHA256: &str =
-    "sha256:ed6bc98ef581d820dc571a9c8dc52e1948f2f70651a7117f7ea507e705dbd374";
-
-#[derive(Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-struct EntrypointDocument {
-    format_version: u32,
-    object_name: String,
-    function_name: String,
-    return_scalar: String,
-    result_json: String,
-}
-
-impl EntrypointInput {
-    /// Decodes and compares the document to the checked protocol probe.
-    pub fn decode_checked(bytes: &[u8]) -> Result<Self, DiagnosticSet> {
-        let document: EntrypointDocument = serde_json::from_slice(bytes).map_err(|_| {
-            DiagnosticSet::one(operation_diagnostic(
-                DiagnosticCode::EntrypointTypeDefInvalid,
-                "operation.entrypoint",
-                "entrypoint TypeDef document is not valid strict JSON",
-            ))
-        })?;
-        if document != checked_entrypoint_document() {
-            return Err(DiagnosticSet::one(operation_diagnostic(
-                DiagnosticCode::EntrypointTypeDefInvalid,
-                "operation.entrypoint",
-                "entrypoint TypeDef does not match the checked private probe",
-            )));
-        }
-        Ok(Self {
-            object_name: document.object_name,
-            function_name: document.function_name,
-            return_scalar: document.return_scalar,
-            result_json: document.result_json,
-        })
-    }
-
-    /// Returns the canonical checked TypeDef bytes used by fixtures and packaging.
-    pub fn checked_bytes() -> Result<Vec<u8>, DiagnosticSet> {
-        Ok(CHECKED_ENTRYPOINT_JSON.to_vec())
-    }
-
-    #[must_use]
-    pub(crate) fn object_name(&self) -> &str {
-        &self.object_name
-    }
-
-    #[must_use]
-    pub(crate) fn function_name(&self) -> &str {
-        &self.function_name
-    }
-
-    #[must_use]
-    pub(crate) fn return_scalar(&self) -> &str {
-        &self.return_scalar
-    }
-
-    #[must_use]
-    pub(crate) fn result_json(&self) -> &str {
-        &self.result_json
-    }
-}
-
-fn checked_entrypoint_document() -> EntrypointDocument {
-    EntrypointDocument {
-        format_version: 1,
-        object_name: "RustSdkProtocolProbe".to_owned(),
-        function_name: "probe".to_owned(),
-        return_scalar: "String".to_owned(),
-        result_json: "\"rust-sdk-protocol-ok\"".to_owned(),
-    }
+pub struct ModuleAuthoringInput {
+    /// Confined immutable source selected by the engine-side package adapter.
+    pub source: ModuleSourceSnapshot,
+    /// Immutable generator identity included in descriptor provenance.
+    pub generator_digest: ModuleSha256Digest,
+    /// Exact Cargo alias through which generated support reaches `dagger-sdk`.
+    pub sdk_dependency_alias: String,
 }
 
 /// Borrowed values needed to validate and render one operation.
@@ -245,8 +170,8 @@ pub struct OperationProjectionRequest<'a> {
     pub output: &'a RelativeOperationPath,
     /// Immutable public SDK dependency.
     pub sdk_dependency: &'a PublishedSdkDependency,
-    /// Checked TypeDef input, valid only for entrypoint generation.
-    pub entrypoint: Option<&'a EntrypointInput>,
+    /// Rust-owned authoring input for module and entrypoint generation.
+    pub authoring: Option<&'a ModuleAuthoringInput>,
 }
 
 /// Class of one pure candidate artifact.
@@ -288,8 +213,8 @@ pub enum ContentDomain {
     ModuleOperation,
     /// Hook-valid baseline that does not claim sibling client-content completeness.
     EngineHookBaseline,
-    /// Private protocol-probe content only.
-    ProtocolProbe,
+    /// Generic descriptor-bound module entrypoint content only.
+    ModuleEntrypoint,
 }
 
 /// One generated Cargo binary target planned without mutating a caller manifest.
@@ -310,7 +235,7 @@ pub struct OperationPlan {
     pub(crate) module: Option<ModuleProjectionInput>,
     pub(crate) output: RelativeOperationPath,
     pub(crate) sdk_dependency: PublishedSdkDependency,
-    pub(crate) entrypoint: Option<EntrypointInput>,
+    pub(crate) authoring: Option<ModuleAuthoringInput>,
     pub(crate) artifacts: BTreeMap<RelativeOperationPath, CandidateArtifact>,
     pub(crate) post_work: Vec<PostWorkPlan>,
     pub(crate) vcs_generated: BTreeSet<RelativeOperationPath>,
@@ -358,10 +283,10 @@ impl OperationPlan {
         &self.sdk_dependency
     }
 
-    /// Returns the checked private TypeDef when entrypoint generation was selected.
+    /// Returns the closed Rust authoring input when module compilation was selected.
     #[must_use]
-    pub const fn entrypoint(&self) -> Option<&EntrypointInput> {
-        self.entrypoint.as_ref()
+    pub const fn authoring(&self) -> Option<&ModuleAuthoringInput> {
+        self.authoring.as_ref()
     }
 
     /// Returns candidate artifacts in normalized path order.

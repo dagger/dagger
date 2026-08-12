@@ -1,73 +1,14 @@
-//! Fixed-probe protocol, isolation, taxonomy, and rejection properties.
+//! Runtime isolation, taxonomy, and rejection properties.
 
 use std::collections::BTreeSet;
 
 use dagger_sdk_engine::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
-use dagger_sdk_engine::protocol::{
-    PROBE_FUNCTION, PROBE_RESULT_JSON, ProtocolBranch, ProtocolFailurePhase, ProtocolFailures,
-    RuntimeCallInput, evaluate_protocol, isolate_runtime_calls,
-};
+use dagger_sdk_engine::protocol::{RuntimeCallInput, isolate_runtime_calls};
 use dagger_sdk_engine::surface::{AdapterSurface, detect_adapter_surfaces};
 use proptest::prelude::*;
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
-
-    // Branch selection and close precedence depend only on the authenticated call context.
-    #[test]
-    fn property_21_protocol_branch_result_follows_call_context(
-        name_kind in 0_u8..4,
-        connect in any::<bool>(),
-        call_context in any::<bool>(),
-        registration in any::<bool>(),
-        result in any::<bool>(),
-        close in any::<bool>(),
-    ) {
-        let name = match name_kind {
-            0 => "",
-            1 => PROBE_FUNCTION,
-            2 => "unknown",
-            _ => "probe-with-suffix",
-        };
-        let failures = ProtocolFailures {
-            connect,
-            call_context,
-            registration,
-            result,
-            close,
-        };
-        let observed = evaluate_protocol(name, failures);
-
-        if connect {
-            let failure = observed.expect_err("connection failure must be primary");
-            prop_assert_eq!(failure.primary, ProtocolFailurePhase::Session);
-            prop_assert!(!failure.close_failed);
-        } else if call_context || !matches!(name, "" | PROBE_FUNCTION) {
-            let failure = observed.expect_err("invalid call context must fail");
-            prop_assert_eq!(failure.primary, ProtocolFailurePhase::CallContext);
-            prop_assert_eq!(failure.close_failed, close);
-        } else if name.is_empty() && registration {
-            let failure = observed.expect_err("registration failure must remain primary");
-            prop_assert_eq!(failure.primary, ProtocolFailurePhase::Registration);
-            prop_assert_eq!(failure.close_failed, close);
-        } else if name == PROBE_FUNCTION && result {
-            let failure = observed.expect_err("result failure must remain primary");
-            prop_assert_eq!(failure.primary, ProtocolFailurePhase::Result);
-            prop_assert_eq!(failure.close_failed, close);
-        } else if close {
-            let failure = observed.expect_err("close is primary only after operation success");
-            prop_assert_eq!(failure.primary, ProtocolFailurePhase::Close);
-        } else {
-            let success = observed.expect("valid branch must succeed");
-            if name.is_empty() {
-                prop_assert_eq!(success.branch, ProtocolBranch::Registration);
-                prop_assert_eq!(success.result_json, None);
-            } else {
-                prop_assert_eq!(success.branch, ProtocolBranch::Invocation);
-                prop_assert_eq!(success.result_json, Some(PROBE_RESULT_JSON));
-            }
-        }
-    }
 
     // Placeholders and similarly named helpers cannot advertise an engine hook.
     #[test]

@@ -329,8 +329,8 @@ macro thin while making both syntactic and semantic disagreement fail compilatio
 flowchart LR
     E["Existing nested-session Client"] --> A["EngineCallAdapter"]
     A --> C["CallEnvelope"]
-    C -->|"empty function name"| R["RegistrationProjection"]
-    C -->|"non-empty function name"| D["Production dispatch()"]
+    C -->|"empty parent name"| R["RegistrationProjection"]
+    C -->|"non-empty parent name"| D["Production dispatch()"]
     R --> S["Module.serve through active session"]
     G["Generated DispatchRegistry"] --> D
     M["Generated ModuleContext + ModuleQuery"] --> D
@@ -342,10 +342,11 @@ flowchart LR
 
 The generic entrypoint connects once to the existing nested session and reads
 `Query.currentFunctionCall`. Every call becomes an engine-independent `CallEnvelope`.
-An empty name selects registration and applies the descriptor-derived registration
-projection with `Module.serve`; a non-empty name selects invocation. Argument objects
-are collected before dispatch so duplicates remain observable; parent JSON remains
-separate from the engine-only current-node identity.
+An empty parent name selects registration and applies the descriptor-derived
+registration projection with `Module.serve`; a non-empty parent name selects
+invocation. Within invocation, an empty function name selects the constructor rather
+than registration. Argument objects are collected before dispatch so duplicates remain
+observable; parent JSON remains separate from the engine-only current-node identity.
 
 `dispatch` validates the parent/function coordinate, parent shape, complete argument
 set, and every typed value before user code runs. It constructs one concrete generated
@@ -871,8 +872,10 @@ pub struct CallEnvelope {
 }
 ```
 
-The adapter maps an empty function name only to `CallSelector::Registration` and a
-non-empty name only to `Invocation`, making a branch/name disagreement unrepresentable.
+The adapter maps an empty parent name only to `CallSelector::Registration` and a
+non-empty parent name only to `Invocation`, making a branch/parent disagreement
+unrepresentable. The invocation selector retains the target's empty function-name
+constructor sentinel in a distinct validated type.
 It generates the local `call_id`; that identity is for isolation and diagnostics, not
 an engine wire field.
 `parent` preserves the exact JSON value returned by the SDK. The argument collection
@@ -1054,7 +1057,8 @@ The generated binary's `run` function performs exactly these steps:
 
 1. connect to the existing nested session through `dagger_sdk::connect()`;
 2. read the active `FunctionCall` name, parent name, parent, and all input argument
-   values into one `CallEnvelope`, deriving registration only from an empty name;
+   values into one `CallEnvelope`, deriving registration only from an empty parent name
+   and retaining an empty function name as constructor selection;
 3. construct the active-session `ModuleContextBase` and cancellation bridge;
 4. route the envelope through `handle_call`, which invokes generated registration or
    the generic production dispatcher;
@@ -1354,11 +1358,12 @@ invocation SHALL occur.
 
 ### Property 14: Registration and invocation branches are disjoint
 
-*For any* active-call name and adapter failure injection, the empty name SHALL perform
-only complete descriptor registration, a non-empty name SHALL construct exactly one
-invocation envelope, constructor dispatch SHALL not reconstruct a receiver, instance
-dispatch SHALL require the matching parent, and the production entrypoint and local
-harness SHALL call the same generated registry.
+*For any* active-call parent/function names and adapter failure injection, an empty
+parent name SHALL perform only complete descriptor registration, a non-empty parent
+name SHALL construct exactly one invocation envelope, an empty function name within
+that invocation SHALL select the constructor without reconstructing a receiver,
+instance dispatch SHALL require the matching parent, and the production entrypoint and
+local harness SHALL call the same generated registry.
 
 **Validates: Requirements 9.1–9.3, 9.9–9.11**
 

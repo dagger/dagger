@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 use dagger_codegen::diagnostic::{DiagnosticCode, DiagnosticSet};
 use dagger_codegen::engine::{
     CandidateArtifact, CandidateArtifactKind, ClientGenerationMetadata, ClientRenderInput,
-    ContentDomain, EntrypointInput, EntrypointRenderInput, LibraryRenderInput,
+    ContentDomain, EntrypointRenderInput, LibraryRenderInput, ModuleAuthoringInput,
     ModuleProjectionInput, ModuleRenderInput, OperationKind, OperationRenderer,
     PreparedOperationRequest, PublishedSdkDependency, RelativeOperationPath, RendererOutput,
     VisibleSchemaPlan, dispatch_prepared_operation, project_visible_schema,
@@ -17,7 +17,7 @@ use dagger_codegen::engine::{
 use dagger_codegen::target::CodegenTarget;
 use proptest::prelude::*;
 
-use support::{CORE_SCHEMA_BYTES, TARGET_BYTES, pure_config};
+use support::{CORE_SCHEMA_BYTES, TARGET_BYTES, module_authoring_input, pure_config};
 
 static TARGET: LazyLock<CodegenTarget> = LazyLock::new(|| {
     CodegenTarget::decode_exact(TARGET_BYTES).expect("checked target must decode")
@@ -34,7 +34,7 @@ struct RecordedCall {
     module: Option<ModuleProjectionInput>,
     output: RelativeOperationPath,
     sdk_dependency: PublishedSdkDependency,
-    entrypoint: Option<EntrypointInput>,
+    authoring: Option<ModuleAuthoringInput>,
 }
 
 struct RecordingRenderer {
@@ -83,7 +83,7 @@ impl OperationRenderer for RecordingRenderer {
             module: input.module.cloned(),
             output: input.output.clone(),
             sdk_dependency: input.sdk_dependency.clone(),
-            entrypoint: None,
+            authoring: None,
         }))
     }
 
@@ -95,7 +95,7 @@ impl OperationRenderer for RecordingRenderer {
             module: Some(input.module.clone()),
             output: input.output.clone(),
             sdk_dependency: input.sdk_dependency.clone(),
-            entrypoint: input.entrypoint.cloned(),
+            authoring: Some(input.authoring.clone()),
         }))
     }
 
@@ -107,7 +107,7 @@ impl OperationRenderer for RecordingRenderer {
             module: Some(input.module.clone()),
             output: input.output.clone(),
             sdk_dependency: input.sdk_dependency.clone(),
-            entrypoint: None,
+            authoring: None,
         }))
     }
 
@@ -122,7 +122,7 @@ impl OperationRenderer for RecordingRenderer {
             module: Some(input.module.clone()),
             output: input.output.clone(),
             sdk_dependency: input.sdk_dependency.clone(),
-            entrypoint: Some(input.entrypoint.clone()),
+            authoring: Some(input.authoring.clone()),
         }))
     }
 }
@@ -136,13 +136,6 @@ fn operation(discriminant: u8) -> OperationKind {
     }
 }
 
-fn entrypoint() -> EntrypointInput {
-    EntrypointInput::decode_checked(
-        &EntrypointInput::checked_bytes().expect("checked entrypoint must encode"),
-    )
-    .expect("checked entrypoint must decode")
-}
-
 proptest! {
     #![proptest_config(pure_config())]
 
@@ -152,7 +145,7 @@ proptest! {
         discriminant in any::<u8>(),
         unknown in any::<bool>(),
         module_present in any::<bool>(),
-        entrypoint_present in any::<bool>(),
+        authoring_present in any::<bool>(),
         module_name in "[a-z][a-z0-9-]{0,15}",
         exact_version in "[1-9][0-9]{0,2}\\.[0-9]{1,3}\\.[0-9]{1,3}",
         artifacts in prop::collection::btree_map(
@@ -176,7 +169,7 @@ proptest! {
             registry: "crates-io".to_owned(),
             exact_version,
         };
-        let entrypoint = entrypoint();
+        let authoring = module_authoring_input();
         let mut output = RendererOutput::new(ContentDomain::VisibleSchemaBindings);
         for (name, content) in artifacts {
             output
@@ -200,7 +193,7 @@ proptest! {
         }
 
         let module_input = module_present.then_some(&module);
-        let entrypoint_input = entrypoint_present.then_some(&entrypoint);
+        let authoring_input = authoring_present.then_some(&authoring);
         let result = dispatch_prepared_operation(
             &renderer,
             PreparedOperationRequest {
@@ -210,14 +203,14 @@ proptest! {
                 module: module_input,
                 output: &output_root,
                 sdk_dependency: &dependency,
-                entrypoint: entrypoint_input,
+                authoring: authoring_input,
             },
         );
         let valid = match operation {
-            OperationKind::GenerateLibrary => !entrypoint_present,
-            OperationKind::GenerateModule => module_present,
-            OperationKind::GenerateClient => module_present && !entrypoint_present,
-            OperationKind::GenerateEntrypoint => module_present && entrypoint_present,
+            OperationKind::GenerateLibrary => !authoring_present,
+            OperationKind::GenerateModule => module_present && authoring_present,
+            OperationKind::GenerateClient => module_present && !authoring_present,
+            OperationKind::GenerateEntrypoint => module_present && authoring_present,
         };
         if !valid {
             let diagnostics = result.expect_err("invalid selector/input pair must fail");
@@ -234,7 +227,7 @@ proptest! {
         prop_assert_eq!(plan.module(), module_input);
         prop_assert_eq!(plan.output(), &output_root);
         prop_assert_eq!(plan.sdk_dependency(), &dependency);
-        prop_assert_eq!(plan.entrypoint(), entrypoint_input);
+        prop_assert_eq!(plan.authoring(), authoring_input);
         let calls = renderer.calls.borrow();
         prop_assert_eq!(calls.len(), 1);
         let call = &calls[0];
@@ -244,6 +237,6 @@ proptest! {
         prop_assert_eq!(call.module.as_ref(), module_input);
         prop_assert_eq!(&call.output, &output_root);
         prop_assert_eq!(&call.sdk_dependency, &dependency);
-        prop_assert_eq!(call.entrypoint.as_ref(), entrypoint_input);
+        prop_assert_eq!(call.authoring.as_ref(), authoring_input);
     }
 }

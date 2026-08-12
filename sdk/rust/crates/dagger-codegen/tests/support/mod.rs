@@ -2,11 +2,17 @@
 
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use dagger_codegen::engine::ModuleAuthoringInput;
+use dagger_codegen::module::{
+    CfgEnvironment, FormatVersion as ModuleFormatVersion, ModulePackage, ModuleSourcePath,
+    ModuleSourceSnapshot, PackageName, Sha256Digest as ModuleDigest, SourceDocument, TargetValue,
+    source_snapshot_digest,
+};
 use dagger_codegen::projection::catalog::{CatalogDisposition, CatalogEntry};
 use dagger_codegen::schema::raw::{
     DirectiveApplication, DirectiveApplicationArgument, FullType, TypeKind, TypeRef,
@@ -21,6 +27,52 @@ pub(crate) const FILESYSTEM_CASES: u32 = 128;
 pub(crate) const TARGET_BYTES: &[u8] = include_bytes!("../../../../completeness/target.json");
 pub(crate) const CORE_SCHEMA_BYTES: &[u8] =
     include_bytes!("../../../../completeness/snapshots/schema.json");
+
+pub(crate) fn module_authoring_input() -> ModuleAuthoringInput {
+    let path = ModuleSourcePath::new("src/lib.rs").expect("fixture source path must validate");
+    let source = r#"
+#[dagger_sdk::object(root)]
+pub struct FixtureRoot {
+    #[dagger(field)]
+    value: String,
+}
+
+#[dagger_sdk::methods]
+impl FixtureRoot {
+    #[dagger(constructor)]
+    pub fn new() -> FixtureRoot { FixtureRoot { value: "fixture".to_owned() } }
+
+    #[dagger(function, cache = "never", role = "check")]
+    pub fn value(&self) -> String { self.value.clone() }
+
+    #[dagger(function)]
+    pub fn directory(
+        &self,
+        #[dagger(default_path = ".", ignore = ["target"])] source: dagger_sdk::Directory,
+    ) -> dagger_sdk::Directory { source }
+}
+"#;
+    let mut snapshot = ModuleSourceSnapshot {
+        format_version: ModuleFormatVersion::current(),
+        package: ModulePackage {
+            name: PackageName::new("fixture").expect("fixture package must validate"),
+            crate_root: path.clone(),
+            edition: TargetValue::new("2024").expect("fixture edition must validate"),
+        },
+        cfg: CfgEnvironment {
+            values: BTreeMap::new(),
+            features: BTreeSet::new(),
+        },
+        documents: BTreeMap::from([(path.clone(), SourceDocument::new(path, source))]),
+        digest: ModuleDigest::hash_bytes(b"pending fixture snapshot"),
+    };
+    snapshot.digest = source_snapshot_digest(&snapshot).expect("fixture snapshot must hash");
+    ModuleAuthoringInput {
+        source: snapshot,
+        generator_digest: ModuleDigest::hash_bytes(b"fixture module generator"),
+        sdk_dependency_alias: "dagger_sdk".to_owned(),
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum VisibleSchemaCase {

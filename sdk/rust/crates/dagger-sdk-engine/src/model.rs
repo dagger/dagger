@@ -115,8 +115,6 @@ pub struct OperationRequest {
     pub sdk_dependency: PublishedSdkDependency,
     /// Engine-selected output subtree.
     pub output_root: RelativeOperationPath,
-    /// Private entrypoint TypeDef document, valid only for entrypoint generation.
-    pub entrypoint_type_defs: Option<SchemaInput>,
 }
 
 /// Complete semantic input to Rust-owned project initialization.
