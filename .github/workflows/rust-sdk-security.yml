@@ -60,21 +60,31 @@ jobs:
               )'
       - name: Check generated source and security boundaries
         run: |
+          cargo test -p dagger-sdk-macros --locked
           cargo test -p dagger-sdk --test source_policy --all-features --locked
+          cargo test -p dagger-sdk --test module_authoring_compile --locked
           cargo test -p dagger-bootstrap --test generation --locked
           cargo test -p dagger-codegen --test render --test projection --locked
           cargo test -p dagger-codegen --test engine_operations --locked
+          cargo test -p dagger-codegen --test module_diagnostics --locked
           cargo test -p dagger-sdk-engine --test packaging_properties --locked
           cargo test -p dagger-sdk-engine --test project_properties --locked
           cargo test -p dagger-sdk-engine --test protocol_properties --locked
+          cargo test -p dagger-sdk-engine --test checkpoint_properties --locked
           cargo test -p dagger-sdk-completeness --test engine_integration --locked
+          cargo test -p dagger-sdk-completeness --test module_authoring_evidence --locked
           cargo test -p dagger-sdk --all-features --locked \
             public_error_rendering_is_redacted_while_sources_remain_inspectable
           cargo test -p dagger-sdk --all-features --locked \
             session_control_and_process_input_debug_never_render_credentials
       - name: Check packaged runtime metadata boundary
         working-directory: sdk/rust/runtime
-        run: go test ./internal/metadata
+        env:
+          # The generated Go client validates these coordinates during package init,
+          # but the direct adapter tests make no request or network connection.
+          DAGGER_SESSION_PORT: "1"
+          DAGGER_SESSION_TOKEN: engine-free-static-check
+        run: go test ./...
       - name: Verify the public SDK package
         run: |
           cargo package -p dagger-sdk-macros --locked

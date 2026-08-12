@@ -46,6 +46,8 @@ or a better idiomatic Rust design.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the existing component overview.
 The focused built-in SDK build, case, and evidence procedure is in
 [ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md).
+The module authoring contract, direct harness, and deferred exact-target case inventory
+are in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
 The complete checked-target refresh and release procedure is in
 [MAINTAINING.md](MAINTAINING.md).
 
@@ -82,8 +84,18 @@ cargo deny check
 ```
 
 Use focused tests while iterating, but run the complete relevant set before submitting
-a pull request. Tests that require a running Dagger engine may be run through the
-repository's Dagger checks:
+a pull request. Module-authoring checkpoints are explicitly engine-free: use the
+production compiler, generated fixture, dispatcher, fake transport, and typed
+checkpoint/evidence suites directly through Cargo. Reuse checked generated assets
+unless an owning source, schema, target, or generator digest changed.
+
+An engine is not a local checkpoint fallback. If a contract cannot be represented by
+the direct production harness, document the precise model gap and smallest proposed
+sign-off case for maintainer approval. Exact-engine cases run only through the bounded
+SDK sign-off workflow documented in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
+
+For non-module work whose owning contract genuinely requires a running Dagger engine,
+the relevant repository checks may be run through Dagger:
 
 ```console
 dagger check '*sdk:*test*'
@@ -125,6 +137,12 @@ New public behaviour needs tests at the lowest useful level:
 - query-builder or unit tests for local semantics;
 - engine-backed integration tests for end-to-end behaviour;
 - examples or documentation for important user-facing workflows.
+
+For module authoring, “integration” normally means the engine-free production harness:
+real generated assets, registry, codecs, context, dispatcher, and result sink over a
+recording Rust transport. Engine registration, runtime-container construction, and
+real engine ID behaviour remain SDK-sign-off observations and cannot replace the
+direct compiler/dispatch closure.
 
 ## Pull requests
 

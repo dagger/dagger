@@ -790,8 +790,8 @@
       network-backed graph, unrelated SDK build, continuous regeneration, credential
       exposure, or unaccounted generated diff occurred.
 
-- [ ] 21. Make engine-free checkpoints and implementation closure executable evidence
-  - [ ] 21.1 Add a closed Rust-only checkpoint planner and recorder
+- [x] 21. Make engine-free checkpoints and implementation closure executable evidence
+  - [x] 21.1 Add a closed Rust-only checkpoint planner and recorder
     - Encode package, test-target, property, fixture, formatting, clippy/rustdoc,
       security, generated-drift, and clean-output commands as closed typed actions with
       elapsed time and generated-asset decisions.
@@ -799,29 +799,29 @@
       other language SDK builds, undeclared package expansion, and engine exceptions
       lacking the exact unmodellable contract plus explicit approval.
     - _Requirements: 16.12-16.19_
-  - [ ] 21.2 Add implementation-closure evidence assembly
+  - [x] 21.2 Add implementation-closure evidence assembly
     - Admit only passed exact-target compiler/dispatcher properties, compile fixtures,
       changed-workspace format/check/test/clippy/rustdoc, cargo-deny, repository Rust
       security, asset drift/ownership, package, and clean-output observations.
     - Record skipped/stale/failed gates and any engine-backed local observation as
       non-closure; preserve all engine-dependent capability blockers.
     - _Requirements: 17.1-17.8_
-  - [ ] 21.3 Property test: Property 28 — local checkpoints are observably engine-free and scoped
+  - [x] 21.3 Property test: Property 28 — local checkpoints are observably engine-free and scoped
     - Generate at least 256 checkpoint plans, command/package expansions, asset states,
       elapsed records, and proposed exception records; admit only scoped checked-asset
       Rust plans with zero engine/network/other-SDK events and explicitly approved
       necessity for any deferred sign-off exception.
     - Test identifier: `property_28_local_checkpoints_observably_engine_free_scoped`.
     - _Requirements: 16.12-16.19_
-  - [ ] 21.4 Property test: Property 29 — implementation closure admits only complete local evidence
+  - [x] 21.4 Property test: Property 29 — implementation closure admits only complete local evidence
     - Generate at least 256 complete/incomplete, passed/skipped/stale/failed,
       engine-free/engine-backed closure observations and capability claims; admit only
       the complete local gate set without changing engine-dependent status.
     - Test identifier: `property_29_implementation_closure_only_complete_local_evidence`.
     - _Requirements: 17.1-17.8_
 
-- [ ] 22. Implement the deferred exact-target SDK-sign-off suite and claim boundary
-  - [ ] 22.1 Define the reusable one-engine sign-off case inventory
+- [x] 22. Implement the deferred exact-target SDK-sign-off suite and claim boundary
+  - [x] 22.1 Define the reusable one-engine sign-off case inventory
     - Add code for registration, constructor/state, execution shapes, types,
       handles/context, negative dispatch, concurrency/cancellation, a packaged
       self-consumer, and applicable pinned common-harness cases against engine revision
@@ -835,14 +835,14 @@
       implementation, generated-assets, runtime, and case digests, and keep the suite
       outside all local checkpoint selectors.
     - _Requirements: 17.9-17.12_
-  - [ ] 22.2 Add strict sign-off observation and evidence admission
+  - [x] 22.2 Add strict sign-off observation and evidence admission
     - Require every selected case to pass, enumerate only its proved capabilities, and
       reject stale, cross-target, skipped, failed, local-only, sibling, or overbroad
       smoke claims without partial admission.
     - Keep common lifecycle checks in their declared domain and distinguish final
       Implementation_Closure from unexecuted/passed SDK_Signoff in derived reports.
     - _Requirements: 17.13-17.18_
-  - [ ] 22.3 Property test: Property 30 — SDK sign-off is exact-target and claim-bounded
+  - [x] 22.3 Property test: Property 30 — SDK sign-off is exact-target and claim-bounded
     - Generate at least 256 sign-off manifests, target/digest mutations, case outcomes,
       capability subsets, harness scopes, and smoke overclaims; admit only the complete
       exact-target observation and preserve the closure/sign-off distinction.
@@ -851,8 +851,8 @@
       execute the engine whose later observation it validates.
     - _Requirements: 17.9-17.18_
 
-- [ ] 23. Complete diagnostics, documentation, security, and derived reporting
-  - [ ] 23.1 Finish total diagnostics across every producing layer
+- [x] 23. Complete diagnostics, documentation, security, and derived reporting
+  - [x] 23.1 Finish total diagnostics across every producing layer
     - Route every compiler, macro, cfg/path, type/state, projection, generation,
       dispatch, codec, application, panic, cancellation, publication, package,
       checkpoint, and evidence failure to exactly one typed code and safe source/wire
@@ -862,7 +862,7 @@
       environment secrets, transport content, arbitrary panic payloads, and opaque
       debug text.
     - _Requirements: 14.1-14.12_
-  - [ ] 23.2 Document the durable authoring and engine-free workflow contracts
+  - [x] 23.2 Document the durable authoring and engine-free workflow contracts
     - Add `//!` boundary/invariant docs and caller-relevant `///` guarantees for every
       new module and public item; explain explicit export/accessibility, typed defaults,
       thin macro versus descriptor ownership, state identity, active-session context,
@@ -873,7 +873,7 @@
     - Keep obvious narration and specification feature/task labels out of production,
       generated, and invariant comments.
     - _Requirements: 2.10, 14.10-14.12, 15.1, 16.17-16.19, 17.3-17.8_
-  - [ ] 23.3 Derive completeness and security outputs without overclaiming
+  - [x] 23.3 Derive completeness and security outputs without overclaiming
     - Emit compiler, fixture, dispatcher, checkpoint, package, dependency, cargo-deny,
       source-policy, and implementation-closure observations through Feature 1
       admission; regenerate only declared derived reports and retain every unproved
@@ -882,7 +882,7 @@
       package contents, locked dependency roots, generated source, redaction, and
       unsafe/panic/unwrap policy without adding an engine job.
     - _Requirements: 1.7-1.10, 14.6, 14.11-14.12, 17.1-17.8, 17.13-17.18_
-  - [ ] 23.4 Property test: Property 23 — diagnostics are typed, stable, ordered, and redacted
+  - [x] 23.4 Property test: Property 23 — diagnostics are typed, stable, ordered, and redacted
     - Generate at least 256 failures from every taxonomy domain, coordinate/order
       permutations, generated/authored maps, safe/unsafe sources, secret-shaped values,
       and panic payloads; require the exact code, stable ordering, safe source retention,
@@ -890,7 +890,7 @@
     - Test identifier: `property_23_diagnostics_typed_stable_ordered_redacted`.
     - _Requirements: 14.1-14.6, 14.10-14.12_
 
-- [ ] 24. Final checkpoint: Feature 6 implementation is engine-free complete
+- [x] 24. Final checkpoint: Feature 6 implementation is engine-free complete
   - Run `cargo fmt --all --check`; locked workspace check/test; warning-denied workspace
     clippy and rustdoc; `cargo deny check`; both public package-policy/package-content
     checks; repository Rust security test commands; direct `sdk/rust/runtime` Go tests;
@@ -909,6 +909,43 @@
   - Any capability requiring engine registration, runtime-container, common-harness, or
     platform evidence remains honestly blocked until the separate SDK-signoff gate
     actually executes and passes.
+  - Checkpoint evidence (2026-08-12, repaired warm local cache, elapsed wall time):
+    - `cargo fmt --all --check` passed in 0.84s; `cargo check --workspace
+      --all-features --locked` passed in 7.99s.
+    - The final exact `cargo test --workspace --all-features --locked` passed in
+      624.34s. It covered all six Rust packages, all 32 named module-authoring
+      properties, the bounded compile-pass/fail corpus, the offline generated-module
+      execution fixture, the complete direct production harness, package policy,
+      closure/sign-off reporting, generated ownership/drift, and root-independent
+      derived-output checks. Engine-requiring integration tests remained explicitly
+      ignored by their existing selectors rather than being reclassified as passing.
+    - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+      passed in 11.57s. Warning-denied workspace rustdoc passed in 12.83s, and
+      `cargo deny check` passed all advisory, ban, license, and source gates in 1.45s.
+    - The complete repository Rust security command inventory passed directly. Its
+      longest existing slices were bootstrap generation (20.46s), codegen render plus
+      projection (12.15s), and engine-integration evidence (27.32s); the new diagnostic,
+      checkpoint, and closure/sign-off properties passed in 0.08s, 0.71s, and 3.99s.
+    - The publication graph query returned exactly `dagger-sdk` and
+      `dagger-sdk-macros`. Both crates packaged and verified successfully in 1.96s and
+      0.56s; their package lists contained the required README, license, example,
+      generated Core root, and macro source without a private workspace dependency.
+    - `DAGGER_SESSION_PORT=1 DAGGER_SESSION_TOKEN=engine-free-static-check go test
+      ./...` under `sdk/rust/runtime` passed in 1.81s. These inert coordinates satisfy
+      generated-client package initialization; the static/direct adapter tests make no
+      request, dial, engine call, or module invocation.
+    - The scoped source change advanced the Rust artifact identity from
+      `sha256:99a688bac97281995bbc0ca460a47b95db2559f57d1d99614b2a124d9e10215c`
+      to `sha256:17bafbc1c653e4fa017214f7752f550dbcad3857a5820952c083782b4b02fff2`.
+      The exact baseline and all 18 harness subject bindings were reconciled; the
+      read-only Integrity report passed in 11.01s with unchanged inventory, ledger,
+      capability counts, evidence outcomes, and honestly incomplete Completeness.
+    - Checked Core and module assets were reused. No owning source/schema input changed,
+      so no Core or module generation ran. No Dagger command, engine process, module
+      invocation, network-backed engine graph, sdk-sdk selector, other language SDK
+      build, distribution build, or unscoped generator entered the checkpoint.
+      Implementation closure and SDK sign-off remain separately rendered: local closure
+      retains the one exact-engine blocker, and SDK sign-off is unexecuted.
 
 ## Deferred SDK Sign-off Gate
 

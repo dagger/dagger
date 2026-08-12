@@ -89,11 +89,20 @@ pub use io::{
 };
 pub use model::*;
 pub use module_authoring::{
-    ModuleAuthoringEvidenceAdmission, ModuleAuthoringFormatVersion, ModuleAuthoringMapping,
-    ModuleAuthoringScope, ModuleAuthoringScopeInput, ModuleAuthority, ModuleEvidenceDomain,
-    ModuleEvidenceObservation, ModuleEvidenceOutcome, ModuleImplementationSubject,
-    ModuleTerminalStatus, OwnershipCorrection, admit_module_authoring_evidence,
-    derive_module_authoring_scope, module_authoring_scope_input,
+    ExactTargetArtifactInput, ExactTargetSignoffArtifact, ImplementationClosureEvidence,
+    ImplementationClosureGate, ImplementationClosureObservation, ImplementationGateObservation,
+    ImplementationGateOutcome, ModuleAuthoringEvidenceAdmission, ModuleAuthoringFormatVersion,
+    ModuleAuthoringMapping, ModuleAuthoringReport, ModuleAuthoringScope, ModuleAuthoringScopeInput,
+    ModuleAuthority, ModuleEvidenceDomain, ModuleEvidenceObservation, ModuleEvidenceOutcome,
+    ModuleEvidencePhase, ModuleImplementationSubject, ModuleSignoffAdmission, ModuleSignoffCase,
+    ModuleSignoffCaseObservation, ModuleSignoffCaseOutcome, ModuleSignoffCaseSpec,
+    ModuleSignoffExecutionShape, ModuleSignoffManifest, ModuleSignoffObservation,
+    ModuleSignoffPhaseTimings, ModuleTerminalStatus, OwnershipCorrection,
+    admit_module_authoring_evidence, admit_module_signoff, assemble_implementation_closure,
+    build_exact_target_signoff_artifact, build_module_signoff_manifest,
+    derive_module_authoring_report, derive_module_authoring_scope, implementation_closure_claims,
+    module_authoring_scope_input, required_implementation_closure_gates,
+    required_module_signoff_cases,
 };
 pub use observation::{
     ExactTargetRun, TransportAssertion, TransportObservationKind, TransportObservationMode,

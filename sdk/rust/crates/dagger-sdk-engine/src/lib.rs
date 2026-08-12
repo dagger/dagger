@@ -8,6 +8,7 @@
 //! process, or Dagger I/O.
 
 pub mod canonical;
+pub mod checkpoint;
 pub mod cli;
 pub mod descriptor;
 pub mod diagnostic;
@@ -26,6 +27,13 @@ pub mod surface;
 
 pub use canonical::{
     CanonicalError, DigestDomain, canonical_bytes, canonical_digest, decode_canonical,
+};
+pub use checkpoint::{
+    CheckpointAction, CheckpointActionObservation, CheckpointActionOutcome,
+    CheckpointGenerationDecision, CheckpointObservation, CheckpointPackage, CheckpointPlan,
+    CheckpointProposal, CheckpointRecord, CheckpointRequest, CheckpointTestTarget,
+    DeferredSignoffException, ForbiddenCheckpointBoundary, ModuleProperty, PublicCheckpointPackage,
+    RustGoAbiPackage, plan_checkpoint, record_checkpoint,
 };
 pub use diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 pub use model::*;

@@ -36,6 +36,33 @@ The implementation is organized into nine features. Each feature will receive a 
 specification with its own `requirements.md`, `design.md`, and `tasks.md` before code is
 changed.
 
+Two deliberately separate execution contracts govern that work:
+
+**Checkpoint build/test — engine-free and Rust-first**
+
+- scoped Cargo checks, properties, compile fixtures, and the direct Rust-owned Go ABI
+  tests run without a Dagger engine or module invocation;
+- checked generated assets are reused unless an owning input digest changed;
+- no network-backed engine graph, unrelated SDK build, or unscoped generation enters
+  the checkpoint; and
+- commands, elapsed time, generated-asset decisions, and any proposed deferred engine
+  exception are recorded as implementation-closure evidence.
+
+**SDK sign-off — bounded and exact-target**
+
+- one reusable exact-target artifact;
+- engine, CLI, Go runtime, and Rust content built at most once;
+- one engine service and one installed Rust baseline;
+- no unrelated SDK builders, tests, generation, or distribution builds;
+- reuse of engine-free closure evidence;
+- isolated case fan-out;
+- atomic digest-bound verdict and phase timings; and
+- rejection of duplicate builds or engine starts.
+
+The checkpoint contract proves the implementation without spending engine resources.
+The sign-off contract later proves only the real-engine boundaries that the direct
+Rust models deliberately cannot claim.
+
 **Dependency graph:**
 
 - Feature 1 (Completeness Contract) — no dependencies

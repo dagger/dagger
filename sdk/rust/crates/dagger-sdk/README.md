@@ -60,6 +60,8 @@ trace propagation, compatibility policy, injected connections, and shutdown deta
 Module authors use the `object`, `interface`, `enum_type`, `scalar`, and `methods`
 attributes re-exported from this crate. Their exact-version procedural implementation
 lives in `dagger-sdk-macros`; applications should not add that companion directly.
+The authoring syntax, state/dispatch model, and current verification boundary are
+documented in [`../../MODULE_AUTHORING.md`](../../MODULE_AUTHORING.md).
 
 ## Features
 

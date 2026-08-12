@@ -30,6 +30,28 @@ The public package graph is deliberately closed and acyclic: an application depe
 `dagger-sdk`, which pins `dagger-sdk-macros` to the same exact version. Code generation,
 engine integration, bootstrap, and completeness crates cannot enter that graph.
 
+## Module authoring and dispatch
+
+Module authoring has one source of intent and two checked interpretations. Thin
+procedural attributes preserve ordinary Rust type checking and emit crate-local typed
+bridges. The private source compiler reads the same grammar, resolves the complete
+Cargo module/type closure, and produces one canonical descriptor. Registration,
+introspection, codecs, dispatch, and generated entrypoint assets are all derived from
+that descriptor; authors do not maintain a second schema or dispatcher.
+
+Calls enter one generated adapter which snapshots the active `FunctionCall` into a
+typed envelope. Registration is selected only by an empty parent name; an empty
+function name remains the constructor contract. Invocation validates parent state and
+all named arguments before user code runs, re-enters handles through the active shared
+session, and elects one value, structured application error, cancellation, panic-safe
+failure, or publication failure. State, context, cancellation, telemetry, and result
+sinks remain call-local.
+
+Generated module assets carry target, descriptor, input-domain, and ownership digests.
+Checked mode compares them directly. A scoped refresh is authorized only by a changed
+authoring, visible-schema, target, or generator identity, and manifest-authorized
+publication never adopts unknown user content.
+
 ## Connection pipeline
 
 `ClientConfig` construction is pure. `connect_with` consumes it, performs preflight,
@@ -145,3 +167,19 @@ engine session. Those hooks cannot stand in for arbitrary module dispatch or com
 standalone-client content, which remain separately scoped work. See
 [ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md) for the reproducible build audit,
 focused case workflow, and exact-target evidence rules.
+
+## Implementation closure and SDK sign-off
+
+Local Feature closure is Rust-first and engine-free. A closed typed planner admits only
+scoped Cargo actions, direct Rust-owned Go ABI tests, generated drift/ownership checks,
+package policy, security, and clean-output inspection. It records elapsed time and the
+checked-asset decision, rejects Dagger, engines, network graphs, unrelated SDKs, and
+distribution builds, and admits closure only when every required gate passed against
+one implementation identity.
+
+SDK sign-off is a later exact-target observation. It consumes that closure rather than
+replaying it, binds one artifact, runtime, generated-assets set, engine service, and
+installed Rust baseline to a closed isolated case inventory, and emits one atomic
+digest-bound verdict. A failed, skipped, stale, missing, duplicated, or overbroad case
+admits no partial sign-off evidence. The maintainer procedure is documented in
+[MODULE_AUTHORING.md](MODULE_AUTHORING.md).

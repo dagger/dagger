@@ -16,4 +16,11 @@ succeeds.
 This crate is repository tooling rather than an application dependency. It is not
 published, and generated user projects depend only on the public `dagger-sdk` crate.
 
+The crate also owns the typed local-checkpoint planner. Its validated form can contain
+only Rust SDK package actions, direct Rust-owned Go ABI tests, generated ownership,
+security, package, and clean-output checks. Engine, Dagger, network-graph, unrelated
+SDK, unscoped-generation, and distribution proposals are rejected before they can be
+rendered as executable work. See [`../../MODULE_AUTHORING.md`](../../MODULE_AUTHORING.md)
+for the boundary between this local record and deferred SDK sign-off.
+
 Licensed under Apache-2.0 as part of the Dagger repository.

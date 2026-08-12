@@ -28,7 +28,8 @@ pub use canonical::{
 pub use compiler::{ModuleCompilation, ModuleCompilationRequest, ModuleCompiler};
 pub use descriptor::{DescriptorBuilder, DescriptorInput, descriptor_digest};
 pub use diagnostic::{
-    ModuleDiagnostic, ModuleDiagnosticCode, ModuleDiagnosticSet, SafeDiagnosticSource,
+    DiagnosticSourceKind, ModuleDiagnostic, ModuleDiagnosticCode, ModuleDiagnosticSet,
+    SafeDiagnosticSource,
 };
 pub use helpers::{
     HelperMapping, HelperMappingError, HelperOwner, definitive_helper_mapping,
