@@ -28,6 +28,11 @@ pub enum DigestDomain {
     Compatibility,
     ModuleAuthoring,
     ClientGeneration,
+    ConformanceScope,
+    ConformanceHostProfile,
+    ConformanceHostPlan,
+    ConformanceHostRecord,
+    ConformancePolicy,
 }
 
 impl DigestDomain {
@@ -41,6 +46,11 @@ impl DigestDomain {
             Self::Compatibility => b"dagger-rust-sdk-compatibility-v1\0",
             Self::ModuleAuthoring => b"dagger-rust-sdk-module-authoring-v1\0",
             Self::ClientGeneration => b"dagger-rust-sdk-client-generation-v1\0",
+            Self::ConformanceScope => b"dagger-rust-sdk-conformance-scope-v1\0",
+            Self::ConformanceHostProfile => b"dagger-rust-sdk-signoff-host-profile-v1\0",
+            Self::ConformanceHostPlan => b"dagger-rust-sdk-signoff-host-plan-v1\0",
+            Self::ConformanceHostRecord => b"dagger-rust-sdk-signoff-host-record-v1\0",
+            Self::ConformancePolicy => b"dagger-rust-sdk-conformance-policy-v1\0",
         }
     }
 }

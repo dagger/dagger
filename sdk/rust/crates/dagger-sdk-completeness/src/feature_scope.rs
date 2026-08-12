@@ -125,12 +125,44 @@ pub fn engine_integration_contract() -> FeatureContractPolicy {
     }
 }
 
+/// Returns the approved umbrella conformance and security contract.
+pub fn conformance_security_contract() -> FeatureContractPolicy {
+    let reviewed: crate::conformance::ReviewedConformanceScope =
+        serde_json::from_str(include_str!("../../../completeness/conformance-scope.json"))
+            .expect("checked conformance scope artifact must decode");
+    let existing_capability_ids = reviewed.existing_capability_ids;
+    let policy_capability_ids = reviewed.policy_capability_ids;
+    let expected_prior_blocking_owners = existing_capability_ids
+        .iter()
+        .chain(policy_capability_ids.iter())
+        .cloned()
+        .map(|capability_id| (capability_id, FeatureId::Feature8))
+        .collect();
+
+    FeatureContractPolicy {
+        requirements_path: ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+        scope: FeatureScopePolicy {
+            feature: FeatureId::Feature8,
+            existing_scope_heading: "### Existing Feature 8 Scope",
+            policy_scope_heading: "### New Rust Policy Capabilities",
+            existing_capability_ids,
+            existing_scope_digest: reviewed.existing_scope_digest,
+            policy_capability_ids,
+            expected_prior_blocking_owners,
+            evidence_repository: RepositoryId::new("github.com/dagger/dagger")
+                .expect("reviewed evidence repository must be valid"),
+        },
+        policy_clauses: FEATURE8_POLICIES,
+    }
+}
+
 /// Returns every reviewed feature contract in delivery order.
-pub fn reviewed_feature_contracts() -> [FeatureContractPolicy; 3] {
+pub fn reviewed_feature_contracts() -> [FeatureContractPolicy; 4] {
     [
         client_lifecycle_contract(),
         transport_contract(),
         engine_integration_contract(),
+        conformance_security_contract(),
     ]
 }
 
@@ -679,6 +711,114 @@ const FEATURE5_POLICIES: &[ReviewedPolicyClause] = &[
     ),
 ];
 
+const FEATURE8_POLICIES: &[ReviewedPolicyClause] = &[
+    clause(
+        "conformance-capability-scope",
+        "policy/rust-policy/conformance-capability-scope",
+        "explicit-ownership",
+    ),
+    clause(
+        "conformance-applicability-accounting",
+        "policy/rust-policy/conformance-applicability-accounting",
+        "typed-public-errors",
+    ),
+    clause(
+        "conformance-case-catalog",
+        "policy/rust-policy/conformance-case-catalog",
+        "explicit-ownership",
+    ),
+    clause(
+        "conformance-engine-free-checkpoint",
+        "policy/rust-policy/conformance-engine-free-checkpoint",
+        "explicit-ownership",
+    ),
+    clause(
+        "signoff-host-preflight",
+        "policy/rust-policy/signoff-host-preflight",
+        "typed-public-errors",
+    ),
+    clause(
+        "signoff-exact-target-artifact",
+        "policy/rust-policy/signoff-exact-target-artifact",
+        "dependency-policy",
+    ),
+    clause(
+        "signoff-artifact-import-reuse",
+        "policy/rust-policy/signoff-artifact-import-reuse",
+        "explicit-ownership",
+    ),
+    clause(
+        "signoff-closure-evidence",
+        "policy/rust-policy/signoff-closure-evidence",
+        "locked-resolution",
+    ),
+    clause(
+        "signoff-single-engine",
+        "policy/rust-policy/signoff-single-engine",
+        "explicit-ownership",
+    ),
+    clause(
+        "signoff-single-rust-baseline",
+        "policy/rust-policy/signoff-single-rust-baseline",
+        "explicit-ownership",
+    ),
+    clause(
+        "signoff-isolated-case-fanout",
+        "policy/rust-policy/signoff-isolated-case-fanout",
+        "explicit-ownership",
+    ),
+    clause(
+        "signoff-case-retry-honesty",
+        "policy/rust-policy/signoff-case-retry-honesty",
+        "typed-public-errors",
+    ),
+    clause(
+        "signoff-atomic-verdict",
+        "policy/rust-policy/signoff-atomic-verdict",
+        "typed-public-errors",
+    ),
+    clause(
+        "signoff-duplicate-work-rejection",
+        "policy/rust-policy/signoff-duplicate-work-rejection",
+        "explicit-ownership",
+    ),
+    clause(
+        "signoff-phase-budget",
+        "policy/rust-policy/signoff-phase-budget",
+        "typed-public-errors",
+    ),
+    clause(
+        "platform-native-matrix",
+        "policy/rust-policy/platform-native-matrix",
+        "idiomatic-rust",
+    ),
+    clause(
+        "security-locked-supply-chain",
+        "policy/rust-policy/security-locked-supply-chain",
+        "locked-resolution",
+    ),
+    clause(
+        "security-artifact-provenance",
+        "policy/rust-policy/security-artifact-provenance",
+        "dependency-policy",
+    ),
+    clause(
+        "security-artifact-vulnerability-scan",
+        "policy/rust-policy/security-artifact-vulnerability-scan",
+        "cargo-deny",
+    ),
+    clause(
+        "security-secret-canary",
+        "policy/rust-policy/security-secret-canary",
+        "secret-safe-output",
+    ),
+    clause(
+        "security-expiring-exception",
+        "policy/rust-policy/security-expiring-exception",
+        "dependency-policy",
+    ),
+];
+
 const fn clause(
     clause_id: &'static str,
     exact_text: &'static str,
@@ -688,5 +828,39 @@ const fn clause(
         clause_id,
         exact_text,
         guidance_id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::authority::{SourceBundle, recompute_source_digest};
+    use crate::model::{AuthorityRegistry, SourceSelector};
+
+    #[test]
+    fn rust_policy_authority_digest_covers_every_reviewed_feature_source() {
+        let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let registry: AuthorityRegistry = serde_json::from_slice(
+            &std::fs::read(repository_root.join("sdk/rust/completeness/authorities.json")).unwrap(),
+        )
+        .unwrap();
+        let authority = registry
+            .authorities
+            .get(&crate::model::AuthorityId::new("rust-policy").unwrap())
+            .unwrap();
+        let files = authority
+            .include
+            .iter()
+            .map(|selector| match selector {
+                SourceSelector::Path(path) => path.path.clone(),
+                SourceSelector::Symbol(symbol) => symbol.path.clone(),
+            })
+            .map(|path| {
+                let bytes = std::fs::read(repository_root.join(path.as_str())).unwrap();
+                (path, bytes)
+            });
+        let digest = recompute_source_digest(authority, &SourceBundle::new(files)).unwrap();
+        assert_eq!(digest, authority.source_digest);
     }
 }

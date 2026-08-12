@@ -576,6 +576,12 @@ fn rust_policy_bundle() -> SourceBundle {
             ),
         ),
         source(
+            ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+            include_bytes!(
+                "../../../../../.kiro/specs/rust-sdk-conformance-security/requirements.md"
+            ),
+        ),
+        source(
             ".kiro/specs/rust-sdk-core-codegen/requirements.md",
             include_bytes!("../../../../../.kiro/specs/rust-sdk-core-codegen/requirements.md"),
         ),

@@ -140,10 +140,13 @@ pub fn derive_contract(
             &repository_root.join(policy.requirements_path),
             "feature requirements",
         )?;
-        let declaration = if policy.scope.feature == FeatureId::Feature5 {
-            // The 31-row engine-integration set is intentionally stored once in the
-            // reviewed machine-readable mapping policy. Re-parsing a second Markdown
-            // list would allow the two authorities to drift before evidence assembly.
+        let declaration = if matches!(
+            policy.scope.feature,
+            FeatureId::Feature5 | FeatureId::Feature8
+        ) {
+            // Large exact scopes are intentionally stored once in reviewed machine-readable
+            // policy. Re-parsing a second Markdown list would allow the two authorities to drift
+            // before evidence assembly.
             FeatureScopeDeclaration {
                 feature: policy.scope.feature.clone(),
                 existing_capability_ids: policy.scope.existing_capability_ids.clone(),

@@ -1,0 +1,40 @@
+{
+  "container_policy": {
+    "allowed_storage_drivers": [
+      "overlay2",
+      "overlayfs"
+    ],
+    "minimum_api_version": "1.44",
+    "minimum_storage_bytes": 171798691840,
+    "privileged_containers": true
+  },
+  "format_version": "1.0.0",
+  "minimum_cpu_count": 16,
+  "minimum_memory_bytes": 51539607552,
+  "minimum_workspace_bytes": 171798691840,
+  "network_policy": "network/isolated-smoke-service",
+  "persistence_policy": {
+    "require_cache_reuse": true,
+    "require_export_import": true,
+    "require_process_restart": true
+  },
+  "phase_budgets": {
+    "observe-cache-reuse": 60000,
+    "observe-container-daemon": 60000,
+    "observe-host": 60000,
+    "probe-smoke-service": 120000,
+    "round-trip-exported-payload": 180000,
+    "round-trip-persistent-canary": 60000,
+    "scan-retained-output": 60000,
+    "start-smoke-engine": 180000,
+    "stop-smoke-engine": 60000
+  },
+  "platform": {
+    "architecture": "amd64",
+    "operating_system": "linux"
+  },
+  "preflight_tool": "binary/dagger-rust-sdk-signoff/sha256/a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
+  "profile_version": 1,
+  "smoke_engine": "oci/registry.dagger.io/engine/v1.0.0-beta.9/sha256/de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e",
+  "smoke_tool": "tool/docker/29.3.0/sha256/b803740c076b46942159eab6ab7a5678ec6e4e3beec330487f5984fa02c06e10"
+}

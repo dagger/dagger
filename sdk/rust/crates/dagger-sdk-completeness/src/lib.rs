@@ -9,6 +9,7 @@ pub mod cli;
 pub mod client_generation;
 pub mod command;
 pub mod compatibility;
+pub mod conformance;
 pub mod contract;
 pub mod core_codegen;
 pub mod diagnostic;
@@ -62,6 +63,7 @@ pub use client_generation::{
 };
 pub use command::{CommandPolicy, command_defects};
 pub use compatibility::{ValidatedCompatibilityClaim, validate_compatibility_claim};
+pub use conformance::*;
 pub use contract::{DerivedContract, derive_contract, rust_artifact_digest};
 pub use core_codegen::{
     BindingRecord, ConformanceCategory, ConformanceObservation, CoreCodegenEvidenceClosure,
@@ -92,7 +94,8 @@ pub use evidence::{
 };
 pub use feature_scope::{
     FeatureContractPolicy, FeatureScopePolicy, ReviewedPolicyClause, client_lifecycle_contract,
-    engine_integration_contract, reviewed_feature_contracts, transport_contract,
+    conformance_security_contract, engine_integration_contract, reviewed_feature_contracts,
+    transport_contract,
 };
 pub use harness::{
     HarnessAdmission, HarnessCheckInventory, HarnessCheckSource, HarnessCommandExecutor,

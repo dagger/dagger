@@ -755,6 +755,45 @@
         "source_path": ".kiro/specs/rust-sdk-client-lifecycle/requirements.md"
       }
     },
+    "routing/rust-policy/conformance-security": {
+      "authority_id": "rust-policy",
+      "classification": {
+        "gap": "Feature 8 conformance and security sign-off lacks complete admitted evidence",
+        "owner_feature": "feature-8",
+        "status": "Missing"
+      },
+      "expected_capability_ids": {
+        "capability-ids": [
+          "policy/rust-policy/conformance-applicability-accounting",
+          "policy/rust-policy/conformance-capability-scope",
+          "policy/rust-policy/conformance-case-catalog",
+          "policy/rust-policy/conformance-engine-free-checkpoint",
+          "policy/rust-policy/platform-native-matrix",
+          "policy/rust-policy/security-artifact-provenance",
+          "policy/rust-policy/security-artifact-vulnerability-scan",
+          "policy/rust-policy/security-expiring-exception",
+          "policy/rust-policy/security-locked-supply-chain",
+          "policy/rust-policy/security-secret-canary",
+          "policy/rust-policy/signoff-artifact-import-reuse",
+          "policy/rust-policy/signoff-atomic-verdict",
+          "policy/rust-policy/signoff-case-retry-honesty",
+          "policy/rust-policy/signoff-closure-evidence",
+          "policy/rust-policy/signoff-duplicate-work-rejection",
+          "policy/rust-policy/signoff-exact-target-artifact",
+          "policy/rust-policy/signoff-host-preflight",
+          "policy/rust-policy/signoff-isolated-case-fanout",
+          "policy/rust-policy/signoff-phase-budget",
+          "policy/rust-policy/signoff-single-engine",
+          "policy/rust-policy/signoff-single-rust-baseline"
+        ]
+      },
+      "overrides": {},
+      "rule_id": "routing/rust-policy/conformance-security",
+      "selector": {
+        "authority_id": "rust-policy",
+        "source_path": ".kiro/specs/rust-sdk-conformance-security/requirements.md"
+      }
+    },
     "routing/rust-policy/core-codegen": {
       "authority_id": "rust-policy",
       "classification": {

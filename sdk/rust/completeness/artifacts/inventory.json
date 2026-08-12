@@ -98571,6 +98571,198 @@
       "stability": "stable",
       "summary": "Client clones and generated handles share one lifecycle and remain Send plus Sync without unsafe code."
     },
+    "policy/rust-policy/conformance-applicability-accounting": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:a69da5b420b7cb9912f8a94854928c596475f3bed983e07553e16251ce8b56fd",
+      "capability_id": "policy/rust-policy/conformance-applicability-accounting",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "conformance-applicability-accounting",
+          "text": "policy/rust-policy/conformance-applicability-accounting"
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-applicability-accounting/source%2Frust-policy%2Frust-policy%2Fconformance-applicability-accounting",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:355",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-applicability-accounting"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-applicability-accounting/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-applicability-accounting"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/conformance-applicability-accounting",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/conformance-applicability-accounting"
+    },
+    "policy/rust-policy/conformance-capability-scope": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:12defd90abd58037147d141ceb5efdb41b539adea6c5f2e0b6b0986fc91aa9ad",
+      "capability_id": "policy/rust-policy/conformance-capability-scope",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "conformance-capability-scope",
+          "text": "policy/rust-policy/conformance-capability-scope"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-capability-scope/source%2Frust-policy%2Frust-policy%2Fconformance-capability-scope",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:354",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-capability-scope"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-capability-scope/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-capability-scope"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/conformance-capability-scope",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/conformance-capability-scope"
+    },
+    "policy/rust-policy/conformance-case-catalog": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:0a46187ac43211917fdd53f7c2ea9c2f6947e44979e91a95b98dd52765329253",
+      "capability_id": "policy/rust-policy/conformance-case-catalog",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "conformance-case-catalog",
+          "text": "policy/rust-policy/conformance-case-catalog"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-case-catalog/source%2Frust-policy%2Frust-policy%2Fconformance-case-catalog",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-case-catalog"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-case-catalog/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-case-catalog"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/conformance-case-catalog",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/conformance-case-catalog"
+    },
+    "policy/rust-policy/conformance-engine-free-checkpoint": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:a64f4739ff24cc959fc724a50fadf47963001488ecc494d5dad6bfd348819b56",
+      "capability_id": "policy/rust-policy/conformance-engine-free-checkpoint",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "conformance-engine-free-checkpoint",
+          "text": "policy/rust-policy/conformance-engine-free-checkpoint"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-engine-free-checkpoint/source%2Frust-policy%2Frust-policy%2Fconformance-engine-free-checkpoint",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:357",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-engine-free-checkpoint"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/conformance-engine-free-checkpoint/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/conformance-engine-free-checkpoint"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/conformance-engine-free-checkpoint",
+        "source/rust-policy/rust-policy/explicit-ownership"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/conformance-engine-free-checkpoint"
+    },
     "policy/rust-policy/core-codegen-atomic-publication": {
       "authority_id": "rust-policy",
       "capability_fingerprint": "sha256:3d434c845ee1ebf559b68cde9bd731dbebcc7bd88af0736b87f994027742a61b",
@@ -100394,6 +100586,822 @@
       ],
       "stability": "stable",
       "summary": "WHEN `dagger sdk install rust` succeeds, THE workspace SHALL contain one Workspace_SDK_Installation named `dagger-rust-sdk`."
+    },
+    "policy/rust-policy/platform-native-matrix": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:b4676ef87426d431a9c20437f6e04119f281d397b35847c21f08387de630ace7",
+      "capability_id": "policy/rust-policy/platform-native-matrix",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "platform-native-matrix",
+          "text": "policy/rust-policy/platform-native-matrix"
+        },
+        "rust_guidance": {
+          "clause_id": "idiomatic-rust",
+          "text": "Cross-SDK consistency does not justify an unidiomatic Rust API."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/platform-native-matrix/source%2Frust-policy%2Frust-policy%2Fidiomatic-rust",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:24",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/platform-native-matrix"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/platform-native-matrix/source%2Frust-policy%2Frust-policy%2Fplatform-native-matrix",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:369",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/platform-native-matrix"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/idiomatic-rust",
+        "source/rust-policy/rust-policy/platform-native-matrix"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/platform-native-matrix"
+    },
+    "policy/rust-policy/security-artifact-provenance": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:7a78d1ec948a9d1831c7c753a4358790c4488dbef0de7852090a1967dd82bef0",
+      "capability_id": "policy/rust-policy/security-artifact-provenance",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "security-artifact-provenance",
+          "text": "policy/rust-policy/security-artifact-provenance"
+        },
+        "rust_guidance": {
+          "clause_id": "dependency-policy",
+          "text": "New dependencies are design decisions."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-artifact-provenance/source%2Frust-policy%2Frust-policy%2Fdependency-policy",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:59",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-artifact-provenance"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-artifact-provenance/source%2Frust-policy%2Frust-policy%2Fsecurity-artifact-provenance",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:371",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-artifact-provenance"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/dependency-policy",
+        "source/rust-policy/rust-policy/security-artifact-provenance"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/security-artifact-provenance"
+    },
+    "policy/rust-policy/security-artifact-vulnerability-scan": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:303753498114e80cdde14716e1ebc272f1d1e2c671e574c106d11034c9925ae9",
+      "capability_id": "policy/rust-policy/security-artifact-vulnerability-scan",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "security-artifact-vulnerability-scan",
+          "text": "policy/rust-policy/security-artifact-vulnerability-scan"
+        },
+        "rust_guidance": {
+          "clause_id": "cargo-deny",
+          "text": "`cargo deny check` must pass."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-artifact-vulnerability-scan/source%2Frust-policy%2Frust-policy%2Fcargo-deny",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:100",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-artifact-vulnerability-scan"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-artifact-vulnerability-scan/source%2Frust-policy%2Frust-policy%2Fsecurity-artifact-vulnerability-scan",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:372",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-artifact-vulnerability-scan"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/cargo-deny",
+        "source/rust-policy/rust-policy/security-artifact-vulnerability-scan"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/security-artifact-vulnerability-scan"
+    },
+    "policy/rust-policy/security-expiring-exception": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:000b7af840ce780d5feee8b9b6826e4edbe3e922d069ab2eed5981dc513cb9e7",
+      "capability_id": "policy/rust-policy/security-expiring-exception",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "security-expiring-exception",
+          "text": "policy/rust-policy/security-expiring-exception"
+        },
+        "rust_guidance": {
+          "clause_id": "dependency-policy",
+          "text": "New dependencies are design decisions."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-expiring-exception/source%2Frust-policy%2Frust-policy%2Fdependency-policy",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:59",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-expiring-exception"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-expiring-exception/source%2Frust-policy%2Frust-policy%2Fsecurity-expiring-exception",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:374",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-expiring-exception"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/dependency-policy",
+        "source/rust-policy/rust-policy/security-expiring-exception"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/security-expiring-exception"
+    },
+    "policy/rust-policy/security-locked-supply-chain": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:620168eb64ff5e7b7a3c90c9d9bc6fd493d47d05bfd0cda2f8edc712858e3ddb",
+      "capability_id": "policy/rust-policy/security-locked-supply-chain",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "security-locked-supply-chain",
+          "text": "policy/rust-policy/security-locked-supply-chain"
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-locked-supply-chain/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:99",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-locked-supply-chain"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-locked-supply-chain/source%2Frust-policy%2Frust-policy%2Fsecurity-locked-supply-chain",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:370",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-locked-supply-chain"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/locked-resolution",
+        "source/rust-policy/rust-policy/security-locked-supply-chain"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/security-locked-supply-chain"
+    },
+    "policy/rust-policy/security-secret-canary": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:b4d0637ea3bb32610ba92068523415790b0f462bd3f82e99560a8a1e97b15049",
+      "capability_id": "policy/rust-policy/security-secret-canary",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "security-secret-canary",
+          "text": "policy/rust-policy/security-secret-canary"
+        },
+        "rust_guidance": {
+          "clause_id": "secret-safe-output",
+          "text": "Never expose session tokens, registry credentials, environment secrets, or sensitive\n  host paths in errors, tracing, fixtures, snapshots, or generated code."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-secret-canary/source%2Frust-policy%2Frust-policy%2Fsecret-safe-output",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:105",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-secret-canary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/security-secret-canary/source%2Frust-policy%2Frust-policy%2Fsecurity-secret-canary",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:373",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/security-secret-canary"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/secret-safe-output",
+        "source/rust-policy/rust-policy/security-secret-canary"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/security-secret-canary"
+    },
+    "policy/rust-policy/signoff-artifact-import-reuse": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:2b16467b87baf2b364459e1d1db42361d0f9b0325018fb52486abbc4d44e5f38",
+      "capability_id": "policy/rust-policy/signoff-artifact-import-reuse",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-artifact-import-reuse",
+          "text": "policy/rust-policy/signoff-artifact-import-reuse"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-artifact-import-reuse/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-artifact-import-reuse"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-artifact-import-reuse/source%2Frust-policy%2Frust-policy%2Fsignoff-artifact-import-reuse",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:360",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-artifact-import-reuse"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/signoff-artifact-import-reuse"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-artifact-import-reuse"
+    },
+    "policy/rust-policy/signoff-atomic-verdict": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:92b47bc503cadc06b0385f3d821520f100c4dbfa697735db09a60074744c7372",
+      "capability_id": "policy/rust-policy/signoff-atomic-verdict",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-atomic-verdict",
+          "text": "policy/rust-policy/signoff-atomic-verdict"
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-atomic-verdict/source%2Frust-policy%2Frust-policy%2Fsignoff-atomic-verdict",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:366",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-atomic-verdict"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-atomic-verdict/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-atomic-verdict"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/signoff-atomic-verdict",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-atomic-verdict"
+    },
+    "policy/rust-policy/signoff-case-retry-honesty": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:99c1e6d7e5bd4d9c9db97ea5c577e4668593db71690d53166de65b2b3a9c0553",
+      "capability_id": "policy/rust-policy/signoff-case-retry-honesty",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-case-retry-honesty",
+          "text": "policy/rust-policy/signoff-case-retry-honesty"
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-case-retry-honesty/source%2Frust-policy%2Frust-policy%2Fsignoff-case-retry-honesty",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:365",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-case-retry-honesty"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-case-retry-honesty/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-case-retry-honesty"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/signoff-case-retry-honesty",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-case-retry-honesty"
+    },
+    "policy/rust-policy/signoff-closure-evidence": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:1225011f7982a411076848965bc8ac8d85aa91b46cf462176ec831a57044547f",
+      "capability_id": "policy/rust-policy/signoff-closure-evidence",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-closure-evidence",
+          "text": "policy/rust-policy/signoff-closure-evidence"
+        },
+        "rust_guidance": {
+          "clause_id": "locked-resolution",
+          "text": "resolution changes are deliberate reviewable changes, never a CI side effect."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-closure-evidence/source%2Frust-policy%2Frust-policy%2Flocked-resolution",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:99",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-closure-evidence"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-closure-evidence/source%2Frust-policy%2Frust-policy%2Fsignoff-closure-evidence",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:361",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-closure-evidence"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/locked-resolution",
+        "source/rust-policy/rust-policy/signoff-closure-evidence"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-closure-evidence"
+    },
+    "policy/rust-policy/signoff-duplicate-work-rejection": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:e14c5e111e2b7212c48472e04be8515b34039f062051e3b4841a93fc728c5fe5",
+      "capability_id": "policy/rust-policy/signoff-duplicate-work-rejection",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-duplicate-work-rejection",
+          "text": "policy/rust-policy/signoff-duplicate-work-rejection"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-duplicate-work-rejection/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-duplicate-work-rejection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-duplicate-work-rejection/source%2Frust-policy%2Frust-policy%2Fsignoff-duplicate-work-rejection",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:367",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-duplicate-work-rejection"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/signoff-duplicate-work-rejection"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-duplicate-work-rejection"
+    },
+    "policy/rust-policy/signoff-exact-target-artifact": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:589cc745ff1da8c15fe7de4f4163431de593262b35ea9ea7bbe078ab784a9273",
+      "capability_id": "policy/rust-policy/signoff-exact-target-artifact",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-exact-target-artifact",
+          "text": "policy/rust-policy/signoff-exact-target-artifact"
+        },
+        "rust_guidance": {
+          "clause_id": "dependency-policy",
+          "text": "New dependencies are design decisions."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-exact-target-artifact/source%2Frust-policy%2Frust-policy%2Fdependency-policy",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:59",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-exact-target-artifact"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-exact-target-artifact/source%2Frust-policy%2Frust-policy%2Fsignoff-exact-target-artifact",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:359",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-exact-target-artifact"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/dependency-policy",
+        "source/rust-policy/rust-policy/signoff-exact-target-artifact"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-exact-target-artifact"
+    },
+    "policy/rust-policy/signoff-host-preflight": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:76ff3ea62e2d6bfac177ec4a745ea0b51d1f274278c3f89a882099a40629ff06",
+      "capability_id": "policy/rust-policy/signoff-host-preflight",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-host-preflight",
+          "text": "policy/rust-policy/signoff-host-preflight"
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-host-preflight/source%2Frust-policy%2Frust-policy%2Fsignoff-host-preflight",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:358",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-host-preflight"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-host-preflight/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-host-preflight"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/signoff-host-preflight",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-host-preflight"
+    },
+    "policy/rust-policy/signoff-isolated-case-fanout": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:da64189edc6f1aa1d976b49bd7e17dc4383eb74e815560d46fe88cc31a5cd349",
+      "capability_id": "policy/rust-policy/signoff-isolated-case-fanout",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-isolated-case-fanout",
+          "text": "policy/rust-policy/signoff-isolated-case-fanout"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-isolated-case-fanout/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-isolated-case-fanout"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-isolated-case-fanout/source%2Frust-policy%2Frust-policy%2Fsignoff-isolated-case-fanout",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:364",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-isolated-case-fanout"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/signoff-isolated-case-fanout"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-isolated-case-fanout"
+    },
+    "policy/rust-policy/signoff-phase-budget": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:de7d8595eeeaea6791eba7538d5de7ac70649c4fbfadef8848e5c8e327061e6b",
+      "capability_id": "policy/rust-policy/signoff-phase-budget",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-phase-budget",
+          "text": "policy/rust-policy/signoff-phase-budget"
+        },
+        "rust_guidance": {
+          "clause_id": "typed-public-errors",
+          "text": "Prefer typed public errors."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-phase-budget/source%2Frust-policy%2Frust-policy%2Fsignoff-phase-budget",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:368",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-phase-budget"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-phase-budget/source%2Frust-policy%2Frust-policy%2Ftyped-public-errors",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:52",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-phase-budget"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/signoff-phase-budget",
+        "source/rust-policy/rust-policy/typed-public-errors"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-phase-budget"
+    },
+    "policy/rust-policy/signoff-single-engine": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:c9d0800c6c3478ee626b16d5e597778707cfab4dd7e098ad5a55ccb051283875",
+      "capability_id": "policy/rust-policy/signoff-single-engine",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-single-engine",
+          "text": "policy/rust-policy/signoff-single-engine"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-single-engine/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-single-engine"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-single-engine/source%2Frust-policy%2Frust-policy%2Fsignoff-single-engine",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:362",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-single-engine"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/signoff-single-engine"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-single-engine"
+    },
+    "policy/rust-policy/signoff-single-rust-baseline": {
+      "authority_id": "rust-policy",
+      "capability_fingerprint": "sha256:3cc8cd79d4870c3b6fbbe7f058bf956610206611b1daf07314092886704c15f9",
+      "capability_id": "policy/rust-policy/signoff-single-rust-baseline",
+      "capability_kind": "rust-policy",
+      "semantic_signature": {
+        "requirement": {
+          "clause_id": "signoff-single-rust-baseline",
+          "text": "policy/rust-policy/signoff-single-rust-baseline"
+        },
+        "rust_guidance": {
+          "clause_id": "explicit-ownership",
+          "text": "Prefer explicit ownership and borrowing over pervasive cloning or shared `Arc`\n  state."
+        }
+      },
+      "source_anchors": [
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-single-rust-baseline/source%2Frust-policy%2Frust-policy%2Fexplicit-ownership",
+          "evidence_kind": "authority",
+          "locator": "sdk/rust/AGENTS.md:57",
+          "path": "sdk/rust/AGENTS.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-single-rust-baseline"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        },
+        {
+          "claim": "Pinned authority source defines this reviewed capability",
+          "evidence_id": "authority/policy/rust-policy/signoff-single-rust-baseline/source%2Frust-policy%2Frust-policy%2Fsignoff-single-rust-baseline",
+          "evidence_kind": "authority",
+          "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:363",
+          "path": ".kiro/specs/rust-sdk-conformance-security/requirements.md",
+          "proved_capability_ids": [
+            "policy/rust-policy/signoff-single-rust-baseline"
+          ],
+          "repository": "github.com/dagger/dagger",
+          "revision": "25300124ca110612edc09c43f89cb5fad6028170"
+        }
+      ],
+      "source_item_ids": [
+        "source/rust-policy/rust-policy/explicit-ownership",
+        "source/rust-policy/rust-policy/signoff-single-rust-baseline"
+      ],
+      "stability": "stable",
+      "summary": "policy/rust-policy/signoff-single-rust-baseline"
     },
     "policy/rust-policy/source%2Frust-policy%2Frust-policy%2Fcargo-deny": {
       "authority_id": "rust-policy",

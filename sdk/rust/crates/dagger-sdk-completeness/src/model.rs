@@ -36,6 +36,11 @@ impl ValueError {
             reason: reason.into(),
         }
     }
+
+    /// Constructs a scalar error for a private conformance vocabulary type.
+    pub(crate) fn from_str_for_conformance(kind: &'static str, reason: impl Into<String>) -> Self {
+        Self::new(kind, reason)
+    }
 }
 
 macro_rules! string_newtype {

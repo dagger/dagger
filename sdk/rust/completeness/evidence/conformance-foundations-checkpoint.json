@@ -1,0 +1,58 @@
+{
+  "asset_decisions": {
+    "cargo_security_inputs_changed": false,
+    "cargo_deny": "reused-unchanged",
+    "regenerated": [
+      "completeness/artifacts/inventory.json",
+      "completeness/artifacts/ledger.json",
+      "completeness/artifacts/report.json",
+      "completeness/artifacts/report.md",
+      "completeness/artifacts/source-items.json"
+    ],
+    "repository_wide_generation": false
+  },
+  "bound_preflight": {
+    "container_daemon_identity": "sha256:f0f1560e22d233f2ed01711c53ff70fdddd945f80e4d3ebc1c2aaa0a9a097583",
+    "plan_digest": "sha256:1fa89b59838e3fc5a6d853b7c3f111d2449f0baf65d8ecb73047b98a281c4436",
+    "preflight_tool": "binary/dagger-rust-sdk-signoff/sha256/a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
+    "profile_digest": "sha256:312a717dc26a1c17991545183df2478e547ce27e09f2ef60799650946a8d3367",
+    "record_digest": "sha256:7d729351dabe12f7c3b1c84bc3fe64295cda8c8876db5893f0ea2f34a0e27de6",
+    "reused_without_live_rerun": true,
+    "smoke_engine": "oci/registry.dagger.io/engine/v1.0.0-beta.9/sha256/de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e"
+  },
+  "cargo_invocation_count": 4,
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "elapsed_millis": 1170,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test -p dagger-sdk-completeness --lib --test conformance_foundation --test signoff_preflight_properties --test conformance_strategy_foundation --locked",
+      "elapsed_millis": 1830,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo clippy -p dagger-sdk-completeness --all-targets --no-deps --locked -- -D warnings",
+      "elapsed_millis": 600,
+      "outcome": "passed"
+    },
+    {
+      "command": "RUSTDOCFLAGS='-D warnings' cargo doc -p dagger-sdk-completeness --no-deps --locked",
+      "elapsed_millis": 17290,
+      "outcome": "passed"
+    }
+  ],
+  "format_version": "1.0.0",
+  "local_boundary": {
+    "dagger_command": false,
+    "distribution_build": false,
+    "engine_build_or_start": false,
+    "module_execution": false,
+    "network": false,
+    "other_sdk_build_or_test": false,
+    "unscoped_generation": false
+  },
+  "owning_input_digest": "sha256:7c0b9fe2fa46a93a4164d7ce0bfbce728f3bebfecaa92e30cec16b63a144d413",
+  "scope": "conformance-foundations"
+}

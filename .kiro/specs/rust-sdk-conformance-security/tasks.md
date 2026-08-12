@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Implement and validate the provider-neutral sign-off host preflight
-  - [ ] 1.1 Add the strict host profile, plan, observation, and record models
+- [x] 1. Implement and validate the provider-neutral sign-off host preflight
+  - [x] 1.1 Add the strict host profile, plan, observation, and record models
     - Add `ConformanceFormatVersion`, `PlatformDescriptor`, bounded resource and timing
       scalars, `SignoffHostProfile`, the closed `HostPreflightStep` set,
       `HostPreflightPlan`, `HostStepObservation`, and `HostPreflightRecord` under
@@ -14,7 +14,7 @@
       toolchain selection, credentials, target source, Capability_IDs, and Dagger graph
       object IDs out of durable models.
     - _Requirements: 2.1-2.6, 2.16-2.20_
-  - [ ] 1.2 Add the typed private preflight host binary and probe adapter
+  - [x] 1.2 Add the typed private preflight host binary and probe adapter
     - Add `dagger-rust-sdk-signoff preflight` as a private
       `dagger-sdk-completeness` binary using `std::process` behind the closed
       `HostProbe` interface; accept one checked profile and output path, not arbitrary
@@ -27,7 +27,7 @@
       including cleanup failure, produces a stable phase diagnostic and no target
       build, SDK install, case execution, or capability claim.
     - _Requirements: 2.1-2.20, 10.1-10.17_
-  - [ ] 1.3 Property test: Property 3 — host planning is provider-neutral and fail-fast
+  - [x] 1.3 Property test: Property 3 — host planning is provider-neutral and fail-fast
     - Implement `property_03_host_planning_provider_neutral_fail_fast` in
       `signoff_preflight_properties.rs` over at least 256 provider labels, profiles,
       platforms, resources, daemon identities, timing schedules, stale identities,
@@ -36,7 +36,7 @@
       threshold model; prove provider-name invariance, Namespace metadata exclusion,
       pre-artifact failure, record invalidation, and sign-off prevention.
     - _Requirements: 2.1-2.6, 2.16-2.20_
-  - [ ] 1.4 Property test: Property 4 — preflight proves infrastructure without claiming conformance
+  - [x] 1.4 Property test: Property 4 — preflight proves infrastructure without claiming conformance
     - Implement `property_04_preflight_infrastructure_only` over at least 256 valid and
       fault-injected step sequences, smoke counts, reachability outcomes, reap states,
       payload/cache digests, target-work probes, claims, and output chunk boundaries.
@@ -44,7 +44,7 @@
       cache reuse, cleanup after failure, and rejection of every target, SDK, case, or
       capability event.
     - _Requirements: 2.7-2.15_
-  - [ ] 1.5 Perform the first bounded live validation on the dedicated Namespace XL host
+  - [x] 1.5 Perform the first bounded live validation on the dedicated Namespace XL host
     - Build the private binary and checked Linux/amd64 profile, execute the same
       provider-neutral plan through `devbox exec`, and retrieve only the canonical
       redacted record. Do not encode the provider command, account, or box ID into that
@@ -57,8 +57,8 @@
       This is infrastructure preflight, not a local checkpoint or conformance evidence.
     - _Requirements: 2.1-2.20_
 
-- [ ] 2. Establish the Feature 8 model, diagnostics, and property-strategy foundation
-  - [ ] 2.1 Add strict common identifiers and canonical wire boundaries
+- [x] 2. Establish the Feature 8 model, diagnostics, and property-strategy foundation
+  - [x] 2.1 Add strict common identifiers and canonical wire boundaries
     - Add validated `AssertionId`, `SignoffCaseId`, `FixtureContextId`,
       `ReviewedFixtureId`, `ProvenanceId`, `FindingId`, `NetworkPolicyId`, non-zero
       duration/count scalars, platform/toolchain roles, and safe diagnostic coordinates.
@@ -68,7 +68,7 @@
     - Keep these types private to `dagger-sdk-completeness`; add no dependency or API
       change to `dagger-sdk` or `dagger-sdk-macros`.
     - _Requirements: 1.1-1.18, 3.1-3.24, 12.1-12.35_
-  - [ ] 2.2 Add the total Feature 8 diagnostic set and safe renderer
+  - [x] 2.2 Add the total Feature 8 diagnostic set and safe renderer
     - Implement the design's scope, applicability, assertion, catalog, preflight,
       closure, artifact, engine, baseline, case, retry, platform, security, checkpoint,
       and verdict codes; reuse existing Feature 1/checkpoint codes where their
@@ -79,7 +79,7 @@
     - Add fixed tests for one instance of every error-table row and hostile control,
       path, credential, and output-size inputs.
     - _Requirements: 1.9-1.16, 2.16-2.20, 3.17-3.24, 9.18-9.23, 10.10-10.17, 12.20-12.35_
-  - [ ] 2.3 Add valid-first property strategies and independent reference models
+  - [x] 2.3 Add valid-first property strategies and independent reference models
     - Add shared generators for exact scope sets, applicability decisions, assertion
       graphs, case catalogs, host plans, child closures, artifact event logs, platform
       matrices, Cargo/security graphs, findings/exceptions, canary chunks, case
@@ -91,8 +91,8 @@
       properties and at least 100 for all remaining properties.
     - _Requirements: 1.1-1.18, 2.1-2.20, 3.1-3.24, 5.1-5.20, 6.1-6.22, 8.1-8.21, 9.1-9.25, 10.1-10.17, 12.1-12.35_
 
-- [ ] 3. Register the exact existing and Rust-policy Feature 8 inventory
-  - [ ] 3.1 Pin the existing 1,081-capability authority scope
+- [x] 3. Register the exact existing and Rust-policy Feature 8 inventory
+  - [x] 3.1 Pin the existing 1,081-capability authority scope
     - Verify the current 1,072 `Missing` integration rows and nine `Partial` definitive
       Go-client rows against the exact target, fingerprints, authorities, source
       locators, and reviewed scope digest
@@ -103,7 +103,7 @@
     - Preserve every row's current status and blocker while mappings are incomplete;
       inventory existence is never implementation evidence.
     - _Requirements: 1.1-1.3, 1.13, 1.15-1.18_
-  - [ ] 3.2 Add the exact 21 Rust policy capabilities
+  - [x] 3.2 Add the exact 21 Rust policy capabilities
     - Add every approved conformance, host, artifact, closure, single-engine/baseline,
       isolation/retry, atomic/duplicate/timing, platform, locked/provenance/scan/canary,
       and expiring-exception capability with stable fingerprints, Feature 8 ownership,
@@ -113,7 +113,7 @@
     - Regenerate only the affected completeness inventory/report artifacts and retain
       every new row as blocking until its required evidence is admitted.
     - _Requirements: 1.4, 1.18_
-  - [ ] 3.3 Add the reviewed applicability and policy artifact schemas
+  - [x] 3.3 Add the reviewed applicability and policy artifact schemas
     - Add checked empty-validity-impossible scaffolds for
       `conformance-applicability.json`, `conformance-assertions.json`, and
       `conformance-cases.json`, with canonical format versions and exact target/scope
@@ -123,7 +123,7 @@
       rationale, or unknown terminal policy fail admission.
     - _Requirements: 1.5-1.16, 3.1-3.24_
 
-- [ ] 4. Checkpoint: host preflight and Feature 8 foundations are green
+- [x] 4. Checkpoint: host preflight and Feature 8 foundations are green
   - Run formatting; locked focused tests for the new common/preflight models,
     diagnostics, exact inventory, policy scope, and Properties 3–4; warning-denied
     Clippy/rustdoc for `dagger-sdk-completeness`; and the preflight binary's in-memory
