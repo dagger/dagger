@@ -79,6 +79,11 @@ func ValidateSDKs(cfg *Config) error {
 
 // Config represents a parsed dagger.toml workspace configuration.
 type Config struct {
+	// Include lists the workspace configs this one builds on: each entry's
+	// config is merged underneath this one. The shape allows several, but only
+	// one is accepted for now, and an included config's own includes are never
+	// followed.
+	Include            []IncludeEntry         `json:"include,omitempty" toml:"include,omitempty"`
 	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
 	SDKs               map[string]SDKEntry    `json:"sdks,omitempty" toml:"sdks"`
 	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
@@ -100,9 +105,26 @@ type PortMapping struct {
 	BackendPort    int    `json:"backendPort" toml:"backendPort"`
 }
 
+// IncludeEntry is one included workspace config. Source addresses the config
+// file itself — not the workspace holding it — either as a path relative to the
+// including config's directory, or as a git ref with the file as its subpath:
+//
+//	[[include]]
+//	source = "../../common/dagger.toml"
+//
+//	[[include]]
+//	source = "https://github.com/acme/platform#:dagger/common/app-base.toml"
+type IncludeEntry struct {
+	Source string `json:"source" toml:"source"`
+}
+
 // ModuleEntry represents a single module entry in the workspace config.
+//
+// Source is optional in the file: with an [[include]], an entry may carry only
+// overrides and inherit its source from the included config. Every entry in an
+// *effective* config still needs one — see ValidateEffectiveConfig.
 type ModuleEntry struct {
-	Source            string         `json:"source" toml:"source"`
+	Source            string         `json:"source,omitempty" toml:"source"`
 	Pin               string         `json:"pin,omitempty" toml:"pin,omitempty"`
 	Settings          map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
 	Entrypoint        bool           `json:"entrypoint,omitempty" toml:"entrypoint,omitempty"`
@@ -404,6 +426,12 @@ func SerializeConfig(cfg *Config) []byte {
 		fmt.Fprintf(&b, "check-generated = %t\n\n", *cfg.CheckGenerated)
 	}
 
+	// After the top-level scalars: every bare key in a TOML document has to
+	// precede the first table header, and [[include]] is one.
+	for _, include := range cfg.Include {
+		fmt.Fprintf(&b, "[[include]]\nsource = %q\n\n", include.Source)
+	}
+
 	wrote := writeModuleEntries(&b, cfg.Modules)
 	if wrote && len(cfg.SDKs) > 0 {
 		b.WriteString("\n")
@@ -431,6 +459,7 @@ func cloneConfig(cfg *Config) *Config {
 	}
 
 	cloned := &Config{
+		Include:            append([]IncludeEntry(nil), cfg.Include...),
 		Ignore:             append([]string(nil), cfg.Ignore...),
 		DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
 	}
@@ -453,24 +482,7 @@ func cloneConfig(cfg *Config) *Config {
 			}
 		}
 	}
-	if len(cfg.SDKs) > 0 {
-		cloned.SDKs = make(map[string]SDKEntry, len(cfg.SDKs))
-		for name, sdk := range cfg.SDKs {
-			clonedSDK := SDKEntry{Module: sdk.Module}
-			if len(sdk.Scopes) > 0 {
-				clonedSDK.Scopes = make(map[string]SDKScope, len(sdk.Scopes))
-				for scopePath, scope := range sdk.Scopes {
-					clonedSDK.Scopes[scopePath] = SDKScope{
-						IsModule: scope.IsModule,
-						Name:     scope.Name,
-						Clients:  append([]string(nil), scope.Clients...),
-						Settings: cloneConfigMap(scope.Settings),
-					}
-				}
-			}
-			cloned.SDKs[name] = clonedSDK
-		}
-	}
+	cloned.SDKs = cloneSDKs(cfg.SDKs)
 	if len(cfg.Env) > 0 {
 		cloned.Env = make(map[string]EnvOverlay, len(cfg.Env))
 		for envName, env := range cfg.Env {
@@ -493,6 +505,32 @@ func cloneConfig(cfg *Config) *Config {
 		for host, pm := range cfg.Ports {
 			cloned.Ports[host] = pm
 		}
+	}
+	return cloned
+}
+
+// cloneSDKs deep-copies a config's SDK declarations. It is separate from
+// cloneConfig because the include merge replaces them wholesale rather than
+// inheriting them.
+func cloneSDKs(sdks map[string]SDKEntry) map[string]SDKEntry {
+	if len(sdks) == 0 {
+		return nil
+	}
+	cloned := make(map[string]SDKEntry, len(sdks))
+	for name, sdk := range sdks {
+		clonedSDK := SDKEntry{Module: sdk.Module}
+		if len(sdk.Scopes) > 0 {
+			clonedSDK.Scopes = make(map[string]SDKScope, len(sdk.Scopes))
+			for scopePath, scope := range sdk.Scopes {
+				clonedSDK.Scopes[scopePath] = SDKScope{
+					IsModule: scope.IsModule,
+					Name:     scope.Name,
+					Clients:  append([]string(nil), scope.Clients...),
+					Settings: cloneConfigMap(scope.Settings),
+				}
+			}
+		}
+		cloned[name] = clonedSDK
 	}
 	return cloned
 }
@@ -527,7 +565,11 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		entry := modules[name]
 		modulePath := "modules." + formatConfigPathSegment(name)
 		fmt.Fprintf(b, "[%s]\n", modulePath)
-		fmt.Fprintf(b, "source = %q\n", entry.Source)
+		// An entry with no source is an override of an included module; writing
+		// source = "" back would turn it into an entry that names nothing.
+		if entry.Source != "" {
+			fmt.Fprintf(b, "source = %q\n", entry.Source)
+		}
 		if entry.Pin != "" {
 			fmt.Fprintf(b, "pin = %q\n", entry.Pin)
 		}
@@ -803,8 +845,26 @@ func writeConfigValueAtKey(existingData []byte, key string, valueFor func(parts 
 	if err != nil {
 		return nil, err
 	}
+
 	// The requested key is explicit, even if its value equals an implicit
 	// default and therefore produces no difference between typed configs.
+	// [[include]] is an array of tables, which the document editor declines to
+	// edit; it is rewritten as a block instead.
+	if parts[0] == "include" {
+		existingCfg, err := ParseConfig(existingData)
+		if err != nil && len(existingData) > 0 {
+			return nil, err
+		}
+		var existingIncludes []IncludeEntry
+		if existingCfg != nil {
+			existingIncludes = existingCfg.Include
+		}
+		updated := rewriteIncludeBlocks(existingData, existingIncludes, cfg.Include)
+		if _, err := ParseConfig(updated); err != nil {
+			return nil, fmt.Errorf("validate edited config: %w", err)
+		}
+		return updated, nil
+	}
 	doc, err := parseConfigText(existingData)
 	if err != nil {
 		return nil, err
@@ -1185,6 +1245,21 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 	}
 
 	switch parts[0] {
+	case "include":
+		// The config shape is an array of tables, but only one include is
+		// accepted for now, so the CLI addresses it as a single value: setting
+		// it replaces whatever was there.
+		if len(parts) == 2 && parts[1] == "source" || len(parts) == 1 {
+			source := fmt.Sprint(value)
+			if strings.TrimSpace(source) == "" {
+				// Writing it empty would leave a block naming nothing, which
+				// every later read rejects. Refuse at the write instead.
+				return fmt.Errorf("include source is required; remove the include rather than emptying it")
+			}
+			cfg.Include = []IncludeEntry{{Source: source}}
+			return nil
+		}
+		return fmt.Errorf("invalid key %q; expected include or include.source", strings.Join(parts, "."))
 	case "ignore":
 		if len(parts) != 1 {
 			return fmt.Errorf("invalid key %q; ignore does not have sub-keys", strings.Join(parts, "."))
