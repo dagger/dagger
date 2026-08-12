@@ -249,6 +249,7 @@ pub async fn execute_initialization(
         format_version: FormatVersion,
         kind: ExecutionResultKind::Initialization,
         output_root: module_root.clone(),
+        touched_paths: BTreeSet::new(),
         operation_manifest: None,
         vcs_generated: BTreeSet::new(),
         vcs_ignored: BTreeSet::new(),

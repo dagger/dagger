@@ -8,7 +8,7 @@ use std::path::Path;
 
 use dagger_codegen::client::{
     CargoPackageName, ClientCompilationInput, ClientProjectIdentity, RustIdentifier,
-    compile_client, render_client,
+    compile_client, render_client, render_client_at,
 };
 use dagger_codegen::engine::{
     ContentDomain, ModuleProjectionInput, OperationKind, OperationProjectionRequest,
@@ -101,6 +101,44 @@ fn production_renderer_emits_only_the_standalone_generated_subtree() {
             .map(|binding| &binding.binding.key)
             .collect::<BTreeSet<_>>()
             .len()
+    );
+}
+
+#[test]
+fn custom_library_root_places_bindings_beside_the_selected_library() {
+    let (target, schema, module, project) = inputs(0);
+    let visible = project_visible_schema(&target, &schema).expect("fixture schema must project");
+    let plan = compile_client(ClientCompilationInput {
+        target: &target,
+        visible_schema: &visible,
+        module: &module,
+        project: &project,
+    })
+    .expect("fixture client must compile");
+    let rendered = render_client_at(
+        &plan,
+        &RelativeOperationPath::parse("client").expect("project root must parse"),
+        &RelativeOperationPath::parse("client/custom/dagger_client")
+            .expect("generated root must parse"),
+    )
+    .expect("custom-root client must render");
+    assert!(
+        rendered.artifacts.contains_key(
+            &RelativeOperationPath::parse("client/custom/dagger_client/mod.rs")
+                .expect("artifact path must parse")
+        )
+    );
+    assert!(
+        rendered.artifacts.contains_key(
+            &RelativeOperationPath::parse("client/examples/dagger-client-quickstart.rs")
+                .expect("example path must parse")
+        )
+    );
+    assert!(
+        rendered
+            .artifacts
+            .keys()
+            .all(|path| !path.as_str().starts_with("client/src/dagger_client/"))
     );
 }
 

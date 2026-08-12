@@ -9,6 +9,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::client::{ClientNamespaceRecord, ClientProjectIdentity};
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticCoordinate, DiagnosticSet};
 use crate::module::{ModuleSourceSnapshot, Sha256Digest as ModuleSha256Digest};
 use crate::target::CodegenTarget;
@@ -233,6 +234,21 @@ pub struct CargoBinaryTarget {
     pub path: RelativeOperationPath,
 }
 
+/// Semantic identity emitted only by the complete standalone-client renderer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientRenderIdentity {
+    /// Cargo and Rust crate names selected from the caller's bounded project snapshot.
+    pub project: ClientProjectIdentity,
+    /// Generated namespace roles, absent for a Core-only client.
+    pub namespace: Option<ClientNamespaceRecord>,
+    /// Exact module-root wire name, absent for a Core-only client.
+    pub module_root_wire_name: Option<String>,
+    /// Domain-separated digest of the exhaustive Core-plus-module binding catalog.
+    pub binding_catalog_digest: String,
+    /// Number of semantic bindings covered by the catalog digest.
+    pub binding_count: u64,
+}
+
 /// Complete immutable result of pure operation projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationPlan {
@@ -250,6 +266,7 @@ pub struct OperationPlan {
     pub(crate) projection_pass_limit: u8,
     pub(crate) content_domain: ContentDomain,
     pub(crate) client_generation: Option<ClientGenerationMetadata>,
+    pub(crate) client_render: Option<ClientRenderIdentity>,
     pub(crate) cargo_binary: Option<CargoBinaryTarget>,
 }
 
@@ -336,6 +353,12 @@ impl OperationPlan {
     #[must_use]
     pub const fn client_generation(&self) -> Option<&ClientGenerationMetadata> {
         self.client_generation.as_ref()
+    }
+
+    /// Returns the complete standalone-client project and catalog identity.
+    #[must_use]
+    pub const fn client_render(&self) -> Option<&ClientRenderIdentity> {
+        self.client_render.as_ref()
     }
 
     /// Returns the exact Cargo binary amendment required by this operation.

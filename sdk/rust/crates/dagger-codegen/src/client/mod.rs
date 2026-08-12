@@ -16,4 +16,4 @@ pub use model::{
     ClientProjectIdentity, ClientSchemaSurface, CoreBindingReference, ModuleRoot,
     ModuleSurfacePlan, RustIdentifier,
 };
-pub use render::{RenderedClient, render_client};
+pub use render::{RenderedClient, render_client, render_client_at};

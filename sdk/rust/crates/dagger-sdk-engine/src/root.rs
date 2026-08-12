@@ -207,6 +207,49 @@ impl OperationRoot {
         fs::symlink_metadata(path.join_lexically(&self.root)).is_ok()
     }
 
+    /// Validates every existing prefix of a prospective path without creating it.
+    ///
+    /// Project initialization needs to prove confinement before candidate construction,
+    /// including when the selected client directory does not exist yet. Stopping at the
+    /// first absent component keeps this check read-only while still rejecting every
+    /// alias or symlink that could redirect a later publication.
+    pub fn validate_prospective(
+        &self,
+        path: &RelativeOperationPath,
+    ) -> Result<(), EngineDiagnostic> {
+        let mut current = self.root.clone();
+        for component in path.as_str().split('/') {
+            reject_case_alias(&current, component, path)?;
+            current.push(component);
+            match fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_dir() => {}
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(diagnostic(
+                        EngineDiagnosticCode::OutputSymlinkEscape,
+                        path.as_str(),
+                        "prospective project path contains a symlink",
+                    ));
+                }
+                Ok(_) => {
+                    return Err(diagnostic(
+                        EngineDiagnosticCode::OutputPathEscape,
+                        path.as_str(),
+                        "prospective project path crosses a non-directory component",
+                    ));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(_) => {
+                    return Err(diagnostic(
+                        EngineDiagnosticCode::OutputPathEscape,
+                        path.as_str(),
+                        "prospective project path could not be inspected",
+                    ));
+                }
+            }
+        }
+        self.require_confined(&current, path)
+    }
+
     /// Borrows the private absolute root for fixed child-process working directories.
     pub(crate) fn absolute(&self) -> &Path {
         &self.root

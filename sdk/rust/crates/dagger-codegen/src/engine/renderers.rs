@@ -7,8 +7,8 @@ use crate::target::CodegenTarget;
 
 use super::metadata::ClientGenerationMetadata;
 use super::model::{
-    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ContentDomain,
-    ModuleAuthoringInput, ModuleProjectionInput, OperationKind, OperationPlan,
+    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ClientRenderIdentity,
+    ContentDomain, ModuleAuthoringInput, ModuleProjectionInput, OperationKind, OperationPlan,
     OperationProjectionRequest, PostWorkPlan, PublishedSdkDependency, RelativeOperationPath,
     operation_diagnostic,
 };
@@ -91,6 +91,8 @@ pub struct RendererOutput {
     pub client_generation: Option<ClientGenerationMetadata>,
     /// Cargo binary amendment, present only when an entrypoint is generated.
     pub cargo_binary: Option<CargoBinaryTarget>,
+    /// Project/catalog identity, present only for complete standalone-client output.
+    pub client_render: Option<ClientRenderIdentity>,
 }
 
 impl RendererOutput {
@@ -105,6 +107,7 @@ impl RendererOutput {
             content_domain,
             client_generation: None,
             cargo_binary: None,
+            client_render: None,
         }
     }
 
@@ -255,6 +258,7 @@ pub fn dispatch_prepared_operation<R: OperationRenderer>(
         projection_pass_limit: 1,
         content_domain: output.content_domain,
         client_generation: output.client_generation,
+        client_render: output.client_render,
         cargo_binary: output.cargo_binary,
     })
 }

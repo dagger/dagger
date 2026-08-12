@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use clap::{Arg, Command};
 
 use crate::DigestDomain;
+use crate::client::initialization::execute_client_initialization;
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::initialization::execute_initialization;
 use crate::post_work::Cancellation;
@@ -74,12 +75,14 @@ async fn execute(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
             }
             execute_initialization(&root, &request, &descriptor, &Cancellation::default()).await?
         }
-        EngineExecutionRequest::InitializeClient(_) => {
-            return Err(EngineDiagnostic::new(
-                EngineDiagnosticCode::ClientInitializationInvalid,
-                Some("client.initialization"),
-                "standalone-client initialization planner is not installed",
-            ));
+        EngineExecutionRequest::InitializeClient(request) => {
+            if matches.get_one::<String>("schema").is_some() {
+                return Err(invalid(
+                    "schema",
+                    "client initialization must not receive a visible schema",
+                ));
+            }
+            execute_client_initialization(&root, &request, &descriptor)?
         }
         EngineExecutionRequest::Generate(request) => {
             let schema_path = optional_path(matches, "schema").ok_or_else(|| {

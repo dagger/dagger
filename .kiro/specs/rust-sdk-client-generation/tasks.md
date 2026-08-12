@@ -441,8 +441,8 @@
       build, repository-wide generation, or network resolution ran.
   - _Requirements: 4.1-4.17, 8.7-8.13, 9.5-9.12, 10.1-10.10_
 
-- [ ] 13. Implement conservative Cargo, library-root, documentation, and toolchain adoption
-  - [ ] 13.1 Discover one bounded client project snapshot
+- [x] 13. Implement conservative Cargo, library-root, documentation, and toolchain adoption
+  - [x] 13.1 Discover one bounded client project snapshot
     - Read only the selected root's Cargo manifest, selected/default library root,
       README, `.gitattributes`, caller-owned lockfile digest, and deterministic nearest
       toolchain declarations without following symlinks or entering another package.
@@ -452,7 +452,7 @@
     - Produce byte-only `ClientProjectSnapshot` and deterministic package/crate identity
       before invoking the pure renderer.
     - _Requirements: 2.4-2.8, 5.1, 5.10-5.13, 6.8-6.12_
-  - [ ] 13.2 Create or format-preservingly adopt the Cargo package
+  - [x] 13.2 Create or format-preservingly adopt the Cargo package
     - For a new package, emit deterministic version `0.1.0`, `publish = false`, edition
       2024, `rust-version = "1.97.1"`, exact `dagger-sdk`, documented compatible Tokio
       runtime, and no local/mutable dependency or lockfile mutation.
@@ -463,7 +463,7 @@
     - Reject inherited, path, wildcard, range, tag-only, branch-only, wrong registry,
       wrong URL, or wrong revision SDK dependencies before publication.
     - _Requirements: 5.1-5.15, 8.11, 8.13_
-  - [ ] 13.3 Reconcile the authored library root, README, and VCS policy semantically
+  - [x] 13.3 Reconcile the authored library root, README, and VCS policy semantically
     - Add or adopt one ordinary `pub mod dagger_client;` item only after parsing the
       selected library root; reject an incompatible identifier/path and leave all
       unrelated source bytes unchanged.
@@ -473,7 +473,7 @@
     - Distinguish complete candidate bytes from the semantic items owned by the SDK so
       touching an authored file never becomes whole-file ownership.
     - _Requirements: 2.4-2.6, 2.11, 5.10-5.11, 6.8-6.10, 6.15, 9.11-9.12_
-  - [ ] 13.4 Select or create the exact compatible toolchain and preserve the lockfile
+  - [x] 13.4 Select or create the exact compatible toolchain and preserve the lockfile
     - Reuse the nearest exact compatible declaration or create client-local
       `rust-toolchain.toml` selecting 1.97.1 only when none exists; reject moving,
       malformed, ambiguous, below-MSRV, or incompatible declarations without shadowing
@@ -482,7 +482,7 @@
       or generation plan contains `GenerateLockfile`, metadata resolution, update,
       network, or other dependency-resolution post-work.
     - _Requirements: 5.14-5.17_
-  - [ ] 13.5 Property test: Property 11 — Cargo creation and adoption preserve caller policy
+  - [x] 13.5 Property test: Property 11 — Cargo creation and adoption preserve caller policy
     - Implement `property_11_cargo_creation_adoption_preserve_caller_policy` over at
       least 256 absent/existing Cargo documents, comments/layouts, custom roots, owned
       and unrelated entries, source files, and repeated plans.
@@ -490,7 +490,7 @@
       model; accept only the approved package policy and return the exact conflict
       coordinate instead of rewriting incompatible caller state.
     - _Requirements: 2.4-2.6, 5.1-5.4, 5.10-5.13_
-  - [ ] 13.6 Property test: Property 12 — SDK dependency is exact, immutable, and fixture-independent
+  - [x] 13.6 Property test: Property 12 — SDK dependency is exact, immutable, and fixture-independent
     - Implement `property_12_sdk_dependency_exact_immutable_fixture_independent` over
       at least 256 approved/mutated registry, Git, inherited, local, and mutable
       declarations plus fixture resolver states.
@@ -498,7 +498,7 @@
       publication, and prove local fixture materialization leaves candidate manifest
       bytes and digest unchanged.
     - _Requirements: 5.5-5.9, 8.11, 8.13, 9.13_
-  - [ ] 13.7 Property test: Property 13 — toolchain and lockfile policy is reproducible without resolution
+  - [x] 13.7 Property test: Property 13 — toolchain and lockfile policy is reproducible without resolution
     - Implement `property_13_toolchain_lockfile_reproducible_without_resolution` over at
       least 256 declaration precedence/policy mutations, lockfile bytes, operation
       outcomes, and post-work plans.
@@ -507,8 +507,8 @@
       dependency-resolution action can be represented.
     - _Requirements: 5.14-5.17_
 
-- [ ] 14. Extend manifest-authorized ownership to semantic amendments and regeneration
-  - [ ] 14.1 Add backwards-compatible client manifest and amendment verification
+- [x] 14. Extend manifest-authorized ownership to semantic amendments and regeneration
+  - [x] 14.1 Add backwards-compatible client manifest and amendment verification
     - Extend format version 1 with omitted-by-default client/amendment sections so old
       non-client manifests decode and serialize unchanged while new client manifests
       bind module/pin, package/crate, namespace/root, catalog count/digest, artifacts,
@@ -517,7 +517,7 @@
       Cargo key, library item, README region, and VCS line; do not authorize an edit or
       deletion by filename, marker name alone, or directory convention.
     - _Requirements: 3.13, 6.1-6.3, 6.8-6.12, 6.15_
-  - [ ] 14.2 Publish generated artifacts and amended files as one transaction
+  - [x] 14.2 Publish generated artifacts and amended files as one transaction
     - Extend the existing ownership verifier and journaled publisher to validate all
       artifact/amendment authority before staging, combine multiple semantic edits into
       one complete file candidate, back up and rename in canonical order, roll back
@@ -526,7 +526,7 @@
       owned values, unknown generated destinations, path/symlink escapes, concurrent
       manifest changes, and incomplete removal sets.
     - _Requirements: 2.12, 6.6-6.15_
-  - [ ] 14.3 Implement authenticated baseline migration and obsolete-artifact removal
+  - [x] 14.3 Implement authenticated baseline migration and obsolete-artifact removal
     - Recognize the Feature 5 `EngineHookBaseline` only by exact target/request identity
       plus a fresh pure projection whose path/digest set matches every old manifest
       record; reject all near matches.
@@ -536,14 +536,14 @@
     - Add schema add/rename/remove plans that retain unchanged bytes and never remove an
       authored or unrecorded path.
     - _Requirements: 6.4-6.15_
-  - [ ] 14.4 Property test: Property 14 — generated manifest is exhaustive and generation is deterministic
+  - [x] 14.4 Property test: Property 14 — generated manifest is exhaustive and generation is deterministic
     - Implement `property_14_generated_manifest_exhaustive_generation_deterministic`
       over at least 256 semantic inputs, schema/filesystem/map permutations, no-op prior
       states, project identities, artifact sets, amendments, and post-format digests.
     - Require byte-identical catalogs/artifacts/manifests and an exact bijection between
       owned outputs/semantic values and manifest records.
     - _Requirements: 6.1-6.5_
-  - [ ] 14.5 Property test: Property 15 — regeneration changes only proven ownership
+  - [x] 14.5 Property test: Property 15 — regeneration changes only proven ownership
     - Implement `property_15_regeneration_changes_only_proven_ownership` over at least
       256 compatible/stale/malformed prior manifests, authored edits, schema changes,
       unknown collisions, target mutations, and baseline migration candidates.
@@ -551,7 +551,7 @@
       exact owned replacement/removal, authored preservation, and rejection without
       adoption or filename-inferred authority.
     - _Requirements: 6.6-6.11, 6.15_
-  - [ ] 14.6 Property test: Property 16 — all client mutations are confined and failure-atomic
+  - [x] 14.6 Property test: Property 16 — all client mutations are confined and failure-atomic
     - Implement `property_16_client_mutations_confined_failure_atomic` over at least 256
       initial trees, artifact/amendment candidates, path/alias/symlink mutations, and
       every publication/rollback fault checkpoint.
@@ -560,8 +560,8 @@
       candidate with manifest last.
     - _Requirements: 2.5-2.6, 2.8, 2.12, 6.12-6.14_
 
-- [ ] 15. Implement the path-confined client initializer
-  - [ ] 15.1 Plan a valid no-bindings client scaffold
+- [x] 15. Implement the path-confined client initializer
+  - [x] 15.1 Plan a valid no-bindings client scaffold
     - Add `plan_client_initialization` over the project snapshot and exact descriptor,
       reusing Task 13 Cargo/toolchain/docs policies while creating a minimal documented
       library only when absent.
@@ -571,7 +571,7 @@
     - Preserve every existing source/file and reject incompatible required paths or
       semantic regions before a result exists.
     - _Requirements: 2.2-2.8, 2.10-2.13, 5.1-5.17_
-  - [ ] 15.2 Execute initialization only from a complete immutable candidate
+  - [x] 15.2 Execute initialization only from a complete immutable candidate
     - Add `EngineExecutionRequest::InitializeClient`, result kind, confined runner, and
       private CLI dispatch; read from the immutable project copy and return touched
       paths only after the full scaffold candidate validates.
@@ -580,7 +580,7 @@
     - Retain module initialization as a separate request and prevent its binary/runtime,
       lockfile-generation, or module-config policy from entering client scaffolds.
     - _Requirements: 2.1-2.8, 2.11-2.13_
-  - [ ] 15.3 Property test: Property 2 — client initialization is confined, conservative, and idempotent
+  - [x] 15.3 Property test: Property 2 — client initialization is confined, conservative, and idempotent
     - Implement `property_02_client_initialization_confined_conservative_idempotent`
       over at least 256 new/adopted authored trees, paths, closed arguments, descriptor
       mutations, toolchains, credentials, and injected planning/publication failures.
@@ -588,7 +588,7 @@
       replay, no workspace-record ownership, no secrets/absolute paths, and no result
       for every invalid or failed case.
     - _Requirements: 2.1-2.8, 2.11-2.13_
-  - [ ] 15.4 Property test: Property 3 — initial generation obeys the engine-owned scope switch
+  - [x] 15.4 Property test: Property 3 — initial generation obeys the engine-owned scope switch
     - Implement `property_03_initial_generation_obeys_engine_scope_switch` over at
       least 256 initialized workspace/scaffold states and generation booleans using a
       reference engine-scope model.
@@ -596,7 +596,7 @@
       and a valid honestly documented no-bindings Cargo scaffold under `--no-generate`.
     - _Requirements: 2.9-2.11_
 
-- [ ] 16. Checkpoint: project adoption, ownership, publication, and initialization are green
+- [x] 16. Checkpoint: project adoption, ownership, publication, and initialization are green
   - Run formatting, locked focused `dagger-sdk-engine` client project,
     initialization, ownership, publication, and baseline-migration tests; Properties
     2, 3, and 11-16; bounded rustfmt post-work cases; and warning-denied Clippy/rustdoc
@@ -609,6 +609,37 @@
   - Require no Dagger command, engine process, module invocation, another SDK,
     unscoped generation, distribution build, or network resolution.
   - _Requirements: 2.1-2.13, 5.1-5.17, 6.1-6.15, 10.1-10.10_
+  - **Completed 2026-08-12.** Engine-free evidence:
+    - `CARGO_NET_OFFLINE=true cargo test --locked -p dagger-sdk-engine --lib
+      --test client_project_properties --test runner_properties` passed 23 tests,
+      including Properties 2, 3, and 11-16 at 256 cases each, combined semantic and
+      whole-artifact publication, every journal fault phase, exact baseline migration,
+      custom library-root selection, and initializer replay. The final phase took about
+      32 seconds including compilation.
+    - `CARGO_NET_OFFLINE=true cargo test --locked -p dagger-codegen` passed the complete
+      compiler suite; the focused custom-root renderer rerun passed 7/7 after the final
+      project-layout refinement. The complete compiler phase took about 304 seconds,
+      dominated by the existing visible-schema permutation property (144 seconds) and
+      candidate compile test (50 seconds). Checked generated assets were reused unchanged.
+    - `CARGO_NET_OFFLINE=true cargo clippy --locked -p dagger-sdk-engine -p
+      dagger-codegen --all-targets -- -D warnings`, warning-denied rustdoc with
+      `--no-deps`, `cargo fmt --all -- --check`, and `git diff --check` passed.
+      Final Clippy and rustdoc phases took about 8 seconds each.
+    - The sole Cargo graph change is the existing locked `syn 2.0.119` becoming a direct
+      parser dependency of `dagger-sdk-engine`. Offline `cargo deny check` passed all
+      advisory, ban, license, and source policies; its configured duplicate/no-license
+      warnings remain non-fatal and unchanged in policy.
+    - The retained harness artifact identity advanced once from
+      `sha256:25acf6a666f6788d3f4d282f0e562b90b31c05b7f3d686b9b3368204e991b3d1`
+      to `sha256:813abc498ccc7b025c2fb2a059d0109608bfce89ccf051748451de00c53c30a2`;
+      all 18 mappings were reconciled without changing check scope, expected outcomes,
+      capability bindings, CLI identity, or evidence claims. The locked offline
+      `dagger-sdk-completeness --test engine_integration` guard passed all 8 tests in
+      27.49 seconds after compilation.
+    - No Dagger command, engine process, module invocation, other SDK, network access,
+      generation refresh, complete generated-client Cargo fixture, distribution build,
+      or repository-wide build ran. Every checkpoint Cargo phase was locked and offline;
+      client project plans themselves expose no dependency-resolution post-work.
 
 - [ ] 17. Wire client initialization and multi-client workspace generation through the thin Go ABI
   - [ ] 17.1 Expose the exact `InitClient` module function

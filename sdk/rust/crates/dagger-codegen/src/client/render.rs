@@ -38,8 +38,16 @@ pub fn render_client(
     plan: &ClientBindingPlan,
     project_root: &RelativeOperationPath,
 ) -> Result<RenderedClient, DiagnosticSet> {
+    render_client_at(plan, project_root, &project_root.join("src/dagger_client")?)
+}
+
+/// Renders one standalone client at an already reconciled library-adjacent root.
+pub fn render_client_at(
+    plan: &ClientBindingPlan,
+    project_root: &RelativeOperationPath,
+    client_root: &RelativeOperationPath,
+) -> Result<RenderedClient, DiagnosticSet> {
     validate_plan(plan)?;
-    let client_root = project_root.join("src/dagger_client")?;
     let generated_root = client_root.join("generated")?;
     let mut artifacts = BTreeMap::new();
     let top = render_top_module(plan)?;

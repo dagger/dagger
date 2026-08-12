@@ -19,7 +19,8 @@ use dagger_codegen::module::{
 use crate::canonical::canonical_bytes;
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::{
-    CandidateArtifact, OperationManifest, OperationRoot, RelativeOperationPath, Sha256Digest,
+    AmendmentCandidate, AmendmentCoordinate, CandidateArtifact, OperationManifest, OperationRoot,
+    RelativeOperationPath, Sha256Digest, semantic_amendment_digest,
 };
 
 static TRANSACTION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -29,6 +30,12 @@ static TRANSACTION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub struct OperationCandidate {
     /// Generated artifacts keyed by their normalized destination.
     pub artifacts: BTreeMap<RelativeOperationPath, CandidateArtifact>,
+    /// Complete authored-file candidates keyed by their semantic ownership coordinate.
+    pub amendments: BTreeMap<AmendmentCoordinate, AmendmentCandidate>,
+    /// New non-owned support files, such as an exact local toolchain declaration.
+    pub created_files: BTreeMap<RelativeOperationPath, Vec<u8>>,
+    /// Prior whole-file artifacts deliberately transferred to semantic ownership.
+    pub retained_previous_artifacts: BTreeSet<RelativeOperationPath>,
     /// Previously owned paths no longer present in the candidate.
     pub removed: BTreeSet<RelativeOperationPath>,
     /// Acyclic ownership record published after every artifact.
@@ -95,6 +102,13 @@ pub struct PublicationOutcome {
     pub changes: Vec<PublicationChange>,
 }
 
+/// One complete authored-file transaction used by initialization before any manifest exists.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthoredPublicationCandidate {
+    /// Complete file candidates paired with their discovery-time byte identity.
+    pub files: BTreeMap<RelativeOperationPath, (Option<Sha256Digest>, Vec<u8>)>,
+}
+
 /// Deterministic transaction checkpoints used by fault-injection tests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PublicationCheckpoint {
@@ -130,13 +144,23 @@ pub fn verify_ownership(
     previous: Option<&OperationManifest>,
     candidate: &OperationCandidate,
 ) -> Result<PublicationPlan, EngineDiagnostic> {
-    OperationRoot::validate_distinct(
-        candidate
-            .artifacts
-            .keys()
-            .chain(candidate.removed.iter())
-            .chain(std::iter::once(&candidate.manifest_path)),
-    )?;
+    let mut amended_files = BTreeMap::<RelativeOperationPath, Vec<u8>>::new();
+    validate_amendments(candidate, &mut amended_files)?;
+    let addressed = candidate
+        .artifacts
+        .keys()
+        .chain(amended_files.keys())
+        .chain(candidate.created_files.keys())
+        .chain(candidate.removed.iter())
+        .chain(std::iter::once(&candidate.manifest_path))
+        .collect::<Vec<_>>();
+    OperationRoot::validate_distinct(addressed.iter().copied())?;
+    let mut unique = BTreeSet::new();
+    for path in &addressed {
+        if !unique.insert(path.as_str()) {
+            return Err(stale(path.as_str(), "publication destinations overlap"));
+        }
+    }
     if candidate.artifacts.contains_key(&candidate.manifest_path)
         || candidate
             .manifest
@@ -204,6 +228,35 @@ pub fn verify_ownership(
                 ));
             }
         }
+        for (coordinate, record) in &previous.amendments {
+            if coordinate.file() != &record.file || coordinate.semantic_key() != &record.coordinate
+            {
+                return Err(stale(
+                    coordinate.file().as_str(),
+                    "prior semantic amendment coordinate is internally inconsistent",
+                ));
+            }
+            let current = root.read(&record.file).map_err(|_| {
+                stale(
+                    record.file.as_str(),
+                    "previously amended file is missing or not regular",
+                )
+            })?;
+            if semantic_amendment_digest(record.kind, &record.coordinate, &current).map_err(
+                |_| {
+                    stale(
+                        record.file.as_str(),
+                        "previously owned semantic value is no longer parseable",
+                    )
+                },
+            )? != record.semantic_digest
+            {
+                return Err(stale(
+                    record.file.as_str(),
+                    "previously owned semantic value changed after publication",
+                ));
+            }
+        }
     } else if root.exists(&candidate.manifest_path) {
         return Err(ownership(
             candidate.manifest_path.as_str(),
@@ -214,6 +267,26 @@ pub fn verify_ownership(
     let prior_paths: BTreeSet<RelativeOperationPath> = previous
         .map(|manifest| manifest.artifacts.keys().cloned().collect())
         .unwrap_or_default();
+    if !candidate
+        .retained_previous_artifacts
+        .is_subset(&prior_paths)
+    {
+        return Err(stale(
+            "operation-candidate.retained-previous-artifacts",
+            "baseline migration retained a path without prior whole-file authority",
+        ));
+    }
+    if previous.is_some_and(|manifest| {
+        !manifest
+            .amendments
+            .keys()
+            .all(|coordinate| candidate.amendments.contains_key(coordinate))
+    }) {
+        return Err(stale(
+            "operation-manifest.amendments",
+            "semantic ownership cannot be silently discarded during regeneration",
+        ));
+    }
     let mut writes = BTreeMap::new();
     let mut changes = Vec::new();
     for (path, artifact) in &candidate.artifacts {
@@ -238,9 +311,101 @@ pub fn verify_ownership(
             kind,
         });
     }
+    for (path, content) in amended_files {
+        let candidates = candidate
+            .amendments
+            .iter()
+            .filter(|(coordinate, _)| coordinate.file() == &path)
+            .map(|(_, amendment)| amendment)
+            .collect::<Vec<_>>();
+        let prior_file_digest = candidates
+            .first()
+            .and_then(|amendment| amendment.prior_file_digest.as_ref());
+        if candidates
+            .iter()
+            .any(|amendment| amendment.prior_file_digest.as_ref() != prior_file_digest)
+        {
+            return Err(stale(
+                path.as_str(),
+                "semantic amendments disagree on their authored-file snapshot",
+            ));
+        }
+        let current = if root.exists(&path) {
+            Some(root.read(&path)?)
+        } else {
+            None
+        };
+        if current.as_deref().map(digest).as_ref() != prior_file_digest {
+            return Err(stale(
+                path.as_str(),
+                "authored file changed after project reconciliation",
+            ));
+        }
+        for (coordinate, amendment) in candidate
+            .amendments
+            .iter()
+            .filter(|(coordinate, _)| coordinate.file() == &path)
+        {
+            let previous_record = previous.and_then(|manifest| manifest.amendments.get(coordinate));
+            if let Some(record) = previous_record {
+                if amendment.prior_semantic_digest.as_ref() != Some(&record.semantic_digest) {
+                    return Err(stale(
+                        path.as_str(),
+                        "amendment candidate was not based on the previously owned value",
+                    ));
+                }
+            } else if let Some(prior) = &amendment.prior_semantic_digest {
+                let Some(current) = &current else {
+                    return Err(stale(
+                        path.as_str(),
+                        "amendment claims a missing prior value",
+                    ));
+                };
+                if semantic_amendment_digest(amendment.kind, coordinate.semantic_key(), current)
+                    .map_err(|_| {
+                        stale(
+                            path.as_str(),
+                            "amendment prior semantic value is no longer parseable",
+                        )
+                    })?
+                    != *prior
+                {
+                    return Err(stale(
+                        path.as_str(),
+                        "amendment prior semantic value is stale",
+                    ));
+                }
+            }
+        }
+        let kind = if current.is_some() {
+            if current.as_deref() == Some(content.as_slice()) {
+                continue;
+            }
+            PublicationChangeKind::Change
+        } else {
+            PublicationChangeKind::Add
+        };
+        writes.insert(path.clone(), content);
+        changes.push(PublicationChange { path, kind });
+    }
+    for (path, content) in &candidate.created_files {
+        if root.exists(path) {
+            return Err(ownership(
+                path.as_str(),
+                "unknown bytes occupy a project support-file destination",
+            ));
+        }
+        writes.insert(path.clone(), content.clone());
+        changes.push(PublicationChange {
+            path: path.clone(),
+            kind: PublicationChangeKind::Add,
+        });
+    }
     let mut removals = BTreeSet::new();
     for path in prior_paths {
-        if !candidate.artifacts.contains_key(&path) {
+        if !candidate.artifacts.contains_key(&path)
+            && !candidate.retained_previous_artifacts.contains(&path)
+        {
             removals.insert(path.clone());
             changes.push(PublicationChange {
                 path,
@@ -268,6 +433,117 @@ pub fn verify_ownership(
         manifest_bytes,
         changes,
     })
+}
+
+/// Verifies a manifest-free authored-file transaction.
+///
+/// One changed path is used as the journal's final visibility barrier; it does not
+/// become a control manifest or acquire whole-file ownership. This reuses the same
+/// staging, backup, flush, and rollback machinery without inventing initialization
+/// provenance that does not exist yet.
+pub fn verify_authored_publication(
+    root: &OperationRoot,
+    candidate: &AuthoredPublicationCandidate,
+) -> Result<Option<PublicationPlan>, EngineDiagnostic> {
+    OperationRoot::validate_distinct(candidate.files.keys())?;
+    let mut writes = BTreeMap::new();
+    let mut changes = Vec::new();
+    for (path, (prior_digest, content)) in &candidate.files {
+        let current = root.exists(path).then(|| root.read(path)).transpose()?;
+        if current.as_deref().map(digest).as_ref() != prior_digest.as_ref() {
+            return Err(stale(
+                path.as_str(),
+                "authored project file changed after initialization planning",
+            ));
+        }
+        if current.as_deref() == Some(content.as_slice()) {
+            continue;
+        }
+        changes.push(PublicationChange {
+            path: path.clone(),
+            kind: if current.is_some() {
+                PublicationChangeKind::Change
+            } else {
+                PublicationChangeKind::Add
+            },
+        });
+        writes.insert(path.clone(), content.clone());
+    }
+    let Some((barrier_path, barrier_bytes)) = writes.pop_last() else {
+        return Ok(None);
+    };
+    Ok(Some(PublicationPlan {
+        writes,
+        removals: BTreeSet::new(),
+        manifest_path: barrier_path,
+        manifest_bytes: barrier_bytes,
+        changes,
+    }))
+}
+
+fn validate_amendments(
+    candidate: &OperationCandidate,
+    amended_files: &mut BTreeMap<RelativeOperationPath, Vec<u8>>,
+) -> Result<(), EngineDiagnostic> {
+    if candidate.amendments.len() != candidate.manifest.amendments.len() {
+        return Err(stale(
+            "operation-manifest.amendments",
+            "candidate and operation manifest own different semantic amendment sets",
+        ));
+    }
+    for (coordinate, amendment) in &candidate.amendments {
+        let Some(record) = candidate.manifest.amendments.get(coordinate) else {
+            return Err(stale(
+                coordinate.file().as_str(),
+                "semantic amendment has no manifest authority",
+            ));
+        };
+        if record.kind != amendment.kind
+            || record.file != *coordinate.file()
+            || record.coordinate != *coordinate.semantic_key()
+            || record.semantic_digest != amendment.next_semantic_digest
+            || semantic_amendment_digest(
+                amendment.kind,
+                coordinate.semantic_key(),
+                &amendment.complete_file_bytes,
+            )
+            .map_err(|_| {
+                stale(
+                    coordinate.file().as_str(),
+                    "semantic amendment candidate is not parseable",
+                )
+            })? != amendment.next_semantic_digest
+        {
+            return Err(stale(
+                coordinate.file().as_str(),
+                "semantic amendment differs from its manifest record",
+            ));
+        }
+        match amended_files.get(coordinate.file()) {
+            Some(bytes) if bytes != &amendment.complete_file_bytes => {
+                return Err(stale(
+                    coordinate.file().as_str(),
+                    "semantic amendments for one file propose different complete bytes",
+                ));
+            }
+            Some(_) => {}
+            None => {
+                amended_files.insert(
+                    coordinate.file().clone(),
+                    amendment.complete_file_bytes.clone(),
+                );
+            }
+        }
+    }
+    for retained in &candidate.retained_previous_artifacts {
+        if candidate.artifacts.contains_key(retained) || !amended_files.contains_key(retained) {
+            return Err(stale(
+                retained.as_str(),
+                "retained baseline artifact must transfer to semantic amendment ownership",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Validates generated-module ownership and computes a manifest-last transaction.

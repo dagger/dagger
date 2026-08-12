@@ -256,6 +256,9 @@ fn publication_setup(seed: u8) -> PublicationSetup {
     )]);
     let candidate = OperationCandidate {
         artifacts,
+        amendments: BTreeMap::new(),
+        created_files: BTreeMap::new(),
+        retained_previous_artifacts: BTreeSet::new(),
         removed: BTreeSet::from([obsolete_path]),
         manifest,
         manifest_path: manifest_path.clone(),

@@ -4,4 +4,5 @@
 //! identities. It neither receives module references nor gains filesystem, Cargo,
 //! process, network, session, or engine authority through this module.
 
+pub mod initialization;
 pub mod project;

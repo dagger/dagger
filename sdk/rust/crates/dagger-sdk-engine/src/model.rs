@@ -226,6 +226,9 @@ pub struct ExecutionResult {
     pub kind: ExecutionResultKind,
     /// Confined result subtree selected by the adapter.
     pub output_root: RelativeOperationPath,
+    /// Exact operation-relative paths changed by a completed request.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub touched_paths: BTreeSet<RelativeOperationPath>,
     /// Durable generation manifest, absent for initialization-only changes.
     pub operation_manifest: Option<RelativeOperationPath>,
     /// Explicit generated VCS paths returned to the engine.

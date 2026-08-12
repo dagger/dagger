@@ -17,8 +17,8 @@ pub use metadata::{
     BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata, REQUIRED_CLIENT_HOST_FILES,
 };
 pub use model::{
-    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ContentDomain,
-    ModuleAuthoringInput, ModuleProjectionInput, OperationKind, OperationPlan,
+    CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ClientRenderIdentity,
+    ContentDomain, ModuleAuthoringInput, ModuleProjectionInput, OperationKind, OperationPlan,
     OperationProjectionRequest, PostWorkPlan, PublishedSdkDependency, RelativeOperationPath,
 };
 pub use renderers::{
@@ -34,13 +34,32 @@ use crate::diagnostic::DiagnosticSet;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProductionRenderers {
     client_generation: ClientGenerationMetadata,
+    client_project: Option<crate::client::ClientProjectIdentity>,
+    generated_client_root: Option<RelativeOperationPath>,
 }
 
 impl ProductionRenderers {
     /// Creates production renderers from validated required-host-file metadata.
     #[must_use]
     pub const fn new(client_generation: ClientGenerationMetadata) -> Self {
-        Self { client_generation }
+        Self {
+            client_generation,
+            client_project: None,
+            generated_client_root: None,
+        }
+    }
+
+    /// Binds standalone-client rendering to an already discovered Cargo identity.
+    #[must_use]
+    pub fn for_client(
+        project: crate::client::ClientProjectIdentity,
+        generated_client_root: RelativeOperationPath,
+    ) -> Self {
+        Self {
+            client_generation: ClientGenerationMetadata::baseline(),
+            client_project: Some(project),
+            generated_client_root: Some(generated_client_root),
+        }
     }
 
     /// Returns the baseline renderer configuration packaged by this checkpoint.
@@ -63,7 +82,12 @@ impl OperationRenderer for ProductionRenderers {
     }
 
     fn render_client(&self, input: ClientRenderInput<'_>) -> Result<RendererOutput, DiagnosticSet> {
-        client::render(input, &self.client_generation)
+        client::render(
+            input,
+            &self.client_generation,
+            self.client_project.as_ref(),
+            self.generated_client_root.as_ref(),
+        )
     }
 
     fn render_entrypoint(

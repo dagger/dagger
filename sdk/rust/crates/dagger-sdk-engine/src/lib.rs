@@ -36,7 +36,12 @@ pub use checkpoint::{
     DeferredSignoffException, ForbiddenCheckpointBoundary, ModuleProperty, PublicCheckpointPackage,
     RustGoAbiPackage, plan_checkpoint, record_checkpoint,
 };
-pub use client::project::{ClientProjectIdentityRequest, select_client_project_identity};
+pub use client::initialization::{execute_client_initialization, plan_client_initialization};
+pub use client::project::{
+    AmendmentCandidate, AuthoredFile, ClientDocumentationState, ClientProjectIdentityRequest,
+    ClientProjectPlan, ClientProjectRequest, ClientProjectSnapshot, discover_client_project,
+    reconcile_client_project, select_client_project_identity, semantic_amendment_digest,
+};
 pub use dagger_codegen::client::{CargoPackageName, RustIdentifier};
 pub use diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 pub use model::*;
