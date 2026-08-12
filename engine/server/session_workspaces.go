@@ -429,31 +429,38 @@ const (
 
 const maxParallelModuleResolves = 8
 
+// loadWorkspaceConfig parses the workspace config and returns the keys the file
+// spells out alongside it. Merging an included config needs that presence information,
+// and re-reading the file to compute it later would be a second host round trip.
 func loadWorkspaceConfig(
 	ctx context.Context,
 	readFile func(context.Context, string) ([]byte, error),
 	ws *workspace.Workspace,
-) (*workspace.Config, error) {
+) (*workspace.Config, map[string]bool, error) {
 	if ws.ConfigFile == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	configPath := filepath.Join(ws.Root, ws.ConfigFile)
 	data, err := readFile(ctx, configPath)
 	if err != nil {
 		if isWorkspaceNotFound(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
+		return nil, nil, fmt.Errorf("reading workspace config %s: %w", configPath, err)
 	}
 
 	cfg, err := workspace.ParseConfig(data)
 	if err != nil {
-		return nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
+		return nil, nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
 	}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
-	return cfg, nil
+	explicitKeys, err := workspace.ExplicitConfigKeys(data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing workspace config %s: %w", configPath, err)
+	}
+	return cfg, explicitKeys, nil
 }
 
 func workspaceConfigPendingModules(
@@ -627,8 +634,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	var wsConfig *workspace.Config
+	var wsConfigKeys map[string]bool
 	if ws != nil && ws.ConfigFile != "" {
-		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
+		wsConfig, wsConfigKeys, err = loadWorkspaceConfig(ctx, readFile, ws)
 		if err != nil {
 			return err
 		}
@@ -720,6 +728,24 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	if !loadModules {
 		return nil
+	}
+
+	// An included config is the bottom layer: it applies before the user-level
+	// overlay and the env overlay, so the current workspace always wins.
+	//
+	// Resolving here, after client.workspace is set, is what makes a git
+	// include's pin land in this workspace's dagger.lock: the lock binding
+	// reads the client's workspace.
+	includeSource := core.IncludeSource{
+		Dag:       client.dag,
+		ConfigDir: filepath.Dir(ws.ConfigFile),
+		ReadWorkspaceFile: func(ctx context.Context, wsPath string) ([]byte, error) {
+			return readFile(ctx, filepath.Join(ws.Root, wsPath))
+		},
+	}
+	wsConfig, err = core.ApplyIncludes(ctx, includeSource, wsConfig, wsConfigKeys)
+	if err != nil {
+		return err
 	}
 
 	// User-level overrides merge over the repository config before any env
