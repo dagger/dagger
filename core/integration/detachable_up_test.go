@@ -34,6 +34,51 @@ func TestDetachableUp(t *testing.T) {
 	})).RunTests(DetachableUpSuite{})
 }
 
+func TestNormalizeOrdinaryUpTranscript(t *testing.T) {
+	t.Parallel()
+
+	t.Run("dropped percentage", func(t *testing.T) {
+		require.Equal(t,
+			"✔ Workspace.services: UpGroup! <duration>",
+			normalizeOrdinaryUpTranscript(
+				"\x1b[32m✔ Workspace.services: UpGroup! 1.2s (3.4% dropped)\x1b[0m\n",
+				nil,
+			),
+		)
+	})
+
+	t.Run("unknown semantic output", func(t *testing.T) {
+		require.Equal(t,
+			"WARNING unexpected top-level output\n│ WARNING unexpected nested output",
+			normalizeOrdinaryUpTranscript(
+				"WARNING unexpected top-level output\n│ WARNING unexpected nested output\n",
+				nil,
+			),
+		)
+	})
+
+	t.Run("optional readiness retries only", func(t *testing.T) {
+		const input = `[42103/tcp] 19:48:30 WRN port not ready host=fixture error="connection refused"
+[42103/tcp] 19:48:31 WRN port not ready host=fixture error="connection refused"
+[42103/tcp] 19:48:31 WRN unexpected readiness warning
+[42103/tcp] 19:48:32 INF port is healthy host=fixture
+`
+		require.Equal(t, `[<native-port>/tcp] 19:48:31 WRN unexpected readiness warning
+[<native-port>/tcp] backend is healthy`, normalizeOrdinaryUpTranscript(input, map[string]string{
+			"42103": "<native-port>",
+		}))
+	})
+
+	t.Run("known effects and sibling ordering", func(t *testing.T) {
+		const input = `  ✔ 1 upload, 1 unpack 0.8s
+╰╴✔ delayed-fixture:delayed:preflight 0.2s
+├╴✔ delayed-fixture:delayed 0.3s
+`
+		require.Equal(t, `• ✔ delayed-fixture:delayed <duration>
+• ✔ delayed-fixture:delayed:preflight <duration>`, normalizeOrdinaryUpTranscript(input, nil))
+	})
+}
+
 func (DetachableUpSuite) TestDetachExposeStopAndTerminate(ctx context.Context, t *testctx.T) {
 	nativePort := reserveDetachableUpPort(t)
 	fixedBackend := reserveDetachableUpPort(t)
@@ -166,18 +211,6 @@ func (DetachableUpSuite) TestDetachExposeStopAndTerminate(ctx context.Context, t
 }
 
 func (DetachableUpSuite) TestAttachedUpBehaviorUnchanged(ctx context.Context, t *testctx.T) {
-	t.Run("normalizer preserves unknown output", func(_ context.Context, t *testctx.T) {
-		input := "\x1b[32m✔ Workspace.services: UpGroup! 1.2s (3.4% dropped)\x1b[0m\n" +
-			"  ✔ 1 upload, 1 unpack 0.8s\n" +
-			"WARNING unexpected semantic output\n" +
-			"╰╴✔ delayed-fixture:delayed:preflight 0.2s\n" +
-			"├╴✔ delayed-fixture:delayed 0.3s\n"
-		require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
-WARNING unexpected semantic output
-• ✔ delayed-fixture:delayed <duration>
-• ✔ delayed-fixture:delayed:preflight <duration>`, normalizeOrdinaryUpTranscript(input, nil))
-	})
-
 	t.Run("success interrupt", func(ctx context.Context, t *testctx.T) {
 		port := reserveDetachableUpPort(t)
 		workspace := writeDetachableUpDelayedModule(t, port, 0)
@@ -201,8 +234,47 @@ WARNING unexpected semantic output
 			}
 		})
 
-		requireDetachableUpHTTP(t, port, "delayed")
-		require.NoError(t, cmd.Process.Signal(os.Interrupt))
+		readyDone := make(chan error, 1)
+		go func() {
+			readyDone <- waitDetachableUpHTTP(commandCtx, port, "delayed")
+		}()
+		select {
+		case waitErr := <-waitDone:
+			finished = true
+			cancel()
+			t.Fatalf(
+				"attached up exited before HTTP readiness: %s\nstdout:\n%s\nstderr:\n%s",
+				detachableUpWaitResult(waitErr), stdout.String(), stderr.String(),
+			)
+		case readyErr := <-readyDone:
+			if readyErr != nil {
+				cancel()
+				waitErr := <-waitDone
+				finished = true
+				t.Fatalf(
+					"attached up did not become HTTP-ready: %v; %s\nstdout:\n%s\nstderr:\n%s",
+					readyErr, detachableUpWaitResult(waitErr), stdout.String(), stderr.String(),
+				)
+			}
+		}
+		select {
+		case waitErr := <-waitDone:
+			finished = true
+			cancel()
+			t.Fatalf(
+				"attached up exited as HTTP readiness completed: %s\nstdout:\n%s\nstderr:\n%s",
+				detachableUpWaitResult(waitErr), stdout.String(), stderr.String(),
+			)
+		default:
+		}
+		if signalErr := cmd.Process.Signal(os.Interrupt); signalErr != nil {
+			waitErr := <-waitDone
+			finished = true
+			t.Fatalf(
+				"attached up exited before interrupt (%v): %s\nstdout:\n%s\nstderr:\n%s",
+				signalErr, detachableUpWaitResult(waitErr), stdout.String(), stderr.String(),
+			)
+		}
 		var waitErr error
 		select {
 		case waitErr = <-waitDone:
@@ -216,7 +288,9 @@ WARNING unexpected semantic output
 ∅ .run: UpGroup! <duration>
 ! context canceled
 • ✔ delayed-fixture:delayed <duration>
-• ✔ delayed-fixture:delayed:preflight <duration>`, normalizeOrdinaryUpTranscript(stderr.String(), nil))
+• ✔ delayed-fixture:delayed:preflight <duration>`, normalizeOrdinaryUpTranscript(stderr.String(), map[string]string{
+			strconv.Itoa(port): "<native-port>",
+		}))
 		require.Eventually(t, func() bool {
 			return !detachableUpPortAccepts(port)
 		}, 15*time.Second, 100*time.Millisecond)
@@ -244,7 +318,6 @@ WARNING unexpected semantic output
 ✘ .run: UpGroup! <duration> ERROR
 ┇ delayed-fixture:delayed ›
 ✘ delayed-fixture:delayed :<native-port> <duration> ERROR
-[<native-port>/tcp] backend readiness retried
 [<native-port>/tcp] backend is healthy
 ! failed to start service: host to container: failed to receive listen response: rpc error: code = Unknown desc = listen tcp 0.0.0.0:<native-port>: bind: address already in use`, normalizeOrdinaryUpTranscript(errorStderr.String(), map[string]string{
 			strconv.Itoa(port): "<native-port>",
@@ -265,7 +338,6 @@ func normalizeOrdinaryUpTranscript(output string, replacements map[string]string
 	lines := strings.Split(output, "\n")
 	normalized := make([]string, 0, len(lines))
 	serviceLines := make([]string, 0, len(lines))
-	readinessRetried := false
 	for _, line := range lines {
 		line = strings.TrimRight(line, " \t\r")
 		if strings.TrimSpace(line) == "" || ordinaryUpEffectSummaryRE.MatchString(line) {
@@ -275,10 +347,6 @@ func normalizeOrdinaryUpTranscript(output string, replacements map[string]string
 			line = strings.ReplaceAll(line, from, to)
 		}
 		if ordinaryUpPortRetryRE.MatchString(line) {
-			if !readinessRetried {
-				normalized = append(normalized, "[<native-port>/tcp] backend readiness retried")
-				readinessRetried = true
-			}
 			continue
 		}
 		if ordinaryUpPortHealthyRE.MatchString(line) {
@@ -1270,6 +1338,16 @@ func detachableUpExitCode(t testing.TB, err error) int {
 	return exitErr.ExitCode()
 }
 
+func detachableUpWaitResult(err error) string {
+	if err == nil {
+		return "exit 0"
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return fmt.Sprintf("exit %d (%v)", exitErr.ExitCode(), err)
+	}
+	return fmt.Sprintf("wait error %T (%v)", err, err)
+}
+
 func inspectDetachableUpSession(
 	ctx context.Context,
 	t testing.TB,
@@ -1327,6 +1405,44 @@ func requireDetachableUpHTTP(t testing.TB, port int, expected string) {
 		body, err := io.ReadAll(response.Body)
 		return err == nil && string(body) == expected
 	}, 30*time.Second, 100*time.Millisecond)
+}
+
+func waitDetachableUpHTTP(ctx context.Context, port int, expected string) error {
+	client := &http.Client{Timeout: time.Second}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		request, err := http.NewRequestWithContext(
+			ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d", port), nil,
+		)
+		if err != nil {
+			return err
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			lastErr = err
+		} else {
+			body, readErr := io.ReadAll(response.Body)
+			closeErr := response.Body.Close()
+			switch {
+			case readErr != nil:
+				lastErr = readErr
+			case closeErr != nil:
+				lastErr = closeErr
+			case string(body) != expected:
+				lastErr = fmt.Errorf("unexpected response body %q", body)
+			default:
+				return nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("HTTP readiness ended: %w (last probe: %v)", context.Cause(ctx), lastErr)
+		case <-ticker.C:
+		}
+	}
 }
 
 func detachableUpPortAccepts(port int) bool {
