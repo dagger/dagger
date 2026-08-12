@@ -17,7 +17,7 @@ func TestSessionsCommandTree(t *testing.T) {
 	t.Parallel()
 	cmd := newSessionsCommand()
 	require.Equal(t, "sessions", cmd.Name())
-	for _, name := range []string{"list", "inspect", "attach", "terminate"} {
+	for _, name := range []string{"list", "inspect", "attach", "expose", "terminate"} {
 		child, _, err := cmd.Find([]string{name})
 		require.NoError(t, err)
 		require.Equal(t, name, child.Name())
@@ -34,28 +34,56 @@ func TestSessionsCommandTree(t *testing.T) {
 	attach, _, err := cmd.Find([]string{"attach"})
 	require.NoError(t, err)
 	require.Equal(t, "true", attach.Annotations[showFinalProgressKey])
+	expose, _, err := cmd.Find([]string{"expose"})
+	require.NoError(t, err)
+	for _, flag := range []string{"port", "replace", "stop"} {
+		require.NotNil(t, expose.Flags().Lookup(flag))
+	}
 }
 
 func TestSessionListAndInspectOutput(t *testing.T) {
 	t.Parallel()
 	created := time.Date(2026, 8, 5, 14, 3, 12, 0, time.UTC)
+	backendKey := engine.SessionServiceKey{Digest: "backend", SessionID: testCLIValidSessionID(), RuntimeKind: "container"}
 	descriptor := engine.SessionDescriptor{
 		ID: testCLIValidSessionID(), State: engine.SessionStateDetached, CreatedAt: created,
 		Query: &engine.SessionQuery{
-			ID: "qry_aaaaaaaaaaaaaaaaaaaaaaaaaa", Status: engine.SessionQueryStateRunning,
+			ID: "qry_aaaaaaaaaaaaaaaaaaaaaaaaaa", Status: engine.SessionQueryStateSucceeded,
+			Presentation: engine.QueryPresentation{Kind: "up"},
+		},
+		Attachment: &engine.SessionAttachment{ID: "att_aaaaaaaaaaaaaaaaaaaaaaaaaa", ClientID: "publisher", Hostname: "erikbox"},
+		Services: []engine.SessionService{
+			{
+				Key: backendKey, Names: []string{"web"}, Kind: "container", Retained: true,
+				Ports: []engine.SessionPort{{Port: 80, Protocol: "TCP"}},
+			},
+			{
+				Key:  engine.SessionServiceKey{Digest: "tunnel", SessionID: testCLIValidSessionID(), RuntimeKind: "tunnel", ClientID: "publisher"},
+				Kind: "tunnel", TunnelUpstream: &backendKey,
+				OwnerClientID: "publisher", OwnerClientHostname: "erikbox",
+				Ports: []engine.SessionPort{{Port: 8080, Protocol: "TCP"}},
+			},
 		},
 	}
 	var output bytes.Buffer
 	require.NoError(t, writeSessionsTable(&output, []engine.SessionDescriptor{descriptor}))
 	require.Contains(t, output.String(), descriptor.ID)
 	require.Contains(t, output.String(), "detached")
-	require.Contains(t, output.String(), "running")
+	require.Contains(t, output.String(), "succeeded")
+	require.Contains(t, output.String(), "SERVICES")
+	require.Contains(t, output.String(), "PORTS")
+	require.Contains(t, output.String(), "1          1")
 
 	output.Reset()
 	require.NoError(t, writeSessionInspect(&output, descriptor))
 	require.Contains(t, output.String(), "ID")
 	require.Contains(t, output.String(), "State")
-	require.Contains(t, output.String(), "Attached   -")
+	require.Contains(t, output.String(), "Attached   att_aaaaaaaaaaaaaaaaaaaaaaaaaa (publisher on erikbox)")
+	require.Contains(t, output.String(), "qry_aaaaaaaaaaaaaaaaaaaaaaaaaa (up, succeeded)")
+	require.Contains(t, output.String(), "Services")
+	require.Contains(t, output.String(), "web   container   running   declared 80/tcp")
+	require.Contains(t, output.String(), "Published ports")
+	require.Contains(t, output.String(), "0.0.0.0:8080/tcp   → web   (served from erikbox)")
 }
 
 func TestSessionsHelpJSONAndEmptyOutput(t *testing.T) {
@@ -66,13 +94,13 @@ func TestSessionsHelpJSONAndEmptyOutput(t *testing.T) {
 	cmd.SetErr(&help)
 	cmd.SetArgs([]string{"--help"})
 	require.NoError(t, cmd.Execute())
-	for _, expected := range []string{"Manage detachable sessions", "list", "inspect", "attach", "terminate"} {
+	for _, expected := range []string{"Manage detachable sessions", "list", "inspect", "attach", "expose", "terminate"} {
 		require.Contains(t, help.String(), expected)
 	}
 
 	var empty bytes.Buffer
 	require.NoError(t, writeSessionsTable(&empty, nil))
-	require.Equal(t, "ID   STATE   QUERY   STATUS   CREATED   ATTACHED\n", empty.String())
+	require.Equal(t, "ID   STATE   QUERY   STATUS   SERVICES   PORTS   CREATED   ATTACHED\n", empty.String())
 
 	descriptor := engine.SessionDescriptor{
 		ID: testCLIValidSessionID(), State: engine.SessionStateDetached,

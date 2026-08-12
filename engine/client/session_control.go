@@ -166,8 +166,31 @@ func (client *ControlClient) TerminateSession(ctx context.Context, sessionID str
 	return client.client.sessionJSON(ctx, http.MethodDelete, path, nil, http.StatusNoContent, nil)
 }
 
+func (client *ControlClient) InspectPrimaryQuery(ctx context.Context, sessionID string) (engine.SessionQuery, error) {
+	if err := engine.ValidateSessionID(sessionID); err != nil {
+		return engine.SessionQuery{}, err
+	}
+	return client.client.inspectPrimaryQuery(ctx, sessionID)
+}
+
+func (client *ControlClient) PrimaryQueryResult(ctx context.Context, sessionID string) (SessionResult, error) {
+	if err := engine.ValidateSessionID(sessionID); err != nil {
+		return SessionResult{}, err
+	}
+	return client.client.primaryQueryResult(ctx, sessionID)
+}
+
 func (c *Client) AttachmentID() string {
 	return c.attachmentID
+}
+
+func (c *Client) InspectSession(ctx context.Context) (engine.SessionDescriptor, error) {
+	var descriptor engine.SessionDescriptor
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID)
+	if err := c.sessionJSON(ctx, http.MethodGet, path, nil, http.StatusOK, &descriptor); err != nil {
+		return engine.SessionDescriptor{}, err
+	}
+	return descriptor, nil
 }
 
 func (c *Client) CloseAttachment(ctx context.Context) error {
@@ -220,8 +243,12 @@ func (c *Client) DetachedQueryAcknowledged() bool {
 }
 
 func (c *Client) InspectPrimaryQuery(ctx context.Context) (engine.SessionQuery, error) {
+	return c.inspectPrimaryQuery(ctx, c.SessionID)
+}
+
+func (c *Client) inspectPrimaryQuery(ctx context.Context, sessionID string) (engine.SessionQuery, error) {
 	var query engine.SessionQuery
-	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID) + "/queries/primary"
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(sessionID) + "/queries/primary"
 	if err := c.sessionJSON(ctx, http.MethodGet, path, nil, http.StatusOK, &query); err != nil {
 		return engine.SessionQuery{}, err
 	}
@@ -235,7 +262,11 @@ type SessionResult struct {
 }
 
 func (c *Client) PrimaryQueryResult(ctx context.Context) (SessionResult, error) {
-	path := engine.SessionsEndpoint + "/" + url.PathEscape(c.SessionID) + "/queries/primary/result"
+	return c.primaryQueryResult(ctx, c.SessionID)
+}
+
+func (c *Client) primaryQueryResult(ctx context.Context, sessionID string) (SessionResult, error) {
+	path := engine.SessionsEndpoint + "/" + url.PathEscape(sessionID) + "/queries/primary/result"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://dagger"+path, nil)
 	if err != nil {
 		return SessionResult{}, err

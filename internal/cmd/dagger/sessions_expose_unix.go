@@ -63,7 +63,8 @@ func inspectLocalExpose(ctx context.Context, paths exposePaths) (*os.File, *expo
 		}
 
 		response, err := exchangeExposeControl(ctx, paths.Socket, exposeControlRequest{Action: exposeControlStatus})
-		if err == nil && response.Status != nil {
+		if err == nil && response.Status != nil &&
+			(response.Status.State == exposeStateStarting || response.Status.State == exposeStateReady) {
 			return nil, response.Status, nil
 		}
 		if err := waitExposeRetry(ctx); err != nil {
@@ -112,14 +113,22 @@ func exchangeExposeControl(
 }
 
 func stopLocalExpose(ctx context.Context, paths exposePaths) error {
+	lock, err := stopAndAcquireLocalExpose(ctx, paths)
+	if err != nil {
+		return err
+	}
+	cleanupErr := cleanupExposeState(paths)
+	return errors.Join(cleanupErr, lock.Close())
+}
+
+func stopAndAcquireLocalExpose(ctx context.Context, paths exposePaths) (*os.File, error) {
 	for {
 		lock, status, err := inspectLocalExpose(ctx, paths)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if lock != nil {
-			cleanupErr := cleanupExposeState(paths)
-			return errors.Join(cleanupErr, lock.Close())
+			return lock, nil
 		}
 		if status == nil {
 			continue

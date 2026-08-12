@@ -20,6 +20,10 @@ func stopLocalExpose(context.Context, exposePaths) error {
 	return errExposeWindowsUnsupported
 }
 
+func stopAndAcquireLocalExpose(context.Context, exposePaths) (*os.File, error) {
+	return nil, errExposeWindowsUnsupported
+}
+
 func spawnExposeServer(context.Context, exposeServerConfig, exposePaths, *os.File) (*exposeStartup, error) {
 	return nil, errExposeWindowsUnsupported
 }

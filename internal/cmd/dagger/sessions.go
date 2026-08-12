@@ -32,6 +32,7 @@ func newSessionsCommand() *cobra.Command {
 		newSessionsListCommand(),
 		newSessionsInspectCommand(),
 		newSessionsAttachCommand(),
+		newSessionsExposeCommand(),
 		newSessionsTerminateCommand(),
 	)
 	return cmd
@@ -209,6 +210,18 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 		attachParams.OnAttachWait = printAttachmentWaitMessage
 		observer, err := client.Connect(ctx, attachParams)
 		if err != nil {
+			var protocolErr *client.SessionProtocolError
+			if errors.As(err, &protocolErr) && protocolErr.Code == engine.SessionErrorAlreadyAttached &&
+				descriptor.Attachment != nil && sessionPortCount(descriptor) > 0 {
+				hostname := descriptor.Attachment.Hostname
+				if hostname == "" {
+					hostname = descriptor.Attachment.ClientID
+				}
+				return cleanup.Run, fmt.Errorf(
+					"ports are being served from %s; see dagger sessions inspect %s: %w",
+					hostname, sessionID, err,
+				)
+			}
 			return cleanup.Run, err
 		}
 		cleanup.Add("close session attachment", observer.Close)
@@ -310,7 +323,7 @@ func writeSessionsJSON(w io.Writer, value any) error {
 
 func writeSessionsTable(w io.Writer, sessions []engine.SessionDescriptor) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	fmt.Fprintln(tw, "ID\tSTATE\tQUERY\tSTATUS\tCREATED\tATTACHED")
+	fmt.Fprintln(tw, "ID\tSTATE\tQUERY\tSTATUS\tSERVICES\tPORTS\tCREATED\tATTACHED")
 	for _, descriptor := range sessions {
 		queryID, status := "-", "-"
 		if descriptor.Query != nil {
@@ -320,8 +333,9 @@ func writeSessionsTable(w io.Writer, sessions []engine.SessionDescriptor) error 
 		if descriptor.Attachment != nil {
 			attached = descriptor.Attachment.ID
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			descriptor.ID, descriptor.State, queryID, status,
+		serviceCount, portCount := sessionServiceCount(descriptor), sessionPortCount(descriptor)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
+			descriptor.ID, descriptor.State, queryID, status, serviceCount, portCount,
 			descriptor.CreatedAt.UTC().Format(time.RFC3339), attached)
 	}
 	return tw.Flush()
@@ -329,21 +343,84 @@ func writeSessionsTable(w io.Writer, sessions []engine.SessionDescriptor) error 
 
 func writeSessionInspect(w io.Writer, descriptor engine.SessionDescriptor) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	queryID, status := "-", "-"
+	query := "-"
 	if descriptor.Query != nil {
-		queryID, status = descriptor.Query.ID, string(descriptor.Query.Status)
+		presentation := descriptor.Query.Presentation.Kind
+		if presentation == "" {
+			presentation = "unknown"
+		}
+		query = fmt.Sprintf("%s (%s, %s)", descriptor.Query.ID, presentation, descriptor.Query.Status)
 	}
 	attached := "-"
 	if descriptor.Attachment != nil {
 		attached = descriptor.Attachment.ID
+		if descriptor.Attachment.Hostname != "" {
+			attached = fmt.Sprintf("%s (%s on %s)", attached, descriptor.Attachment.ClientID, descriptor.Attachment.Hostname)
+		}
 	}
 	rows := [][2]string{
 		{"ID", descriptor.ID}, {"State", string(descriptor.State)},
-		{"Query", queryID}, {"Status", status},
+		{"Query", query},
 		{"Created", descriptor.CreatedAt.UTC().Format(time.RFC3339)}, {"Attached", attached},
 	}
 	for _, row := range rows {
 		fmt.Fprintf(tw, "%s\t%s\n", row[0], strings.TrimSpace(row[1]))
 	}
+	fmt.Fprintln(tw, "Services")
+	for _, service := range descriptor.Services {
+		if !service.Retained || len(service.Names) == 0 {
+			continue
+		}
+		ports := make([]string, 0, len(service.Ports))
+		for _, port := range service.Ports {
+			ports = append(ports, fmt.Sprintf("%d/%s", port.Port, strings.ToLower(port.Protocol)))
+		}
+		fmt.Fprintf(tw, "  %s\t%s\trunning\tdeclared %s\n",
+			strings.Join(service.Names, ","), service.Kind, strings.Join(ports, ", "))
+	}
+	fmt.Fprintln(tw, "Published ports")
+	namesByKey := map[engine.SessionServiceKey][]string{}
+	for _, service := range descriptor.Services {
+		if service.Retained {
+			namesByKey[service.Key] = service.Names
+		}
+	}
+	for _, service := range descriptor.Services {
+		if service.TunnelUpstream == nil {
+			continue
+		}
+		names := strings.Join(namesByKey[*service.TunnelUpstream], ",")
+		servedFrom := service.OwnerClientHostname
+		if servedFrom == "" {
+			servedFrom = service.OwnerClientID
+		}
+		for _, port := range service.Ports {
+			fmt.Fprintf(tw, "  0.0.0.0:%d/%s\t→ %s\t(served from %s)\n",
+				port.Port, strings.ToLower(port.Protocol), names, servedFrom)
+		}
+	}
 	return tw.Flush()
+}
+
+func sessionServiceCount(descriptor engine.SessionDescriptor) int {
+	names := map[string]struct{}{}
+	for _, service := range descriptor.Services {
+		if !service.Retained {
+			continue
+		}
+		for _, name := range service.Names {
+			names[name] = struct{}{}
+		}
+	}
+	return len(names)
+}
+
+func sessionPortCount(descriptor engine.SessionDescriptor) int {
+	count := 0
+	for _, service := range descriptor.Services {
+		if service.TunnelUpstream != nil {
+			count += len(service.Ports)
+		}
+	}
+	return count
 }
