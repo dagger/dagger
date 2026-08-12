@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	bkfilesync "github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc"
@@ -473,6 +475,118 @@ func TestSessionSnapshotDoesNotWaitForLifecycleLock(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("session snapshot blocked on lifecycleMu")
 	}
+}
+
+type descriptorServiceStartable struct {
+	kind     core.RunningServiceKind
+	host     string
+	ports    []core.Port
+	upstream *core.ServiceKey
+	done     chan struct{}
+	stopOnce sync.Once
+}
+
+func (startable *descriptorServiceStartable) Start(
+	_ context.Context,
+	running *core.RunningService,
+	_ digest.Digest,
+	_ core.ServiceStartOpts,
+) error {
+	running.Kind = startable.kind
+	running.Host = startable.host
+	running.Ports = slices.Clone(startable.ports)
+	if startable.upstream != nil {
+		upstream := *startable.upstream
+		running.TunnelUpstream = &upstream
+	}
+	running.Stop = func(context.Context, bool) error {
+		startable.stopOnce.Do(func() { close(startable.done) })
+		return nil
+	}
+	running.Wait = func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-startable.done:
+			return nil
+		}
+	}
+	return nil
+}
+
+func TestSessionSnapshotIncludesLiveServicesAndHostnames(t *testing.T) {
+	t.Parallel()
+	srv, sess, creator := newDetachableLifecycleTestSession(t, 0)
+	creator.clientMetadata = &engine.ClientMetadata{
+		SessionID: sess.sessionID, ClientID: creator.clientID, ClientHostname: "creator-host",
+	}
+	publisher := &daggerClient{
+		daggerSession: sess,
+		clientID:      "publisher",
+		clientMetadata: &engine.ClientMetadata{
+			SessionID: sess.sessionID, ClientID: "publisher", ClientHostname: "publisher-host",
+		},
+		shutdownCh: make(chan struct{}),
+	}
+	sess.clientMu.Lock()
+	sess.clients[publisher.clientID] = publisher
+	sess.clientMu.Unlock()
+	sess.currentAttachment = &sessionAttachment{
+		ID: "att_bbbbbbbbbbbbbbbbbbbbbbbbbb", Generation: 2,
+		ClientID: publisher.clientID, Ready: true, CreatedAt: time.Now(),
+	}
+
+	backendDigest := digest.FromString("descriptor-backend")
+	backendKey := core.ServiceKey{
+		Digest: backendDigest, SessionID: sess.sessionID, Kind: core.ServiceRuntimeShared,
+	}
+	backendDescription := "declared backend"
+	backend := &descriptorServiceStartable{
+		kind: core.RunningServiceKindContainer, host: "backend-host", done: make(chan struct{}),
+		ports: []core.Port{{Port: 8080, Protocol: core.NetworkProtocolTCP, Description: &backendDescription}},
+	}
+	creatorCtx := engine.ContextWithClientMetadata(t.Context(), creator.clientMetadata)
+	_, err := sess.services.StartWithOpts(creatorCtx, backendDigest, backend, core.ServiceStartOpts{
+		RetainNames: []string{"api", "web"},
+	})
+	require.NoError(t, err)
+
+	tunnelDigest := digest.FromString("descriptor-tunnel")
+	frontendDescription := "published frontend"
+	tunnel := &descriptorServiceStartable{
+		kind: core.RunningServiceKindTunnel, host: "127.0.0.1", done: make(chan struct{}),
+		ports:    []core.Port{{Port: 18080, Protocol: core.NetworkProtocolTCP, Description: &frontendDescription}},
+		upstream: &backendKey,
+	}
+	publisherCtx := engine.ContextWithClientMetadata(t.Context(), publisher.clientMetadata)
+	_, err = sess.services.StartWithOpts(publisherCtx, tunnelDigest, tunnel, core.ServiceStartOpts{ClientSpecific: true})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sess.services.StopSessionServices(context.Background(), sess.sessionID)) })
+
+	descriptor, ok := srv.snapshotDetachableSession(sess)
+	require.True(t, ok)
+	require.NotNil(t, descriptor.Attachment)
+	require.Equal(t, "publisher-host", descriptor.Attachment.Hostname)
+	require.Len(t, descriptor.Services, 2)
+
+	var backendSnapshot, tunnelSnapshot *engine.SessionService
+	for i := range descriptor.Services {
+		switch descriptor.Services[i].Kind {
+		case string(core.RunningServiceKindContainer):
+			backendSnapshot = &descriptor.Services[i]
+		case string(core.RunningServiceKindTunnel):
+			tunnelSnapshot = &descriptor.Services[i]
+		}
+	}
+	require.NotNil(t, backendSnapshot)
+	require.Equal(t, []string{"api", "web"}, backendSnapshot.Names)
+	require.True(t, backendSnapshot.Retained)
+	require.Equal(t, "tcp", backendSnapshot.Ports[0].Protocol)
+	require.NotNil(t, tunnelSnapshot)
+	require.Equal(t, publisher.clientID, tunnelSnapshot.OwnerClientID)
+	require.Equal(t, "publisher-host", tunnelSnapshot.OwnerClientHostname)
+	require.Equal(t, backendSnapshot.Key, *tunnelSnapshot.TunnelUpstream)
+	require.Equal(t, 18080, tunnelSnapshot.Ports[0].Port)
 }
 
 func TestNestedMetadataClearsDetachableRoles(t *testing.T) {

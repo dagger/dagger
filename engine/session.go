@@ -41,8 +41,35 @@ type SessionAttachment struct {
 	ID         string    `json:"id"`
 	Generation uint64    `json:"generation"`
 	ClientID   string    `json:"client_id"`
+	Hostname   string    `json:"hostname,omitempty"`
 	Ready      bool      `json:"ready"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type SessionServiceKey struct {
+	Digest      string `json:"digest"`
+	SessionID   string `json:"session_id"`
+	ClientID    string `json:"client_id,omitempty"`
+	RuntimeKind string `json:"runtime_kind"`
+	InstanceID  string `json:"instance_id,omitempty"`
+}
+
+type SessionPort struct {
+	Port        int    `json:"port"`
+	Protocol    string `json:"protocol"`
+	Description string `json:"description,omitempty"`
+}
+
+type SessionService struct {
+	Key                 SessionServiceKey  `json:"key"`
+	Names               []string           `json:"names"`
+	Kind                string             `json:"kind"`
+	Host                string             `json:"host"`
+	Ports               []SessionPort      `json:"ports"`
+	OwnerClientID       string             `json:"owner_client_id,omitempty"`
+	OwnerClientHostname string             `json:"owner_client_hostname,omitempty"`
+	TunnelUpstream      *SessionServiceKey `json:"tunnel_upstream,omitempty"`
+	Retained            bool               `json:"retained"`
 }
 
 type QueryPresentation struct {
@@ -79,6 +106,7 @@ type SessionDescriptor struct {
 	DetachedAt time.Time          `json:"detached_at,omitempty"`
 	Attachment *SessionAttachment `json:"attachment,omitempty"`
 	Query      *SessionQuery      `json:"query,omitempty"`
+	Services   []SessionService   `json:"services"`
 }
 
 type SubmitPrimaryQueryRequest struct {

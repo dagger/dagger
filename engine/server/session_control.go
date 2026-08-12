@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -326,7 +327,17 @@ func (srv *Server) snapshotDetachableSession(sess *daggerSession) (engine.Sessio
 	descriptor := engine.SessionDescriptor{
 		ID:        sess.sessionID,
 		CreatedAt: sess.createdAt,
+		Services:  []engine.SessionService{},
 	}
+
+	clientHostnames := map[string]string{}
+	sess.clientMu.RLock()
+	for clientID, client := range sess.clients {
+		if client != nil && client.clientMetadata != nil {
+			clientHostnames[clientID] = client.clientMetadata.ClientHostname
+		}
+	}
+	sess.clientMu.RUnlock()
 
 	sess.attachmentMu.Lock()
 	if sess.terminating.Load() {
@@ -335,7 +346,7 @@ func (srv *Server) snapshotDetachableSession(sess *daggerSession) (engine.Sessio
 		descriptor.State = engine.SessionStateAttached
 		descriptor.Attachment = &engine.SessionAttachment{
 			ID: attachment.ID, Generation: attachment.Generation,
-			ClientID: attachment.ClientID, Ready: attachment.Ready,
+			ClientID: attachment.ClientID, Hostname: clientHostnames[attachment.ClientID], Ready: attachment.Ready,
 			CreatedAt: attachment.CreatedAt,
 		}
 	} else {
@@ -351,10 +362,46 @@ func (srv *Server) snapshotDetachableSession(sess *daggerSession) (engine.Sessio
 		descriptor.Query = &snapshot
 	}
 	sess.queryMu.RUnlock()
+
+	if sess.services != nil {
+		for _, service := range sess.services.Describe(sess.sessionID) {
+			descriptorService := engine.SessionService{
+				Key:                 sessionServiceKey(service.Key),
+				Names:               slices.Clone(service.Names),
+				Kind:                string(service.Kind),
+				Host:                service.Host,
+				Ports:               make([]engine.SessionPort, 0, len(service.Ports)),
+				OwnerClientID:       service.OwnerClientID,
+				OwnerClientHostname: clientHostnames[service.OwnerClientID],
+				Retained:            service.Retained,
+			}
+			if service.TunnelUpstream != nil {
+				upstream := sessionServiceKey(*service.TunnelUpstream)
+				descriptorService.TunnelUpstream = &upstream
+			}
+			for _, port := range service.Ports {
+				description := ""
+				if port.Description != nil {
+					description = *port.Description
+				}
+				descriptorService.Ports = append(descriptorService.Ports, engine.SessionPort{
+					Port: port.Port, Protocol: port.Protocol.Network(), Description: description,
+				})
+			}
+			descriptor.Services = append(descriptor.Services, descriptorService)
+		}
+	}
 	if sess.state.Load() != sessionStateInitialized {
 		return engine.SessionDescriptor{}, false
 	}
 	return descriptor, true
+}
+
+func sessionServiceKey(key core.ServiceKey) engine.SessionServiceKey {
+	return engine.SessionServiceKey{
+		Digest: key.Digest.String(), SessionID: key.SessionID, ClientID: key.ClientID,
+		RuntimeKind: string(key.Kind), InstanceID: key.InstanceID,
+	}
 }
 
 func (srv *Server) detachAttachment(sess *daggerSession, attachmentID string, generation uint64) bool {
