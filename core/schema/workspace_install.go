@@ -36,7 +36,17 @@ func planWorkspaceInstallConfig(
 	}
 
 	if existing, ok := cfg.Modules[name]; ok {
-		if existing.Source != sourcePath {
+		if existing.Source == "" {
+			// An entry with no source overrides a module an included config
+			// provides; installing under that name is not a conflict, it fills
+			// the source in and keeps the overrides. A pin recorded for the
+			// inherited ref goes with it — same source/pin coupling the merge
+			// uses.
+			existing.Source = sourcePath
+			existing.Pin = ""
+			cfg.Modules[name] = existing
+			plan.Changed = true
+		} else if existing.Source != sourcePath {
 			return plan, fmt.Errorf(
 				"module %q already exists in workspace config with source %q (new source %q)",
 				name,
