@@ -229,7 +229,7 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 			}
 		}
 
-		query, err := observer.InspectPrimaryQuery(ctx)
+		query, err := waitForPrimaryQuery(ctx, observer.InspectPrimaryQuery)
 		if err != nil {
 			var protocolErr *client.SessionProtocolError
 			if errors.As(err, &protocolErr) && protocolErr.Code == engine.SessionErrorSessionNotFound {
@@ -244,7 +244,7 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 		if err != nil {
 			return cleanup.Run, err
 		}
-		value, err := extractDetachedResult(result.Body, query.Presentation)
+		value, err := decodeDetachedResult(result.Body, query.Presentation)
 		if err != nil {
 			return cleanup.Run, err
 		}

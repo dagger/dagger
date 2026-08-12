@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/querybuilder"
@@ -251,6 +252,30 @@ func TestDetachedResultExtractionAndFormatting(t *testing.T) {
 
 	_, err = extractDetachedResult([]byte(`{"data":null,"errors":[{"message":"saved failure"}]}`), presentation)
 	require.ErrorContains(t, err, "saved failure")
+}
+
+func TestDetachedUpResultDecodeAndFormatting(t *testing.T) {
+	t.Parallel()
+	presentation := engine.QueryPresentation{
+		Kind: "up", ResponsePath: []string{"node", "_startDetached"},
+	}
+	const body = `{"data":{"node":{"_startDetached":"{\"services\":[{\"name\":\"web\",\"serviceId\":\"svc_web\",\"native\":true,\"portMappings\":[],\"backendPorts\":[{\"port\":8080,\"protocol\":\"TCP\"}]},{\"name\":\"db\",\"serviceId\":\"svc_db\",\"native\":false,\"portMappings\":[{\"frontend\":15432,\"backend\":5432,\"protocol\":\"TCP\"}],\"backendPorts\":[{\"port\":5432,\"protocol\":\"TCP\"}]}]}"}}}`
+	value, err := decodeDetachedResult([]byte(body), presentation)
+	require.NoError(t, err)
+	result, ok := value.(core.DetachedUpResult)
+	require.True(t, ok)
+	require.Len(t, result.Services, 2)
+	require.True(t, result.Services[0].Native)
+	require.Equal(t, 8080, result.Services[0].BackendPorts[0].Port)
+	require.Equal(t, 15432, *result.Services[1].PortMappings[0].Frontend)
+
+	var output bytes.Buffer
+	require.NoError(t, formatDetachedResult(&output, result, presentation))
+	require.Equal(t, "SERVICE   PORTS\nweb       8080/tcp\ndb        15432:5432/tcp\n", output.String())
+
+	const graphqlError = `{"data":{"node":null},"errors":[{"message":"saved startup failure"}]}`
+	_, err = decodeDetachedResult([]byte(graphqlError), presentation)
+	require.EqualError(t, err, "saved startup failure")
 }
 
 func TestDetachFlagIsCallLocal(t *testing.T) {

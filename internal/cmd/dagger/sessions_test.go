@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -122,6 +123,58 @@ func TestDetachedQueryResultStateBeforeFetch(t *testing.T) {
 			require.EqualError(t, err, test.wantError)
 		})
 	}
+}
+
+func TestPrimaryQueryCompletionPolling(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		states     []engine.SessionQueryState
+		queryError string
+		wantStatus engine.SessionQueryState
+		wantError  string
+		wantWaits  int
+	}{
+		{name: "succeeded", states: []engine.SessionQueryState{engine.SessionQueryStateRunning, engine.SessionQueryStateSucceeded}, wantStatus: engine.SessionQueryStateSucceeded, wantWaits: 1},
+		{name: "failed", states: []engine.SessionQueryState{engine.SessionQueryStateFailed}, wantStatus: engine.SessionQueryStateFailed},
+		{name: "canceled", states: []engine.SessionQueryState{engine.SessionQueryStateCanceled}, wantError: "detached query was canceled"},
+		{name: "result discarded", states: []engine.SessionQueryState{engine.SessionQueryStateResultDiscarded}, wantError: "detached query result was discarded"},
+		{name: "unknown with error", states: []engine.SessionQueryState{"unknown"}, queryError: "saved state error", wantError: "saved state error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inspections := 0
+			waits := 0
+			query, err := pollPrimaryQuery(t.Context(), func(context.Context) (engine.SessionQuery, error) {
+				state := test.states[inspections]
+				inspections++
+				return engine.SessionQuery{Status: state, Error: test.queryError}, nil
+			}, func(context.Context) error {
+				waits++
+				return nil
+			})
+			if test.wantError != "" {
+				require.EqualError(t, err, test.wantError)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, test.wantStatus, query.Status)
+			}
+			require.Equal(t, len(test.states), inspections)
+			require.Equal(t, test.wantWaits, waits)
+		})
+	}
+}
+
+func TestPrimaryQueryPollingCancellation(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(errors.New("poll canceled"))
+	_, err := pollPrimaryQuery(ctx, func(context.Context) (engine.SessionQuery, error) {
+		return engine.SessionQuery{Status: engine.SessionQueryStateRunning}, nil
+	}, func(ctx context.Context) error {
+		return context.Cause(ctx)
+	})
+	require.EqualError(t, err, "poll canceled")
 }
 
 func testCLIValidSessionID() string {

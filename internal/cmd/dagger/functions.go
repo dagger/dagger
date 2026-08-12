@@ -11,9 +11,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/core"
+	"github.com/juju/ansiterm/tabwriter"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
@@ -1001,7 +1004,70 @@ func extractDetachedResult(body []byte, presentation engine.QueryPresentation) (
 	return value, nil
 }
 
+func decodeDetachedResult(body []byte, presentation engine.QueryPresentation) (any, error) {
+	value, err := extractDetachedResult(body, presentation)
+	if err != nil {
+		return nil, err
+	}
+	if presentation.Kind != "up" {
+		return value, nil
+	}
+	encoded, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("saved up result is %T, not a JSON string", value)
+	}
+	var result core.DetachedUpResult
+	if err := json.Unmarshal([]byte(encoded), &result); err != nil {
+		return nil, fmt.Errorf("decode saved up result: %w", err)
+	}
+	return result, nil
+}
+
+type inspectPrimaryQueryFunc func(context.Context) (engine.SessionQuery, error)
+
+func waitForPrimaryQuery(ctx context.Context, inspect inspectPrimaryQueryFunc) (engine.SessionQuery, error) {
+	return pollPrimaryQuery(ctx, inspect, func(ctx context.Context) error {
+		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return nil
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	})
+}
+
+func pollPrimaryQuery(
+	ctx context.Context,
+	inspect inspectPrimaryQueryFunc,
+	wait func(context.Context) error,
+) (engine.SessionQuery, error) {
+	for {
+		query, err := inspect(ctx)
+		if err != nil {
+			return engine.SessionQuery{}, err
+		}
+		if query.Status != engine.SessionQueryStateRunning {
+			if err := validateDetachedQueryResultState(query); err != nil {
+				return engine.SessionQuery{}, err
+			}
+			return query, nil
+		}
+		if err := wait(ctx); err != nil {
+			return engine.SessionQuery{}, err
+		}
+	}
+}
+
 func formatDetachedResult(w io.Writer, value any, presentation engine.QueryPresentation) error {
+	if presentation.Kind == "up" {
+		result, ok := value.(core.DetachedUpResult)
+		if !ok {
+			return fmt.Errorf("saved up result is %T", value)
+		}
+		return formatDetachedUpResult(w, result)
+	}
 	if presentation.Void {
 		return nil
 	}
@@ -1025,6 +1091,29 @@ func formatDetachedResult(w io.Writer, value any, presentation engine.QueryPrese
 		fmt.Fprintln(w)
 	}
 	return nil
+}
+
+func formatDetachedUpResult(w io.Writer, result core.DetachedUpResult) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+	fmt.Fprintln(tw, "SERVICE\tPORTS")
+	for _, service := range result.Services {
+		ports := make([]string, 0, len(service.BackendPorts))
+		if service.Native {
+			for _, port := range service.BackendPorts {
+				ports = append(ports, fmt.Sprintf("%d/%s", port.Port, strings.ToLower(string(port.Protocol))))
+			}
+		} else {
+			for _, port := range service.PortMappings {
+				frontend := ""
+				if port.Frontend != nil {
+					frontend = fmt.Sprintf("%d", *port.Frontend)
+				}
+				ports = append(ports, fmt.Sprintf("%s:%d/%s", frontend, port.Backend, strings.ToLower(string(port.Protocol))))
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%s\n", service.Name, strings.Join(ports, ", "))
+	}
+	return tw.Flush()
 }
 
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {
