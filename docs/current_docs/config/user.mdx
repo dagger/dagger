@@ -22,7 +22,7 @@ region = "us-west-2"
 
 ## Merge order
 
-Dagger merges the effective configuration in a fixed order: the repository's `dagger.toml`, then your user-level overrides, then the selected [environment](./environments.mdx) overlay. User-level values shadow repository values key by key, and user-level environments add to the repository's, all without modifying `dagger.toml`.
+Dagger merges the effective configuration in a fixed order: the config the repository [includes](./includes.mdx), then the repository's own `dagger.toml`, then your user-level overrides, then the selected [environment](./environments.mdx) overlay. User-level values shadow repository values key by key, and user-level environments add to the repository's, all without modifying `dagger.toml`.
 
 ## Writing values
 

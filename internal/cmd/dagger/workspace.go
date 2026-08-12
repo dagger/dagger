@@ -196,6 +196,13 @@ With one argument and --unset, removes the value at the given key.
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
 
+An include is set with "dagger workspace config include <source>", where source
+is a git ref (github.com/acme/base@v1) or a path to a config file next to this
+one ("./base.toml", or "/common/base.toml" from the workspace root). Reads then
+show the merged view — the included configuration with this workspace's own on
+top — while writes still only touch this workspace's dagger.toml. Reading the
+include key itself reports this workspace's own value.
+
 Local module source values are stored relative to dagger.toml.`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: runWorkspaceConfig,
@@ -559,6 +566,24 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		_, err = fmt.Fprintf(out, "Uninstalled module %q from env %q in %s\n", name, workspaceEnv, configPath)
 		return err
 	}
+
+	// A module that survives the write was never installed here: what went away
+	// is the local entry overriding the module an included config provides.
+	modules, err := updated.Modules(ctx)
+	if err != nil {
+		return err
+	}
+	for _, module := range modules {
+		moduleName, err := module.Name(ctx)
+		if err != nil {
+			return err
+		}
+		if moduleName == name {
+			_, err = fmt.Fprintf(out, "Removed local overrides for module %q from %s; the module is still provided by an included config\n", name, configPath)
+			return err
+		}
+	}
+
 	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
 	return err
 }

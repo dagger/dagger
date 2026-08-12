@@ -20,8 +20,22 @@ The machine-readable schema is published at [dagger-workspace.schema.json](/refe
 | `ignore` | array | Path patterns excluded when loading the workspace. |
 | `defaults_from_dotenv` | bool | Read module constructor defaults from a `.env` file. |
 | `check-generated` | bool | Run generators as checks during `dagger check`, failing when generated files are stale. Defaults to `true`; CLI flags override it. |
+| `include` | array of tables | Another config file whose contents are merged underneath this one. See [`[[include]]`](#include). |
 
 Resolved image and Git lookups are pinned in `dagger.lock` alongside the config, and refreshed with `dagger update`.
+
+## `[[include]]`
+
+```toml
+[[include]]
+source = "../common"
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `source` | string | Config file to inherit from — a workspace-relative path, or a Git ref such as `github.com/org/base@version`. A source with no file extension names a directory and reaches the `dagger.toml` inside it. |
+
+The included config is merged **underneath** this one, so this workspace wins every conflict. Only one `[[include]]` is resolved for now. See [Includes](../../config/includes.mdx).
 
 ## `[modules.<name>]`
 

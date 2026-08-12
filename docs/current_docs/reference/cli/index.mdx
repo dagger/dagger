@@ -2888,6 +2888,13 @@ With one argument and --unset, removes the value at the given key.
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
 
+An include is set with "dagger workspace config include &lt;source&gt;", where source
+is a git ref (github.com/acme/base@v1) or a path to a config file next to this
+one ("./base.toml", or "/common/base.toml" from the workspace root). Reads then
+show the merged view — the included configuration with this workspace's own on
+top — while writes still only touch this workspace's dagger.toml. Reading the
+include key itself reports this workspace's own value.
+
 Local module source values are stored relative to dagger.toml.
 
 ```

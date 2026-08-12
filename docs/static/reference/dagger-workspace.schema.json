@@ -5,6 +5,13 @@
   "$defs": {
     "Config": {
       "properties": {
+        "include": {
+          "items": {
+            "$ref": "#/$defs/IncludeEntry"
+          },
+          "type": "array",
+          "description": "Include lists the workspace configs this one builds on: each entry's config is merged underneath this one. The shape allows several, but only one is accepted for now, and an included config's own includes are never followed."
+        },
         "modules": {
           "additionalProperties": {
             "$ref": "#/$defs/ModuleEntry"
@@ -72,6 +79,19 @@
       "type": "object",
       "description": "EnvOverlay is a named workspace environment overlay."
     },
+    "IncludeEntry": {
+      "properties": {
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "description": "IncludeEntry is one included workspace config."
+    },
     "ModuleAsSDK": {
       "properties": {
         "name": {
@@ -130,9 +150,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "source"
-      ],
       "description": "ModuleEntry represents a single module entry in the workspace config."
     },
     "ModuleSkip": {

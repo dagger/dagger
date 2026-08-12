@@ -1,0 +1,72 @@
+---
+title: "Includes"
+slug: /config/includes
+description: "Inherit workspace configuration from a shared config file"
+---
+
+# Includes
+
+An include points your workspace at another config file and inherits what it declares. Use one when several repositories — or several projects in one repository — need the same tool versions, module settings, and environments, so they are written down once instead of copied into each `dagger.toml`.
+
+```toml
+[[include]]
+source = "github.com/acme/dagger-base@v1.2.0"
+
+# Only the difference from the included config:
+[modules.go.settings]
+goVersion = "1.24"
+```
+
+## Name a config to inherit from
+
+`source` addresses a config **file**, written either as a path or as a Git ref:
+
+- a path — `common/base.toml` or `./base.toml` relative to your config's directory, `../shared/base.toml` beside it, or `/common/base.toml` from the workspace root.
+- a Git ref — `github.com/acme/dagger-base@v1.2.0`, `https://host/repo.git#main:dagger/base.toml`, or `git@github.com:acme/base.git`.
+
+A source is a path when it starts with `/`, `./` or `../`, or when its first segment contains neither a dot nor a colon — the same rule that tells a local module source from a remote one. One consequence: a file with a dotted name sitting directly beside your config, such as `base.toml`, reads as a Git ref, so write it as `./base.toml`.
+
+A source with no file extension names a **directory** and reaches the `dagger.toml` inside it, so `common` reaches `common/dagger.toml`.
+
+Set it with `dagger workspace config`:
+
+```shell
+dagger workspace config include ../common
+```
+
+## Configuration, not code
+
+A module entry in the included config whose source is a local path names a directory beside *that* config, not beside yours, so it is dropped with a warning naming it. Its remote module refs come through normally.
+
+## Override what you inherit
+
+The included config is merged **underneath** yours, so your workspace wins every conflict. The effective configuration is merged in a fixed order: the included config, then your `dagger.toml`, then your [user configuration](./user.mdx), then the selected [environment](./environments.mdx).
+
+Merging is per key, so a module entry may omit `source` and override only a setting of a module the include installs:
+
+```toml
+[modules.go.settings]
+goVersion = "1.24"
+```
+
+Module settings merge key by key; a `source` you set replaces the inherited one and its pin travels with it; an explicit `false` or `[]` overrides an inherited value, and an absent key inherits. `[ports.<host>]` replaces the inherited mapping as a unit. An included module's `as-sdk` state and `legacy-default-path` flag are never inherited: they describe the tree that config came from.
+
+## Reads are effective, writes are local
+
+`dagger workspace config` prints the merged configuration as a standalone snapshot, with a `# included: <source>` comment in place of the `[[include]]` block:
+
+```shell
+dagger workspace config
+```
+
+Every write — `dagger install`, `dagger settings`, `dagger workspace config <key> <value>` — only ever touches your own `dagger.toml`. An inherited entry can be overridden but not deleted: uninstalling a module the include provides, or unsetting a value it supplies, tells you where the value comes from instead.
+
+## Limits
+
+Only one `[[include]]` is resolved for now — a config with more is an error. With two includes, the order they apply in and what happens when they disagree are questions this version doesn't answer, so the limit stays until it does. The shape is an array so several can be expressed later, without changing what people write today.
+
+If the included config includes something in turn, that's an error. Includes do not compose.
+
+## Pinning
+
+A Git include's ref is resolved and recorded in `dagger.lock` like any other Git reference: later runs reuse the recorded pin, and `dagger update` refreshes it. A path include is read from the workspace as it is on disk, so there is nothing to pin.

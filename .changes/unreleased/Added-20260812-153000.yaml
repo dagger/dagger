@@ -1,0 +1,38 @@
+kind: Added
+body: |
+  Workspaces can include another config file.
+
+  A new top-level `[[include]]` block in `dagger.toml` names a config whose
+  contents are merged underneath the current one, so a team can publish one
+  base config — shared tool versions, settings, environments — and have many
+  repositories point at it instead of duplicating it:
+
+  ```toml
+  [[include]]
+  source = "github.com/acme/dagger-base@v1.2.0"
+
+  [modules.go.settings]
+  goVersion = "1.24"
+  ```
+
+  `source` addresses a config file, either as a path (`common/base.toml` or
+  `./base.toml` next to the including config, `/common/base.toml` from the
+  workspace root) or as a Git ref (`github.com/acme/dagger-base@v1.2.0`,
+  `https://host/repo.git#main:dagger/base.toml`). A source with no extension
+  names a directory and reaches the `dagger.toml` inside it. The workspace
+  naming the include wins every conflict, and a module entry may omit `source`
+  to override just the settings of a module the include installs.
+
+  Only one include is resolved for now — a config with more is an error — and
+  an included config that includes something in turn is rejected rather than
+  followed. Module entries whose source is a local path are dropped with a
+  warning: an include shares configuration, not code.
+
+  Reads report the merged result (`dagger workspace config` and the module and
+  env listings); writes still only touch the local `dagger.toml`. A Git
+  include's resolved commit is recorded in `dagger.lock` like any other Git
+  reference, so later runs reuse the pin and `dagger update` refreshes it.
+time: 2026-08-12T15:30:00.000000000+00:00
+custom:
+    Author: eunomie
+    PR: "13882"
