@@ -55,6 +55,12 @@ func malformedSessionIDError(kind, id string, err error) sessionControlError {
 		fmt.Errorf("malformed %s %q: %w", kind, id, err))
 }
 
+func attachmentMismatchError(sessionID, attachmentID, clientID string) sessionControlError {
+	return controlError(http.StatusConflict, engine.SessionErrorAttachmentMismatch,
+		fmt.Errorf("attachment %s for client %s is not the current ready attachment for session %s",
+			attachmentID, clientID, sessionID))
+}
+
 func isSessionControlPath(path string) bool {
 	return path == engine.SessionsEndpoint || strings.HasPrefix(path, engine.SessionsEndpoint+"/")
 }
@@ -239,7 +245,7 @@ func (srv *Server) lookupDetachableSession(sessionID string) (*daggerSession, bo
 	return sess, true
 }
 
-func (srv *Server) claimObserverAttachment(opts *ClientInitOpts) (*sessionAttachmentClaim, error) {
+func (srv *Server) claimSessionAttachment(opts *ClientInitOpts) (*sessionAttachmentClaim, error) {
 	srv.hitSessionHook(sessionTestEvent{
 		Name: sessionHookObserverBeforeValidation, SessionID: opts.SessionID,
 		ClientID: opts.ClientID, AttachmentID: opts.AttachmentID,
@@ -274,10 +280,9 @@ func (srv *Server) claimObserverAttachment(opts *ClientInitOpts) (*sessionAttach
 			fmt.Errorf("session %s already has an attachment", opts.SessionID))
 	}
 	sess.nextGeneration++
-	attachment := &sessionAttachment{
-		ID: opts.AttachmentID, Generation: sess.nextGeneration,
-		ClientID: opts.ClientID, CreatedAt: srv.nowTime(),
-	}
+	attachment := newSessionAttachment(
+		opts.AttachmentID, sess.nextGeneration, opts.ClientID, srv.nowTime(),
+	)
 	sess.currentAttachment = attachment
 	claim := &sessionAttachmentClaim{
 		ID: attachment.ID, Generation: attachment.Generation,
@@ -300,10 +305,9 @@ func (srv *Server) claimCreatorAttachment(sess *daggerSession, opts *ClientInitO
 	attachment := sess.currentAttachment
 	if attachment == nil {
 		sess.nextGeneration++
-		attachment = &sessionAttachment{
-			ID: opts.AttachmentID, Generation: sess.nextGeneration,
-			ClientID: opts.ClientID, CreatedAt: srv.nowTime(),
-		}
+		attachment = newSessionAttachment(
+			opts.AttachmentID, sess.nextGeneration, opts.ClientID, srv.nowTime(),
+		)
 		sess.currentAttachment = attachment
 		claim := &sessionAttachmentClaim{
 			ID: attachment.ID, Generation: attachment.Generation,
@@ -412,17 +416,20 @@ func (srv *Server) detachAttachment(sess *daggerSession, attachmentID string, ge
 		return false
 	}
 	clientID := attachment.ClientID
-	var observer *daggerClient
+	if attachment.cancel != nil {
+		attachment.cancel(fmt.Errorf("attachment %s generation %d detached", attachment.ID, attachment.Generation))
+	}
+	var attachmentClient *daggerClient
 	if clientID != sess.creatorClientID {
-		// Remove the exact observer while attachment ownership is still held.
+		// Remove the exact attach-role client while attachment ownership is still held.
 		// Once currentAttachment is cleared, a retry using the same client ID may
 		// initialize a replacement; delayed cleanup must never remove that newer
 		// client from the session.
 		sess.clientMu.Lock()
 		candidate := sess.clients[clientID]
-		if candidate != nil && candidate.observerClient {
+		if candidate != nil && candidate.attachmentClient {
 			delete(sess.clients, clientID)
-			observer = candidate
+			attachmentClient = candidate
 		}
 		sess.clientMu.Unlock()
 	}
@@ -434,13 +441,13 @@ func (srv *Server) detachAttachment(sess *daggerSession, attachmentID string, ge
 		Name: sessionHookAttachmentCleared, SessionID: sess.sessionID,
 		ClientID: clientID, AttachmentID: attachmentID, Generation: generation,
 	})
-	if observer != nil {
-		srv.cleanupObserverClient(sess, observer)
+	if attachmentClient != nil {
+		srv.cleanupAttachmentClient(sess, attachmentClient)
 	}
 	return true
 }
 
-func (srv *Server) cleanupObserverClient(sess *daggerSession, client *daggerClient) {
+func (srv *Server) cleanupAttachmentClient(sess *daggerSession, client *daggerClient) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_ = client.cleanupResources(ctx)

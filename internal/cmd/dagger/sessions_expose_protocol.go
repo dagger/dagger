@@ -94,8 +94,8 @@ type exposedPort struct {
 }
 
 func (port exposedPort) URL() string {
-	// Match ordinary up's friendly HTTP rendering for conventional web ports;
-	// retain an explicit tcp scheme for arbitrary stream services.
+	// Match ordinary up's friendly rendering based on the backend's conventional
+	// web port, even when the published frontend differs.
 	scheme := "tcp"
 	switch port.Backend {
 	case 80, 3000, 8000, 8080:
@@ -128,10 +128,18 @@ type exposeControlResponse struct {
 }
 
 type exposeChildStatus struct {
-	Phase string        `json:"phase,omitempty"`
-	Ports []exposedPort `json:"ports,omitempty"`
-	Error string        `json:"error,omitempty"`
+	Phase     string        `json:"phase,omitempty"`
+	Ports     []exposedPort `json:"ports,omitempty"`
+	ErrorCode string        `json:"error_code,omitempty"`
+	Error     string        `json:"error,omitempty"`
 }
+
+type exposeChildError struct {
+	Code    string
+	Message string
+}
+
+func (err *exposeChildError) Error() string { return err.Message }
 
 type exposeServerConfig struct {
 	SessionID string        `json:"session_id"`
@@ -396,7 +404,9 @@ func readExposeChildStatus(ctx context.Context, r io.Reader, expectedPhase strin
 			return exposeChildStatus{}, fmt.Errorf("read expose server status: %w", result.err)
 		}
 		if result.status.Error != "" {
-			return exposeChildStatus{}, errors.New(result.status.Error)
+			return exposeChildStatus{}, &exposeChildError{
+				Code: result.status.ErrorCode, Message: result.status.Error,
+			}
 		}
 		if result.status.Phase != expectedPhase {
 			return exposeChildStatus{}, fmt.Errorf(

@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/sessionwire"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -114,16 +119,154 @@ func TestExposedPortsFromSessionDescriptor(t *testing.T) {
 		{
 			Key:  engine.SessionServiceKey{Digest: "tunnel", SessionID: testCLIValidSessionID(), ClientID: "publisher", RuntimeKind: "tunnel"},
 			Kind: "tunnel", TunnelUpstream: &backendKey,
-			Ports: []engine.SessionPort{{Port: 8080, Protocol: "TCP"}},
+			OwnerClientID: "publisher",
+			Ports:         []engine.SessionPort{{Port: 8080, Protocol: "TCP"}},
 		},
-	}}
+	}, Attachment: &engine.SessionAttachment{ClientID: "publisher"}}
 	request := exposeRequest{Mappings: []exposePortMapping{{
 		Service: "web", ServiceID: "web-id", Frontend: &frontend, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}}
-	ports := exposedPortsFromDescriptor(descriptor, request)
+	ports, err := exposedPortsFromDescriptor(descriptor, request)
+	require.NoError(t, err)
 	require.Equal(t, []exposedPort{{
 		Service: "web", Frontend: 8080, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}, ports)
+}
+
+func TestExposedPortsIgnoreStaleAttachmentOwner(t *testing.T) {
+	t.Parallel()
+	frontend := 9090
+	backendKey := engine.SessionServiceKey{Digest: "backend", SessionID: testCLIValidSessionID(), RuntimeKind: "container"}
+	oldTunnel := engine.SessionService{
+		Key:            engine.SessionServiceKey{Digest: "old", ClientID: "old-client", RuntimeKind: "tunnel"},
+		TunnelUpstream: &backendKey, OwnerClientID: "old-client",
+		Ports: []engine.SessionPort{{Port: 8080, Protocol: "TCP"}},
+	}
+	newTunnel := engine.SessionService{
+		Key:            engine.SessionServiceKey{Digest: "new", ClientID: "new-client", RuntimeKind: "tunnel"},
+		TunnelUpstream: &backendKey, OwnerClientID: "new-client",
+		Ports: []engine.SessionPort{{Port: frontend, Protocol: "TCP"}},
+	}
+	descriptor := engine.SessionDescriptor{
+		Attachment: &engine.SessionAttachment{ClientID: "new-client"},
+		Services: []engine.SessionService{
+			{Key: backendKey, Names: []string{"web"}, Retained: true}, oldTunnel, newTunnel,
+		},
+	}
+	request := exposeRequest{Mappings: []exposePortMapping{{
+		Service: "web", Frontend: &frontend, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
+	}}}
+	ports, err := exposedPortsFromDescriptor(descriptor, request)
+	require.NoError(t, err)
+	require.Equal(t, []exposedPort{{
+		Service: "web", Frontend: frontend, Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
+	}}, ports)
+
+	descriptor.Services = descriptor.Services[:2]
+	_, err = exposedPortsFromDescriptor(descriptor, request)
+	require.ErrorContains(t, err, "not yet available from attachment client new-client")
+}
+
+func TestAttachmentHolderDiagnostics(t *testing.T) {
+	t.Parallel()
+	cause := &exposeChildError{Code: engine.SessionErrorAlreadyAttached, Message: "already attached"}
+	descriptor := engine.SessionDescriptor{Attachment: &engine.SessionAttachment{
+		ClientID: "holder-client", Hostname: "builder.example",
+	}}
+	err := attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
+	require.ErrorContains(t, err, "session is attached by client holder-client on builder.example")
+	require.NotContains(t, err.Error(), "ports are being served")
+
+	descriptor.Services = []engine.SessionService{{
+		TunnelUpstream: &engine.SessionServiceKey{}, Ports: []engine.SessionPort{{Port: 8080}},
+	}}
+	err = attachmentHolderConflict(descriptor, testCLIValidSessionID(), cause)
+	require.ErrorContains(t, err, "ports are being served by client holder-client on builder.example")
+}
+
+func TestLateAttachmentConflictReinspectsCurrentHolder(t *testing.T) {
+	t.Parallel()
+	control := &fakeExposeSessionControl{descriptors: []engine.SessionDescriptor{{
+		Attachment: &engine.SessionAttachment{ClientID: "late-holder"},
+	}}}
+	cause := &exposeChildError{Code: engine.SessionErrorAlreadyAttached, Message: "already attached"}
+	err := inspectAttachmentHolderConflict(t.Context(), control, testCLIValidSessionID(), cause)
+	require.ErrorContains(t, err, "session is attached by client late-holder")
+	require.Equal(t, 1, control.inspectCalls)
+}
+
+func TestExposeStopValidatesSessionKindAndCleansMissingSessionState(t *testing.T) {
+	t.Parallel()
+	sessionID := testCLIValidSessionID()
+	for _, test := range []struct {
+		name       string
+		descriptor engine.SessionDescriptor
+		inspectErr error
+		wantErr    string
+	}{
+		{name: "missing query", descriptor: engine.SessionDescriptor{}, wantErr: "session has no up services"},
+		{name: "non-up query", descriptor: engine.SessionDescriptor{Query: &engine.SessionQuery{Presentation: engine.QueryPresentation{Kind: "call"}}}, wantErr: "session has no up services"},
+		{name: "running up", descriptor: engine.SessionDescriptor{Query: &engine.SessionQuery{Status: engine.SessionQueryStateRunning, Presentation: engine.QueryPresentation{Kind: "up"}}}},
+		{name: "failed up", descriptor: engine.SessionDescriptor{Query: &engine.SessionQuery{Status: engine.SessionQueryStateFailed, Presentation: engine.QueryPresentation{Kind: "up"}}}},
+		{name: "not found", inspectErr: &client.SessionProtocolError{StatusCode: http.StatusNotFound, Code: engine.SessionErrorSessionNotFound, Message: "gone"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			stateDir, err := os.MkdirTemp("/tmp", "du-stop-")
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+			paths, err := makeExposePaths(stateDir, sessionID)
+			require.NoError(t, err)
+			require.NoError(t, writeExposeRecord(paths.Record, exposeRecord{State: exposeStateReady}))
+			require.NoError(t, os.WriteFile(paths.Socket, []byte("stale"), 0o600))
+			control := &fakeExposeSessionControl{descriptors: []engine.SessionDescriptor{test.descriptor}, inspectErr: test.inspectErr}
+			cmd := &cobra.Command{}
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			err = exposeDetachableSessionWithControl(t.Context(), cmd, control, sessionID, stateDir, nil, false, true)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				_, statErr := os.Stat(paths.Record)
+				require.NoError(t, statErr, "validation failure cleaned local state")
+				return
+			}
+			require.NoError(t, err)
+			require.Contains(t, output.String(), "Stopped local ports")
+			_, statErr := os.Stat(paths.Record)
+			require.ErrorIs(t, statErr, os.ErrNotExist)
+			_, statErr = os.Stat(paths.Socket)
+			require.ErrorIs(t, statErr, os.ErrNotExist)
+		})
+	}
+}
+
+type fakeExposeSessionControl struct {
+	descriptors  []engine.SessionDescriptor
+	inspectErr   error
+	inspectCalls int
+}
+
+func (control *fakeExposeSessionControl) InspectSession(context.Context, string) (engine.SessionDescriptor, error) {
+	control.inspectCalls++
+	if control.inspectErr != nil {
+		return engine.SessionDescriptor{}, control.inspectErr
+	}
+	if len(control.descriptors) == 0 {
+		return engine.SessionDescriptor{}, errors.New("unexpected inspect")
+	}
+	descriptor := control.descriptors[0]
+	if len(control.descriptors) > 1 {
+		control.descriptors = control.descriptors[1:]
+	}
+	return descriptor, nil
+}
+
+func (*fakeExposeSessionControl) InspectPrimaryQuery(context.Context, string) (engine.SessionQuery, error) {
+	return engine.SessionQuery{}, errors.New("unexpected primary query inspection")
+}
+
+func (*fakeExposeSessionControl) PrimaryQueryResult(context.Context, string) (client.SessionResult, error) {
+	return client.SessionResult{}, errors.New("unexpected primary query result")
 }
 
 func TestPublishExposePortsStartsBeforeReadingPorts(t *testing.T) {

@@ -154,6 +154,11 @@ func TestDetachableModesRejectUnsupportedConnectionBoundaries(t *testing.T) {
 		require.ErrorContains(t, err, "mutually exclusive")
 	})
 
+	t.Run("telemetry replay requires observer", func(t *testing.T) {
+		_, err := Connect(t.Context(), Params{ReplaySessionTelemetry: true})
+		require.ErrorContains(t, err, "requires an attached session")
+	})
+
 	t.Run("nested session port", func(t *testing.T) {
 		t.Setenv("DAGGER_SESSION_PORT", "1234")
 		for name, connect := range map[string]func() error{
@@ -187,6 +192,33 @@ func TestDetachableModesRejectUnsupportedConnectionBoundaries(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestAttachedTelemetryPathSeparatesWorkFromCreatorReplay(t *testing.T) {
+	t.Parallel()
+	const sessionID = "sess_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+	for _, test := range []struct {
+		name   string
+		params Params
+		want   string
+	}{
+		{
+			name:   "full work attachment",
+			params: Params{SessionID: sessionID},
+			want:   "/v1/traces",
+		},
+		{
+			name:   "creator history replay",
+			params: Params{SessionID: sessionID, ReplaySessionTelemetry: true},
+			want:   engine.SessionsEndpoint + "/" + sessionID + "/telemetry/traces",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &Client{Params: test.params, connectionMode: connectionModeObserver}
+			require.Equal(t, test.want, client.telemetryPath("traces"))
+		})
+	}
 }
 
 func TestClientClosePolicy(t *testing.T) {

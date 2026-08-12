@@ -111,7 +111,7 @@ func TestObserverClaimRolePartitionAndFailedClaimBaseline(t *testing.T) {
 		SessionID: testSessionID, ClientID: testObserverID, ClientSecretToken: "observer-token",
 		AttachSession: true, AttachmentID: "att_bbbbbbbbbbbbbbbbbbbbbbbbbb",
 	}}
-	_, err := srv.claimObserverAttachment(opts)
+	_, err := srv.claimSessionAttachment(opts)
 	var protocolErr sessionControlError
 	require.ErrorAs(t, err, &protocolErr)
 	require.Equal(t, engine.SessionErrorAlreadyAttached, protocolErr.code)
@@ -151,7 +151,7 @@ func TestConcurrentObserverClaimsHaveOneWinner(t *testing.T) {
 	results := make(chan result, 2)
 	for _, opt := range opts {
 		go func() {
-			claim, err := srv.claimObserverAttachment(opt)
+			claim, err := srv.claimSessionAttachment(opt)
 			results <- result{claim: claim, err: err}
 		}()
 	}
@@ -190,7 +190,7 @@ func TestObserverClaimRacingTerminationCannotRecreateSession(t *testing.T) {
 	}}
 	claimResult := make(chan error, 1)
 	go func() {
-		_, err := srv.claimObserverAttachment(opts)
+		_, err := srv.claimSessionAttachment(opts)
 		claimResult <- err
 	}()
 	waitForSessionHookCount(t, hooks.Events, sessionHookObserverAfterValidation, 1)
@@ -208,7 +208,7 @@ func TestObserverClaimRacingTerminationCannotRecreateSession(t *testing.T) {
 	require.Nil(t, sess.currentAttachment)
 	require.Len(t, sess.clients, 1, "failed observer claim left an orphan client")
 
-	_, err := srv.claimObserverAttachment(opts)
+	_, err := srv.claimSessionAttachment(opts)
 	require.ErrorAs(t, err, &protocolErr)
 	require.Equal(t, engine.SessionErrorSessionNotFound, protocolErr.code)
 	require.False(t, sessionInRegistry(srv, testSessionID), "observer metadata recreated a terminated session")
@@ -227,7 +227,7 @@ func TestDelayedCreatorReconnectCannotStealObserver(t *testing.T) {
 		SessionID: testSessionID, ClientID: testObserverID, ClientSecretToken: "observer-token",
 		AttachSession: true, AttachmentID: observerAttachmentID,
 	}}
-	observerClaim, err := srv.claimObserverAttachment(observerOpts)
+	observerClaim, err := srv.claimSessionAttachment(observerOpts)
 	require.NoError(t, err)
 	sess.currentAttachment.Ready = true
 	observerAttachment := sess.currentAttachment
@@ -257,7 +257,7 @@ func TestRepeatedObserverDetachReturnsResourcesToBaseline(t *testing.T) {
 	const attempts = 4
 	for i, clientID := range []string{"observer-a", "observer-b", "observer-c", "observer-d"} {
 		attachmentID := "att_" + strings.Repeat(string(rune('b'+i)), engine.SessionIDEncodedLength)
-		claim, err := srv.claimObserverAttachment(&ClientInitOpts{ClientMetadata: &engine.ClientMetadata{
+		claim, err := srv.claimSessionAttachment(&ClientInitOpts{ClientMetadata: &engine.ClientMetadata{
 			SessionID: testSessionID, ClientID: clientID, ClientSecretToken: "token",
 			AttachSession: true, AttachmentID: attachmentID,
 		}})
@@ -267,7 +267,7 @@ func TestRepeatedObserverDetachReturnsResourcesToBaseline(t *testing.T) {
 		require.NoError(t, err)
 		exporter := &shutdownRecordingSpanExporter{done: make(chan struct{})}
 		observer := &daggerClient{
-			daggerSession: sess, clientID: clientID, observerClient: true,
+			daggerSession: sess, clientID: clientID, attachmentClient: true,
 			keepAliveTelemetryDB: keepAlive, shutdownCh: make(chan struct{}),
 			tracerProvider: sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter)),
 		}
@@ -327,7 +327,7 @@ func TestObserverCleanupPreservesSameIDReplacement(t *testing.T) {
 	srv.sessionTestHooks = hooks
 
 	old := &daggerClient{
-		daggerSession: sess, clientID: testObserverID, observerClient: true,
+		daggerSession: sess, clientID: testObserverID, attachmentClient: true,
 		shutdownCh: make(chan struct{}),
 	}
 	sess.clients[testObserverID] = old
@@ -338,9 +338,15 @@ func TestObserverCleanupPreservesSameIDReplacement(t *testing.T) {
 	go func() { detached <- srv.detachAttachment(sess, testAttachmentID, 2) }()
 	waitForSessionHookCount(t, hooks.Events, sessionHookAttachmentCleared, 1)
 
+	replacementAttachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+	claim, err := srv.claimSessionAttachment(&ClientInitOpts{ClientMetadata: &engine.ClientMetadata{
+		SessionID: testSessionID, ClientID: testObserverID, ClientSecretToken: "replacement-token",
+		AttachSession: true, AttachmentID: replacementAttachmentID,
+	}})
+	require.NoError(t, err)
 	replacement := &daggerClient{
-		daggerSession: sess, clientID: testObserverID, observerClient: true,
-		shutdownCh: make(chan struct{}),
+		daggerSession: sess, clientID: testObserverID, attachmentClient: true,
+		attachmentGeneration: claim.Generation, shutdownCh: make(chan struct{}),
 	}
 	sess.clientMu.Lock()
 	sess.clients[testObserverID] = replacement
@@ -351,6 +357,8 @@ func TestObserverCleanupPreservesSameIDReplacement(t *testing.T) {
 	sess.clientMu.RLock()
 	require.Same(t, replacement, sess.clients[testObserverID])
 	sess.clientMu.RUnlock()
+	require.Equal(t, replacementAttachmentID, sess.currentAttachment.ID)
+	require.Equal(t, claim.Generation, sess.currentAttachment.Generation)
 	select {
 	case <-old.shutdownCh:
 	default:
@@ -656,7 +664,7 @@ func TestDetachableAttachmentShutdownRejectedButNestedShutdownSucceeds(t *testin
 	sess.currentAttachment = attachment
 
 	observer := &daggerClient{
-		daggerSession: sess, clientID: testObserverID, observerClient: true,
+		daggerSession: sess, clientID: testObserverID, attachmentClient: true,
 		shutdownCh: make(chan struct{}),
 	}
 	for name, client := range map[string]*daggerClient{
@@ -1104,7 +1112,7 @@ func TestAttachedClientPublicationMarksSourcePublished(t *testing.T) {
 	srv, sess, _ := newDetachableLifecycleTestSession(t, 0)
 	attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
 	observer := &daggerClient{
-		daggerSession: sess, clientID: testObserverID, observerClient: true,
+		daggerSession: sess, clientID: testObserverID, attachmentClient: true,
 		clientMetadata: &engine.ClientMetadata{AttachSession: true},
 		shutdownCh:     make(chan struct{}),
 	}
@@ -1168,14 +1176,14 @@ func TestAttachedRoleCanInitAfterPublication(t *testing.T) {
 	attached := &daggerClient{
 		state: clientStateInitialized, daggerSession: sess,
 		clientID: testObserverID, secretToken: metadata.ClientSecretToken,
-		clientMetadata: metadata, observerClient: true, shutdownCh: make(chan struct{}),
+		clientMetadata: metadata, attachmentClient: true, attachmentGeneration: 2,
+		shutdownCh: make(chan struct{}),
 	}
 	sess.clientMu.Lock()
 	sess.clients[attached.clientID] = attached
 	sess.clientMu.Unlock()
-	sess.currentAttachment = &sessionAttachment{
-		ID: attachmentID, Generation: 2, ClientID: attached.clientID, Ready: true,
-	}
+	sess.currentAttachment = newSessionAttachment(attachmentID, 2, attached.clientID, time.Now())
+	sess.currentAttachment.Ready = true
 	sess.markSourceClientPublished(attached.clientID)
 
 	recorder := httptest.NewRecorder()
@@ -1184,6 +1192,103 @@ func TestAttachedRoleCanInitAfterPublication(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, recorder.Code)
 	require.True(t, sess.sourceClientPublished(attached.clientID))
 	require.Same(t, attached, sess.clients[attached.clientID])
+}
+
+func TestAttachedRoleWorkRequiresCurrentReadyGeneration(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		attachment *sessionAttachment
+		clientGen  uint64
+	}{
+		{name: "unclaimed"},
+		{
+			name: "stale generation",
+			attachment: func() *sessionAttachment {
+				attachment := newSessionAttachment(
+					"att_bbbbbbbbbbbbbbbbbbbbbbbbbb", 3, testObserverID, time.Now(),
+				)
+				attachment.Ready = true
+				return attachment
+			}(),
+			clientGen: 2,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			srv, sess, _ := newDetachableLifecycleTestSession(t, 0)
+			attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+			metadata := &engine.ClientMetadata{
+				SessionID: testSessionID, ClientID: testObserverID,
+				ClientSecretToken: "observer-token", AttachSession: true,
+				AttachmentID: attachmentID,
+			}
+			if test.attachment != nil {
+				sess.currentAttachment = test.attachment
+				sess.clients[testObserverID] = &daggerClient{
+					state: clientStateInitialized, daggerSession: sess,
+					clientID: testObserverID, secretToken: metadata.ClientSecretToken,
+					clientMetadata: metadata, attachmentClient: true,
+					attachmentGeneration: test.clientGen, shutdownCh: make(chan struct{}),
+				}
+			}
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "http://dagger"+engine.InitEndpoint, nil)
+			httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{ClientMetadata: metadata}).ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusConflict, recorder.Code)
+			var response engine.SessionProtocolErrorResponse
+			require.NoError(t, json.NewDecoder(recorder.Body).Decode(&response))
+			require.Equal(t, engine.SessionErrorAttachmentMismatch, response.Error.Code)
+		})
+	}
+}
+
+func TestAttachedRoleWorkCanceledBeforeGenerationCleanup(t *testing.T) {
+	t.Parallel()
+	srv, sess, _ := newDetachableLifecycleTestSession(t, 0)
+	attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+	metadata := &engine.ClientMetadata{
+		SessionID: testSessionID, ClientID: testObserverID,
+		ClientSecretToken: "observer-token", AttachSession: true,
+		AttachmentID: attachmentID,
+	}
+	attached := &daggerClient{
+		state: clientStateInitialized, daggerSession: sess,
+		clientID: testObserverID, secretToken: metadata.ClientSecretToken,
+		clientMetadata: metadata, attachmentClient: true, attachmentGeneration: 2,
+		shutdownCh: make(chan struct{}),
+	}
+	sess.clients[testObserverID] = attached
+	sess.currentAttachment = newSessionAttachment(attachmentID, 2, testObserverID, time.Now())
+	sess.currentAttachment.Ready = true
+
+	const workPath = "/test/attachment-work"
+	entered := make(chan struct{})
+	canceled := make(chan error, 1)
+	sess.endpointMu.Lock()
+	sess.endpoints = map[string]http.Handler{
+		workPath: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			close(entered)
+			<-r.Context().Done()
+			canceled <- context.Cause(r.Context())
+		}),
+	}
+	sess.endpointMu.Unlock()
+
+	request := httptest.NewRequest(http.MethodPost, "http://dagger"+workPath, nil)
+	served := make(chan error, 1)
+	go func() {
+		served <- srv.serveHTTPToClient(
+			httptest.NewRecorder(), request, &ClientInitOpts{ClientMetadata: metadata},
+		)
+	}()
+	<-entered
+	require.True(t, srv.detachAttachment(sess, attachmentID, 2))
+	require.ErrorContains(t, <-canceled, "generation 2 detached")
+	require.NoError(t, <-served)
+	require.Nil(t, sess.currentAttachment)
 }
 
 func TestDelayedDetachableRegistrationRechecksPublicationAfterReservation(t *testing.T) {
@@ -1300,7 +1405,7 @@ func TestPrePublicationAttachmentFailuresReleaseClaim(t *testing.T) {
 			attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
 			sess.currentAttachment = &sessionAttachment{ID: attachmentID, Generation: 2, ClientID: testObserverID}
 			observer := &daggerClient{
-				daggerSession: sess, clientID: testObserverID, observerClient: true,
+				daggerSession: sess, clientID: testObserverID, attachmentClient: true,
 				clientMetadata: &engine.ClientMetadata{AttachSession: true}, shutdownCh: make(chan struct{}),
 			}
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://dagger"+engine.SessionAttachablesEndpoint, nil)
@@ -1327,7 +1432,7 @@ func TestReservationConflictReleasesAttachmentClaim(t *testing.T) {
 	require.NoError(t, sess.attachables.Reserve(testObserverID, false))
 	t.Cleanup(func() { sess.attachables.ReleaseReservation(testObserverID) })
 	observer := &daggerClient{
-		daggerSession: sess, clientID: testObserverID, observerClient: true,
+		daggerSession: sess, clientID: testObserverID, attachmentClient: true,
 		clientMetadata: &engine.ClientMetadata{AttachSession: true}, shutdownCh: make(chan struct{}),
 	}
 	req := httptest.NewRequest(http.MethodGet, "http://dagger"+engine.SessionAttachablesEndpoint, nil)

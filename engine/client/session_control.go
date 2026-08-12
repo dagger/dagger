@@ -305,7 +305,7 @@ func (c *Client) SessionTelemetryPath(signal string) string {
 }
 
 func (c *Client) telemetryPath(signal string) string {
-	if c.connectionMode == connectionModeObserver {
+	if c.connectionMode == connectionModeObserver && c.ReplaySessionTelemetry {
 		return c.SessionTelemetryPath(signal)
 	}
 	return "/v1/" + signal

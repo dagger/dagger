@@ -24,6 +24,12 @@ type exposePreparation struct {
 	Paths   exposePaths
 }
 
+type exposeSessionControl interface {
+	InspectSession(context.Context, string) (engine.SessionDescriptor, error)
+	InspectPrimaryQuery(context.Context, string) (engine.SessionQuery, error)
+	PrimaryQueryResult(context.Context, string) (client.SessionResult, error)
+}
+
 func newSessionsExposeCommand() *cobra.Command {
 	var (
 		portSpecs []string
@@ -77,92 +83,120 @@ func exposeDetachableSession(
 	stop bool,
 ) error {
 	return withSessionControlClient(cmd.Context(), func(ctx context.Context, control *client.ControlClient) error {
-		descriptor, err := control.InspectSession(ctx, sessionID)
-		if err != nil {
-			return err
-		}
 		stateDir, err := exposeStateDirectory()
 		if err != nil {
 			return err
 		}
-		paths, err := makeExposePaths(stateDir, sessionID)
-		if err != nil {
-			return err
-		}
-		if stop {
+		return exposeDetachableSessionWithControl(
+			ctx, cmd, control, sessionID, stateDir, portSpecs, replace, stop,
+		)
+	})
+}
+
+func exposeDetachableSessionWithControl(
+	ctx context.Context,
+	cmd *cobra.Command,
+	control exposeSessionControl,
+	sessionID string,
+	stateDir string,
+	portSpecs []string,
+	replace bool,
+	stop bool,
+) error {
+	descriptor, err := control.InspectSession(ctx, sessionID)
+	if err != nil {
+		if stop && isSessionProtocolErrorCode(err, engine.SessionErrorSessionNotFound) {
+			paths, pathErr := makeExposePaths(stateDir, sessionID)
+			if pathErr != nil {
+				return pathErr
+			}
 			if err := stopLocalExpose(ctx, paths); err != nil {
 				return err
 			}
 			_, err := fmt.Fprintf(cmd.OutOrStdout(), "Stopped local ports for %s\n", sessionID)
 			return err
 		}
+		return err
+	}
+	if stop {
 		if descriptor.Query == nil || descriptor.Query.Presentation.Kind != "up" {
 			return errors.New("session has no up services")
 		}
-		if descriptor.Query.Status == engine.SessionQueryStateRunning {
-			fmt.Fprintln(cmd.ErrOrStderr(), "Services are still starting...")
-		}
-		query, err := waitForPrimaryQuery(ctx, func(ctx context.Context) (engine.SessionQuery, error) {
-			return control.InspectPrimaryQuery(ctx, sessionID)
-		})
+		paths, err := makeExposePaths(stateDir, sessionID)
 		if err != nil {
 			return err
 		}
-		result, err := control.PrimaryQueryResult(ctx, sessionID)
-		if err != nil {
+		if err := stopLocalExpose(ctx, paths); err != nil {
 			return err
 		}
-		value, err := decodeDetachedResult(result.Body, query.Presentation)
-		if err != nil {
-			return err
-		}
-		upResult, ok := value.(sessionwire.DetachedUpResult)
-		if !ok {
-			return fmt.Errorf("saved up result is %T", value)
-		}
-		request, err := normalizeExposeRequest(upResult, portSpecs)
-		if err != nil {
-			return err
-		}
-		descriptor, err = control.InspectSession(ctx, sessionID)
-		if err != nil {
-			return err
-		}
-		remoteHolder := ""
-		if descriptor.Attachment != nil && sessionPortCount(descriptor) > 0 {
-			remoteHolder = descriptor.Attachment.Hostname
-			if remoteHolder == "" {
-				remoteHolder = descriptor.Attachment.ClientID
-			}
-		}
-
-		preparation, err := prepareExposePorts(ctx, sessionID, stateDir, request, len(portSpecs) == 0, replace, remoteHolder, func(message string) {
-			fmt.Fprintln(cmd.ErrOrStderr(), message)
-		})
-		if err != nil {
-			return err
-		}
-		committed := false
-		if preparation.Startup != nil {
-			defer func() {
-				if !committed {
-					_ = preparation.Startup.Abort()
-				}
-			}()
-			if err := preparation.Startup.Commit(ctx); err != nil {
-				return err
-			}
-			committed = true
-			return writeExposeSummary(cmd.OutOrStdout(), sessionID, preparation.Startup.Ports, preparation.Paths.Log)
-		}
-
-		descriptor, err = control.InspectSession(ctx, sessionID)
-		if err != nil {
-			return err
-		}
-		ports := exposedPortsFromDescriptor(descriptor, preparation.Request)
-		return writeExposeSummary(cmd.OutOrStdout(), sessionID, ports, preparation.Paths.Log)
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Stopped local ports for %s\n", sessionID)
+		return err
+	}
+	if descriptor.Query == nil || descriptor.Query.Presentation.Kind != "up" {
+		return errors.New("session has no up services")
+	}
+	if descriptor.Query.Status == engine.SessionQueryStateRunning {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Services are still starting...")
+	}
+	query, err := waitForPrimaryQuery(ctx, func(ctx context.Context) (engine.SessionQuery, error) {
+		return control.InspectPrimaryQuery(ctx, sessionID)
 	})
+	if err != nil {
+		return err
+	}
+	result, err := control.PrimaryQueryResult(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	value, err := decodeDetachedResult(result.Body, query.Presentation)
+	if err != nil {
+		return err
+	}
+	upResult, ok := value.(sessionwire.DetachedUpResult)
+	if !ok {
+		return fmt.Errorf("saved up result is %T", value)
+	}
+	request, err := normalizeExposeRequest(upResult, portSpecs)
+	if err != nil {
+		return err
+	}
+	descriptor, err = control.InspectSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	preparation, err := prepareExposePorts(ctx, sessionID, stateDir, request, len(portSpecs) == 0, replace, func(message string) {
+		fmt.Fprintln(cmd.ErrOrStderr(), message)
+	})
+	if err != nil {
+		if isExposeAttachmentConflict(err) {
+			return inspectAttachmentHolderConflict(ctx, control, sessionID, err)
+		}
+		return err
+	}
+	committed := false
+	if preparation.Startup != nil {
+		defer func() {
+			if !committed {
+				_ = preparation.Startup.Abort()
+			}
+		}()
+		if err := preparation.Startup.Commit(ctx); err != nil {
+			return err
+		}
+		committed = true
+		return writeExposeSummary(cmd.OutOrStdout(), sessionID, preparation.Startup.Ports, preparation.Paths.Log)
+	}
+
+	descriptor, err = control.InspectSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	ports, err := exposedPortsFromDescriptor(descriptor, preparation.Request)
+	if err != nil {
+		return err
+	}
+	return writeExposeSummary(cmd.OutOrStdout(), sessionID, ports, preparation.Paths.Log)
+
 }
 
 func prepareExposePorts(
@@ -172,7 +206,6 @@ func prepareExposePorts(
 	request exposeRequest,
 	noExplicitPorts bool,
 	replace bool,
-	remoteHolder string,
 	notify func(string),
 ) (exposePreparation, error) {
 	paths, err := makeExposePaths(stateDir, sessionID)
@@ -186,13 +219,6 @@ func prepareExposePorts(
 			return exposePreparation{}, err
 		}
 		if lock != nil {
-			if remoteHolder != "" {
-				_ = lock.Close()
-				return exposePreparation{}, fmt.Errorf(
-					"ports are being served from %s; see dagger sessions inspect %s",
-					remoteHolder, sessionID,
-				)
-			}
 			if notify != nil {
 				notify("Publishing ports...")
 			}
@@ -235,6 +261,50 @@ func prepareExposePorts(
 		}
 		return exposePreparation{Startup: startup, Request: request, Paths: paths}, nil
 	}
+}
+
+func isSessionProtocolErrorCode(err error, code string) bool {
+	var protocolErr *client.SessionProtocolError
+	return errors.As(err, &protocolErr) && protocolErr.Code == code
+}
+
+func isExposeAttachmentConflict(err error) bool {
+	var childErr *exposeChildError
+	if errors.As(err, &childErr) {
+		return childErr.Code == engine.SessionErrorAlreadyAttached
+	}
+	return isSessionProtocolErrorCode(err, engine.SessionErrorAlreadyAttached)
+}
+
+func attachmentHolderConflict(descriptor engine.SessionDescriptor, sessionID string, cause error) error {
+	attachment := descriptor.Attachment
+	if attachment == nil {
+		return nil
+	}
+	holder := fmt.Sprintf("client %s", attachment.ClientID)
+	if attachment.Hostname != "" {
+		holder += " on " + attachment.Hostname
+	}
+	if sessionPortCount(descriptor) > 0 {
+		return fmt.Errorf("ports are being served by %s; see dagger sessions inspect %s: %w", holder, sessionID, cause)
+	}
+	return fmt.Errorf("session is attached by %s; see dagger sessions inspect %s: %w", holder, sessionID, cause)
+}
+
+func inspectAttachmentHolderConflict(
+	ctx context.Context,
+	control exposeSessionControl,
+	sessionID string,
+	cause error,
+) error {
+	latest, err := control.InspectSession(ctx, sessionID)
+	if err != nil {
+		return cause
+	}
+	if conflict := attachmentHolderConflict(latest, sessionID, cause); conflict != nil {
+		return conflict
+	}
+	return cause
 }
 
 func parseExposePortSpec(spec string) (exposePortMapping, error) {
@@ -308,6 +378,9 @@ func normalizeExposeRequest(result sessionwire.DetachedUpResult, specs []string)
 				if protocol == "" {
 					protocol = sessionwire.NetworkProtocolTCP
 				}
+				if err := validateSavedExposeProtocol(service.Name, port.Port, protocol); err != nil {
+					return exposeRequest{}, err
+				}
 				frontend := port.Port
 				put(exposePortMapping{
 					Service: service.Name, ServiceID: service.ServiceID, Frontend: &frontend,
@@ -319,6 +392,9 @@ func normalizeExposeRequest(result sessionwire.DetachedUpResult, specs []string)
 				protocol := port.Protocol
 				if protocol == "" {
 					protocol = sessionwire.NetworkProtocolTCP
+				}
+				if err := validateSavedExposeProtocol(service.Name, port.Backend, protocol); err != nil {
+					return exposeRequest{}, err
 				}
 				put(exposePortMapping{
 					Service: service.Name, ServiceID: service.ServiceID, Frontend: port.Frontend,
@@ -370,7 +446,21 @@ func normalizeExposeRequest(result sessionwire.DetachedUpResult, specs []string)
 	return request.canonical(), nil
 }
 
-func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exposeRequest) []exposedPort {
+func validateSavedExposeProtocol(service string, backend int, protocol sessionwire.NetworkProtocol) error {
+	if protocol == sessionwire.NetworkProtocolUDP {
+		return fmt.Errorf("saved UDP port forwarding is not supported (%s:%d/udp)", service, backend)
+	}
+	if protocol != sessionwire.NetworkProtocolTCP {
+		return fmt.Errorf("unsupported saved network protocol %q", protocol)
+	}
+	return nil
+}
+
+func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exposeRequest) ([]exposedPort, error) {
+	if descriptor.Attachment == nil || descriptor.Attachment.ClientID == "" {
+		return nil, errors.New("current attachment is unavailable while reconstructing published ports")
+	}
+	ownerClientID := descriptor.Attachment.ClientID
 	namesByKey := map[engine.SessionServiceKey][]string{}
 	for _, service := range descriptor.Services {
 		if service.Retained && len(service.Names) > 0 {
@@ -380,7 +470,7 @@ func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exp
 	used := make([]bool, len(request.Mappings))
 	ports := make([]exposedPort, 0)
 	for _, service := range descriptor.Services {
-		if service.TunnelUpstream == nil {
+		if service.TunnelUpstream == nil || service.OwnerClientID != ownerClientID {
 			continue
 		}
 		aliases := namesByKey[*service.TunnelUpstream]
@@ -399,17 +489,24 @@ func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exp
 					mappingIndex = i
 				}
 			}
-			published := exposedPort{Frontend: port.Port, Backend: port.Port, Protocol: protocol}
-			if len(aliases) > 0 {
-				published.Service = aliases[0]
+			if mappingIndex < 0 {
+				continue
 			}
-			if mappingIndex >= 0 {
-				mapping := request.Mappings[mappingIndex]
-				used[mappingIndex] = true
-				published.Service = mapping.Service
-				published.Backend = mapping.Backend
+			mapping := request.Mappings[mappingIndex]
+			used[mappingIndex] = true
+			published := exposedPort{
+				Service: mapping.Service, Frontend: port.Port, Backend: mapping.Backend, Protocol: protocol,
 			}
 			ports = append(ports, published)
+		}
+	}
+	for i, matched := range used {
+		if !matched {
+			mapping := request.Mappings[i]
+			return nil, fmt.Errorf(
+				"published port mapping for %s:%d/%s is not yet available from attachment client %s",
+				mapping.Service, mapping.Backend, strings.ToLower(string(mapping.Protocol)), ownerClientID,
+			)
 		}
 	}
 	sort.Slice(ports, func(i, j int) bool {
@@ -418,7 +515,7 @@ func exposedPortsFromDescriptor(descriptor engine.SessionDescriptor, request exp
 		}
 		return ports[i].Frontend < ports[j].Frontend
 	})
-	return ports
+	return ports, nil
 }
 
 func containsString(values []string, value string) bool {

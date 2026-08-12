@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -53,6 +54,11 @@ Examples:
 		}
 		if upDetachMode && !exposePlatformSupported() {
 			return errors.New("detached up and sessions expose are not yet supported on Windows")
+		}
+		if upDetachMode {
+			if err := validateDetachedUpEngineTarget(); err != nil {
+				return err
+			}
 		}
 		return withEngine(
 			cmd.Context(),
@@ -154,10 +160,17 @@ func runDetachedServices(
 	if err != nil {
 		return err
 	}
-	preparation, err := prepareExposePorts(ctx, engineClient.SessionID, stateDir, requestPorts, true, false, "", func(message string) {
+	preparation, err := prepareExposePorts(ctx, engineClient.SessionID, stateDir, requestPorts, true, false, func(message string) {
 		fmt.Fprintln(cmd.ErrOrStderr(), message)
 	})
 	if err != nil {
+		if isExposeAttachmentConflict(err) {
+			if descriptor, inspectErr := engineClient.InspectSession(ctx); inspectErr == nil {
+				if conflict := attachmentHolderConflict(descriptor, engineClient.SessionID, err); conflict != nil {
+					return conflict
+				}
+			}
+		}
 		return err
 	}
 	if preparation.Startup != nil {
@@ -176,10 +189,25 @@ func runDetachedServices(
 		return err
 	}
 	transaction.committed = true
+	ports, err := exposedPortsFromDescriptor(descriptor, preparation.Request)
+	if err != nil {
+		return err
+	}
 	return writeDetachedUpSummary(
 		cmd.OutOrStdout(), engineClient.SessionID,
-		exposedPortsFromDescriptor(descriptor, preparation.Request), preparation.Paths.Log,
+		ports, preparation.Paths.Log,
 	)
+}
+
+func validateDetachedUpEngineTarget() error {
+	runnerHost := RunnerHost
+	if useCloudEngine {
+		runnerHost = engine.DefaultCloudRunnerHost
+	}
+	if strings.HasPrefix(runnerHost, engine.CloudRunnerHostPrefix) {
+		return errors.New("up --detach is not supported with a Dagger Cloud Engine because the background port server cannot reconnect to that engine")
+	}
+	return nil
 }
 
 type detachedUpTransaction struct {

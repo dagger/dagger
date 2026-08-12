@@ -315,9 +315,13 @@ type daggerClient struct {
 	// is around to avoid perf overhead of closing/reopening a lot
 	keepAliveTelemetryDB *clientdb.DB
 
-	observerClient bool
-	cleanupOnce    sync.Once
-	cleanupErr     error
+	attachmentClient bool
+	// attachmentGeneration binds an attach-role client to the exact attachment
+	// claim that created it. A later attachment may reuse the client ID, but it
+	// must never inherit authority from an older generation.
+	attachmentGeneration uint64
+	cleanupOnce          sync.Once
+	cleanupErr           error
 }
 
 type sessionLifetime uint8
@@ -333,6 +337,16 @@ type sessionAttachment struct {
 	ClientID   string
 	Ready      bool
 	CreatedAt  time.Time
+	ctx        context.Context
+	cancel     context.CancelCauseFunc
+}
+
+func newSessionAttachment(id string, generation uint64, clientID string, createdAt time.Time) *sessionAttachment {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	return &sessionAttachment{
+		ID: id, Generation: generation, ClientID: clientID, CreatedAt: createdAt,
+		ctx: ctx, cancel: cancel,
+	}
 }
 
 func (srv *Server) getCoreSchemaBase(ctx context.Context) (*schema.CoreSchemaBase, error) {
@@ -661,6 +675,18 @@ func (sess *daggerSession) withClosingCancel(ctx context.Context) context.Contex
 	return ctx
 }
 
+func withAttachmentCancel(ctx, attachmentCtx context.Context) context.Context {
+	ctx, cancel := context.WithCancelCause(ctx)
+	go func() {
+		select {
+		case <-attachmentCtx.Done():
+			cancel(context.Cause(attachmentCtx))
+		case <-ctx.Done():
+		}
+	}()
+	return ctx
+}
+
 // requires that sess.lifecycleMu is held.
 //
 // removeDaggerSession does NOT remove the session from srv.daggerSessions; it
@@ -904,6 +930,8 @@ type ClientInitOpts struct {
 	FunctionCall *core.FunctionCall
 
 	claimedAttachment *sessionAttachmentClaim
+	attachmentWork    bool
+	attachmentCtx     context.Context
 }
 
 // requires that client.stateMu is held
@@ -1239,7 +1267,7 @@ func (srv *Server) getOrInitClient(
 	}
 	if opts.DetachableSession && opts.AttachSession {
 		return nil, nil, controlError(http.StatusBadRequest, engine.SessionErrorInvalidRequest,
-			errors.New("detachable creation and observer attachment roles are mutually exclusive"))
+			errors.New("detachable creation and session attachment roles are mutually exclusive"))
 	}
 	if opts.DetachableSession || opts.AttachSession {
 		if err := engine.ValidateSessionID(opts.SessionID); err != nil {
@@ -1310,10 +1338,9 @@ func (srv *Server) getOrInitClient(
 		if opts.DetachableSession {
 			sess.lifetime = sessionLifetimeDetachable
 			sess.nextGeneration = 1
-			sess.currentAttachment = &sessionAttachment{
-				ID: opts.AttachmentID, Generation: 1, ClientID: clientID,
-				CreatedAt: sess.createdAt,
-			}
+			sess.currentAttachment = newSessionAttachment(
+				opts.AttachmentID, 1, clientID, sess.createdAt,
+			)
 			opts.claimedAttachment = &sessionAttachmentClaim{
 				ID: opts.AttachmentID, Generation: 1, ClientID: clientID,
 			}
@@ -1398,6 +1425,38 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q removed", sessionID)}
 	}
 
+	// Attachment claims and attach-role work are serialized against detach. A
+	// claimed attachables request must still own the exact claim when it
+	// publishes its client. Every later work request must come from that ready
+	// client's exact generation. Keep ownership through activeCount++ so detach
+	// cancels either before this request starts or after it has a lifetime-bound
+	// context; there is no unauthorised gap between the check and admission.
+	attachmentHeld := false
+	if opts.claimedAttachment != nil || opts.attachmentWork {
+		sess.attachmentMu.Lock()
+		attachmentHeld = true
+		defer func() {
+			if attachmentHeld {
+				sess.attachmentMu.Unlock()
+			}
+		}()
+		attachment := sess.currentAttachment
+		claim := opts.claimedAttachment
+		if claim != nil {
+			if attachment == nil || attachment.ID != claim.ID ||
+				attachment.Generation != claim.Generation || attachment.ClientID != claim.ClientID {
+				return nil, nil, attachmentMismatchError(sessionID, opts.AttachmentID, clientID)
+			}
+		}
+		if opts.attachmentWork {
+			if attachment == nil || !attachment.Ready || attachment.ID != opts.AttachmentID ||
+				attachment.ClientID != clientID || attachment.ctx == nil || attachment.ctx.Err() != nil {
+				return nil, nil, attachmentMismatchError(sessionID, opts.AttachmentID, clientID)
+			}
+			opts.attachmentCtx = attachment.ctx
+		}
+	}
+
 	// get or initialize the client itself.
 	//
 	// A client is inserted into sess.clients only AFTER it is fully initialized,
@@ -1408,17 +1467,26 @@ func (srv *Server) getOrInitClient(
 	sess.clientMu.RLock()
 	client, clientExists := sess.clients[clientID]
 	sess.clientMu.RUnlock()
+	if opts.attachmentWork && (!clientExists || !client.attachmentClient ||
+		client.attachmentGeneration != sess.currentAttachment.Generation) {
+		return nil, nil, attachmentMismatchError(sessionID, opts.AttachmentID, clientID)
+	}
 
 	if !clientExists {
+		var attachmentGeneration uint64
+		if opts.claimedAttachment != nil {
+			attachmentGeneration = opts.claimedAttachment.Generation
+		}
 		client = &daggerClient{
-			state:          clientStateUninitialized,
-			daggerSession:  sess,
-			clientID:       clientID,
-			clientVersion:  opts.ClientVersion,
-			secretToken:    token,
-			shutdownCh:     make(chan struct{}),
-			clientMetadata: opts.ClientMetadata,
-			observerClient: opts.AttachSession,
+			state:                clientStateUninitialized,
+			daggerSession:        sess,
+			clientID:             clientID,
+			clientVersion:        opts.ClientVersion,
+			secretToken:          token,
+			shutdownCh:           make(chan struct{}),
+			clientMetadata:       opts.ClientMetadata,
+			attachmentClient:     opts.AttachSession,
+			attachmentGeneration: attachmentGeneration,
 		}
 
 		// Open the store outside clientMu because replaying persisted streams can
@@ -1797,10 +1865,29 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	mux := http.NewServeMux()
 	switch r.URL.Path {
 	case "/v1/traces", "/v1/logs", "/v1/metrics":
-		// Just get the client if it exists, don't init it.
-		client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+		var client *daggerClient
+		var cleanup func() error
+		var err error
+		if opts.AttachSession {
+			opts.attachmentWork = true
+			client, cleanup, err = srv.getOrInitClient(ctx, opts)
+		} else {
+			// Ordinary telemetry subscriptions only require an existing client.
+			client, err = srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+		}
 		if err != nil {
+			var controlErr sessionControlError
+			if errors.As(err, &controlErr) {
+				return controlErr
+			}
 			return fmt.Errorf("get client: %w", err)
+		}
+		if cleanup != nil {
+			defer func() {
+				rerr = errors.Join(rerr, cleanup())
+			}()
+			ctx = withAttachmentCancel(ctx, opts.attachmentCtx)
+			r = r.WithContext(ctx)
 		}
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, client))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, client))
@@ -1809,11 +1896,12 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		var attachmentClaim *sessionAttachmentClaim
 		if r.URL.Path == engine.SessionAttachablesEndpoint && opts.AttachSession {
 			var err error
-			attachmentClaim, err = srv.claimObserverAttachment(opts)
+			attachmentClaim, err = srv.claimSessionAttachment(opts)
 			if err != nil {
 				return err
 			}
 		}
+		opts.attachmentWork = opts.AttachSession && r.URL.Path != engine.SessionAttachablesEndpoint
 		client, cleanup, err := srv.getOrInitClient(ctx, opts)
 		if err != nil {
 			if attachmentClaim != nil {
@@ -1848,6 +1936,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			if err != nil {
 				return err
 			}
+		}
+		if opts.attachmentWork {
+			ctx = withAttachmentCancel(ctx, opts.attachmentCtx)
 		}
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
@@ -2291,7 +2382,7 @@ func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *dag
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	sess := client.daggerSession
 	if sess.lifetime == sessionLifetimeDetachable &&
-		(client.observerClient || client.clientMetadata != nil && client.clientMetadata.DetachableSession) {
+		(client.attachmentClient || client.clientMetadata != nil && client.clientMetadata.DetachableSession) {
 		return controlError(http.StatusBadRequest, engine.SessionErrorInvalidRequest,
 			errors.New("detachable session attachments cannot shut down the session"))
 	}

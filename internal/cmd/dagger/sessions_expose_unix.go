@@ -393,7 +393,12 @@ func serveExposePortServer(
 			if readySent {
 				phase = exposeChildPhaseAccepted
 			}
-			_ = writeExposeChildStatus(statusW, exposeChildStatus{Phase: phase, Error: rerr.Error()})
+			status := exposeChildStatus{Phase: phase, Error: rerr.Error()}
+			var protocolErr *client.SessionProtocolError
+			if errors.As(rerr, &protocolErr) {
+				status.ErrorCode = protocolErr.Code
+			}
+			_ = writeExposeChildStatus(statusW, status)
 		}
 	}()
 	writeRecord := hooks.WriteRecord

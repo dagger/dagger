@@ -78,22 +78,6 @@ func TestExposeHeldLockWithoutSocketRetriesUntilAcquired(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestPrepareExposePortsRejectsRemoteHolderAndReleasesLock(t *testing.T) {
-	t.Parallel()
-	stateDir := t.TempDir()
-	sessionID := testCLIValidSessionID()
-	_, err := prepareExposePorts(
-		t.Context(), sessionID, stateDir, exposeRequest{}, true, false, "remote-host", nil,
-	)
-	require.ErrorContains(t, err, "ports are being served from remote-host")
-	paths, err := makeExposePaths(stateDir, sessionID)
-	require.NoError(t, err)
-	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
-	require.NoError(t, err)
-	require.True(t, acquired)
-	require.NoError(t, lock.Close())
-}
-
 func TestPrepareExposePortsReadyIdempotenceAndDifference(t *testing.T) {
 	t.Parallel()
 	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-ready-")
@@ -124,21 +108,21 @@ func TestPrepareExposePortsReadyIdempotenceAndDifference(t *testing.T) {
 		Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
 	}}}
 	preparation, err := prepareExposePorts(
-		t.Context(), sessionID, stateDir, different, true, false, "", nil,
+		t.Context(), sessionID, stateDir, different, true, false, nil,
 	)
 	require.NoError(t, err)
 	require.Nil(t, preparation.Startup)
 	require.True(t, preparation.Request.equal(served), "plain expose did not adopt the served request")
 
 	preparation, err = prepareExposePorts(
-		t.Context(), sessionID, stateDir, served, false, false, "", nil,
+		t.Context(), sessionID, stateDir, served, false, false, nil,
 	)
 	require.NoError(t, err)
 	require.Nil(t, preparation.Startup)
 	require.True(t, preparation.Request.equal(served))
 
 	_, err = prepareExposePorts(
-		t.Context(), sessionID, stateDir, different, false, false, "", nil,
+		t.Context(), sessionID, stateDir, different, false, false, nil,
 	)
 	require.ErrorContains(t, err, "already served with a different port set; use --replace")
 }

@@ -207,34 +207,39 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 
 		attachParams := baseParams
 		attachParams.AttachSessionID = sessionID
+		attachParams.ReplaySessionTelemetry = true
 		attachParams.OnAttachWait = printAttachmentWaitMessage
-		observer, err := client.Connect(ctx, attachParams)
+		attachment, err := client.Connect(ctx, attachParams)
 		if err != nil {
 			var protocolErr *client.SessionProtocolError
-			if errors.As(err, &protocolErr) && protocolErr.Code == engine.SessionErrorAlreadyAttached &&
-				descriptor.Attachment != nil && sessionPortCount(descriptor) > 0 {
-				hostname := descriptor.Attachment.Hostname
-				if hostname == "" {
-					hostname = descriptor.Attachment.ClientID
+			if errors.As(err, &protocolErr) && protocolErr.Code == engine.SessionErrorAlreadyAttached {
+				// The retry window may outlive the descriptor read before Connect.
+				// Re-inspect so a new zero-port or port-serving holder is named
+				// accurately instead of reporting a stale attachment.
+				if conflictControl, connectErr := client.ConnectControl(ctx, baseParams); connectErr == nil {
+					latest, inspectErr := conflictControl.InspectSession(ctx, sessionID)
+					_ = conflictControl.Close()
+					if inspectErr == nil {
+						descriptor = latest
+					}
 				}
-				return cleanup.Run, fmt.Errorf(
-					"ports are being served from %s; see dagger sessions inspect %s: %w",
-					hostname, sessionID, err,
-				)
+				if conflict := attachmentHolderConflict(descriptor, sessionID, err); conflict != nil {
+					return cleanup.Run, conflict
+				}
 			}
 			return cleanup.Run, err
 		}
-		cleanup.Add("close session attachment", observer.Close)
+		cleanup.Add("close session attachment", attachment.Close)
 
 		telemetryDone := make(chan error, 1)
-		go func() { telemetryDone <- observer.WaitTelemetry() }()
+		go func() { telemetryDone <- attachment.WaitTelemetry() }()
 		select {
 		case err := <-telemetryDone:
 			if err != nil {
 				return cleanup.Run, err
 			}
 		case <-ctx.Done():
-			closeErr := observer.Close()
+			closeErr := attachment.Close()
 			telemetryErr := <-telemetryDone
 			return cleanup.Run, idtui.ExitError{
 				OriginalCode: 130,
@@ -242,7 +247,7 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 			}
 		}
 
-		query, err := waitForPrimaryQuery(ctx, observer.InspectPrimaryQuery)
+		query, err := waitForPrimaryQuery(ctx, attachment.InspectPrimaryQuery)
 		if err != nil {
 			var protocolErr *client.SessionProtocolError
 			if errors.As(err, &protocolErr) && protocolErr.Code == engine.SessionErrorSessionNotFound {
@@ -253,7 +258,7 @@ func attachDetachableSession(cmd *cobra.Command, sessionID string) (rerr error) 
 		if err := validateDetachedQueryResultState(query); err != nil {
 			return cleanup.Run, err
 		}
-		result, err := observer.PrimaryQueryResult(ctx)
+		result, err := attachment.PrimaryQueryResult(ctx)
 		if err != nil {
 			return cleanup.Run, err
 		}
@@ -353,9 +358,9 @@ func writeSessionInspect(w io.Writer, descriptor engine.SessionDescriptor) error
 	}
 	attached := "-"
 	if descriptor.Attachment != nil {
-		attached = descriptor.Attachment.ID
+		attached = fmt.Sprintf("%s (%s)", descriptor.Attachment.ID, descriptor.Attachment.ClientID)
 		if descriptor.Attachment.Hostname != "" {
-			attached = fmt.Sprintf("%s (%s on %s)", attached, descriptor.Attachment.ClientID, descriptor.Attachment.Hostname)
+			attached = fmt.Sprintf("%s (%s on %s)", descriptor.Attachment.ID, descriptor.Attachment.ClientID, descriptor.Attachment.Hostname)
 		}
 	}
 	rows := [][2]string{

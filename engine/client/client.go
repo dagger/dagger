@@ -102,7 +102,13 @@ type Params struct {
 	// It is mutually exclusive with Detachable.
 	AttachSessionID string
 
-	// OnAttachWait is called once if observer attachment must wait for a stale
+	// ReplaySessionTelemetry makes an attached client consume the creator's
+	// bounded primary-query telemetry history. It is reserved for the explicit
+	// `sessions attach` presentation path; work-capable attachments consume
+	// their own live telemetry through /v1.
+	ReplaySessionTelemetry bool
+
+	// OnAttachWait is called once if a session attachment must wait for a stale
 	// or live current attachment to clear.
 	OnAttachWait func()
 
@@ -238,7 +244,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 //nolint:gocyclo // Connection setup keeps the lifecycle of each supported role in one cleanup scope.
 func connect(ctx context.Context, params Params, requestedMode connectionMode) (_ *Client, rerr error) {
 	if params.Detachable && params.AttachSessionID != "" {
-		return nil, errors.New("detachable creation and observer attachment are mutually exclusive")
+		return nil, errors.New("detachable creation and session attachment are mutually exclusive")
+	}
+	if params.ReplaySessionTelemetry && params.AttachSessionID == "" {
+		return nil, errors.New("session telemetry replay requires an attached session")
 	}
 	mode := requestedMode
 	if mode != connectionModeControl {
@@ -345,7 +354,7 @@ func connect(ctx context.Context, params Params, requestedMode connectionMode) (
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		if mode != connectionModeOrdinary {
-			return nil, errors.New("detachable, observer, and control-only modes are not supported through DAGGER_SESSION_PORT")
+			return nil, errors.New("detachable, session attachment, and control-only modes are not supported through DAGGER_SESSION_PORT")
 		}
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
@@ -470,7 +479,7 @@ type EngineToEngineParams struct {
 // Session attachables are proxied back to the original client.
 func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ *Client, rerr error) {
 	if params.Detachable || params.AttachSessionID != "" {
-		return nil, errors.New("detachable and observer modes are not supported for engine-to-engine connections")
+		return nil, errors.New("detachable and session attachment modes are not supported for engine-to-engine connections")
 	}
 	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
 		params.LoadWorkspaceModules,

@@ -10,6 +10,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -62,6 +63,30 @@ func TestDetachedUpListFlagConflictIsUsageError(t *testing.T) {
 	require.Equal(t, 2, exitErr.OriginalCode)
 	require.Contains(t, output.String(), "--detach cannot be combined with --list")
 	require.NotNil(t, upCmd.Flags().Lookup("detach"))
+}
+
+func TestDetachedUpRejectsEffectiveCloudEngineBeforeConnect(t *testing.T) {
+	oldDetach, oldList := upDetachMode, upListMode
+	oldCloud, oldRunnerHost := useCloudEngine, RunnerHost
+	t.Cleanup(func() {
+		upDetachMode, upListMode = oldDetach, oldList
+		useCloudEngine, RunnerHost = oldCloud, oldRunnerHost
+	})
+	upDetachMode, upListMode = true, false
+	cmd := &cobra.Command{Use: "up"}
+
+	useCloudEngine = true
+	RunnerHost = "docker-container://local"
+	err := upCmd.RunE(cmd, nil)
+	require.ErrorContains(t, err, "background port server cannot reconnect")
+
+	useCloudEngine = false
+	RunnerHost = engine.DefaultCloudRunnerHost
+	err = upCmd.RunE(cmd, nil)
+	require.ErrorContains(t, err, "background port server cannot reconnect")
+
+	RunnerHost = "docker-container://local"
+	require.NoError(t, validateDetachedUpEngineTarget())
 }
 
 func TestDetachedUpRollbackOwnership(t *testing.T) {
