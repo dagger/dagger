@@ -12,6 +12,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,12 +201,72 @@ func (DetachableUpSuite) TestAttachedUpBehaviorUnchanged(ctx context.Context, t 
 		t.Fatalf("attached up did not exit after interrupt\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 	require.NoError(t, waitErr, stderr.String()+stdout.String())
-	require.Contains(t, stderr.String(), "services")
-	require.NotContains(t, stdout.String()+stderr.String(), "Detached session")
-	require.NotContains(t, stdout.String()+stderr.String(), "background process")
+	require.Empty(t, stdout.String())
+	require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
+∅ .run: UpGroup! <duration>
+! context canceled
+• ✔ hello-with-services:infra:database <duration>
+• ✔ hello-with-services:infra:database:preflight <duration>
+• ✔ hello-with-services:web <duration>
+• ✔ hello-with-services:web:preflight <duration>`, normalizeOrdinaryUpTranscript(stderr.String(), nil))
 	require.Eventually(t, func() bool {
 		return !detachableUpPortAccepts(nativePort) && !detachableUpPortAccepts(fixedFrontend)
 	}, 15*time.Second, 100*time.Millisecond)
+
+	conflict, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", nativePort))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conflict.Close()) })
+	errorCtx, cancelError := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelError()
+	errorCmd := hostDaggerCommand(errorCtx, t, workspace, "up")
+	setCommandEnv(errorCmd, "XDG_STATE_HOME", stateHome)
+	var errorStdout, errorStderr bytes.Buffer
+	errorCmd.Stdout = &errorStdout
+	errorCmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &errorStderr)
+	errorRun := errorCmd.Run()
+	require.Equal(t, 1, detachableUpExitCode(t, errorRun))
+	require.Empty(t, errorStdout.String())
+	require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
+✘ .run: UpGroup! <duration> ERROR
+┇ hello-with-services:web ›
+✘ hello-with-services:web :<native-port> <duration> ERROR
+! failed to start service: host to container: failed to receive listen response: rpc error: code = Unknown desc = listen tcp 0.0.0.0:<native-port>: bind: address already in use`, normalizeOrdinaryUpTranscript(errorStderr.String(), map[string]string{
+		strconv.Itoa(nativePort): "<native-port>",
+	}))
+}
+
+var ordinaryUpANSIRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+var ordinaryUpDurationRE = regexp.MustCompile(`\b(?:\d+(?:\.\d+)?(?:ns|µs|ms|s|m|h))+\b`)
+var ordinaryUpEffectSummaryRE = regexp.MustCompile(`^[\s│]*✔ \d+ (?:upload|unpack|pull)s?(?:,|\s)`)
+var ordinaryUpServiceRE = regexp.MustCompile(`^[├╰]╴✔ hello-with-services:`)
+var ordinaryUpSurfaceRE = regexp.MustCompile(`^(?:[✔∅✘] (?:Workspace\.services|\.run|hello-with-services:)|┇ hello-with-services:|! |[├╰]╴✔ hello-with-services:)`)
+
+func normalizeOrdinaryUpTranscript(output string, replacements map[string]string) string {
+	output = ordinaryUpANSIRE.ReplaceAllString(output, "")
+	lines := strings.Split(output, "\n")
+	normalized := make([]string, 0, len(lines))
+	serviceLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t\r")
+		if strings.TrimSpace(line) == "" || ordinaryUpEffectSummaryRE.MatchString(line) {
+			continue
+		}
+		if !ordinaryUpSurfaceRE.MatchString(line) {
+			continue
+		}
+		for from, to := range replacements {
+			line = strings.ReplaceAll(line, from, to)
+		}
+		line = ordinaryUpDurationRE.ReplaceAllString(line, "<duration>")
+		if ordinaryUpServiceRE.MatchString(line) {
+			serviceLines = append(serviceLines, "• "+strings.TrimPrefix(strings.TrimPrefix(line, "├╴"), "╰╴"))
+			continue
+		}
+		normalized = append(normalized, line)
+	}
+	sort.Strings(serviceLines)
+	normalized = append(normalized, serviceLines...)
+	return strings.Join(normalized, "\n")
 }
 
 func (DetachableUpSuite) TestZeroMatchingServicesCleansSession(ctx context.Context, t *testctx.T) {
@@ -556,13 +619,7 @@ func (DetachableUpSuite) TestBindConflictRollsBack(ctx context.Context, t *testc
 }
 
 func (DetachableUpSuite) TestInterruptAfterAcknowledgementRollsBack(ctx context.Context, t *testctx.T) {
-	workspace := writeDetachableUpModuleWithNginxPath(
-		t,
-		reserveDetachableUpPort(t),
-		reserveDetachableUpPort(t),
-		reserveDetachableUpPort(t),
-		"/etc/nginx/http.d/default.conf",
-	)
+	workspace := writeDetachableUpDelayedModule(t, reserveDetachableUpPort(t), 8*time.Second)
 	stateHome := t.TempDir()
 	before := detachableUpSessionIDs(ctx, t, workspace, stateHome)
 	commandCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -586,13 +643,17 @@ func (DetachableUpSuite) TestInterruptAfterAcknowledgementRollsBack(ctx context.
 	var interruptedSession string
 	require.Eventually(t, func() bool {
 		for id := range detachableUpSessionIDs(ctx, t, workspace, stateHome) {
-			if _, existed := before[id]; !existed {
+			if _, existed := before[id]; existed {
+				continue
+			}
+			descriptor := inspectDetachableUpSession(ctx, t, workspace, stateHome, id)
+			if descriptor.Query != nil && descriptor.Query.Status == engine.SessionQueryStateRunning {
 				interruptedSession = id
 				return true
 			}
 		}
 		return false
-	}, 45*time.Second, 250*time.Millisecond, "detachable up was not acknowledged")
+	}, 45*time.Second, 250*time.Millisecond, "detachable up primary query was not acknowledged and running")
 	require.NoError(t, cmd.Process.Signal(os.Interrupt))
 	var waitErr error
 	select {
