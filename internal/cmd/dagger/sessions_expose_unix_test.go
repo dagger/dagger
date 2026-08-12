@@ -75,6 +75,22 @@ func TestExposeHeldLockWithoutSocketRetriesUntilAcquired(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestPrepareExposePortsRejectsRemoteHolderAndReleasesLock(t *testing.T) {
+	t.Parallel()
+	stateDir := t.TempDir()
+	sessionID := testCLIValidSessionID()
+	_, err := prepareExposePorts(
+		t.Context(), sessionID, stateDir, exposeRequest{}, true, false, "remote-host", nil,
+	)
+	require.ErrorContains(t, err, "ports are being served from remote-host")
+	paths, err := makeExposePaths(stateDir, sessionID)
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.NoError(t, lock.Close())
+}
+
 func TestExposeControlStopRequest(t *testing.T) {
 	t.Parallel()
 	paths, err := makeExposePaths(t.TempDir(), testCLIValidSessionID())

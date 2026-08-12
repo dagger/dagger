@@ -124,8 +124,19 @@ func exposeDetachableSession(
 		if err != nil {
 			return err
 		}
+		descriptor, err = control.InspectSession(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		remoteHolder := ""
+		if descriptor.Attachment != nil && sessionPortCount(descriptor) > 0 {
+			remoteHolder = descriptor.Attachment.Hostname
+			if remoteHolder == "" {
+				remoteHolder = descriptor.Attachment.ClientID
+			}
+		}
 
-		preparation, err := prepareExposePorts(ctx, sessionID, stateDir, request, len(portSpecs) == 0, replace, func(message string) {
+		preparation, err := prepareExposePorts(ctx, sessionID, stateDir, request, len(portSpecs) == 0, replace, remoteHolder, func(message string) {
 			fmt.Fprintln(cmd.ErrOrStderr(), message)
 		})
 		if err != nil {
@@ -161,6 +172,7 @@ func prepareExposePorts(
 	request exposeRequest,
 	noExplicitPorts bool,
 	replace bool,
+	remoteHolder string,
 	notify func(string),
 ) (exposePreparation, error) {
 	paths, err := makeExposePaths(stateDir, sessionID)
@@ -174,6 +186,13 @@ func prepareExposePorts(
 			return exposePreparation{}, err
 		}
 		if lock != nil {
+			if remoteHolder != "" {
+				_ = lock.Close()
+				return exposePreparation{}, fmt.Errorf(
+					"ports are being served from %s; see dagger sessions inspect %s",
+					remoteHolder, sessionID,
+				)
+			}
 			if notify != nil {
 				notify("Publishing ports...")
 			}

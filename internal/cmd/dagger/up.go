@@ -154,7 +154,7 @@ func runDetachedServices(
 	if err != nil {
 		return err
 	}
-	preparation, err := prepareExposePorts(ctx, engineClient.SessionID, stateDir, requestPorts, true, false, func(message string) {
+	preparation, err := prepareExposePorts(ctx, engineClient.SessionID, stateDir, requestPorts, true, false, "", func(message string) {
 		fmt.Fprintln(cmd.ErrOrStderr(), message)
 	})
 	if err != nil {
