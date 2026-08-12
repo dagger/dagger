@@ -765,13 +765,13 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
 	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
-		return err.Error(), true
+		return guardToolResult(err.Error()), true
 	}
 
 	args := map[string]any{}
 	if len(toolCall.Arguments) > 0 {
 		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
-			return fmt.Sprintf("failed to parse tool arguments: %s", err), true
+			return guardToolResult(fmt.Sprintf("failed to parse tool arguments: %s", err)), true
 		}
 	}
 
@@ -827,6 +827,12 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	defer stdio.Close()
 
 	defer func() {
+		// Bound the result before anything observes it: everything downstream
+		// must see exactly what the LLM sees, and this is the one place every
+		// tool result funnels through. That means the telemetry copy below,
+		// and the LLMToolResultTokensAttr estimate endToolCallDisplay stamps
+		// from the string we return.
+		res = guardToolResult(res)
 		// write final result to telemetry so we see exactly what the LLM sees
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
@@ -852,6 +858,58 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		}
 		return string(jsonBytes), false
 	}
+}
+
+// llmToolResultMaxBytes is the total byte budget for a single tool result:
+// the last-resort bound on how much one call can inject into the model's
+// context (and into the persisted conversation).
+//
+// 48 KiB is roughly 12k tokens, and deliberately generous -- 3x the trace
+// report budget. A result can legitimately carry a report that is already at
+// its own 16 KiB budget PLUS the tool's own OUTPUT section and, for a
+// state-returning method, a patch summary on top (see spanResult and
+// routeObjectMethodResult), so a 16 KiB result budget would fight a report
+// sitting exactly at its own. Reading a large source file is a legitimate
+// result too: a tool's own offset/limit arguments are the pagination
+// mechanism, this is only the safety net under them, and it should fire on
+// accidents rather than on ordinary work -- a base64 blob on one line, a
+// dumped database, a 300 KB JSON file read "15 lines" at a time. For
+// reference, the pi agent bounds tool output at 50 KB or 2000 lines,
+// whichever it hits first.
+const llmToolResultMaxBytes = 48 * 1024
+
+// llmToolResultHeadBytes is how much of llmToolResultMaxBytes the head keeps
+// when the middle has to go: the same two-thirds split as the trace report
+// and the captured-log cap. The head usually holds the answer, but plenty of
+// results end with the part that matters most -- the last hunk of a diff, a
+// trailing error -- so the tail is not a token gesture.
+const llmToolResultHeadBytes = llmToolResultMaxBytes * 2 / 3
+
+// guardToolResult bounds what a single tool call can hand back to the model:
+// every line clamped to llmLogsMaxLineLen bytes, the whole result to
+// llmToolResultMaxBytes with the middle dropped on line boundaries.
+//
+// The other size guards in here cover captured LOGS (limitIndirectLines,
+// capLinesBytes) and rendered reports (guardTraceReport); nothing covered a
+// tool's return VALUE, so e.g. a file read of a 6-line JSON file whose second
+// line is a 400 KB base64 blob sailed past its own `limit: 15` and landed
+// verbatim in the conversation. This is the one guard every tool result
+// passes through, whatever produced it.
+//
+// Unlike a log capture there is no ReadLogs escape hatch for a return value --
+// it was never persisted anywhere else -- so the marker steers the model back
+// to the tool with a narrower request instead. A result already within both
+// limits is returned byte-identical.
+func guardToolResult(res string) string {
+	return guardText(res, textGuard{
+		maxBytes:   llmToolResultMaxBytes,
+		maxLineLen: llmLogsMaxLineLen,
+		headBytes:  llmToolResultHeadBytes,
+		marker: func(lines, bytes int) string {
+			return fmt.Sprintf("... %d lines (%d bytes) omitted from the middle of this result (re-run the call more narrowly to see them) ...",
+				lines, bytes)
+		},
+	})
 }
 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
