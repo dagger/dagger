@@ -363,6 +363,7 @@ func TestBytesRoundTripUsesRawBytesForIdentity(t *testing.T) {
 }
 
 func TestDigestedStringRoundTrip(t *testing.T) {
+	const canary = "CHECKPOINT-CANARY-raw-recipe-only"
 	typ := &ast.Type{
 		NamedType: "String",
 		NonNull:   true,
@@ -371,8 +372,23 @@ func TestDigestedStringRoundTrip(t *testing.T) {
 	orig := New().Append(
 		typ,
 		"withExec",
-		WithArgs(NewArgument("execMD", NewLiteralDigestedString(`{"nested":true}`, execMDDigest), false)),
+		WithArgs(NewArgument("execMD", NewLiteralDigestedString(canary, execMDDigest), false)),
 	)
+
+	for name, display := range map[string]string{
+		"ID display":      orig.Display(),
+		"literal display": orig.Arg("execMD").Value().Display(),
+		"literal AST":     orig.Arg("execMD").Value().ToAST().String(),
+	} {
+		if strings.Contains(display, canary) {
+			t.Fatalf("%s exposed digested-string value: %q", name, display)
+		}
+		for _, want := range []string{"digested-string", execMDDigest.String(), "size=33B"} {
+			if !strings.Contains(display, want) {
+				t.Errorf("%s = %q, missing %q", name, display, want)
+			}
+		}
+	}
 
 	enc, err := orig.Encode()
 	if err != nil {
@@ -396,7 +412,10 @@ func TestDigestedStringRoundTrip(t *testing.T) {
 	if lit.Digest() != execMDDigest {
 		t.Fatalf("digested-string digest mismatch after round-trip: got %s, want %s", lit.Digest(), execMDDigest)
 	}
-	if lit.Value() != `{"nested":true}` {
+	if lit.Value() != canary {
 		t.Fatalf("digested-string value mismatch after round-trip: got %q", lit.Value())
+	}
+	if got := decoded.Call().GetArgs()[0].GetValue().GetDigestedString().GetValue(); got != canary {
+		t.Fatalf("raw recipe lost digested-string value: got %q", got)
 	}
 }
