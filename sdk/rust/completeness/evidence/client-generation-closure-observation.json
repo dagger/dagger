@@ -1,0 +1,463 @@
+{
+  "catalog_digest": "sha256:b0cd2889f3cec8dd2d74a9691aab089ca9477d552c31a3492a78ac763b727677",
+  "checkpoint": {
+    "asset_input_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41",
+    "asset_output_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41",
+    "cargo": [
+      {
+        "action": {
+          "action": "format",
+          "packages": [
+            "dagger-codegen",
+            "dagger-sdk",
+            "dagger-sdk-engine",
+            "dagger-sdk-completeness"
+          ]
+        },
+        "invocations": 1
+      },
+      {
+        "action": {
+          "action": "check",
+          "all_features": true,
+          "package": "dagger-sdk-engine"
+        },
+        "invocations": 1
+      },
+      {
+        "action": {
+          "action": "check",
+          "all_features": true,
+          "package": "dagger-sdk-completeness"
+        },
+        "invocations": 1
+      },
+      {
+        "action": {
+          "action": "test",
+          "package": "dagger-sdk-engine",
+          "properties": [
+            2,
+            3,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            23,
+            25
+          ],
+          "targets": [
+            "client_checkpoint_properties",
+            "client_project_properties",
+            "client_usability_properties"
+          ]
+        },
+        "invocations": 7
+      },
+      {
+        "action": {
+          "action": "test",
+          "package": "dagger-sdk-completeness",
+          "properties": [
+            26,
+            27
+          ],
+          "targets": [
+            "client_generation_documentation",
+            "client_generation_evidence"
+          ]
+        },
+        "invocations": 1
+      },
+      {
+        "action": {
+          "action": "test",
+          "package": "dagger-sdk",
+          "properties": [],
+          "targets": [
+            "source_policy"
+          ]
+        },
+        "invocations": 1
+      },
+      {
+        "action": {
+          "action": "clippy",
+          "packages": [
+            "dagger-sdk-engine",
+            "dagger-sdk-completeness"
+          ]
+        },
+        "invocations": 1
+      },
+      {
+        "action": {
+          "action": "rustdoc",
+          "packages": [
+            "dagger-sdk-engine",
+            "dagger-sdk-completeness"
+          ]
+        },
+        "invocations": 1
+      },
+      {
+        "action": {
+          "action": "clean-output"
+        },
+        "invocations": 0
+      }
+    ],
+    "checkpoint": {
+      "actions": [
+        {
+          "action": {
+            "action": "format",
+            "packages": [
+              "dagger-codegen",
+              "dagger-sdk",
+              "dagger-sdk-engine",
+              "dagger-sdk-completeness"
+            ]
+          },
+          "elapsed_millis": 875,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "check",
+            "all_features": true,
+            "package": "dagger-sdk-engine"
+          },
+          "elapsed_millis": 1880,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "check",
+            "all_features": true,
+            "package": "dagger-sdk-completeness"
+          },
+          "elapsed_millis": 5950,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "test",
+            "package": "dagger-sdk-engine",
+            "properties": [
+              2,
+              3,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              23,
+              25
+            ],
+            "targets": [
+              "client_checkpoint_properties",
+              "client_project_properties",
+              "client_usability_properties"
+            ]
+          },
+          "elapsed_millis": 32150,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "test",
+            "package": "dagger-sdk-completeness",
+            "properties": [
+              26,
+              27
+            ],
+            "targets": [
+              "client_generation_documentation",
+              "client_generation_evidence"
+            ]
+          },
+          "elapsed_millis": 1320,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "test",
+            "package": "dagger-sdk",
+            "properties": [],
+            "targets": [
+              "source_policy"
+            ]
+          },
+          "elapsed_millis": 310,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "clippy",
+            "packages": [
+              "dagger-sdk-engine",
+              "dagger-sdk-completeness"
+            ]
+          },
+          "elapsed_millis": 5750,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "rustdoc",
+            "packages": [
+              "dagger-sdk-engine",
+              "dagger-sdk-completeness"
+            ]
+          },
+          "elapsed_millis": 14080,
+          "outcome": "passed"
+        },
+        {
+          "action": {
+            "action": "clean-output"
+          },
+          "elapsed_millis": 1,
+          "outcome": "passed"
+        }
+      ],
+      "deferred_signoff_exception": null,
+      "generation": {
+        "decision": "reuse-checked",
+        "manifest_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41"
+      },
+      "implementation_digest": "sha256:fff834f46eccbafcc6a55386df4b5d582aa4a85242e58a386fbb994610167fee"
+    },
+    "disposition": "checked-generated-reused"
+  },
+  "claims": {
+    "adapter-fixture": [
+      "policy/rust-policy/client-initialization"
+    ],
+    "diagnostic-security": [
+      "policy/rust-policy/client-diagnostic-and-secret-safety"
+    ],
+    "generated-api-property": [
+      "policy/rust-policy/client-core-runtime-reuse",
+      "policy/rust-policy/client-module-root-composition",
+      "policy/rust-policy/client-module-surface-closure",
+      "policy/rust-policy/client-rust-namespace-isolation"
+    ],
+    "implementation-closure": [
+      "policy/rust-policy/client-capability-scope",
+      "policy/rust-policy/client-engine-free-local-checkpoint"
+    ],
+    "project-property": [
+      "policy/rust-policy/client-cargo-project-adoption",
+      "policy/rust-policy/client-immutable-sdk-dependency"
+    ],
+    "publication-property": [
+      "policy/rust-policy/client-deterministic-regeneration",
+      "policy/rust-policy/client-generated-ownership-manifest",
+      "policy/rust-policy/client-obsolete-artifact-removal",
+      "policy/rust-policy/client-user-file-preservation"
+    ],
+    "query-transport-property": [
+      "policy/rust-policy/client-query-usability"
+    ],
+    "schema-property": [
+      "policy/rust-policy/client-single-bound-module",
+      "policy/rust-policy/client-transitive-dependency-exclusion",
+      "policy/rust-policy/client-visible-schema-closure"
+    ],
+    "workspace-property": [
+      "policy/rust-policy/client-multi-client-isolation",
+      "policy/rust-policy/client-pinned-module-resolution",
+      "policy/rust-policy/client-scoped-initial-generation",
+      "policy/rust-policy/client-workspace-cwd-scoping",
+      "policy/rust-policy/client-workspace-record"
+    ]
+  },
+  "fixture_baseline_materializations": 1,
+  "format_version": 1,
+  "gates": [
+    {
+      "disposition": {
+        "disposition": "reused",
+        "prior_checkpoint_digest": "sha256:3b67f6cf332044a5c4f1794663ab996c9447b91828d26183f5b4595babd2eed4"
+      },
+      "expected_input_digest": "sha256:5b8f02ad6b4a581286dd0742f1a7feaaa74238abcd3cccb441cd0c8f2ac5ace2",
+      "gate": "adapter-fixture",
+      "observed_input_digest": "sha256:5b8f02ad6b4a581286dd0742f1a7feaaa74238abcd3cccb441cd0c8f2ac5ace2",
+      "result": {
+        "evidence_digest": "sha256:b66ab42fba67082cec67de4ed0adbd778325efda683423484d97852659fa18f7",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "disposition": "reused",
+        "prior_checkpoint_digest": "sha256:3b67f6cf332044a5c4f1794663ab996c9447b91828d26183f5b4595babd2eed4"
+      },
+      "expected_input_digest": "sha256:a19e698c083b3e3f5c31bef43169a732b5d5efab7ed371843775c439e289e0c8",
+      "gate": "workspace-properties",
+      "observed_input_digest": "sha256:a19e698c083b3e3f5c31bef43169a732b5d5efab7ed371843775c439e289e0c8",
+      "result": {
+        "evidence_digest": "sha256:286a1c30b4b49d2cf8ecacd8a995078cdfe0034739fa0bb87a61005530411fbc",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "disposition": "reused",
+        "prior_checkpoint_digest": "sha256:3b67f6cf332044a5c4f1794663ab996c9447b91828d26183f5b4595babd2eed4"
+      },
+      "expected_input_digest": "sha256:95a05272657ef3524d50a59651061e0998c3cde042d746ace82e980f70bcc891",
+      "gate": "schema-compiler",
+      "observed_input_digest": "sha256:95a05272657ef3524d50a59651061e0998c3cde042d746ace82e980f70bcc891",
+      "result": {
+        "evidence_digest": "sha256:379a7567de6c76d5cc0a5f81af5fdd182611bb5c0c310e36be310aa8b9e23e88",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "disposition": "reused",
+        "prior_checkpoint_digest": "sha256:3b67f6cf332044a5c4f1794663ab996c9447b91828d26183f5b4595babd2eed4"
+      },
+      "expected_input_digest": "sha256:c6ed57fa5851d22933da5690fddfdf77f292f3d81390d3c014e7b575c6819568",
+      "gate": "generated-api",
+      "observed_input_digest": "sha256:c6ed57fa5851d22933da5690fddfdf77f292f3d81390d3c014e7b575c6819568",
+      "result": {
+        "evidence_digest": "sha256:79802761d60b460c04107d56d586ab2a1a7b5ecd09d629989bb3a7363d7ccd96",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "cargo_invocations": 7,
+        "disposition": "executed",
+        "elapsed_millis": 32150
+      },
+      "expected_input_digest": "sha256:d1d5fcbd9d4430a436c0c1e4424e20681d1b2eb5e88d3fa1718491c2d4f02383",
+      "gate": "project-reconciliation",
+      "observed_input_digest": "sha256:d1d5fcbd9d4430a436c0c1e4424e20681d1b2eb5e88d3fa1718491c2d4f02383",
+      "result": {
+        "evidence_digest": "sha256:4c9bc9f4cdabdeaa58c9785b34e61cfaf10226c8d904c491dc4f690009341b55",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "cargo_invocations": 7,
+        "disposition": "executed",
+        "elapsed_millis": 32150
+      },
+      "expected_input_digest": "sha256:a8f0fddbe12a5efbad8122880d34bbd34e11efc859cf46715099d2ea5d496ebf",
+      "gate": "publication",
+      "observed_input_digest": "sha256:a8f0fddbe12a5efbad8122880d34bbd34e11efc859cf46715099d2ea5d496ebf",
+      "result": {
+        "evidence_digest": "sha256:093e6996587a3ed8bda1aefab63029adc1881f8a4e3f2106a8c72267b4ac8f52",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "disposition": "reused",
+        "prior_checkpoint_digest": "sha256:3b67f6cf332044a5c4f1794663ab996c9447b91828d26183f5b4595babd2eed4"
+      },
+      "expected_input_digest": "sha256:b3cf39fe075635dcd4023fbfcaf0bc3f3153024ee9f287818ef3337e885d6439",
+      "gate": "query-transport",
+      "observed_input_digest": "sha256:b3cf39fe075635dcd4023fbfcaf0bc3f3153024ee9f287818ef3337e885d6439",
+      "result": {
+        "evidence_digest": "sha256:7e17b5cafbd5170aa501699e7b18a2ac1b7f827269776a3ddc238a22d4871e66",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "cargo_invocations": 1,
+        "disposition": "executed",
+        "elapsed_millis": 310
+      },
+      "expected_input_digest": "sha256:bdd22c065380ab60fa10311db6657a3034ff4e0679ae8d35bc4b32b6aad2e632",
+      "gate": "diagnostic-security",
+      "observed_input_digest": "sha256:bdd22c065380ab60fa10311db6657a3034ff4e0679ae8d35bc4b32b6aad2e632",
+      "result": {
+        "evidence_digest": "sha256:73fc55d71a0d03c20aa97381d53a1f4663fb42a0ddcf5a83d3b61d86bbe7bdf4",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "cargo_invocations": 1,
+        "disposition": "executed",
+        "elapsed_millis": 28535
+      },
+      "expected_input_digest": "sha256:ea5120f0eed724b72686e8283e7469c2811a445ab06e295e43ba4558390f140e",
+      "gate": "cargo-hygiene",
+      "observed_input_digest": "sha256:ea5120f0eed724b72686e8283e7469c2811a445ab06e295e43ba4558390f140e",
+      "result": {
+        "evidence_digest": "sha256:ef2ae78e81b418c24a27c1cb2bcffd4d5861539e2a0e12d42b631bfe80382c3f",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "disposition": "reused",
+        "prior_checkpoint_digest": "sha256:3b67f6cf332044a5c4f1794663ab996c9447b91828d26183f5b4595babd2eed4"
+      },
+      "expected_input_digest": "sha256:0cfb858cb7f2d3e03461e8fe7eee42d16d3586bfbe3e2f577bee7c2e6059ef6f",
+      "gate": "direct-go-abi",
+      "observed_input_digest": "sha256:0cfb858cb7f2d3e03461e8fe7eee42d16d3586bfbe3e2f577bee7c2e6059ef6f",
+      "result": {
+        "evidence_digest": "sha256:c75649be08f11625c3ef027efd0aa5ac5e33ebeb53484c4f5bfb787bbf3b58f8",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "disposition": "reused",
+        "prior_checkpoint_digest": "sha256:3b67f6cf332044a5c4f1794663ab996c9447b91828d26183f5b4595babd2eed4"
+      },
+      "expected_input_digest": "sha256:2b293e728d4b98a8c1c1f302619c965f35ec3f7be0b109fd7e321b9aad769763",
+      "gate": "generated-asset-drift",
+      "observed_input_digest": "sha256:2b293e728d4b98a8c1c1f302619c965f35ec3f7be0b109fd7e321b9aad769763",
+      "result": {
+        "evidence_digest": "sha256:c1ff65ff535a8bbeda291d8fec16b1e4c70d2d7242183458c36bc0d166d596d6",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "cargo_invocations": 1,
+        "disposition": "executed",
+        "elapsed_millis": 1320
+      },
+      "expected_input_digest": "sha256:d92bae62f9a1286464404935dc0f0d40b8e112ed642159489e8ca16ce680edaf",
+      "gate": "derived-reporting",
+      "observed_input_digest": "sha256:d92bae62f9a1286464404935dc0f0d40b8e112ed642159489e8ca16ce680edaf",
+      "result": {
+        "evidence_digest": "sha256:a16ee5df8d1b628a3028e517c31249100a82db77f8c9f194f9c760507686dcd8",
+        "outcome": "passed"
+      }
+    },
+    {
+      "disposition": {
+        "cargo_invocations": 0,
+        "disposition": "executed",
+        "elapsed_millis": 1
+      },
+      "expected_input_digest": "sha256:78e67afe2cac35a6840b811e8cc2fe1b859ae8c12726825c076a37383d94e7a8",
+      "gate": "clean-output",
+      "observed_input_digest": "sha256:78e67afe2cac35a6840b811e8cc2fe1b859ae8c12726825c076a37383d94e7a8",
+      "result": {
+        "evidence_digest": "sha256:42680aff07edb28095178c53a133273bdc12c0f8a040f9dc6da687dcc9dff8d0",
+        "outcome": "passed"
+      }
+    }
+  ],
+  "implementation_digest": "sha256:fff834f46eccbafcc6a55386df4b5d582aa4a85242e58a386fbb994610167fee",
+  "manifest_digest": "sha256:f18262dbff88e58563c03f32e3c04f6f11f1c3ffac4c9b352297027cccc20d41",
+  "mapping_digest": "sha256:9cf302052d932e7a7ec1bdfba7a74af7ba276223ff55c0f675da5a4affcb98c3",
+  "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+}

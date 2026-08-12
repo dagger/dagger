@@ -1,6 +1,7 @@
 //! Change-triggered, engine-free standalone-client checkpoint properties.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use dagger_codegen::module::RegenerationClass;
 use dagger_sdk_engine::{
@@ -9,12 +10,69 @@ use dagger_sdk_engine::{
     CheckpointTestTarget, ClientCargoExpectation, ClientCheckedAssetState,
     ClientCheckpointActionObservation, ClientCheckpointObservation, ClientCheckpointRequest,
     DeferredSignoffException, ForbiddenCheckpointBoundary, RustGoAbiPackage, Sha256Digest,
-    plan_client_checkpoint, record_client_checkpoint,
+    client_feature_end_checkpoint_actions, plan_client_checkpoint, record_client_checkpoint,
 };
 use proptest::prelude::*;
 
 fn digest(seed: u16) -> Sha256Digest {
     Sha256Digest::new(format!("sha256:{seed:04x}{}", "00".repeat(30))).unwrap()
+}
+
+#[test]
+fn feature_end_inventory_accounts_for_all_client_properties_and_boundaries() {
+    let actions = client_feature_end_checkpoint_actions();
+    let properties = actions
+        .iter()
+        .filter_map(|action| match action {
+            CheckpointAction::Test { properties, .. } => Some(properties),
+            _ => None,
+        })
+        .flatten()
+        .map(|property| property.get())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(properties, BTreeSet::from_iter(1..=27));
+    assert!(actions.contains(&CheckpointAction::CargoDeny));
+    assert!(actions.contains(&CheckpointAction::RepositoryRustSecurity));
+    assert!(actions.contains(&CheckpointAction::GeneratedAssetDrift));
+    assert!(actions.contains(&CheckpointAction::CleanOutput));
+    assert!(actions.iter().all(|action| !matches!(
+        action,
+        CheckpointAction::Check {
+            package: CheckpointPackage::DaggerBootstrap,
+            ..
+        }
+    )));
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("engine crate has a workspace crates directory");
+    for action in &actions {
+        let CheckpointAction::Test {
+            package, targets, ..
+        } = action
+        else {
+            continue;
+        };
+        let package = match package {
+            CheckpointPackage::DaggerCodegen => "dagger-codegen",
+            CheckpointPackage::DaggerSdk => "dagger-sdk",
+            CheckpointPackage::DaggerSdkEngine => "dagger-sdk-engine",
+            CheckpointPackage::DaggerSdkCompleteness => "dagger-sdk-completeness",
+            CheckpointPackage::DaggerSdkMacros | CheckpointPackage::DaggerBootstrap => {
+                panic!("client test inventory contains a package outside its closure")
+            }
+        };
+        for target in targets {
+            let path = crates
+                .join(package)
+                .join("tests")
+                .join(format!("{}.rs", target.as_str()));
+            assert!(
+                path.is_file(),
+                "typed test target is absent: {}",
+                path.display()
+            );
+        }
+    }
 }
 
 fn test_action(package: CheckpointPackage, target: &str) -> CheckpointAction {

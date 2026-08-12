@@ -37,7 +37,8 @@ pub use checkpoint::{
     ClientCheckpointActionObservation, ClientCheckpointObservation, ClientCheckpointPlan,
     ClientCheckpointRecord, ClientCheckpointRequest, DeferredSignoffException,
     ForbiddenCheckpointBoundary, ModuleProperty, PublicCheckpointPackage, RustGoAbiPackage,
-    plan_checkpoint, plan_client_checkpoint, record_checkpoint, record_client_checkpoint,
+    client_feature_end_checkpoint_actions, plan_checkpoint, plan_client_checkpoint,
+    record_checkpoint, record_client_checkpoint,
 };
 pub use client::initialization::{execute_client_initialization, plan_client_initialization};
 pub use client::project::{

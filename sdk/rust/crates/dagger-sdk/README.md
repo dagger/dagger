@@ -63,6 +63,11 @@ lives in `dagger-sdk-macros`; applications should not add that companion directl
 The authoring syntax, state/dispatch model, and current verification boundary are
 documented in [`../../MODULE_AUTHORING.md`](../../MODULE_AUTHORING.md).
 
+Generated standalone clients also reuse this crate's owned lifecycle, Core bindings,
+transport, errors, and IDs by identity. Their `dagger_client` namespace adds one bound
+module without copying Core or merging dependency modules. See
+[`../../CLIENT_GENERATION.md`](../../CLIENT_GENERATION.md).
+
 ## Features
 
 | Cargo selection | Public surface | Intended use |

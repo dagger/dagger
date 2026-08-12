@@ -30,6 +30,23 @@ The public package graph is deliberately closed and acyclic: an application depe
 `dagger-sdk`, which pins `dagger-sdk-macros` to the same exact version. Code generation,
 engine integration, bootstrap, and completeness crates cannot enter that graph.
 
+## Standalone-client generation
+
+Standalone-client work is split across four fail-closed boundaries. `dagger-codegen`
+purely compiles complete Core plus at most one selected module into a typed Rust plan;
+it reuses the checked public Core catalog rather than regenerating Core. The private
+engine crate discovers or adopts one Cargo project, reconciles semantic amendments,
+and publishes only manifest-authorized generated files. The Go adapter translates
+transient engine objects into those data-only operations. Generated applications then
+use only the public `dagger-sdk` lifecycle and transport.
+
+One client never absorbs transitive module dependencies. Each dependency is bound by
+an independent client, giving it a separate pin, namespace, schema, project, manifest,
+and regeneration boundary. Publication preserves unknown files and authored bytes;
+the ownership manifest is committed last so failure cannot expose a partial next
+generation. See [CLIENT_GENERATION.md](CLIENT_GENERATION.md) for the consumer and
+maintainer contract.
+
 ## Module authoring and dispatch
 
 Module authoring has one source of intent and two checked interpretations. Thin
@@ -182,4 +199,5 @@ replaying it, binds one artifact, runtime, generated-assets set, engine service,
 installed Rust baseline to a closed isolated case inventory, and emits one atomic
 digest-bound verdict. A failed, skipped, stale, missing, duplicated, or overbroad case
 admits no partial sign-off evidence. The maintainer procedure is documented in
-[MODULE_AUTHORING.md](MODULE_AUTHORING.md).
+[MODULE_AUTHORING.md](MODULE_AUTHORING.md); the standalone-client procedure and its
+distinct five-case inventory are in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).

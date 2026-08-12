@@ -23,4 +23,10 @@ SDK, unscoped-generation, and distribution proposals are rejected before they ca
 rendered as executable work. See [`../../MODULE_AUTHORING.md`](../../MODULE_AUTHORING.md)
 for the boundary between this local record and deferred SDK sign-off.
 
+For standalone clients, this crate also owns confined Cargo discovery, semantic
+amendments, workspace client preflight, manifest-authorized failure-atomic publication,
+and exact Cargo-process accounting. The planner reuses checked assets and one fixture
+SDK baseline when their owning inputs are current. Its consumer and contributor
+contract is in [`../../CLIENT_GENERATION.md`](../../CLIENT_GENERATION.md).
+
 Licensed under Apache-2.0 as part of the Dagger repository.

@@ -603,6 +603,123 @@ pub fn record_client_checkpoint(
     })
 }
 
+/// Returns the complete typed standalone-client feature-end action inventory.
+///
+/// The planner may reuse a current observation for any item, but this closed set is
+/// the authority for what must be accounted before implementation closure.
+#[must_use]
+pub fn client_feature_end_checkpoint_actions() -> BTreeSet<CheckpointAction> {
+    let packages = BTreeSet::from([
+        CheckpointPackage::DaggerCodegen,
+        CheckpointPackage::DaggerSdk,
+        CheckpointPackage::DaggerSdkEngine,
+        CheckpointPackage::DaggerSdkCompleteness,
+    ]);
+    BTreeSet::from([
+        CheckpointAction::Format {
+            packages: packages.clone(),
+        },
+        CheckpointAction::Check {
+            package: CheckpointPackage::DaggerCodegen,
+            all_features: true,
+        },
+        CheckpointAction::Check {
+            package: CheckpointPackage::DaggerSdk,
+            all_features: true,
+        },
+        CheckpointAction::Check {
+            package: CheckpointPackage::DaggerSdkEngine,
+            all_features: true,
+        },
+        CheckpointAction::Check {
+            package: CheckpointPackage::DaggerSdkCompleteness,
+            all_features: true,
+        },
+        client_test_action(
+            CheckpointPackage::DaggerCodegen,
+            &[
+                "client_compiler_properties",
+                "client_metadata_properties",
+                "client_renderer",
+                "client_source_policy",
+                "visible_schema_properties",
+            ],
+            &[5, 6, 8, 10, 22],
+        ),
+        client_test_action(
+            CheckpointPackage::DaggerSdk,
+            &[
+                "generated_client_compile",
+                "generated_client_query_properties",
+                "source_policy",
+            ],
+            &[7, 9, 24],
+        ),
+        client_test_action(
+            CheckpointPackage::DaggerSdkEngine,
+            &[
+                "client_checkpoint_properties",
+                "client_diagnostic_properties",
+                "client_project_properties",
+                "client_usability_properties",
+                "workspace_client_properties",
+            ],
+            &[2, 3, 4, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 25],
+        ),
+        client_test_action(
+            CheckpointPackage::DaggerSdkCompleteness,
+            &[
+                "client_generation_documentation",
+                "client_generation_evidence",
+                "client_generation_scope",
+                "initial_baseline",
+            ],
+            &[1, 26, 27],
+        ),
+        CheckpointAction::Clippy {
+            packages: packages.clone(),
+        },
+        CheckpointAction::Rustdoc { packages },
+        CheckpointAction::CargoDeny,
+        CheckpointAction::RepositoryRustSecurity,
+        CheckpointAction::GeneratedAssetDrift,
+        CheckpointAction::PackageContents {
+            package: PublicCheckpointPackage::DaggerSdk,
+        },
+        CheckpointAction::PackageContents {
+            package: PublicCheckpointPackage::DaggerSdkMacros,
+        },
+        CheckpointAction::DirectGoAbi {
+            package: RustGoAbiPackage::Runtime,
+        },
+        CheckpointAction::CleanOutput,
+    ])
+}
+
+fn client_test_action(
+    package: CheckpointPackage,
+    targets: &[&str],
+    properties: &[u8],
+) -> CheckpointAction {
+    CheckpointAction::Test {
+        package,
+        targets: targets
+            .iter()
+            .map(|target| {
+                CheckpointTestTarget::new(*target)
+                    .expect("reviewed client test target spelling is valid")
+            })
+            .collect(),
+        properties: properties
+            .iter()
+            .map(|property| {
+                ModuleProperty::new(*property)
+                    .expect("reviewed client property identity is in range")
+            })
+            .collect(),
+    }
+}
+
 fn action_is_well_scoped(action: &CheckpointAction) -> bool {
     match action {
         CheckpointAction::Format { packages }
@@ -638,12 +755,15 @@ fn client_action_is_scoped(action: &CheckpointAction) -> bool {
         CheckpointAction::Check { package, .. } | CheckpointAction::Test { package, .. } => {
             package_is_client_owned(package)
         }
+        CheckpointAction::PackageContents { package } => matches!(
+            package,
+            PublicCheckpointPackage::DaggerSdk | PublicCheckpointPackage::DaggerSdkMacros
+        ),
         CheckpointAction::CargoDeny
         | CheckpointAction::RepositoryRustSecurity
         | CheckpointAction::GeneratedAssetDrift
         | CheckpointAction::DirectGoAbi { .. }
         | CheckpointAction::CleanOutput => true,
-        CheckpointAction::PackageContents { .. } => false,
     }
 }
 
@@ -656,6 +776,9 @@ fn cargo_action(action: &CheckpointAction) -> bool {
             | CheckpointAction::Clippy { .. }
             | CheckpointAction::Rustdoc { .. }
             | CheckpointAction::CargoDeny
+            | CheckpointAction::RepositoryRustSecurity
+            | CheckpointAction::GeneratedAssetDrift
+            | CheckpointAction::PackageContents { .. }
     )
 }
 

@@ -48,6 +48,8 @@ The focused built-in SDK build, case, and evidence procedure is in
 [ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md).
 The module authoring contract, direct harness, and deferred exact-target case inventory
 are in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
+The standalone-client compiler, project, generated API, ownership, checkpoint, and
+deferred sign-off workflow is in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
 The complete checked-target refresh and release procedure is in
 [MAINTAINING.md](MAINTAINING.md).
 
@@ -84,15 +86,20 @@ cargo deny check
 ```
 
 Use focused tests while iterating, but run the complete relevant set before submitting
-a pull request. Module-authoring checkpoints are explicitly engine-free: use the
-production compiler, generated fixture, dispatcher, fake transport, and typed
-checkpoint/evidence suites directly through Cargo. Reuse checked generated assets
-unless an owning source, schema, target, or generator digest changed.
+a pull request. Module-authoring and standalone-client checkpoints are explicitly
+engine-free: use the production compilers, generated fixtures, recording transport,
+and typed checkpoint/evidence suites directly through Cargo. Reuse checked generated
+assets unless an owning source, schema, target, or generator digest changed. The
+standalone-client fixture materializes one SDK baseline and fans out isolated Cargo
+projects from it; investigate fixture sequencing and its owning input before a broader
+rerun.
 
 An engine is not a local checkpoint fallback. If a contract cannot be represented by
 the direct production harness, document the precise model gap and smallest proposed
 sign-off case for maintainer approval. Exact-engine cases run only through the bounded
 SDK sign-off workflow documented in [MODULE_AUTHORING.md](MODULE_AUTHORING.md).
+Standalone-client exact-engine cases follow the same separation and remain the
+deferred five-case inventory in [CLIENT_GENERATION.md](CLIENT_GENERATION.md).
 
 For non-module work whose owning contract genuinely requires a running Dagger engine,
 the relevant repository checks may be run through Dagger:

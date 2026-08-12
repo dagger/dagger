@@ -40,14 +40,25 @@ pub use canonical::{
 pub use classification::{resolve_classifications, validate_status_entries};
 pub use cli::{ArtifactCliBackend, CliBackend, ContractCliBackend, run_with_backend};
 pub use client_generation::{
-    ClientAuthority, ClientDependencyScope, ClientEvidenceAdmission, ClientEvidenceDomain,
-    ClientEvidenceObservation, ClientEvidenceOutcome, ClientGenerationDiagnostic,
-    ClientGenerationDiagnosticCode, ClientGenerationDiagnosticSet, ClientGenerationFormatVersion,
+    ClientAuthority, ClientClosureGate, ClientClosureGateDisposition, ClientClosureGateObservation,
+    ClientClosureGateOutcome, ClientDependencyScope, ClientEvidenceAdmission, ClientEvidenceDomain,
+    ClientEvidenceObservation, ClientEvidenceOutcome, ClientEvidencePhase,
+    ClientFeatureEndGatePlan, ClientGenerationClosureEvidence, ClientGenerationClosureObservation,
+    ClientGenerationCompletenessReport, ClientGenerationDiagnostic, ClientGenerationDiagnosticCode,
+    ClientGenerationDiagnosticSet, ClientGenerationEvidenceArtifact, ClientGenerationFormatVersion,
     ClientGenerationMapping, ClientGenerationReport, ClientGenerationScope,
     ClientGenerationScopeInput, ClientImplementationSubject, ClientOwnershipCorrection,
-    ClientReportSection, ClientTerminalStatus, PreservedClientBoundary, admit_client_evidence,
-    apply_client_ownership_correction, client_generation_scope_input,
-    derive_client_generation_scope,
+    ClientReportSection, ClientSignoffAdmission, ClientSignoffArtifact, ClientSignoffArtifactInput,
+    ClientSignoffCase, ClientSignoffCaseObservation, ClientSignoffCaseOutcome,
+    ClientSignoffCaseSpec, ClientSignoffExecutionCounts, ClientSignoffInventory,
+    ClientSignoffObservation, ClientSignoffPhaseTimings, ClientSignoffRun, ClientTerminalStatus,
+    PreservedClientBoundary, admit_client_evidence, admit_client_generation_closure,
+    apply_client_ownership_correction, build_client_signoff_artifact,
+    build_client_signoff_inventory, client_generation_scope_input,
+    client_implementation_closure_claims, client_signoff_verdict_digest,
+    derive_client_generation_report, derive_client_generation_scope, plan_client_feature_end_gate,
+    required_client_closure_gates, required_client_signoff_cases,
+    validate_client_signoff_candidate,
 };
 pub use command::{CommandPolicy, command_defects};
 pub use compatibility::{ValidatedCompatibilityClaim, validate_compatibility_claim};

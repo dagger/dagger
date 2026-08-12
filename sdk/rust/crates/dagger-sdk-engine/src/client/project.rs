@@ -725,10 +725,10 @@ fn reconcile_readme(
         .map_err(|_| project_conflict("README.md", "README must be UTF-8"))?;
     let body = match state {
         ClientDocumentationState::Initialized => {
-            "## Dagger client\n\nThis Cargo project is ready for Dagger client bindings. Run `dagger generate` to generate them.\n"
+            "## Dagger client\n\nThis Cargo project is ready for generated bindings. Run `dagger generate`; generation binds Core plus this client's one selected module. Bind each dependency through its own client.\n"
         }
         ClientDocumentationState::Generated => {
-            "## Dagger client\n\nBindings are generated under `src/dagger_client`. Run `cargo run --example dagger-client-quickstart` to try the client.\n"
+            "## Dagger client\n\nBindings under `src/dagger_client` reuse the public `dagger-sdk` lifecycle and bind Core plus this client's one selected module. Run `cargo run --example dagger-client-quickstart`; bind each dependency through its own client. Files outside this generated region remain authored.\n"
         }
     };
     let region = render_readme_region(body);

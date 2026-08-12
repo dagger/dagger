@@ -9,9 +9,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use dagger_sdk_engine::{
+    CheckpointAction, CheckpointActionOutcome, CheckpointGenerationDecision, ClientCheckpointRecord,
+};
+
 use crate::canonical::{DigestDomain, canonical_digest};
 use crate::model::{
-    CapabilityId, Digest, EvidenceId, FeatureId, NonEmptyText, ResolvedLedger, Status, TargetDigest,
+    CanonicalSet, CapabilityId, Digest, EvidenceId, FeatureId, NonEmptyText, ResolvedLedger,
+    Status, TargetDigest,
 };
 
 const INITIALIZATION_ID: &str = "behavior/go-client/init-client-lifecycle";
@@ -119,7 +124,7 @@ pub enum ClientEvidenceDomain {
     ImplementationClosure,
     /// Deferred exact-target engine sign-off.
     ExactEngineSignoff,
-    /// Feature 5 hook-only evidence, never sufficient for client contents.
+    /// Engine-integration hook-only evidence, never sufficient for client contents.
     EngineHook,
 }
 
@@ -197,7 +202,7 @@ pub struct ClientOwnershipCorrection {
     pub to: FeatureId,
 }
 
-/// Feature 5 boundary row which client evidence may not absorb.
+/// Engine-integration boundary row which client evidence may not absorb.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreservedClientBoundary {
@@ -233,7 +238,7 @@ pub struct ClientGenerationScopeInput {
     pub mappings: Vec<ClientGenerationMapping>,
     /// Exact ownership-only provision correction.
     pub ownership_corrections: Vec<ClientOwnershipCorrection>,
-    /// Exact hook and operation rows which remain owned by Feature 5.
+    /// Exact hook and operation rows which remain engine-integration owned.
     pub preserved_boundaries: Vec<PreservedClientBoundary>,
     /// One-client dependency interpretation reviewed against engine behaviour.
     pub dependency_scope: ClientDependencyScope,
@@ -274,7 +279,7 @@ impl ClientGenerationScope {
         &self.ownership_correction
     }
 
-    /// Returns Feature 5 rows excluded from generated-content evidence.
+    /// Returns engine-integration rows excluded from generated-content evidence.
     #[must_use]
     pub const fn preserved_boundaries(&self) -> &BTreeMap<CapabilityId, PreservedClientBoundary> {
         &self.preserved_boundaries
@@ -394,6 +399,377 @@ pub struct ClientEvidenceAdmission {
     pub rejection: Option<ClientGenerationDiagnosticSet>,
 }
 
+/// Complete local evidence inventory required before standalone-client implementation closure.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClientClosureGate {
+    /// Direct Rust-owned Go adapter lifecycle fixtures.
+    AdapterFixture,
+    /// Workspace selection, pin, and multi-client properties.
+    WorkspaceProperties,
+    /// Visible-schema and compiler properties.
+    SchemaCompiler,
+    /// Generated public API and compile checks.
+    GeneratedApi,
+    /// Cargo discovery and semantic reconciliation properties.
+    ProjectReconciliation,
+    /// Manifest-authorized publication and preservation properties.
+    Publication,
+    /// Recording-transport Core and module query properties.
+    QueryTransport,
+    /// Stable diagnostics, source policy, and repository security checks.
+    DiagnosticSecurity,
+    /// Locked formatting, checking, testing, Clippy, and rustdoc checks.
+    CargoHygiene,
+    /// Direct engine-free Go ABI tests owned by the Rust adapter.
+    DirectGoAbi,
+    /// Generated-asset ownership and drift verification.
+    GeneratedAssetDrift,
+    /// Documentation, command, and derived-report verification.
+    DerivedReporting,
+    /// Final byte-clean output inspection.
+    CleanOutput,
+}
+
+/// Terminal result for one implementation-closure gate.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ClientClosureGateOutcome {
+    /// Gate passed and produced immutable evidence.
+    Passed { evidence_digest: Digest },
+    /// Gate ran and failed.
+    Failed { diagnostic: NonEmptyText },
+    /// Gate was not executed.
+    Skipped { reason: NonEmptyText },
+}
+
+/// Whether a current gate ran now or reused matching immutable prior evidence.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "disposition", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ClientClosureGateDisposition {
+    /// Gate executed during this feature-end checkpoint.
+    Executed {
+        /// Measured gate duration.
+        elapsed_millis: u64,
+        /// Complete Cargo process count for this gate.
+        cargo_invocations: u32,
+    },
+    /// Matching evidence was consumed without replay.
+    Reused {
+        /// Canonical identity of the earlier admitted checkpoint evidence.
+        prior_checkpoint_digest: Digest,
+    },
+}
+
+/// One gate observation retained as authored so duplicates remain observable.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientClosureGateObservation {
+    /// Closed evidence-domain identity.
+    pub gate: ClientClosureGate,
+    /// Current owning-input identity required by the gate planner.
+    pub expected_input_digest: Digest,
+    /// Owning-input identity actually observed by the gate.
+    pub observed_input_digest: Digest,
+    /// Executed or evidence-reuse accounting.
+    pub disposition: ClientClosureGateDisposition,
+    /// Passed, failed, or skipped result.
+    pub result: ClientClosureGateOutcome,
+}
+
+/// Complete engine-free standalone-client closure candidate.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientGenerationClosureObservation {
+    /// Strict evidence format.
+    pub format_version: ClientGenerationFormatVersion,
+    /// Exact completeness target.
+    pub target_digest: TargetDigest,
+    /// Exact standalone-client mapping identity.
+    pub mapping_digest: Digest,
+    /// Complete Rust implementation identity.
+    pub implementation_digest: Digest,
+    /// Checked public Core/catalog identity used by generation.
+    pub catalog_digest: Digest,
+    /// Checked generated-client ownership manifest identity.
+    pub manifest_digest: Digest,
+    /// Fully accounted typed checkpoint record.
+    pub checkpoint: ClientCheckpointRecord,
+    /// Materialization count for the fixture SDK dependency baseline.
+    pub fixture_baseline_materializations: u32,
+    /// Authored gate list; omissions and duplicates are rejected.
+    pub gates: Vec<ClientClosureGateObservation>,
+    /// Capability-local claims partitioned by reviewed evidence domain.
+    pub claims: BTreeMap<ClientEvidenceDomain, CanonicalSet<CapabilityId>>,
+}
+
+/// Admitted engine-free implementation closure, distinct from SDK sign-off.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientGenerationClosureEvidence {
+    /// Canonical identity of the complete local observation.
+    pub closure_digest: Digest,
+    /// Exact completeness target.
+    pub target_digest: TargetDigest,
+    /// Exact standalone-client mapping identity.
+    pub mapping_digest: Digest,
+    /// Complete Rust implementation identity.
+    pub implementation_digest: Digest,
+    /// Checked public Core/catalog identity.
+    pub catalog_digest: Digest,
+    /// Checked generated-client ownership manifest identity.
+    pub manifest_digest: Digest,
+    /// Status changes supported by complete local evidence.
+    pub status_changes: BTreeMap<CapabilityId, Status>,
+    /// Exact-engine blockers intentionally retained after local closure.
+    pub signoff_blockers: CanonicalSet<CapabilityId>,
+}
+
+/// Change-triggered selection of current versus scheduled closure gates.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientFeatureEndGatePlan {
+    /// Complete current owning-input identities.
+    pub current_inputs: BTreeMap<ClientClosureGate, Digest>,
+    /// Current passed observations reusable without replay.
+    pub reused: BTreeMap<ClientClosureGate, ClientClosureGateObservation>,
+    /// Missing, failed, skipped, or stale gates which must execute.
+    pub scheduled: CanonicalSet<ClientClosureGate>,
+}
+
+/// Canonical standalone-client closure artifact written by the recorder.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientGenerationEvidenceArtifact {
+    /// Strict evidence format.
+    pub format_version: ClientGenerationFormatVersion,
+    /// Complete authored observation retained for audit.
+    pub observation: ClientGenerationClosureObservation,
+    /// Admitted local closure.
+    pub closure: ClientGenerationClosureEvidence,
+    /// Exact deferred case identities; no case outcome is synthesized locally.
+    pub deferred_signoff_cases: CanonicalSet<ClientSignoffCase>,
+}
+
+/// One exact engine-backed standalone-client sign-off case.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClientSignoffCase {
+    /// Initialize and generate one confined local client.
+    InitializedLocalClient,
+    /// Generate one independently bound immutable remote dependency client.
+    PinnedRemoteClient,
+    /// Regenerate while preserving authored content and removing only owned obsolete files.
+    SchemaRegeneration,
+    /// Execute a generated Core query through the public runtime.
+    CoreQuery,
+    /// Execute a query through the selected module namespace.
+    NamespacedModuleQuery,
+}
+
+/// Immutable exact-target artifact inputs shared by every client sign-off case.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffArtifactInput {
+    /// Exact completeness target.
+    pub target_digest: TargetDigest,
+    /// Target platform identity.
+    pub platform: NonEmptyText,
+    /// Combined engine and CLI immutable input identity.
+    pub engine_cli_input_digest: Digest,
+    /// Mandatory engine-packaged Go runtime identity.
+    pub go_runtime_digest: Digest,
+    /// Exact Rust SDK manifest identity.
+    pub rust_manifest_digest: Digest,
+    /// Exact Rust engine descriptor identity.
+    pub rust_descriptor_digest: Digest,
+    /// Rust generated assets and source content identity.
+    pub rust_content_digest: Digest,
+    /// Exact Rust and Go toolchain identity.
+    pub toolchain_digest: Digest,
+}
+
+/// One content-addressed exact-target artifact reused throughout sign-off.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffArtifact {
+    /// Immutable artifact inputs.
+    pub input: ClientSignoffArtifactInput,
+    /// Domain-separated canonical artifact identity.
+    pub artifact_digest: Digest,
+}
+
+/// One isolated case bound to the shared artifact and local closure.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffCaseSpec {
+    /// Stable case identity.
+    pub case: ClientSignoffCase,
+    /// Artifact-, closure-, and case-bound identity.
+    pub case_digest: Digest,
+    /// Exact engine-domain claims assigned to this case.
+    pub capability_ids: CanonicalSet<CapabilityId>,
+}
+
+/// Complete deferred standalone-client sign-off inventory.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffInventory {
+    /// Strict evidence format.
+    pub format_version: ClientGenerationFormatVersion,
+    /// Exact standalone-client mapping identity.
+    pub mapping_digest: Digest,
+    /// Matching local closure consumed without replay.
+    pub implementation_closure_digest: Digest,
+    /// One reusable exact-target artifact.
+    pub artifact: ClientSignoffArtifact,
+    /// One installed Rust baseline shared by isolated workspaces.
+    pub rust_baseline_digest: Digest,
+    /// Complete closed five-case inventory.
+    pub cases: BTreeMap<ClientSignoffCase, ClientSignoffCaseSpec>,
+}
+
+/// Terminal state of one engine-backed client case.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ClientSignoffCaseOutcome {
+    /// Case passed with immutable evidence.
+    Passed { observation_digest: Digest },
+    /// Case ran and failed.
+    Failed { diagnostic: NonEmptyText },
+    /// Case did not execute.
+    Skipped { reason: NonEmptyText },
+}
+
+/// One isolated case outcome branched from the common installed baseline.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffCaseObservation {
+    /// Stable case identity.
+    pub case: ClientSignoffCase,
+    /// Expected case digest from the inventory.
+    pub case_digest: Digest,
+    /// Unique isolated workspace identity.
+    pub workspace_digest: Digest,
+    /// Measured case duration.
+    pub elapsed_millis: u64,
+    /// Passed, failed, or skipped result.
+    pub result: ClientSignoffCaseOutcome,
+}
+
+/// Counts proving reuse of every expensive sign-off resource.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffExecutionCounts {
+    /// Target artifact build or import count.
+    pub artifact_materializations: u32,
+    /// Engine binary build count; zero is valid when the artifact was imported.
+    pub engine_builds: u32,
+    /// CLI binary build count; zero is valid when the artifact was imported.
+    pub cli_builds: u32,
+    /// Mandatory Go runtime content build count.
+    pub go_runtime_builds: u32,
+    /// Rust content build count.
+    pub rust_content_builds: u32,
+    /// Engine service start count.
+    pub engine_starts: u32,
+    /// Installed Rust baseline materialization count.
+    pub rust_baseline_installs: u32,
+    /// Engine-free closure replay count; this must remain zero.
+    pub implementation_closure_replays: u32,
+    /// Unrelated SDK, generation, test, or distribution graph entries.
+    pub unrelated_actions: u32,
+}
+
+/// Shared expensive-phase timings for exact-target sign-off.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffPhaseTimings {
+    /// Artifact build or import duration.
+    pub artifact_build_or_import_millis: u64,
+    /// One engine startup duration.
+    pub engine_start_millis: u64,
+    /// One Rust baseline installation duration.
+    pub rust_install_millis: u64,
+}
+
+/// Complete exact-target run from which the atomic verdict is derived.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffRun {
+    /// Canonical inventory identity observed by the runner.
+    pub inventory_digest: Digest,
+    /// Exact shared artifact used by every case.
+    pub artifact_digest: Digest,
+    /// Matching local closure consumed rather than replayed.
+    pub implementation_closure_digest: Digest,
+    /// Matching installed Rust baseline.
+    pub rust_baseline_digest: Digest,
+    /// Expensive resource counts.
+    pub execution_counts: ClientSignoffExecutionCounts,
+    /// Expensive shared phase timings.
+    pub phase_timings: ClientSignoffPhaseTimings,
+    /// Authored case outcomes; omissions and duplicates are rejected.
+    pub cases: Vec<ClientSignoffCaseObservation>,
+}
+
+/// One submitted sign-off result carrying its independently recomputable verdict.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSignoffObservation {
+    /// Complete run data.
+    pub run: ClientSignoffRun,
+    /// Atomic digest of the complete run data.
+    pub verdict_digest: Digest,
+}
+
+/// Pure sign-off admission result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientSignoffAdmission {
+    /// Admitted atomic verdict; absent on every rejection.
+    pub verdict_digest: Option<Digest>,
+    /// Engine-dependent status changes supported by the complete run.
+    pub status_changes: BTreeMap<CapabilityId, Status>,
+    /// Every remaining blocker.
+    pub blockers: CanonicalSet<CapabilityId>,
+    /// Stable rejection reason, absent only for admitted sign-off.
+    pub rejection: Option<ClientGenerationDiagnosticSet>,
+}
+
+/// Independently observable state of one standalone-client evidence phase.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ClientEvidencePhase {
+    /// No admitted evidence exists for this phase.
+    Unexecuted,
+    /// Complete evidence passed and is bound to this identity.
+    Passed { evidence_digest: Digest },
+}
+
+/// Honest standalone-client completeness report derived only from admitted evidence.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientGenerationCompletenessReport {
+    /// Exact completeness target.
+    pub target_digest: TargetDigest,
+    /// Reviewed standalone-client mapping identity.
+    pub mapping_digest: Digest,
+    /// Approved one-client dependency interpretation.
+    pub dependency_scope: ClientDependencyScope,
+    /// Reviewed ownership-only correction retained in output.
+    pub ownership_correction: ClientOwnershipCorrection,
+    /// Engine-integration boundaries which client contents never absorb.
+    pub preserved_boundaries: Vec<PreservedClientBoundary>,
+    /// Engine-free implementation phase.
+    pub implementation_closure: ClientEvidencePhase,
+    /// Deferred exact-engine phase.
+    pub sdk_signoff: ClientEvidencePhase,
+    /// Status changes supported by admitted phases.
+    pub status_changes: BTreeMap<CapabilityId, Status>,
+    /// Remaining blockers partitioned by durable report section.
+    pub blockers: BTreeMap<ClientReportSection, CanonicalSet<CapabilityId>>,
+}
+
 /// Constructs the reviewed one-authority/24-policy client-generation scope.
 pub fn client_generation_scope_input(target_digest: TargetDigest) -> ClientGenerationScopeInput {
     let mut mappings = Vec::with_capacity(1 + POLICY_SPECS.len());
@@ -466,7 +842,7 @@ pub fn derive_client_generation_scope(
 
 /// Applies the reviewed `TestProvision` ownership-only correction.
 ///
-/// The baseline remains independently reproducible as Feature 7 input. This transition
+/// The baseline remains independently reproducible before this transition. It
 /// validates its immutable capability projection before changing only the final owner.
 pub fn apply_client_ownership_correction(
     before: &ResolvedLedger,
@@ -542,6 +918,642 @@ pub fn admit_client_evidence(
         status_changes,
         report: report(scope, &expected),
         rejection: None,
+    }
+}
+
+/// Returns the exact engine-free gate set required for standalone-client closure.
+#[must_use]
+pub fn required_client_closure_gates() -> BTreeSet<ClientClosureGate> {
+    BTreeSet::from([
+        ClientClosureGate::AdapterFixture,
+        ClientClosureGate::WorkspaceProperties,
+        ClientClosureGate::SchemaCompiler,
+        ClientClosureGate::GeneratedApi,
+        ClientClosureGate::ProjectReconciliation,
+        ClientClosureGate::Publication,
+        ClientClosureGate::QueryTransport,
+        ClientClosureGate::DiagnosticSecurity,
+        ClientClosureGate::CargoHygiene,
+        ClientClosureGate::DirectGoAbi,
+        ClientClosureGate::GeneratedAssetDrift,
+        ClientClosureGate::DerivedReporting,
+        ClientClosureGate::CleanOutput,
+    ])
+}
+
+/// Plans only missing, failed, skipped, or stale feature-end gates.
+pub fn plan_client_feature_end_gate(
+    current_inputs: BTreeMap<ClientClosureGate, Digest>,
+    retained: &[ClientClosureGateObservation],
+) -> Result<ClientFeatureEndGatePlan, ClientGenerationDiagnosticSet> {
+    let rejected = || {
+        ClientGenerationDiagnosticSet::one(
+            ClientGenerationDiagnosticCode::ClientClosureIncomplete,
+            "standalone-client feature-end inputs are incomplete or duplicated",
+        )
+    };
+    if BTreeSet::from_iter(current_inputs.keys().copied()) != required_client_closure_gates() {
+        return Err(rejected());
+    }
+    let mut observations = BTreeMap::new();
+    for observation in retained {
+        if observations
+            .insert(observation.gate, observation.clone())
+            .is_some()
+        {
+            return Err(rejected());
+        }
+    }
+    if observations
+        .keys()
+        .any(|gate| !current_inputs.contains_key(gate))
+    {
+        return Err(rejected());
+    }
+    let mut reused = BTreeMap::new();
+    let mut scheduled = Vec::new();
+    for (gate, current) in &current_inputs {
+        match observations.get(gate) {
+            Some(observation)
+                if observation.expected_input_digest == *current
+                    && observation.observed_input_digest == *current
+                    && matches!(observation.result, ClientClosureGateOutcome::Passed { .. }) =>
+            {
+                reused.insert(*gate, observation.clone());
+            }
+            _ => scheduled.push(*gate),
+        }
+    }
+    Ok(ClientFeatureEndGatePlan {
+        current_inputs,
+        reused,
+        scheduled: CanonicalSet::new(scheduled),
+    })
+}
+
+/// Returns the exact local capability partition implied by the reviewed mappings.
+#[must_use]
+pub fn client_implementation_closure_claims(
+    scope: &ClientGenerationScope,
+) -> BTreeMap<ClientEvidenceDomain, CanonicalSet<CapabilityId>> {
+    let mut claims = BTreeMap::<ClientEvidenceDomain, Vec<CapabilityId>>::new();
+    for mapping in scope.mappings.values() {
+        for domain in &mapping.evidence_domains {
+            if *domain != ClientEvidenceDomain::ExactEngineSignoff {
+                claims
+                    .entry(*domain)
+                    .or_default()
+                    .push(mapping.capability_id.clone());
+            }
+        }
+    }
+    claims
+        .into_iter()
+        .map(|(domain, ids)| (domain, CanonicalSet::new(ids)))
+        .collect()
+}
+
+/// Admits local closure only from the complete current engine-free evidence set.
+pub fn admit_client_generation_closure(
+    scope: &ClientGenerationScope,
+    observation: &ClientGenerationClosureObservation,
+) -> Result<ClientGenerationClosureEvidence, ClientGenerationDiagnosticSet> {
+    let rejected = || {
+        ClientGenerationDiagnosticSet::one(
+            ClientGenerationDiagnosticCode::ClientClosureIncomplete,
+            "standalone-client closure is stale, incomplete, failed, duplicated, or outside the engine-free graph",
+        )
+    };
+    if observation.target_digest != *scope.target_digest()
+        || observation.mapping_digest != *scope.mapping_digest()
+        || observation.implementation_digest.as_str()
+            != observation
+                .checkpoint
+                .checkpoint
+                .implementation_digest
+                .as_str()
+        || observation.manifest_digest.as_str()
+            != observation.checkpoint.asset_output_digest.as_str()
+        || observation.fixture_baseline_materializations != 1
+        || observation
+            .checkpoint
+            .checkpoint
+            .deferred_signoff_exception
+            .is_some()
+        || observation
+            .checkpoint
+            .checkpoint
+            .actions
+            .iter()
+            .any(|action| {
+                action.elapsed_millis == 0 || action.outcome != CheckpointActionOutcome::Passed
+            })
+    {
+        return Err(rejected());
+    }
+    let checkpoint_actions = observation
+        .checkpoint
+        .checkpoint
+        .actions
+        .iter()
+        .map(|item| item.action.clone())
+        .collect::<BTreeSet<_>>();
+    let cargo_actions = observation
+        .checkpoint
+        .cargo
+        .iter()
+        .map(|item| item.action.clone())
+        .collect::<BTreeSet<_>>();
+    let generation_manifest = match &observation.checkpoint.checkpoint.generation {
+        CheckpointGenerationDecision::ReuseChecked { manifest_digest }
+        | CheckpointGenerationDecision::ScopedRefresh {
+            manifest_digest, ..
+        } => manifest_digest,
+    };
+    if checkpoint_actions.len() != observation.checkpoint.checkpoint.actions.len()
+        || cargo_actions.len() != observation.checkpoint.cargo.len()
+        || checkpoint_actions != cargo_actions
+        || generation_manifest.as_str() != observation.manifest_digest.as_str()
+        || observation
+            .checkpoint
+            .cargo
+            .iter()
+            .any(|item| !client_closure_cargo_count_is_valid(&item.action, item.invocations))
+    {
+        return Err(rejected());
+    }
+
+    let mut gates = BTreeMap::new();
+    for gate in &observation.gates {
+        if gate.expected_input_digest != gate.observed_input_digest
+            || matches!(
+                gate.disposition,
+                ClientClosureGateDisposition::Executed {
+                    elapsed_millis: 0,
+                    ..
+                }
+            )
+            || gates.insert(gate.gate, &gate.result).is_some()
+        {
+            return Err(rejected());
+        }
+    }
+    if BTreeSet::from_iter(gates.keys().copied()) != required_client_closure_gates()
+        || gates
+            .values()
+            .any(|result| !matches!(result, ClientClosureGateOutcome::Passed { .. }))
+    {
+        return Err(rejected());
+    }
+
+    let expected_claims = client_implementation_closure_claims(scope);
+    if observation.claims != expected_claims
+        || observation
+            .claims
+            .contains_key(&ClientEvidenceDomain::ExactEngineSignoff)
+        || observation
+            .claims
+            .contains_key(&ClientEvidenceDomain::EngineHook)
+    {
+        return Err(rejected());
+    }
+
+    let closure_digest =
+        canonical_digest(DigestDomain::ClientGeneration, observation).map_err(|_| rejected())?;
+    let mut status_changes = BTreeMap::new();
+    for (domain, capability_ids) in &observation.claims {
+        let admission = admit_client_evidence(
+            scope,
+            &ClientEvidenceObservation {
+                format_version: ClientGenerationFormatVersion::current(),
+                evidence_id: EvidenceId::new(format!(
+                    "verification/client-generation/implementation-closure/{}",
+                    client_evidence_domain_slug(*domain)
+                ))
+                .expect("closed evidence domain produces a valid identity"),
+                target_digest: observation.target_digest.clone(),
+                mapping_digest: observation.mapping_digest.clone(),
+                domain: *domain,
+                capability_ids: capability_ids.iter().cloned().collect(),
+                result: ClientEvidenceOutcome::Passed {
+                    observation_digest: closure_digest.clone(),
+                },
+            },
+        );
+        if admission.rejection.is_some() {
+            return Err(rejected());
+        }
+        status_changes.extend(admission.status_changes);
+    }
+    let signoff_blockers = CanonicalSet::new(
+        scope
+            .blockers()
+            .into_iter()
+            .filter(|id| !status_changes.contains_key(id)),
+    );
+    Ok(ClientGenerationClosureEvidence {
+        closure_digest,
+        target_digest: observation.target_digest.clone(),
+        mapping_digest: observation.mapping_digest.clone(),
+        implementation_digest: observation.implementation_digest.clone(),
+        catalog_digest: observation.catalog_digest.clone(),
+        manifest_digest: observation.manifest_digest.clone(),
+        status_changes,
+        signoff_blockers,
+    })
+}
+
+/// Builds one immutable exact-target client sign-off artifact without engine work.
+pub fn build_client_signoff_artifact(
+    input: ClientSignoffArtifactInput,
+) -> Result<ClientSignoffArtifact, ClientGenerationDiagnosticSet> {
+    let artifact_digest =
+        canonical_digest(DigestDomain::ClientGeneration, &input).map_err(|_| {
+            ClientGenerationDiagnosticSet::one(
+                ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+                "standalone-client sign-off artifact could not be hashed",
+            )
+        })?;
+    Ok(ClientSignoffArtifact {
+        input,
+        artifact_digest,
+    })
+}
+
+/// Returns the complete closed deferred client case inventory.
+#[must_use]
+pub fn required_client_signoff_cases() -> BTreeSet<ClientSignoffCase> {
+    BTreeSet::from([
+        ClientSignoffCase::InitializedLocalClient,
+        ClientSignoffCase::PinnedRemoteClient,
+        ClientSignoffCase::SchemaRegeneration,
+        ClientSignoffCase::CoreQuery,
+        ClientSignoffCase::NamespacedModuleQuery,
+    ])
+}
+
+/// Constructs the deferred five-case inventory without starting an engine.
+pub fn build_client_signoff_inventory(
+    scope: &ClientGenerationScope,
+    closure: &ClientGenerationClosureEvidence,
+    artifact: ClientSignoffArtifact,
+    rust_baseline_digest: Digest,
+) -> Result<ClientSignoffInventory, ClientGenerationDiagnosticSet> {
+    let rejected = || {
+        ClientGenerationDiagnosticSet::one(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off inventory combines stale or incomplete identities",
+        )
+    };
+    if closure.target_digest != *scope.target_digest()
+        || closure.mapping_digest != *scope.mapping_digest()
+        || closure.target_digest != artifact.input.target_digest
+        || build_client_signoff_artifact(artifact.input.clone())? != artifact
+        || closure.signoff_blockers != exact_client_signoff_claims(scope)
+    {
+        return Err(rejected());
+    }
+    let signoff_claims = exact_client_signoff_claims(scope);
+    let mut cases = BTreeMap::new();
+    for case in required_client_signoff_cases() {
+        // Initialization is the engine-owned lifecycle boundary. The remaining cases
+        // still participate in the atomic verdict but do not claim that row alone.
+        let capability_ids = if case == ClientSignoffCase::InitializedLocalClient {
+            signoff_claims.clone()
+        } else {
+            CanonicalSet::default()
+        };
+        let case_digest = canonical_digest(
+            DigestDomain::ClientGeneration,
+            &(
+                case,
+                &artifact.artifact_digest,
+                &closure.closure_digest,
+                &rust_baseline_digest,
+                &capability_ids,
+            ),
+        )
+        .map_err(|_| rejected())?;
+        cases.insert(
+            case,
+            ClientSignoffCaseSpec {
+                case,
+                case_digest,
+                capability_ids,
+            },
+        );
+    }
+    Ok(ClientSignoffInventory {
+        format_version: ClientGenerationFormatVersion::current(),
+        mapping_digest: scope.mapping_digest().clone(),
+        implementation_closure_digest: closure.closure_digest.clone(),
+        artifact,
+        rust_baseline_digest,
+        cases,
+    })
+}
+
+/// Computes the atomic verdict expected for one complete exact-target run.
+pub fn client_signoff_verdict_digest(
+    run: &ClientSignoffRun,
+) -> Result<Digest, ClientGenerationDiagnosticSet> {
+    canonical_digest(DigestDomain::ClientGeneration, run).map_err(|_| {
+        ClientGenerationDiagnosticSet::one(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off verdict could not be hashed",
+        )
+    })
+}
+
+/// Atomically validates the bounded exact-target sign-off candidate.
+#[must_use]
+pub fn validate_client_signoff_candidate(
+    scope: &ClientGenerationScope,
+    closure: &ClientGenerationClosureEvidence,
+    inventory: &ClientSignoffInventory,
+    observation: &ClientSignoffObservation,
+) -> ClientSignoffAdmission {
+    let reject = |code, message| ClientSignoffAdmission {
+        verdict_digest: None,
+        status_changes: BTreeMap::new(),
+        // A rejected engine run cannot erase the independently admitted local
+        // closure; it retains only that closure's exact residual blockers.
+        blockers: closure.signoff_blockers.clone(),
+        rejection: Some(ClientGenerationDiagnosticSet::one(code, message)),
+    };
+    let Ok(expected_inventory_digest) = canonical_digest(DigestDomain::ClientGeneration, inventory)
+    else {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off inventory could not be hashed",
+        );
+    };
+    let Ok(expected_artifact) = build_client_signoff_artifact(inventory.artifact.input.clone())
+    else {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off artifact is not canonical",
+        );
+    };
+    if closure.target_digest != *scope.target_digest()
+        || closure.mapping_digest != *scope.mapping_digest()
+        || inventory.mapping_digest != *scope.mapping_digest()
+        || inventory.implementation_closure_digest != closure.closure_digest
+        || inventory.artifact != expected_artifact
+        || inventory.artifact.input.target_digest != *scope.target_digest()
+        || observation.run.inventory_digest != expected_inventory_digest
+        || observation.run.artifact_digest != inventory.artifact.artifact_digest
+        || observation.run.implementation_closure_digest != closure.closure_digest
+        || observation.run.rust_baseline_digest != inventory.rust_baseline_digest
+    {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off is stale or cross-target",
+        );
+    }
+
+    let counts = observation.run.execution_counts;
+    if counts.artifact_materializations != 1
+        || counts.engine_builds > 1
+        || counts.cli_builds > 1
+        || counts.go_runtime_builds > 1
+        || counts.rust_content_builds > 1
+        || counts.engine_starts != 1
+        || counts.rust_baseline_installs != 1
+        || counts.implementation_closure_replays != 0
+        || counts.unrelated_actions != 0
+    {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffDuplicateWork,
+            "standalone-client sign-off did not reuse one bounded artifact, engine, and Rust baseline",
+        );
+    }
+    let timings = observation.run.phase_timings;
+    if timings.artifact_build_or_import_millis == 0
+        || timings.engine_start_millis == 0
+        || timings.rust_install_millis == 0
+    {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off omitted a shared phase timing",
+        );
+    }
+
+    let mut cases = BTreeMap::new();
+    let mut workspaces = BTreeSet::new();
+    for case in &observation.run.cases {
+        let Some(spec) = inventory.cases.get(&case.case) else {
+            return reject(
+                ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+                "standalone-client sign-off contains an unknown case",
+            );
+        };
+        if case.case_digest != spec.case_digest
+            || case.elapsed_millis == 0
+            || !matches!(case.result, ClientSignoffCaseOutcome::Passed { .. })
+            || !workspaces.insert(case.workspace_digest.clone())
+            || cases.insert(case.case, case).is_some()
+        {
+            return reject(
+                ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+                "standalone-client sign-off case is stale, shared, duplicated, skipped, or failed",
+            );
+        }
+    }
+    if BTreeSet::from_iter(cases.keys().copied()) != required_client_signoff_cases()
+        || CanonicalSet::new(
+            inventory
+                .cases
+                .values()
+                .flat_map(|case| case.capability_ids.iter().cloned()),
+        ) != exact_client_signoff_claims(scope)
+    {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off omits a required case or claim",
+        );
+    }
+    let Ok(verdict_digest) = client_signoff_verdict_digest(&observation.run) else {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off verdict could not be hashed",
+        );
+    };
+    if verdict_digest != observation.verdict_digest {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off verdict is not atomic",
+        );
+    }
+
+    let admission = admit_client_evidence(
+        scope,
+        &ClientEvidenceObservation {
+            format_version: ClientGenerationFormatVersion::current(),
+            evidence_id: EvidenceId::new("verification/client-generation/sdk-signoff")
+                .expect("static evidence identity is valid"),
+            target_digest: scope.target_digest().clone(),
+            mapping_digest: scope.mapping_digest().clone(),
+            domain: ClientEvidenceDomain::ExactEngineSignoff,
+            capability_ids: exact_client_signoff_claims(scope).iter().cloned().collect(),
+            result: ClientEvidenceOutcome::Passed {
+                observation_digest: verdict_digest.clone(),
+            },
+        },
+    );
+    if admission.rejection.is_some() {
+        return reject(
+            ClientGenerationDiagnosticCode::ClientSignoffIncomplete,
+            "standalone-client sign-off claims failed capability-local admission",
+        );
+    }
+    ClientSignoffAdmission {
+        verdict_digest: Some(verdict_digest),
+        status_changes: admission.status_changes,
+        blockers: CanonicalSet::default(),
+        rejection: None,
+    }
+}
+
+/// Derives the honest standalone-client report from independently admitted phases.
+pub fn derive_client_generation_report(
+    scope: &ClientGenerationScope,
+    closure: Option<&ClientGenerationClosureEvidence>,
+    signoff: Option<&ClientSignoffAdmission>,
+) -> Result<ClientGenerationCompletenessReport, ClientGenerationDiagnosticSet> {
+    let rejected = || {
+        ClientGenerationDiagnosticSet::one(
+            ClientGenerationDiagnosticCode::CapabilityEvidenceIncomplete,
+            "standalone-client report input is stale, rejected, or incomplete",
+        )
+    };
+    if signoff.is_some() && closure.is_none() {
+        return Err(rejected());
+    }
+
+    let expected_local = expected_client_status_changes(scope, |mapping| {
+        !mapping
+            .evidence_domains
+            .contains(&ClientEvidenceDomain::ExactEngineSignoff)
+    });
+    let expected_signoff = expected_client_status_changes(scope, |mapping| {
+        mapping
+            .evidence_domains
+            .contains(&ClientEvidenceDomain::ExactEngineSignoff)
+    });
+    let mut status_changes = BTreeMap::new();
+    let implementation_closure = if let Some(closure) = closure {
+        if closure.target_digest != *scope.target_digest()
+            || closure.mapping_digest != *scope.mapping_digest()
+            || closure.status_changes != expected_local
+            || closure.signoff_blockers != exact_client_signoff_claims(scope)
+        {
+            return Err(rejected());
+        }
+        status_changes.extend(closure.status_changes.clone());
+        ClientEvidencePhase::Passed {
+            evidence_digest: closure.closure_digest.clone(),
+        }
+    } else {
+        ClientEvidencePhase::Unexecuted
+    };
+    let sdk_signoff = if let Some(signoff) = signoff {
+        let Some(verdict_digest) = &signoff.verdict_digest else {
+            return Err(rejected());
+        };
+        if signoff.rejection.is_some()
+            || signoff.status_changes != expected_signoff
+            || !signoff.blockers.is_empty()
+        {
+            return Err(rejected());
+        }
+        status_changes.extend(signoff.status_changes.clone());
+        ClientEvidencePhase::Passed {
+            evidence_digest: verdict_digest.clone(),
+        }
+    } else {
+        ClientEvidencePhase::Unexecuted
+    };
+
+    let proved = status_changes.keys().cloned().collect::<BTreeSet<_>>();
+    let raw = report(scope, &proved);
+    Ok(ClientGenerationCompletenessReport {
+        target_digest: scope.target_digest().clone(),
+        mapping_digest: scope.mapping_digest().clone(),
+        dependency_scope: ClientDependencyScope::CorePlusOneBoundModule,
+        ownership_correction: scope.ownership_correction().clone(),
+        preserved_boundaries: scope.preserved_boundaries().values().cloned().collect(),
+        implementation_closure,
+        sdk_signoff,
+        status_changes,
+        blockers: raw
+            .blockers
+            .into_iter()
+            .map(|(section, blockers)| (section, CanonicalSet::new(blockers)))
+            .collect(),
+    })
+}
+
+fn exact_client_signoff_claims(scope: &ClientGenerationScope) -> CanonicalSet<CapabilityId> {
+    CanonicalSet::new(
+        scope
+            .mappings
+            .values()
+            .filter(|mapping| {
+                mapping
+                    .evidence_domains
+                    .contains(&ClientEvidenceDomain::ExactEngineSignoff)
+            })
+            .map(|mapping| mapping.capability_id.clone()),
+    )
+}
+
+fn expected_client_status_changes(
+    scope: &ClientGenerationScope,
+    predicate: impl Fn(&ClientGenerationMapping) -> bool,
+) -> BTreeMap<CapabilityId, Status> {
+    scope
+        .mappings
+        .values()
+        .filter(|mapping| predicate(mapping))
+        .map(|mapping| {
+            let status = match mapping.allowed_terminal_status {
+                ClientTerminalStatus::Implemented => Status::Implemented,
+                ClientTerminalStatus::IdiomaticEquivalent => Status::IdiomaticEquivalent,
+            };
+            (mapping.capability_id.clone(), status)
+        })
+        .collect()
+}
+
+const fn client_evidence_domain_slug(domain: ClientEvidenceDomain) -> &'static str {
+    match domain {
+        ClientEvidenceDomain::AdapterFixture => "adapter-fixture",
+        ClientEvidenceDomain::WorkspaceProperty => "workspace-property",
+        ClientEvidenceDomain::SchemaProperty => "schema-property",
+        ClientEvidenceDomain::GeneratedApiProperty => "generated-api-property",
+        ClientEvidenceDomain::ProjectProperty => "project-property",
+        ClientEvidenceDomain::PublicationProperty => "publication-property",
+        ClientEvidenceDomain::QueryTransportProperty => "query-transport-property",
+        ClientEvidenceDomain::DiagnosticSecurity => "diagnostic-security",
+        ClientEvidenceDomain::ImplementationClosure => "implementation-closure",
+        ClientEvidenceDomain::ExactEngineSignoff => "exact-engine-signoff",
+        ClientEvidenceDomain::EngineHook => "engine-hook",
+    }
+}
+
+const fn client_closure_cargo_count_is_valid(action: &CheckpointAction, count: u32) -> bool {
+    match action {
+        CheckpointAction::DirectGoAbi { .. } | CheckpointAction::CleanOutput => count == 0,
+        CheckpointAction::Format { .. }
+        | CheckpointAction::Check { .. }
+        | CheckpointAction::Test { .. }
+        | CheckpointAction::Clippy { .. }
+        | CheckpointAction::Rustdoc { .. }
+        | CheckpointAction::CargoDeny
+        | CheckpointAction::RepositoryRustSecurity
+        | CheckpointAction::GeneratedAssetDrift
+        | CheckpointAction::PackageContents { .. } => count > 0,
     }
 }
 

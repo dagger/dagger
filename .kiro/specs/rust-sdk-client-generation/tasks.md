@@ -858,8 +858,8 @@
     - No Dagger command, engine process, module invocation, unrelated SDK, unscoped
       generation, distribution build, or network-backed dependency resolution ran.
 
-- [ ] 21. Implement client-generation closure and deferred sign-off evidence admission
-  - [ ] 21.1 Add the exact engine-free Implementation Closure gate
+- [x] 21. Implement client-generation closure and deferred sign-off evidence admission
+  - [x] 21.1 Add the exact engine-free Implementation Closure gate
     - Add `ClientGenerationClosureObservation`, exact required evidence-domain set,
       implementation/capability/catalog/manifest/checkpoint identities, canonical
       digest, and admission function in `dagger-sdk-completeness`.
@@ -870,7 +870,7 @@
     - Advance only mapped policy capabilities whose allowed evidence domain is fully
       admitted; retain the engine initialization lifecycle blocker until SDK sign-off.
     - _Requirements: 1.4-1.11, 10.11-10.12_
-  - [ ] 21.2 Add the bounded client SDK sign-off inventory validator
+  - [x] 21.2 Add the bounded client SDK sign-off inventory validator
     - Add typed cases for one initialized local client, pinned remote dependency-bound
       client, schema regeneration, Core query, and namespaced module query plus exact
       target artifact, build/start/install counts, isolated outcomes, phase timings,
@@ -880,7 +880,7 @@
       baseline, incomplete timing, or non-atomic verdict observations.
     - Keep the validator pure and its execution deferred to Feature 8.
     - _Requirements: 10.12-10.19_
-  - [ ] 21.3 Property test: Property 26 — Implementation Closure consumes only complete matching local evidence
+  - [x] 21.3 Property test: Property 26 — Implementation Closure consumes only complete matching local evidence
     - Implement `property_26_implementation_closure_complete_matching_local_evidence`
       over at least 256 evidence-set permutations, exact-target and implementation
       digests, catalog/manifest identities, checkpoint boundaries, outcomes, and
@@ -888,14 +888,14 @@
     - Admit only the complete matching engine-free set and require canonical reusable
       closure output without replaying local work.
     - _Requirements: 10.11-10.12_
-  - [ ] 21.4 Property test: Property 27 — SDK sign-off inventory is bounded, reused, and atomic
+  - [x] 21.4 Property test: Property 27 — SDK sign-off inventory is bounded, reused, and atomic
     - Implement `property_27_sdk_signoff_inventory_bounded_reused_atomic` over at least
       256 closure/inventory/build/start/baseline/case/timing/verdict mutations.
     - Require all five exact cases, at-most-once builds, one engine/baseline, isolated
       results, complete timings, and one matching atomic verdict; reject the complete
       candidate after any invalid observation.
     - _Requirements: 10.13-10.19_
-  - [ ] 21.5 Render the honest Feature 7 completeness result
+  - [x] 21.5 Render the honest Feature 7 completeness result
     - Regenerate the mapping/policy/evidence-derived report only from admitted records,
       distinguish initialization, generated content, Cargo integration, regeneration,
       query usability, local closure, and sign-off, and retain every unexecuted
@@ -904,8 +904,8 @@
       derived inventories and no Feature 5 hook evidence is reused as content proof.
     - _Requirements: 1.1-1.12, 10.11-10.19_
 
-- [ ] 22. Document the durable standalone-client and contributor workflow
-  - [ ] 22.1 Add `sdk/rust/CLIENT_GENERATION.md`
+- [x] 22. Document the durable standalone-client and contributor workflow
+  - [x] 22.1 Add `sdk/rust/CLIENT_GENERATION.md`
     - Document initialization, `--no-generate`, generation/regeneration, local versus
       pinned remote binding, separately bound dependency clients, `dagger_client`,
       `core`, module namespace, extension trait/prelude, public lifecycle, Cargo and
@@ -913,7 +913,7 @@
     - Include a compile-checked quickstart and troubleshooting flow without presenting
       generated implementation layout or an engine run as the normal development API.
     - _Requirements: 2.1-2.13, 3.1-3.13, 4.1-4.17, 5.1-5.17, 6.1-6.15, 9.11-9.12_
-  - [ ] 22.2 Update architecture, contribution, crate README, and generated guidance
+  - [x] 22.2 Update architecture, contribution, crate README, and generated guidance
     - Add the pure compiler/reconciler/runtime-bridge/publication boundaries and the
       engine-free fixture/checkpoint commands to `ARCHITECTURE.md`, `CONTRIBUTING.md`,
       owning crate READMEs, and generated package README regions.
@@ -924,7 +924,7 @@
       and correctness-critical WHY comments without embedding spec feature/task labels
       in source comments.
     - _Requirements: 4.17, 6.1-6.15, 9.11-9.14, 10.1-10.12_
-  - [ ] 22.3 Correct and strengthen the umbrella contract
+  - [x] 22.3 Correct and strengthen the umbrella contract
     - Replace the stale implication that one client contains transitive dependency
       surfaces with the approved independent bound-client model.
     - Place the engine-free Rust-first checkpoint rule and the bounded reusable SDK
@@ -934,15 +934,15 @@
       an atomic verdict rejecting duplicate builds/starts.
     - Keep Feature 8 as sign-off owner and Feature 9 as publication/release owner.
     - _Requirements: 1.12, 10.1-10.19_
-  - [ ] 22.4 Add documentation and command-drift tests
+  - [x] 22.4 Add documentation and command-drift tests
     - Verify every documented local command resolves to the typed checkpoint action set,
       paths/test names exist, quickstarts compile, dependency and ownership claims match
       production constants, and no local section invokes Dagger, an engine, another
       SDK, unscoped generation, distribution, or network resolution.
     - _Requirements: 5.1-5.17, 9.11-9.14, 10.1-10.19_
 
-- [ ] 23. Wire and record the complete engine-free feature-end gate
-  - [ ] 23.1 Add the executable scoped gate and derived-evidence recorder
+- [x] 23. Wire and record the complete engine-free feature-end gate
+  - [x] 23.1 Add the executable scoped gate and derived-evidence recorder
     - Compose the exact typed feature-end evidence requirements from the design:
       format; focused client properties/unit/compile/fixture tests in the four Rust
       packages; direct Go ABI tests; warning-denied Clippy/rustdoc; Cargo Deny;
@@ -960,7 +960,7 @@
       Cargo counts, generated-asset decisions, and complete implementation digest for
       closure admission.
     - _Requirements: 9.1-9.14, 10.1-10.12_
-  - [ ] 23.2 Produce canonical closure evidence and leave sign-off explicitly unexecuted
+  - [x] 23.2 Produce canonical closure evidence and leave sign-off explicitly unexecuted
     - Admit only passed current feature-end observations, write canonical Feature 7
       evidence and report artifacts, and prove regeneration of those derived files is
       deterministic and leaves the worktree byte-clean.
@@ -968,7 +968,7 @@
       Feature 8 work; do not synthesize, skip-as-pass, or execute an engine observation.
     - _Requirements: 1.4-1.11, 10.11-10.19_
 
-- [ ] 24. Final checkpoint: Feature 7 is engine-free implementation-complete
+- [x] 24. Final checkpoint: Feature 7 is engine-free implementation-complete
   - Run the executable Task 23 gate once from the documented working directories. Its
     admitted current evidence must cover all 27 required property tests at their
     declared case counts, fixed and `trybuild` cases, the complete generated-client
@@ -993,6 +993,48 @@
     Feature 8 SDK-sign-off blocker.
   - Record exact commands and elapsed times in this task when executed; do not copy
     planned commands into evidence as though they ran.
+  - Checkpoint evidence (2026-08-12, warm local cache as executed):
+    - Scoped formatting for `dagger-codegen`, `dagger-sdk`, `dagger-sdk-engine`, and
+      `dagger-sdk-completeness` passed in 0.875s. Package-scoped all-target/all-feature
+      checks passed for the changed engine and completeness crates in 1.88s and 5.95s
+      respectively; the latter timing is the uncontended combined check observation
+      because a later parallel confirmation waited on Cargo's build lock.
+    - `cargo test -p dagger-sdk-engine --test client_project_properties --test
+      client_usability_properties --test client_checkpoint_properties --locked`
+      passed after preserving the established initialized-README generation hint. Its
+      256-case project/ownership properties and one-baseline four-client usability
+      corpus completed in 32.15s. The usability harness performed its six expected
+      nested offline Cargo phases once: lock, rustfmt, check, quickstart, Clippy, and
+      rustdoc.
+    - `cargo test -p dagger-sdk-completeness --test client_generation_evidence --test
+      client_generation_documentation --locked` passed in 1.32s at admission time.
+      Properties 26 and 27 each ran 256 cases; the fixed tests proved change-triggered
+      scheduling, honest blocker partitioning, documentation/command drift, canonical
+      artifact reproduction, and the deferred five-case inventory.
+    - `cargo test -p dagger-sdk --test source_policy --locked` passed in 0.31s. The
+      final warning-denied, no-dependency Clippy confirmation for the changed
+      engine/completeness crates passed in 5.75s; warning-denied rustdoc passed in
+      14.08s. Existing
+      unselected `dagger-sdk` dead-code warnings remained visible as dependency output
+      and were not attributed to this slice.
+    - The executable `dagger-client-generation-evidence` recorder wrote and then
+      byte-checked the canonical observation, closure, and report. Closure digest
+      `sha256:7a37c676636518b9880487e886ebd6a5c1988a15ad03b34c868fd8cc9c4876bb`
+      admits all 23 local policy mappings. The report retains exactly
+      `behavior/go-client/init-client-lifecycle` and
+      `policy/rust-policy/client-exact-engine-signoff-boundary`; SDK sign-off remains
+      explicitly `unexecuted`.
+    - The current checkpoint records 14 Cargo processes: eight top-level scoped Cargo
+      invocations plus the six nested offline usability phases. It records one
+      materialized fixture SDK baseline, checked generated-asset reuse, and individual
+      action timings. Properties 1-25, direct Go ABI, Cargo Deny, repository security,
+      package contents, query/runtime, compiler/schema, and checked-asset observations
+      were reused from Task 20 because their owning inputs did not change; the changed
+      project/publication, diagnostics, hygiene, reporting, and clean-output domains
+      were rerun.
+    - `git diff --check`, the recorder's `--check` mode, and the canonical artifact
+      regression were clean. No Dagger command, engine process, module invocation,
+      other SDK, unscoped generation, distribution build, or network resolution ran.
   - _Requirements: 1.1-1.12, 2.1-2.13, 3.1-3.13, 4.1-4.17, 5.1-5.17, 6.1-6.15, 7.1-7.14, 8.1-8.14, 9.1-9.14, 10.1-10.19_
 
 ## Deferred SDK Sign-off Gate

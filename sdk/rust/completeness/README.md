@@ -43,6 +43,17 @@ Everything under `artifacts/` is derived. Do not hand-edit it. `source-items.jso
 `inventory.json`, `ledger.json`, both reports, and release compatibility metadata must reproduce
 byte-for-byte from the authored inputs.
 
+Standalone-client closure adds one deliberately separate evidence chain:
+`evidence/client-generation-closure-observation.json` records the engine-free typed
+checkpoint, current/reused gate inputs, timings, and Cargo counts;
+`evidence/client-generation-closure.json` is its admitted canonical closure; and
+`artifacts/client-generation-report.json` is the derived honest report. Reproduce or
+check those files with `dagger-client-generation-evidence`. The report must leave the
+five exact-engine cases unexecuted and retain both sign-off blockers until Feature 8;
+local closure never fabricates an engine result.
+The governing workflow and deferred case semantics are documented in
+[`CLIENT_GENERATION.md`](../CLIENT_GENERATION.md).
+
 ## Reproducing the checked F1 baseline
 
 This runbook proves the checked baseline from two independent directions. Local verification

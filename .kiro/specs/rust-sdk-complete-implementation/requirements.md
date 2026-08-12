@@ -602,8 +602,9 @@ and modules, so that I can consume typed Dagger APIs outside a module runtime.
    bindings and connection support for the Target_Revision.
 2. WHEN generating a module client, THE Rust backend SHALL emit the module's complete
    public TypeDef surface.
-3. WHEN a module has dependencies, THE Rust backend SHALL emit bindings for every
-   selected dependency surface.
+3. WHEN a module has dependencies, THE Rust backend SHALL keep the generated client
+   limited to Core plus its one selected module and SHALL require an independently
+   bound client for each dependency surface a consumer selects.
 4. WHEN generated names from different modules collide, THE Rust backend SHALL place
    them in deterministic non-conflicting namespaces.
 5. WHEN a generated client project requires Cargo metadata, THE Rust backend SHALL emit

@@ -25,6 +25,9 @@ Install the published SDK with `cargo add dagger-sdk`. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the pinned toolchain and verification commands.
 Maintainers should use [`MAINTAINING.md`](MAINTAINING.md) for checked-target refresh,
 generation, evidence, rollback, and release review.
+Standalone-client users and contributors should read
+[`CLIENT_GENERATION.md`](CLIENT_GENERATION.md) for initialization, binding,
+regeneration, ownership, and engine-free checkpoint rules.
 
 Small crate examples can be run from this directory:
 

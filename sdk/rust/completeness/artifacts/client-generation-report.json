@@ -1,0 +1,77 @@
+{
+  "blockers": {
+    "cargo-integration": [],
+    "generated-content": [],
+    "initialization": [
+      "behavior/go-client/init-client-lifecycle"
+    ],
+    "local-closure": [],
+    "query-usability": [],
+    "regeneration": [],
+    "sdk-signoff": [
+      "policy/rust-policy/client-exact-engine-signoff-boundary"
+    ]
+  },
+  "dependency_scope": "core-plus-one-bound-module",
+  "implementation_closure": {
+    "evidence_digest": "sha256:7a37c676636518b9880487e886ebd6a5c1988a15ad03b34c868fd8cc9c4876bb",
+    "status": "passed"
+  },
+  "mapping_digest": "sha256:9cf302052d932e7a7ec1bdfba7a74af7ba276223ff55c0f675da5a4affcb98c3",
+  "ownership_correction": {
+    "capability_fingerprint": "sha256:42cf3a1fb160841bd3237cbf44dd394c9fff5d661a9361b44a518b34e1bde26d",
+    "capability_id": "behavior/go-client/source%2Fgo-client%2Fgo-test%2Fdagger%2F%2554est%2550rovision",
+    "from": "feature-7",
+    "status": "Partial",
+    "to": "feature-3"
+  },
+  "preserved_boundaries": [
+    {
+      "capability_fingerprint": "sha256:092288e4ae793c94fef04442d33c1f8b7ae0e3bf7f184570c288fa0250496619",
+      "capability_id": "behavior/go-codegen/source%2Fgo-codegen%2Fgo-method%2Fgogenerator%2F%2547o%2547enerator%2F%2547enerate%2543lient",
+      "owner": "feature-5",
+      "status": "Partial"
+    },
+    {
+      "capability_fingerprint": "sha256:20591cad1b89a97fe13b1b41dba336f8c1108c9ff2dda8478528338e99db55a2",
+      "capability_id": "behavior/go-codegen/source%2Fgo-codegen%2Fgo-type%2Fgenerator%2F%2547enerator",
+      "owner": "feature-5",
+      "status": "Partial"
+    },
+    {
+      "capability_fingerprint": "sha256:ab8c33f9dfcd8202538965ed2911afeca9d257234f3129804fb27740a90e9646",
+      "capability_id": "behavior/go-engine-sdk/source%2Fgo-engine-sdk%2Fgo-type%2Fcore%2F%2543lient%2547enerator",
+      "owner": "feature-5",
+      "status": "Missing"
+    }
+  ],
+  "sdk_signoff": {
+    "status": "unexecuted"
+  },
+  "status_changes": {
+    "policy/rust-policy/client-capability-scope": "Implemented",
+    "policy/rust-policy/client-cargo-project-adoption": "Implemented",
+    "policy/rust-policy/client-core-runtime-reuse": "Implemented",
+    "policy/rust-policy/client-deterministic-regeneration": "Implemented",
+    "policy/rust-policy/client-diagnostic-and-secret-safety": "Implemented",
+    "policy/rust-policy/client-engine-free-local-checkpoint": "Implemented",
+    "policy/rust-policy/client-generated-ownership-manifest": "Implemented",
+    "policy/rust-policy/client-immutable-sdk-dependency": "Implemented",
+    "policy/rust-policy/client-initialization": "Implemented",
+    "policy/rust-policy/client-module-root-composition": "Implemented",
+    "policy/rust-policy/client-module-surface-closure": "Implemented",
+    "policy/rust-policy/client-multi-client-isolation": "Implemented",
+    "policy/rust-policy/client-obsolete-artifact-removal": "Implemented",
+    "policy/rust-policy/client-pinned-module-resolution": "Implemented",
+    "policy/rust-policy/client-query-usability": "Implemented",
+    "policy/rust-policy/client-rust-namespace-isolation": "Implemented",
+    "policy/rust-policy/client-scoped-initial-generation": "Implemented",
+    "policy/rust-policy/client-single-bound-module": "Implemented",
+    "policy/rust-policy/client-transitive-dependency-exclusion": "Implemented",
+    "policy/rust-policy/client-user-file-preservation": "Implemented",
+    "policy/rust-policy/client-visible-schema-closure": "Implemented",
+    "policy/rust-policy/client-workspace-cwd-scoping": "Implemented",
+    "policy/rust-policy/client-workspace-record": "Implemented"
+  },
+  "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+}
