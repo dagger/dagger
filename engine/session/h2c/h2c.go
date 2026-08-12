@@ -17,15 +17,26 @@ import (
 )
 
 type TunnelListenerAttachable struct {
-	rootCtx context.Context
+	rootCtx     context.Context
+	onCompleted func(TunnelListenerCompletion)
 
 	UnimplementedTunnelListenerServer
 }
 
-func NewTunnelListenerAttachable(rootCtx context.Context) TunnelListenerAttachable {
-	return TunnelListenerAttachable{
-		rootCtx: rootCtx,
+type TunnelListenerCompletion struct {
+	Addr string
+	Err  error
+}
+
+func NewTunnelListenerAttachable(
+	rootCtx context.Context,
+	onCompleted ...func(TunnelListenerCompletion),
+) TunnelListenerAttachable {
+	attachable := TunnelListenerAttachable{rootCtx: rootCtx}
+	if len(onCompleted) > 0 {
+		attachable.onCompleted = onCompleted[0]
 	}
+	return attachable
 }
 
 func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
@@ -34,7 +45,7 @@ func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
 
 const InstrumentationLibrary = "dagger.io/engine.session"
 
-func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
+func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) (rerr error) {
 	slog := slog.SpanLogger(s.rootCtx, InstrumentationLibrary)
 
 	req, err := srv.Recv()
@@ -47,6 +58,11 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 		return err
 	}
 	defer l.Close()
+	defer func() {
+		if s.onCompleted != nil && s.rootCtx.Err() == nil {
+			s.onCompleted(TunnelListenerCompletion{Addr: l.Addr().String(), Err: rerr})
+		}
+	}()
 
 	err = srv.Send(&ListenResponse{
 		Addr: l.Addr().String(),
