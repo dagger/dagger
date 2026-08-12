@@ -369,27 +369,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Go).Env(&parent, platform), nil
-		case "GenerateDaggerRuntime":
-			var parent Go
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var start string
-			if inputArgs["start"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["start"]), &start)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg start", err))
-				}
-			}
-			return (*Go).GenerateDaggerRuntime(&parent, ctx, start)
-		case "GenerateDaggerRuntimes":
-			var parent Go
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Go).GenerateDaggerRuntimes(&parent, ctx)
 		case "ListPackages":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)
@@ -687,10 +666,10 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("CheckTidy",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check if 'go mod tidy' is up-to-date").
-							WithSourceMap(dag.SourceMap("main.go", 798, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 678, 1)).
 							WithCheck().
-							WithArg("include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 800, 2)}).
-							WithArg("exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 801, 2)})).
+							WithArg("include", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 680, 2)}).
+							WithArg("exclude", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 681, 2)})).
 					WithFunction(
 						dag.Function("Download",
 							dag.TypeDef().WithObject("Go")).
@@ -703,17 +682,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithDescription("Prepare a build environment for the given Go source code:\n  - Build a base container with Go tooling installed and configured\n  - Apply configuration\n  - Mount the source code").
 							WithSourceMap(dag.SourceMap("main.go", 260, 1)).
 							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 262, 2)})).
-					WithFunction(
-						dag.Function("GenerateDaggerRuntime",
-							dag.TypeDef().WithObject("Go")).
-							WithSourceMap(dag.SourceMap("main.go", 639, 1)).
-							WithArg("start", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 639, 57)})).
-					WithFunction(
-						dag.Function("GenerateDaggerRuntimes",
-							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Generate Dagger runtime files for Go SDK modules in the configured source.").
-							WithSourceMap(dag.SourceMap("main.go", 595, 1)).
-							WithGenerator()).
 					WithFunction(
 						dag.Function("ListPackages",
 							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).

@@ -10,7 +10,7 @@ import (
 )
 
 // A Go project
-type Go struct { // go (../../../../:0:0)
+type Go struct { // go (../../../../../:0:0)
 	query *querybuilder.Selection
 
 	cgo       *bool
@@ -227,24 +227,6 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-func (r *Go) GenerateDaggerRuntime(start string) *Go {
-	q := r.query.Select("generateDaggerRuntime")
-	q = q.Arg("start", start)
-
-	return &Go{
-		query: q,
-	}
-}
-
-// Generate Dagger runtime files for Go SDK modules in the configured source.
-func (r *Go) GenerateDaggerRuntimes() *Changeset {
-	q := r.query.Select("generateDaggerRuntimes")
-
-	return &Changeset{
-		query: q,
-	}
 }
 
 // A unique identifier for this Go.
@@ -625,7 +607,7 @@ type GoOpts struct {
 	VcsDirty bool
 }
 
-func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../:0:0)
+func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../../:0:0)
 	q := r.query.Select("go")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument

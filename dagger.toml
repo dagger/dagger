@@ -170,6 +170,9 @@ path = "modules/git-releaser"
 path = "modules/wolfi"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
+path = ".dagger/modules/go"
+
+[[modules.dagger-go-sdk.as-sdk.modules]]
 path = ".dagger/modules/cli-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
