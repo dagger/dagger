@@ -8,7 +8,7 @@ status: draft
 
 | Field | Value |
 | --- | --- |
-| Phase | 1 — feature doc |
+| Phase | 2 — implementation plan |
 | Branch | `feature-dev-a451d460` |
 | Base | `upstream/main` @ `49a8726ee` |
 | PR | _not opened yet_ |
@@ -334,3 +334,162 @@ Integration (`core/integration`), with the base workspace served by
   mechanism, but the same instinct — inheritance must be explicit and bounded.
 - `future/synthetic-workspace.md` — `GitRef.asWorkspace`; the same "a git ref can
   denote a workspace" idea the import ref relies on.
+
+## Implementation plan
+
+### Patch series
+
+| # | Patch | Scope |
+| --- | --- | --- |
+| 1 | `workspace-import-config` | `core/workspace`: the `import` key, merge + validation, unit tests |
+| 2 | `workspace-import-resolve` | `core`: remote workspace ref parsing/cloning moved out of `engine/server`, plus the imported-config loader |
+| 3 | `workspace-import-load` | `engine/server`: resolve and merge during workspace load |
+| 4 | `workspace-import-reads` | `core/schema`: merge in the read choke points |
+| 5 | `workspace-import-tests` | `core/integration`: multi-workspace fixture and the six cases |
+| 6 | `workspace-import-docs` | `dagger.toml` reference gains `import` |
+
+Each patch builds and tests on its own. 1 and 2 carry their own unit tests; 3
+and 4 are wiring covered by 5.
+
+### Patch 1 — `core/workspace`
+
+`config.go`:
+
+- `Config.Import string` with `json:"import,omitempty" toml:"import,omitempty"`,
+  declared first in the struct so `validTOMLFieldNames` lists it naturally.
+- `SerializeConfig`: emit `import = "…"` before `ignore`, followed by a blank
+  line, matching how the other top-level scalars render.
+- `cloneConfig`: copy `Import`.
+- `setConfigValue`: an `"import"` case, single-segment only, string value —
+  mirroring the `"ignore"` case's shape.
+- `config_document.go:configDocumentMap`: `values["import"]` when non-empty, so
+  document-preserving updates and `deleteRemovedConfigRoots` handle it like the
+  other scalars.
+
+New `core/workspace/import.go`:
+
+```go
+// MergeImportedConfig layers current on top of imported and returns the
+// effective config. imported may be nil (nothing to merge).
+func MergeImportedConfig(imported, current _Config) (_Config, error)
+```
+
+Behavior, in order:
+
+1. `imported.Import != ""` → `ErrNestedWorkspaceImport`, naming both refs.
+2. Clone `imported` as the base; drop `Import` from it; drop every
+   `AsSDK.Modules` / `AsSDK.Clients` while keeping the marker and `Name`.
+3. Apply `current` field by field per the merge table, tracking which module
+   names (and `env.<name>.modules.<mod>` overlays) still carry a source that
+   came from `imported`.
+4. For each of those, classify the source with
+   `gitref.FastKindCheck(source, pin)`. `KindLocal` → error naming the module,
+   the source and the import ref. `KindGit` and `KindUnknown` pass:
+   `github.com/acme/base` — the most common remote form — classifies as
+   `KindUnknown`, so requiring `KindGit` would reject the normal case.
+   `core/workspace` may import `core/gitref` (leaf package, no cycle), and this
+   is deliberately the _same_ classifier `FastModuleSourceKindCheck` and the
+   module loader use, so validation cannot drift from resolution.
+5. `current.Import` is preserved on the result.
+
+Errors are typed (`NestedImportError`, `LocalImportedModuleError`) so the load
+paths can wrap them with the config path without string matching.
+
+Tests in `core/workspace/import_test.go`: one table-driven test per merge-table
+row, plus the error cases and a round trip
+(`SerializeConfig` → `ParseConfig` preserves `Import`).
+
+### Patch 2 — `core`
+
+New `core/workspace_import.go` (package `core`):
+
+- `ParseWorkspaceRemoteRef(ctx, ref) (WorkspaceRemoteRef, error)` and
+  `CloneWorkspaceGitTree(ctx, dag, cloneRef, version) (Directory, GitRef, error)`
+  — moved verbatim from `engine/server/session_workspaces.go`
+  (`parseWorkspaceRemoteRef`, `cloneGitTree`), which then delegates. One
+  implementation, no behavior change; the move is what lets `core/schema` and
+  `engine/server` share it.
+- `LoadImportedWorkspaceConfig(ctx, dag _dagql.Server, ref string) (_workspace.Config, error)`:
+  reject a `gitref.KindLocal` ref up front; parse; clone; `workspace.DetectInRoot`
+  inside the tree at the ref's subdir; error when the imported tree has no
+  `dagger.toml`; read and `ParseConfig` it. Wrapped in a span named
+  `importing workspace config: <ref>`.
+
+The clone runs through the ordinary `git(url).head` / `.ref(name)` dagql
+selectors, which is what makes the lockfile entry appear — no lock code here.
+
+### Patch 3 — `engine/server/session_workspaces.go`
+
+In `detectAndLoadWorkspaceWithRootfs`, inside the `loadModules` block and
+_before_ `ApplyUserOverlay`:
+
+```go
+if wsConfig != nil && wsConfig.Import != "" {
+    imported, err := core.LoadImportedWorkspaceConfig(ctx, client.dag, wsConfig.Import)
+    if err != nil { return err }
+    wsConfig, err = workspace.MergeImportedConfig(imported, wsConfig)
+    if err != nil { return err }
+}
+```
+
+Placement matters and is load-bearing:
+
+- after `client.workspace = coreWS`, so the workspace lock binding exists and
+  the git resolution's lock entry lands in this workspace's `dagger.lock`;
+- before the user overlay and the env overlay, so the layering is
+  import → repo → user → env.
+
+### Patch 4 — `core/schema`
+
+- `workspace_config.go:readWorkspaceConfig` — after `ParseConfig`, when
+  `cfg.Import != ""`, resolve and merge with the same two calls. This is the
+  single read choke point behind `dagger config`, `Workspace.modules`,
+  `Workspace.envList`, `Workspace.sdks` and `currentModule.asSDK`, so all of
+  them report the merged view from one change.
+- `modulesource.go:workspaceModuleSourceByName` — same, so `-m <name>` resolves
+  a module the import contributes.
+- `workspace_builders.go:loadWorkspaceConfigForOverlay` is deliberately **not**
+  touched: writes stay local. A comment states that.
+
+### Patch 5 — `core/integration/workspace_import_test.go`
+
+Fixture helper, following `workspaceSelectionRemoteRef`:
+
+```go
+func workspaceImportBaseRef(ctx, t, c, base *dagger.Directory) string
+```
+
+serving the base workspace over `gitSmartHTTPServiceDirAuth` and returning an
+IP-addressed `http://…/repo.git@main` — reachable from the engine, which the
+`ExperimentalServiceHost` form is not, since the engine resolves the import
+itself.
+
+The six cases from [Testing](#testing), each a `t.Run` in one suite test, run
+against a container workspace whose `dagger.toml` carries the import.
+
+### Patch 6 — docs
+
+`docs/` `dagger.toml` reference: the `import` key, the merge order, the two
+limitations, and the fact that the pin lives in `dagger.lock`.
+
+### Verification
+
+```sh
+go build ./...
+go test ./core/workspace/...
+golangci-lint run core/workspace/... core/schema/... engine/server/...
+dagger call engine-dev test --pkg="./core/integration" --run='^TestWorkspaceImport'
+```
+
+### Open questions taken as decided
+
+- **Key name**: scalar `import`. Table form is the alternative and is a one-way
+  door; recorded in [Config surface](#config-surface).
+- **Nested import**: error, not ignore.
+- **Local module from the import**: error at merge, not silent skip.
+- **`dagger config` view**: effective/merged, consistent with `--env`.
+- **Remote (`-W <ref>`) workspaces that declare an import**: resolved the same
+  way. They have no host lock binding, so under `pinned` the lookup degrades to
+  live and under `frozen` it reads the remote's committed `dagger.lock` — the
+  existing behavior for every other lookup in a remote workspace, inherited, not
+  redesigned.
