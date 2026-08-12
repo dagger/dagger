@@ -368,3 +368,228 @@ func TestStartWithKeyCancellationReleasesResourcesAfterStopError(t *testing.T) {
 }
 
 var _ bkcache.Ref = (*failedStartRef)(nil)
+
+type retainedTestGeneration struct {
+	done chan struct{}
+	once sync.Once
+}
+
+func (generation *retainedTestGeneration) exit() {
+	generation.once.Do(func() { close(generation.done) })
+}
+
+type retainedTestStartable struct {
+	started chan *retainedTestGeneration
+	stops   atomic.Int32
+}
+
+func newRetainedTestStartable() *retainedTestStartable {
+	return &retainedTestStartable{started: make(chan *retainedTestGeneration, 8)}
+}
+
+func (startable *retainedTestStartable) Start(
+	_ context.Context,
+	running *RunningService,
+	_ digest.Digest,
+	_ ServiceStartOpts,
+) error {
+	generation := &retainedTestGeneration{done: make(chan struct{})}
+	running.Host = "retained-backend"
+	running.Kind = RunningServiceKindContainer
+	running.Stop = func(context.Context, bool) error {
+		startable.stops.Add(1)
+		generation.exit()
+		return nil
+	}
+	running.Wait = func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-generation.done:
+			return nil
+		}
+	}
+	startable.started <- generation
+	return nil
+}
+
+func retainedTestKey(name string) ServiceKey {
+	return ServiceKey{
+		Digest:    digest.FromString(name),
+		SessionID: "retained-session",
+		Kind:      ServiceRuntimeShared,
+	}
+}
+
+func TestRetainedServiceIdlesAndJoinsWithoutBindingLeaks(t *testing.T) {
+	t.Parallel()
+	services := NewServices()
+	startable := newRetainedTestStartable()
+	key := retainedTestKey("retained-idle")
+
+	running, release, err := services.startWithKey(t.Context(), key, startable, ServiceStartOpts{
+		RetainNames: []string{"web"},
+	}, false)
+	require.NoError(t, err)
+	firstGeneration := <-startable.started
+	release()
+
+	services.l.Lock()
+	require.Equal(t, 0, services.bindings[key])
+	require.Equal(t, map[string]struct{}{"web": {}}, services.retained[key])
+	services.l.Unlock()
+	select {
+	case <-firstGeneration.done:
+		t.Fatal("retained zero-binding service stopped")
+	default:
+	}
+
+	for range 4 {
+		joined, detach, err := services.startWithKey(t.Context(), key, startable, ServiceStartOpts{}, false)
+		require.NoError(t, err)
+		require.Same(t, running, joined)
+		detach()
+		services.l.Lock()
+		require.Equal(t, 0, services.bindings[key])
+		services.l.Unlock()
+		select {
+		case <-firstGeneration.done:
+			t.Fatal("retained service stopped after join/detach")
+		default:
+		}
+	}
+	require.Empty(t, startable.started, "join started another generation")
+
+	require.NoError(t, services.StopSessionServices(t.Context(), key.SessionID))
+	require.Equal(t, int32(1), startable.stops.Load())
+	services.l.Lock()
+	require.NotContains(t, services.retained, key)
+	services.l.Unlock()
+}
+
+func TestRetainedServiceRestartAndDelayedOldDetachAreGenerationSafe(t *testing.T) {
+	t.Parallel()
+	services := NewServices()
+	startable := newRetainedTestStartable()
+	key := retainedTestKey("retained-restart")
+
+	oldRunning, oldDetach, err := services.startWithKey(t.Context(), key, startable, ServiceStartOpts{
+		RetainNames: []string{"web"},
+	}, false)
+	require.NoError(t, err)
+	oldGeneration := <-startable.started
+	oldGeneration.exit()
+	require.Eventually(t, func() bool {
+		services.l.Lock()
+		defer services.l.Unlock()
+		_, running := services.running[key]
+		_, retained := services.retained[key]
+		return !running && retained
+	}, time.Second, time.Millisecond)
+
+	newRunning, newDetach, err := services.startWithKey(t.Context(), key, startable, ServiceStartOpts{}, false)
+	require.NoError(t, err)
+	require.NotSame(t, oldRunning, newRunning)
+	newGeneration := <-startable.started
+	oldDetach()
+	services.l.Lock()
+	require.Same(t, newRunning, services.running[key])
+	require.Equal(t, 1, services.bindings[key], "old generation release changed the new binding")
+	require.Equal(t, map[string]struct{}{"web": {}}, services.retained[key])
+	services.l.Unlock()
+
+	newDetach()
+	select {
+	case <-newGeneration.done:
+		t.Fatal("restarted retained generation stopped at zero bindings")
+	default:
+	}
+	require.NoError(t, services.StopSessionServices(t.Context(), key.SessionID))
+	require.Equal(t, int32(1), startable.stops.Load(), "only the current generation should be stopped")
+}
+
+func TestRetainedAliasesAndServiceDescriptionsAreStructured(t *testing.T) {
+	t.Parallel()
+	services := NewServices()
+	startable := newRetainedTestStartable()
+	key := retainedTestKey("retained-aliases")
+
+	backend, releaseWeb, err := services.startWithKey(t.Context(), key, startable, ServiceStartOpts{
+		RetainNames: []string{"web"},
+	}, false)
+	require.NoError(t, err)
+	<-startable.started
+	joined, releaseAPI, err := services.startWithKey(t.Context(), key, startable, ServiceStartOpts{
+		RetainNames: []string{"api"},
+	}, false)
+	require.NoError(t, err)
+	require.Same(t, backend, joined)
+	releaseWeb()
+	releaseAPI()
+
+	tunnelKey := ServiceKey{
+		Digest:    digest.FromString("published-tunnel"),
+		SessionID: key.SessionID,
+		ClientID:  "publisher",
+		Kind:      ServiceRuntimeShared,
+	}
+	frontendDescription := "published frontend"
+	services.l.Lock()
+	services.running[tunnelKey] = &RunningService{
+		Key: tunnelKey, Host: "127.0.0.1", Kind: RunningServiceKindTunnel,
+		Ports:          []Port{{Port: 8080, Protocol: NetworkProtocolTCP, Description: &frontendDescription}},
+		TunnelUpstream: &key,
+	}
+	services.bindings[tunnelKey] = 1
+	services.l.Unlock()
+
+	descriptions := services.Describe(key.SessionID)
+	require.Len(t, descriptions, 2)
+	var backendDescription, tunnelDescription *ServiceDescription
+	for i := range descriptions {
+		switch descriptions[i].Kind {
+		case RunningServiceKindContainer:
+			backendDescription = &descriptions[i]
+		case RunningServiceKindTunnel:
+			tunnelDescription = &descriptions[i]
+		}
+	}
+	require.NotNil(t, backendDescription)
+	require.Equal(t, []string{"api", "web"}, backendDescription.Names)
+	require.True(t, backendDescription.Retained)
+	require.NotNil(t, tunnelDescription)
+	require.Equal(t, "publisher", tunnelDescription.OwnerClientID)
+	require.Equal(t, key, *tunnelDescription.TunnelUpstream)
+	require.Equal(t, 8080, tunnelDescription.Ports[0].Port)
+}
+
+func TestRetentionCannotRaceSessionStop(t *testing.T) {
+	t.Parallel()
+	services := NewServices()
+	startable := newRetainedTestStartable()
+	key := retainedTestKey("retained-stop-race")
+	beforeStart := make(chan struct{})
+	allowStart := make(chan struct{})
+	services.testBeforeStartWithKey = func(ServiceKey) {
+		close(beforeStart)
+		<-allowStart
+	}
+
+	startResult := make(chan error, 1)
+	go func() {
+		_, _, err := services.startWithKey(t.Context(), key, startable, ServiceStartOpts{
+			RetainNames: []string{"web"},
+		}, false)
+		startResult <- err
+	}()
+	<-beforeStart
+	require.NoError(t, services.StopSessionServices(t.Context(), key.SessionID))
+	close(allowStart)
+	require.ErrorContains(t, <-startResult, "is stopping")
+	services.l.Lock()
+	require.NotContains(t, services.retained, key)
+	require.NotContains(t, services.starting, key)
+	require.NotContains(t, services.running, key)
+	services.l.Unlock()
+	require.Zero(t, startable.stops.Load())
+}

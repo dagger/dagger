@@ -516,10 +516,13 @@ func (svc *Service) Start(
 ) error {
 	switch {
 	case svc.Container.Self() != nil:
+		running.Kind = RunningServiceKindContainer
 		return svc.startContainer(ctx, running, dig, opts)
 	case svc.TunnelUpstream.Self() != nil:
+		running.Kind = RunningServiceKindTunnel
 		return svc.startTunnel(ctx, running, opts)
 	case len(svc.HostSockets) > 0:
+		running.Kind = RunningServiceKindReverseTunnel
 		return svc.startReverseTunnel(ctx, running, dig, opts)
 	default:
 		return fmt.Errorf("unknown service type")
@@ -1352,6 +1355,8 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	if err != nil {
 		return fmt.Errorf("start upstream: %w", err)
 	}
+	upstreamKey := upstream.Key
+	running.TunnelUpstream = &upstreamKey
 	registry = &tunnelListenerRegistry{}
 	const bindHost = "0.0.0.0"
 	const dialHost = "127.0.0.1"
