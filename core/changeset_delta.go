@@ -150,7 +150,7 @@ func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string,
 	return &ChangesetPaths{
 		Added:      added,
 		Modified:   fc.Modified,
-		Removed:    collapseChildPaths(allRemoved),
+		Removed:    CollapseChildPaths(allRemoved),
 		AllRemoved: allRemoved,
 		Renamed:    fc.Renamed,
 	}, stats, nil

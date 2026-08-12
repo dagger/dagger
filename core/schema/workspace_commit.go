@@ -647,15 +647,28 @@ func (s *workspaceSchema) scopeChangesetToPaths(
 	}
 	added := commitPathsInScope(paths.Added, resolved)
 	modified := commitPathsInScope(paths.Modified, resolved)
-	removed := commitPathsInScope(paths.AllRemoved, resolved)
+	// AllRemoved is deliberately uncollapsed: every path beneath a removed
+	// directory carries its own entry (changesetDelta.appendRemovedTree
+	// re-expands what the walker collapsed). Scope first, so a path-scoped
+	// commit still removes only what it was asked to, then collapse — removing
+	// a directory already removes everything beneath it, so the descendants are
+	// pure no-ops, and each one used to cost its own (empty) snapshot layer.
+	removed := core.CollapseChildPaths(commitPathsInScope(paths.AllRemoved, resolved))
 
 	before := cs.Self().Before
 	after := cs.Self().After
 	scopedAfter = before
-	for _, p := range removed {
+	if len(removed) > 0 {
+		// One call, one layer, however many paths: chaining a call per path
+		// stacks a snapshot per path, and overlayfs runs out of lowerdirs
+		// (mount options exceed a page) a few hundred deep.
+		removePaths := make(dagql.ArrayInput[dagql.String], len(removed))
+		for i, p := range removed {
+			removePaths[i] = dagql.String(strings.TrimSuffix(p, "/"))
+		}
 		if err := srv.Select(ctx, scopedAfter, &scopedAfter, dagql.Selector{
-			Field: "withoutDirectory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(strings.TrimSuffix(p, "/"))}},
+			Field: "withoutDirectories",
+			Args:  []dagql.NamedInput{{Name: "paths", Value: removePaths}},
 		}); err != nil {
 			return scoped, scopedAfter, err
 		}
