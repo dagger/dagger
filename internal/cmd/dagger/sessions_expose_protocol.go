@@ -28,6 +28,9 @@ const (
 
 	exposeCommitByte = byte(1)
 
+	exposeChildPhaseReady    = "ready"
+	exposeChildPhaseAccepted = "accepted"
+
 	// Darwin's sockaddr_un.sun_path is the smallest POSIX target in scope:
 	// 104 bytes including the terminating NUL.
 	maxExposeSocketPathLen = 103
@@ -125,6 +128,7 @@ type exposeControlResponse struct {
 }
 
 type exposeChildStatus struct {
+	Phase string        `json:"phase,omitempty"`
 	Ports []exposedPort `json:"ports,omitempty"`
 	Error string        `json:"error,omitempty"`
 }
@@ -265,9 +269,10 @@ func waitExposeRetry(ctx context.Context) error {
 type exposeListenerMonitor struct {
 	mu           sync.Mutex
 	lost         error
-	committed    bool
 	shuttingDown bool
 	notify       chan struct{}
+
+	testCommitLocked func()
 }
 
 func newExposeListenerMonitor() *exposeListenerMonitor {
@@ -293,10 +298,12 @@ func (monitor *exposeListenerMonitor) listenerEnded(addr string, err error) {
 func (monitor *exposeListenerMonitor) commit() error {
 	monitor.mu.Lock()
 	defer monitor.mu.Unlock()
+	if monitor.testCommitLocked != nil {
+		monitor.testCommitLocked()
+	}
 	if monitor.lost != nil {
 		return monitor.lost
 	}
-	monitor.committed = true
 	return nil
 }
 
@@ -317,6 +324,7 @@ type exposeStartup struct {
 
 	mu        sync.Mutex
 	lifecycle *os.File
+	status    *os.File
 	lock      *os.File
 	wait      <-chan error
 	paths     exposePaths
@@ -324,19 +332,26 @@ type exposeStartup struct {
 	finished  bool
 }
 
-func (startup *exposeStartup) Commit() error {
+func (startup *exposeStartup) Commit(ctx context.Context) error {
 	startup.mu.Lock()
 	defer startup.mu.Unlock()
 	if startup.finished {
 		return errors.New("expose startup already finished")
 	}
+	if err := context.Cause(ctx); err != nil {
+		return err
+	}
 	if _, err := startup.lifecycle.Write([]byte{exposeCommitByte}); err != nil {
 		return fmt.Errorf("commit expose server: %w", err)
 	}
+	if _, err := readExposeChildStatus(ctx, startup.status, exposeChildPhaseAccepted); err != nil {
+		return fmt.Errorf("accept expose server commit: %w", err)
+	}
 	startup.committed = true
 	startup.finished = true
-	// The commit byte is the acknowledgement boundary. Descriptor-close errors
-	// after that write must not turn an acknowledged server into a rollback.
+	// The child's accepted response is the acknowledgement boundary. Descriptor
+	// close errors after it must not turn an acknowledged server into rollback.
+	_ = startup.status.Close()
 	_ = startup.lifecycle.Close()
 	_ = startup.lock.Close()
 	return nil
@@ -354,16 +369,17 @@ func (startup *exposeStartup) Abort() error {
 	startup.finished = true
 	closeErr := startup.lifecycle.Close()
 	waitErr := <-startup.wait
+	statusErr := startup.status.Close()
 	cleanupErr := cleanupExposeState(startup.paths)
 	lockErr := startup.lock.Close()
-	return errors.Join(closeErr, waitErr, cleanupErr, lockErr)
+	return errors.Join(closeErr, waitErr, statusErr, cleanupErr, lockErr)
 }
 
 func writeExposeChildStatus(w io.Writer, status exposeChildStatus) error {
 	return json.NewEncoder(w).Encode(status)
 }
 
-func readExposeChildStatus(ctx context.Context, r io.Reader) (exposeChildStatus, error) {
+func readExposeChildStatus(ctx context.Context, r io.Reader, expectedPhase string) (exposeChildStatus, error) {
 	type result struct {
 		status exposeChildStatus
 		err    error
@@ -381,6 +397,12 @@ func readExposeChildStatus(ctx context.Context, r io.Reader) (exposeChildStatus,
 		}
 		if result.status.Error != "" {
 			return exposeChildStatus{}, errors.New(result.status.Error)
+		}
+		if result.status.Phase != expectedPhase {
+			return exposeChildStatus{}, fmt.Errorf(
+				"unexpected expose server status phase %q, expected %q",
+				result.status.Phase, expectedPhase,
+			)
 		}
 		return result.status, nil
 	case <-ctx.Done():

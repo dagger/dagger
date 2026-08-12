@@ -162,7 +162,7 @@ func runDetachedServices(
 	}
 	if preparation.Startup != nil {
 		transaction.abort = preparation.Startup.Abort
-		if err := preparation.Startup.Commit(); err != nil {
+		if err := preparation.Startup.Commit(ctx); err != nil {
 			return err
 		}
 		transaction.committed = true

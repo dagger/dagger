@@ -15,6 +15,7 @@ import (
 	"sort"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/session/h2c"
@@ -228,9 +229,9 @@ func spawnExposeServerWith(
 	}
 	_ = statusW.Close()
 	_ = lifecycleR.Close()
-	status, statusErr := readExposeChildStatus(ctx, statusR)
-	_ = statusR.Close()
+	status, statusErr := readExposeChildStatus(ctx, statusR, exposeChildPhaseReady)
 	if statusErr != nil {
+		_ = statusR.Close()
 		_ = lifecycleW.Close()
 		<-waitCh
 		cleanupErr := cleanupExposeState(paths)
@@ -241,7 +242,7 @@ func spawnExposeServerWith(
 		return nil, statusErr
 	}
 	return &exposeStartup{
-		Ports: status.Ports, lifecycle: lifecycleW, lock: lock,
+		Ports: status.Ports, lifecycle: lifecycleW, status: statusR, lock: lock,
 		wait: waitCh, paths: paths,
 	}, nil
 }
@@ -320,6 +321,8 @@ func (server *exposeControlServer) Close() error {
 
 type exposeServerHooks struct {
 	BeforeReady <-chan struct{}
+	Connect     func(context.Context, client.Params) (exposePortSession, error)
+	WriteRecord func(string, exposeRecord) error
 }
 
 func runExposePortServer(ctx context.Context, encodedConfig string) error {
@@ -349,7 +352,18 @@ func runExposePortServerWithHooks(
 	defer lock.Close()
 	defer statusW.Close()
 	defer lifecycleR.Close()
+	return serveExposePortServer(ctx, config, paths, lock, statusW, lifecycleR, hooks)
+}
 
+func serveExposePortServer(
+	ctx context.Context,
+	config exposeServerConfig,
+	paths exposePaths,
+	lock *os.File,
+	statusW *os.File,
+	lifecycleR *os.File,
+	hooks exposeServerHooks,
+) (rerr error) {
 	serverCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	serverCtx, cancel := context.WithCancelCause(serverCtx)
@@ -372,12 +386,21 @@ func runExposePortServerWithHooks(
 	}()
 
 	readySent := false
+	acceptedSent := false
 	defer func() {
-		if rerr != nil && !readySent {
-			_ = writeExposeChildStatus(statusW, exposeChildStatus{Error: rerr.Error()})
+		if rerr != nil && !acceptedSent {
+			phase := exposeChildPhaseReady
+			if readySent {
+				phase = exposeChildPhaseAccepted
+			}
+			_ = writeExposeChildStatus(statusW, exposeChildStatus{Phase: phase, Error: rerr.Error()})
 		}
 	}()
-	if err := writeExposeRecord(paths.Record, exposeRecord{
+	writeRecord := hooks.WriteRecord
+	if writeRecord == nil {
+		writeRecord = writeExposeRecord
+	}
+	if err := writeRecord(paths.Record, exposeRecord{
 		PID: os.Getpid(), State: exposeStateStarting, Request: config.Request,
 	}); err != nil {
 		return err
@@ -404,7 +427,13 @@ func runExposePortServerWithHooks(
 			monitor.listenerEnded(completion.Addr, completion.Err)
 		},
 	}
-	session, err := client.Connect(serverCtx, params)
+	connect := hooks.Connect
+	if connect == nil {
+		connect = func(ctx context.Context, params client.Params) (exposePortSession, error) {
+			return client.Connect(ctx, params)
+		}
+	}
+	session, err := connect(serverCtx, params)
 	if err != nil {
 		return fmt.Errorf("attach expose server: %w", err)
 	}
@@ -434,7 +463,7 @@ func runExposePortServerWithHooks(
 			return context.Cause(serverCtx)
 		}
 	}
-	if err := writeExposeChildStatus(statusW, exposeChildStatus{Ports: ports}); err != nil {
+	if err := writeExposeChildStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseReady, Ports: ports}); err != nil {
 		return fmt.Errorf("report expose server readiness: %w", err)
 	}
 	readySent = true
@@ -461,12 +490,16 @@ func runExposePortServerWithHooks(
 		return context.Cause(serverCtx)
 	}
 
-	if err := writeExposeRecord(paths.Record, exposeRecord{
+	control.ready(ports)
+	if err := writeExposeChildStatus(statusW, exposeChildStatus{Phase: exposeChildPhaseAccepted}); err != nil {
+		return fmt.Errorf("report expose server commit acceptance: %w", err)
+	}
+	acceptedSent = true
+	if err := writeRecord(paths.Record, exposeRecord{
 		PID: os.Getpid(), State: exposeStateReady, Request: config.Request,
 	}); err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "write committed expose record:", err)
 	}
-	control.ready(ports)
 	fmt.Fprintln(os.Stderr, "detached service ports committed")
 
 	select {
@@ -568,4 +601,10 @@ func publishExposePorts(
 
 type exposeQueryClient interface {
 	Do(context.Context, string, string, map[string]any, any) error
+}
+
+type exposePortSession interface {
+	exposeQueryClient
+	Done() <-chan struct{}
+	Close() error
 }

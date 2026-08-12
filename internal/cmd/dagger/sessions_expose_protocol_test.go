@@ -90,27 +90,47 @@ func TestExposeListenerMonitorCommitAndShutdown(t *testing.T) {
 	monitor.shutdown()
 	monitor.listenerEnded("127.0.0.1:8080", errors.New("expected close"))
 	require.NoError(t, monitor.loss())
+
+	monitor = newExposeListenerMonitor()
+	commitLocked := make(chan struct{})
+	releaseCommit := make(chan struct{})
+	monitor.testCommitLocked = func() {
+		close(commitLocked)
+		<-releaseCommit
+	}
+	commitDone := make(chan error, 1)
+	go func() { commitDone <- monitor.commit() }()
+	<-commitLocked
+	lossDone := make(chan struct{})
+	go func() {
+		monitor.listenerEnded("127.0.0.1:8080", errors.New("concurrent loss"))
+		close(lossDone)
+	}()
+	close(releaseCommit)
+	require.NoError(t, <-commitDone)
+	<-lossDone
+	require.ErrorContains(t, monitor.loss(), "concurrent loss")
 }
 
 func TestExposeChildStatusProtocol(t *testing.T) {
 	t.Parallel()
 	var ready bytes.Buffer
 	require.NoError(t, writeExposeChildStatus(&ready, exposeChildStatus{
-		Ports: []exposedPort{{Service: "web", Frontend: 8080}},
+		Phase: exposeChildPhaseReady, Ports: []exposedPort{{Service: "web", Frontend: 8080}},
 	}))
-	status, err := readExposeChildStatus(t.Context(), &ready)
+	status, err := readExposeChildStatus(t.Context(), &ready, exposeChildPhaseReady)
 	require.NoError(t, err)
 	require.Equal(t, 8080, status.Ports[0].Frontend)
 
 	var failed bytes.Buffer
-	require.NoError(t, writeExposeChildStatus(&failed, exposeChildStatus{Error: "bind failed"}))
-	_, err = readExposeChildStatus(t.Context(), &failed)
+	require.NoError(t, writeExposeChildStatus(&failed, exposeChildStatus{Phase: exposeChildPhaseReady, Error: "bind failed"}))
+	_, err = readExposeChildStatus(t.Context(), &failed, exposeChildPhaseReady)
 	require.EqualError(t, err, "bind failed")
 
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(errors.New("status canceled"))
 	reader, writer := io.Pipe()
-	_, err = readExposeChildStatus(ctx, reader)
+	_, err = readExposeChildStatus(ctx, reader, exposeChildPhaseReady)
 	require.EqualError(t, err, "status canceled")
 	require.NoError(t, reader.Close())
 	require.NoError(t, writer.Close())

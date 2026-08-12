@@ -149,7 +149,7 @@ func exposeDetachableSession(
 					_ = preparation.Startup.Abort()
 				}
 			}()
-			if err := preparation.Startup.Commit(); err != nil {
+			if err := preparation.Startup.Commit(ctx); err != nil {
 				return err
 			}
 			committed = true

@@ -3,6 +3,7 @@
 package daggercmd
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/engine/sessionwire"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
@@ -200,7 +203,7 @@ func TestExposeReadyCommitLivenessAndLockHandoff(t *testing.T) {
 			require.Nil(t, contender)
 
 			if test.commit {
-				require.NoError(t, startup.Commit())
+				require.NoError(t, startup.Commit(t.Context()))
 				contender, acquired, err = tryAcquireExposeLock(paths.Lock)
 				require.NoError(t, err)
 				require.False(t, acquired, "parent close dropped the child's inherited lock")
@@ -223,6 +226,154 @@ func TestExposeReadyCommitLivenessAndLockHandoff(t *testing.T) {
 		})
 	}
 }
+
+func TestExposeCommitCanceledBeforeLinearization(t *testing.T) {
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-cancel-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	paths, err := makeExposePaths(stateDir, testCLIValidSessionID())
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	serverExit := make(chan struct{})
+	startup, err := spawnExposeServerWith(
+		t.Context(),
+		exposeServerConfig{SessionID: testCLIValidSessionID(), StateDir: paths.Dir},
+		paths,
+		lock,
+		fakeExposeProcessStarter(t, paths, serverExit),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(errors.New("commit canceled"))
+	require.EqualError(t, startup.Commit(ctx), "commit canceled")
+	require.NoError(t, startup.Abort())
+}
+
+func TestExposeServerRejectsListenerLossAfterReady(t *testing.T) {
+	harness := newExposeServerHarness(t)
+	var listenerCompleted func(h2c.TunnelListenerCompletion)
+	harness.hooks.Connect = func(_ context.Context, params client.Params) (exposePortSession, error) {
+		listenerCompleted = params.OnTunnelListenerCompleted
+		return harness.session, nil
+	}
+	harness.start()
+
+	ready, err := readExposeChildStatus(t.Context(), harness.statusR, exposeChildPhaseReady)
+	require.NoError(t, err)
+	require.Len(t, ready.Ports, 1)
+	require.NotNil(t, listenerCompleted)
+	listenerCompleted(h2c.TunnelListenerCompletion{Addr: "127.0.0.1:8080", Err: errors.New("backend exited")})
+	_, err = readExposeChildStatus(t.Context(), harness.statusR, exposeChildPhaseAccepted)
+	require.ErrorContains(t, err, "backend exited")
+	require.ErrorContains(t, <-harness.wait, "backend exited")
+}
+
+func TestExposeServerCommittedRecordFailureIsDiagnostic(t *testing.T) {
+	harness := newExposeServerHarness(t)
+	harness.hooks.Connect = func(_ context.Context, _ client.Params) (exposePortSession, error) {
+		return harness.session, nil
+	}
+	recordFailed := make(chan struct{})
+	recordWrites := 0
+	harness.hooks.WriteRecord = func(path string, record exposeRecord) error {
+		recordWrites++
+		if recordWrites == 2 {
+			close(recordFailed)
+			return errors.New("injected ready-record failure")
+		}
+		return writeExposeRecord(path, record)
+	}
+	harness.start()
+
+	_, err := readExposeChildStatus(t.Context(), harness.statusR, exposeChildPhaseReady)
+	require.NoError(t, err)
+	_, err = harness.lifecycleW.Write([]byte{exposeCommitByte})
+	require.NoError(t, err)
+	_, err = readExposeChildStatus(t.Context(), harness.statusR, exposeChildPhaseAccepted)
+	require.NoError(t, err)
+	<-recordFailed
+	select {
+	case err := <-harness.wait:
+		t.Fatalf("committed server exited after diagnostic record failure: %v", err)
+	default:
+	}
+	close(harness.session.done)
+	require.NoError(t, <-harness.wait)
+}
+
+type exposeServerHarness struct {
+	t          *testing.T
+	config     exposeServerConfig
+	paths      exposePaths
+	lock       *os.File
+	statusR    *os.File
+	statusW    *os.File
+	lifecycleR *os.File
+	lifecycleW *os.File
+	session    *fakeExposePortSession
+	hooks      exposeServerHooks
+	wait       chan error
+}
+
+func newExposeServerHarness(t *testing.T) *exposeServerHarness {
+	t.Helper()
+	stateDir, err := os.MkdirTemp("/tmp", "dagger-expose-server-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(stateDir)) })
+	sessionID := testCLIValidSessionID()
+	paths, err := makeExposePaths(stateDir, sessionID)
+	require.NoError(t, err)
+	lock, acquired, err := tryAcquireExposeLock(paths.Lock)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	statusR, statusW, err := os.Pipe()
+	require.NoError(t, err)
+	lifecycleR, lifecycleW, err := os.Pipe()
+	require.NoError(t, err)
+	frontend := 8080
+	request := exposeRequest{Mappings: []exposePortMapping{{
+		Service: "web", ServiceID: "backend-id", Frontend: &frontend,
+		Backend: 80, Protocol: sessionwire.NetworkProtocolTCP,
+	}}}
+	harness := &exposeServerHarness{
+		t: t, config: exposeServerConfig{SessionID: sessionID, StateDir: stateDir, Request: request},
+		paths: paths, lock: lock, statusR: statusR, statusW: statusW,
+		lifecycleR: lifecycleR, lifecycleW: lifecycleW,
+		session: &fakeExposePortSession{
+			fakeExposeQueryClient: &fakeExposeQueryClient{t: t}, done: make(chan struct{}),
+		},
+		wait: make(chan error, 1),
+	}
+	t.Cleanup(func() {
+		_ = harness.statusR.Close()
+		_ = harness.statusW.Close()
+		_ = harness.lifecycleR.Close()
+		_ = harness.lifecycleW.Close()
+		_ = harness.lock.Close()
+	})
+	return harness
+}
+
+func (harness *exposeServerHarness) start() {
+	harness.t.Helper()
+	go func() {
+		harness.wait <- serveExposePortServer(
+			harness.t.Context(), harness.config, harness.paths,
+			harness.lock, harness.statusW, harness.lifecycleR, harness.hooks,
+		)
+	}()
+}
+
+type fakeExposePortSession struct {
+	*fakeExposeQueryClient
+	done chan struct{}
+}
+
+func (session *fakeExposePortSession) Done() <-chan struct{} { return session.done }
+func (session *fakeExposePortSession) Close() error          { return nil }
 
 func fakeExposeProcessStarter(
 	t *testing.T,
@@ -258,7 +409,7 @@ func fakeExposeProcessStarter(
 				wait <- err
 				return
 			}
-			if err := writeExposeChildStatus(statusChild, exposeChildStatus{Ports: []exposedPort{{Service: "web", Frontend: 8080}}}); err != nil {
+			if err := writeExposeChildStatus(statusChild, exposeChildStatus{Phase: exposeChildPhaseReady, Ports: []exposedPort{{Service: "web", Frontend: 8080}}}); err != nil {
 				wait <- err
 				return
 			}
@@ -271,6 +422,10 @@ func fakeExposeProcessStarter(
 			}
 			if commit[0] != exposeCommitByte {
 				wait <- errors.New("invalid commit")
+				return
+			}
+			if err := writeExposeChildStatus(statusChild, exposeChildStatus{Phase: exposeChildPhaseAccepted}); err != nil {
+				wait <- err
 				return
 			}
 			if err := writeExposeRecord(paths.Record, exposeRecord{PID: 123, State: exposeStateReady}); err != nil {
