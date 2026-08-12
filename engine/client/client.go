@@ -98,8 +98,8 @@ type Params struct {
 	// engine-client mode; it is not a public SDK connection option.
 	Detachable bool
 
-	// AttachSessionID selects the narrow observer path for an existing
-	// detachable session. It is mutually exclusive with Detachable.
+	// AttachSessionID attaches a full client to an existing detachable session.
+	// It is mutually exclusive with Detachable.
 	AttachSessionID string
 
 	// OnAttachWait is called once if observer attachment must wait for a stale
@@ -183,6 +183,9 @@ type Client struct {
 	closeCtx      context.Context
 	closeRequests context.CancelCauseFunc
 	closeMu       sync.RWMutex
+	done          chan struct{}
+	doneInit      sync.Once
+	doneOnce      sync.Once
 
 	telemetry *errgroup.Group
 
@@ -412,11 +415,10 @@ func connect(ctx context.Context, params Params, requestedMode connectionMode) (
 		return c, nil
 	}
 
-	if mode == connectionModeObserver {
-		if err := c.startObserverSession(connectCtx); err != nil {
+	if err := c.startSession(connectCtx); err != nil {
+		if mode == connectionModeObserver {
 			return nil, fmt.Errorf("attach session: %w", err)
 		}
-	} else if err := c.startSession(connectCtx); err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
 
@@ -429,10 +431,6 @@ func connect(ctx context.Context, params Params, requestedMode connectionMode) (
 	if err := c.subscribeTelemetry(connectCtx); err != nil {
 		return nil, fmt.Errorf("subscribe to telemetry: %w", err)
 	}
-	if mode == connectionModeObserver {
-		return c, nil
-	}
-
 	if err := c.daggerConnect(ctx); err != nil {
 		return nil, fmt.Errorf("failed to connect to dagger: %w", err)
 	}
@@ -668,7 +666,11 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
-	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
+	spanName := "starting session"
+	if c.connectionMode == connectionModeObserver {
+		spanName = "attaching to session"
+	}
+	ctx, sessionSpan := Tracer(ctx).Start(ctx, spanName, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(sessionSpan, &rerr)
 
 	clientMetadata := c.clientMetadata()
@@ -730,71 +732,20 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		c.sessionSrv = sessionSrv
 		return nil
 	}
-	if c.connectionMode == connectionModeDetachableCreator {
+	switch c.connectionMode {
+	case connectionModeDetachableCreator:
 		err = retrySessionAttachment(ctx, attachmentRetryCreator, nil, connect, defaultAttachmentRetryPolicy())
-	} else {
+	case connectionModeObserver:
+		err = retrySessionAttachment(ctx, attachmentRetryObserver, c.OnAttachWait, connect, defaultAttachmentRetryPolicy())
+	default:
 		err = connect(ctx)
 	}
 	if err != nil {
 		return err
 	}
 
-	c.eg.Go(func() error {
-		ctx, cancel, err := c.withClientCloseCancel(ctx)
-		if err != nil {
-			return err
-		}
-		go func() {
-			<-ctx.Done()
-			cancel(errors.New("startSession context done"))
-		}()
-		c.sessionSrv.Run(ctx)
-		return nil
-	})
+	c.eg.Go(func() error { return c.runSessionAttachables(ctx) })
 
-	c.httpClient = c.newHTTPClient()
-	return nil
-}
-
-func (c *Client) startObserverSession(ctx context.Context) (rerr error) {
-	ctx, sessionSpan := Tracer(ctx).Start(ctx, "attaching to session", telemetry.Encapsulate())
-	defer telemetry.EndWithCause(sessionSpan, &rerr)
-
-	clientMetadata := c.clientMetadata()
-	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
-	connect := func(attemptCtx context.Context) error {
-		sessionConn, err := c.DialContext(attemptCtx, "", "")
-		if err != nil {
-			return fmt.Errorf("dial for session attachment: %w", err)
-		}
-		sessionSrv, err := ConnectSessionAttachables(
-			attemptCtx,
-			sessionConn,
-			c.AppendHTTPRequestHeaders(http.Header{}),
-		)
-		if err != nil {
-			sessionConn.Close()
-			return fmt.Errorf("connect session attachment: %w", err)
-		}
-		c.sessionSrv = sessionSrv
-		return nil
-	}
-	if err := retrySessionAttachment(ctx, attachmentRetryObserver, c.OnAttachWait, connect, defaultAttachmentRetryPolicy()); err != nil {
-		return err
-	}
-
-	c.eg.Go(func() error {
-		ctx, cancel, err := c.withClientCloseCancel(ctx)
-		if err != nil {
-			return err
-		}
-		go func() {
-			<-ctx.Done()
-			cancel(errors.New("startObserverSession context done"))
-		}()
-		c.sessionSrv.Run(ctx)
-		return nil
-	})
 	c.httpClient = c.newHTTPClient()
 	return nil
 }
@@ -845,18 +796,7 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 		return fmt.Errorf("connect session attachables: %w", err)
 	}
 
-	c.eg.Go(func() error {
-		ctx, cancel, err := c.withClientCloseCancel(ctx)
-		if err != nil {
-			return err
-		}
-		go func() {
-			<-ctx.Done()
-			cancel(errors.New("startSession context done"))
-		}()
-		c.sessionSrv.Run(ctx)
-		return nil
-	})
+	c.eg.Go(func() error { return c.runSessionAttachables(ctx) })
 
 	c.httpClient = c.newHTTPClient()
 	return nil
@@ -993,6 +933,36 @@ func (c *Client) Close() (rerr error) {
 	return errors.Join(rerr, c.closeLocalResources())
 }
 
+// Done closes exactly once when the client's persistent engine-side session
+// transport ends or the client closes locally.
+func (c *Client) Done() <-chan struct{} {
+	return c.doneChannel()
+}
+
+func (c *Client) signalDone() {
+	done := c.doneChannel()
+	c.doneOnce.Do(func() { close(done) })
+}
+
+func (c *Client) runSessionAttachables(ctx context.Context) error {
+	defer c.signalDone()
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return err
+	}
+	go func() {
+		<-ctx.Done()
+		cancel(errors.New("session attachables context done"))
+	}()
+	c.sessionSrv.Run(ctx)
+	return nil
+}
+
+func (c *Client) doneChannel() chan struct{} {
+	c.doneInit.Do(func() { c.done = make(chan struct{}) })
+	return c.done
+}
+
 func (c *Client) closeLocalResources() (rerr error) {
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
@@ -1046,6 +1016,7 @@ func (c *Client) closeLocalResources() (rerr error) {
 			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
 		}
 	}
+	c.signalDone()
 
 	return rerr
 }

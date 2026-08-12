@@ -1794,11 +1794,6 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		srv.serveSessionControl(w, r)
 		return nil
 	}
-	if opts.AttachSession && r.URL.Path != engine.SessionAttachablesEndpoint {
-		return controlError(http.StatusBadRequest, engine.SessionErrorInvalidRequest,
-			fmt.Errorf("observer attachment role is valid only for %s", engine.SessionAttachablesEndpoint))
-	}
-
 	mux := http.NewServeMux()
 	switch r.URL.Path {
 	case "/v1/traces", "/v1/logs", "/v1/metrics":
@@ -1901,7 +1896,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		}()
 	}
 
-	strictPublication := client.daggerSession.lifetime == sessionLifetimeDetachable && !client.observerClient
+	strictPublication := client.daggerSession.lifetime == sessionLifetimeDetachable
 	if strictPublication {
 		if client.daggerSession.sourceClientPublished(client.clientID) {
 			return controlError(http.StatusConflict, engine.SessionErrorAttachmentConnectionExists,

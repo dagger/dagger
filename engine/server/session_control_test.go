@@ -1099,7 +1099,7 @@ func TestDetachableSourcePrePublicationFailureCanRetry(t *testing.T) {
 	}
 }
 
-func TestObserverPublicationDoesNotMarkSourcePublished(t *testing.T) {
+func TestAttachedClientPublicationMarksSourcePublished(t *testing.T) {
 	t.Parallel()
 	srv, sess, _ := newDetachableLifecycleTestSession(t, 0)
 	attachmentID := "att_bbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1145,7 +1145,7 @@ func TestObserverPublicationDoesNotMarkSourcePublished(t *testing.T) {
 	}()
 	require.NoError(t, <-handshake)
 	waitForSessionHookCount(t, hooks.Events, sessionHookAttachmentPublished, 1)
-	require.False(t, sess.sourceClientPublished(observer.clientID))
+	require.True(t, sess.sourceClientPublished(observer.clientID))
 
 	cancel()
 	select {

@@ -382,6 +382,64 @@ func TestDetachableTelemetryConsumersStopWithLocalAttachment(t *testing.T) {
 	}
 }
 
+func TestClientDoneSignalsOnSessionTransportEnd(t *testing.T) {
+	t.Parallel()
+	serverConn, peerConn := net.Pipe()
+	closeCtx, closeRequests := context.WithCancelCause(context.Background())
+	client := &Client{
+		closeCtx:      closeCtx,
+		closeRequests: closeRequests,
+		sessionSrv:    NewSessionAttachablesServer(t.Context(), serverConn),
+	}
+	done := client.Done()
+	select {
+	case <-done:
+		t.Fatal("client completed before its session transport ended")
+	default:
+	}
+
+	runResult := make(chan error, 1)
+	go func() { runResult <- client.runSessionAttachables(t.Context()) }()
+	require.NoError(t, peerConn.Close())
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("client did not complete when its session transport ended")
+	}
+	require.NoError(t, <-runResult)
+	require.Equal(t, done, client.Done())
+	client.signalDone()
+}
+
+func TestClientDoneSignalsOnLocalClose(t *testing.T) {
+	t.Parallel()
+	internalCtx, internalCancel := context.WithCancelCause(context.Background())
+	closeCtx, closeRequests := context.WithCancelCause(context.Background())
+	group, internalCtx := errgroup.WithContext(internalCtx)
+	client := &Client{
+		eg:             group,
+		internalCtx:    internalCtx,
+		internalCancel: internalCancel,
+		closeCtx:       closeCtx,
+		closeRequests:  closeRequests,
+	}
+	done := client.Done()
+	select {
+	case <-done:
+		t.Fatal("client completed before local close")
+	default:
+	}
+
+	require.NoError(t, client.closeLocalResources())
+	select {
+	case <-done:
+	default:
+		t.Fatal("client did not complete after local close")
+	}
+	require.NoError(t, client.closeLocalResources())
+	client.signalDone()
+}
+
 func TestOrdinaryTelemetryConsumerIgnoresLocalRequestCancellation(t *testing.T) {
 	t.Parallel()
 	closeCtx, closeRequests := context.WithCancelCause(context.Background())
