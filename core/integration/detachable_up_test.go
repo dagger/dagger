@@ -57,14 +57,73 @@ func TestNormalizeOrdinaryUpTranscript(t *testing.T) {
 		)
 	})
 
+	t.Run("exact report heartbeat", func(t *testing.T) {
+		require.Empty(t, normalizeOrdinaryUpTranscript(
+			"[dagger] 30.0s elapsed · 42 steps running\n",
+			nil,
+		))
+	})
+
+	t.Run("multiple exact report heartbeats", func(t *testing.T) {
+		require.Empty(t, normalizeOrdinaryUpTranscript(
+			"[dagger] 30.0s elapsed · 42 steps running\n[dagger] 1m0s elapsed · 7 steps running\n",
+			nil,
+		))
+	})
+
+	t.Run("report heartbeat near misses remain", func(t *testing.T) {
+		const input = `[dagger] 30.0s elapsed · 1 step running
+[dagger] 30.0s elapsed · many steps running
+[dagger] 30.0s elapsed · 2 steps running extra
+ [dagger] 30.0s elapsed · 3 steps running
+[dagger] arbitrary status
+WARNING unexpected top-level output
+✔ Unexpected.topLevel: Thing! 1.2s
+│ nested semantic line 2.3s
+`
+		require.Equal(t, `[dagger] <duration> elapsed · 1 step running
+[dagger] <duration> elapsed · many steps running
+[dagger] <duration> elapsed · 2 steps running extra
+ [dagger] <duration> elapsed · 3 steps running
+[dagger] arbitrary status
+WARNING unexpected top-level output
+✔ Unexpected.topLevel: Thing! <duration>
+│ nested semantic line <duration>`, normalizeOrdinaryUpTranscript(input, nil))
+	})
+
 	t.Run("optional readiness retries only", func(t *testing.T) {
-		const input = `[42103/tcp] 19:48:30 WRN port not ready host=fixture error="connection refused"
+		const input = `[42103/tcp] 19:48:29 WRN port not ready
+[42103/tcp] 19:48:30 WRN port not ready host=fixture error="connection refused"
 [42103/tcp] 19:48:31 WRN port not ready host=fixture error="connection refused"
 [42103/tcp] 19:48:31 WRN unexpected readiness warning
 [42103/tcp] 19:48:32 INF port is healthy host=fixture
 `
 		require.Equal(t, `[<native-port>/tcp] 19:48:31 WRN unexpected readiness warning
 [<native-port>/tcp] backend is healthy`, normalizeOrdinaryUpTranscript(input, map[string]string{
+			"42103": "<native-port>",
+		}))
+	})
+
+	t.Run("attribute-less healthy record", func(t *testing.T) {
+		require.Equal(t,
+			"[<native-port>/tcp] backend is healthy",
+			normalizeOrdinaryUpTranscript(
+				"[42103/tcp] 19:48:32 INF port is healthy\n",
+				map[string]string{"42103": "<native-port>"},
+			),
+		)
+	})
+
+	t.Run("readiness near misses remain", func(t *testing.T) {
+		const input = `[42103/tcp] 19:48:30 WRN port not readiness
+[42103/tcp] 19:48:31 WRN port not readying
+[42103/tcp] 19:48:32 INF port is health
+[42103/tcp] 19:48:33 INF port is healthy-ish
+`
+		require.Equal(t, `[<native-port>/tcp] 19:48:30 WRN port not readiness
+[<native-port>/tcp] 19:48:31 WRN port not readying
+[<native-port>/tcp] 19:48:32 INF port is health
+[<native-port>/tcp] 19:48:33 INF port is healthy-ish`, normalizeOrdinaryUpTranscript(input, map[string]string{
 			"42103": "<native-port>",
 		}))
 	})
@@ -328,10 +387,11 @@ func (DetachableUpSuite) TestAttachedUpBehaviorUnchanged(ctx context.Context, t 
 var ordinaryUpANSIRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 var ordinaryUpDurationRE = regexp.MustCompile(`\b(?:\d+(?:\.\d+)?(?:ns|µs|ms|s|m|h))+\b`)
 var ordinaryUpDroppedRE = regexp.MustCompile(` \(\d+(?:\.\d+)?% dropped\)$`)
+var ordinaryUpReportHeartbeatRE = regexp.MustCompile(`^\[dagger\] <duration> elapsed · [0-9]+ steps running$`)
 var ordinaryUpEffectSummaryRE = regexp.MustCompile(`^[\s│]*✔ (?:\d+ (?:upload|unpack|pull)s?(?:,|\s)|uploading \S+ )`)
 var ordinaryUpSiblingServiceRE = regexp.MustCompile(`^[├╰]╴✔ delayed-fixture:`)
-var ordinaryUpPortRetryRE = regexp.MustCompile(`^\[<native-port>/tcp\] \S+ WRN port not ready `)
-var ordinaryUpPortHealthyRE = regexp.MustCompile(`^\[<native-port>/tcp\] \S+ INF port is healthy `)
+var ordinaryUpPortRetryRE = regexp.MustCompile(`^\[<native-port>/tcp\] \S+ WRN port not ready(?:$| )`)
+var ordinaryUpPortHealthyRE = regexp.MustCompile(`^\[<native-port>/tcp\] \S+ INF port is healthy(?:$| )`)
 
 func normalizeOrdinaryUpTranscript(output string, replacements map[string]string) string {
 	output = ordinaryUpANSIRE.ReplaceAllString(output, "")
@@ -340,11 +400,16 @@ func normalizeOrdinaryUpTranscript(output string, replacements map[string]string
 	serviceLines := make([]string, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimRight(line, " \t\r")
-		if strings.TrimSpace(line) == "" || ordinaryUpEffectSummaryRE.MatchString(line) {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		for from, to := range replacements {
 			line = strings.ReplaceAll(line, from, to)
+		}
+		line = ordinaryUpDroppedRE.ReplaceAllString(line, "")
+		line = ordinaryUpDurationRE.ReplaceAllString(line, "<duration>")
+		if ordinaryUpReportHeartbeatRE.MatchString(line) || ordinaryUpEffectSummaryRE.MatchString(line) {
+			continue
 		}
 		if ordinaryUpPortRetryRE.MatchString(line) {
 			continue
@@ -353,8 +418,6 @@ func normalizeOrdinaryUpTranscript(output string, replacements map[string]string
 			normalized = append(normalized, "[<native-port>/tcp] backend is healthy")
 			continue
 		}
-		line = ordinaryUpDroppedRE.ReplaceAllString(line, "")
-		line = ordinaryUpDurationRE.ReplaceAllString(line, "<duration>")
 		if ordinaryUpSiblingServiceRE.MatchString(line) {
 			serviceLines = append(serviceLines, "• "+strings.TrimPrefix(strings.TrimPrefix(line, "├╴"), "╰╴"))
 			continue
