@@ -56,7 +56,7 @@ func detachedUpServiceResultForTest(
 func TestDetachedUpCorePayloadDecodesAsSessionWire(t *testing.T) {
 	t.Parallel()
 	frontend := 15432
-	encoded, err := json.Marshal(DetachedUpResult{Services: []DetachedUpService{
+	corePayload := DetachedUpResult{Services: []DetachedUpService{
 		{
 			Name: "web", ServiceID: "svc_web", Native: true,
 			PortMappings: []PortForward{},
@@ -67,12 +67,13 @@ func TestDetachedUpCorePayloadDecodesAsSessionWire(t *testing.T) {
 			PortMappings: []PortForward{{Frontend: &frontend, Backend: 5432, Protocol: NetworkProtocolTCP}},
 			BackendPorts: []DetachedUpPort{},
 		},
-	}})
+	}}
+	encoded, err := json.Marshal(corePayload)
 	require.NoError(t, err)
 
 	var decoded sessionwire.DetachedUpResult
 	require.NoError(t, json.Unmarshal(encoded, &decoded))
-	require.Equal(t, sessionwire.DetachedUpResult{Services: []sessionwire.DetachedUpService{
+	wirePayload := sessionwire.DetachedUpResult{Services: []sessionwire.DetachedUpService{
 		{
 			Name: "web", ServiceID: "svc_web", Native: true,
 			PortMappings: []sessionwire.PortForward{},
@@ -83,7 +84,14 @@ func TestDetachedUpCorePayloadDecodesAsSessionWire(t *testing.T) {
 			PortMappings: []sessionwire.PortForward{{Frontend: &frontend, Backend: 5432, Protocol: sessionwire.NetworkProtocolTCP}},
 			BackendPorts: []sessionwire.DetachedUpPort{},
 		},
-	}}, decoded)
+	}}
+	require.Equal(t, wirePayload, decoded)
+
+	wireEncoded, err := json.Marshal(wirePayload)
+	require.NoError(t, err)
+	var coreDecoded DetachedUpResult
+	require.NoError(t, json.Unmarshal(wireEncoded, &coreDecoded))
+	require.Equal(t, corePayload, coreDecoded)
 }
 
 func TestPrepareDetachedUpServiceExactPayloadAndRoundTrip(t *testing.T) {

@@ -166,99 +166,128 @@ func (DetachableUpSuite) TestDetachExposeStopAndTerminate(ctx context.Context, t
 }
 
 func (DetachableUpSuite) TestAttachedUpBehaviorUnchanged(ctx context.Context, t *testctx.T) {
-	nativePort := reserveDetachableUpPort(t)
-	fixedBackend := reserveDetachableUpPort(t)
-	fixedFrontend := reserveDetachableUpPort(t)
-	workspace := writeDetachableUpModule(t, nativePort, fixedBackend, fixedFrontend)
-	stateHome := t.TempDir()
-
-	commandCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	cmd := hostDaggerCommand(commandCtx, t, workspace, "up")
-	setCommandEnv(cmd, "XDG_STATE_HOME", stateHome)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &stderr)
-	require.NoError(t, cmd.Start())
-	waitDone := make(chan error, 1)
-	go func() { waitDone <- cmd.Wait() }()
-	finished := false
-	t.Cleanup(func() {
-		if !finished {
-			_ = cmd.Process.Kill()
-			<-waitDone
-		}
+	t.Run("normalizer preserves unknown output", func(_ context.Context, t *testctx.T) {
+		input := "\x1b[32m✔ Workspace.services: UpGroup! 1.2s (3.4% dropped)\x1b[0m\n" +
+			"  ✔ 1 upload, 1 unpack 0.8s\n" +
+			"WARNING unexpected semantic output\n" +
+			"╰╴✔ delayed-fixture:delayed:preflight 0.2s\n" +
+			"├╴✔ delayed-fixture:delayed 0.3s\n"
+		require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
+WARNING unexpected semantic output
+• ✔ delayed-fixture:delayed <duration>
+• ✔ delayed-fixture:delayed:preflight <duration>`, normalizeOrdinaryUpTranscript(input, nil))
 	})
 
-	requireDetachableUpHTTP(t, nativePort, "native")
-	requireDetachableUpHTTP(t, fixedFrontend, "fixed")
-	require.NoError(t, cmd.Process.Signal(os.Interrupt))
-	var waitErr error
-	select {
-	case waitErr = <-waitDone:
-		finished = true
-	case <-time.After(30 * time.Second):
-		t.Fatalf("attached up did not exit after interrupt\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
-	}
-	require.NoError(t, waitErr, stderr.String()+stdout.String())
-	require.Empty(t, stdout.String())
-	require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
+	t.Run("success interrupt", func(ctx context.Context, t *testctx.T) {
+		port := reserveDetachableUpPort(t)
+		workspace := writeDetachableUpDelayedModule(t, port, 0)
+		stateHome := t.TempDir()
+
+		commandCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		cmd := hostDaggerCommand(commandCtx, t, workspace, "up")
+		setCommandEnv(cmd, "XDG_STATE_HOME", stateHome)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &stderr)
+		require.NoError(t, cmd.Start())
+		waitDone := make(chan error, 1)
+		go func() { waitDone <- cmd.Wait() }()
+		finished := false
+		t.Cleanup(func() {
+			if !finished {
+				_ = cmd.Process.Kill()
+				<-waitDone
+			}
+		})
+
+		requireDetachableUpHTTP(t, port, "delayed")
+		require.NoError(t, cmd.Process.Signal(os.Interrupt))
+		var waitErr error
+		select {
+		case waitErr = <-waitDone:
+			finished = true
+		case <-time.After(30 * time.Second):
+			t.Fatalf("attached up did not exit after interrupt\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+		}
+		require.NoError(t, waitErr, stderr.String()+stdout.String())
+		require.Empty(t, stdout.String())
+		require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
 ∅ .run: UpGroup! <duration>
 ! context canceled
-• ✔ hello-with-services:infra:database <duration>
-• ✔ hello-with-services:infra:database:preflight <duration>
-• ✔ hello-with-services:web <duration>
-• ✔ hello-with-services:web:preflight <duration>`, normalizeOrdinaryUpTranscript(stderr.String(), nil))
-	require.Eventually(t, func() bool {
-		return !detachableUpPortAccepts(nativePort) && !detachableUpPortAccepts(fixedFrontend)
-	}, 15*time.Second, 100*time.Millisecond)
+• ✔ delayed-fixture:delayed <duration>
+• ✔ delayed-fixture:delayed:preflight <duration>`, normalizeOrdinaryUpTranscript(stderr.String(), nil))
+		require.Eventually(t, func() bool {
+			return !detachableUpPortAccepts(port)
+		}, 15*time.Second, 100*time.Millisecond)
+	})
 
-	conflict, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", nativePort))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, conflict.Close()) })
-	errorCtx, cancelError := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancelError()
-	errorCmd := hostDaggerCommand(errorCtx, t, workspace, "up")
-	setCommandEnv(errorCmd, "XDG_STATE_HOME", stateHome)
-	var errorStdout, errorStderr bytes.Buffer
-	errorCmd.Stdout = &errorStdout
-	errorCmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &errorStderr)
-	errorRun := errorCmd.Run()
-	require.Equal(t, 1, detachableUpExitCode(t, errorRun))
-	require.Empty(t, errorStdout.String())
-	require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
+	t.Run("bind conflict", func(ctx context.Context, t *testctx.T) {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, listener.Close()) })
+		port := listener.Addr().(*net.TCPAddr).Port
+		workspace := writeDetachableUpDelayedModule(t, port, 0)
+		stateHome := t.TempDir()
+
+		errorCtx, cancelError := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancelError()
+		errorCmd := hostDaggerCommand(errorCtx, t, workspace, "up")
+		setCommandEnv(errorCmd, "XDG_STATE_HOME", stateHome)
+		var errorStdout, errorStderr bytes.Buffer
+		errorCmd.Stdout = &errorStdout
+		errorCmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &errorStderr)
+		errorRun := errorCmd.Run()
+		require.Equal(t, 1, detachableUpExitCode(t, errorRun))
+		require.Empty(t, errorStdout.String())
+		require.Equal(t, `✔ Workspace.services: UpGroup! <duration>
 ✘ .run: UpGroup! <duration> ERROR
-┇ hello-with-services:web ›
-✘ hello-with-services:web :<native-port> <duration> ERROR
+┇ delayed-fixture:delayed ›
+✘ delayed-fixture:delayed :<native-port> <duration> ERROR
+[<native-port>/tcp] backend readiness retried
+[<native-port>/tcp] backend is healthy
 ! failed to start service: host to container: failed to receive listen response: rpc error: code = Unknown desc = listen tcp 0.0.0.0:<native-port>: bind: address already in use`, normalizeOrdinaryUpTranscript(errorStderr.String(), map[string]string{
-		strconv.Itoa(nativePort): "<native-port>",
-	}))
+			strconv.Itoa(port): "<native-port>",
+		}))
+	})
 }
 
 var ordinaryUpANSIRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 var ordinaryUpDurationRE = regexp.MustCompile(`\b(?:\d+(?:\.\d+)?(?:ns|µs|ms|s|m|h))+\b`)
-var ordinaryUpEffectSummaryRE = regexp.MustCompile(`^[\s│]*✔ \d+ (?:upload|unpack|pull)s?(?:,|\s)`)
-var ordinaryUpServiceRE = regexp.MustCompile(`^[├╰]╴✔ hello-with-services:`)
-var ordinaryUpSurfaceRE = regexp.MustCompile(`^(?:[✔∅✘] (?:Workspace\.services|\.run|hello-with-services:)|┇ hello-with-services:|! |[├╰]╴✔ hello-with-services:)`)
+var ordinaryUpDroppedRE = regexp.MustCompile(` \(\d+(?:\.\d+)?% dropped\)$`)
+var ordinaryUpEffectSummaryRE = regexp.MustCompile(`^[\s│]*✔ (?:\d+ (?:upload|unpack|pull)s?(?:,|\s)|uploading \S+ )`)
+var ordinaryUpSiblingServiceRE = regexp.MustCompile(`^[├╰]╴✔ delayed-fixture:`)
+var ordinaryUpPortRetryRE = regexp.MustCompile(`^\[<native-port>/tcp\] \S+ WRN port not ready `)
+var ordinaryUpPortHealthyRE = regexp.MustCompile(`^\[<native-port>/tcp\] \S+ INF port is healthy `)
 
 func normalizeOrdinaryUpTranscript(output string, replacements map[string]string) string {
 	output = ordinaryUpANSIRE.ReplaceAllString(output, "")
 	lines := strings.Split(output, "\n")
 	normalized := make([]string, 0, len(lines))
 	serviceLines := make([]string, 0, len(lines))
+	readinessRetried := false
 	for _, line := range lines {
 		line = strings.TrimRight(line, " \t\r")
 		if strings.TrimSpace(line) == "" || ordinaryUpEffectSummaryRE.MatchString(line) {
 			continue
 		}
-		if !ordinaryUpSurfaceRE.MatchString(line) {
-			continue
-		}
 		for from, to := range replacements {
 			line = strings.ReplaceAll(line, from, to)
 		}
+		if ordinaryUpPortRetryRE.MatchString(line) {
+			if !readinessRetried {
+				normalized = append(normalized, "[<native-port>/tcp] backend readiness retried")
+				readinessRetried = true
+			}
+			continue
+		}
+		if ordinaryUpPortHealthyRE.MatchString(line) {
+			normalized = append(normalized, "[<native-port>/tcp] backend is healthy")
+			continue
+		}
+		line = ordinaryUpDroppedRE.ReplaceAllString(line, "")
 		line = ordinaryUpDurationRE.ReplaceAllString(line, "<duration>")
-		if ordinaryUpServiceRE.MatchString(line) {
+		if ordinaryUpSiblingServiceRE.MatchString(line) {
 			serviceLines = append(serviceLines, "• "+strings.TrimPrefix(strings.TrimPrefix(line, "├╴"), "╰╴"))
 			continue
 		}
