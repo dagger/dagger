@@ -22,6 +22,13 @@ const maxBodyCapture = 256 * 1024 // 256 KiB
 // the endpoint has a dial override (local endpoints tunneled through the
 // client's session), connections go through it while requests keep using
 // BaseURL's host for TLS verification/SNI and the Host header.
+//
+// When the endpoint carries a credential source, the transport chain also
+// re-authenticates every request from it, so a rotated OAuth bearer token
+// takes effect without rebuilding the provider's SDK client (which bakes the
+// credential in at construction). Credential handling sits *below* the OTel
+// transport, which logs bodies and never headers — a bearer token must not
+// reach telemetry.
 func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
 	var base http.RoundTripper
 	if endpoint.dial != nil {
@@ -29,6 +36,7 @@ func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
 		transport.DialContext = endpoint.dial
 		base = transport
 	}
+	base = newCredentialTransport(base, endpoint.AuthTokenSource, endpoint.credentialApplier())
 	return &http.Client{
 		Transport: newLLMOTelTransport(base, provider),
 	}
