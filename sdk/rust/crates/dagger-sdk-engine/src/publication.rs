@@ -100,6 +100,8 @@ pub struct PublicationOutcome {
     pub manifest_digest: Sha256Digest,
     /// Complete sorted artifact change set.
     pub changes: Vec<PublicationChange>,
+    /// Whether canonical control-manifest bytes changed.
+    pub manifest_changed: bool,
 }
 
 /// One complete authored-file transaction used by initialization before any manifest exists.
@@ -703,6 +705,18 @@ pub fn publish_with(
 ) -> Result<PublicationOutcome, EngineDiagnostic> {
     let lock = File::open(root.absolute()).map_err(|_| publication("publication-lock"))?;
     fs4::FileExt::lock(&lock).map_err(|_| publication("publication-lock"))?;
+    let manifest_changed =
+        !root.exists(&plan.manifest_path) || root.read(&plan.manifest_path)? != plan.manifest_bytes;
+    // An identical replay must not manufacture a filesystem change merely to
+    // re-publish the same transaction barrier. This also prevents file timestamps
+    // from becoming hidden semantic input to downstream changeset calculation.
+    if plan.writes.is_empty() && plan.removals.is_empty() && !manifest_changed {
+        return Ok(PublicationOutcome {
+            manifest_digest: digest(&plan.manifest_bytes),
+            changes: plan.changes,
+            manifest_changed: false,
+        });
+    }
     let transaction = TRANSACTION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let mut staged = BTreeMap::new();
     let mut created_directories = BTreeSet::new();
@@ -781,6 +795,7 @@ pub fn publish_with(
     Ok(PublicationOutcome {
         manifest_digest: digest(&plan.manifest_bytes),
         changes: plan.changes,
+        manifest_changed,
     })
 }
 

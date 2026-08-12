@@ -100,6 +100,53 @@ pub enum EngineDiagnosticCode {
     DiagnosticRedactionFailed,
 }
 
+impl EngineDiagnosticCode {
+    /// Complete private diagnostic taxonomy in declaration order.
+    pub const ALL: &'static [Self] = &[
+        Self::SdkManifestInvalid,
+        Self::PackagedAssetInvalid,
+        Self::SecurityAuditIncomplete,
+        Self::CargoManifestMissing,
+        Self::CargoManifestInvalid,
+        Self::CargoPackageMissing,
+        Self::CargoPackageAmbiguous,
+        Self::SdkDependencyConflict,
+        Self::SdkDependencyMutable,
+        Self::DependencyResolutionFailed,
+        Self::ToolchainUnsupported,
+        Self::ToolchainNonReproducible,
+        Self::OutputPathEscape,
+        Self::OutputSymlinkEscape,
+        Self::OwnershipConflict,
+        Self::OperationManifestStale,
+        Self::PostWorkRejected,
+        Self::GenerationNonConvergent,
+        Self::GenerationFailed,
+        Self::FormatFailed,
+        Self::PublicationFailed,
+        Self::RollbackFailed,
+        Self::OperationInputInvalid,
+        Self::ClientInitializationInvalid,
+        Self::ClientPinMismatch,
+        Self::ClientProjectConflict,
+        Self::ClientRootOverlap,
+        Self::ClientFixtureFailed,
+        Self::ClientCheckpointEvidenceInvalid,
+        Self::OperationCancelled,
+        Self::GeneratedMissing,
+        Self::GeneratedStale,
+        Self::LockfileMissing,
+        Self::LockfileStale,
+        Self::RuntimeTargetInvalid,
+        Self::RuntimeBuildFailed,
+        Self::RuntimeSessionInvalid,
+        Self::RuntimeProtocolInvalid,
+        Self::RuntimeProtocolFailed,
+        Self::ResultReportFailed,
+        Self::DiagnosticRedactionFailed,
+    ];
+}
+
 impl fmt::Display for EngineDiagnosticCode {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let encoded = serde_json::to_string(self).map_err(|_| fmt::Error)?;
@@ -162,11 +209,34 @@ impl EngineDiagnostic {
 }
 
 fn sanitize_coordinate(value: &str) -> String {
-    value
+    let sanitized = value
         .chars()
         .filter(|character| !character.is_control())
         .take(MAX_COORDINATE_CHARS)
-        .collect()
+        .collect::<String>();
+    if coordinate_is_private(&sanitized) {
+        "[REDACTED]".to_owned()
+    } else {
+        sanitized
+    }
+}
+
+fn coordinate_is_private(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    value.starts_with('/')
+        || value.starts_with("~/")
+        || value.as_bytes().get(1).is_some_and(|byte| *byte == b':')
+        || [
+            "://",
+            "git@",
+            "authorization",
+            "bearer ",
+            "token=",
+            "password=",
+            "session_token",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
 }
 
 fn sanitize_message(value: &str) -> String {

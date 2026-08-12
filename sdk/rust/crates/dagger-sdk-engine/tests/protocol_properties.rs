@@ -95,7 +95,12 @@ proptest! {
         let rendered = diagnostic.render();
         prop_assert!(!rendered.contains("password"));
         prop_assert!(!rendered.contains("token=secret"));
-        prop_assert!(rendered.contains(&coordinate));
+        if coordinate.starts_with('/') {
+            prop_assert!(rendered.contains("[REDACTED]"));
+            prop_assert!(!rendered.contains(&coordinate));
+        } else {
+            prop_assert!(rendered.contains(&coordinate));
+        }
     }
 }
 

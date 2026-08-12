@@ -192,6 +192,60 @@ pub struct ClientInitializationRequest {
     pub sdk_dependency: PublishedSdkDependency,
 }
 
+/// One Rust-managed standalone-client record presented to the pure workspace preflight.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManagedClientInput {
+    /// Stable engine record position used to recover the transient Dagger objects in Go.
+    pub record_index: u32,
+    /// Confined client root beneath the private operation capability.
+    pub path: RelativeOperationPath,
+    /// Credential-free digest of the user-facing module reference.
+    pub module_ref_digest: Sha256Digest,
+    /// Exact stored remote pin; absent for mutable workspace-local modules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stored_pin: Option<FullRevision>,
+}
+
+/// Complete input to canonical Rust-owned workspace client selection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanClientSetRequest {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Rebased workspace cwd used as the selection boundary.
+    pub cwd: RelativeOperationPath,
+    /// Finite Rust-managed client records in engine discovery order.
+    pub clients: Vec<ManagedClientInput>,
+}
+
+/// Canonically ordered client selected for one workspace generation operation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlannedClient {
+    /// Stable engine record position used only by the transient adapter.
+    pub record_index: u32,
+    /// Confined client root.
+    pub path: RelativeOperationPath,
+    /// Credential-free module-reference identity.
+    pub module_ref_digest: Sha256Digest,
+    /// Exact stored remote pin, when the workspace record is immutable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stored_pin: Option<FullRevision>,
+}
+
+/// Pure, mutation-free result of workspace client selection and overlap validation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientSetPlan {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Exact selection boundary.
+    pub cwd: RelativeOperationPath,
+    /// Selected records in canonical path order.
+    pub clients: Vec<PlannedClient>,
+}
+
 /// Closed request accepted by the private `execute` command.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "request_kind", content = "request", rename_all = "kebab-case")]
@@ -200,6 +254,8 @@ pub enum EngineExecutionRequest {
     InitializeModule(InitializationRequest),
     /// Initialize or adopt one standalone Rust client project.
     InitializeClient(ClientInitializationRequest),
+    /// Select and validate the Rust-managed workspace client set without filesystem I/O.
+    PlanClientSet(PlanClientSetRequest),
     /// Execute one of the four schema-driven generation operations.
     Generate(OperationRequest),
 }
@@ -212,6 +268,8 @@ pub enum ExecutionResultKind {
     Initialization,
     /// Standalone-client Cargo scaffold and semantic project amendments.
     ClientInitialization,
+    /// Pure workspace-client selection result.
+    ClientPlan,
     /// One generated operation plus its durable ownership manifest.
     Generation,
 }
@@ -235,6 +293,9 @@ pub struct ExecutionResult {
     pub vcs_generated: BTreeSet<RelativeOperationPath>,
     /// Explicit ignored VCS paths returned to the engine.
     pub vcs_ignored: BTreeSet<RelativeOperationPath>,
+    /// Canonical selected client set, present only for a client-plan result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_plan: Option<ClientSetPlan>,
 }
 
 /// Class of one generator-owned candidate artifact.

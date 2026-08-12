@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use dagger_client::minimal::SearchOpts;
 use dagger_client::prelude::*;
 use dagger_sdk::{
-    ClientConfig, EngineConnection, EngineConnectionError, Id, IdInput, IntoID, QueryBuildError,
-    QueryBuildErrorKind, QueryError, RawRequest, RawResponse, ResponseData,
+    ClientConfig, EngineConnection, EngineConnectionError, GraphQlError, Id, IdInput, IntoID,
+    QueryBuildError, QueryBuildErrorKind, QueryError, RawRequest, RawResponse, ResponseData,
 };
 use serde_json::{Value, json};
 
@@ -35,6 +35,13 @@ impl RecordingConnection {
             .lock()
             .expect("response queue remains available")
             .push_back(RawResponse::new(ResponseData::Value(value)));
+    }
+
+    fn respond_raw(&self, response: RawResponse) {
+        self.responses
+            .lock()
+            .expect("response queue remains available")
+            .push_back(response);
     }
 
     fn requests(&self) -> Vec<String> {
@@ -388,4 +395,81 @@ async fn exact_version_bridge_covers_direct_ids_core_reentry_and_explicit_null()
     );
 
     client.close().await.expect("fixture session closes");
+}
+
+#[tokio::test]
+async fn property_24_generated_queries_one_public_transport_contract() {
+    // Invariant: Core, module, alias, error, and close schedules share one public transport.
+    for case in 0_u16..128 {
+        let connection = RecordingConnection::default();
+        let client = configured_client(connection.clone()).await;
+        if case % 16 == 15 {
+            client.close().await.expect("fixture session closes");
+            assert!(matches!(
+                client.query().version().await,
+                Err(QueryError::Request(dagger_sdk::RequestError::ClientClosed))
+            ));
+            assert_eq!(connection.execute_calls(), 0);
+            continue;
+        }
+
+        match case % 4 {
+            0 => {
+                connection.respond_with(json!({"version": format!("v{case}")}));
+                assert_eq!(
+                    client.query().version().await.expect("Core query executes"),
+                    format!("v{case}")
+                );
+                assert_eq!(connection.requests(), ["query{version}"]);
+            }
+            1 => {
+                let explicit = case % 8 == 1;
+                let opts = if explicit {
+                    SearchOpts::default().with_enabled(false)
+                } else {
+                    SearchOpts::default()
+                };
+                connection.respond_with(json!({"minimal": {"search": "module"}}));
+                assert_eq!(
+                    client
+                        .minimal()
+                        .search_opts(opts)
+                        .await
+                        .expect("module query executes"),
+                    "module"
+                );
+                let expected = if explicit {
+                    "query{minimal{search(enabled:false)}}"
+                } else {
+                    "query{minimal{search}}"
+                };
+                assert_eq!(connection.requests(), [expected]);
+            }
+            2 => {
+                connection.respond_with(json!({"observed": {"id": format!("ctr-{case}")}}));
+                let value = client
+                    .query_builder()
+                    .select_with_alias("observed", "container")
+                    .select("id")
+                    .execute::<String>()
+                    .await
+                    .expect("aliased public query executes");
+                assert_eq!(value, format!("ctr-{case}"));
+                assert_eq!(connection.requests(), ["query{observed:container{id}}"]);
+            }
+            _ => {
+                connection.respond_raw(
+                    RawResponse::new(ResponseData::Value(json!({"version": null})))
+                        .with_errors(vec![GraphQlError::new("fixture rejection")]),
+                );
+                assert!(matches!(
+                    client.query().version().await,
+                    Err(QueryError::GraphQl { .. })
+                ));
+                assert_eq!(connection.requests(), ["query{version}"]);
+            }
+        }
+        client.close().await.expect("fixture session closes");
+        assert_eq!(connection.close_calls.load(Ordering::SeqCst), 1);
+    }
 }

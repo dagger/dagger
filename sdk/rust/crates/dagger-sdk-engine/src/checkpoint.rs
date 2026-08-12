@@ -315,6 +315,106 @@ pub struct CheckpointRecord {
     pub deferred_signoff_exception: Option<DeferredSignoffException>,
 }
 
+/// Checked generated-asset identities used to select reuse or one scoped refresh.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCheckedAssetState {
+    /// Digest of the owning semantic inputs at the current revision.
+    pub owning_input_digest: Sha256Digest,
+    /// Owning-input digest recorded by the checked output.
+    pub checked_input_digest: Sha256Digest,
+    /// Digest of the complete checked output.
+    pub checked_output_digest: Sha256Digest,
+}
+
+/// Expected Cargo process count for one exact typed action.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCargoExpectation {
+    /// Exact package/target action whose process count is bounded.
+    pub action: CheckpointAction,
+    /// Complete Cargo invocation count, including nested fixture invocations.
+    pub invocations: u32,
+}
+
+/// Generated-asset work admitted for a standalone-client checkpoint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClientAssetDisposition {
+    /// Current owning inputs match the checked asset identity.
+    CheckedGeneratedReused,
+    /// Current owning inputs differ and authorize one bounded refresh.
+    ScopedRegenerationPerformed,
+}
+
+/// Standalone-client extension of the existing engine-free checkpoint request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCheckpointRequest {
+    /// Base typed request; arbitrary commands remain impossible.
+    pub checkpoint: CheckpointRequest,
+    /// Checked-asset input and output identities.
+    pub asset: ClientCheckedAssetState,
+    /// One explicit process-count expectation for every action.
+    pub cargo: Vec<ClientCargoExpectation>,
+}
+
+/// Validated standalone-client checkpoint plan.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCheckpointPlan {
+    /// Validated base plan.
+    pub checkpoint: CheckpointPlan,
+    /// Checked-asset input and output identities.
+    pub asset: ClientCheckedAssetState,
+    /// Proven reuse or refresh disposition.
+    pub disposition: ClientAssetDisposition,
+    /// Canonically action-ordered Cargo process expectations.
+    pub cargo: Vec<ClientCargoExpectation>,
+}
+
+/// One timed standalone-client action observation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCheckpointActionObservation {
+    /// Base outcome and elapsed phase timing.
+    pub action: CheckpointActionObservation,
+    /// Complete observed Cargo invocation count for this phase.
+    pub cargo_invocations: u32,
+}
+
+/// Complete standalone-client checkpoint observation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCheckpointObservation {
+    /// Exact implementation identity observed by the runner.
+    pub implementation_digest: Sha256Digest,
+    /// Owning-input identity observed immediately before execution.
+    pub asset_input_digest: Sha256Digest,
+    /// Checked-output identity observed immediately after execution.
+    pub asset_output_digest: Sha256Digest,
+    /// One outcome for every exact planned action.
+    pub actions: Vec<ClientCheckpointActionObservation>,
+    /// Any external forbidden event; valid records contain none.
+    pub forbidden_events: Vec<ForbiddenCheckpointBoundary>,
+}
+
+/// Fully accounted standalone-client checkpoint record.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCheckpointRecord {
+    /// Canonical base record.
+    pub checkpoint: CheckpointRecord,
+    /// Proven reuse or refresh disposition.
+    pub disposition: ClientAssetDisposition,
+    /// Owning-input identity admitted by the record.
+    pub asset_input_digest: Sha256Digest,
+    /// Checked-output identity admitted by the record.
+    pub asset_output_digest: Sha256Digest,
+    /// Canonically action-ordered Cargo process counts.
+    pub cargo: Vec<ClientCargoExpectation>,
+}
+
 /// Validates a request into an engine-free executable plan.
 pub fn plan_checkpoint(request: CheckpointRequest) -> Result<CheckpointPlan, ModuleDiagnosticSet> {
     if request.proposals.is_empty() {
@@ -398,6 +498,111 @@ pub fn record_checkpoint(
     })
 }
 
+/// Extends the closed planner with only standalone-client Rust and direct-Go slices.
+pub fn plan_client_checkpoint(
+    request: ClientCheckpointRequest,
+) -> Result<ClientCheckpointPlan, ModuleDiagnosticSet> {
+    let checkpoint = plan_checkpoint(request.checkpoint)?;
+    if !checkpoint.actions.iter().all(client_action_is_scoped) {
+        return Err(checkpoint_error(
+            "standalone-client checkpoint selected a package or target outside its Rust closure",
+        ));
+    }
+
+    let disposition = match &checkpoint.generation {
+        CheckpointGenerationDecision::ReuseChecked { manifest_digest }
+            if request.asset.owning_input_digest == request.asset.checked_input_digest
+                && manifest_digest == &request.asset.checked_output_digest =>
+        {
+            ClientAssetDisposition::CheckedGeneratedReused
+        }
+        CheckpointGenerationDecision::ScopedRefresh {
+            changed_domains,
+            manifest_digest,
+        } if request.asset.owning_input_digest != request.asset.checked_input_digest
+            && !changed_domains.is_empty()
+            && manifest_digest == &request.asset.checked_output_digest =>
+        {
+            ClientAssetDisposition::ScopedRegenerationPerformed
+        }
+        _ => {
+            return Err(checkpoint_error(
+                "checked-asset identities do not justify the requested reuse or scoped refresh",
+            ));
+        }
+    };
+
+    let mut cargo = request.cargo;
+    cargo.sort();
+    if cargo.len() != checkpoint.actions.len()
+        || cargo
+            .windows(2)
+            .any(|pair| pair[0].action == pair[1].action)
+        || cargo.iter().any(|expectation| {
+            !checkpoint.actions.contains(&expectation.action)
+                || cargo_action(&expectation.action) != (expectation.invocations > 0)
+                || expectation.invocations > 64
+        })
+    {
+        return Err(checkpoint_error(
+            "Cargo process expectations are incomplete, duplicated, or inconsistent with the typed action",
+        ));
+    }
+
+    Ok(ClientCheckpointPlan {
+        checkpoint,
+        asset: request.asset,
+        disposition,
+        cargo,
+    })
+}
+
+/// Records a complete passed observation with exact asset and Cargo accounting.
+pub fn record_client_checkpoint(
+    plan: &ClientCheckpointPlan,
+    observation: ClientCheckpointObservation,
+) -> Result<ClientCheckpointRecord, ModuleDiagnosticSet> {
+    if observation.asset_input_digest != plan.asset.owning_input_digest
+        || observation.asset_output_digest != plan.asset.checked_output_digest
+    {
+        return Err(checkpoint_evidence_error(
+            "standalone-client checkpoint observed stale checked-asset identities",
+        ));
+    }
+    let expected = plan
+        .cargo
+        .iter()
+        .map(|item| (&item.action, item.invocations))
+        .collect::<BTreeMap<_, _>>();
+    if observation.actions.iter().any(|item| {
+        item.action.outcome != CheckpointActionOutcome::Passed
+            || expected.get(&item.action.action).copied() != Some(item.cargo_invocations)
+    }) {
+        return Err(checkpoint_evidence_error(
+            "standalone-client checkpoint has a failed action or unexpected Cargo process count",
+        ));
+    }
+    let checkpoint = record_checkpoint(
+        &plan.checkpoint,
+        CheckpointObservation {
+            implementation_digest: observation.implementation_digest,
+            actions: observation
+                .actions
+                .into_iter()
+                .map(|item| item.action)
+                .collect(),
+            forbidden_events: observation.forbidden_events,
+        },
+    )?;
+    Ok(ClientCheckpointRecord {
+        checkpoint,
+        disposition: plan.disposition,
+        asset_input_digest: plan.asset.owning_input_digest.clone(),
+        asset_output_digest: plan.asset.checked_output_digest.clone(),
+        cargo: plan.cargo.clone(),
+    })
+}
+
 fn action_is_well_scoped(action: &CheckpointAction) -> bool {
     match action {
         CheckpointAction::Format { packages }
@@ -414,6 +619,46 @@ fn action_is_well_scoped(action: &CheckpointAction) -> bool {
     }
 }
 
+fn client_action_is_scoped(action: &CheckpointAction) -> bool {
+    let package_is_client_owned = |package: &CheckpointPackage| {
+        matches!(
+            package,
+            CheckpointPackage::DaggerCodegen
+                | CheckpointPackage::DaggerSdk
+                | CheckpointPackage::DaggerSdkEngine
+                | CheckpointPackage::DaggerSdkCompleteness
+        )
+    };
+    match action {
+        CheckpointAction::Format { packages }
+        | CheckpointAction::Clippy { packages }
+        | CheckpointAction::Rustdoc { packages } => {
+            !packages.is_empty() && packages.iter().all(package_is_client_owned)
+        }
+        CheckpointAction::Check { package, .. } | CheckpointAction::Test { package, .. } => {
+            package_is_client_owned(package)
+        }
+        CheckpointAction::CargoDeny
+        | CheckpointAction::RepositoryRustSecurity
+        | CheckpointAction::GeneratedAssetDrift
+        | CheckpointAction::DirectGoAbi { .. }
+        | CheckpointAction::CleanOutput => true,
+        CheckpointAction::PackageContents { .. } => false,
+    }
+}
+
+fn cargo_action(action: &CheckpointAction) -> bool {
+    matches!(
+        action,
+        CheckpointAction::Format { .. }
+            | CheckpointAction::Check { .. }
+            | CheckpointAction::Test { .. }
+            | CheckpointAction::Clippy { .. }
+            | CheckpointAction::Rustdoc { .. }
+            | CheckpointAction::CargoDeny
+    )
+}
+
 fn safe_nonempty(value: &str) -> bool {
     !value.is_empty()
         && value.trim() == value
@@ -427,6 +672,17 @@ fn checkpoint_error(message: &'static str) -> ModuleDiagnosticSet {
         None,
         message,
         "use only typed Rust-owned actions and defer exact-engine observations to SDK sign-off",
+    )
+    .expect("static checkpoint diagnostics satisfy the safe renderer policy")])
+    .expect("a singleton checkpoint diagnostic set is non-empty")
+}
+
+fn checkpoint_evidence_error(message: &'static str) -> ModuleDiagnosticSet {
+    ModuleDiagnosticSet::new([ModuleDiagnostic::new(
+        ModuleDiagnosticCode::ModuleEvidenceRejected,
+        None,
+        message,
+        "record every planned passed action with matching asset identities, Cargo counts, and elapsed timings",
     )
     .expect("static checkpoint diagnostics satisfy the safe renderer policy")])
     .expect("a singleton checkpoint diagnostic set is non-empty")

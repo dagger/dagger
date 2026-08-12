@@ -586,6 +586,14 @@ fn render_input(
         }
     }
     source.push_str("}\n");
+    if required.is_empty() {
+        // An input object with no required fields has one natural empty value. Using
+        // the standard trait makes that value compose with Rust APIs and avoids
+        // forcing callers to learn a generator-specific constructor convention.
+        source.push_str(&format!(
+            "impl Default for {name} {{\nfn default() -> Self {{ Self::new() }}\n}}\n"
+        ));
+    }
     Ok(source)
 }
 

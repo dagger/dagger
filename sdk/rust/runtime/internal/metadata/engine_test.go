@@ -122,6 +122,48 @@ func TestModuleSourceDigestIsDomainSeparated(t *testing.T) {
 	require.NotEqual(t, DigestBytes([]byte("xxh3:opaque")), digest)
 }
 
+func TestClientPlanResultIsCanonicalConfinedAndMutationFree(t *testing.T) {
+	t.Parallel()
+
+	result := ExecutionResult{
+		FormatVersion: 1,
+		Kind:          "client-plan",
+		OutputRoot:    "workspace/clients",
+		ClientPlan: &ClientSetPlan{
+			FormatVersion: 1,
+			Cwd:           "workspace/clients",
+			Clients: []PlannedClient{
+				{RecordIndex: 4, Path: "workspace/clients/a", ModuleRefDigest: DigestModuleReference("github.com/example/a")},
+				{RecordIndex: 7, Path: "workspace/clients/b", ModuleRefDigest: DigestModuleReference("github.com/example/b")},
+			},
+		},
+	}
+	encoded, err := CanonicalJSON(result)
+	require.NoError(t, err)
+	decoded, err := DecodeExecutionResult(encoded, "client-plan")
+	require.NoError(t, err)
+	require.Equal(t, result.ClientPlan, decoded.ClientPlan)
+
+	mutations := []func(*ExecutionResult){
+		func(value *ExecutionResult) { value.TouchedPaths = []string{"workspace/clients/a"} },
+		func(value *ExecutionResult) { value.ClientPlan.Clients[1].Path = "workspace/clients/a" },
+		func(value *ExecutionResult) { value.ClientPlan.Clients[1].RecordIndex = 4 },
+		func(value *ExecutionResult) { value.ClientPlan.Clients[0].ModuleRefDigest = "raw-module-ref" },
+		func(value *ExecutionResult) { value.ClientPlan.Cwd = "workspace/other" },
+	}
+	for index, mutate := range mutations {
+		candidate := result
+		plan := *result.ClientPlan
+		plan.Clients = append([]PlannedClient(nil), result.ClientPlan.Clients...)
+		candidate.ClientPlan = &plan
+		mutate(&candidate)
+		encoded, err := CanonicalJSON(candidate)
+		require.NoError(t, err)
+		_, err = DecodeExecutionResult(encoded, "client-plan")
+		require.Error(t, err, "mutation %d", index)
+	}
+}
+
 func TestModuleSourceFileDigestIsCanonicalAndSensitive(t *testing.T) {
 	t.Parallel()
 

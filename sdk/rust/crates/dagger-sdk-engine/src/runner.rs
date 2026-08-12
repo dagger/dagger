@@ -19,7 +19,7 @@ use crate::client::project::{
 };
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::post_work::{
-    Cancellation, current_allowlisted_environment, execute, require_convergence,
+    Cancellation, ProcessOutcome, current_allowlisted_environment, require_convergence,
 };
 use crate::project::source_snapshot::{SourceSnapshotBuilder, SourceSnapshotRequest};
 use crate::publication::{OperationCandidate, publish, verify_ownership};
@@ -34,6 +34,41 @@ use crate::{
 
 const TARGET_DESCRIPTOR: &[u8] = include_bytes!("../../../completeness/target.json");
 
+/// Executes the closed post-work plans selected by the production operation runner.
+///
+/// Engine packaging uses [`PackagedPostWork`]. Engine-free fixtures inject an executor
+/// for the same typed plans so the production compiler/reconciler/publisher can run on
+/// a development host without pretending its paths are the packaged Linux image.
+// The runner awaits each operation in place and never exposes or spawns its future,
+// so requiring a public `Send` future would add ceremony without a usable guarantee.
+#[allow(async_fn_in_trait)]
+pub trait OperationPostWork: Send + Sync {
+    /// Executes one runner-authored plan in its confined staging root.
+    async fn execute(
+        &self,
+        root: &OperationRoot,
+        plan: &PostWorkPlan,
+        environment: &BTreeMap<String, String>,
+        cancel: &Cancellation,
+    ) -> Result<ProcessOutcome, EngineDiagnostic>;
+}
+
+/// Production executor backed by immutable paths in the packaged engine content.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PackagedPostWork;
+
+impl OperationPostWork for PackagedPostWork {
+    async fn execute(
+        &self,
+        root: &OperationRoot,
+        plan: &PostWorkPlan,
+        environment: &BTreeMap<String, String>,
+        cancel: &Cancellation,
+    ) -> Result<ProcessOutcome, EngineDiagnostic> {
+        crate::post_work::execute(root, plan, environment, cancel).await
+    }
+}
+
 /// Executes one validated operation and publishes its ownership manifest last.
 pub async fn execute_operation(
     root: &OperationRoot,
@@ -41,6 +76,19 @@ pub async fn execute_operation(
     schema: &[u8],
     descriptor: &EngineSourceDescriptor,
     cancel: &Cancellation,
+) -> Result<ExecutionResult, EngineDiagnostic> {
+    execute_operation_with_post_work(root, request, schema, descriptor, cancel, &PackagedPostWork)
+        .await
+}
+
+/// Executes the production operation stack with an explicit typed post-work boundary.
+pub async fn execute_operation_with_post_work<P: OperationPostWork>(
+    root: &OperationRoot,
+    request: &OperationRequest,
+    schema: &[u8],
+    descriptor: &EngineSourceDescriptor,
+    cancel: &Cancellation,
+    post_work: &P,
 ) -> Result<ExecutionResult, EngineDiagnostic> {
     validate_request(request, descriptor)?;
     let target = CodegenTarget::decode_exact(TARGET_DESCRIPTOR).map_err(|_| {
@@ -167,11 +215,14 @@ pub async fn execute_operation(
             files: files.clone(),
         };
         let environment = current_allowlisted_environment();
-        let outcome = execute(&staging_root, &plan, &environment, cancel).await?;
+        let outcome = post_work
+            .execute(&staging_root, &plan, &environment, cancel)
+            .await?;
         if !outcome.success {
-            let coordinate = first_failing_format_path(&staging_root, &plan, &environment, cancel)
-                .await?
-                .unwrap_or_else(|| "post-work.rustfmt".to_owned());
+            let coordinate =
+                first_failing_format_path(post_work, &staging_root, &plan, &environment, cancel)
+                    .await?
+                    .unwrap_or_else(|| "post-work.rustfmt".to_owned());
             return Err(diagnostic(
                 EngineDiagnosticCode::FormatFailed,
                 &coordinate,
@@ -179,7 +230,9 @@ pub async fn execute_operation(
             ));
         }
         let first_digest = digest_path_set(&staging_root, &files)?;
-        let convergence = execute(&staging_root, &plan, &environment, cancel).await?;
+        let convergence = post_work
+            .execute(&staging_root, &plan, &environment, cancel)
+            .await?;
         if !convergence.success {
             return Err(diagnostic(
                 EngineDiagnosticCode::FormatFailed,
@@ -216,6 +269,18 @@ pub async fn execute_operation(
             ))
         })
         .collect::<Result<BTreeMap<_, _>, EngineDiagnostic>>()?;
+    if request.operation == crate::OperationKind::GenerateClient {
+        for artifact in artifacts.values() {
+            let boundary = match artifact.kind {
+                ArtifactKind::RustSource => crate::ClientBoundaryArtifactKind::GeneratedRust,
+                ArtifactKind::CargoManifest => crate::ClientBoundaryArtifactKind::GeneratedManifest,
+                ArtifactKind::ControlManifest | ArtifactKind::VcsPolicy => {
+                    crate::ClientBoundaryArtifactKind::Evidence
+                }
+            };
+            crate::validate_client_boundary(boundary, &artifact.content)?;
+        }
+    }
     let artifact_records = artifacts
         .iter()
         .map(|(path, artifact)| {
@@ -273,6 +338,17 @@ pub async fn execute_operation(
         }
         _ => BTreeSet::new(),
     };
+    if let Some(project) = &project_plan {
+        for (path, content) in &project.created_files {
+            crate::validate_client_boundary(client_project_boundary(path), content)?;
+        }
+        for (coordinate, amendment) in &project.amendments {
+            crate::validate_client_boundary(
+                client_project_boundary(coordinate.file()),
+                &amendment.complete_file_bytes,
+            )?;
+        }
+    }
     let previous_paths = previous
         .as_ref()
         .map(|manifest| manifest.artifacts.keys().cloned().collect::<BTreeSet<_>>())
@@ -360,11 +436,12 @@ pub async fn execute_operation(
             .changes
             .iter()
             .map(|change| change.path.clone())
-            .chain(std::iter::once(manifest_path.clone()))
+            .chain(published.manifest_changed.then(|| manifest_path.clone()))
             .collect(),
         operation_manifest: Some(manifest_path),
         vcs_generated,
         vcs_ignored,
+        client_plan: None,
     })
 }
 
@@ -581,7 +658,18 @@ fn stale_baseline(coordinate: &str) -> EngineDiagnostic {
     )
 }
 
-async fn first_failing_format_path(
+fn client_project_boundary(path: &RelativeOperationPath) -> crate::ClientBoundaryArtifactKind {
+    if path.as_str().ends_with(".rs") {
+        crate::ClientBoundaryArtifactKind::GeneratedRust
+    } else if path.as_str().ends_with("Cargo.toml") {
+        crate::ClientBoundaryArtifactKind::GeneratedManifest
+    } else {
+        crate::ClientBoundaryArtifactKind::Evidence
+    }
+}
+
+async fn first_failing_format_path<P: OperationPostWork>(
+    post_work: &P,
     root: &OperationRoot,
     plan: &PostWorkPlan,
     environment: &BTreeMap<String, String>,
@@ -598,7 +686,11 @@ async fn first_failing_format_path(
             toolchain: toolchain.clone(),
             files: BTreeSet::from([file.clone()]),
         };
-        if !execute(root, &single, environment, cancel).await?.success {
+        if !post_work
+            .execute(root, &single, environment, cancel)
+            .await?
+            .success
+        {
             return Ok(Some(file.to_string()));
         }
     }

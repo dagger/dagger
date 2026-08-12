@@ -253,6 +253,7 @@ pub async fn execute_initialization(
         operation_manifest: None,
         vcs_generated: BTreeSet::new(),
         vcs_ignored: BTreeSet::new(),
+        client_plan: None,
     })
 }
 

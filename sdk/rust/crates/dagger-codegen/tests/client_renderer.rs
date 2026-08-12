@@ -212,6 +212,7 @@ fn generated_sources_are_documented_safe_and_credential_free() {
     assert!(config.contains("pub enabled: Option<Option<bool>>"));
     assert!(config.contains("pub fn with_enabled(mut self, value: bool)"));
     assert!(config.contains("pub fn with_enabled_null(mut self)"));
+    assert!(config.contains("impl Default for Config"));
     assert!(client.contains("config: Option<Option<super::Config>>"));
     assert!(client.contains("pub fn with_config(mut self, value: super::Config)"));
     assert!(client.contains("pub fn with_config_null(mut self)"));

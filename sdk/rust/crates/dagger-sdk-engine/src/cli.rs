@@ -12,6 +12,7 @@ use clap::{Arg, Command};
 
 use crate::DigestDomain;
 use crate::client::initialization::execute_client_initialization;
+use crate::client::workspace::plan_client_set;
 use crate::diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 use crate::initialization::execute_initialization;
 use crate::post_work::Cancellation;
@@ -19,10 +20,10 @@ use crate::runner::execute_operation;
 use crate::runtime::{finalize_runtime, verify_runtime};
 use crate::{
     CanonicalRegistry, CanonicalRepositoryUrl, EngineExecutionRequest, EngineSourceDescriptor,
-    ExactRustToolchain, ExactVersion, FullRevision, OperationRoot, PackageIdentity,
-    PublishedSdkDependency, RuntimeBuildPlan, RuntimePolicy, RuntimeVerificationRequest,
-    SdkPackageName, Sha256Digest, build_packaged_content, canonical_bytes, canonical_digest,
-    decode_canonical,
+    ExactRustToolchain, ExactVersion, ExecutionResult, ExecutionResultKind, FullRevision,
+    OperationRoot, PackageIdentity, PublishedSdkDependency, RuntimeBuildPlan, RuntimePolicy,
+    RuntimeVerificationRequest, SdkPackageName, Sha256Digest, build_packaged_content,
+    canonical_bytes, canonical_digest, decode_canonical,
 };
 
 const MAX_CONTROL_BYTES: u64 = 16 * 1024 * 1024;
@@ -83,6 +84,26 @@ async fn execute(matches: &clap::ArgMatches) -> Result<(), EngineDiagnostic> {
                 ));
             }
             execute_client_initialization(&root, &request, &descriptor)?
+        }
+        EngineExecutionRequest::PlanClientSet(request) => {
+            if matches.get_one::<String>("schema").is_some() {
+                return Err(invalid(
+                    "schema",
+                    "client-set planning must not receive a visible schema",
+                ));
+            }
+            let output_root = request.cwd.clone();
+            let client_plan = plan_client_set(request)?;
+            ExecutionResult {
+                format_version: crate::FormatVersion,
+                kind: ExecutionResultKind::ClientPlan,
+                output_root,
+                touched_paths: Default::default(),
+                operation_manifest: None,
+                vcs_generated: Default::default(),
+                vcs_ignored: Default::default(),
+                client_plan: Some(client_plan),
+            }
         }
         EngineExecutionRequest::Generate(request) => {
             let schema_path = optional_path(matches, "schema").ok_or_else(|| {

@@ -102,6 +102,54 @@ pub enum DiagnosticCode {
     ClientSchemaScopeInvalid,
 }
 
+impl DiagnosticCode {
+    /// Complete generator diagnostic taxonomy in declaration order.
+    pub const ALL: &'static [Self] = &[
+        Self::TargetIdentityInvalid,
+        Self::SchemaDigestMismatch,
+        Self::SchemaRootInvalid,
+        Self::SchemaTypeUnsupported,
+        Self::SchemaReferenceInvalid,
+        Self::SchemaCoreCoordinateMissing,
+        Self::SchemaCoreCoordinateIncompatible,
+        Self::SchemaWrapperInvalid,
+        Self::SchemaDefaultInvalid,
+        Self::SchemaDirectiveArgumentInvalid,
+        Self::SchemaFieldUnmapped,
+        Self::SchemaArgumentUnmapped,
+        Self::SchemaInputFieldUnmapped,
+        Self::SchemaEnumValueUnmapped,
+        Self::SchemaDirectiveUnmapped,
+        Self::ObjectHandleMappingInvalid,
+        Self::ListReentryTypeInvalid,
+        Self::ExpectedTypeInvalid,
+        Self::OptionArgumentMappingInvalid,
+        Self::WireNameMismatch,
+        Self::DeprecationDirectiveInvalid,
+        Self::ExperimentalDirectiveInvalid,
+        Self::TargetInactiveDirectiveChanged,
+        Self::RustNameInvalid,
+        Self::RustNameCollision,
+        Self::GeneratedDocumentationInvalid,
+        Self::GeneratedProvenanceInvalid,
+        Self::CapabilityScopeChanged,
+        Self::CapabilityBindingMissing,
+        Self::CapabilityBindingDuplicate,
+        Self::CapabilityFingerprintMismatch,
+        Self::CapabilityEvidenceIncomplete,
+        Self::GeneratedFormatFailed,
+        Self::GeneratedOutputDrift,
+        Self::GeneratedPublicationFailed,
+        Self::OperationUnknown,
+        Self::OperationInputMissing,
+        Self::OperationInputForbidden,
+        Self::OperationArtifactCollision,
+        Self::RequiredHostFileInvalid,
+        Self::ClientModuleRootInvalid,
+        Self::ClientSchemaScopeInvalid,
+    ];
+}
+
 impl fmt::Display for DiagnosticCode {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let serialized = serde_json::to_string(self).map_err(|_| fmt::Error)?;
@@ -122,7 +170,30 @@ impl DiagnosticCoordinate {
             .chars()
             .filter(|character| !character.is_control())
             .take(MAX_COORDINATE_CHARS)
-            .collect();
+            .collect::<String>();
+        let lower = normalized.to_ascii_lowercase();
+        let private = normalized.starts_with('/')
+            || normalized.starts_with("~/")
+            || normalized
+                .as_bytes()
+                .get(1)
+                .is_some_and(|byte| *byte == b':')
+            || [
+                "://",
+                "git@",
+                "authorization",
+                "bearer ",
+                "token=",
+                "password=",
+                "session_token",
+            ]
+            .iter()
+            .any(|marker| lower.contains(marker));
+        let normalized = if private {
+            "[REDACTED]".to_owned()
+        } else {
+            normalized
+        };
         Self(normalized)
     }
 

@@ -641,8 +641,8 @@
       or repository-wide build ran. Every checkpoint Cargo phase was locked and offline;
       client project plans themselves expose no dependency-resolution post-work.
 
-- [ ] 17. Wire client initialization and multi-client workspace generation through the thin Go ABI
-  - [ ] 17.1 Expose the exact `InitClient` module function
+- [x] 17. Wire client initialization and multi-client workspace generation through the thin Go ABI
+  - [x] 17.1 Expose the exact `InitClient` module function
     - Add `RustSDK.InitClient(ctx, ws, path, module)` with the target engine signature,
       require a non-nil workspace plus confined non-empty path/module, derive only the
       deterministic package candidate, and invoke the private `InitializeClient`
@@ -653,7 +653,7 @@
     - Regenerate only the scoped Rust SDK runtime API client needed to expose the new
       module function, inspect it, and keep Core SDK bindings unchanged.
     - _Requirements: 2.1-2.13_
-  - [ ] 17.2 Add one Rust-owned workspace-client-set preflight
+  - [x] 17.2 Add one Rust-owned workspace-client-set preflight
     - Add a private `PlanClientSet` request/result which accepts cwd, normalized client
       paths, stable record indices, safe module-reference digests, and stored pins;
       selects only descendants, sorts canonically, rejects duplicates/prefix overlap,
@@ -663,7 +663,7 @@
     - Keep raw module references and Dagger objects out of the Rust request and all
       durable diagnostics/evidence.
     - _Requirements: 7.1-7.3, 7.6-7.8, 8.7-8.10_
-  - [ ] 17.3 Resolve and generate every selected client independently and atomically
+  - [x] 17.3 Resolve and generate every selected client independently and atomically
     - Resolve each record's own module source, module name/original name/source digest,
       and resolved pin; reject a remote stored/resolved mismatch before schema
       compilation and retain empty pins for mutable local sources.
@@ -674,7 +674,7 @@
       aggregate changeset available only after all disjoint client operations succeed;
       do not generate managed modules or enter another SDK.
     - _Requirements: 3.1-3.4, 3.13, 7.4-7.13_
-  - [ ] 17.4 Converge modern workspace and legacy client adapters
+  - [x] 17.4 Converge modern workspace and legacy client adapters
     - Extend the shared request encoder with resolved pin and selected project identity
       so equivalent modern and direct `GenerateClient` inputs reach the same Rust
       compiler/reconciler/publication path.
@@ -683,21 +683,21 @@
       project semantics, artifacts, and provenance while permitting only root-relative
       control-path differences.
     - _Requirements: 3.1-3.4, 7.14, 8.14_
-  - [ ] 17.5 Property test: Property 4 — one workspace record resolves to one exact bound module
+  - [x] 17.5 Property test: Property 4 — one workspace record resolves to one exact bound module
     - Implement `property_04_workspace_record_resolves_one_exact_bound_module` over at
       least 256 local/remote records, source identities, stored/resolved pins,
       resolution failures, extra-module attempts, and manifest bindings.
     - Require exactly one identity plus complete target/module/pin/schema/dependency
       provenance, and reject mismatch or ambiguity before compilation/publication.
     - _Requirements: 3.1-3.4, 3.13, 7.4_
-  - [ ] 17.6 Property test: Property 17 — workspace cwd selection is canonical and Rust-only
+  - [x] 17.6 Property test: Property 17 — workspace cwd selection is canonical and Rust-only
     - Implement `property_17_workspace_cwd_selection_canonical_rust_only` over at least
       256 cwd/record trees, SDK ownerships, orderings, normalized/invalid paths, and
       operation expansions using the production preflight.
     - Select exactly Rust clients at/below cwd in canonical order, retain independent
       roots/manifests, and prove no module-generation or other-SDK action can appear.
     - _Requirements: 7.1-7.7, 7.12-7.13_
-  - [ ] 17.7 Property test: Property 18 — multiple client operations are isolated and all-or-nothing
+  - [x] 17.7 Property test: Property 18 — multiple client operations are isolated and all-or-nothing
     - Implement `property_18_multiple_clients_isolated_all_or_nothing` over at least
       256 equal/overlapping/disjoint path sets, same/different module bindings, isolated
       schema/catalog states, operation orderings, and injected client failures.
@@ -705,7 +705,7 @@
       every disjoint root, no cross-client semantic state, and no aggregate changeset
       after any sibling failure.
     - _Requirements: 7.8-7.11_
-  - [ ] 17.8 Property test: Property 19 — modern and legacy generation converge on one semantic result
+  - [x] 17.8 Property test: Property 19 — modern and legacy generation converge on one semantic result
     - Implement `property_19_modern_legacy_generation_semantically_converge` over at
       least 256 equivalent target/module/pin/schema/dependency/project/output inputs and
       adapter-root permutations.
@@ -713,8 +713,8 @@
       exactly and allow differences only in explicitly classified control paths.
     - _Requirements: 7.14_
 
-- [ ] 18. Build the complete engine-free generated-client usability harness
-  - [ ] 18.1 Materialize exact candidates through the production stack
+- [x] 18. Build the complete engine-free generated-client usability harness
+  - [x] 18.1 Materialize exact candidates through the production stack
     - Add a fixture harness that invokes the real `ClientCompiler`, project identity,
       renderer, reconciler, formatter post-work, ownership verifier, and publisher into
       temporary roots for Core-only, local-module, dependency-bound, and adopted
@@ -725,7 +725,7 @@
     - Record per-phase and per-Cargo-invocation timings so duplicate SDK builds or an
       unexpectedly broad package graph are visible.
     - _Requirements: 5.5-5.9, 5.14-5.17, 9.1-9.6, 9.11-9.14, 10.5-10.8_
-  - [ ] 18.2 Add the representative pass, adoption, regeneration, and failure corpus
+  - [x] 18.2 Add the representative pass, adoption, regeneration, and failure corpus
     - Cover Core-only/runtime-less, a rich local module, a pinned dependency-bound
       module without its transitive namespace, custom library roots, existing Cargo and
       source/docs/VCS policy, caller lockfiles, schema add/rename/remove, and identical
@@ -737,7 +737,7 @@
     - Keep fixture schemas/trees recorded and generated only when their owning semantic
       inputs change.
     - _Requirements: 2.4-2.12, 3.5-3.13, 5.1-5.17, 6.4-6.15, 9.1-9.6, 9.11-9.14_
-  - [ ] 18.3 Exercise generated Core and module operations through recording transport
+  - [x] 18.3 Exercise generated Core and module operations through recording transport
     - Construct a normal public `Client` via the existing injected connector, import
       the generated extension trait, execute representative Core and module operations,
       and assert exact raw GraphQL documents, omission/explicit values, response
@@ -747,7 +747,7 @@
     - Compile and run the generated quickstart through the same public lifecycle route
       without editing generated source.
     - _Requirements: 4.4-4.16, 9.7-9.14_
-  - [ ] 18.4 Property test: Property 23 — every generated client class passes the scoped Cargo contract
+  - [x] 18.4 Property test: Property 23 — every generated client class passes the scoped Cargo contract
     - Implement `property_23_generated_client_classes_pass_scoped_cargo_contract` over
       at least 128 Core-only/local/dependency schema and new/adopted project candidates,
       while batching a bounded representative set into each Cargo execution.
@@ -755,7 +755,7 @@
       immutable dependency declaration, and evidence that production renderer/runtime
       paths—not fixture substitutes—were invoked.
     - _Requirements: 9.1-9.6, 9.11-9.14_
-  - [ ] 18.5 Property test: Property 24 — generated Core and module queries use one public transport contract
+  - [x] 18.5 Property test: Property 24 — generated Core and module queries use one public transport contract
     - Implement `property_24_generated_queries_one_public_transport_contract` over at
       least 128 generated Core/module operations, aliases, wrappers, argument/omission
       states, responses, GraphQL/transport errors, and lifecycle schedules.
@@ -763,8 +763,8 @@
       the quickstart/public API never enters a hidden fixture transport route.
     - _Requirements: 9.7-9.12_
 
-- [ ] 19. Complete client diagnostics, security boundaries, and checkpoint planning
-  - [ ] 19.1 Audit every rejection site against the total diagnostic table
+- [x] 19. Complete client diagnostics, security boundaries, and checkpoint planning
+  - [x] 19.1 Audit every rejection site against the total diagnostic table
     - Map every schema/name/codec, workspace/pin/path, project/Cargo/toolchain,
       ownership/publication, fixture/checkpoint, closure, and sign-off rejection to one
       stable primary code and the approved safe coordinate class.
@@ -772,7 +772,7 @@
       causes for engine diagnostics, and add exhaustive fixed cases for every error
       table row without matching implementation prose as API.
     - _Requirements: 8.1-8.6_
-  - [ ] 19.2 Enforce secret, source, path, unsafe, and dependency boundaries
+  - [x] 19.2 Enforce secret, source, path, unsafe, and dependency boundaries
     - Generate credential-shaped module refs, Git/registry URLs, environment/session
       values, Cargo/Git stderr, GraphQL values, hostile docs/coordinates, and host paths;
       require redaction or pre-output rejection across requests, diagnostics, manifests,
@@ -781,7 +781,7 @@
       source, unsafe Rust, global client state, raw authorization/session values, and
       accidental private-crate dependency.
     - _Requirements: 2.13, 8.6-8.14_
-  - [ ] 19.3 Extend the typed engine-free checkpoint planner for generated clients
+  - [x] 19.3 Extend the typed engine-free checkpoint planner for generated clients
     - Add only the Feature 7 package/test/fixture/direct-Go-ABI actions to the existing
       closed planner, with explicit checked-asset input/output digests, reuse versus
       scoped-regeneration decision, package/target identity, Cargo invocation count,
@@ -791,7 +791,7 @@
       observations, and executable engine exceptions. Model an exception only as
       separately approvable sign-off evidence.
     - _Requirements: 10.1-10.10_
-  - [ ] 19.4 Property test: Property 20 — diagnostics are total, stable, ordered, and safely located
+  - [x] 19.4 Property test: Property 20 — diagnostics are total, stable, ordered, and safely located
     - Implement `property_20_diagnostics_total_stable_ordered_safely_located` over at
       least 256 invalid-domain values from every producing layer, discovery orders,
       duplicate causes, control characters, and coordinate mutations.
@@ -799,7 +799,7 @@
       schema/path/semantic-key coordinates, deterministic sorting/deduplication, and no
       terminal control output.
     - _Requirements: 8.1-8.6_
-  - [ ] 19.5 Property test: Property 21 — credentials and host identity never cross the client boundary
+  - [x] 19.5 Property test: Property 21 — credentials and host identity never cross the client boundary
     - Implement `property_21_credentials_host_identity_never_cross_client_boundary`
       over at least 256 request/environment/dependency/diagnostic/generated/evidence
       combinations seeded with credential and absolute-path shapes.
@@ -807,7 +807,7 @@
       allowing only approved immutable dependency URLs with userinfo removed and never
       unsafe Rust or an ambient local SDK source.
     - _Requirements: 2.13, 8.7-8.13_
-  - [ ] 19.6 Property test: Property 25 — local checkpoints are observably engine-free and change-triggered
+  - [x] 19.6 Property test: Property 25 — local checkpoints are observably engine-free and change-triggered
     - Implement `property_25_local_checkpoints_engine_free_change_triggered` over at
       least 256 action/package expansions, asset states, observations, timing records,
       Cargo counts, forbidden boundaries, and exception records.
@@ -816,7 +816,7 @@
       and approval.
     - _Requirements: 10.1-10.10_
 
-- [ ] 20. Checkpoint: production client path is engine-free integration-complete
+- [x] 20. Checkpoint: production client path is engine-free integration-complete
   - Run formatting; locked focused client tests in `dagger-codegen`, `dagger-sdk`,
     `dagger-sdk-engine`, and `dagger-sdk-completeness`; direct `sdk/rust/runtime` Go ABI
     tests; Properties 4, 17-25; the bounded Cargo/recording-transport corpus; and
@@ -833,6 +833,30 @@
   - Require no Dagger command, engine process, module invocation, unrelated SDK,
     repository-wide generation, distribution build, or network resolution.
   - _Requirements: 2.1-2.13, 3.1-3.13, 4.1-4.17, 5.1-5.17, 6.1-6.15, 7.1-7.14, 8.1-8.14, 9.1-9.14, 10.1-10.10_
+  - Checkpoint evidence (2026-08-12):
+    - Formatting, `git diff --check`, the focused compiler/SDK/engine/completeness
+      suites, direct runtime Go ABI tests, and Properties 4 and 17-25 passed. The
+      inherited visible-schema permutation property was the slowest focused slice at
+      138.29 seconds; it remained engine-free and changed no checked asset.
+    - One production-stack fixture phase materialized Core-only, local-module, pinned
+      remote, and adopted-project candidates, replayed them without mutation, and ran
+      exactly six offline Cargo phases against one shared local SDK baseline: lock,
+      rustfmt, check, all quickstarts, warning-denied Clippy, and warning-denied
+      rustdoc. The complete phase passed in 25.31 seconds and retained candidate Cargo
+      and provenance bytes exactly.
+    - Warning-denied Clippy for only `dagger-codegen`, `dagger-sdk`,
+      `dagger-sdk-engine`, and `dagger-sdk-completeness` passed in 8.37 seconds; their
+      warning-denied no-dependency rustdoc phase passed in 13.98 seconds. Direct
+      `sdk/rust/runtime` Go tests passed in about 1.2 seconds.
+    - The scoped runtime module entrypoint and its internal API client were refreshed
+      once for the exact engine `initClient(ws, path, module)` ABI and inspected by a
+      direct checked-asset test. No Core SDK binding under `dagger-sdk/src/gen` changed.
+    - `cargo deny check` passed advisories, bans, licenses, and sources; the focused
+      redaction, source, package, protocol, and publication-policy slices passed, and
+      Cargo metadata still admits exactly `dagger-sdk` and `dagger-sdk-macros` as public
+      crates. Configured duplicate/no-license warnings remain non-fatal policy output.
+    - No Dagger command, engine process, module invocation, unrelated SDK, unscoped
+      generation, distribution build, or network-backed dependency resolution ran.
 
 - [ ] 21. Implement client-generation closure and deferred sign-off evidence admission
   - [ ] 21.1 Add the exact engine-free Implementation Closure gate

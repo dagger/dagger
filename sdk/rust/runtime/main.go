@@ -38,6 +38,14 @@ type RustSDK struct {
 	SDKSourceDir *dagger.Directory // +private
 }
 
+type managedClientPlan struct {
+	RecordIndex uint32
+	Path        string
+	ModuleRef   string
+	StoredPin   string
+	Source      *dagger.ModuleSource
+}
+
 // New constructs the built-in adapter from the complete packaged SDK content root.
 func New(
 	// Complete engine-packaged Rust SDK content, including runtime and dist metadata.
@@ -106,24 +114,64 @@ func (sdk *RustSDK) GenerateClients(ctx context.Context, ws *dagger.Workspace) (
 	}
 
 	workspaceBefore := ws.Directory("/")
-	generated := make([]*dagger.Changeset, 0, len(clients))
-	for _, client := range clients {
+	records := make([]managedClientPlan, 0, len(clients))
+	for index, client := range clients {
 		clientPath, err := client.Path(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("read managed Rust client path: %w", err)
 		}
-		_, visible := relativeToWorkspaceCwd(cwd, clientPath)
-		if !visible {
-			continue
+		if !isConfinedWorkspacePath(clientPath) {
+			return nil, fmt.Errorf("managed Rust client path is not confined")
 		}
+		moduleRef, err := client.Module(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read managed Rust client module reference: %w", err)
+		}
+		if err := validateModuleReference(moduleRef); err != nil {
+			return nil, err
+		}
+		storedPin, err := client.Pin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read managed Rust client pin: %w", err)
+		}
+		if err := validateOptionalRevision(storedPin); err != nil {
+			return nil, fmt.Errorf("managed Rust client pin is invalid")
+		}
+		records = append(records, managedClientPlan{
+			RecordIndex: uint32(index),
+			Path:        normalizeWorkspacePath(clientPath),
+			ModuleRef:   moduleRef,
+			StoredPin:   storedPin,
+			Source:      client.ModuleSource(),
+		})
+	}
 
-		moduleSource := client.ModuleSource()
-		identity, err := moduleIdentity(ctx, moduleSource, "current")
+	selected, err := sdk.planClientSet(ctx, cwd, records, workspaceBefore)
+	if err != nil {
+		return nil, err
+	}
+	generated := make([]*dagger.Changeset, 0, len(selected))
+	for _, selectedClient := range selected {
+		if int(selectedClient.RecordIndex) >= len(records) {
+			return nil, fmt.Errorf("Rust client preflight returned an unknown record")
+		}
+		record := records[selectedClient.RecordIndex]
+		rebasedRecordPath, err := rebasePath(record.Path)
+		if err != nil {
+			return nil, fmt.Errorf("managed Rust client path: %w", err)
+		}
+		if rebasedRecordPath != selectedClient.Path || metadata.DigestModuleReference(record.ModuleRef) != selectedClient.ModuleRefDigest || optionalString(selectedClient.StoredPin) != record.StoredPin {
+			return nil, fmt.Errorf("Rust client preflight identity differs from the workspace record")
+		}
+		identity, err := moduleIdentity(ctx, record.Source, "current")
 		if err != nil {
 			return nil, fmt.Errorf("resolve client module source: %w", err)
 		}
-		schema := moduleSource.ClientSchemaIntrospectionJSON()
-		outputRoot, err := rebasePath(normalizeWorkspacePath(clientPath))
+		if record.StoredPin != identity.ResolvedPin {
+			return nil, fmt.Errorf("stored client pin differs from the resolved module revision")
+		}
+		schema := record.Source.ClientSchemaIntrospectionJSON()
+		outputRoot, err := rebasePath(record.Path)
 		if err != nil {
 			return nil, fmt.Errorf("client output directory: %w", err)
 		}
@@ -141,6 +189,50 @@ func (sdk *RustSDK) GenerateClients(ctx context.Context, ws *dagger.Workspace) (
 	}
 
 	return dag.Changeset().WithChangesets(generated), nil
+}
+
+func (sdk *RustSDK) planClientSet(
+	ctx context.Context,
+	cwd string,
+	records []managedClientPlan,
+	workspaceBefore *dagger.Directory,
+) ([]metadata.PlannedClient, error) {
+	rebasedCwd, err := rebasePath(cwd)
+	if err != nil {
+		return nil, fmt.Errorf("workspace cwd: %w", err)
+	}
+	clients := make([]map[string]any, 0, len(records))
+	for _, record := range records {
+		rebasedPath, err := rebasePath(record.Path)
+		if err != nil {
+			return nil, fmt.Errorf("managed Rust client path: %w", err)
+		}
+		client := map[string]any{
+			"record_index":      record.RecordIndex,
+			"path":              rebasedPath,
+			"module_ref_digest": metadata.DigestModuleReference(record.ModuleRef),
+		}
+		if record.StoredPin != "" {
+			client["stored_pin"] = record.StoredPin
+		}
+		clients = append(clients, client)
+	}
+	request := map[string]any{
+		"request_kind": "plan-client-set",
+		"request": map[string]any{
+			"format_version": 1,
+			"cwd":            rebasedCwd,
+			"clients":        clients,
+		},
+	}
+	execution, err := sdk.executeOperation(ctx, request, nil, workspaceBefore, "client-plan")
+	if err != nil {
+		return nil, err
+	}
+	if execution.result.ClientPlan == nil {
+		return nil, fmt.Errorf("Rust client preflight returned no plan")
+	}
+	return execution.result.ClientPlan.Clients, nil
 }
 
 func workspaceCwd(ctx context.Context, ws *dagger.Workspace) (string, error) {
@@ -183,6 +275,9 @@ func relativeToWorkspaceCwd(cwd string, target string) (string, bool) {
 }
 
 func isConfinedWorkspacePath(candidate string) bool {
+	if path.IsAbs(candidate) {
+		return false
+	}
 	normalized := normalizeWorkspacePath(candidate)
 	return normalized != ".." && !strings.HasPrefix(normalized, "../") && !strings.Contains(candidate, "\\")
 }
@@ -253,6 +348,59 @@ func (sdk *RustSDK) InitModule(
 		return nil, err
 	}
 	return execution.project.Directory(operationWorkspaceRoot).Changes(before), nil
+}
+
+// InitClient validates the engine-owned record inputs and returns only SDK-owned
+// scaffold changes. The module reference is never forwarded into Rust or generated
+// content; the engine remains responsible for persisting and resolving that record.
+func (sdk *RustSDK) InitClient(
+	ctx context.Context,
+	ws *dagger.Workspace,
+	path string,
+	module string,
+) (*dagger.Changeset, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace not provided")
+	}
+	if err := validateModuleReference(module); err != nil {
+		return nil, err
+	}
+	clientRoot, err := rebasePath(path)
+	if err != nil {
+		return nil, fmt.Errorf("client path: %w", err)
+	}
+	packageName, err := clientPackageName(path)
+	if err != nil {
+		return nil, err
+	}
+	descriptor, err := sdk.descriptorMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+	request := clientInitializationRequestDocument(descriptor, clientRoot, packageName)
+	before := ws.Directory("/")
+	execution, err := sdk.executeOperation(ctx, request, nil, before, "client-initialization")
+	if err != nil {
+		return nil, err
+	}
+	return execution.project.Directory(operationWorkspaceRoot).Changes(before), nil
+}
+
+func clientInitializationRequestDocument(
+	descriptor metadata.EngineSource,
+	clientRoot string,
+	packageName string,
+) map[string]any {
+	return map[string]any{
+		"request_kind": "initialize-client",
+		"request": map[string]any{
+			"format_version": 1,
+			"target":         targetIdentity(descriptor),
+			"client_root":    clientRoot,
+			"package_name":   packageName,
+			"sdk_dependency": descriptor.SDKDependency,
+		},
+	}
 }
 
 // Codegen compiles the engine-visible schema into the scoped module context and
@@ -335,6 +483,7 @@ type scopedModuleIdentity struct {
 	SourceSubpath string
 	SourceDigest  string
 	ConfigFormat  string
+	ResolvedPin   string
 }
 
 type operationExecution struct {
@@ -432,6 +581,16 @@ func generationRequestDocument(
 	schemaBytes []byte,
 	outputRoot string,
 ) map[string]any {
+	moduleDocument := map[string]any{
+		"name":           module.Name,
+		"original_name":  module.OriginalName,
+		"source_subpath": module.SourceSubpath,
+		"config_format":  module.ConfigFormat,
+		"source_digest":  module.SourceDigest,
+	}
+	if module.ResolvedPin != "" {
+		moduleDocument["resolved_pin"] = module.ResolvedPin
+	}
 	return map[string]any{
 		"request_kind": "generate",
 		"request": map[string]any{
@@ -442,13 +601,7 @@ func generationRequestDocument(
 				"path":   "schema.json",
 				"digest": metadata.DigestBytes(schemaBytes),
 			},
-			"module": map[string]any{
-				"name":           module.Name,
-				"original_name":  module.OriginalName,
-				"source_subpath": module.SourceSubpath,
-				"config_format":  module.ConfigFormat,
-				"source_digest":  module.SourceDigest,
-			},
+			"module":         moduleDocument,
 			"sdk_dependency": descriptor.SDKDependency,
 			"output_root":    outputRoot,
 		},
@@ -511,10 +664,81 @@ func moduleIdentity(ctx context.Context, source *dagger.ModuleSource, configForm
 	if err != nil {
 		return scopedModuleIdentity{}, fmt.Errorf("read semantic module source digest: %w", err)
 	}
+	kind, err := source.Kind(ctx)
+	if err != nil {
+		return scopedModuleIdentity{}, fmt.Errorf("read module source kind: %w", err)
+	}
+	resolvedPin := ""
+	if kind == dagger.ModuleSourceKindGit {
+		resolvedPin, err = source.Pin(ctx)
+		if err != nil {
+			return scopedModuleIdentity{}, fmt.Errorf("read resolved module pin: %w", err)
+		}
+		if err := validateOptionalRevision(resolvedPin); err != nil || resolvedPin == "" {
+			return scopedModuleIdentity{}, fmt.Errorf("resolved remote module pin is invalid")
+		}
+	} else if kind != dagger.ModuleSourceKindLocal {
+		return scopedModuleIdentity{}, fmt.Errorf("module source kind is unsupported")
+	}
 	return scopedModuleIdentity{
 		Name: name, OriginalName: originalName, SourceSubpath: rebased,
-		SourceDigest: digest, ConfigFormat: configFormat,
+		SourceDigest: digest, ConfigFormat: configFormat, ResolvedPin: resolvedPin,
 	}, nil
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func validateOptionalRevision(value string) error {
+	if value == "" {
+		return nil
+	}
+	if len(value) != 40 {
+		return fmt.Errorf("revision must be a full lowercase commit")
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return fmt.Errorf("revision must be a full lowercase commit")
+		}
+	}
+	return nil
+}
+
+func validateModuleReference(value string) error {
+	if value == "" || strings.TrimSpace(value) != value {
+		return fmt.Errorf("client module reference is empty or malformed")
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return fmt.Errorf("client module reference is empty or malformed")
+		}
+	}
+	return nil
+}
+
+func clientPackageName(clientPath string) (string, error) {
+	normalized := normalizeWorkspacePath(clientPath)
+	if !isConfinedWorkspacePath(clientPath) {
+		return "", fmt.Errorf("client path is not confined")
+	}
+	name := path.Base(normalized)
+	if name == "." {
+		name = "dagger-client"
+	}
+	name = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
+	if name == "" || name[0] == '-' || name[len(name)-1] == '-' {
+		return "", fmt.Errorf("client path does not yield a valid Cargo package name")
+	}
+	for _, character := range name {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '-' {
+			return "", fmt.Errorf("client path does not yield a valid Cargo package name")
+		}
+	}
+	return name, nil
 }
 
 func semanticModuleSourceDigest(

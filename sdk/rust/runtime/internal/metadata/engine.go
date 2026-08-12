@@ -52,12 +52,29 @@ type RuntimePolicy struct {
 
 // ExecutionResult is the closed projection returned by an operation execution.
 type ExecutionResult struct {
-	FormatVersion     uint32   `json:"format_version"`
-	Kind              string   `json:"kind"`
-	OutputRoot        string   `json:"output_root"`
-	OperationManifest *string  `json:"operation_manifest"`
-	VCSGenerated      []string `json:"vcs_generated"`
-	VCSIgnored        []string `json:"vcs_ignored"`
+	FormatVersion     uint32         `json:"format_version"`
+	Kind              string         `json:"kind"`
+	OutputRoot        string         `json:"output_root"`
+	TouchedPaths      []string       `json:"touched_paths,omitempty"`
+	OperationManifest *string        `json:"operation_manifest"`
+	VCSGenerated      []string       `json:"vcs_generated"`
+	VCSIgnored        []string       `json:"vcs_ignored"`
+	ClientPlan        *ClientSetPlan `json:"client_plan,omitempty"`
+}
+
+// PlannedClient is one credential-free Rust-owned workspace selection result.
+type PlannedClient struct {
+	RecordIndex     uint32  `json:"record_index"`
+	Path            string  `json:"path"`
+	ModuleRefDigest string  `json:"module_ref_digest"`
+	StoredPin       *string `json:"stored_pin,omitempty"`
+}
+
+// ClientSetPlan is the canonical path-ordered result of the Rust preflight.
+type ClientSetPlan struct {
+	FormatVersion uint32          `json:"format_version"`
+	Cwd           string          `json:"cwd"`
+	Clients       []PlannedClient `json:"clients"`
 }
 
 // EngineDiagnostic is the bounded, engine-authored error projection emitted by
@@ -117,10 +134,32 @@ func DecodeExecutionResult(data []byte, expectedKind string) (ExecutionResult, e
 	if value.FormatVersion != 1 || value.Kind != expectedKind || !isNormalizedRelativePath(value.OutputRoot) {
 		return ExecutionResult{}, fmt.Errorf("execution result differs from the requested operation")
 	}
-	for _, candidate := range append(append([]string{}, value.VCSGenerated...), value.VCSIgnored...) {
+	paths := append(append(append([]string{}, value.TouchedPaths...), value.VCSGenerated...), value.VCSIgnored...)
+	for _, candidate := range paths {
 		if !isNormalizedRelativePath(candidate) {
 			return ExecutionResult{}, fmt.Errorf("execution result path %q is not confined", candidate)
 		}
+	}
+	if expectedKind == "client-plan" {
+		if value.ClientPlan == nil || value.OperationManifest != nil || len(value.TouchedPaths) != 0 ||
+			value.ClientPlan.FormatVersion != 1 || value.ClientPlan.Cwd != value.OutputRoot {
+			return ExecutionResult{}, fmt.Errorf("client plan result differs from the requested operation")
+		}
+		previous := ""
+		indices := map[uint32]struct{}{}
+		for _, client := range value.ClientPlan.Clients {
+			if !isNormalizedRelativePath(client.Path) || !validSHA256(client.ModuleRefDigest) ||
+				(previous != "" && previous >= client.Path) {
+				return ExecutionResult{}, fmt.Errorf("client plan is not canonical and confined")
+			}
+			if _, exists := indices[client.RecordIndex]; exists {
+				return ExecutionResult{}, fmt.Errorf("client plan contains duplicate record identity")
+			}
+			indices[client.RecordIndex] = struct{}{}
+			previous = client.Path
+		}
+	} else if value.ClientPlan != nil {
+		return ExecutionResult{}, fmt.Errorf("non-planning result contains a client plan")
 	}
 	return value, nil
 }
@@ -214,6 +253,14 @@ func DigestModuleSource(value string) string {
 	return "sha256:" + hex.EncodeToString(digest.Sum(nil))
 }
 
+// DigestModuleReference keeps raw user-facing refs out of Rust control documents.
+func DigestModuleReference(value string) string {
+	digest := sha256.New()
+	digest.Write([]byte("dagger-rust-module-reference-v1\x00"))
+	digest.Write([]byte(value))
+	return "sha256:" + hex.EncodeToString(digest.Sum(nil))
+}
+
 // ModuleSourceFile is one normalized caller-owned leaf in semantic source identity.
 type ModuleSourceFile struct {
 	Path   string `json:"path"`
@@ -300,6 +347,18 @@ func validCargoArgs(args []string) bool {
 		args[3] == "--package" && args[4] != "" && args[5] == "--bin" && args[6] == "dagger-module" &&
 		args[7] == "--release" && args[8] == "--locked" && args[9] == "--target" && args[10] != "" &&
 		args[11] == "--target-dir" && args[12] == "/var/lib/dagger/rust/target"
+}
+
+func validSHA256(value string) bool {
+	if len(value) != len("sha256:")+64 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, character := range value[len("sha256:"):] {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizedOrDot(candidate string) bool {
