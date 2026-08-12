@@ -610,6 +610,24 @@ func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Cl
 		_, err = fmt.Fprintf(out, "Uninstalled module %q from env %q in %s\n", name, workspaceEnv, configPath)
 		return err
 	}
+
+	// A module that survives the write was never installed here: what went away
+	// is the local entry overriding the module an included config provides.
+	modules, err := updated.Modules(ctx)
+	if err != nil {
+		return err
+	}
+	for _, module := range modules {
+		moduleName, err := module.Name(ctx)
+		if err != nil {
+			return err
+		}
+		if moduleName == name {
+			_, err = fmt.Fprintf(out, "Removed local overrides for module %q from %s; the module is still provided by an included config\n", name, configPath)
+			return err
+		}
+	}
+
 	if _, err := fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath); err != nil {
 		return err
 	}
