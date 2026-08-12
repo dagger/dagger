@@ -27,6 +27,7 @@ pub enum DigestDomain {
     RuleExpansion,
     Compatibility,
     ModuleAuthoring,
+    ClientGeneration,
 }
 
 impl DigestDomain {
@@ -39,6 +40,7 @@ impl DigestDomain {
             Self::RuleExpansion => b"dagger-rust-sdk-rule-expansion-v1\0",
             Self::Compatibility => b"dagger-rust-sdk-compatibility-v1\0",
             Self::ModuleAuthoring => b"dagger-rust-sdk-module-authoring-v1\0",
+            Self::ClientGeneration => b"dagger-rust-sdk-client-generation-v1\0",
         }
     }
 }

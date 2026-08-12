@@ -12,6 +12,16 @@ use super::model::{RelativeOperationPath, operation_diagnostic};
 pub const BASELINE_CLIENT_GENERATION_JSON: &[u8] =
     include_bytes!("../../assets/client-generation.json");
 
+/// Complete sorted host-file projection accepted by client generation.
+pub const REQUIRED_CLIENT_HOST_FILES: [&str; 6] = [
+    "**/.gitattributes",
+    "**/Cargo.toml",
+    "**/README.md",
+    "**/rust-toolchain",
+    "**/rust-toolchain.toml",
+    "**/src/lib.rs",
+];
+
 /// Validated required-host-file metadata derived from Rust renderer configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClientGenerationMetadata {
@@ -42,23 +52,18 @@ impl<'de> Deserialize<'de> for ClientGenerationMetadata {
 }
 
 impl ClientGenerationMetadata {
-    /// Validates a finite required-file set and rejects duplicates explicitly.
+    /// Accepts only the reviewed finite host-file projection in canonical order.
     pub fn try_new<'a>(paths: impl IntoIterator<Item = &'a str>) -> Result<Self, DiagnosticSet> {
+        let paths = paths.into_iter().collect::<Vec<_>>();
+        if paths.as_slice() != REQUIRED_CLIENT_HOST_FILES {
+            return Err(invalid_required_host_files());
+        }
         let mut required_host_files = BTreeSet::new();
         for path in paths {
-            let parsed = RelativeOperationPath::parse(path).map_err(|_| {
-                DiagnosticSet::one(operation_diagnostic(
-                    DiagnosticCode::RequiredHostFileInvalid,
-                    path,
-                    "required host file is not a normalized relative path",
-                ))
-            })?;
+            let parsed =
+                RelativeOperationPath::parse(path).map_err(|_| invalid_required_host_files())?;
             if !required_host_files.insert(parsed) {
-                return Err(DiagnosticSet::one(operation_diagnostic(
-                    DiagnosticCode::RequiredHostFileInvalid,
-                    path,
-                    "required host file occurs more than once",
-                )));
+                return Err(invalid_required_host_files());
             }
         }
         Ok(Self {
@@ -67,12 +72,15 @@ impl ClientGenerationMetadata {
         })
     }
 
-    /// Returns the approved baseline with no host-file requirements.
+    /// Returns the approved finite baseline without parsing caller-controlled input.
     #[must_use]
     pub fn baseline() -> Self {
         Self {
             format_version: 1,
-            required_host_files: BTreeSet::new(),
+            required_host_files: REQUIRED_CLIENT_HOST_FILES
+                .into_iter()
+                .map(RelativeOperationPath::from_reviewed_static)
+                .collect(),
         }
     }
 
@@ -86,4 +94,12 @@ impl ClientGenerationMetadata {
             ))
         })
     }
+}
+
+fn invalid_required_host_files() -> DiagnosticSet {
+    DiagnosticSet::one(operation_diagnostic(
+        DiagnosticCode::RequiredHostFileInvalid,
+        "client-generation.required-host-files",
+        "required host files must equal the reviewed finite canonical set",
+    ))
 }

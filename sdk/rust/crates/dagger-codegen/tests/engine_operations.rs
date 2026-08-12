@@ -6,7 +6,8 @@ use dagger_codegen::diagnostic::DiagnosticCode;
 use dagger_codegen::engine::{
     BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata, ContentDomain,
     ModuleProjectionInput, OperationKind, OperationProjectionRequest, ProductionRenderers,
-    PublishedSdkDependency, RelativeOperationPath, project_operation, project_operation_with,
+    PublishedSdkDependency, REQUIRED_CLIENT_HOST_FILES, RelativeOperationPath, project_operation,
+    project_operation_with,
 };
 use dagger_codegen::target::CodegenTarget;
 
@@ -150,7 +151,7 @@ fn production_renderers_emit_bounded_operation_specific_artifacts() {
                         .expect("client output must carry metadata")
                         .required_host_files
                         .len(),
-                    0
+                    REQUIRED_CLIENT_HOST_FILES.len()
                 );
             }
             OperationKind::GenerateEntrypoint => {
@@ -385,24 +386,49 @@ fn operation_matrix_rejects_missing_and_forbidden_inputs_before_rendering() {
 }
 
 #[test]
-fn client_generation_metadata_accepts_only_unique_normalized_relative_paths() {
-    let finite = ClientGenerationMetadata::try_new(["Cargo.toml", "src/lib.rs"])
-        .expect("finite normalized set must validate");
-    assert_eq!(finite.required_host_files.len(), 2);
-    assert!(ClientGenerationMetadata::try_new(std::iter::empty()).is_ok());
+fn client_generation_metadata_accepts_only_the_reviewed_canonical_set() {
+    let finite = ClientGenerationMetadata::try_new(REQUIRED_CLIENT_HOST_FILES)
+        .expect("reviewed finite set must validate");
+    assert_eq!(
+        finite
+            .required_host_files
+            .iter()
+            .map(RelativeOperationPath::as_str)
+            .collect::<Vec<_>>(),
+        REQUIRED_CLIENT_HOST_FILES
+    );
     for invalid in [
-        "/Cargo.toml",
-        "../Cargo.toml",
-        "src/./lib.rs",
-        "src//lib.rs",
+        Vec::new(),
+        vec!["**/Cargo.toml"],
+        REQUIRED_CLIENT_HOST_FILES.into_iter().rev().collect(),
+        vec![
+            "**/.gitattributes",
+            "**/Cargo.toml",
+            "**/Cargo.toml",
+            "**/rust-toolchain",
+            "**/rust-toolchain.toml",
+            "**/src/lib.rs",
+        ],
+        vec![
+            "**/.gitattributes",
+            "**/Cargo.lock",
+            "**/README.md",
+            "**/rust-toolchain",
+            "**/rust-toolchain.toml",
+            "**/src/lib.rs",
+        ],
     ] {
-        let diagnostics =
-            ClientGenerationMetadata::try_new([invalid]).expect_err("non-canonical path must fail");
+        let diagnostics = ClientGenerationMetadata::try_new(invalid)
+            .expect_err("alternate host projection must fail");
         assert!(diagnostics.contains(DiagnosticCode::RequiredHostFileInvalid));
+        assert_eq!(
+            diagnostics.diagnostics()[0]
+                .coordinate
+                .as_ref()
+                .map(|coordinate| coordinate.as_str()),
+            Some("client-generation.required-host-files")
+        );
     }
-    let duplicate = ClientGenerationMetadata::try_new(["Cargo.toml", "Cargo.toml"])
-        .expect_err("duplicate required file must fail");
-    assert!(duplicate.contains(DiagnosticCode::RequiredHostFileInvalid));
     for invalid_json in [
         br#"{"format_version":2,"required_host_files":[]}"#.as_slice(),
         br#"{"format_version":1,"required_host_files":["/Cargo.toml"]}"#.as_slice(),

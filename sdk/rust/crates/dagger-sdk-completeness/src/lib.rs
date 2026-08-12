@@ -6,6 +6,7 @@ pub mod authority;
 pub mod canonical;
 pub mod classification;
 pub mod cli;
+pub mod client_generation;
 pub mod command;
 pub mod compatibility;
 pub mod contract;
@@ -38,6 +39,16 @@ pub use canonical::{
 };
 pub use classification::{resolve_classifications, validate_status_entries};
 pub use cli::{ArtifactCliBackend, CliBackend, ContractCliBackend, run_with_backend};
+pub use client_generation::{
+    ClientAuthority, ClientDependencyScope, ClientEvidenceAdmission, ClientEvidenceDomain,
+    ClientEvidenceObservation, ClientEvidenceOutcome, ClientGenerationDiagnostic,
+    ClientGenerationDiagnosticCode, ClientGenerationDiagnosticSet, ClientGenerationFormatVersion,
+    ClientGenerationMapping, ClientGenerationReport, ClientGenerationScope,
+    ClientGenerationScopeInput, ClientImplementationSubject, ClientOwnershipCorrection,
+    ClientReportSection, ClientTerminalStatus, PreservedClientBoundary, admit_client_evidence,
+    apply_client_ownership_correction, client_generation_scope_input,
+    derive_client_generation_scope,
+};
 pub use command::{CommandPolicy, command_defects};
 pub use compatibility::{ValidatedCompatibilityClaim, validate_compatibility_claim};
 pub use contract::{DerivedContract, derive_contract, rust_artifact_digest};

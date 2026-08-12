@@ -13,7 +13,9 @@ mod render;
 mod renderers;
 mod visible;
 
-pub use metadata::{BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata};
+pub use metadata::{
+    BASELINE_CLIENT_GENERATION_JSON, ClientGenerationMetadata, REQUIRED_CLIENT_HOST_FILES,
+};
 pub use model::{
     CandidateArtifact, CandidateArtifactKind, CargoBinaryTarget, ContentDomain,
     ModuleAuthoringInput, ModuleProjectionInput, OperationKind, OperationPlan,

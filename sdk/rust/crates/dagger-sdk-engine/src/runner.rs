@@ -242,6 +242,8 @@ pub async fn execute_operation(
             engine_source_digest: canonical_digest(DigestDomain::EngineSource, descriptor)
                 .map_err(|_| generation_failed())?,
         },
+        amendments: BTreeMap::new(),
+        client: None,
     };
     let candidate = OperationCandidate {
         artifacts,

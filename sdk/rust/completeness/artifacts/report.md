@@ -6,7 +6,7 @@
 - Dagger revision: `25300124ca110612edc09c43f89cb5fad6028170`
 - Rust SDK: 1.0.0-beta.10
 - Inventory digest: `sha256:b464cfb08bde5fd41a085cc0400163d1019a61b699e8b38b901b2351e93358d3`
-- Ledger digest: `sha256:e134a8e098bcf2e207f2f4f8d0d307fef9c8c6280a774ee0321b10facf3a1e59`
+- Ledger digest: `sha256:0ca7dd487feb996d122d7ad13635601a76ad470ef996dc63a53fe26cf89d4e44`
 
 ## Verdicts
 
@@ -59,11 +59,11 @@
 ## Counts by owner
 
 - feature-2: 13
-- feature-3: 53
+- feature-3: 54
 - feature-4: 2559
 - feature-5: 53
 - feature-6: 96
-- feature-7: 2
+- feature-7: 1
 - feature-8: 1081
 - feature-9: 20
 

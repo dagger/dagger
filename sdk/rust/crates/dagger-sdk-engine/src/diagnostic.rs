@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const MAX_MESSAGE_BYTES: usize = 4 * 1024;
+const MAX_COORDINATE_CHARS: usize = 512;
 
 /// Stable machine-readable failure classes emitted by the private runner.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -61,6 +62,18 @@ pub enum EngineDiagnosticCode {
     RollbackFailed,
     /// Operation-specific input is absent, forbidden, or invalid.
     OperationInputInvalid,
+    /// Standalone-client initialization input or scaffold state is invalid.
+    ClientInitializationInvalid,
+    /// A stored remote client pin differs from the resolved module revision.
+    ClientPinMismatch,
+    /// Existing Cargo or toolchain policy conflicts with standalone-client adoption.
+    ClientProjectConflict,
+    /// Two managed standalone-client roots overlap or alias one another.
+    ClientRootOverlap,
+    /// A generated standalone-client fixture failed its scoped Rust phase.
+    ClientFixtureFailed,
+    /// Standalone-client checkpoint evidence is missing, stale, or incomplete.
+    ClientCheckpointEvidenceInvalid,
     /// A child process was cancelled and reaped.
     OperationCancelled,
     /// Checked runtime generation is missing a required committed artifact.
@@ -152,7 +165,7 @@ fn sanitize_coordinate(value: &str) -> String {
     value
         .chars()
         .filter(|character| !character.is_control())
-        .take(512)
+        .take(MAX_COORDINATE_CHARS)
         .collect()
 }
 
@@ -161,7 +174,18 @@ fn sanitize_message(value: &str) -> String {
         .chars()
         .filter(|character| !character.is_control() || *character == '\n')
         .collect::<String>();
-    for marker in ["https://", "http://", "Authorization:", "Bearer ", "token="] {
+    for marker in [
+        "https://",
+        "http://",
+        "ssh://",
+        "git@",
+        "Authorization:",
+        "authorization:",
+        "Bearer ",
+        "bearer ",
+        "token=",
+        "password=",
+    ] {
         while let Some(start) = sanitized.find(marker) {
             let search_from = start + marker.len();
             let end = sanitized[search_from..]

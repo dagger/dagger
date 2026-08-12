@@ -7,8 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use dagger_codegen::client::{CargoPackageName, RustIdentifier};
 pub use dagger_codegen::engine::OperationKind;
 
 use crate::scalar::{
@@ -71,6 +72,48 @@ pub struct ModuleOperationInput {
     pub config_format: ModuleConfigFormat,
     /// Digest of the complete selected module source.
     pub source_digest: Sha256Digest,
+    /// Exact resolved remote revision; absent for workspace-local mutable source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_pin: Option<FullRevision>,
+}
+
+/// Credential-free identity of the one module selected for a standalone client.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientModuleIdentity {
+    /// Engine-normalized name used by `Query.<module>`.
+    pub name: StableCoordinate,
+    /// Original display name retained for safe documentation and name planning.
+    pub original_name: StableCoordinate,
+    /// Engine-selected source subtree beneath the operation root.
+    pub source_subpath: RelativeOperationPath,
+    /// Digest of the complete selected authored module source.
+    pub source_digest: Sha256Digest,
+    /// Exact resolved remote revision; absent for workspace-local mutable source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_pin: Option<FullRevision>,
+}
+
+impl From<&ModuleOperationInput> for ClientModuleIdentity {
+    fn from(module: &ModuleOperationInput) -> Self {
+        Self {
+            name: module.name.clone(),
+            original_name: module.original_name.clone(),
+            source_subpath: module.source_subpath.clone(),
+            source_digest: module.source_digest.clone(),
+            resolved_pin: module.resolved_pin.clone(),
+        }
+    }
+}
+
+/// Deterministic Cargo and Rust identity selected for a standalone client project.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientProjectIdentity {
+    /// Exact Cargo package spelling retained in the project manifest.
+    pub package_name: CargoPackageName,
+    /// Rust crate spelling used by generated examples and documentation.
+    pub crate_name: RustIdentifier,
 }
 
 /// Immutable dependency descriptor for generated projects.
@@ -133,12 +176,30 @@ pub struct InitializationRequest {
     pub sdk_dependency: PublishedSdkDependency,
 }
 
+/// Complete non-secret input to standalone-client project initialization.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientInitializationRequest {
+    /// Wire-format revision.
+    pub format_version: FormatVersion,
+    /// Exact engine and Rust SDK target.
+    pub target: TargetIdentity,
+    /// Confined workspace-relative client root selected by the engine.
+    pub client_root: RelativeOperationPath,
+    /// Deterministic package name used only when a new Cargo package is required.
+    pub package_name: CargoPackageName,
+    /// Immutable dependency emitted into the selected Cargo manifest.
+    pub sdk_dependency: PublishedSdkDependency,
+}
+
 /// Closed request accepted by the private `execute` command.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "request_kind", content = "request", rename_all = "kebab-case")]
 pub enum EngineExecutionRequest {
     /// Initialize or adopt one engine-selected Rust module project.
     InitializeModule(InitializationRequest),
+    /// Initialize or adopt one standalone Rust client project.
+    InitializeClient(ClientInitializationRequest),
     /// Execute one of the four schema-driven generation operations.
     Generate(OperationRequest),
 }
@@ -149,6 +210,8 @@ pub enum EngineExecutionRequest {
 pub enum ExecutionResultKind {
     /// SDK-owned Cargo and starter-source initialization changes.
     Initialization,
+    /// Standalone-client Cargo scaffold and semantic project amendments.
+    ClientInitialization,
     /// One generated operation plus its durable ownership manifest.
     Generation,
 }
@@ -302,6 +365,117 @@ pub struct ArtifactRecord {
     pub ownership: ArtifactOwnership,
 }
 
+/// Semantic item class owned inside an otherwise authored file.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AmendmentKind {
+    /// One Cargo manifest key or dependency declaration.
+    CargoKey,
+    /// One Rust module item in the selected library root.
+    RustModuleItem,
+    /// One digest-marked documentation region.
+    DocumentationRegion,
+    /// One exact line in a line-preserving VCS policy file.
+    VcsPolicyLine,
+}
+
+/// Stable map key for one semantic item inside an authored file.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AmendmentCoordinate {
+    file: RelativeOperationPath,
+    semantic_key: StableCoordinate,
+}
+
+impl AmendmentCoordinate {
+    /// Constructs a semantic coordinate from validated file and item identities.
+    #[must_use]
+    pub const fn new(file: RelativeOperationPath, semantic_key: StableCoordinate) -> Self {
+        Self { file, semantic_key }
+    }
+
+    /// Borrows the authored file containing the owned semantic item.
+    #[must_use]
+    pub const fn file(&self) -> &RelativeOperationPath {
+        &self.file
+    }
+
+    /// Borrows the stable semantic item identity.
+    #[must_use]
+    pub const fn semantic_key(&self) -> &StableCoordinate {
+        &self.semantic_key
+    }
+}
+
+impl Serialize for AmendmentCoordinate {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Operation-relative paths reject `:`, so the first delimiter makes this
+        // spelling reversible even when a semantic key itself contains `::`.
+        serializer.serialize_str(&format!("{}::{}", self.file, self.semantic_key))
+    }
+}
+
+impl<'de> Deserialize<'de> for AmendmentCoordinate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        let (file, semantic_key) = value.split_once("::").ok_or_else(|| {
+            serde::de::Error::custom("amendment coordinate must contain a file and semantic key")
+        })?;
+        Ok(Self {
+            file: RelativeOperationPath::parse(file).map_err(serde::de::Error::custom)?,
+            semantic_key: semantic_key.parse().map_err(serde::de::Error::custom)?,
+        })
+    }
+}
+
+/// Durable authority for one semantic item inside an authored file.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AmendmentRecord {
+    /// Semantic amendment class.
+    pub kind: AmendmentKind,
+    /// Authored file containing the item.
+    pub file: RelativeOperationPath,
+    /// Stable item identity interpreted by the matching semantic parser.
+    pub coordinate: StableCoordinate,
+    /// Digest of the canonical semantic value rather than the complete file bytes.
+    pub semantic_digest: Sha256Digest,
+}
+
+/// Public namespace roles retained in a generated-client ownership manifest.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientNamespaceRecord {
+    /// Exact module-root Wire_Name selected under Core `Query`.
+    pub module_root_wire_name: StableCoordinate,
+    /// Snake-case namespace below `dagger_client`.
+    pub namespace: RustIdentifier,
+    /// Public extension-trait path used to enter the module root.
+    pub extension_trait_path: StableCoordinate,
+}
+
+/// Durable standalone-client identity added to a generation manifest.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientManifestRecord {
+    /// Exact selected module identity, including an immutable remote pin when present.
+    pub module: ClientModuleIdentity,
+    /// Adopted or created Cargo/Rust project identity.
+    pub package: ClientProjectIdentity,
+    /// Generated namespace roles; absent for an observable Core-only surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<ClientNamespaceRecord>,
+    /// Digest of the complete semantic binding catalog.
+    pub binding_catalog_digest: Sha256Digest,
+    /// Number of catalog bindings covered by the digest.
+    pub binding_count: u64,
+}
+
 /// Complete ownership and provenance record published last by an operation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -330,6 +504,12 @@ pub struct OperationManifest {
     pub post_work: Vec<PostWorkRecord>,
     /// Private generator identity.
     pub generator: GeneratorIdentity,
+    /// Semantic ownership inside authored files; omitted for legacy manifests.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub amendments: BTreeMap<AmendmentCoordinate, AmendmentRecord>,
+    /// Standalone-client identity; omitted for every non-client operation and legacy baseline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client: Option<ClientManifestRecord>,
 }
 
 /// Immutable engine source and packaged-SDK descriptor.

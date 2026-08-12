@@ -18,7 +18,7 @@ proptest! {
     #[test]
     fn property_30_canonical_models_round_trip_without_semantic_loss(
         corpus in model_corpus(),
-        invalid_kind in 0_u8..12,
+        invalid_kind in 0_u8..16,
     ) {
         round_trip_corpus(&corpus);
         reject_invalid_boundary(&corpus, invalid_kind);
@@ -29,6 +29,10 @@ fn round_trip_corpus(corpus: &ModelCorpus) {
     round_trip(&corpus.target);
     round_trip(&corpus.schema);
     round_trip(&corpus.module);
+    round_trip(&corpus.client_module);
+    round_trip(&corpus.client_project);
+    round_trip(&corpus.client_initialization);
+    round_trip(&corpus.client_execution_request);
     round_trip(&corpus.dependency);
     round_trip(&corpus.request);
     round_trip(&corpus.candidate);
@@ -38,6 +42,10 @@ fn round_trip_corpus(corpus: &ModelCorpus) {
     round_trip(&corpus.generator);
     round_trip(&corpus.artifact_record);
     round_trip(&corpus.manifest);
+    round_trip(&corpus.amendment_coordinate);
+    round_trip(&corpus.amendment_record);
+    round_trip(&corpus.client_manifest);
+    round_trip(&corpus.client_operation_manifest);
     round_trip(&corpus.engine_source);
     round_trip(&corpus.cargo_package);
     round_trip(&corpus.toolchain);
@@ -55,6 +63,10 @@ fn round_trip_corpus(corpus: &ModelCorpus) {
 
     digest_round_trip(DigestDomain::OperationRequest, &corpus.request);
     digest_round_trip(DigestDomain::OperationManifest, &corpus.manifest);
+    digest_round_trip(
+        DigestDomain::OperationManifest,
+        &corpus.client_operation_manifest,
+    );
     digest_round_trip(DigestDomain::EngineSource, &corpus.engine_source);
     digest_round_trip(DigestDomain::RuntimeProvenance, &corpus.provenance);
     digest_round_trip(DigestDomain::PackagedAssets, &corpus.asset_manifest);
@@ -130,6 +142,18 @@ fn reject_invalid_boundary(corpus: &ModelCorpus, invalid_kind: u8) {
             let non_canonical = serde_json::to_vec(&corpus.request).unwrap();
             assert!(decode_canonical::<OperationRequest>(&non_canonical).is_err());
         }
+        12 => reject::<ClientInitializationRequest>(&corpus.client_initialization, |value| {
+            value["client_root"] = json!("../escape");
+        }),
+        13 => reject::<ClientProjectIdentity>(&corpus.client_project, |value| {
+            value["package_name"] = json!("async");
+        }),
+        14 => reject::<OperationManifest>(&corpus.client_operation_manifest, |value| {
+            value["client"]["module"]["resolved_pin"] = json!("main");
+        }),
+        15 => reject::<EngineExecutionRequest>(&corpus.client_execution_request, |value| {
+            value["request_kind"] = json!("initialize-everything");
+        }),
         _ => unreachable!(),
     }
 }

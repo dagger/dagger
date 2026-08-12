@@ -13,7 +13,7 @@ const CLI_DIGEST: &str = "sha256:e670234e6f8c0544e209423f8c42c8300e06cd9780921d1
 const GO_CLIENT_FEATURE2_DIGEST: &str =
     "sha256:bb11a3b1d9e7f03f26b0121efe32c0a438b969b23e1d7a1546f784fce3274277";
 const RUST_ARTIFACT_DIGEST: &str =
-    "sha256:17bafbc1c653e4fa017214f7752f550dbcad3857a5820952c083782b4b02fff2";
+    "sha256:3e0635e53de76565e15c2500cf3328cfc67298712921ea0ee985ecae1bad4c42";
 
 #[derive(Serialize)]
 struct OwnershipProjection<'a> {
@@ -114,7 +114,7 @@ fn target_locks_authorities_harness_status_and_ownership() {
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:e134a8e098bcf2e207f2f4f8d0d307fef9c8c6280a774ee0321b10facf3a1e59"
+        "sha256:0ca7dd487feb996d122d7ad13635601a76ad470ef996dc63a53fe26cf89d4e44"
     );
     assert_eq!(derived.report.blocking_capabilities.len(), 3_877);
     assert_eq!(derived.report.complete_exceptions.len(), 10);
@@ -204,11 +204,11 @@ fn target_locks_authorities_harness_status_and_ownership() {
         derived.report.counts_by_owner,
         std::collections::BTreeMap::from([
             (FeatureId::Feature2, 13),
-            (FeatureId::Feature3, 53),
+            (FeatureId::Feature3, 54),
             (FeatureId::Feature4, 2_559),
             (FeatureId::Feature5, 53),
             (FeatureId::Feature6, 96),
-            (FeatureId::Feature7, 2),
+            (FeatureId::Feature7, 1),
             (FeatureId::Feature8, 1_081),
             (FeatureId::Feature9, 20),
         ])

@@ -197,3 +197,43 @@ fn module_authoring_foundations_have_no_unchecked_execution_escape_hatches() {
         }
     }
 }
+
+#[test]
+fn client_foundations_have_no_unchecked_or_process_global_escape_hatches() {
+    let crates = rust_workspace().join("crates");
+    let roots = [
+        crates.join("dagger-codegen/src/client"),
+        crates.join("dagger-sdk-engine/src/client"),
+    ];
+    let mut sources = roots
+        .iter()
+        .flat_map(|root| rust_sources(root))
+        .collect::<Vec<_>>();
+    sources.push(crates.join("dagger-sdk-completeness/src/client_generation.rs"));
+    sources.sort();
+
+    for path in sources {
+        let source = fs::read_to_string(&path).expect("client source must be UTF-8");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(&source);
+        for forbidden in [
+            "panic!(",
+            ".unwrap(",
+            "unsafe {",
+            "static CLIENT",
+            "OnceLock<Client",
+            "LazyLock<Client",
+            "module_reference",
+            "session_token",
+            "Authorization",
+            "dbg!(",
+            "println!(",
+            "eprintln!(",
+        ] {
+            assert!(
+                !production.contains(forbidden),
+                "{} contains forbidden client production token {forbidden}",
+                path.display(),
+            );
+        }
+    }
+}

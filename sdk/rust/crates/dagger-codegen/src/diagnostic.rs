@@ -9,6 +9,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+const MAX_COORDINATE_CHARS: usize = 512;
+const MAX_MESSAGE_BYTES: usize = 4 * 1024;
+
 /// A stable machine-readable generator diagnostic code.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -93,6 +96,10 @@ pub enum DiagnosticCode {
     OperationArtifactCollision,
     /// Client-generation metadata contains an invalid or duplicate relative path.
     RequiredHostFileInvalid,
+    /// The selected module root is missing, promoted, duplicated, or malformed.
+    ClientModuleRootInvalid,
+    /// A non-Core coordinate lies outside the selected module's reachable closure.
+    ClientSchemaScopeInvalid,
 }
 
 impl fmt::Display for DiagnosticCode {
@@ -114,6 +121,7 @@ impl DiagnosticCoordinate {
             .as_ref()
             .chars()
             .filter(|character| !character.is_control())
+            .take(MAX_COORDINATE_CHARS)
             .collect();
         Self(normalized)
     }
@@ -280,8 +288,37 @@ impl CodegenError {
 }
 
 fn sanitize_message(message: String) -> String {
-    message
+    let mut sanitized = message
         .chars()
         .filter(|character| !character.is_control() || *character == '\n')
-        .collect()
+        .collect::<String>();
+    for marker in [
+        "https://",
+        "http://",
+        "ssh://",
+        "git@",
+        "Authorization:",
+        "authorization:",
+        "Bearer ",
+        "bearer ",
+        "token=",
+        "password=",
+    ] {
+        while let Some(start) = sanitized.find(marker) {
+            let search_from = start + marker.len();
+            let end = sanitized[search_from..]
+                .find(char::is_whitespace)
+                .map_or(sanitized.len(), |offset| search_from + offset);
+            sanitized.replace_range(start..end, "[REDACTED]");
+        }
+    }
+    if sanitized.len() > MAX_MESSAGE_BYTES {
+        let mut boundary = MAX_MESSAGE_BYTES;
+        while !sanitized.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        sanitized.truncate(boundary);
+        sanitized.push_str("...[truncated]");
+    }
+    sanitized
 }

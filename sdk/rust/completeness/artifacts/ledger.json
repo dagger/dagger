@@ -57820,7 +57820,7 @@
       "implementation_evidence": [
         "implementation/go-client-baseline"
       ],
-      "owner_feature": "feature-7",
+      "owner_feature": "feature-3",
       "semantic_signature": {
         "kind": "test",
         "name": "TestProvision",

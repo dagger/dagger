@@ -4,9 +4,19 @@ package metadata
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 )
+
+var requiredClientGenerationFiles = [...]string{
+	"**/.gitattributes",
+	"**/Cargo.toml",
+	"**/README.md",
+	"**/rust-toolchain",
+	"**/rust-toolchain.toml",
+	"**/src/lib.rs",
+}
 
 // ClientGeneration is the closed metadata emitted by the Rust renderer configuration.
 type ClientGeneration struct {
@@ -14,8 +24,7 @@ type ClientGeneration struct {
 	RequiredHostFiles []string `json:"required_host_files"`
 }
 
-// DecodeClientGeneration rejects alternate versions, unknown fields, duplicate paths,
-// and any path which cannot be confined beneath a host generation root.
+// DecodeClientGeneration accepts only the reviewed, ordered finite host projection.
 func DecodeClientGeneration(data []byte) (ClientGeneration, error) {
 	var metadata ClientGeneration
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
@@ -23,18 +32,22 @@ func DecodeClientGeneration(data []byte) (ClientGeneration, error) {
 	if err := decoder.Decode(&metadata); err != nil {
 		return ClientGeneration{}, fmt.Errorf("decode client-generation metadata: %w", err)
 	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return ClientGeneration{}, fmt.Errorf("decode client-generation metadata: trailing content")
+	}
 	if metadata.FormatVersion != 1 {
 		return ClientGeneration{}, fmt.Errorf("client-generation format_version must be 1")
 	}
-	seen := make(map[string]struct{}, len(metadata.RequiredHostFiles))
-	for _, candidate := range metadata.RequiredHostFiles {
+	if len(metadata.RequiredHostFiles) != len(requiredClientGenerationFiles) {
+		return ClientGeneration{}, fmt.Errorf("client-generation required host files differ from the reviewed finite set")
+	}
+	for index, candidate := range metadata.RequiredHostFiles {
 		if !isNormalizedRelativePath(candidate) {
-			return ClientGeneration{}, fmt.Errorf("required host file %q is not a normalized relative path", candidate)
+			return ClientGeneration{}, fmt.Errorf("client-generation required host file at index %d is invalid", index)
 		}
-		if _, exists := seen[candidate]; exists {
-			return ClientGeneration{}, fmt.Errorf("required host file %q occurs more than once", candidate)
+		if candidate != requiredClientGenerationFiles[index] {
+			return ClientGeneration{}, fmt.Errorf("client-generation required host files differ from the reviewed finite set")
 		}
-		seen[candidate] = struct{}{}
 	}
 	return metadata, nil
 }

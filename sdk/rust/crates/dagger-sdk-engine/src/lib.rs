@@ -10,6 +10,7 @@
 pub mod canonical;
 pub mod checkpoint;
 pub mod cli;
+pub mod client;
 pub mod descriptor;
 pub mod diagnostic;
 pub mod initialization;
@@ -35,6 +36,8 @@ pub use checkpoint::{
     DeferredSignoffException, ForbiddenCheckpointBoundary, ModuleProperty, PublicCheckpointPackage,
     RustGoAbiPackage, plan_checkpoint, record_checkpoint,
 };
+pub use client::project::{ClientProjectIdentityRequest, select_client_project_identity};
+pub use dagger_codegen::client::{CargoPackageName, RustIdentifier};
 pub use diagnostic::{EngineDiagnostic, EngineDiagnosticCode};
 pub use model::*;
 pub use packaging::{

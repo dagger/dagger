@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Establish the canonical standalone-client models and diagnostic foundation
-  - [ ] 1.1 Add strict client operation, module, project, and ownership wire models
+- [x] 1. Establish the canonical standalone-client models and diagnostic foundation
+  - [x] 1.1 Add strict client operation, module, project, and ownership wire models
     - Add `ClientModuleIdentity`, optional resolved pin, `ClientProjectIdentity`,
       `ClientSchemaSurface`, module-root/namespace records, semantic amendment records,
       and the optional client section of `OperationManifest` in their owning crates.
@@ -12,7 +12,7 @@
     - Keep raw module refs, credentials, absolute paths, sessions, filesystem handles,
       and engine objects out of Rust durable models.
     - _Requirements: 2.1-2.3, 3.13, 5.5-5.9, 6.1-6.3, 8.7-8.13_
-  - [ ] 1.2 Add the client compiler, engine, fixture, checkpoint, and evidence codes
+  - [x] 1.2 Add the client compiler, engine, fixture, checkpoint, and evidence codes
     - Add only the new stable codes approved by the design for initialization, pin,
       project, root-overlap, module-root, schema-scope, fixture, closure, and sign-off
       failures; reuse existing target, schema, wrapper, naming, Cargo, dependency,
@@ -25,7 +25,7 @@
       panic/unwrap fallbacks, process-global client state, or credential-bearing debug
       output.
     - _Requirements: 4.14-4.17, 6.9-6.14, 8.1-8.13_
-  - [ ] 1.3 Add valid-first client property strategies and reference models
+  - [x] 1.3 Add valid-first client property strategies and reference models
     - Add shared strategies for exact-target identities, Core-plus-module schema
       graphs, wrapper trees, module/local names, Cargo documents, authored trees,
       manifests/amendments, workspace records/pins, checkpoint actions, and
@@ -37,8 +37,8 @@
       compare pure plans first and use a bounded representative compile corpus.
     - _Requirements: 3.4-3.13, 4.4-4.14, 5.1-5.17, 6.1-6.15, 7.1-7.14, 8.1-8.14, 10.1-10.19_
 
-- [ ] 2. Register the exact Feature 7 capability scope and ownership correction
-  - [ ] 2.1 Add the client-generation mapping and Rust policy inventory
+- [x] 2. Register the exact Feature 7 capability scope and ownership correction
+  - [x] 2.1 Add the client-generation mapping and Rust policy inventory
     - Retain `behavior/go-client/init-client-lifecycle` with its pinned fingerprint,
       add exactly the 24 approved client Rust-policy capabilities, and map every row to
       one requirement, implementation subject, authority, rationale, evidence domain,
@@ -49,7 +49,7 @@
     - Update checked scope digests and generated report fixtures without promoting any
       status merely because a mapping or source file exists.
     - _Requirements: 1.1-1.11_
-  - [ ] 2.2 Implement dependency-scope and evidence-domain validation
+  - [x] 2.2 Implement dependency-scope and evidence-domain validation
     - Encode the approved rule that one standalone client binds Core plus exactly one
       selected local or pinned remote module and that a dependency needs its own
       independently bound client.
@@ -58,7 +58,7 @@
       evidence as complete-set failures; retain every unresolved blocker in rendered
       output.
     - _Requirements: 1.4-1.12_
-  - [ ] 2.3 Property test: Property 1 — capability scope is exact, attributable, and evidence-gated
+  - [x] 2.3 Property test: Property 1 — capability scope is exact, attributable, and evidence-gated
     - Implement `property_01_capability_scope_exact_attributable_evidence_gated` as a
       reference-set PBT over at least 256 capability, ownership, fingerprint, mapping,
       authority, terminal-status, target, evidence, and dependency-wording mutations.
@@ -67,8 +67,8 @@
       leaves status unchanged while all blockers remain visible.
     - _Requirements: 1.1-1.12_
 
-- [ ] 3. Define finite host metadata and client project identity inputs
-  - [ ] 3.1 Replace the empty client-generation baseline with the reviewed finite set
+- [x] 3. Define finite host metadata and client project identity inputs
+  - [x] 3.1 Replace the empty client-generation baseline with the reviewed finite set
     - Emit the canonical sorted patterns for client Cargo manifests, README,
       `.gitattributes`, exact toolchain declarations, and library roots needed by the
       legacy host-scoping path; retain no `Cargo.lock`, credential file, generated
@@ -78,7 +78,7 @@
     - Regenerate the packaged `client-generation.json` only once after this owning
       input changes and update its asset digest/packaging evidence atomically.
     - _Requirements: 5.14-5.17, 8.10-8.14, 10.5-10.8_
-  - [ ] 3.2 Add deterministic package/crate identity and initialization requests
+  - [x] 3.2 Add deterministic package/crate identity and initialization requests
     - Normalize an existing Cargo package identity or derive `<client-basename>-dagger-client`,
       falling back to the normalized bound-module name only when the path has no valid
       basename; reject a result that is not a valid Cargo package and Rust crate name.
@@ -88,7 +88,7 @@
     - Add strict encode/decode and canonical digest tests for new request/model variants
       while proving old non-client protocol fixtures remain byte-compatible.
     - _Requirements: 2.2-2.8, 5.1-5.9, 5.13, 8.7-8.13_
-  - [ ] 3.3 Property test: Property 22 — required host-file metadata is finite and canonical
+  - [x] 3.3 Property test: Property 22 — required host-file metadata is finite and canonical
     - Implement `property_22_required_host_file_metadata_finite_canonical` over at
       least 256 valid and hostile pattern sets, ordering/duplicate mutations, path
       escapes, controls, aliases, credential paths, lockfiles, generated paths, and
@@ -97,7 +97,7 @@
       reviewed finite set; fixed tests separately pin the checked asset bytes.
     - _Requirements: 8.14_
 
-- [ ] 4. Checkpoint: client models, scope, metadata, and protocol foundations are green
+- [x] 4. Checkpoint: client models, scope, metadata, and protocol foundations are green
   - Run formatting and only the new client model/protocol tests in `dagger-codegen`,
     `dagger-sdk-engine`, and `dagger-sdk-completeness`, Property 1, Property 22, the
     packaging metadata test, focused warning-denied Clippy/rustdoc, and direct metadata
@@ -110,6 +110,42 @@
     inputs.
   - Require no Dagger command, engine process, module invocation, another SDK,
     unscoped repository generation, distribution build, or network resolution.
+  - Checkpoint evidence (2026-08-12, warm local cache as executed, elapsed wall time):
+    - `cargo fmt --all -- --check` passed in 1.08s. The locked package-scoped check for
+      `dagger-codegen`, `dagger-sdk-engine`, and `dagger-sdk-completeness` with all
+      features passed in 8.24s.
+    - The four focused `dagger-codegen` targets (`client_models`, `diagnostics`,
+      `engine_operations`, and `client_metadata_properties`) passed in 11.52s. This
+      includes 256-case Property 22 and the exact checked-asset byte regression.
+    - The three focused `dagger-sdk-engine` targets (`client_models`,
+      `canonical_models`, and `packaging_properties`) passed in 5.30s. They exercised
+      the 256-case canonical protocol/project corpus, legacy non-client byte
+      compatibility, and the packaged security graph.
+    - `cargo test -p dagger-sdk-completeness --test client_generation_scope --test
+      initial_baseline --locked` passed in 39.59s. Property 1 ran 256 cases; the
+      root-independent baseline proved the ownership-only `TestProvision` correction,
+      unchanged status/fingerprint/evidence, and byte-exact derived artifacts.
+    - The complete source-policy target passed in 0.48s. Direct Go metadata decoder
+      tests passed from cache in 0.55s with only normal machine Go-cache access.
+    - Warning-denied, no-dependency Clippy for the three selected packages passed in
+      12.37s; pre-existing unused-code warnings from the unselected `dagger-sdk`
+      dependency remained visible but were not attributed to this slice. Warning-denied
+      rustdoc passed in 12.68s.
+    - The finite host-file semantic input digest is
+      `sha256:2ce5e5bd829fcc948239284c8abdf213d4eef84f3b0b3b77e361d25226615e76`;
+      its one scoped `client-generation.json` output digest is
+      `sha256:1a9c795a25e5f7c90333b75e761105bb682d5c8465fd43da17a2e94f4263ade9`.
+      No Core or module binding was regenerated.
+    - The Rust harness artifact identity advanced once to
+      `sha256:3e0635e53de76565e15c2500cf3328cfc67298712921ea0ee985ecae1bad4c42`.
+      All 18 existing mappings were reconciled without changing target, check scope,
+      outcome, capability evidence, or platform. The locked Integrity gate passed in
+      17.37s with ledger digest
+      `sha256:0ca7dd487feb996d122d7ad13635601a76ad470ef996dc63a53fe26cf89d4e44`.
+    - No Cargo manifest, lockfile, dependency, source policy, or security-policy input
+      changed, so `cargo deny check` was not repeated. No Dagger command, engine
+      process, module invocation, another SDK, unscoped generation, distribution
+      build, or network resolution ran.
   - _Requirements: 1.1-1.12, 5.14, 8.1-8.14, 10.1-10.10_
 
 - [ ] 5. Implement the exact client-visible schema scope compiler

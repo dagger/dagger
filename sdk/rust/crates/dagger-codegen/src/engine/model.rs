@@ -64,6 +64,11 @@ impl OperationKind {
 pub struct RelativeOperationPath(String);
 
 impl RelativeOperationPath {
+    /// Constructs a path from a compile-time reviewed generator constant.
+    pub(super) fn from_reviewed_static(value: &'static str) -> Self {
+        Self(value.to_owned())
+    }
+
     /// Parses a non-empty, slash-normalized relative path.
     pub fn parse(value: &str) -> Result<Self, DiagnosticSet> {
         let invalid = value.is_empty()

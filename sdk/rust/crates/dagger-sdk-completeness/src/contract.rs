@@ -18,6 +18,10 @@ use crate::authority::{
 };
 use crate::canonical::{DigestDomain, canonical_bytes, canonical_digest, decode_canonical};
 use crate::classification::resolve_classifications;
+use crate::client_generation::{
+    apply_client_ownership_correction, client_generation_scope_input,
+    derive_client_generation_scope,
+};
 use crate::command::CommandPolicy;
 use crate::compatibility::validate_compatibility_claim;
 use crate::core_codegen::{
@@ -300,6 +304,19 @@ pub fn derive_contract(
             artifact: "target digest",
         })?,
     );
+    let client_scope = derive_client_generation_scope(
+        &client_generation_scope_input(target_digest.clone()),
+        &target_digest,
+    )
+    .map_err(|_| ToolError::Decode {
+        artifact: "client generation capability scope",
+    })?;
+    let client_corrected_ledger =
+        apply_client_ownership_correction(&core_codegen.ledger, &client_scope).map_err(|_| {
+            ToolError::Decode {
+                artifact: "client generation ownership correction",
+            }
+        })?;
     let core_codegen_closure = verify_core_codegen_evidence(
         &core_codegen_manifest,
         &core_codegen_evidence,
@@ -344,7 +361,7 @@ pub fn derive_contract(
     }
     let ledger = validated(
         apply_feature_status_changes(
-            &core_codegen.ledger,
+            &client_corrected_ledger,
             &core_codegen.declaration,
             &core_codegen.policy,
             &candidate,
