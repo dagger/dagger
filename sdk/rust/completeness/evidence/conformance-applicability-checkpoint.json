@@ -1,0 +1,84 @@
+{
+  "asset_decisions": {
+    "cargo_deny": "reused-unchanged",
+    "cargo_security_inputs_changed": false,
+    "regenerated": [
+      "completeness/conformance-applicability-audit.json",
+      "completeness/conformance-applicability-review.json",
+      "completeness/conformance-applicability.json"
+    ],
+    "repository_wide_generation": false
+  },
+  "bound_preflight": {
+    "container_daemon_identity": "sha256:f0f1560e22d233f2ed01711c53ff70fdddd945f80e4d3ebc1c2aaa0a9a097583",
+    "plan_digest": "sha256:1fa89b59838e3fc5a6d853b7c3f111d2449f0baf65d8ecb73047b98a281c4436",
+    "preflight_tool": "binary/dagger-rust-sdk-signoff/sha256/a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
+    "profile_digest": "sha256:312a717dc26a1c17991545183df2478e547ce27e09f2ef60799650946a8d3367",
+    "record_digest": "sha256:7d729351dabe12f7c3b1c84bc3fe64295cda8c8876db5893f0ea2f34a0e27de6",
+    "reused_without_live_rerun": true,
+    "smoke_engine": "oci/registry.dagger.io/engine/v1.0.0-beta.9/sha256/de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e"
+  },
+  "cargo_invocation_count": 6,
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "elapsed_millis": 970,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test --quiet --locked -p dagger-sdk-completeness --lib --test conformance_foundation --test conformance_applicability --test conformance_applicability_properties",
+      "elapsed_millis": 16770,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test --locked -p dagger-sdk --test source_policy",
+      "elapsed_millis": 300,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo clippy --quiet --locked -p dagger-sdk-completeness --all-targets --no-deps -- -D warnings",
+      "elapsed_millis": 6760,
+      "outcome": "passed"
+    },
+    {
+      "command": "RUSTDOCFLAGS='-D warnings' cargo doc --quiet --locked -p dagger-sdk-completeness --no-deps",
+      "elapsed_millis": 18880,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo run --locked -p dagger-sdk-completeness --bin dagger-conformance-applicability -- --ledger completeness/artifacts/ledger.json --scope completeness/conformance-scope.json --review completeness/conformance-applicability-review.json --output completeness/conformance-applicability.json --audit completeness/conformance-applicability-audit.json",
+      "elapsed_millis": 11770,
+      "outcome": "passed"
+    }
+  ],
+  "format_version": "1.0.0",
+  "local_boundary": {
+    "dagger_command": false,
+    "distribution_build": false,
+    "engine_build_or_start": false,
+    "module_execution": false,
+    "network": false,
+    "other_sdk_build_or_test": false,
+    "unscoped_generation": false
+  },
+  "observations": {
+    "admitted_scope_digest": "sha256:ebb0cbab791730404bd0cb43f2fcf6c33823d0d4db998e4225891bb888539607",
+    "applicability_record_digest": "sha256:c58abe80a123109fd1fe00eb6727065531ee37d36e5c6be774c35ae5b3a1c3da",
+    "applicability_review_digest": "sha256:bfb4ba2ea8c93cc599ff826ea9289fdfc6b79ce1c6a02c87b4113e93101f3bf8",
+    "assertion_sharing_count": 0,
+    "current_blocker_count": 1081,
+    "disposition_counts": {
+      "engine-owned-no-rust-obligation": 2,
+      "foreign-sdk-no-rust-obligation": 458,
+      "rust-observable-idiomatic": 9,
+      "rust-observable-same-mechanism": 612
+    },
+    "existing_record_count": 1081,
+    "justified_neutral_disposition_count": 460,
+    "policy_capability_count": 21,
+    "projected_terminal_blocker_count": 621,
+    "reviewed_group_count": 138
+  },
+  "owning_input_digest": "sha256:2037af0557044ac895ba32785d36b4c357971261119f81a56fca810d9bf09828",
+  "scope": "conformance-applicability"
+}

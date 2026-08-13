@@ -1,4 +1,4 @@
-//! Fixed Feature 8 inventory, wire-boundary, and diagnostic foundation checks.
+//! Fixed conformance inventory, wire-boundary, and diagnostic foundation checks.
 
 use dagger_sdk_completeness::*;
 
@@ -64,24 +64,15 @@ fn scope_drift_renderer_reports_exact_stable_categories() {
 }
 
 #[test]
-fn canonical_scaffolds_bind_the_target_but_cannot_claim_completion() {
+fn canonical_applicability_is_admitted_while_later_catalogs_remain_scaffolds() {
     let ledger: ResolvedLedger = decode_canonical(&artifact("artifacts/ledger.json")).unwrap();
     let reviewed: ReviewedConformanceScope =
         decode_canonical(&artifact("conformance-scope.json")).unwrap();
     let input: ConformanceScopeInput =
         decode_canonical(&artifact("conformance-applicability.json")).unwrap();
-    let errors = derive_conformance_scope(&ledger, &reviewed, input).unwrap_err();
-    assert!(
-        errors
-            .as_slice()
-            .iter()
-            .any(|error| { error.code == ConformanceDiagnosticCode::ApplicabilityRecordInvalid })
-    );
-    assert!(
-        errors.as_slice().iter().any(|error| {
-            error.code == ConformanceDiagnosticCode::ConformancePolicyScopeChanged
-        })
-    );
+    let scope = derive_conformance_scope(&ledger, &reviewed, input).unwrap();
+    assert_eq!(scope.existing_records().len(), 1_081);
+    assert_eq!(scope.policy_capabilities().len(), 21);
 
     let assertions: ConformanceAssertionScaffold =
         decode_canonical(&artifact("conformance-assertions.json")).unwrap();

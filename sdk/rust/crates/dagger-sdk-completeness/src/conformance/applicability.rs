@@ -1,8 +1,8 @@
-//! Exact Feature 8 inventory and fail-closed applicability artifact boundary.
+//! Exact conformance inventory and fail-closed applicability artifact boundary.
 //!
 //! The authority-derived 1,081-row scope and the distinct Rust-policy scope are accounted for
-//! separately. The initial checked artifacts intentionally contain no decisions: their empty
-//! catalogs are valid canonical JSON but cannot be admitted as completed conformance evidence.
+//! separately. A checked review is admitted only after every row has a current local decision;
+//! canonical but empty scaffolds cannot become conformance evidence.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::canonical::{DigestDomain, canonical_digest};
 use crate::model::{
-    AuthorityId, CanonicalSet, CapabilityId, CommitSha, Digest, EvidenceReference, FeatureId,
-    RepositoryId, RepositoryRelativePath, ResolvedLedger, SourceItemKind, SourceLocator, Status,
-    TargetDigest,
+    AuthorityId, CanonicalSet, CapabilityId, CapabilityRecord, CommitSha, Digest,
+    EvidenceReference, FeatureId, RepositoryId, RepositoryRelativePath, ResolvedLedger,
+    SourceItemKind, SourceLocator, Status, TargetDigest,
 };
 
 use super::{
@@ -20,11 +20,11 @@ use super::{
     ConformanceFormatVersion, DiagnosticCoordinate, DiagnosticPhase, SignoffCaseId,
 };
 
-/// Exact reviewed authority scope size at Feature 8 implementation start.
+/// Exact reviewed authority scope size at applicability review start.
 pub const EXISTING_CONFORMANCE_CAPABILITY_COUNT: usize = 1_081;
-/// Exact missing integration-row count at Feature 8 implementation start.
+/// Exact missing integration-row count at applicability review start.
 pub const EXISTING_CONFORMANCE_MISSING_COUNT: usize = 1_072;
-/// Exact partial definitive-client-row count at Feature 8 implementation start.
+/// Exact partial definitive-client-row count at applicability review start.
 pub const EXISTING_CONFORMANCE_PARTIAL_COUNT: usize = 9;
 /// Reviewed compact sorted-ID digest of the existing authority scope.
 pub const EXISTING_CONFORMANCE_SCOPE_DIGEST: &str =
@@ -232,6 +232,8 @@ pub struct ConformanceScope {
     target_digest: TargetDigest,
     existing_records: BTreeMap<CapabilityId, ApplicabilityRecord>,
     policy_capabilities: BTreeMap<CapabilityId, PolicyCapability>,
+    assertion_capabilities: BTreeMap<AssertionId, CanonicalSet<CapabilityId>>,
+    case_capabilities: BTreeMap<SignoffCaseId, CanonicalSet<CapabilityId>>,
     digest: Digest,
 }
 
@@ -249,6 +251,16 @@ impl ConformanceScope {
     /// Borrows the distinct admitted policy capability map.
     pub fn policy_capabilities(&self) -> &BTreeMap<CapabilityId, PolicyCapability> {
         &self.policy_capabilities
+    }
+
+    /// Borrows the complete assertion-to-capability reverse index.
+    pub fn assertion_capabilities(&self) -> &BTreeMap<AssertionId, CanonicalSet<CapabilityId>> {
+        &self.assertion_capabilities
+    }
+
+    /// Borrows the complete case-to-capability reverse index.
+    pub fn case_capabilities(&self) -> &BTreeMap<SignoffCaseId, CanonicalSet<CapabilityId>> {
+        &self.case_capabilities
     }
 
     /// Returns the domain-separated complete scope identity.
@@ -424,29 +436,66 @@ pub fn derive_conformance_scope(
             "conformance scope input identity is stale",
         ));
     }
-    let existing = input
-        .existing_records
-        .into_iter()
-        .map(|record| (record.capability_id.clone(), record))
-        .collect::<BTreeMap<_, _>>();
-    if existing.len() != EXISTING_CONFORMANCE_CAPABILITY_COUNT
-        || existing.keys().cloned().collect::<BTreeSet<_>>()
-            != reviewed.existing_capability_ids.iter().cloned().collect()
-    {
+    let mut existing = BTreeMap::new();
+    for record in input.existing_records {
+        let capability_id = record.capability_id.clone();
+        if existing.insert(capability_id.clone(), record).is_some() {
+            diagnostics.push(capability_diagnostic(
+                ConformanceDiagnosticCode::ApplicabilityRecordInvalid,
+                capability_id,
+                "applicability capability is duplicated",
+            ));
+        }
+    }
+    let expected_ids = reviewed
+        .existing_capability_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let observed_ids = existing.keys().cloned().collect::<BTreeSet<_>>();
+    for capability_id in expected_ids.difference(&observed_ids) {
+        diagnostics.push(capability_diagnostic(
+            ConformanceDiagnosticCode::ApplicabilityRecordInvalid,
+            capability_id.clone(),
+            "applicability capability is missing",
+        ));
+    }
+    for capability_id in observed_ids.difference(&expected_ids) {
+        diagnostics.push(capability_diagnostic(
+            ConformanceDiagnosticCode::ApplicabilityRecordInvalid,
+            capability_id.clone(),
+            "applicability capability is outside reviewed scope",
+        ));
+    }
+    if existing.len() != EXISTING_CONFORMANCE_CAPABILITY_COUNT {
         diagnostics.push(scope_diagnostic(
             ConformanceDiagnosticCode::ApplicabilityRecordInvalid,
             "applicability records are incomplete duplicated or out of scope",
         ));
     }
-    let policies = input
-        .policy_capabilities
+    for (capability_id, record) in &existing {
+        let Some(current) = ledger.capabilities.get(capability_id) else {
+            continue;
+        };
+        validate_applicability_record(current, record, &mut diagnostics);
+    }
+
+    let mut policies = BTreeMap::new();
+    for policy in input.policy_capabilities {
+        let capability_id = policy.capability_id.clone();
+        if policies.insert(capability_id.clone(), policy).is_some() {
+            diagnostics.push(capability_diagnostic(
+                ConformanceDiagnosticCode::ConformancePolicyScopeChanged,
+                capability_id,
+                "Rust policy capability is duplicated",
+            ));
+        }
+    }
+    let expected_policies = reviewed_policy_capabilities()
         .into_iter()
         .map(|policy| (policy.capability_id.clone(), policy))
         .collect::<BTreeMap<_, _>>();
-    if policies.len() != CONFORMANCE_POLICY_CAPABILITY_IDS.len()
-        || policies.keys().cloned().collect::<BTreeSet<_>>()
-            != reviewed.policy_capability_ids.iter().cloned().collect()
-    {
+    if policies != expected_policies {
         diagnostics.push(scope_diagnostic(
             ConformanceDiagnosticCode::ConformancePolicyScopeChanged,
             "Rust policy capability inventory is incomplete duplicated or changed",
@@ -465,12 +514,143 @@ pub fn derive_conformance_scope(
             "conformance scope cannot be encoded canonically",
         )
     })?;
+    let assertion_capabilities = reverse_index(existing.values().flat_map(|record| {
+        record
+            .assertion_ids
+            .iter()
+            .cloned()
+            .map(|id| (id, record.capability_id.clone()))
+    }));
+    let case_capabilities = reverse_index(existing.values().flat_map(|record| {
+        record
+            .case_ids
+            .iter()
+            .cloned()
+            .map(|id| (id, record.capability_id.clone()))
+    }));
     Ok(ConformanceScope {
         target_digest: input.target_digest,
         existing_records: existing,
         policy_capabilities: policies,
+        assertion_capabilities,
+        case_capabilities,
         digest,
     })
+}
+
+fn validate_applicability_record(
+    current: &CapabilityRecord,
+    record: &ApplicabilityRecord,
+    diagnostics: &mut Vec<ConformanceDiagnostic>,
+) {
+    let capability_id = record.capability_id.clone();
+    let exact_anchor = authority_anchor(current);
+    if record.source_fingerprint != current.capability_fingerprint
+        || exact_anchor.as_ref() != Some(&record.authority_anchor)
+    {
+        diagnostics.push(capability_diagnostic(
+            ConformanceDiagnosticCode::ApplicabilityRecordInvalid,
+            capability_id.clone(),
+            "applicability authority anchor or fingerprint is stale",
+        ));
+    }
+
+    let compatible = match (&record.disposition, &record.decision_evidence) {
+        (ApplicabilityDisposition::RustObservableSameMechanism, None) => {
+            !record.assertion_ids.is_empty()
+                && !record.case_ids.is_empty()
+                && record.terminal_policy == current.status
+                && is_blocking(&record.terminal_policy)
+        }
+        (
+            ApplicabilityDisposition::RustObservableIdiomatic,
+            Some(ApplicabilityDecision::IdiomaticEquivalence {
+                observable_contract,
+                rust_mechanism,
+            }),
+        ) => {
+            !record.assertion_ids.is_empty()
+                && !record.case_ids.is_empty()
+                && observable_contract != rust_mechanism
+                && observable_contract.as_str().starts_with("authority/")
+                && rust_mechanism.as_str().starts_with("public-rust-sdk/")
+                && record.terminal_policy == current.status
+                && is_blocking(&record.terminal_policy)
+        }
+        (
+            ApplicabilityDisposition::EngineOwnedNoRustObligation,
+            Some(ApplicabilityDecision::EngineOwned {
+                no_rust_input,
+                no_rust_output,
+                no_rust_lifecycle,
+                no_rust_compatibility,
+            }),
+        ) => {
+            record.assertion_ids.is_empty()
+                && record.case_ids.is_empty()
+                && *no_rust_input
+                && *no_rust_output
+                && *no_rust_lifecycle
+                && *no_rust_compatibility
+                && record.terminal_policy == Status::Inapplicable
+                && is_blocking(&current.status)
+        }
+        (
+            ApplicabilityDisposition::ForeignSdkNoRustObligation,
+            Some(ApplicabilityDecision::ForeignSdk {
+                foreign_mechanism,
+                shared_assertion_ids,
+            }),
+        ) => {
+            record.case_ids.is_empty()
+                && shared_assertion_ids == &record.assertion_ids
+                && foreign_mechanism.as_str().starts_with("authority/")
+                && foreign_mechanism.as_str().split('/').count() >= 3
+                && record.terminal_policy == Status::Inapplicable
+                && is_blocking(&current.status)
+        }
+        _ => false,
+    };
+    if !compatible {
+        diagnostics.push(capability_diagnostic(
+            ConformanceDiagnosticCode::ApplicabilityDecisionInvalid,
+            capability_id,
+            "applicability disposition decision routes or terminal policy conflict",
+        ));
+    }
+}
+
+pub(crate) fn authority_anchor(current: &CapabilityRecord) -> Option<AuthorityAnchor> {
+    let [source] = current.source_anchors.as_slice() else {
+        return None;
+    };
+    let source_item_kind = SourceItemKind::new(current.capability_kind.as_str()).ok()?;
+    Some(AuthorityAnchor {
+        repository: source.repository.clone(),
+        revision: source.revision.clone(),
+        path: source.path.clone(),
+        locator: source.locator.clone(),
+        source_item_kind,
+    })
+}
+
+pub(crate) fn is_blocking(status: &Status) -> bool {
+    matches!(status, Status::Missing | Status::Partial)
+}
+
+fn reverse_index<I, K>(edges: I) -> BTreeMap<K, CanonicalSet<CapabilityId>>
+where
+    I: IntoIterator<Item = (K, CapabilityId)>,
+    K: Ord,
+{
+    let mut index = BTreeMap::<K, Vec<CapabilityId>>::new();
+    for (key, capability_id) in edges {
+        index.entry(key).or_default().push(capability_id);
+    }
+    index
+        .into_iter()
+        .map(|(key, capability_ids)| (key, CanonicalSet::new(capability_ids)))
+        .collect()
 }
 
 /// Builds the exact policy inventory with deterministic fingerprints and blocking ownership.
@@ -533,6 +713,22 @@ fn scope_diagnostic(
         code,
         DiagnosticCoordinate {
             phase: Some(DiagnosticPhase::Scope),
+            ..DiagnosticCoordinate::default()
+        },
+        detail,
+    )
+}
+
+fn capability_diagnostic(
+    code: ConformanceDiagnosticCode,
+    capability_id: CapabilityId,
+    detail: &'static str,
+) -> ConformanceDiagnostic {
+    ConformanceDiagnostic::new(
+        code,
+        DiagnosticCoordinate {
+            phase: Some(DiagnosticPhase::Applicability),
+            capability_id: Some(capability_id),
             ..DiagnosticCoordinate::default()
         },
         detail,

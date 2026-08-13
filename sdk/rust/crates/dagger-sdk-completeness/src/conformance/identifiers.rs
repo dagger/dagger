@@ -102,6 +102,10 @@ conformance_id!(
     "Stable identity of one observable conformance assertion."
 );
 conformance_id!(
+    ApplicabilityGroupId,
+    "Stable identity of one exact reviewed applicability group."
+);
+conformance_id!(
     SignoffCaseId,
     "Stable identity of one closed sign-off case."
 );

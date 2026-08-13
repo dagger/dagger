@@ -5,11 +5,13 @@
 //! a dependency or public API to `dagger-sdk` or `dagger-sdk-macros`.
 
 mod applicability;
+mod applicability_review;
 mod diagnostic;
 mod identifiers;
 pub mod preflight;
 
 pub use applicability::*;
+pub use applicability_review::*;
 pub use diagnostic::*;
 pub use identifiers::*;
 pub use preflight::*;

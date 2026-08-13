@@ -29,6 +29,8 @@ pub enum DigestDomain {
     ModuleAuthoring,
     ClientGeneration,
     ConformanceScope,
+    ConformanceApplicabilityReview,
+    ConformanceApplicabilityRecords,
     ConformanceHostProfile,
     ConformanceHostPlan,
     ConformanceHostRecord,
@@ -47,6 +49,12 @@ impl DigestDomain {
             Self::ModuleAuthoring => b"dagger-rust-sdk-module-authoring-v1\0",
             Self::ClientGeneration => b"dagger-rust-sdk-client-generation-v1\0",
             Self::ConformanceScope => b"dagger-rust-sdk-conformance-scope-v1\0",
+            Self::ConformanceApplicabilityReview => {
+                b"dagger-rust-sdk-conformance-applicability-review-v1\0"
+            }
+            Self::ConformanceApplicabilityRecords => {
+                b"dagger-rust-sdk-conformance-applicability-records-v1\0"
+            }
             Self::ConformanceHostProfile => b"dagger-rust-sdk-signoff-host-profile-v1\0",
             Self::ConformanceHostPlan => b"dagger-rust-sdk-signoff-host-plan-v1\0",
             Self::ConformanceHostRecord => b"dagger-rust-sdk-signoff-host-record-v1\0",

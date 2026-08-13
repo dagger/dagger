@@ -139,8 +139,8 @@
     preflight remains a separately identified infrastructure action.
   - _Requirements: 1.1-1.18, 2.1-2.20, 10.1-10.17, 11.1-11.20_
 
-- [ ] 5. Implement exact scope and applicability admission
-  - [ ] 5.1 Add `ConformanceScopeInput` and the exact scope compiler
+- [x] 5. Implement exact scope and applicability admission
+  - [x] 5.1 Add `ConformanceScopeInput` and the exact scope compiler
     - Validate the existing authority count/set/digest and distinct policy inventory
       before decoding decisions; build private canonical maps and reverse indexes only
       after the complete input is valid.
@@ -151,7 +151,7 @@
       engine-owned rows with Rust effects, foreign-only rows with unrouted shared
       invariants, and unsupported status transitions as complete-set failures.
     - _Requirements: 1.1-1.18_
-  - [ ] 5.2 Add capability-local equivalence and inapplicability decision models
+  - [x] 5.2 Add capability-local equivalence and inapplicability decision models
     - Model same-mechanism, idiomatic-equivalent, engine-owned-no-Rust-obligation, and
       foreign-SDK-no-Rust-obligation dispositions without source-language mechanism
       leakage into the public Rust contract.
@@ -161,7 +161,7 @@
       routed shared assertion.
     - Add fixed valid and invalid records for each disposition and terminal policy.
     - _Requirements: 1.6-1.15, 7.1-7.4_
-  - [ ] 5.3 Property test: Property 1 — existing and Rust-policy scope is exact
+  - [x] 5.3 Property test: Property 1 — existing and Rust-policy scope is exact
     - Implement `property_01_existing_and_policy_scope_exact` over at least 256 active
       ledger/policy permutations and mutations; compare production scope derivation
       with exact set/count/digest reference logic.
@@ -169,8 +169,8 @@
       and require an exact drift result before any changed inventory is admitted.
     - _Requirements: 1.1-1.4, 1.16_
 
-- [ ] 6. Review shared engine, CLI, workspace, and module authority rows
-  - [ ] 6.1 Classify direct shared module semantics capability by capability
+- [x] 6. Review shared engine, CLI, workspace, and module authority rows
+  - [x] 6.1 Classify direct shared module semantics capability by capability
     - Review the exact rows from call, path-input, runtime-behaviour, type, loading,
       configuration, workspace, definition, self-call, dependency-runtime,
       constructor, interface, current-module, private-dependency, validation,
@@ -181,14 +181,14 @@
     - Preserve exact authority anchors and fingerprints for every expanded record; use
       shared assertions only where normalized predicate and fixture context match.
     - _Requirements: 1.5-1.17, 7.1-7.4, 7.8-7.18_
-  - [ ] 6.2 Classify CLI, initialization, custom SDK, and suite-scaffolding rows
+  - [x] 6.2 Classify CLI, initialization, custom SDK, and suite-scaffolding rows
     - Review exact module-init, SDK-init, SDK-selection, introspection, module CLI,
       custom-SDK, runtime-codegen, dependency-CLI, TUI, and suite-lifecycle rows.
     - Route public CLI/SDK lifecycle effects to Rust cases, retain presentation-only or
       harness-scaffolding mechanisms as justified inapplicable, and prevent a suite
       name or helper type from becoming an automatic Rust obligation.
     - _Requirements: 1.5-1.17, 3.5-3.13, 7.1-7.7_
-  - [ ] 6.3 Add reviewed exact-ID grouping and audit output
+  - [x] 6.3 Add reviewed exact-ID grouping and audit output
     - Permit one rationale/assertion to be authored once for an explicit sorted ID set,
       then expand it to one complete record per ID with its local anchor and
       fingerprint. Reject globs, file-wide defaults, predicate mismatches, or hidden
@@ -198,8 +198,8 @@
       grouping as evidence.
     - _Requirements: 1.5-1.18_
 
-- [ ] 7. Review foreign-SDK mechanisms and definitive Go-client behaviours
-  - [ ] 7.1 Classify language-specific integration rows without language-shaped Rust
+- [x] 7. Review foreign-SDK mechanisms and definitive Go-client behaviours
+  - [x] 7.1 Classify language-specific integration rows without language-shaped Rust
     - Review every exact TypeScript, Python, Go, Dang, Java, PHP, Elixir, built-in Dang,
       and custom-language row. Name foreign package managers, templates, reflection,
       runtime bootstraps, and source-language syntax precisely where inapplicable.
@@ -207,13 +207,13 @@
       invariants to idiomatic Rust assertions. Never classify a complete language file
       in one step or run a foreign SDK to prove the Rust result.
     - _Requirements: 1.5-1.17, 7.1-7.4_
-  - [ ] 7.2 Map all nine definitive Go-client behaviours to public Rust assertions
+  - [x] 7.2 Map all nine definitive Go-client behaviours to public Rust assertions
     - Add exact directory, Git, container, container-mutation, list, typed exec-error,
       and three exec-error subtest mappings with the pinned Go anchors/fingerprints.
     - Preserve observable results and typed error fields through idiomatic Rust APIs;
       do not copy Go globals, pointer options, zero-value omission, or package layout.
     - _Requirements: 1.1-1.17, 3.13, 7.1-7.4, 7.17-7.18_
-  - [ ] 7.3 Property test: Property 2 — applicability is total, local, and evidence-gated
+  - [x] 7.3 Property test: Property 2 — applicability is total, local, and evidence-gated
     - Implement `property_02_applicability_total_local_evidence_gated` over at least
       256 complete/mutated record sets, anchors, fingerprints, decisions, assertions,
       case routes, terminal policies, and Rust-effect flags.
@@ -222,7 +222,7 @@
       closure.
     - _Requirements: 1.5-1.15, 1.17-1.18_
 
-- [ ] 8. Checkpoint: the complete applicability decision surface is green
+- [x] 8. Checkpoint: the complete applicability decision surface is green
   - Run formatting, locked scope/applicability tests, Properties 1–2, fixed authority
     and nine-Go-client mappings, exact count/digest drift tests, source-policy tests,
     and focused warning-denied Clippy/rustdoc for `dagger-sdk-completeness`.
@@ -235,6 +235,10 @@
   - Require the engine-free local boundary and reuse the admitted host preflight record
     without starting its smoke engine.
   - _Requirements: 1.1-1.18, 7.1-7.4, 11.1-11.20_
+  - Checkpoint evidence: `sdk/rust/completeness/evidence/conformance-applicability-checkpoint.json`
+    records the six bounded Cargo commands, 1,081/1,081 expanded authority records,
+    21/21 policy rows, exact disposition counts, retained current blockers, and reuse
+    of the unchanged host preflight without a Dagger command or engine start.
 
 - [ ] 9. Build the Rust-observable assertion catalog and fixture registry
   - [ ] 9.1 Add closed observable predicates and assertion compilation
