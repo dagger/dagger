@@ -3528,7 +3528,7 @@
 			"t": "M",
 			"n": "Dagger\\CurrentModuleAsSDK::modules",
 			"p": "Dagger/CurrentModuleAsSDK.html#method_modules",
-			"d": "<p>The workspace-local modules this SDK authors and manages.</p>"
+			"d": "<p>The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.</p>"
 		},
 		{
 			"t": "M",
@@ -7327,6 +7327,12 @@
 			"n": "Dagger\\Workspace::file",
 			"p": "Dagger/Workspace.html#method_file",
 			"d": "<p>Returns a File from the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::findRoots",
+			"p": "Dagger/Workspace.html#method_findRoots",
+			"d": "<p>Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.</p>"
 		},
 		{
 			"t": "M",

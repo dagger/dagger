@@ -32,7 +32,7 @@ class CurrentModuleAsSDK extends Client\AbstractObject implements Client\IdAble,
     }
 
     /**
-     * The workspace-local modules this SDK authors and manages.
+     * The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
      */
     public function modules(): array
     {

@@ -176,11 +176,11 @@ func (src *ModuleSource) SelfCallsEnabled() bool {
 }
 
 type ModuleSource struct {
-	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
-	ConfigFilename                string
-	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
-	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
-	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
+	ConfigExists       bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
+	ConfigFilename     string
+	ModuleName         string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
+	ModuleOriginalName string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
+	EngineVersion      string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
 	// ConfigEngineVersion is the engine version as declared in the module
 	// config — possibly the floating "latest". EngineVersion always holds
 	// the resolved version that drives behavior; this one is what config

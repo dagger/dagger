@@ -164,6 +164,26 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Find project roots marked by any of the given filenames, starting from a path relative to the workspace cwd.
+     *
+     * Returns cwd-relative directory paths for every marked directory at or below start, plus the nearest marked ancestor when start itself is not marked.
+     *
+     * Each returned path is usable as-is with other workspace APIs, e.g. directory(path).
+     */
+    public function findRoots(array $markers, ?string $start = '.', ?array $exclude = []): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findRoots');
+        $leafQueryBuilder->setArgument('markers', $markers);
+        if (null !== $start) {
+        $leafQueryBuilder->setArgument('start', $start);
+        }
+        if (null !== $exclude) {
+        $leafQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'findRoots');
+    }
+
+    /**
      * Search for a file or directory by walking up from the start path within the workspace.
      *
      * Returns the absolute workspace path if found, or null if not found.

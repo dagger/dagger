@@ -50,7 +50,7 @@ defmodule Dagger.CurrentModuleAsSDK do
   end
 
   @doc """
-  The workspace-local modules this SDK authors and manages.
+  The managed modules relevant to the bound workspace cwd: every module at or below it, plus the nearest enclosing module when the cwd itself is not managed.
   """
   @spec modules(t()) :: {:ok, [Dagger.CurrentModuleAsSDKModule.t()]} | {:error, term()}
   def modules(%__MODULE__{} = current_module_as_sdk) do
