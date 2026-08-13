@@ -1,0 +1,94 @@
+name: Rust SDK Native Platforms
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-sdk-platform.yml"
+      - "sdk/rust/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/rust-sdk-platform.yml"
+      - "sdk/rust/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-sdk-platform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: rust-sdk-native-${{ matrix.os-name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            os-name: linux
+          - runner: macos-15
+            os-name: macos
+          - runner: windows-2025
+            os-name: windows
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: sdk/rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build the fixed native producer
+        run: cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-platform --locked
+      - name: Exercise the native Rust SDK and record its observation
+        run: >-
+          ./target/debug/dagger-rust-sdk-platform${{ runner.os == 'Windows' && '.exe' || '' }}
+          native
+          --output platform-observation-${{ matrix.os-name }}.json
+      - name: Upload the bounded native observation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-sdk-platform-${{ matrix.os-name }}
+          path: sdk/rust/platform-observation-${{ matrix.os-name }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: rust-sdk-platform-matrix
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sdk/rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download native observations
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: rust-sdk-platform-*
+          path: sdk/rust/platform-observations
+          merge-multiple: true
+      - name: Build the pure platform compiler
+        run: cargo build -p dagger-sdk-completeness --bin dagger-rust-sdk-platform --locked
+      - name: Admit the exact three-OS matrix
+        run: >-
+          ./target/debug/dagger-rust-sdk-platform
+          aggregate
+          --scope completeness/conformance-scope.json
+          --input platform-observations/platform-observation-linux.json
+          --input platform-observations/platform-observation-macos.json
+          --input platform-observations/platform-observation-windows.json
+          --output portable-platform-matrix.json
+      - name: Upload the admitted matrix
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-sdk-portable-platform-matrix
+          path: sdk/rust/portable-platform-matrix.json
+          if-no-files-found: error
+          retention-days: 14

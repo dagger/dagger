@@ -365,6 +365,7 @@ dependencies = [
  "dagger-sdk-engine",
  "pretty_assertions",
  "proptest",
+ "rand 0.8.7",
  "semver",
  "serde",
  "serde_json",

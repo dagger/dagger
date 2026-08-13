@@ -11,9 +11,11 @@ use proptest::prelude::*;
 use crate::config::ClientConfig;
 use crate::connection::{EngineConnection, EngineConnectionError};
 use crate::connector::{ConnectionRequest, Connector, DefaultConnector};
+#[cfg(unix)]
+use crate::discovery::resolve_explicit_cli;
 use crate::discovery::{
     ExecutableLease, NativeContextError, NativeDiscoveryInputs, NativePathSemantics,
-    TestDiscoveryFileSystem, resolve_compatibility_path_cli_for_test, resolve_explicit_cli,
+    TestDiscoveryFileSystem, resolve_compatibility_path_cli_for_test,
     resolve_explicit_cli_for_test,
 };
 use crate::errors::{
@@ -92,6 +94,14 @@ fn observed_source(plan: &ConnectionPlan) -> SourceReference {
             CliSourcePlan::CompiledRelease { .. } => SourceReference::CompiledRelease,
         },
     }
+}
+
+fn native_fixture_path(unix: &str, windows: &str) -> PathBuf {
+    PathBuf::from(if cfg!(windows) { windows } else { unix })
+}
+
+fn native_fixture_text<'a>(unix: &'a str, windows: &'a str) -> &'a str {
+    if cfg!(windows) { windows } else { unix }
 }
 
 proptest! {
@@ -481,19 +491,26 @@ fn six_release_descriptors_match_the_published_naming_policy() {
 
 #[test]
 fn explicit_discovery_expands_home_resolves_symlinks_and_ignores_irrelevant_cwd() {
-    let absolute = PathBuf::from("/home/operator/bin/dagger");
-    let resolved = PathBuf::from("/opt/dagger-v1.0.0-beta.10");
+    let absolute = native_fixture_path(
+        "/home/operator/bin/dagger",
+        r"C:\Users\operator\bin\dagger.EXE",
+    );
+    let resolved = native_fixture_path(
+        "/opt/dagger-v1.0.0-beta.10",
+        r"C:\tools\dagger-v1.0.0-beta.10.exe",
+    );
     let filesystem = TestDiscoveryFileSystem::new().executable(absolute.clone(), resolved.clone());
     let inputs = NativeDiscoveryInputs::new(
-        NativePathSemantics::Unix,
+        NativePathSemantics::current(),
         Vec::new(),
         None,
-        Some(PathBuf::from("/home/operator")),
+        Some(native_fixture_path("/home/operator", r"C:\Users\operator")),
         Err(NativeContextError),
     );
 
+    let configured = native_fixture_text("~/bin/dagger", r"~\bin\dagger");
     let executable =
-        resolve_explicit_cli_for_test(OsString::from("~/bin/dagger"), &inputs, &filesystem)
+        resolve_explicit_cli_for_test(OsString::from(configured), &inputs, &filesystem)
             .expect("home-expanded absolute discovery succeeds without cwd");
     assert_eq!(executable.path(), resolved);
     assert_eq!(executable.lease(), ExecutableLease::Unmanaged);
@@ -546,10 +563,10 @@ fn discovery_failures_are_typed_terminal_and_path_safe() {
 
 #[test]
 fn discovery_rejects_non_regular_targets() {
-    let candidate = PathBuf::from("/opt/dagger");
+    let candidate = native_fixture_path("/opt/dagger", r"C:\tools\dagger.exe");
     let filesystem = TestDiscoveryFileSystem::new().unusable(candidate.clone());
     let inputs = NativeDiscoveryInputs::new(
-        NativePathSemantics::Unix,
+        NativePathSemantics::current(),
         Vec::new(),
         None,
         None,

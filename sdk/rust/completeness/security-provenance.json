@@ -1,0 +1,78 @@
+{
+  "format_version": "1.0.0",
+  "records": {
+    "artifact-builder-image": {
+      "id": "image/rust/1.97.1-bookworm",
+      "immutable_digest": "sha256:705e294093973d7c10e83400393dce7b3611f8e03e55a80af7fff6d02ae1affb",
+      "publisher": "docker-official-images",
+      "repository": "github.com/docker-library/rust",
+      "review_evidence_digest": "sha256:49497d39824f5694a8d9dc07583e3ea4a466b5c16a2f111fa63cc0c65f96ed19",
+      "role": "artifact-builder-image"
+    },
+    "cli-archive": {
+      "id": "archive/dagger-cli/beta.9/linux-amd64",
+      "immutable_digest": "sha256:776a390ecef59ff2ad8c0a3b3ca6d793bb62556bb8a512f475a725bdc830e40c",
+      "publisher": "dagger",
+      "repository": "github.com/dagger/dagger",
+      "review_evidence_digest": "sha256:ab4f2a0a6cf68228a74281a0d4a9fc192ab933f6a8bc92218b592e48692b655d",
+      "role": "cli-archive"
+    },
+    "engine-base-image": {
+      "id": "image/dagger-engine/beta.9",
+      "immutable_digest": "sha256:de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e",
+      "publisher": "dagger",
+      "repository": "github.com/dagger/dagger",
+      "review_evidence_digest": "sha256:49497d39824f5694a8d9dc07583e3ea4a466b5c16a2f111fa63cc0c65f96ed19",
+      "role": "engine-base-image"
+    },
+    "go-toolchain": {
+      "id": "image/golang/1.26.1-bookworm",
+      "immutable_digest": "sha256:ab3d6955bbc813a0f3fdf220c1d817dd89c0b3f283777db8ece4a32fe7858edd",
+      "publisher": "docker-official-images",
+      "repository": "github.com/docker-library/golang",
+      "review_evidence_digest": "sha256:49497d39824f5694a8d9dc07583e3ea4a466b5c16a2f111fa63cc0c65f96ed19",
+      "role": "go-toolchain"
+    },
+    "preflight-cli": {
+      "id": "binary/preflight/a8789093",
+      "immutable_digest": "sha256:a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
+      "publisher": "dagger-rust-sdk-maintainers",
+      "repository": "github.com/dagger/dagger",
+      "review_evidence_digest": "sha256:9782caf579780b1db1d6f65e07f4829b6203b6ef4250dc3a2f76fb98a85bb681",
+      "role": "preflight-cli"
+    },
+    "preflight-engine": {
+      "id": "image/preflight-engine/beta.9",
+      "immutable_digest": "sha256:de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e",
+      "publisher": "dagger",
+      "repository": "github.com/dagger/dagger",
+      "review_evidence_digest": "sha256:9782caf579780b1db1d6f65e07f4829b6203b6ef4250dc3a2f76fb98a85bb681",
+      "role": "preflight-engine"
+    },
+    "rust-toolchain": {
+      "id": "toolchain/rust/1.97.1/8bab26f4f68e0e26f0bb7960be334d5b520ea452",
+      "immutable_digest": "sha256:c60a41fd857ed7cc29207d7733c9816bedd227259cbd2751cf8efc825fa62280",
+      "publisher": "rust-project",
+      "repository": "github.com/rust-lang/rust",
+      "review_evidence_digest": "sha256:3fca259635cc3616a3c9f899442a43dc0b39174429eeb3d3ae58ab2a08d27af3",
+      "role": "rust-toolchain"
+    },
+    "scanner-image": {
+      "id": "image/trivy/0.69.3",
+      "immutable_digest": "sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
+      "publisher": "aqua-security",
+      "repository": "github.com/aquasecurity/trivy",
+      "review_evidence_digest": "sha256:3b3f0d67ca232d3d13a5ee643ce8ef1d7baa647a9e9b2a1da41c5e907388d6a4",
+      "role": "scanner-image"
+    },
+    "vulnerability-database-source": {
+      "id": "source/trivy-db/0e0340a01b57209346d88dd061342a857776e403",
+      "immutable_digest": "sha256:c2f4a18d6a217f0f65c6d71b0b9a1f80ec4070af700e152df810d15ac46c4c68",
+      "publisher": "aqua-security",
+      "repository": "github.com/aquasecurity/trivy-db",
+      "review_evidence_digest": "sha256:463084208d2fcf4cb6c0dab75f07dfaacdbcf19948022fe381102e2d11b9803b",
+      "role": "vulnerability-database-source"
+    }
+  },
+  "registry_digest": "sha256:7d9f1aab97666c7960be420d2b5e0ba8c6af49b8f80fecb61f13178a21eaeafc"
+}

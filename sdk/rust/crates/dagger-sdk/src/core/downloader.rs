@@ -6,7 +6,6 @@
 use std::{
     fs::File,
     io::{Write, copy},
-    os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -134,15 +133,20 @@ impl Downloader {
         Ok(path)
     }
 
+    fn cli_bin_name(&self) -> String {
+        let extension = if self.platform.os == "windows" {
+            ".exe"
+        } else {
+            ""
+        };
+        format!("{CLI_BIN_PREFIX}{}{extension}", self.version)
+    }
+
     pub async fn get_cli(&self) -> Result<PathBuf, DaggerError> {
-        let version = &self.version;
         let mut cli_bin_path = self
             .cache_dir()
             .map_err(DaggerError::from_legacy_download)?;
-        cli_bin_path.push(format!("{CLI_BIN_PREFIX}{version}"));
-        if self.platform.os == "windows" {
-            cli_bin_path = cli_bin_path.with_extension("exe")
-        }
+        cli_bin_path.push(self.cli_bin_name());
 
         if !cli_bin_path.exists() {
             cli_bin_path = self
@@ -168,10 +172,7 @@ impl Downloader {
         }
 
         let mut file = std::fs::File::create(&path)?;
-        let meta = file.metadata()?;
-        let mut perm = meta.permissions();
-        perm.set_mode(0o700);
-        file.set_permissions(perm)?;
+        set_executable_permissions(&file)?;
         file.write_all(bytes.as_slice())?;
 
         Ok(path)
@@ -249,6 +250,19 @@ impl Downloader {
     }
 }
 
+#[cfg(unix)]
+fn set_executable_permissions(file: &File) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    file.set_permissions(std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn set_executable_permissions(_file: &File) -> std::io::Result<()> {
+    // Windows decides executability from the file type rather than POSIX mode bits.
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 #[error("CLI release unavailable: failed to download checksums from {url}: {status}")]
 pub(super) struct CliReleaseUnavailableError {
@@ -289,14 +303,20 @@ mod tests {
         CliReleaseUnavailableError, Downloader, Platform, has_cli_release_unavailable_error,
     };
 
-    #[tokio::test]
-    async fn download() {
-        let cli_path = Downloader::new("0.3.10".into()).get_cli().await.unwrap();
+    #[test]
+    fn selects_cli_binary_name_for_platform() {
+        for (os, expected) in [("linux", "dagger-0.3.10"), ("windows", "dagger-0.3.10.exe")] {
+            let downloader = Downloader {
+                version: "0.3.10".into(),
+                platform: Platform {
+                    os: os.into(),
+                    arch: "amd64".into(),
+                },
+                cli_base_url: "https://example.test".into(),
+            };
 
-        assert_eq!(
-            Some("dagger-0.3.10"),
-            cli_path.file_name().and_then(|s| s.to_str())
-        )
+            assert_eq!(downloader.cli_bin_name(), expected);
+        }
     }
 
     #[tokio::test]

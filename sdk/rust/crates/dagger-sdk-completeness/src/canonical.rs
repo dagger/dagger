@@ -38,6 +38,8 @@ pub enum DigestDomain {
     ConformanceHostProfile,
     ConformanceHostPlan,
     ConformanceHostRecord,
+    ConformancePlatformMatrix,
+    ConformanceSecurity,
     ConformancePolicy,
 }
 
@@ -70,6 +72,8 @@ impl DigestDomain {
             Self::ConformanceHostProfile => b"dagger-rust-sdk-signoff-host-profile-v1\0",
             Self::ConformanceHostPlan => b"dagger-rust-sdk-signoff-host-plan-v1\0",
             Self::ConformanceHostRecord => b"dagger-rust-sdk-signoff-host-record-v1\0",
+            Self::ConformancePlatformMatrix => b"dagger-rust-sdk-conformance-platform-matrix-v1\0",
+            Self::ConformanceSecurity => b"dagger-rust-sdk-conformance-security-v1\0",
             Self::ConformancePolicy => b"dagger-rust-sdk-conformance-policy-v1\0",
         }
     }

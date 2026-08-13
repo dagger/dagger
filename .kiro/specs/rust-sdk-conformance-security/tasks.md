@@ -333,15 +333,15 @@
     closure-plan identity, and reuse of the unchanged host preflight without a Dagger
     command, engine start, another SDK, or replayed child closure.
 
-- [ ] 13. Implement native and descriptor platform closure
-  - [ ] 13.1 Add the exact platform policy and pure descriptor matrix
+- [x] 13. Implement native and descriptor platform closure
+  - [x] 13.1 Add the exact platform policy and pure descriptor matrix
     - Define Linux, macOS, Windows, amd64, arm64, native domain, runner/toolchain/source/
       lockfile/test identities, and exact-engine platform-claim models.
     - Exercise archive/executable descriptor selection for all six OS/architecture
       pairs as pure Rust. Reject unknown aliases, missing pairs, and attempts to infer
       native semantics from descriptor simulation.
     - _Requirements: 8.4-8.9, 8.18, 8.20-8.21_
-  - [ ] 13.2 Add native engine-free OS observation and matrix admission
+  - [x] 13.2 Add native engine-free OS observation and matrix admission
     - Extend existing process, discovery, cache publication, archive/path/link,
       child-reap, control-line, diagnostic, and redaction fixtures to emit one canonical
       bounded observation on each native OS under Rust 1.97.1 and committed lockfiles.
@@ -349,21 +349,21 @@
       descriptors; allow documented native equivalents such as Windows reparse/ACL
       behaviour but reject skips, simulation, another SDK, Docker, Dagger, or an engine.
     - _Requirements: 8.1-8.3, 8.10-8.19_
-  - [ ] 13.3 Property test: Property 16 — descriptor and exact-engine platform claims never widen
+  - [x] 13.3 Property test: Property 16 — descriptor and exact-engine platform claims never widen
     - Implement `property_16_descriptor_and_exact_engine_platform_claims_never_widen`
       over at least 100 descriptor/matrix/artifact/verdict platform permutations.
     - Require all six descriptors, exact identity binding, initial Linux/amd64, and a
       separate artifact/verdict for every later platform.
     - _Requirements: 8.4-8.9, 8.18, 8.20-8.21_
-  - [ ] 13.4 Property test: Property 17 — native OS closure proves native behaviour without an engine
+  - [x] 13.4 Property test: Property 17 — native OS closure proves native behaviour without an engine
     - Implement `property_17_native_os_closure_engine_free` over at least 100 native
       job/domain/identity/outcome permutations and forbidden-event sets.
     - Compare with the exact three-OS/native-domain model; reject missing, duplicated,
       stale, skipped, failed, simulated, engine-backed, or other-SDK evidence.
     - _Requirements: 8.1-8.3, 8.10-8.17, 8.19_
 
-- [ ] 14. Implement locked dependency, provenance, and vulnerability policy
-  - [ ] 14.1 Make Rust root and automation coverage exact
+- [x] 14. Implement locked dependency, provenance, and vulnerability policy
+  - [x] 14.1 Make Rust root and automation coverage exact
     - Enumerate every supported root/example Cargo manifest and committed lockfile,
       require `--locked`, all Cargo Deny classes, approved licenses/sources, no
       unapproved wildcard or active reachable advisory, and workspace unsafe denial.
@@ -371,7 +371,7 @@
       `/sdk/rust` entry as false Rust coverage. Retain read-only/minimum workflow token
       permissions and immutable packaged dependency policy.
     - _Requirements: 9.1-9.10, 9.24-9.25_
-  - [ ] 14.2 Add the checked external provenance registry
+  - [x] 14.2 Add the checked external provenance registry
     - Record role, publisher, repository, immutable digest/checksum, and independent
       review evidence for builder/base images, Rust/Go toolchains, preflight CLI/engine,
       CLI archives, scanner, and vulnerability database source.
@@ -379,7 +379,7 @@
       repository, and exact digest provenance are reviewed; reject tag-only,
       unknown-publisher, missing-review, or role-mismatched inputs.
     - _Requirements: 5.20, 9.11-9.16_
-  - [ ] 14.3 Add finding and machine-expiring exception admission
+  - [x] 14.3 Add finding and machine-expiring exception admission
     - Decode canonical scanner findings against the exact artifact payload and model
       fixed-date, target-revision, patched-version, and advisory-withdrawal expiry
       predicates.
@@ -387,14 +387,14 @@
       missing exact finding, reachability, impact, owner, upstream remediation, or a
       currently false expiry condition. Reject stale exceptions automatically.
     - _Requirements: 9.16-9.23_
-  - [ ] 14.4 Property test: Property 18 — Rust dependency security is locked, complete, and least-privileged
+  - [x] 14.4 Property test: Property 18 — Rust dependency security is locked, complete, and least-privileged
     - Implement `property_18_rust_dependency_security_locked_complete_least_privileged`
       over at least 100 Cargo roots, graph/license/source/advisory/unsafe/automation/
       permission/package observations.
     - Compare with exact root and security truth-table models; admit only complete
       locked current policy and narrowly proved unsafe exceptions.
     - _Requirements: 9.1-9.10, 9.24-9.25_
-  - [ ] 14.5 Property test: Property 19 — external provenance and exact-payload vulnerability policy fail closed
+  - [x] 14.5 Property test: Property 19 — external provenance and exact-payload vulnerability policy fail closed
     - Implement `property_19_external_provenance_exact_payload_vulnerability_fail_closed`
       over at least 256 provenance, payload, scanner/database, finding, and exception
       mutations.
@@ -403,8 +403,8 @@
       unexcepted high/critical result.
     - _Requirements: 9.11-9.23_
 
-- [ ] 15. Prove secret, diagnostic, and evidence safety
-  - [ ] 15.1 Add the ephemeral canary harness and exhaustive inspection domains
+- [x] 15. Prove secret, diagnostic, and evidence safety
+  - [x] 15.1 Add the ephemeral canary harness and exhaustive inspection domains
     - Generate independent high-entropy non-production canaries for session, registry,
       Git, environment, trace, and URL credential boundaries; pass values only to the
       live scanner and persist only their canonical set digest.
@@ -412,7 +412,7 @@
       stdout/stderr, errors/Debug, diagnostics/traces, reports, and draft verdicts
       across arbitrary chunk boundaries.
     - _Requirements: 10.1-10.10_
-  - [ ] 15.2 Add durable evidence sanitization and bounded failure retention
+  - [x] 15.2 Add durable evidence sanitization and bounded failure retention
     - Reject any persisted canary value, real credential, absolute host path, personal
       or provider identity, terminal control, unbounded output, or unredacted failure
       source. Retain only canary category, inspection domain, and safe relative
@@ -420,7 +420,7 @@
     - Ensure artifact and final verdict contain no live credentials and that inability
       to prove redaction prevents evidence admission.
     - _Requirements: 10.10-10.17_
-  - [ ] 15.3 Property test: Property 20 — canaries and host identity never enter retained evidence
+  - [x] 15.3 Property test: Property 20 — canaries and host identity never enter retained evidence
     - Implement `property_20_canaries_and_host_identity_never_persist` over at least 256
       canary sets, output domains, arbitrary byte chunking, diagnostic causes,
       artifacts, caches, traces, reports, verdicts, paths, and identities.
@@ -428,7 +428,7 @@
       or unsafe identity must reject the whole observation.
     - _Requirements: 10.1-10.17_
 
-- [ ] 16. Checkpoint: native-platform and security policy are green
+- [x] 16. Checkpoint: native-platform and security policy are green
   - Run formatting; locked platform, security, provenance, exception, and canary tests;
     Properties 16–20; Cargo Deny when dependency/security inputs changed; source-policy
     tests; and focused warning-denied Clippy/rustdoc.
@@ -440,6 +440,14 @@
   - Require no Dagger, engine, module, another SDK, target artifact build, unscoped
     generation, or distribution work.
   - _Requirements: 8.1-8.21, 9.1-9.25, 10.1-10.17, 11.1-11.20_
+  - Checkpoint evidence: `sdk/rust/completeness/evidence/conformance-platform-security-checkpoint.json`
+    records 156 passed native macOS/arm64 tests with one exact-engine test and one
+    subprocess-helper test ignored by their owning parent cases,
+    Properties 16–20, all locked Cargo roots, current Cargo Deny, checked Aqua Security
+    provenance, and zero Dagger, Docker, engine, module, foreign-SDK, target-artifact, or
+    distribution work. The three-OS matrix is aggregated by the new native CI workflow;
+    the local checkpoint retains only the current native observation and does not simulate
+    Linux or Windows.
 
 - [ ] 17. Implement the exact-target artifact manifest and state machine
   - [ ] 17.1 Add every artifact manifest, component, and provenance field

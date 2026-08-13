@@ -12,7 +12,9 @@ mod closure;
 mod diagnostic;
 mod identifiers;
 mod planning;
+mod platform;
 pub mod preflight;
+mod security;
 
 pub use applicability::*;
 pub use applicability_review::*;
@@ -22,4 +24,6 @@ pub use closure::*;
 pub use diagnostic::*;
 pub use identifiers::*;
 pub use planning::*;
+pub use platform::*;
 pub use preflight::*;
+pub use security::*;

@@ -50,25 +50,6 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: "npm"
-    directory: "/sdk/rust"
-    exclude-paths:
-      - "**/examples/**"
-      - "**/snippets/**"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "07:00"
-      timezone: "UTC"
-    labels:
-      - "kind/dependencies"
-      - "area/sdk/typescript"
-    groups:
-      sdk-rust:
-        applies-to: version-updates
-        patterns:
-          - "*"
-
   - package-ecosystem: "cargo"
     directories:
       - "/sdk/rust"

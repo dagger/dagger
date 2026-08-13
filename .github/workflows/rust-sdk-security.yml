@@ -40,6 +40,12 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install cargo-deny
         run: cargo install --locked cargo-deny@0.19.9
+      - name: Resolve every supported Rust root with committed lockfiles
+        run: |
+          cargo metadata --no-deps --format-version 1 --locked >/dev/null
+          cargo metadata --manifest-path examples/backend/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
+          cargo metadata --manifest-path examples/cli/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
+          cargo metadata --manifest-path examples/frontend/Cargo.toml --no-deps --format-version 1 --locked >/dev/null
       - name: Check dependency security and policy
         run: cargo deny check
       - name: Check crate publication policy
@@ -73,6 +79,9 @@ jobs:
           cargo test -p dagger-sdk-engine --test checkpoint_properties --locked
           cargo test -p dagger-sdk-completeness --test engine_integration --locked
           cargo test -p dagger-sdk-completeness --test module_authoring_evidence --locked
+          cargo test -p dagger-sdk-completeness --test signoff_security_properties --locked
+          cargo test -p dagger-sdk-completeness --test security_repository_policy --locked
+          cargo run -p dagger-sdk-completeness --bin dagger-conformance-security-policy --locked -- --check
           cargo test -p dagger-sdk --all-features --locked \
             public_error_rendering_is_redacted_while_sources_remain_inspectable
           cargo test -p dagger-sdk --all-features --locked \
