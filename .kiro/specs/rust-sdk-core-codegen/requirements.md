@@ -29,8 +29,8 @@ registration and the `GenerateLibrary`, `GenerateModule`, `GenerateClient`, and
 `GenerateEntrypoint` hooks. Feature 6 owns Rust source discovery, module TypeDef
 emission, and dispatch. Feature 7 owns standalone, module, and dependency client
 project generation. Feature 8 owns the closing multi-platform and end-to-end
-conformance matrix. Feature 9 owns crate publication, migration material, and the
-stable release gate.
+conformance matrix. Feature 9 owns immutable Git-tagged distribution, migration
+material, release assets, and the stable release gate.
 
 The current `sdk-sdk` harness has no check that enumerates Core_Schema coordinates or
 directly exercises the generated typed bindings. Its generation and module-load checks

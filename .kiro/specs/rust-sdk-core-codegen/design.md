@@ -85,9 +85,9 @@ and Rust `1.97.1` toolchain.
 - Feature 8 owns the multi-platform, cross-SDK, and full application conformance
   matrix. Feature 4 supplies focused exact-target engine evidence for the generated
   categories it claims.
-- Feature 9 owns crate publication, user migration, final SemVer review, and the stable
-  release gate. Feature 4 detects when its public change requires a breaking-change
-  fragment but does not publish a crate.
+- Feature 9 owns immutable Git-tagged distribution, user migration, final SemVer
+  review, release assets, and the stable release gate. Feature 4 detects when its
+  public change requires a breaking-change fragment but does not create a release.
 
 ### Rust construction rules
 

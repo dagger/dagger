@@ -86,11 +86,12 @@ authored visibility. There is no parallel schema and no hand-written string disp
 Procedural attributes cannot live in an ordinary Rust library crate. The idiomatic
 surface therefore requires a small `dagger-sdk-macros` companion which `dagger-sdk`
 re-exports, following the conventional library-plus-proc-macro shape. This is a narrow,
-explicit successor to Feature 5's “`dagger-sdk` is the sole publishable crate” packaging
-rule: the public dependency graph now contains `dagger-sdk` and its exact-version macro
-companion, while every engine, codegen, bootstrap, and completeness crate remains
-private. Feature 6 makes that graph packageable but does not publish it; Feature 9 owns
-registry publication and stable-release presentation.
+explicit successor to Feature 5's “`dagger-sdk` is the sole external SDK entry package”
+rule: the externally consumed dependency graph now contains `dagger-sdk` and its
+exact-revision macro companion, while every engine, codegen, bootstrap, and
+completeness crate remains private. Feature 6 makes that graph Git-resolvable but does
+not release it; Feature 9 owns immutable Git-tagged distribution and stable-release
+presentation.
 
 Local implementation closure is strictly engine-free. It compiles representative
 module crates, drives the production compiler and dispatcher through direct Rust
@@ -131,10 +132,10 @@ the Rust authoring design.
   conformance matrix, including promotion of the bounded packaged self-consumer into a
   complete consumer workflow. Feature 6 defines only the representative exact-target
   sign-off cases needed to admit its capabilities.
-- Feature 9 owns crates.io publication, migration guidance, compatibility policy, and
-  stable-release presentation, including any claim that the Rust SDK builds, tests,
-  and releases itself. It consumes the packageable two-crate public graph established
-  here.
+- Feature 9 owns immutable Git-tagged distribution, migration guidance, compatibility
+  policy, release assets, and stable-release presentation, including any claim that
+  the Rust SDK builds, tests, and releases itself. It consumes the Git-resolvable
+  two-package external graph established here.
 - `dagger-codegen` remains the pure compiler. `dagger-sdk-engine` owns filesystem,
   Cargo-project, process, publication, and engine-operation boundaries.
 - `dagger-sdk` owns public runtime types, call-scoped lifecycle, codecs, query
@@ -1777,8 +1778,8 @@ dispatch, fixture, hygiene, or security evidence.
 The packaged self-consumer is a bounded Feature 6 sign-off observation, not the local
 checkpoint runner and not a complete self-hosting claim. Feature 8 expands it into the
 full initialization, development, generation, execution, dependency, and platform
-matrix. Feature 9 owns published-package installation, release rehearsal, signing, and
-stable-release automation.
+matrix. Feature 9 owns exact Git-revision installation, release rehearsal, signing,
+attestation, and stable-release automation.
 
 ### Documentation and review gates
 

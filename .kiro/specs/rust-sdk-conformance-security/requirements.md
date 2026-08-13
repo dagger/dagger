@@ -44,7 +44,8 @@ The first host used to validate this contract is a dedicated Namespace XL Linux/
 devbox. Namespace is an execution choice, not a behavioural authority, repository
 dependency, or permanent sign-off requirement. Any provider-neutral host satisfying
 the same preflight contract may reproduce the run. Feature 9 consumes the successful
-Feature 8 verdict for publication and stable release presentation.
+Feature 8 verdict and exact signed-off bytes through a Release_Handoff_Record; it owns
+Git-tagged distribution, release assets, attestations, and stable presentation.
 
 ## Glossary
 
@@ -103,6 +104,10 @@ Feature 8 verdict for publication and stable release presentation.
   connector's production CLI selection. For the current unavailable beta.10 checksum
   manifest, the definitive 403/404 compatibility path may select the exact built CLI
   from `PATH`; that observation does not claim a successful verified download.
+- **Release_Handoff_Record:** A canonical Feature 8 record binding one passing
+  Atomic_Signoff_Verdict to the exact artifact manifest, payload bytes, security
+  report, Subject_Revision, and platform which Feature 9 may consume without rebuild;
+  it does not itself authorize publication.
 - **Secret_Canary_Set:** High-entropy non-production values injected into every
   credential-bearing sign-off boundary and forbidden from all persisted or rendered
   outputs.
@@ -184,7 +189,11 @@ The Atomic_Signoff_Verdict binds every identity, case outcome, security result,
 platform result, build/start count, and phase timing. A missing, skipped, unknown,
 stale, failed, leaking, duplicated, or overbroad input produces one failed verdict and
 no partial sign-off evidence. Only an admitted passing verdict may close Feature 8
-blockers and unblock Feature 9.
+blockers and unblock Feature 9. A passing verdict also emits one
+Release_Handoff_Record which preserves the exact bundle and payload identities.
+Feature 9 may copy or wrap those bytes for a release asset, but any rebuild, payload
+mutation, or platform widening invalidates the handoff and requires a new Feature 8
+artifact and verdict.
 
 ## Evidence From Current Code
 
@@ -364,6 +373,7 @@ policy/rust-policy/signoff-single-rust-baseline
 policy/rust-policy/signoff-isolated-case-fanout
 policy/rust-policy/signoff-case-retry-honesty
 policy/rust-policy/signoff-atomic-verdict
+policy/rust-policy/signoff-release-handoff
 policy/rust-policy/signoff-duplicate-work-rejection
 policy/rust-policy/signoff-phase-budget
 policy/rust-policy/platform-native-matrix
@@ -698,6 +708,10 @@ every case and retry observes identical bytes without rebuilding Dagger.
     SHALL reject the artifact.
 20. IF any external component lacks immutable identity or reviewed provenance, THEN THE
     security gate SHALL reject the artifact.
+21. WHEN an imported artifact produces a passing verdict, THE artifact pipeline SHALL
+    retain the exact outer bundle bytes used to verify its payload.
+22. WHEN an imported artifact produces a passing verdict, THE artifact pipeline SHALL
+    retain the exact inner payload bytes identified by the artifact manifest.
 
 ### Requirement 6: One Engine, One Rust Baseline, and Isolated Fan-out
 
@@ -1016,11 +1030,22 @@ no partial pass, stale retry, or hidden rebuild can authorize the Rust SDK relea
     platform closure, security closure, and exact-engine sign-off.
 35. WHEN Feature 9 evaluates release readiness, THE release gate SHALL require the
     admitted passing Feature 8 verdict.
+36. WHEN the authoritative imported-artifact Atomic_Signoff_Verdict passes, THE
+    evidence registry SHALL emit exactly one Release_Handoff_Record.
+37. THE Release_Handoff_Record SHALL bind the exact artifact bundle, manifest, payload,
+    Artifact_Security_Report, verdict, Subject_Revision, and platform identities.
+38. THE Release_Handoff_Record SHALL state that it does not authorize publication or
+    a claim for another platform.
+39. IF a Feature 9 candidate changes the handed-off payload bytes, THEN THE release
+    gate SHALL reject the candidate.
+40. IF a Feature 9 candidate claims another platform, THEN THE release gate SHALL
+    require that platform's separate Release_Handoff_Record.
 
 ## Out of Scope
 
-- Publishing crates, synchronizing final release versions, or changing stable release
-  presentation; Feature 9 owns those actions.
+- Creating release tags or assets, synchronizing final release versions, generating
+  release SBOMs or attestations, applying Apple signing/notarization, or publishing the
+  immutable GitHub Release; Feature 9 owns those actions.
 - Running the complete Definitive Go SDK, target Dagger integration, or another
   language SDK test suite inside Rust sign-off.
 - Treating Namespace as a required SDK dependency, permanent CI provider, behavioural
@@ -1053,6 +1078,9 @@ no partial pass, stale retry, or hidden rebuild can authorize the Rust SDK relea
 - The exact artifact must survive a host restart as bytes, not merely as a digest or an
   in-memory Dagger graph object. This is the key difference between development cache
   reuse and reproducible sign-off reuse.
+- Feature 9 distributes the Rust SDK by immutable Git tag and exact Cargo revision and
+  publishes neither crates.io packages nor GHCR images. Feature 8 supplies the exact
+  signed-off bytes and evidence boundary but does not implement that release policy.
 - The final sign-off is intentionally strict: a case assertion that fails once makes
   the run fail. Infrastructure retries remain visible and may not create a second
   engine or baseline.

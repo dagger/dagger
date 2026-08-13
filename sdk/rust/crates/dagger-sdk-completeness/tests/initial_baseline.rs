@@ -110,11 +110,11 @@ fn target_locks_authorities_harness_status_and_ownership() {
     assert!(!derived.report.completeness_verdict);
     assert_eq!(
         derived.report.inventory_digest.as_str(),
-        "sha256:52bad4d60818d348d1b4fa209d14a39fbcd40e9349c28386e584abb69e190f09"
+        "sha256:e34c24a778016052d9b6fe1c1f702c97c46e94b172fe8a3708bc93404db8d0ed"
     );
     assert_eq!(
         derived.report.ledger_digest.as_str(),
-        "sha256:a87b4de2d67bc30c288d2cffff418d76f83a6bfe4e22ceb250531cfd714c6af4"
+        "sha256:bd7cb3ce0a24a4775e99f8a2040288f4fe1a487773ed82f31bfcfaef9861d8cc"
     );
     assert_eq!(derived.report.blocking_capabilities.len(), 3_898);
     assert_eq!(derived.report.complete_exceptions.len(), 10);

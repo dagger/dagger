@@ -52,8 +52,8 @@ available, and uses the resource's synchronous kill-on-drop backstop otherwise.
   a generated handle's lifecycle fields, but it does not add, remove, or reinterpret a
   schema field or method.
 - Feature 8 owns live platform and engine conformance beyond the focused Feature 2
-  tests. Feature 9 owns beta migration material, examples, publication, and the final
-  SemVer gate.
+  tests. Feature 9 owns beta migration material, examples, immutable Git-tagged
+  distribution, release assets, and the final SemVer gate.
 
 ### Dependency changes
 

@@ -111,9 +111,9 @@ engine-dependent completeness rows remain Partial.
 - Feature 8 owns the full platform, SDK, engine-distribution, and application
   conformance matrix. Feature 5 adds focused Linux engine-build and runtime evidence
   for the exact target.
-- Feature 9 owns stable publication, version synchronization, migration guidance,
-  crate release rehearsal, and release presentation. Feature 5 preserves
-  `dagger-sdk` as the only publishable Rust workspace crate.
+- Feature 9 owns stable Git-tagged distribution, version synchronization, migration
+  guidance, exact-revision Cargo rehearsal, release assets, and presentation. Feature
+  5 preserves `dagger-sdk` as the sole external SDK entry package.
 
 ### Construction rules
 

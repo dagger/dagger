@@ -40,8 +40,8 @@ Feature 7 depends on Feature 1's completeness contract, Feature 2's client owner
 Feature 3's transport and reliability, Feature 4's exact Core projection, Feature 5's
 engine operation and workspace seams, and Feature 6's module TypeDef surface. Feature
 8 owns cross-platform and complete engine-backed conformance, including the bounded
-exact-target SDK sign-off. Feature 9 owns publication, release migration, and stable
-release presentation.
+exact-target SDK sign-off. Feature 9 owns immutable Git-tagged distribution, release
+migration, release assets, and stable release presentation.
 
 Every Feature 7 implementation checkpoint is engine-free and Rust-first. Production
 schema composition, project reconciliation, formatting, compilation, query

@@ -63,7 +63,8 @@ artifacts satisfy Feature 1's evidence rules.
   `EXEC_ERROR` extension is transport error semantics and belongs here.
 - Feature 8 owns the closing live platform, conformance, and security matrices.
   Deterministic Linux, macOS, and Windows archive fixtures here do not claim that gate.
-- Feature 9 owns migration guidance and publication of the complete SDK.
+- Feature 9 owns migration guidance, immutable Git-tagged distribution, and verified
+  release assets for the complete SDK.
 
 ### Rust construction rules
 

@@ -89799,7 +89799,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:b231285f02b09837c4d2f39dd4c2a4abed2917ac43bfff321c788d1f5582a87d",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:355",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:364",
       "semantic_signature": {
         "clause_id": "conformance-applicability-accounting",
         "text": "policy/rust-policy/conformance-applicability-accounting"
@@ -89811,7 +89811,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:3e219034467b62665f1e87f1332e02a91018538fdad298c3dcc75046bf2e0feb",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:354",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:363",
       "semantic_signature": {
         "clause_id": "conformance-capability-scope",
         "text": "policy/rust-policy/conformance-capability-scope"
@@ -89823,7 +89823,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:6f31354037c2b669f1b7146dd0bb6fe0e45966cd93c89d76afc8931560ea07f7",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:356",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:365",
       "semantic_signature": {
         "clause_id": "conformance-case-catalog",
         "text": "policy/rust-policy/conformance-case-catalog"
@@ -89835,7 +89835,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:20f557790aaeafb0a6f39d6317770db4db688d82c5b657f13f30d9993832e520",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:357",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:366",
       "semantic_signature": {
         "clause_id": "conformance-engine-free-checkpoint",
         "text": "policy/rust-policy/conformance-engine-free-checkpoint"
@@ -90363,7 +90363,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:f935072cd60f6935c6cfeeff3b29ed83f078c7cdf1bc190ee63573a4acbfd286",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:369",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:379",
       "semantic_signature": {
         "clause_id": "platform-native-matrix",
         "text": "policy/rust-policy/platform-native-matrix"
@@ -90387,7 +90387,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:fab58af6c792d931a29100fd62610a075ee833f10d106fd4c5762e9dfa1fd833",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:371",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:381",
       "semantic_signature": {
         "clause_id": "security-artifact-provenance",
         "text": "policy/rust-policy/security-artifact-provenance"
@@ -90399,7 +90399,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:f6ece79cf8e7d338150c9819ca8c2d8132e86cb81cf5464c67d14f9d4ec86484",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:372",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:382",
       "semantic_signature": {
         "clause_id": "security-artifact-vulnerability-scan",
         "text": "policy/rust-policy/security-artifact-vulnerability-scan"
@@ -90411,7 +90411,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:f39a1253829fde627052f04a512df8555e3184fd26b782268c614119eb610052",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:374",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:384",
       "semantic_signature": {
         "clause_id": "security-expiring-exception",
         "text": "policy/rust-policy/security-expiring-exception"
@@ -90423,7 +90423,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:7f097524685ea9ecf9961888353e919aad974e469642d0b41fc845ed7cec20c4",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:370",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:380",
       "semantic_signature": {
         "clause_id": "security-locked-supply-chain",
         "text": "policy/rust-policy/security-locked-supply-chain"
@@ -90435,7 +90435,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:5252462d96d48c4320cc200e9f6909d452cd1bbe73590bd3b4c932afea42b807",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:373",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:383",
       "semantic_signature": {
         "clause_id": "security-secret-canary",
         "text": "policy/rust-policy/security-secret-canary"
@@ -90447,7 +90447,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:d4d9704953678ab2b43c8e63a3dbcc839fa8566846ec025d630ee8e42b94ac4e",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:360",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:369",
       "semantic_signature": {
         "clause_id": "signoff-artifact-import-reuse",
         "text": "policy/rust-policy/signoff-artifact-import-reuse"
@@ -90459,7 +90459,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:879e9709fedbd35e5034193cc2a6e375e78bfdf1dc8e2424ab2befbd8be0da88",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:366",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:375",
       "semantic_signature": {
         "clause_id": "signoff-atomic-verdict",
         "text": "policy/rust-policy/signoff-atomic-verdict"
@@ -90471,7 +90471,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:e04a7acb20b8518df17cc6b59fc9876cb3f51117ab3af3081694fa0d8beba497",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:365",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:374",
       "semantic_signature": {
         "clause_id": "signoff-case-retry-honesty",
         "text": "policy/rust-policy/signoff-case-retry-honesty"
@@ -90483,7 +90483,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:6b7d76464dcb83837a9c986769bc66690d087e2af3f3f2d6c40118cc819648ff",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:361",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:370",
       "semantic_signature": {
         "clause_id": "signoff-closure-evidence",
         "text": "policy/rust-policy/signoff-closure-evidence"
@@ -90495,7 +90495,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:ceaf0f8232e28511deb481ad6b16771fdf856f96a39460e2cf4c7936d5779604",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:367",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:377",
       "semantic_signature": {
         "clause_id": "signoff-duplicate-work-rejection",
         "text": "policy/rust-policy/signoff-duplicate-work-rejection"
@@ -90507,7 +90507,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:85c6a109879ffb5c6742fa8620fd4e096e84079a3767816c7cff904f1bebcc49",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:359",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:368",
       "semantic_signature": {
         "clause_id": "signoff-exact-target-artifact",
         "text": "policy/rust-policy/signoff-exact-target-artifact"
@@ -90519,7 +90519,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:f0eac51f5466afdd530c6da0716da39dc5d7a31d9d2e9d3aa8339b5414557d82",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:358",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:367",
       "semantic_signature": {
         "clause_id": "signoff-host-preflight",
         "text": "policy/rust-policy/signoff-host-preflight"
@@ -90531,7 +90531,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:e2a98424f2b1015039275076a865ac3711c87e492da510c7d71657f8802a2e5a",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:364",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:373",
       "semantic_signature": {
         "clause_id": "signoff-isolated-case-fanout",
         "text": "policy/rust-policy/signoff-isolated-case-fanout"
@@ -90543,7 +90543,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:d07c6e258b4aba6c628fb3a567f8434b64f86f39879a3b83e34dc07ee6f8d378",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:368",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:378",
       "semantic_signature": {
         "clause_id": "signoff-phase-budget",
         "text": "policy/rust-policy/signoff-phase-budget"
@@ -90555,7 +90555,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:fa6da26e94f98082285e3eed630b51b8095e918f9d02077047e29112f5c7b122",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:362",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:371",
       "semantic_signature": {
         "clause_id": "signoff-single-engine",
         "text": "policy/rust-policy/signoff-single-engine"
@@ -90567,7 +90567,7 @@
       "authority_id": "rust-policy",
       "fingerprint": "sha256:420b4755113b5d421f79472ad14e012257b41d117fb07f75ad166f79a4d8307b",
       "item_kind": "rust-policy",
-      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:363",
+      "locator": ".kiro/specs/rust-sdk-conformance-security/requirements.md:372",
       "semantic_signature": {
         "clause_id": "signoff-single-rust-baseline",
         "text": "policy/rust-policy/signoff-single-rust-baseline"

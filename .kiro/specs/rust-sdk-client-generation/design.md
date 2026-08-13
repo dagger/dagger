@@ -107,9 +107,10 @@ set of workspace and real-query facts that a direct harness cannot prove.
 - Feature 8 owns the reusable exact-target engine artifact, one-engine sign-off run,
   platform and cross-SDK conformance, and the final digest-bound verdict. Feature 7
   defines and validates the client case inventory but does not execute it locally.
-- Feature 9 owns crates.io publication, public release automation, migration policy,
-  and stable-release presentation. Feature 7 consumes an exact registry or immutable
-  Git `PublishedSdkDependency`; it does not publish the generated package or the SDK.
+- Feature 9 owns immutable Git-tagged SDK distribution, public release automation,
+  migration policy, release assets, and stable-release presentation. Feature 7
+  consumes an immutable Git `PublishedSdkDependency`; it does not release the
+  generated package or the SDK.
 - `dagger-codegen` remains the pure compiler. It owns client schema scope, local names,
   type projection, method shape, Rust rendering, and the semantic binding catalog.
 - `dagger-sdk` owns the public runtime and a deliberately tiny, exact-version,

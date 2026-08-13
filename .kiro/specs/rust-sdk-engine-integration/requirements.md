@@ -32,8 +32,8 @@ It establishes the engine-facing seams that later work fills:
   while Feature 5 owns the engine hook and lossless operation boundary used to request
   them;
 - Feature 8 owns the full cross-platform and cross-SDK release matrix; and
-- Feature 9 owns final crate publication, version synchronization, user migration, and
-  stable-release presentation.
+- Feature 9 owns final Git-tagged SDK distribution, version synchronization, user
+  migration, release assets, and stable-release presentation.
 
 The engine contract, checked target, and Definitive_Go_SDK are peer authorities within
 their declared scopes. Rust policy owns Cargo project shape, dependency sources,

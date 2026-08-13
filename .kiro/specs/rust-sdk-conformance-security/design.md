@@ -84,6 +84,13 @@ bundle, case catalog, platform matrix, security report, every attempt, every cou
 every phase timing. A missing, stale, skipped, failed, leaking, duplicated, or
 overbroad input yields one failed verdict and no admissible successful subset.
 
+A passing imported-artifact verdict also derives one `ReleaseHandoffRecord`. The
+record is a deliberately narrow boundary: it preserves the exact outer bundle, inner
+payload, manifest, security report, verdict, subject, and platform identities for
+Feature 9. It cannot authorize publication, widen a platform claim, or bless a rebuilt
+payload. Feature 9 may add a release envelope around those bytes, but the signed-off
+payload itself remains immutable.
+
 ## Dependencies and Non-Goals
 
 ### Owning relationships
@@ -113,9 +120,11 @@ overbroad input yields one failed verdict and no admissible successful subset.
 - Feature 7 owns standalone client generation, project reconciliation, generated
   module API, and its five deferred cases. Its admitted engine-free closure and case
   inventory are consumed without replay.
-- Feature 9 owns crate publication, release version synchronization, release
-  automation, migration presentation, and the public `v1.0.0` release claim. It accepts
-  only a passing Feature 8 verdict.
+- Feature 9 owns immutable Git-tagged SDK distribution, release version
+  synchronization, exact asset assembly, SBOMs, attestations, Apple signing
+  disposition, release automation, migration presentation, and the public `v1.0.0`
+  release claim. It accepts only a passing Feature 8 verdict and matching
+  `ReleaseHandoffRecord`; it does not rebuild the handed-off payload.
 - `dagger-sdk-completeness` owns all pure Feature 8 contract types, canonical encoding,
   applicability and case compilation, evidence admission, security/platform policy,
   and verdict derivation.
@@ -132,8 +141,10 @@ overbroad input yields one failed verdict and no admissible successful subset.
 - `toolchains/security` owns the Trivy invocation over an exact supplied payload.
   Feature 8 adds immutable scanner/database observation and canonical result
   translation; it does not rebuild the engine for scanning.
-- GitHub Actions owns native hosted execution for Linux, macOS, and Windows. The Rust
-  policy model owns whether those observations form a complete portable matrix.
+- GitHub Actions owns routine native hosted execution for Linux and macOS plus the
+  separately dispatched engine-free Windows preflight. The Rust policy model owns
+  whether those observations form a complete portable matrix; Namespace Personal is
+  not assumed to provide a Windows runner.
 - The host provider or remote-execution wrapper owns transport to a machine. The
   `devbox exec` command is used to reach the first Namespace host, but no Namespace
   command, account, box ID, or API enters a repository contract or retained verdict.
@@ -1120,10 +1131,33 @@ pub struct AtomicSignoffVerdict {
     pub decision: VerdictDecision,
 }
 
+pub struct ReleaseHandoffRecord {
+    pub format_version: ConformanceFormatVersion,
+    pub handoff_digest: Digest,
+    pub target_digest: TargetDigest,
+    pub subject_revision: CommitSha,
+    pub platform: PlatformDescriptor,
+    pub signoff_bundle_digest: Digest,
+    pub artifact_manifest_digest: Digest,
+    pub artifact_payload_digest: Digest,
+    pub security_report_digest: Digest,
+    pub verdict_digest: Digest,
+    pub authority: ReleaseHandoffAuthority,
+}
+
+pub enum ReleaseHandoffAuthority {
+    EvidenceOnly,
+}
+
 pub fn derive_atomic_signoff_verdict(
     context: &SignoffAdmissionContext<'_>,
     observation: SignoffObservation,
 ) -> AtomicSignoffVerdict;
+
+pub fn derive_release_handoff(
+    bundle: &VerifiedArtifactBundle,
+    verdict: &AtomicSignoffVerdict,
+) -> Result<ReleaseHandoffRecord, ConformanceDiagnosticSet>;
 ```
 
 `derive_atomic_signoff_verdict` is total for a decodable observation: it returns a
@@ -1142,6 +1176,12 @@ preflight's earlier smoke start belongs only to the preflight record. Exactly on
 Exact_Target_Engine start and baseline materialization are mandatory. The artifact
 counters depend on Build versus Import. Closure replay and unrelated action counts
 must remain zero.
+
+`derive_release_handoff` succeeds only for the authoritative imported-artifact path
+and a passing verdict whose complete identity set matches the verified bundle. The
+caller must retain the actual bundle and payload bytes; a digest without recoverable
+content is insufficient. A failed verdict, rebuilt or mutated payload, subject drift,
+or platform change returns a typed diagnostic and no handoff record.
 
 ### Completeness admission and reporting
 (`dagger-sdk-completeness/src/conformance/mod.rs`)
@@ -1186,7 +1226,9 @@ The guide records:
 - how to inspect counters, timings, case attempts, scanner/database identities, and
   failures;
 - how to verify a clean reproducible completeness diff; and
-- which evidence is implementation closure versus release sign-off.
+- which evidence is implementation closure versus release sign-off;
+- how the exact outer bundle and inner payload are retained for Feature 9; and
+- why the release handoff permits neither rebuild, platform widening, nor publication.
 
 Commands use placeholders for provider transport, artifact directory, and subject
 revision. No personal account, box ID, or absolute developer path is checked in.
@@ -1264,6 +1306,13 @@ origin records. `checksums.sha256` is derived from canonical member bytes and us
 fixed member order, permissions, ownership, timestamps, and compression policy so the
 same inputs reproduce the same bundle. It lists the manifest, provenance record, and
 OCI payload only; it does not recursively list itself.
+
+The successful imported run retains this complete outer bundle and its inner OCI
+payload as the Feature 9 handoff. Release automation may copy the bundle or wrap the
+unchanged payload with release-only metadata. It may not reconstruct the OCI archive,
+recompress the payload under the same identity, replace a member, or infer support for
+another platform. Each additional platform requires its own bundle, security report,
+passing verdict, and `ReleaseHandoffRecord`.
 
 ### Closure bundle
 
@@ -1575,6 +1624,17 @@ derived diff, and prevent Feature 9 release admission.
 
 **Validates: Requirements 12.20–12.35**
 
+### Property 25: Release handoff preserves exact signed-off bytes and scope
+
+*For any* verified artifact bundle, atomic verdict, payload mutation, subject
+mutation, and platform mutation, handoff derivation SHALL produce one deterministic
+record if and only if the authoritative imported-artifact verdict passed and every
+bundle, manifest, payload, security, subject, and platform identity matches. A failed
+verdict, unavailable bytes, rebuild, byte mutation, or platform widening SHALL produce
+no handoff, and a valid handoff SHALL never authorize publication by itself.
+
+**Validates: Requirements 5.21–5.22, 12.36–12.40**
+
 ## Error Handling
 
 Pure Feature 8 validation returns a sorted non-empty `ConformanceDiagnosticSet`.
@@ -1624,6 +1684,7 @@ Dagger, Cargo, Git, scanner, and engine output never becomes the stable error co
 | Checkpoint evidence is incomplete/stale/miscounted | `CheckpointEvidenceInvalid` | `CONFORMANCE_CHECKPOINT_EVIDENCE_INVALID` |
 | Sign-off contains unrelated SDK/distribution action | `ForbiddenSignoffEvent` | `SIGNOFF_UNRELATED_WORK` |
 | Verdict identity/timing/counter/evidence is incomplete | `VerdictIncomplete` | `SIGNOFF_VERDICT_INCOMPLETE` |
+| Release handoff bytes, verdict, subject, or platform differ | `ReleaseHandoffInvalid` | `SIGNOFF_RELEASE_HANDOFF_INVALID` |
 | Persisted output contains a path, identity, control text, or secret | `EvidenceRedactionFailed` | `EVIDENCE_REDACTION_FAILED` |
 
 Diagnostics contain only stable capability/assertion/case IDs, semantic policy fields,
@@ -1640,7 +1701,7 @@ while preserving canonical ordering.
 
 ### Property tests
 
-All Properties 1–24 are required and use workspace-standard `proptest` with at least
+All Properties 1–25 are required and use workspace-standard `proptest` with at least
 100 successful cases. Scope, graph, artifact state-machine, isolation, secret-chunking,
 and atomic-verdict properties use at least 256 cases because their mutation spaces are
 larger. Stable function names (`property_01_exact_scope`, and so on) carry traceability;
@@ -1659,7 +1720,7 @@ task numbers.
 | `dagger-sdk-completeness/tests/platform_matrix_properties.rs` | 16–17 | native/descriptor matrices and identity/status mutations |
 | `dagger-sdk-completeness/tests/signoff_security_properties.rs` | 18–20 | Cargo graphs, provenance, findings/exceptions, chunked canary outputs |
 | `dagger-sdk-engine/tests/conformance_checkpoint_properties.rs` | 21–22 | typed action plans, asset states, prior evidence, timings/counts |
-| `dagger-sdk-completeness/tests/signoff_verdict_properties.rs` | 23–24 | complete observation trees, arbitrary order, all failure mutations |
+| `dagger-sdk-completeness/tests/signoff_verdict_properties.rs` | 23–25 | complete observation trees, artifact bytes, arbitrary order, all failure mutations |
 
 The scope reference model performs exact set equality and disposition truth tables.
 The catalog model uses simple forward/reverse set joins. The artifact model is a small
@@ -1674,7 +1735,7 @@ required identities, counts, results, and gates.
 Example-based tests cover fixed facts which do not benefit from randomized inputs:
 
 - exact 1,081-item initial count, status partition, and scope digest;
-- the 21 new Rust policy capability spellings;
+- the 22 new Rust policy capability spellings;
 - all 17 pinned sdk-sdk subject check IDs and exclusion of its harness-self check;
 - the nine definitive Go-client behaviour IDs;
 - exact Feature 5, Feature 6, and Feature 7 case inventories;
@@ -1687,7 +1748,8 @@ Example-based tests cover fixed facts which do not benefit from randomized input
 - exact Trivy image/provenance registry entry, database metadata decoding, and finding
   severity mapping;
 - every exception expiry variant at its boundary;
-- canonical failed and passed verdict JSON and Markdown rendering; and
+- canonical failed and passed verdict JSON, release handoff JSON, and Markdown
+  rendering; and
 - umbrella documentation wording that distinguishes checkpoint, preflight,
   Orchestration_Engine, Exact_Target_Engine, and release sign-off.
 
@@ -1707,7 +1769,8 @@ The production Rust compilers and validators run against checked fixtures for:
 5. built/imported artifact event logs with actual small canary payload bytes;
 6. Linux/macOS/Windows native observation documents and all descriptor pairs;
 7. Cargo Deny/provenance/finding/exception/canary security documents; and
-8. passed and every-class-failed sign-off observations.
+8. passed and every-class-failed sign-off observations; and
+9. exact-byte, mutated-byte, and widened-platform release handoff candidates.
 
 The fixture host adapter uses a deterministic in-memory filesystem, daemon, service,
 cache, and clock. It executes the real preflight planner/recorder but cannot start
@@ -1732,9 +1795,12 @@ These source/fixture tests verify graph construction, not engine behaviour.
 ### Native platform jobs
 
 `.github/workflows/rust-sdk-platform.yml` runs the same engine-free platform test
-binary on Linux, macOS, and Windows with Rust 1.97.1 and committed lockfiles. Each job
-uploads one canonical bounded observation. A separate aggregation job runs the pure
-matrix compiler and rejects any missing or mismatched job.
+binary on Linux and macOS with Rust 1.97.1 and committed lockfiles for routine pull
+requests. `.github/workflows/rust-sdk-windows-preflight.yml` runs the Windows
+observation only when explicitly dispatched for ultimate SDK sign-off. Each job
+uploads one canonical bounded observation. The pure matrix compiler accepts sign-off
+only when all three current observations are present and rejects any missing or
+mismatched job.
 
 The jobs do not install Dagger, start Docker, build an engine, execute a module, or run
 another SDK. They may compile the public Rust packages and private platform test
@@ -1800,7 +1866,8 @@ verdict model are complete, one bounded Linux/amd64 sign-off does the following:
 6. fan out the closed isolated Rust case catalog with bounded concurrency;
 7. stop and reap the target service;
 8. derive one atomic Rust verdict from all observations; and
-9. reproduce the completeness artifacts and require a clean reviewed diff.
+9. derive one Release_Handoff_Record from the passing imported-artifact verdict; and
+10. reproduce the completeness artifacts and require a clean reviewed diff.
 
 The initial validation exercises both artifact paths without duplicating target work:
 a built run exports the bundle; a later invocation after host/session restart imports

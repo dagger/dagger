@@ -34,7 +34,8 @@ operation, project, runtime, and nested-session seams. It fills the semantic con
 of Generate_Module and Generate_Entrypoint without changing their engine ABI. Feature
 7 owns complete standalone Core, module, and dependency client projects. Feature 8
 owns the full engine-backed, cross-SDK, and cross-platform conformance matrix. Feature
-9 owns publication, migration, and stable-release presentation.
+9 owns immutable Git-tagged distribution, migration, release assets, and stable-release
+presentation.
 
 Local development and every Feature 6 implementation checkpoint are engine-free by
 contract. Production source analysis, descriptor construction, TypeDef projection,

@@ -845,14 +845,21 @@
     - A failed/missing verdict must retain every unsupported blocker. Reject stale
       verdicts, unproved assertions, inapplicability without decision evidence, and any
       direct ledger edit.
-    - _Requirements: 1.13-1.18, 7.17-7.18, 12.30-12.35_
+    - Derive one Release_Handoff_Record only from the authoritative imported-artifact
+      path, retained bundle/payload bytes, matching security report, and passing
+      verdict. The handoff must not authorize publication or another platform.
+    - Add the `policy/rust-policy/signoff-release-handoff` capability and require its
+      exact evidence route without rewriting the historical 21-row checkpoint record.
+    - _Requirements: 1.13-1.18, 5.21-5.22, 7.17-7.18, 12.30-12.40_
   - [ ] 29.2 Add honest Feature 8 completeness reporting
     - Render independent applicability, implementation, native-platform, security, and
       exact-engine sections; include neutral status counts, remaining blockers,
       artifact/verdict digests, timings, and reproducibility result.
     - Update checked report/inventory/ledger artifacts only from admitted transitions
       and require a clean reproducible diff.
-    - _Requirements: 1.17-1.18, 12.31-12.35_
+    - Report the release handoff identity and exact one-platform scope separately from
+      the sign-off verdict; never describe handoff eligibility as publication.
+    - _Requirements: 1.17-1.18, 12.31-12.40_
   - [ ] 29.3 Write the durable conformance and sign-off workflow
     - Add `sdk/rust/CONFORMANCE_SIGNOFF.md` covering applicability review, engine-free
       checkpoints, native evidence, host preflight, Namespace as a replaceable example,
@@ -862,13 +869,26 @@
       requirements, and relevant workflow docs. Use placeholders rather than personal
       paths/account/box IDs and distinguish Orchestration_Engine from
       Exact_Target_Engine.
-    - _Requirements: 2.19-2.20, 5.10-5.18, 10.10-10.17, 11.1-11.20, 12.30-12.35_
+    - Document how the exact outer bundle and inner payload are retained for Feature 9
+      and why the handoff permits no rebuild, platform widening, or publication.
+    - _Requirements: 2.19-2.20, 5.10-5.22, 10.10-10.17, 11.1-11.20, 12.30-12.40_
+  - [ ] 29.4 Property test: Property 25 — release handoff preserves exact signed-off bytes and scope
+    - Implement `property_25_release_handoff_preserves_exact_bytes_and_scope` over at
+      least 256 passed/failed verdicts, retained/unavailable bundles, payload byte
+      mutations, subject mutations, and platform-widening attempts.
+    - Require a handoff only for one passing identity-exact imported artifact; every
+      rebuild, mutation, widened claim, or failed verdict must produce no handoff, and
+      no handoff may authorize publication.
+    - _Requirements: 5.21-5.22, 12.36-12.40_
 
 - [ ] 30. Add native CI aggregation and record Feature 8 implementation closure
-  - [ ] 30.1 Add the engine-free Linux/macOS/Windows workflow
-    - Create `.github/workflows/rust-sdk-platform.yml` with read-only permissions,
-      Rust 1.97.1, committed lockfiles, native package/fixture tests, bounded canonical
-      observation upload, and no Dagger/Docker/engine/other SDK work.
+  - [ ] 30.1 Complete the engine-free native observation workflow
+    - Keep `.github/workflows/rust-sdk-platform.yml` on routine Linux/macOS pull
+      requests and use the separately dispatched
+      `.github/workflows/rust-sdk-windows-preflight.yml` only to refresh Windows for
+      ultimate SDK sign-off. Both use read-only permissions, Rust 1.97.1, committed
+      lockfiles, native package/fixture tests, bounded canonical observation upload,
+      and no Dagger/Docker/engine/other SDK work.
     - Add an aggregation job which verifies exact source/toolchain/test identities and
       assembles the matrix through the production Rust model; reject missing, stale,
       skipped, failed, or duplicate native evidence.
@@ -888,7 +908,9 @@
       promises, and Feature 9's requirement for a passed Feature 8 verdict.
     - Ensure implementation closure alone leaves exact-engine blockers and cannot
       render SDK sign-off complete.
-    - _Requirements: 4.13-4.19, 11.19-11.20, 12.30-12.35_
+    - Pin handoff bytes/identity fixtures and reject rebuilt payloads, missing retained
+      bytes, and widened platform claims.
+    - _Requirements: 4.13-4.19, 5.21-5.22, 11.19-11.20, 12.30-12.40_
 
 - [ ] 31. Complete the production one-artifact, one-engine sign-off facade
   - [ ] 31.1 Wire the canonical run plan and evidence inputs into `rust-sdk-dev`
@@ -898,7 +920,7 @@
     - Validate input digests before graph construction, reject an incomplete catalog
       or closure before target work, use one pinned Orchestration_Engine invocation,
       and return typed raw observations rather than a Go-computed pass.
-    - _Requirements: 3.1-3.24, 4.1-4.19, 5.1-5.20, 12.1-12.19_
+    - _Requirements: 3.1-3.24, 4.1-4.19, 5.1-5.22, 12.1-12.19_
   - [ ] 31.2 Connect artifact, scan, service, baseline, and complete case fan-out once
     - Build or import one artifact, pass the same payload to scanning and target
       import, start one exact target service, materialize one baseline, execute the
@@ -907,14 +929,14 @@
     - Remove or fence old feature-local entrypoints which could construct a second
       service, installation, artifact, or partial passing verdict. Focused selectors
       may remain development-only but cannot produce admissible evidence.
-    - _Requirements: 5.1-5.20, 6.1-6.22, 7.1-7.18, 9.14-9.23, 12.1-12.35_
+    - _Requirements: 5.1-5.22, 6.1-6.22, 7.1-7.18, 9.14-9.23, 12.1-12.40_
   - [ ] 31.3 Add total engine-free construction audits for the final graph
     - Prove one artifact materialization branch, one scanner payload edge, one service
       creation, one baseline install, complete fixed/dynamic case registry, bounded
       fan-out, one cleanup edge, all raw observation fields, and zero unrelated SDK or
       distribution paths by AST/fixture inspection.
     - Keep this audit engine-free; exact behaviour is reserved for Task 32.
-    - _Requirements: 5.1-5.20, 6.1-6.22, 11.1-11.20, 12.1-12.35_
+    - _Requirements: 5.1-5.22, 6.1-6.22, 11.1-11.20, 12.1-12.40_
 
 - [ ] 32. Final checkpoint: produce one imported exact-target SDK sign-off verdict
   - Refresh the provider-neutral host preflight only if its profile, smoke tool/engine,
@@ -936,9 +958,11 @@
     platform, security, all attempts/counts/timings, and zero leak/duplicate/unrelated
     event. A failure produces no partial status change and remains the final result.
   - Derive Feature 1 transitions and checked reports from that verdict, run the clean
-    reproducibility gate, update task evidence with exact commands/timings/digests, and
-    confirm Feature 9—not Feature 8—owns publication and stable release presentation.
-  - _Requirements: 1.17-1.18, 2.1-2.20, 3.1-3.24, 4.1-4.19, 5.1-5.20, 6.1-6.22, 7.1-7.18, 8.20-8.21, 9.11-9.25, 10.1-10.17, 12.1-12.35_
+    reproducibility gate, retain the exact outer bundle and inner payload, and emit one
+    Release_Handoff_Record bound to the passing verdict and Linux/amd64 platform.
+    Update task evidence with exact commands/timings/digests, and confirm Feature 9—not
+    Feature 8—owns Git tagging, release assets, attestations, and stable presentation.
+  - _Requirements: 1.17-1.18, 2.1-2.20, 3.1-3.24, 4.1-4.19, 5.1-5.22, 6.1-6.22, 7.1-7.18, 8.20-8.21, 9.11-9.25, 10.1-10.17, 12.1-12.40_
 
 ## Final SDK Sign-off Gate
 
@@ -953,6 +977,9 @@ SDK execution are separated across a host/session restart. The artifact-producin
 invocation builds each component at most once and starts no Exact_Target_Engine. The
 authoritative invocation imports once, builds no component, starts one
 Exact_Target_Engine, installs one Rust baseline, and executes the complete catalog.
+Only after that run passes does the Rust policy model emit the Linux/amd64
+Release_Handoff_Record. Feature 9 must distribute those exact bytes or require a new
+platform-specific Feature 8 artifact and verdict.
 
 ## Task Dependency Graph
 
@@ -1016,7 +1043,8 @@ evidence artifact without first splitting ownership by file and digest.
   not.
 - Task 32 alone performs exact-target SDK sign-off. It is intentionally import-first
   for the authoritative verdict: build/export once, restart, import with zero builds,
-  then start one target engine and install one baseline.
+  then start one target engine, install one baseline, and retain the passed bytes for
+  Feature 9 without authorizing publication.
 - The Orchestration_Engine is infrastructure needed to evaluate the Dagger graph. The
   Exact_Target_Engine is the product under test. Both identities/counts are recorded;
   only the latter is the exact-one target-service invariant.
