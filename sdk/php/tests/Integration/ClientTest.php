@@ -70,4 +70,15 @@ class ClientTest extends TestCase
 
         $this->assertEquals('3.16.2', trim($contents));
     }
+
+    public function testNode(): void
+    {
+        $client = $this->newClient();
+        $containerId = $client->container()->id();
+
+        $node = $client->node($containerId);
+
+        self::assertNotNull($node);
+        self::assertEquals($containerId, $node->id());
+    }
 }
