@@ -8,7 +8,7 @@ mkdir -p "$output_root/raw" "$output_root/profiles"
 
 manifest="$output_root/manifest.tsv"
 if [[ ! -f "$manifest" ]]; then
-	printf 'phase\tfamily\tscale\treplicate\tstatus\telapsed_s\tmax_rss_kib\tfile\n' >"$manifest"
+	printf 'phase\tfamily\tscale\treplicate\tstatus\toutcome\telapsed_s\tmax_rss_kib\tfile\n' >"$manifest"
 fi
 
 characterize_environment() {
@@ -49,6 +49,29 @@ extract_max_rss() {
 	printf '%s' "${max_rss:-0}"
 }
 
+classify_point_output() {
+	local status="$1"
+	local raw="$2"
+	if [[ "$status" -eq 124 || "$status" -eq 143 ]]; then
+		printf 'external-timeout'
+	elif [[ "$status" -ne 0 ]]; then
+		printf 'command-failure'
+	else
+		awk '
+			/EGRAPH_BENCH_STOP/ { stopped = 1 }
+			/^BenchmarkCacheEGraph.*-[0-9]+[[:space:]]+1[[:space:]]/ { result = 1 }
+			END {
+				# A setup or in-process memory guard skips the sub-benchmark
+				# without a result line. Recognize that deliberate family stop
+				# before validating ordinary successful output.
+				if (stopped) print "benchmark-stop"
+				else if (!result) print "missing-result"
+				else print "completed"
+			}
+		' "$raw"
+	fi
+}
+
 run_preflight() {
 	local family="$1"
 	local raw_name="$2"
@@ -66,8 +89,16 @@ run_preflight() {
 	local elapsed=$((SECONDS - started))
 	local max_rss
 	max_rss="$(extract_max_rss "$raw")"
-	printf 'preflight\t%s\t-\t1\t%s\t%s\t%s\t%s\n' \
-		"$family" "$status" "$elapsed" "$max_rss" "$raw" >>"$manifest"
+	local outcome=completed
+	if [[ "$status" -eq 124 || "$status" -eq 143 ]]; then
+		outcome=external-timeout
+	elif [[ "$status" -ne 0 ]]; then
+		outcome=command-failure
+	elif (( max_rss > 4194304 )); then
+		outcome=max-rss-failure
+	fi
+	printf 'preflight\t%s\t-\t1\t%s\t%s\t%s\t%s\t%s\n' \
+		"$family" "$status" "$outcome" "$elapsed" "$max_rss" "$raw" >>"$manifest"
 	if [[ "$status" -ne 0 ]]; then
 		printf 'preflight failed or exceeded 75s: family=%s status=%s raw=%s\n' \
 			"$family" "$status" "$raw" >&2
@@ -105,39 +136,52 @@ run_point() {
 			>"$raw" 2>&1
 		local status=$?
 		set -e
-		if [[ "$status" -eq 0 ]] && ! grep -Eq '^BenchmarkCacheEGraph.*-[0-9]+[[:space:]]+1[[:space:]]' "$raw"; then
+		local outcome
+		outcome="$(classify_point_output "$status" "$raw")"
+		if [[ "$outcome" == missing-result ]]; then
 			printf 'runner validation: benchmark emitted no one-iteration result line\n' >>"$raw"
-			status=1
 		fi
 		local elapsed=$((SECONDS - started))
 		local max_rss
 		max_rss="$(extract_max_rss "$raw")"
-		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-			"$phase" "$family" "$scale" "$replicate" "$status" "$elapsed" "$max_rss" "$raw" >>"$manifest"
+		if [[ "$outcome" == completed ]] && (( max_rss > 4194304 )); then
+			outcome=max-rss-stop
+		fi
+		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+			"$phase" "$family" "$scale" "$replicate" "$status" "$outcome" "$elapsed" "$max_rss" "$raw" >>"$manifest"
 
-		if [[ "$status" -ne 0 ]]; then
-			if [[ "$status" -eq 124 || "$status" -eq 143 ]]; then
-				stopped[$key]=1
-				printf 'stopping larger points: family=%s scale=%s reason=external-timeout status=%s raw=%s\n' \
-					"$family" "$scale" "$status" "$raw"
-				return 0
-			fi
-			printf 'benchmark failed: family=%s scale=%s replicate=%s status=%s raw=%s\n' \
-				"$family" "$scale" "$replicate" "$status" "$raw" >&2
+		case "$outcome" in
+		external-timeout)
+			stopped[$key]=1
+			printf 'stopping larger points: family=%s scale=%s outcome=%s status=%s raw=%s\n' \
+				"$family" "$scale" "$outcome" "$status" "$raw"
+			return 0
+			;;
+		benchmark-stop)
+			stopped[$key]=1
+			printf 'stopping larger points: family=%s scale=%s outcome=%s raw=%s\n' \
+				"$family" "$scale" "$outcome" "$raw"
+			return 0
+			;;
+		max-rss-stop)
+			stopped[$key]=1
+			printf 'stopping larger points: family=%s scale=%s outcome=%s max_rss_kib=%s raw=%s\n' \
+				"$family" "$scale" "$outcome" "$max_rss" "$raw"
+			return 0
+			;;
+		command-failure)
+			printf 'benchmark failed: family=%s scale=%s replicate=%s outcome=%s status=%s raw=%s\n' \
+				"$family" "$scale" "$replicate" "$outcome" "$status" "$raw" >&2
 			exit "$status"
-		fi
-		if grep -q 'EGRAPH_BENCH_STOP' "$raw"; then
-			stopped[$key]=1
-			printf 'stopping larger points: family=%s scale=%s reason=benchmark-limit raw=%s\n' \
-				"$family" "$scale" "$raw"
-			return 0
-		fi
-		if (( max_rss > 4194304 )); then
-			stopped[$key]=1
-			printf 'stopping larger points: family=%s scale=%s reason=max-rss max_rss_kib=%s raw=%s\n' \
-				"$family" "$scale" "$max_rss" "$raw"
-			return 0
-		fi
+			;;
+		missing-result)
+			printf 'benchmark failed: family=%s scale=%s replicate=%s outcome=%s status=%s raw=%s\n' \
+				"$family" "$scale" "$replicate" "$outcome" "$status" "$raw" >&2
+			exit 1
+			;;
+		completed) ;;
+		*) printf 'internal runner error: unknown outcome=%s\n' "$outcome" >&2; exit 1 ;;
+		esac
 	done
 }
 
@@ -396,25 +440,26 @@ run_profile() {
 		>"$raw" 2>&1
 	local status=$?
 	set -e
-	if [[ "$status" -eq 0 ]] && ! grep -Eq '^BenchmarkCacheEGraph.*-[0-9]+[[:space:]]+1[[:space:]]' "$raw"; then
+	local outcome
+	outcome="$(classify_point_output "$status" "$raw")"
+	if [[ "$outcome" == missing-result ]]; then
 		printf 'runner validation: profile emitted no one-iteration result line\n' >>"$raw"
-		status=1
 	fi
 	local elapsed=$((SECONDS - started))
 	local max_rss
 	max_rss="$(extract_max_rss "$raw")"
-	printf 'profile\tfirst-anomaly\t%s\t1\t%s\t%s\t%s\t%s\n' \
-		"$scale" "$status" "$elapsed" "$max_rss" "$raw" >>"$manifest"
-	if [[ "$status" -ne 0 ]]; then
-		printf 'status=%s\n' "$status" >"$attempt/FAILED"
-		rmdir "$claim"
-		printf 'profile failed or exceeded 75s: status=%s raw=%s\n' "$status" "$raw" >&2
-		exit "$status"
+	if [[ "$outcome" == completed ]] && (( max_rss > 4194304 )); then
+		outcome=max-rss-failure
 	fi
-	if (( max_rss > 4194304 )); then
-		printf 'max_rss_kib=%s\n' "$max_rss" >"$attempt/FAILED"
+	printf 'profile\tfirst-anomaly\t%s\t1\t%s\t%s\t%s\t%s\t%s\n' \
+		"$scale" "$status" "$outcome" "$elapsed" "$max_rss" "$raw" >>"$manifest"
+	if [[ "$outcome" != completed ]]; then
+		printf 'status=%s\noutcome=%s\n' "$status" "$outcome" >"$attempt/FAILED"
 		rmdir "$claim"
-		printf 'profile exceeded 4 GiB RSS: max_rss_kib=%s raw=%s\n' "$max_rss" "$raw" >&2
+		printf 'profile failed: outcome=%s status=%s raw=%s\n' "$outcome" "$status" "$raw" >&2
+		if [[ "$status" -ne 0 ]]; then
+			exit "$status"
+		fi
 		exit 1
 	fi
 	printf 'scale=%s\nregex=%s\nraw=%s\nattempt=%s\n' \

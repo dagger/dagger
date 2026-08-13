@@ -88,7 +88,11 @@ The same observer records details that lock timing cannot recover:
 
 These are emitted as `EGRAPH_DETAIL_METRIC` JSON. Deterministic tests validate
 their cardinality semantics; elapsed durations are reported but never asserted
-by tests.
+by tests. In the full/serial configuration, detail observations are recorded
+while the enclosing `egraphMu` critical section is still held, so reported lock
+holds include that recorder work. The sampled steady-state configuration turns
+detail observations off. The full calibration arm therefore measures this
+in-hold cost as part of the instrumentation bias it gates.
 
 Every operation reports the pre-operation cache shape:
 
@@ -122,7 +126,11 @@ path on freshly constructed transient wide-output fixtures (`R=64`):
 - the serial configuration (every lock timed, details on).
 
 The configuration order rotates between triples to reduce position and warmup
-bias; the raw file retains the order and every individual result.
+bias; the raw file retains the order and every individual result. All three
+arms allocate and keep alive equal-capacity recorder buffers so their live heap
+and GC trigger pressure are structurally comparable. Only sampled and full
+arms install the observer; recording and timer work remain the intended
+differences under measurement.
 
 The gate records every paired overhead, its median, median absolute deviation,
 and range for each instrumentation configuration. It stops if either median's
@@ -144,9 +152,18 @@ hack/run-egraph-contention-benchmarks.sh screen /tmp/dagger-egraph-bench
 
 The runner preserves an append-only environment history, every raw `go test`
 and `/usr/bin/time -v` output, the instrumentation-gate inputs and calculation,
-and a TSV manifest including preflight commands. It refuses to overwrite an
-existing raw result, so a repeated screen should use a new output directory.
-It stops larger points in a fixture family when:
+and a TSV manifest including preflight commands. The manifest preserves both
+the process exit status and a distinct outcome. Per-point outcomes are
+`completed`, `benchmark-stop`, `max-rss-stop`, `external-timeout`,
+`command-failure`, or `missing-result`; preflight/profile rows also distinguish
+`max-rss-failure`. A guard-generated `EGRAPH_BENCH_STOP` is a successful
+`benchmark-stop` even when Go emits no benchmark result line; it is not
+rewritten as a generic failure.
+
+The runner refuses to overwrite an existing raw result, so a repeated screen
+should use a new output directory. A family stop skips its remaining larger
+points and then continues the same screen with the next independent family. It
+stops larger points in a fixture family when:
 
 - setup exceeds 30 seconds;
 - the measured operation exceeds 20 seconds;

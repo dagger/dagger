@@ -452,14 +452,23 @@ func BenchmarkCacheEGraphInstrumentationOverhead(b *testing.B) {
 					if err := egraphBenchmarkRunLookup(f, egraphBenchmarkLookupExact, sessionID); err != nil {
 						b.Fatalf("overhead warmup: %v", err)
 					}
-					var recorder *egraphBenchmarkLockRecorder
+					// Keep identical recorder backing arrays live in every arm so the
+					// overhead estimate is not confounded by different live-heap sizes
+					// and GC trigger points. Only instrumented arms install the observer.
+					recorder := newEgraphBenchmarkLockRecorder(2*b.N + 128)
+					installObserver := false
 					switch instrumentation {
+					case "disabled":
 					case "sampled":
-						recorder = newEgraphBenchmarkSampledLockRecorder(2*b.N+128, 32)
+						recorder.recordDetails = false
+						recorder.sampleEvery = 32
+						installObserver = true
 					case "full":
-						recorder = newEgraphBenchmarkLockRecorder(2*b.N + 128)
+						installObserver = true
+					default:
+						b.Fatalf("unknown instrumentation configuration %q", instrumentation)
 					}
-					if recorder != nil {
+					if installObserver {
 						f.cache.egraphLockObserver = recorder
 					}
 					b.ReportAllocs()
@@ -471,7 +480,9 @@ func BenchmarkCacheEGraphInstrumentationOverhead(b *testing.B) {
 					}
 					b.StopTimer()
 					f.cache.egraphLockObserver = nil
-					if recorder != nil {
+					b.ReportMetric(float64(cap(recorder.observations)), "calibration-recorder-capacity")
+					runtime.KeepAlive(recorder)
+					if installObserver {
 						egraphBenchmarkReportLocks(b, recorder)
 					}
 				})
