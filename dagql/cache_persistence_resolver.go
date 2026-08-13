@@ -54,25 +54,25 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 		return nil, false, 0, fmt.Errorf("resolve result %d: canonical equivalent lookup requires session ID", resultID)
 	}
 	if sessionID == "" {
-		c.egraphMu.RLock()
+		lock := c.rlockEgraphMeasured("id-load-exact")
 		res := c.resultsByID[resultID]
-		c.egraphMu.RUnlock()
+		c.runlockEgraphMeasured(lock)
 		if res == nil {
 			return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 		}
 		return res, false, 0, nil
 	}
 
-	c.egraphMu.Lock()
+	lock := c.lockEgraphMeasured("id-load-canonical")
 	res := c.resultsByID[resultID]
 	if res == nil {
-		c.egraphMu.Unlock()
+		c.unlockEgraphMeasured(lock)
 		return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
 	if mode == sharedResultLookupCanonicalEquivalent {
 		res = c.canonicalEquivalentSharedResultLocked(sessionID, res, time.Now().Unix())
 		if res == nil {
-			c.egraphMu.Unlock()
+			c.unlockEgraphMeasured(lock)
 			return nil, false, 0, fmt.Errorf("resolve result %d: canonical shared result missing", resultID)
 		}
 	}
@@ -94,7 +94,7 @@ func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, re
 	}
 	trackedCount = len(c.sessionResultIDsBySession[sessionID])
 	c.sessionMu.Unlock()
-	c.egraphMu.Unlock()
+	c.unlockEgraphMeasured(lock)
 
 	return res, alreadyTracked, trackedCount, nil
 }
@@ -117,7 +117,7 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 	loaded, err := c.ensurePersistedHitValueLoaded(ctx, dag, wrapped)
 	if err != nil {
 		if sessionID != "" {
-			c.egraphMu.Lock()
+			rollbackLock := c.lockEgraphMeasured("id-load-rollback")
 			c.sessionMu.Lock()
 			if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
 				delete(resultIDs, res.id)
@@ -132,7 +132,7 @@ func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag 
 				queue, decErr = c.decrementIncomingOwnershipLocked(ctx, res, nil)
 			}
 			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-			c.egraphMu.Unlock()
+			c.unlockEgraphMeasured(rollbackLock)
 			return nil, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
 		}
 		return nil, err

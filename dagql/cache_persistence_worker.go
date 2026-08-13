@@ -27,7 +27,7 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
 	var snapshot persistStateSnapshot
 
-	c.egraphMu.RLock()
+	lock := c.rlockEgraphMeasured("persistence-snapshot")
 
 	addEqClassID := func(eqClassIDs map[eqClassID]struct{}, eqID eqClassID) {
 		eqID = c.findEqClassLocked(eqID)
@@ -60,7 +60,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		addEqClassID(eqClassIDs, outputEqID)
 		inputProvenance := c.termInputProvenance[termID]
 		if len(inputProvenance) != len(term.inputEqIDs) {
-			c.egraphMu.RUnlock()
+			c.runlockEgraphMeasured(lock)
 			return persistStateSnapshot{}, fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", termID, len(inputProvenance), len(term.inputEqIDs))
 		}
 		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
@@ -204,7 +204,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		}
 	}
 
-	c.egraphMu.RUnlock()
+	c.runlockEgraphMeasured(lock)
 
 	if c.snapshotManager != nil {
 		rows := c.snapshotManager.PersistentMetadataRows()

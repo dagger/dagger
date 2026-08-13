@@ -73,7 +73,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 	var eagerDecodeResultIDs []sharedResultID
 
-	c.egraphMu.Lock()
+	importLock := c.lockEgraphMeasured("persistence-import")
 	importErr := func() error {
 		c.initEgraphLocked()
 
@@ -396,7 +396,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 
 		return nil
 	}()
-	c.egraphMu.Unlock()
+	c.unlockEgraphMeasured(importLock)
 	if importErr != nil {
 		return importErr
 	}
@@ -482,14 +482,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 
 		desiredLeaseIDs := c.desiredImportedOwnerLeaseIDs()
-		c.egraphMu.RLock()
+		lock := c.rlockEgraphMeasured("persistence-import-snapshot-links")
 		results := make([]*sharedResult, 0, len(c.resultsByID))
 		for _, res := range c.resultsByID {
 			if res != nil {
 				results = append(results, res)
 			}
 		}
-		c.egraphMu.RUnlock()
+		c.runlockEgraphMeasured(lock)
 		for _, res := range results {
 			links := desiredSnapshotLinksForResult(res)
 			seen := make(map[snapshotOwnerKey]struct{}, len(links))

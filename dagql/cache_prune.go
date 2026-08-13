@@ -129,12 +129,12 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		return report, err
 	}
 
-	c.egraphMu.Lock()
+	initialLock := c.lockEgraphMeasured("prune-initial-compaction")
 	report.BeforeCompaction = c.cacheMetadataEstimateLocked()
 	report.AfterInitialCompaction = report.BeforeCompaction
 	report.AfterPrune = report.BeforeCompaction
 	if report.BeforeCompaction.EstimatedBytes <= maximumBytes {
-		c.egraphMu.Unlock()
+		c.unlockEgraphMeasured(initialLock)
 		return report, nil
 	}
 	report.Triggered = true
@@ -142,7 +142,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	_, report.InitialCompactionOldClassSlots, report.InitialCompactionNewClassSlots = c.compactEqClassesLocked(true)
 	report.AfterInitialCompaction = c.cacheMetadataEstimateLocked()
 	report.AfterPrune = report.AfterInitialCompaction
-	c.egraphMu.Unlock()
+	c.unlockEgraphMeasured(initialLock)
 
 	if report.AfterInitialCompaction.EstimatedBytes <= maximumBytes {
 		return report, nil
@@ -158,10 +158,13 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		return report, err
 	}
 	directResultBytes := metadataDirectResultBytes(report.AfterInitialCompaction)
+	snapshotMeasurement := c.beginEgraphMeasurement("metadata-prune-snapshot")
 	snapshot, err := c.snapshotPruneStateCancelable(activeRoots, pruneSnapshotMetadata, directResultBytes, checker)
 	if err != nil {
 		return report, err
 	}
+	c.endEgraphMeasurement(snapshotMeasurement, len(snapshot.results), len(activeRoots))
+	planMeasurement := c.beginEgraphMeasurement("metadata-prune-plan")
 	activeClosure, err := pruneActiveClosureCancelable(snapshot, activeRoots, checker)
 	if err != nil {
 		return report, err
@@ -189,7 +192,9 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	report.SimulatedStructuralBytes = simulatedReclaimed
 	report.SimulatedCollectedResultCount = simulatedCollected
 	report.CandidatesExhausted = len(plan) == len(candidates) && simulatedReclaimed < reclaimTarget
+	c.endEgraphMeasurement(planMeasurement, len(plan), len(candidates))
 
+	applyMeasurement := c.beginEgraphMeasurement("metadata-prune-apply")
 	for _, planEntry := range plan {
 		if err := ctx.Err(); err != nil {
 			return report, err
@@ -202,12 +207,13 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 			report.RemovedPersistedRootCount++
 		}
 	}
+	c.endEgraphMeasurement(applyMeasurement, report.RemovedPersistedRootCount, len(plan))
 
 	if len(plan) > 0 {
-		c.egraphMu.Lock()
+		finalLock := c.lockEgraphMeasured("prune-final-compaction")
 		_, report.FinalCompactionOldClassSlots, report.FinalCompactionNewClassSlots = c.compactEqClassesLocked(true)
 		report.AfterPrune = c.cacheMetadataEstimateLocked()
-		c.egraphMu.Unlock()
+		c.unlockEgraphMeasured(finalLock)
 	} else {
 		report.AfterPrune = c.MetadataEstimate()
 	}
@@ -270,8 +276,12 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	compactedNeeded := false
 	for policyIdx, policy := range policies {
 		activeRoots := c.snapshotSessionResultIDs()
+		sizeMeasurement := c.beginEgraphMeasurement("disk-prune-measure-sizes")
 		c.measureAllResultSizes(ctx)
+		c.endEgraphMeasurement(sizeMeasurement, 0, 0)
+		snapshotMeasurement := c.beginEgraphMeasurement("disk-prune-snapshot")
 		snapshot := c.snapshotPruneState(activeRoots, pruneSnapshotDisk, 0)
+		c.endEgraphMeasurement(snapshotMeasurement, len(snapshot.results), len(activeRoots))
 
 		targetBytes, _ := pruneTargetBytes(policy, snapshot.usedBytes)
 		if targetBytes <= 0 {
@@ -281,19 +291,23 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			continue
 		}
 
+		planMeasurement := c.beginEgraphMeasurement("disk-prune-plan")
 		activeClosure := pruneActiveClosure(snapshot, activeRoots)
 		candidates := c.collectPruneCandidates(ctx, policyIdx, snapshot, activeClosure, policy, now)
 		if len(candidates) == 0 {
+			c.endEgraphMeasurement(planMeasurement, 0, 0)
 			continue
 		}
 
 		plan, plannedReclaim, _ := buildPrunePlan(snapshot, candidates, targetBytes)
+		c.endEgraphMeasurement(planMeasurement, len(plan), len(candidates))
 		if len(plan) == 0 {
 			continue
 		}
 
 		policyReclaimed := int64(0)
 		policyApplied := 0
+		applyMeasurement := c.beginEgraphMeasurement("disk-prune-apply")
 		for _, planEntry := range plan {
 			snapRes, ok := snapshot.results[planEntry.candidate.resultID]
 			if ok {
@@ -336,6 +350,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			report.ReclaimedBytes += planEntry.reclaimBytes
 			policyReclaimed += planEntry.reclaimBytes
 		}
+		c.endEgraphMeasurement(applyMeasurement, policyApplied, len(plan))
 
 		if policyApplied > 0 {
 			slog.Debug("dagql prune applied plan",
@@ -349,13 +364,13 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	}
 
 	if compactedNeeded {
-		c.egraphMu.Lock()
+		lock := c.lockEgraphMeasured("disk-prune-compaction")
 		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(false); compacted {
 			slog.Debug("dagql prune compacted eq classes",
 				"oldSlots", oldSlots,
 				"newSlots", newSlots)
 		}
-		c.egraphMu.Unlock()
+		c.unlockEgraphMeasured(lock)
 	}
 
 	if len(report.Entries) > 0 && c.snapshotGC != nil {
@@ -378,8 +393,8 @@ func (c *Cache) snapshotPruneStateCancelable(
 	directResultBytes int64,
 	checker *pruneCancellationChecker,
 ) (pruneSnapshot, error) {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	lock := c.rlockEgraphMeasured("prune-snapshot")
+	defer c.runlockEgraphMeasured(lock)
 
 	snapshot := pruneSnapshot{
 		results:         make(map[sharedResultID]pruneSnapshotResult, len(c.resultsByID)),
