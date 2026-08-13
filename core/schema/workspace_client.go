@@ -132,7 +132,11 @@ func (s *workspaceSchema) initClientChanges(
 	if !ok {
 		return res, scope, fmt.Errorf("%q does not support client init", args.SDK)
 	}
-	sdkChanges, err := clientInitializer.InitClient(ctx, parent, clientPath, moduleRef, sdkArgs)
+	sdkWorkspace, err := rootAnchoredWorkspace(ctx, parent)
+	if err != nil {
+		return res, scope, err
+	}
+	sdkChanges, err := clientInitializer.InitClient(ctx, sdkWorkspace, clientPath, moduleRef, sdkArgs)
 	if err != nil {
 		return res, scope, fmt.Errorf("sdk client init: %w", err)
 	}

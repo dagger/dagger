@@ -84,7 +84,10 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 			opts.Args = dagger.JSON(sdkArgs)
 		}
 		current := dag.CurrentWorkspace()
-		updated := current.WithInitClient(clientPath, sdkName, moduleRef, opts)
+		// Root-measured for the same reason as module init: the workspace
+		// config this edits can sit above the caller, and the apply happens
+		// at the workspace root.
+		updated := current.WithInitClient(clientPath, sdkName, moduleRef, opts).WithWorkdir(".")
 		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		return err
 	})

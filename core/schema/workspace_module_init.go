@@ -186,7 +186,11 @@ func (s *workspaceSchema) initModuleChanges(
 	if !ok {
 		return res, scope, fmt.Errorf("%q does not support module init", args.SDK)
 	}
-	sdkChanges, err := moduleInitializer.InitModule(ctx, parent, args.Name, relPath, sdkArgs)
+	sdkWorkspace, err := rootAnchoredWorkspace(ctx, parent)
+	if err != nil {
+		return res, scope, err
+	}
+	sdkChanges, err := moduleInitializer.InitModule(ctx, sdkWorkspace, args.Name, relPath, sdkArgs)
 	if err != nil {
 		return res, scope, fmt.Errorf("sdk module init: %w", err)
 	}

@@ -57,6 +57,42 @@ func (s *workspaceSchema) loadWorkspaceSDK(
 	return loaded, nil
 }
 
+// rootAnchoredWorkspace returns ws with its cwd at the workspace root.
+//
+// An SDK's initModule/initClient stages its files relative to Workspace.cwd,
+// because a changeset returned from a plain function call is applied wherever
+// the client is standing. Init changesets are not: they are merged into the
+// workspace overlay and exported at the workspace root (Workspace.export writes
+// to ExportHostPath), against paths the engine resolved root-relative. Handing
+// the SDK the caller's cwd makes those two conventions disagree the moment the
+// caller is not at the root — the SDK either strips the cwd prefix and scatters
+// its files (engine config in one place, sources in another) or refuses a path
+// that lies outside the cwd altogether. Anchoring at the root is what makes the
+// cwd the SDK sees match where the changeset actually lands.
+func rootAnchoredWorkspace(
+	ctx context.Context,
+	ws dagql.ObjectResult[*core.Workspace],
+) (dagql.ObjectResult[*core.Workspace], error) {
+	if ws.Self() == nil || cleanWorkspaceRelPath(ws.Self().Cwd) == "." {
+		return ws, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return ws, fmt.Errorf("dagql server: %w", err)
+	}
+	// Built through withWorkdir rather than a bare clone so the result stays an
+	// attached dagql result whose ID resolves when the SDK passes it back
+	// (see scopedStagedWorkspace).
+	var rooted dagql.ObjectResult[*core.Workspace]
+	if err := srv.Select(ctx, ws, &rooted, dagql.Selector{
+		Field: "withWorkdir",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".")}},
+	}); err != nil {
+		return ws, fmt.Errorf("anchor workspace at root: %w", err)
+	}
+	return rooted, nil
+}
+
 func mergeWorkspaceInitChangeset(ctx context.Context, base dagql.ObjectResult[*core.Changeset], sdkChanges dagql.ObjectResult[*core.Changeset]) (dagql.ObjectResult[*core.Changeset], error) {
 	if sdkChanges.Self() == nil {
 		return base, nil

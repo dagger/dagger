@@ -187,7 +187,11 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 			opts.Args = dagger.JSON(sdkArgs)
 		}
 		current := dag.CurrentWorkspace()
-		updated := current.WithInitModule(name, sdkName, opts)
+		// Init edits the workspace config and scaffolds beside it, both of
+		// which can sit above the caller, and it exports at the workspace
+		// root. Read the diff from the root so changes() takes them in --
+		// same reason `dagger setup` does this for migration.
+		updated := current.WithInitModule(name, sdkName, opts).WithWorkdir(".")
 		_, err = handleWorkspaceResponse(ctx, dag, current, updated, autoApply)
 		return err
 	})
