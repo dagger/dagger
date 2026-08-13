@@ -217,9 +217,9 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 }
 
 // Load any object by its ID.
-func Node(id dagger.ID) dagger.Node {
+func Node(ctx context.Context, id dagger.ID) (dagger.Node, error) {
 	client := initClient()
-	return client.Node(id)
+	return client.Node(ctx, id)
 }
 
 // Load a GraphQL introspection schema for merging.

@@ -168,7 +168,7 @@
                     object
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_loadObjectFromId">loadObjectFromId</a>(string $className, <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
+                    <a href="#method_loadObjectFromId">loadObjectFromId</a>(string $className, <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id, string|null $graphQLTypeName = null)
         
                                             <p><p>Load an object by its ID using node(id:) with an inline fragment.</p></p>                </div>
                 <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractClient.html#method_loadObjectFromId">
@@ -479,7 +479,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+                    <abbr title="Dagger\Dagger\Node">Node</abbr>|null
                 </div>
                 <div class="col-md-8">
                     <a href="#method_node">node</a>(<a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
@@ -720,9 +720,9 @@
                     <div class="method-item">
                     <h3 id="method_loadObjectFromId">
         <div class="location">in <a href="../Dagger/Client/AbstractClient.html#method_loadObjectFromId">
-<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> at line 66</div>
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> at line 67</div>
         <code>                    object
-    <strong>loadObjectFromId</strong>(string $className, <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
+    <strong>loadObjectFromId</strong>(string $className, <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id, string|null $graphQLTypeName = null)
         </code>
     </h3>
     <div class="details">    
@@ -745,6 +745,11 @@
                 <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
                 <td>$id</td>
                 <td><p>The object's ID</p></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$graphQLTypeName</td>
+                <td><p>GraphQL type name when it differs from the PHP class name</p></td>
             </tr>
             </table>
 
@@ -2041,7 +2046,7 @@
                     <div class="method-item">
                     <h3 id="method_node">
         <div class="location">at line 406</div>
-        <code>                    <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+        <code>                    <abbr title="Dagger\Dagger\Node">Node</abbr>|null
     <strong>node</strong>(<a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
         </code>
     </h3>
@@ -2068,7 +2073,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a></td>
+            <td><abbr title="Dagger\Dagger\Node">Node</abbr>|null</td>
             <td></td>
         </tr>
     </table>
@@ -2082,7 +2087,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_schema">
-        <div class="location">at line 416</div>
+        <div class="location">at line 421</div>
         <code>                    <a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a>
     <strong>schema</strong>(<a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $json)
         </code>
@@ -2124,7 +2129,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 426</div>
+        <div class="location">at line 431</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -2171,7 +2176,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 441</div>
+        <div class="location">at line 446</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -2218,7 +2223,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceDir">
-        <div class="location">at line 449</div>
+        <div class="location">at line 454</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>sourceDir</strong>()
         </code>
@@ -2251,7 +2256,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 458</div>
+        <div class="location">at line 463</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -2303,7 +2308,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sshfsVolume">
-        <div class="location">at line 470</div>
+        <div class="location">at line 475</div>
         <code>                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
     <strong>sshfsVolume</strong>(string $endpoint, <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a> $privateKey, <abbr title="Dagger\Dagger\Secret">Secret</abbr>|null $knownHosts = null, string|null $cacheKey = null, bool|null $insecureSkipHostKeyCheck = false, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $experimentalServiceHost = null)
         </code>
@@ -2370,7 +2375,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 499</div>
+        <div class="location">at line 504</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -2402,7 +2407,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 508</div>
+        <div class="location">at line 513</div>
         <code>                    string
     <strong>version</strong>()
         </code>
@@ -2434,7 +2439,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_with">
-        <div class="location">at line 517</div>
+        <div class="location">at line 522</div>
         <code>                    <a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a>
     <strong>with</strong>(<abbr title="Dagger\Dagger\Directory">Directory</abbr>|null $sdkSourceDir = null)
         </code>

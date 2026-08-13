@@ -523,15 +523,29 @@ defmodule Dagger.Client do
   @doc """
   Load any object by its ID.
   """
-  @spec node(t(), String.t()) :: Dagger.Node.t() | nil
+  @spec node(t(), String.t()) :: {:ok, Dagger.Node.t() | nil} | {:error, term()}
   def node(%__MODULE__{} = client, id) do
     query_builder =
-      client.query_builder |> QB.select("node") |> QB.put_arg("id", id)
+      client.query_builder |> QB.select("node") |> QB.put_arg("id", id) |> QB.select("id")
 
-    %Dagger.Node{
-      query_builder: query_builder,
-      client: client.client
-    }
+    case Client.execute(client.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.Node{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Node"),
+           client: client.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

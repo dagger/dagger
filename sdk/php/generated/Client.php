@@ -403,11 +403,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     /**
      * Load any object by its ID.
      */
-    public function node(Id $id): Node
+    public function node(Id $id): ?Node
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('node');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('node');
+        $objectQueryBuilder->setArgument('id', $id);
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\NodeClient::class, new \Dagger\Id((string)$id), 'Node');
     }
 
     /**

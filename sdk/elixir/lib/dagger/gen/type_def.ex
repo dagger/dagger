@@ -18,85 +18,169 @@ defmodule Dagger.TypeDef do
   @doc """
   If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
   """
-  @spec as_enum(t()) :: Dagger.EnumTypeDef.t() | nil
+  @spec as_enum(t()) :: {:ok, Dagger.EnumTypeDef.t() | nil} | {:error, term()}
   def as_enum(%__MODULE__{} = type_def) do
     query_builder =
-      type_def.query_builder |> QB.select("asEnum")
+      type_def.query_builder |> QB.select("asEnum") |> QB.select("id")
 
-    %Dagger.EnumTypeDef{
-      query_builder: query_builder,
-      client: type_def.client
-    }
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.EnumTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("EnumTypeDef"),
+           client: type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
   If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
   """
-  @spec as_input(t()) :: Dagger.InputTypeDef.t() | nil
+  @spec as_input(t()) :: {:ok, Dagger.InputTypeDef.t() | nil} | {:error, term()}
   def as_input(%__MODULE__{} = type_def) do
     query_builder =
-      type_def.query_builder |> QB.select("asInput")
+      type_def.query_builder |> QB.select("asInput") |> QB.select("id")
 
-    %Dagger.InputTypeDef{
-      query_builder: query_builder,
-      client: type_def.client
-    }
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.InputTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("InputTypeDef"),
+           client: type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
   If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
   """
-  @spec as_interface(t()) :: Dagger.InterfaceTypeDef.t() | nil
+  @spec as_interface(t()) :: {:ok, Dagger.InterfaceTypeDef.t() | nil} | {:error, term()}
   def as_interface(%__MODULE__{} = type_def) do
     query_builder =
-      type_def.query_builder |> QB.select("asInterface")
+      type_def.query_builder |> QB.select("asInterface") |> QB.select("id")
 
-    %Dagger.InterfaceTypeDef{
-      query_builder: query_builder,
-      client: type_def.client
-    }
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.InterfaceTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("InterfaceTypeDef"),
+           client: type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
   If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
   """
-  @spec as_list(t()) :: Dagger.ListTypeDef.t() | nil
+  @spec as_list(t()) :: {:ok, Dagger.ListTypeDef.t() | nil} | {:error, term()}
   def as_list(%__MODULE__{} = type_def) do
     query_builder =
-      type_def.query_builder |> QB.select("asList")
+      type_def.query_builder |> QB.select("asList") |> QB.select("id")
 
-    %Dagger.ListTypeDef{
-      query_builder: query_builder,
-      client: type_def.client
-    }
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.ListTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ListTypeDef"),
+           client: type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
   If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
   """
-  @spec as_object(t()) :: Dagger.ObjectTypeDef.t() | nil
+  @spec as_object(t()) :: {:ok, Dagger.ObjectTypeDef.t() | nil} | {:error, term()}
   def as_object(%__MODULE__{} = type_def) do
     query_builder =
-      type_def.query_builder |> QB.select("asObject")
+      type_def.query_builder |> QB.select("asObject") |> QB.select("id")
 
-    %Dagger.ObjectTypeDef{
-      query_builder: query_builder,
-      client: type_def.client
-    }
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.ObjectTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ObjectTypeDef"),
+           client: type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """
   If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
   """
-  @spec as_scalar(t()) :: Dagger.ScalarTypeDef.t() | nil
+  @spec as_scalar(t()) :: {:ok, Dagger.ScalarTypeDef.t() | nil} | {:error, term()}
   def as_scalar(%__MODULE__{} = type_def) do
     query_builder =
-      type_def.query_builder |> QB.select("asScalar")
+      type_def.query_builder |> QB.select("asScalar") |> QB.select("id")
 
-    %Dagger.ScalarTypeDef{
-      query_builder: query_builder,
-      client: type_def.client
-    }
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.ScalarTypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ScalarTypeDef"),
+           client: type_def.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

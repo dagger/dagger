@@ -281,10 +281,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     /**
      * The SDK configuration of the module.
      */
-    public function sdk(): SDKConfig
+    public function sdk(): ?SDKConfig
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
-        return new \Dagger\SDKConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\SDKConfig::class, new \Dagger\Id((string)$id), 'SDKConfig');
     }
 
     /**

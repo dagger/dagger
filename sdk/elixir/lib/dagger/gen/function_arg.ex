@@ -108,15 +108,29 @@ defmodule Dagger.FunctionArg do
   @doc """
   The location of this arg declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
+  @spec source_map(t()) :: {:ok, Dagger.SourceMap.t() | nil} | {:error, term()}
   def source_map(%__MODULE__{} = function_arg) do
     query_builder =
-      function_arg.query_builder |> QB.select("sourceMap")
+      function_arg.query_builder |> QB.select("sourceMap") |> QB.select("id")
 
-    %Dagger.SourceMap{
-      query_builder: query_builder,
-      client: function_arg.client
-    }
+    case Client.execute(function_arg.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.SourceMap{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SourceMap"),
+           client: function_arg.client
+         }}
+
+      error ->
+        error
+    end
   end
 
   @doc """

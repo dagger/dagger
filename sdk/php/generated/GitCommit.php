@@ -16,13 +16,18 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The latest semver release tag reachable from this commit.
      */
-    public function ancestorReleaseTag(?bool $includePreRelease = false): GitRef
+    public function ancestorReleaseTag(?bool $includePreRelease = false): ?GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('ancestorReleaseTag');
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('ancestorReleaseTag');
         if (null !== $includePreRelease) {
-        $innerQueryBuilder->setArgument('includePreRelease', $includePreRelease);
+        $objectQueryBuilder->setArgument('includePreRelease', $includePreRelease);
         }
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\GitRef::class, new \Dagger\Id((string)$id), 'GitRef');
     }
 
     /**
@@ -127,13 +132,18 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * The latest semver release tag that points directly at this commit.
      */
-    public function releaseTag(?bool $includePreRelease = false): GitRef
+    public function releaseTag(?bool $includePreRelease = false): ?GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('releaseTag');
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('releaseTag');
         if (null !== $includePreRelease) {
-        $innerQueryBuilder->setArgument('includePreRelease', $includePreRelease);
+        $objectQueryBuilder->setArgument('includePreRelease', $includePreRelease);
         }
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\GitRef::class, new \Dagger\Id((string)$id), 'GitRef');
     }
 
     /**
