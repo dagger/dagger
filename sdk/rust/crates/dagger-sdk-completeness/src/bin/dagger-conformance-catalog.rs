@@ -8,9 +8,9 @@ use clap::{Arg, ArgAction, Command, value_parser};
 use dagger_sdk_completeness::{
     AssertionOrigin, CaseFamily, ClosurePlanAction, ConformanceScopeInput,
     EngineIntegrationMappings, HarnessMappings, ResolvedLedger, ReviewedConformanceScope,
-    SubjectIdentity, assertion_catalog_drift, build_reviewed_catalog_plan, canonical_bytes,
-    decode_canonical, derive_conformance_scope, reviewed_implementation_closure_plan,
-    rust_artifact_digest,
+    SubjectIdentity, assertion_catalog_drift, build_observable_fixture_program_artifact,
+    build_reviewed_catalog_plan, canonical_bytes, decode_canonical, derive_conformance_scope,
+    reviewed_implementation_closure_plan, rust_artifact_digest,
 };
 use serde::Serialize;
 
@@ -82,6 +82,12 @@ fn run() -> Result<(), &'static str> {
         .map_err(|_| "reviewed conformance catalog was rejected")?;
     let closure_plan =
         reviewed_implementation_closure_plan().map_err(|_| "reviewed closure plan was rejected")?;
+    let observable_programs = build_observable_fixture_program_artifact(
+        &plan.assertion_catalog,
+        &plan.fixture_registry,
+        &plan.case_catalog,
+    )
+    .map_err(|_| "observable fixture program registry was rejected")?;
     let rendered_cases = canonical_bytes(&plan.cases)
         .map_err(|_| "case catalog could not be inspected for executable text")?;
     let executable_text_present = [
@@ -159,6 +165,11 @@ fn run() -> Result<(), &'static str> {
     publish(
         &completeness.join("conformance-cases.json"),
         &plan.cases,
+        matches.get_flag("update"),
+    )?;
+    publish(
+        &completeness.join("conformance-observable-programs.json"),
+        &observable_programs,
         matches.get_flag("update"),
     )?;
     publish(

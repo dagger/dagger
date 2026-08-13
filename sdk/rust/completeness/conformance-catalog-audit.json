@@ -11,7 +11,7 @@
     "split": []
   },
   "authority_route_case_count": 612,
-  "case_catalog_digest": "sha256:2f918db3827f0e24b959e9977450e4061b64264ed8b8f7990a271ab8e8ebb6c9",
+  "case_catalog_digest": "sha256:e9574efc18dd1dbbbfeb6e98cef73c0a8d8d72462220cab8a58135b4bee714fd",
   "case_count": 672,
   "closure_plan_digest": "sha256:d59d5788b24726f55899a29ffad2f7071e1dc52ffbf14864c9b874e9e3ff46b0",
   "engine_action_present": false,
@@ -22,7 +22,7 @@
   "replay_action_present": false,
   "scope_digest": "sha256:ebb0cbab791730404bd0cb43f2fcf6c33823d0d4db998e4225891bb888539607",
   "subject": {
-    "identity": "sha256:88d8fe990df22d3a8ca2708eccdbdc2ae41cd6b759395557452344a6b256a81c",
+    "identity": "sha256:e3c68e278b27c1371423472cb7128d8e115223cdfdd94423521ad50977f1ec9d",
     "kind": "source-digest"
   },
   "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"

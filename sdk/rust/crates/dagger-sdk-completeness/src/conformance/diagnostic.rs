@@ -296,6 +296,25 @@ impl ConformanceDiagnosticSet {
     }
 }
 
+impl Serialize for ConformanceDiagnosticSet {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConformanceDiagnosticSet {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(Vec::<ConformanceDiagnostic>::deserialize(deserializer)?)
+            .ok_or_else(|| D::Error::custom("a diagnostic set must not be empty"))
+    }
+}
+
 impl fmt::Display for ConformanceDiagnosticSet {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{} conformance diagnostic(s)", self.0.len())

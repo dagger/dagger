@@ -15823,7 +15823,7 @@
   },
   "scope_digest": "sha256:ebb0cbab791730404bd0cb43f2fcf6c33823d0d4db998e4225891bb888539607",
   "subject": {
-    "identity": "sha256:88d8fe990df22d3a8ca2708eccdbdc2ae41cd6b759395557452344a6b256a81c",
+    "identity": "sha256:e3c68e278b27c1371423472cb7128d8e115223cdfdd94423521ad50977f1ec9d",
     "kind": "source-digest"
   },
   "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"

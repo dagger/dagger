@@ -695,8 +695,8 @@
     generation, or distribution build ran; Windows remains deferred to ultimate SDK
     sign-off.
 
-- [ ] 25. Complete the additional integration assertion fixtures and observable parity
-  - [ ] 25.1 Implement every remaining applicable reviewed assertion program
+- [x] 25. Complete the additional integration assertion fixtures and observable parity
+  - [x] 25.1 Implement every remaining applicable reviewed assertion program
     - Add Rust-owned fixtures for every applicable integration assertion not already
       covered by fixed case families, reusing one program for exact equivalent
       capability sets only when fixture context and observable predicate match.
@@ -706,14 +706,14 @@
     - Add catalog/registry totality tests proving every applicable assertion has one
       executable reviewed fixture and every fixture claims only routed capabilities.
     - _Requirements: 3.5, 3.14-3.24, 7.1-7.4, 7.16-7.18_
-  - [ ] 25.2 Property test: Property 12 — authority mechanisms translate to observable Rust contracts
+  - [x] 25.2 Property test: Property 12 — authority mechanisms translate to observable Rust contracts
     - Implement `property_12_authority_translates_to_observable_rust` over at least 100
       authority mechanisms, Rust effects, predicates, equivalence decisions,
       assertion/case outcomes, and drift mutations.
     - Preserve observable results, reject copied foreign mechanisms/unrouted effects,
       report exact drift, and fail completeness for every unproved applicable claim.
     - _Requirements: 7.1-7.4, 7.16-7.18_
-  - [ ] 25.3 Property test: Property 13 — common harness and standalone clients remain bounded
+  - [x] 25.3 Property test: Property 13 — common harness and standalone clients remain bounded
     - Implement `property_13_harness_and_clients_bounded` over at least 100 harness
       inventories, claim maps, client workspace/dependency states, and foreign-suite
       additions.
@@ -721,13 +721,13 @@
       overclaiming, and require standalone external workspaces with immutable SDK
       dependencies.
     - _Requirements: 7.5-7.7_
-  - [ ] 25.4 Property test: Property 14 — module authoring covers the complete production semantic matrix
+  - [x] 25.4 Property test: Property 14 — module authoring covers the complete production semantic matrix
     - Implement `property_14_module_authoring_complete_semantic_matrix` over at least
       100 valid module inputs and required-case outcome sets.
     - Compare with the exact lifecycle/dispatch/handle/error/concurrency required set
       and require the packaged self-consumer to use artifact SDK content only.
     - _Requirements: 7.8-7.9, 7.11_
-  - [ ] 25.5 Property test: Property 15 — Core and standalone-client cases use public generated APIs
+  - [x] 25.5 Property test: Property 15 — Core and standalone-client cases use public generated APIs
     - Implement `property_15_core_and_clients_use_public_generated_apis` over at least
       100 Core shape, remote revision, schema-regeneration, authored/owned tree, and
       query-route observations.
@@ -735,8 +735,8 @@
       public Core query, and generated namespaced module query.
     - _Requirements: 7.10, 7.12-7.15_
 
-- [ ] 26. Extend engine-free checkpoint planning and evidence accounting
-  - [ ] 26.1 Add closed Feature 8 checkpoint actions and phase budgets
+- [x] 26. Extend engine-free checkpoint planning and evidence accounting
+  - [x] 26.1 Add closed Feature 8 checkpoint actions and phase budgets
     - Extend `dagger-sdk-engine/src/checkpoint.rs` with only the Feature 8 Rust package,
       named test, source-policy, direct-Go signoff-adapter, native-evidence aggregation,
       Cargo Deny, documentation, and clean-output actions required by the design.
@@ -744,7 +744,7 @@
       target artifact/scan, distribution, and arbitrary shell actions unrepresentable.
       Keep the preflight as a separately approved non-local infrastructure record.
     - _Requirements: 11.1-11.11, 11.16-11.18_
-  - [ ] 26.2 Add change-triggered evidence reuse, timings, counts, and closure gating
+  - [x] 26.2 Add change-triggered evidence reuse, timings, counts, and closure gating
     - Bind every action to its owning input, prior passed observation, elapsed budget,
       Cargo invocation expectation, generated-asset reuse/refresh decision, and
       forbidden-event observation.
@@ -753,14 +753,14 @@
       rustdoc/Cargo Deny/source/evidence/native-matrix closure; and never claim SDK
       sign-off.
     - _Requirements: 11.10-11.20_
-  - [ ] 26.3 Property test: Property 21 — checkpoints are engine-free by construction
+  - [x] 26.3 Property test: Property 21 — checkpoints are engine-free by construction
     - Implement `property_21_checkpoints_engine_free_by_construction` over at least 256
       action/package/target expansions, asset states, exception requests, and forbidden
       boundaries.
     - Admit only the closed direct model and adapter fixtures; reject every engine,
       Dagger, module, other SDK, generation, distribution, target, or network proposal.
     - _Requirements: 11.1-11.11, 11.16-11.18_
-  - [ ] 26.4 Property test: Property 22 — checkpoint evidence is timed, counted, reusable, and complete
+  - [x] 26.4 Property test: Property 22 — checkpoint evidence is timed, counted, reusable, and complete
     - Implement `property_22_checkpoint_evidence_timed_counted_reusable_complete` over
       at least 256 plans, prior observations, outcomes, timings, Cargo counts, asset
       decisions, and closure-domain mutations.
@@ -768,8 +768,8 @@
       current bounded evidence with no sign-off claim.
     - _Requirements: 11.12-11.15, 11.19-11.20_
 
-- [ ] 27. Derive the one atomic digest-bound verdict
-  - [ ] 27.1 Add immutable run-plan and complete raw observation models
+- [x] 27. Derive the one atomic digest-bound verdict
+  - [x] 27.1 Add immutable run-plan and complete raw observation models
     - Bind target, reachable Subject_Revision, Linux/amd64, host profile/preflight,
       Build/Import plan, closure, catalog, network policies, concurrency, total budget,
       artifact/security/platform identities, exact engine, baseline, counters, timings,
@@ -778,7 +778,7 @@
       invocation, and exactly one Exact_Target_Engine start. Reject dirty source,
       unknown network, zero timing, unsafe diagnostic, and undecodable excess input.
     - _Requirements: 12.1-12.19, 12.23-12.29_
-  - [ ] 27.2 Add total passed/failed verdict derivation
+  - [x] 27.2 Add total passed/failed verdict derivation
     - Recompute every digest/relation, validate Build/Import counters, one target
       engine/baseline, zero closure replay/unrelated work, complete policy-compliant
       case histories, platform/security gates, canary absence, and exact capability
@@ -788,21 +788,21 @@
       succeeds. Hash the complete verdict with its digest field omitted and recheck on
       decode.
     - _Requirements: 12.1-12.35_
-  - [ ] 27.3 Add canonical verdict JSON and neutral Markdown rendering
+  - [x] 27.3 Add canonical verdict JSON and neutral Markdown rendering
     - Render exact phase identities, artifact/build/import/engine/baseline counts,
       phase timings, case attempts, platform/security closure, and safe diagnostics.
     - Distinguish implementation, platform, security, applicability, and exact-engine
       closure; never label justified `Inapplicable` as implemented or omit an earlier
       assertion failure.
     - _Requirements: 12.1-12.35_
-  - [ ] 27.4 Property test: Property 23 — verdict binds every identity, counter, outcome, and timing
+  - [x] 27.4 Property test: Property 23 — verdict binds every identity, counter, outcome, and timing
     - Implement `property_23_verdict_binds_all_identities_counts_outcomes_timings` over
       at least 256 complete observations, declaration orders, and single-field
       mutations.
     - Require deterministic equality under ordering and a changed digest for every
       bound semantic mutation.
     - _Requirements: 12.1-12.19_
-  - [ ] 27.5 Property test: Property 24 — sign-off admission is atomic and fail-closed
+  - [x] 27.5 Property test: Property 24 — sign-off admission is atomic and fail-closed
     - Implement `property_24_signoff_atomic_fail_closed` over at least 256 passed and
       arbitrarily malformed observation trees covering every failure class.
     - Compare with an independent all-gates conjunction; every missing/skipped/failed/
@@ -810,7 +810,7 @@
       zero admitted subset/status change, and a blocked release gate.
     - _Requirements: 12.20-12.35_
 
-- [ ] 28. Checkpoint: complete Feature 8 policy and execution models are green
+- [x] 28. Checkpoint: complete Feature 8 policy and execution models are green
   - Run formatting; locked additional assertion, checkpoint, run-plan, and verdict
     tests; Properties 12–15 and 21–24; complete fixed/error fixtures; engine-free Go
     signoff graph tests; Cargo Deny; source-policy tests; and warning-denied
@@ -823,6 +823,18 @@
   - Require no Dagger command, engine, module invocation, other SDK, target build/scan,
     unscoped generation, or distribution build.
   - _Requirements: 1.1-1.18, 3.1-3.24, 4.1-4.19, 6.1-6.22, 7.1-7.18, 11.1-11.20, 12.1-12.35_
+  - Checkpoint evidence: `sdk/rust/completeness/evidence/conformance-policy-execution-checkpoint.json`
+    records the closed observable-program registry, engine-free checkpoint planner,
+    atomic verdict model, commands, timings, Cargo counts, scoped generated-asset
+    decision, current closure/platform/security fixture assembly, and artifact
+    identities. Properties 12–15 passed at 128 cases each and Properties 21–24 at 256
+    cases each on macOS/arm64 and the dedicated isolated Linux/amd64 runner; the Linux
+    native observation remained byte-identical to its current 156-test evidence and
+    macOS native evidence was reused because its owning inputs did not change. Cargo
+    Deny passed on both platforms with only the existing reviewed duplicate-version
+    and `serde_graphql_input` metadata warnings. No Dagger command, engine, module,
+    foreign SDK, target artifact/scan, unscoped generation, or distribution build ran;
+    this evidence does not claim SDK sign-off.
 
 - [ ] 29. Wire completeness transitions, reports, and durable operator documentation
   - [ ] 29.1 Add Feature 8 evidence admission and status derivation

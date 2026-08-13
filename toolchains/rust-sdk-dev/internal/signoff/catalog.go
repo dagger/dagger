@@ -19,6 +19,7 @@ const (
 	ProgramModuleAuthoring   ProgramKind = "module-authoring"
 	ProgramStandaloneClient  ProgramKind = "standalone-client"
 	ProgramDefinitiveGo      ProgramKind = "definitive-go-client"
+	ProgramIntegration       ProgramKind = "integration-assertion"
 )
 
 // Program is one validated fixed route; Value is empty only for the stable connector.

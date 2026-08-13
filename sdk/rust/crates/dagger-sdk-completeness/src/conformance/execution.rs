@@ -701,6 +701,24 @@ pub fn admit_case_observation(
     binding: &CaseExecutionBinding,
     observation: SignoffCaseObservation,
 ) -> Result<AdmittedCaseObservation, ConformanceDiagnosticSet> {
+    validate_case_observation(case, binding, &observation)?;
+    let observation_digest = canonical_digest(DigestDomain::ConformanceCaseExecution, &observation)
+        .map_err(|_| encoding_error(Some(case.id.clone())))?;
+    Ok(AdmittedCaseObservation {
+        observation,
+        observation_digest,
+    })
+}
+
+/// Validates a complete retry history without computing a standalone evidence identity.
+///
+/// Atomic verdict derivation hashes the complete normalized observation tree once, so it uses
+/// this borrowed form to avoid redundantly serializing hundreds of already-bound case records.
+pub fn validate_case_observation(
+    case: &CaseDefinition,
+    binding: &CaseExecutionBinding,
+    observation: &SignoffCaseObservation,
+) -> Result<(), ConformanceDiagnosticSet> {
     if !binding_matches_case(case, binding)
         || observation.case_id != case.id
         || binding.case_id != case.id
@@ -749,12 +767,7 @@ pub fn admit_case_observation(
     {
         return Err(retry_error(&case.id));
     }
-    let observation_digest = canonical_digest(DigestDomain::ConformanceCaseExecution, &observation)
-        .map_err(|_| encoding_error(Some(case.id.clone())))?;
-    Ok(AdmittedCaseObservation {
-        observation,
-        observation_digest,
-    })
+    Ok(())
 }
 
 /// Admits the complete catalog fan-out only when lifecycle and namespace isolation are exact.

@@ -11,6 +11,7 @@ const (
 	BoundaryModuleRuntime   ProgramBoundary = "production-module-dispatcher"
 	BoundaryGeneratedClient ProgramBoundary = "public-generated-client"
 	BoundaryRustClient      ProgramBoundary = "public-rust-client"
+	BoundaryPackagedRuntime ProgramBoundary = "exact-packaged-runtime"
 )
 
 // WorkspacePolicy states where mutable program state may be created.

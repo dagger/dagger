@@ -36,9 +36,16 @@ pub use checkpoint::{
     ClientAssetDisposition, ClientCargoExpectation, ClientCheckedAssetState,
     ClientCheckpointActionObservation, ClientCheckpointObservation, ClientCheckpointPlan,
     ClientCheckpointRecord, ClientCheckpointRequest, DeferredSignoffException,
+    Feature8ActionDisposition, Feature8ActionInput, Feature8ActionObservation,
+    Feature8ActionOutcome, Feature8ActionRecord, Feature8CheckpointAction,
+    Feature8CheckpointObservation, Feature8CheckpointPhase, Feature8CheckpointPlan,
+    Feature8CheckpointProposal, Feature8CheckpointRecord, Feature8CheckpointRequest,
+    Feature8PhaseBudget, Feature8PlannedAction, Feature8PriorActionObservation,
     ForbiddenCheckpointBoundary, ModuleProperty, PublicCheckpointPackage, RustGoAbiPackage,
-    client_feature_end_checkpoint_actions, plan_checkpoint, plan_client_checkpoint,
-    record_checkpoint, record_client_checkpoint,
+    admit_feature8_checkpoint_closure, client_feature_end_checkpoint_actions,
+    feature8_checkpoint_actions, feature8_checkpoint_phase_budgets, plan_checkpoint,
+    plan_client_checkpoint, plan_feature8_checkpoint, record_checkpoint, record_client_checkpoint,
+    record_feature8_checkpoint,
 };
 pub use client::initialization::{execute_client_initialization, plan_client_initialization};
 pub use client::project::{

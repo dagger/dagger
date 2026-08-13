@@ -1,0 +1,225 @@
+{
+  "artifact_digests": {
+    "case_catalog": "sha256:e9574efc18dd1dbbbfeb6e98cef73c0a8d8d72462220cab8a58135b4bee714fd",
+    "checked_case_catalog_file": "sha256:e9263c7aad9e897001bf6b5beda8c106b78c48de3f34fad1aba6726ccfb7ea9a",
+    "checked_closure_plan_file": "sha256:810f9d470d44334f4b9053f4225a3bb631069b81f3405f016128c68d1967952b",
+    "checked_observable_program_file": "sha256:f0568a1cffd2dc2b5e4198d98c07b79f014f368a25f40d5829f500d40b8c8760",
+    "checked_security_provenance_file": "sha256:9a89831d56601af5dab175500a254cc1424235122fad25277769984137b7847f",
+    "checkpoint_model_source": "sha256:2778ae0ce065d874947038a06c591083f7ec741a1263dfd75a01f6795cbb44ac",
+    "closure_plan": "sha256:d59d5788b24726f55899a29ffad2f7071e1dc52ffbf14864c9b874e9e3ff46b0",
+    "observable_program_registry": "sha256:b18369f379f01462bd5f9825df20461078b7fe4468c1c4b5802dd71161a03732",
+    "subject_source": "sha256:e3c68e278b27c1371423472cb7128d8e115223cdfdd94423521ad50977f1ec9d",
+    "target": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f",
+    "verdict_model_source": "sha256:0f589c253313fec71a73df367136a081a5895b42e34428911bdeba8f8ca43c54"
+  },
+  "asset_decisions": {
+    "cargo_deny": "executed-on-macos-arm64-and-linux-amd64",
+    "checked_conformance_catalog": "scoped-refresh-after-observable-verdict-and-checkpoint-input-changes",
+    "child_closure_evidence": "reused-current-engine-free-evidence-without-replay",
+    "native_macos_observation": "reused-owning-inputs-unchanged",
+    "native_windows_observation": "deferred-ultimate-sdk-signoff",
+    "repository_wide_generation": false
+  },
+  "boundaries": {
+    "dagger_command": false,
+    "distribution_build": false,
+    "docker_invocation": false,
+    "engine_build_or_start": false,
+    "module_execution": false,
+    "network_graph": false,
+    "other_sdk_build_or_test": false,
+    "target_artifact_build_or_scan": false,
+    "unscoped_generation": false
+  },
+  "cargo_invocation_counts": {
+    "linux_amd64": 12,
+    "macos_arm64": 13
+  },
+  "clean_output": {
+    "canonical_json": true,
+    "checked_asset_drift": "none-after-scoped-refresh",
+    "generated_asset_diff": "observable-program-registry-and-dependent-catalog-identities-only",
+    "unexplained_output": false
+  },
+  "commands": {
+    "linux_amd64": [
+      {
+        "command": "cargo fmt --all -- --check",
+        "elapsed_millis": 990,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo check -p dagger-sdk-engine --locked",
+        "elapsed_millis": 8280,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo check -p dagger-sdk-completeness --locked",
+        "elapsed_millis": 9260,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo test -p dagger-sdk-completeness <ten closed Feature 8 model targets> --locked",
+        "elapsed_millis": 89810,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo test -p dagger-sdk-engine --test conformance_checkpoint_properties --locked",
+        "elapsed_millis": 12570,
+        "outcome": "passed"
+      },
+      {
+        "command": "go test ./internal/enginefree ./internal/signoff",
+        "elapsed_millis": 450,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo clippy -p dagger-sdk-completeness -p dagger-sdk-engine --all-targets --no-deps --locked -- -D warnings",
+        "elapsed_millis": 18460,
+        "outcome": "passed"
+      },
+      {
+        "command": "RUSTDOCFLAGS=-Dwarnings cargo doc -p dagger-sdk-completeness -p dagger-sdk-engine --no-deps --locked",
+        "elapsed_millis": 4960,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo deny check",
+        "elapsed_millis": 870,
+        "outcome": "passed-with-reviewed-warnings"
+      },
+      {
+        "command": "./scripts/ci-platform-preflight.sh <ephemeral-linux-observation>",
+        "elapsed_millis": 35690,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo test -p dagger-sdk-completeness --test signoff_verdict_properties --locked",
+        "elapsed_millis": 49440,
+        "outcome": "passed-after-final-renderer-refinement"
+      },
+      {
+        "command": "cargo clippy -p dagger-sdk-completeness --test signoff_verdict_properties --no-deps --locked -- -D warnings",
+        "elapsed_millis": 4570,
+        "outcome": "passed-after-final-renderer-refinement"
+      }
+    ],
+    "macos_arm64": [
+      {
+        "command": "cargo fmt --all -- --check",
+        "elapsed_millis": 1055,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo check -p dagger-sdk-engine --locked",
+        "elapsed_millis": 350,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo check -p dagger-sdk-completeness --locked",
+        "elapsed_millis": 7080,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo test -p dagger-sdk-completeness <ten closed Feature 8 model targets> --locked",
+        "elapsed_millis": 133560,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo test -p dagger-sdk-engine --test conformance_checkpoint_properties --locked",
+        "elapsed_millis": 1830,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo test -p dagger-sdk-completeness --test security_repository_policy --locked",
+        "elapsed_millis": 1910,
+        "outcome": "passed"
+      },
+      {
+        "command": "go test ./internal/enginefree ./internal/signoff",
+        "elapsed_millis": 1950,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo clippy -p dagger-sdk-completeness -p dagger-sdk-engine --all-targets --no-deps --locked -- -D warnings",
+        "elapsed_millis": 1690,
+        "outcome": "passed-after-one-pre-evidence-lint-fix"
+      },
+      {
+        "command": "RUSTDOCFLAGS=-Dwarnings cargo doc -p dagger-sdk-completeness -p dagger-sdk-engine --no-deps --locked",
+        "elapsed_millis": 40110,
+        "outcome": "passed"
+      },
+      {
+        "command": "cargo deny check",
+        "elapsed_millis": 1430,
+        "outcome": "passed-with-reviewed-warnings"
+      },
+      {
+        "command": "dagger-conformance-catalog --root <repository>",
+        "elapsed_millis": 3260,
+        "outcome": "passed-no-drift"
+      },
+      {
+        "command": "cargo test -p dagger-sdk-completeness --test signoff_verdict_properties --locked",
+        "elapsed_millis": 87770,
+        "outcome": "passed-after-final-renderer-refinement"
+      },
+      {
+        "command": "cargo clippy -p dagger-sdk-completeness --test signoff_verdict_properties --no-deps --locked -- -D warnings",
+        "elapsed_millis": 9680,
+        "outcome": "passed-after-final-renderer-refinement"
+      }
+    ]
+  },
+  "format_version": "1.0.0",
+  "model_fixture_assembly": {
+    "artifact_security": "passed-exact-payload-policy-fixtures",
+    "implementation_closure": "passed-current-six-child-consume-only-fixture",
+    "platform_matrix": "passed-three-os-native-and-six-descriptor-fixture",
+    "replayed_child_evidence": false,
+    "sdk_signoff_claimed": false
+  },
+  "native_evidence": {
+    "linux_amd64": {
+      "engine_starts": 0,
+      "ignored_exact_engine_tests": 1,
+      "ignored_subprocess_helper_tests": 1,
+      "observation_digest": "sha256:eaf62dd93e8ecd5a8c1ccf7b12ed95f7295baf497fba23573f9b2394de09505d",
+      "other_sdk_invocations": 0,
+      "outcome": "passed",
+      "passed_tests": 156,
+      "rust_version": "1.97.1"
+    },
+    "macos_arm64": {
+      "observation_digest": "sha256:a3b07f01edb793237f46f09d2e24df04d329c15be5034b13e30e5e3d697998fd",
+      "outcome": "reused-current",
+      "passed_tests": 156,
+      "rust_version": "1.97.1"
+    },
+    "windows": "deferred-ultimate-sdk-signoff"
+  },
+  "properties": {
+    "property_12_cases": 128,
+    "property_13_cases": 128,
+    "property_14_cases": 128,
+    "property_15_cases": 128,
+    "property_21_cases": 256,
+    "property_22_cases": 256,
+    "property_23_cases": 256,
+    "property_24_cases": 256
+  },
+  "scope": "complete-feature-8-policy-and-execution-models",
+  "security": {
+    "advisories": "passed",
+    "bans": "passed-with-reviewed-duplicate-version-warnings",
+    "licenses": "passed-with-existing-serde-graphql-input-metadata-warning",
+    "sources": "passed"
+  },
+  "transfer_preflight": {
+    "appledouble_files": 0,
+    "candidate_archive_digest": "sha256:6fd1a33375ef99756fe5d441d6b1db09a45683dc9a73a092b3a7d57ec19d3713",
+    "cargo_target_policy": "fresh-per-extracted-repository-root",
+    "outcome": "source-only-snapshot"
+  }
+}
