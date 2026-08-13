@@ -1,0 +1,19 @@
+kind: Added
+body: |
+  The interactive prompt (`dagger agent`, `dagger shell`'s prompt mode) can now
+  open a context visualizer: press `ctrl+t` (or run `/context`) to start a local
+  web UI showing exactly what occupies the focused conversation's context
+  window. It classifies system prompts, tool schemas, skill reads, user
+  prompts, assistant replies, thinking, tool calls, and tool results into a
+  stacked breakdown bar, with per-block token counts calibrated against the
+  provider-reported usage of each API call so the buckets add up to the
+  measured context; charts each API call's prompt-cache activity and flags
+  cache misses (e.g. after a system-prompt or toolset change); and renders an
+  interactive transcript showing how many tokens each content block added,
+  highlighting that block's share of the breakdown bar. The server listens on a
+  random localhost port, its URL is shown in the sidebar, and the page follows
+  focus and refreshes live as the conversation advances.
+time: 2026-08-14T00:00:00Z
+custom:
+  Author: vito
+  PR: ""
