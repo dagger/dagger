@@ -222,44 +222,6 @@ gc = false
 </TabItem>
 </Tabs>
 
-The garbage collector also limits the in-memory metadata retained by Dagger's
-operation cache. This limit is separate from the disk-space policy: pruning can
-run when cached operations use little or no disk, and it does not depend on a
-worker disk policy being configured.
-
-The current provisional metadata estimate limit is 4 GiB. When the estimate
-exceeds that limit, the engine removes cold persisted cache roots toward a 3
-GiB target. These implementation defaults remain subject to final tuning and
-canary evidence. Active results and engine-lifetime unpruneable results remain
-protected. Removed results can be recomputed by later calls.
-
-The limits can be changed in `engine.json` using absolute integer bytes:
-
-```json
-{
-  "gc": {
-    "dagqlCache": {
-      "maxEstimatedBytes": 4294967296,
-      "targetEstimatedBytes": 3221225472
-    }
-  }
-}
-```
-
-`targetEstimatedBytes` must be positive and lower than
-`maxEstimatedBytes`. Omitting either field, or setting it to `0`, uses its
-built-in default. These fields do not accept percentages or size strings.
-Setting `gc.enabled` to `false` disables automatic disk and operation-metadata
-garbage collection. Explicit manual structural pruning remains available.
-Manual `useDefaultPolicy` does not enable the structural stage in this case;
-because no default disk policies are active, its existing disk path falls back
-to pruning all releasable disk-cache entries.
-
-The metadata value is a coarse structural estimate based on the number of live
-cached results, symbolic operation terms, and allocated equivalence-class
-slots. It is inexpensive to read, but it is not a measurement or hard limit of
-the engine process's resident memory.
-
 The default cache policy attempts to keep the long-term cache storage under 75%
 of the total disk, while also ensuring that at least 20% of the disk remains
 free for other applications and tools. The cache policy can be further tweaked
@@ -373,6 +335,42 @@ To adjust the garbage collector's fine-grained policies:
 
 </TabItem>
 </Tabs>
+
+The garbage collector also limits the metadata that Dagger keeps in memory for
+the operation cache. This limit is separate from the disk policies above. It
+applies even when cached operations use little or no disk, and it does not
+need a disk policy to be configured.
+
+The metadata estimate is a coarse count of the cached results and internal
+terms the engine holds in memory. It is not a measurement of the engine
+process's memory usage.
+
+When the estimate goes above `maxEstimatedBytes`, the engine removes cached
+results, least recently used first, aiming for `targetEstimatedBytes`. Results
+in use and results kept for the engine's lifetime are never removed. Removed
+results are recomputed if a later call needs them. The engine checks the
+estimate after each session ends and on a background timer.
+
+`maxEstimatedBytes` defaults to 4 GiB and `targetEstimatedBytes` to 3 GiB. Both
+are set in `engine.json` as absolute integer bytes:
+
+```json
+{
+  "gc": {
+    "dagqlCache": {
+      "maxEstimatedBytes": 4294967296,
+      "targetEstimatedBytes": 3221225472
+    }
+  }
+}
+```
+
+Percentages and size strings are not accepted. Omitting a field, or setting it
+to `0`, uses its default. `targetEstimatedBytes` must be positive and lower
+than `maxEstimatedBytes`.
+
+Setting `gc.enabled` to `false` also stops automatic metadata pruning. Metadata
+can still be pruned [on demand](./cache.mdx#manual-pruning).
 
 ## Custom registries
 
