@@ -350,7 +350,12 @@ fn applicability_sources_keep_review_policy_out_of_production_comments() {
     for source in [
         include_str!("../src/conformance/applicability.rs"),
         include_str!("../src/conformance/applicability_review.rs"),
+        include_str!("../src/conformance/assertion.rs"),
+        include_str!("../src/conformance/case_catalog.rs"),
+        include_str!("../src/conformance/closure.rs"),
+        include_str!("../src/conformance/planning.rs"),
         include_str!("../src/bin/dagger-conformance-applicability.rs"),
+        include_str!("../src/bin/dagger-conformance-catalog.rs"),
     ] {
         for forbidden in ["// Feature:", "// Task ", "// Property "] {
             assert!(!source.contains(forbidden), "source contains {forbidden}");

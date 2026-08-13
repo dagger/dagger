@@ -1,0 +1,29 @@
+{
+  "applicability_assertion_count": 996,
+  "assertion_catalog_digest": "sha256:321bca31098a27b6748b1dd727adb4fac52cd018c687c092bdec89a3ffaf8aa4",
+  "assertion_count": 1047,
+  "assertion_drift": {
+    "added": [],
+    "fingerprint_changed": [],
+    "merged": [],
+    "reclassified": [],
+    "removed": [],
+    "split": []
+  },
+  "authority_route_case_count": 612,
+  "case_catalog_digest": "sha256:837c267a4ed85a96b1e61757e3b98b71020e1ea6cf489c864d9fe59644a30102",
+  "case_count": 672,
+  "closure_plan_digest": "sha256:d59d5788b24726f55899a29ffad2f7071e1dc52ffbf14864c9b874e9e3ff46b0",
+  "engine_action_present": false,
+  "executable_text_present": false,
+  "fixed_case_count": 60,
+  "fixture_count": 1047,
+  "fixture_registry_digest": "sha256:689a96fa142b214a8b5dac2155b3ef3f732678bb99d90bb54d4999b3fd3961b9",
+  "replay_action_present": false,
+  "scope_digest": "sha256:ebb0cbab791730404bd0cb43f2fcf6c33823d0d4db998e4225891bb888539607",
+  "subject": {
+    "identity": "sha256:bfa62a72c81924b8f33daeccfb46c8767d863e6660c29d7c30ca12e0ec1f0069",
+    "kind": "source-digest"
+  },
+  "target_digest": "sha256:cca4bdcf5f934b5b1acfc03a8bb6db081856f3c1110ebb28f7bdca592efc0f4f"
+}

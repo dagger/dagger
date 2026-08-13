@@ -31,6 +31,10 @@ pub enum DigestDomain {
     ConformanceScope,
     ConformanceApplicabilityReview,
     ConformanceApplicabilityRecords,
+    ConformanceAssertionCatalog,
+    ConformanceFixtureRegistry,
+    ConformanceCaseCatalog,
+    ConformanceClosureBundle,
     ConformanceHostProfile,
     ConformanceHostPlan,
     ConformanceHostRecord,
@@ -55,6 +59,14 @@ impl DigestDomain {
             Self::ConformanceApplicabilityRecords => {
                 b"dagger-rust-sdk-conformance-applicability-records-v1\0"
             }
+            Self::ConformanceAssertionCatalog => {
+                b"dagger-rust-sdk-conformance-assertion-catalog-v1\0"
+            }
+            Self::ConformanceFixtureRegistry => {
+                b"dagger-rust-sdk-conformance-fixture-registry-v1\0"
+            }
+            Self::ConformanceCaseCatalog => b"dagger-rust-sdk-conformance-case-catalog-v1\0",
+            Self::ConformanceClosureBundle => b"dagger-rust-sdk-conformance-closure-bundle-v1\0",
             Self::ConformanceHostProfile => b"dagger-rust-sdk-signoff-host-profile-v1\0",
             Self::ConformanceHostPlan => b"dagger-rust-sdk-signoff-host-plan-v1\0",
             Self::ConformanceHostRecord => b"dagger-rust-sdk-signoff-host-record-v1\0",

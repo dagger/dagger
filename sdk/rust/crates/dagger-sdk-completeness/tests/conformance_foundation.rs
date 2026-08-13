@@ -64,7 +64,7 @@ fn scope_drift_renderer_reports_exact_stable_categories() {
 }
 
 #[test]
-fn canonical_applicability_is_admitted_while_later_catalogs_remain_scaffolds() {
+fn canonical_applicability_and_closed_catalogs_are_admitted() {
     let ledger: ResolvedLedger = decode_canonical(&artifact("artifacts/ledger.json")).unwrap();
     let reviewed: ReviewedConformanceScope =
         decode_canonical(&artifact("conformance-scope.json")).unwrap();
@@ -74,12 +74,19 @@ fn canonical_applicability_is_admitted_while_later_catalogs_remain_scaffolds() {
     assert_eq!(scope.existing_records().len(), 1_081);
     assert_eq!(scope.policy_capabilities().len(), 21);
 
-    let assertions: ConformanceAssertionScaffold =
+    let assertions: AssertionCatalogInput =
         decode_canonical(&artifact("conformance-assertions.json")).unwrap();
-    let cases: ConformanceCaseScaffold =
-        decode_canonical(&artifact("conformance-cases.json")).unwrap();
-    assert!(assertions.assertions.is_empty());
-    assert!(cases.cases.is_empty());
+    let fixtures: FixtureRegistryInput =
+        decode_canonical(&artifact("conformance-fixtures.json")).unwrap();
+    let cases: CaseCatalogInput = decode_canonical(&artifact("conformance-cases.json")).unwrap();
+    let assertion_catalog = compile_assertion_catalog(&scope, assertions.clone()).unwrap();
+    let fixture_registry = compile_fixture_registry(fixtures.clone()).unwrap();
+    let case_catalog =
+        compile_case_catalog(&scope, &assertion_catalog, &fixture_registry, cases.clone()).unwrap();
+    assert_eq!(assertions.assertions.len(), 1_047);
+    assert_eq!(fixtures.fixtures.len(), 1_047);
+    assert_eq!(cases.cases.len(), 672);
+    assert_eq!(case_catalog.cases().len(), 672);
     assert_eq!(assertions.target_digest, reviewed.target_digest);
     assert_eq!(cases.target_digest, reviewed.target_digest);
 

@@ -118,6 +118,10 @@ conformance_id!(
     "Reviewed fixture registered by the closed executor."
 );
 conformance_id!(
+    FixtureExecutorId,
+    "Closed production executor selected by a reviewed fixture."
+);
+conformance_id!(
     ProvenanceId,
     "Immutable reviewed provenance identity for an external input."
 );

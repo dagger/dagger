@@ -1,0 +1,86 @@
+{
+  "asset_decisions": {
+    "cargo_deny": "reused-unchanged",
+    "cargo_security_inputs_changed": false,
+    "regenerated": [
+      "completeness/conformance-assertions.json",
+      "completeness/conformance-cases.json",
+      "completeness/conformance-catalog-audit.json",
+      "completeness/conformance-closure-plan.json",
+      "completeness/conformance-fixtures.json"
+    ],
+    "repository_wide_generation": false
+  },
+  "bound_preflight": {
+    "container_daemon_identity": "sha256:f0f1560e22d233f2ed01711c53ff70fdddd945f80e4d3ebc1c2aaa0a9a097583",
+    "plan_digest": "sha256:1fa89b59838e3fc5a6d853b7c3f111d2449f0baf65d8ecb73047b98a281c4436",
+    "preflight_tool": "binary/dagger-rust-sdk-signoff/sha256/a8789093fdfe61d47e93ac62c5556bfd6fcfba9409850cc020d822558f193a1e",
+    "profile_digest": "sha256:312a717dc26a1c17991545183df2478e547ce27e09f2ef60799650946a8d3367",
+    "record_digest": "sha256:7d729351dabe12f7c3b1c84bc3fe64295cda8c8876db5893f0ea2f34a0e27de6",
+    "reused_without_live_rerun": true,
+    "smoke_engine": "oci/registry.dagger.io/engine/v1.0.0-beta.9/sha256/de22dbf0c848d618efa9243f76fd47364110d31bb2e24cce063b702e91e1b73e"
+  },
+  "cargo_invocation_count": 6,
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "elapsed_millis": 913,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test --locked -p dagger-sdk-completeness --lib",
+      "elapsed_millis": 5666,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo test --locked -p dagger-sdk-completeness --test conformance_catalog --test conformance_closure --test conformance_foundation --test conformance_applicability",
+      "elapsed_millis": 58614,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo clippy --locked -p dagger-sdk-completeness --all-targets --no-deps -- -D warnings",
+      "elapsed_millis": 7127,
+      "outcome": "passed"
+    },
+    {
+      "command": "RUSTDOCFLAGS=-Dwarnings cargo doc --locked -p dagger-sdk-completeness --no-deps",
+      "elapsed_millis": 21694,
+      "outcome": "passed"
+    },
+    {
+      "command": "cargo run -p dagger-sdk-completeness --bin dagger-conformance-catalog --locked -- --root <repository-root>",
+      "elapsed_millis": 15695,
+      "outcome": "passed"
+    }
+  ],
+  "format_version": "1.0.0",
+  "local_boundary": {
+    "dagger_command": false,
+    "distribution_build": false,
+    "engine_build_or_start": false,
+    "module_execution": false,
+    "network": false,
+    "other_sdk_build_or_test": false,
+    "unscoped_generation": false
+  },
+  "observations": {
+    "applicability_assertion_count": 996,
+    "assertion_catalog_digest": "sha256:321bca31098a27b6748b1dd727adb4fac52cd018c687c092bdec89a3ffaf8aa4",
+    "assertion_count": 1047,
+    "assertion_drift_empty": true,
+    "authority_route_case_count": 612,
+    "case_catalog_digest": "sha256:837c267a4ed85a96b1e61757e3b98b71020e1ea6cf489c864d9fe59644a30102",
+    "case_count": 672,
+    "closure_plan_digest": "sha256:d59d5788b24726f55899a29ffad2f7071e1dc52ffbf14864c9b874e9e3ff46b0",
+    "engine_action_present": false,
+    "executable_text_present": false,
+    "fixed_case_count": 60,
+    "fixture_count": 1047,
+    "fixture_registry_digest": "sha256:689a96fa142b214a8b5dac2155b3ef3f732678bb99d90bb54d4999b3fd3961b9",
+    "replay_action_present": false,
+    "scope_digest": "sha256:ebb0cbab791730404bd0cb43f2fcf6c33823d0d4db998e4225891bb888539607",
+    "subject_digest": "sha256:bfa62a72c81924b8f33daeccfb46c8767d863e6660c29d7c30ca12e0ec1f0069"
+  },
+  "owning_input_digest": "sha256:cef76762c2cde4dd6e46859e8db34b5090af29c5d8e3b16582db750a1d4ab4cb",
+  "scope": "conformance-catalog-and-closure-planning"
+}

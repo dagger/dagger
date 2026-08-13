@@ -240,8 +240,8 @@
     21/21 policy rows, exact disposition counts, retained current blockers, and reuse
     of the unchanged host preflight without a Dagger command or engine start.
 
-- [ ] 9. Build the Rust-observable assertion catalog and fixture registry
-  - [ ] 9.1 Add closed observable predicates and assertion compilation
+- [x] 9. Build the Rust-observable assertion catalog and fixture registry
+  - [x] 9.1 Add closed observable predicates and assertion compilation
     - Add result, typed-error, lifecycle, filesystem, query, metadata, omission,
       isolation, and compatibility predicate variants with exact authority anchors,
       capability sets, fixture context, and optional idiomatic decision identity.
@@ -249,7 +249,7 @@
       predicate plus fixture context; reject prose-only, foreign-code, orphaned,
       duplicated, conflicting, or anchor-mismatched assertions.
     - _Requirements: 1.6-1.12, 3.5, 3.14-3.20, 7.1-7.4, 7.16-7.18_
-  - [ ] 9.2 Add the reviewed fixture registry and exact executor identities
+  - [x] 9.2 Add the reviewed fixture registry and exact executor identities
     - Register stable fixture IDs and digests for common harness, stable connector,
       Core shapes, Feature 5, Feature 6, Feature 7, definitive Go-client, and remaining
       integration-assertion families.
@@ -257,15 +257,15 @@
       and permitted assertion family. Reject runtime paths, arbitrary commands,
       unknown selectors, mutable remotes, foreign SDK executors, and digest drift.
     - _Requirements: 3.5-3.24, 7.5-7.15_
-  - [ ] 9.3 Add deterministic authority/assertion drift reporting
+  - [x] 9.3 Add deterministic authority/assertion drift reporting
     - Compare current selected sources with assertion anchors and report exact added,
       removed, reclassified, merged, split, and fingerprint-changed assertion scope.
     - Require an updated reviewed assertion and applicability artifact before a changed
       authority can enter the case compiler.
     - _Requirements: 1.15-1.16, 7.16_
 
-- [ ] 10. Compile the complete closed sign-off case catalog
-  - [ ] 10.1 Add `CaseProgram`, `CaseDefinition`, and policy models
+- [x] 10. Compile the complete closed sign-off case catalog
+  - [x] 10.1 Add `CaseProgram`, `CaseDefinition`, and policy models
     - Implement the eight closed case families, exact fixed child-case enums, fixture
       digest, assertion/capability sets, non-zero timeout, typed retry classes,
       network policy, and concurrency class. Catalog JSON must contain no command text.
@@ -273,7 +273,7 @@
       cases while retaining their closure identities; stop treating their provisional
       artifact/counter/verdict shapes as independently releasable.
     - _Requirements: 3.1-3.16, 7.5-7.15_
-  - [ ] 10.2 Add total forward/reverse catalog validation
+  - [x] 10.2 Add total forward/reverse catalog validation
     - Require exact target, Subject_Revision/source digest, platform, all applicable
       assertions, all 17 sdk-sdk subject checks, stable connector, complete Core shape
       family, Feature 5/6/7 inventories, nine Go-client behaviours, and all additional
@@ -282,7 +282,7 @@
       duplicated/unknown IDs, fixture mismatch, complete foreign suites, unrelated SDK
       work, repository-wide generation, and declaration-order dependence.
     - _Requirements: 3.1-3.24_
-  - [ ] 10.3 Property test: Property 5 — case catalog is closed, complete, and deterministic
+  - [x] 10.3 Property test: Property 5 — case catalog is closed, complete, and deterministic
     - Implement `property_05_case_catalog_closed_complete_deterministic` over at least
       256 scope/assertion/case graph permutations, fixed inventory mutations, fixture
       identities, policies, and forbidden programs.
@@ -291,8 +291,8 @@
       diagnostic set.
     - _Requirements: 3.1-3.24_
 
-- [ ] 11. Assemble matching engine-free implementation closure evidence
-  - [ ] 11.1 Add exact Feature 2–7 closure references and compatibility policy
+- [x] 11. Assemble matching engine-free implementation closure evidence
+  - [x] 11.1 Add exact Feature 2–7 closure references and compatibility policy
     - Define the closed six-child set, target/subject-or-asset/closure identities,
       outcome, engine-free marker, generated-asset map, native matrix identity, and
       ordinary Rust security identity.
@@ -300,7 +300,7 @@
       engine-backed Feature 5 evidence honestly: consume only its direct implementation
       closure here and keep its exact cases in the umbrella catalog.
     - _Requirements: 4.1-4.13, 4.19_
-  - [ ] 11.2 Add fail-fast closure admission without replay
+  - [x] 11.2 Add fail-fast closure admission without replay
     - Validate exact child set, shared target, Subject_Revision or reviewed compatible
       asset identity, passed current outcomes, generated assets, complete platform
       matrix, and Rust hygiene/security before artifact work.
@@ -308,7 +308,7 @@
       engine-free evidence. Ensure the plan contains zero Rust unit/fixture, format,
       Clippy, rustdoc, Cargo Deny, or direct-Go replay actions.
     - _Requirements: 4.1-4.19_
-  - [ ] 11.3 Property test: Property 6 — closure consumes exactly current engine-free evidence
+  - [x] 11.3 Property test: Property 6 — closure consumes exactly current engine-free evidence
     - Implement `property_06_closure_exact_current_engine_free` over at least 256 child
       sets, targets, subjects/assets, outcomes, generated assets, platform/security
       identities, and replay-event mutations.
@@ -316,7 +316,7 @@
       only complete current evidence with zero replay and reject before engine startup.
     - _Requirements: 4.1-4.19_
 
-- [ ] 12. Checkpoint: assertions, catalog, and closure planning are green
+- [x] 12. Checkpoint: assertions, catalog, and closure planning are green
   - Run formatting, locked assertion/catalog/closure tests, Properties 5–6, fixed child
     inventory and sdk-sdk boundary tests, source-policy tests, and focused
     warning-denied Clippy/rustdoc.
@@ -327,6 +327,11 @@
     catalog/closure digests. Regenerate only changed Feature 8 artifacts.
   - Keep the checkpoint engine-free and consume—not rerun—the current preflight record.
   - _Requirements: 3.1-3.24, 4.1-4.19, 7.5-7.18, 11.1-11.20_
+  - Checkpoint evidence: `sdk/rust/completeness/evidence/conformance-catalog-checkpoint.json`
+    records six bounded Cargo commands, the 1,047-assertion/1,047-fixture/672-case
+    catalog, Properties 5–6 at 256 cases each, zero authority drift, the consume-only
+    closure-plan identity, and reuse of the unchanged host preflight without a Dagger
+    command, engine start, another SDK, or replayed child closure.
 
 - [ ] 13. Implement native and descriptor platform closure
   - [ ] 13.1 Add the exact platform policy and pure descriptor matrix

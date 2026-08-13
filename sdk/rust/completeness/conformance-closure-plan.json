@@ -1,0 +1,69 @@
+{
+  "actions": [
+    {
+      "action": "consume-child",
+      "domain": "transport"
+    },
+    {
+      "action": "consume-child",
+      "domain": "client-lifecycle"
+    },
+    {
+      "action": "consume-child",
+      "domain": "core-codegen"
+    },
+    {
+      "action": "consume-child",
+      "domain": "engine-integration"
+    },
+    {
+      "action": "consume-child",
+      "domain": "module-authoring"
+    },
+    {
+      "action": "consume-child",
+      "domain": "standalone-client"
+    },
+    {
+      "action": "consume-generated-asset",
+      "domain": "core-bindings"
+    },
+    {
+      "action": "consume-generated-asset",
+      "domain": "engine-package"
+    },
+    {
+      "action": "consume-generated-asset",
+      "domain": "module-assets"
+    },
+    {
+      "action": "consume-generated-asset",
+      "domain": "standalone-client-assets"
+    },
+    {
+      "action": "consume-platform-matrix"
+    },
+    {
+      "action": "consume-rust-security"
+    }
+  ],
+  "child_formats": {
+    "client-lifecycle": "client-evidence-registry",
+    "core-codegen": "core-codegen-evidence-registry",
+    "engine-integration": "engine-integration-implementation-closure",
+    "module-authoring": "module-authoring-implementation-closure",
+    "standalone-client": "client-generation-closure",
+    "transport": "transport-observation-registry"
+  },
+  "format_version": "1.0.0",
+  "generated_asset_domains": [
+    "core-bindings",
+    "engine-package",
+    "module-assets",
+    "standalone-client-assets"
+  ],
+  "permits_historical_engine_signoff": false,
+  "plan_digest": "sha256:d59d5788b24726f55899a29ffad2f7071e1dc52ffbf14864c9b874e9e3ff46b0",
+  "requires_platform_matrix": true,
+  "requires_rust_security": true
+}

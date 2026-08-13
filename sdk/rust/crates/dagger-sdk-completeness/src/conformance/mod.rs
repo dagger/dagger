@@ -6,12 +6,20 @@
 
 mod applicability;
 mod applicability_review;
+mod assertion;
+mod case_catalog;
+mod closure;
 mod diagnostic;
 mod identifiers;
+mod planning;
 pub mod preflight;
 
 pub use applicability::*;
 pub use applicability_review::*;
+pub use assertion::*;
+pub use case_catalog::*;
+pub use closure::*;
 pub use diagnostic::*;
 pub use identifiers::*;
+pub use planning::*;
 pub use preflight::*;
