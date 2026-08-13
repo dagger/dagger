@@ -40,6 +40,7 @@ import (
 
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
@@ -723,8 +724,10 @@ func isObviouslyRemoteWorkspaceRef(ref string) bool {
 		}
 	}
 
-	head, _, hasSlash := strings.Cut(ref, "/")
-	return hasSlash && strings.Contains(head, ".")
+	// A single dotted token ("my.dir") is far more likely a directory that does
+	// not exist yet than a host, so stay conservative and require a path.
+	_, _, hasSlash := strings.Cut(ref, "/")
+	return hasSlash && !workspace.IsLocalRef(ref, "")
 }
 
 func Tracer() trace.Tracer {
