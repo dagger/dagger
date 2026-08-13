@@ -25,7 +25,10 @@ pub struct RustGenerator {}
 impl Generator for RustGenerator {
     fn generate(&self, schema: Schema) -> eyre::Result<String> {
         let render = Arc::new(Mutex::new(rust::Tokens::new()));
-        let common_funcs = Arc::new(CommonFunctions::new(Arc::new(FormatTypeFunc {})));
+        let common_funcs = Arc::new(CommonFunctions::new(
+            Arc::new(FormatTypeFunc {}),
+            schema.schema_version.as_deref(),
+        ));
 
         tracing::info!("generating dagger for rust");
 

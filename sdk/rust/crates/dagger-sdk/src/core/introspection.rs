@@ -266,6 +266,8 @@ pub struct SchemaDirectives {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Schema {
+    #[serde(skip)]
+    pub schema_version: Option<String>,
     pub query_type: Option<SchemaQueryType>,
     pub mutation_type: Option<SchemaMutationType>,
     pub subscription_type: Option<SchemaSubscriptionType>,
@@ -308,6 +310,8 @@ impl DirectivesExt for Option<Vec<DirectiveApplication>> {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct SchemaContainer {
+    #[serde(rename = "__schemaVersion", default)]
+    pub schema_version: Option<String>,
     #[serde(rename = "__schema")]
     pub schema: Option<Schema>,
 }
@@ -333,9 +337,13 @@ impl IntrospectionResponse {
     }
 
     pub fn into_schema(self) -> SchemaContainer {
-        match self {
+        let mut container = match self {
             IntrospectionResponse::FullResponse(full_response) => full_response.data,
             IntrospectionResponse::Schema(schema) => schema,
+        };
+        if let Some(schema) = container.schema.as_mut() {
+            schema.schema_version = container.schema_version.clone();
         }
+        container
     }
 }
