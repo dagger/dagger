@@ -30,7 +30,7 @@ characterize_environment() {
 		for governor in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
 			[[ -r "$governor" ]] || continue
 			printf '%s=' "$governor"
-			<"$governor"
+			: <"$governor"
 		done
 		printf '\n'
 	} >>"$output_root/environment-history.txt" 2>&1
@@ -123,6 +123,8 @@ run_point() {
 	# The first pass is a scaling screen, not a precision estimate. Run each
 	# point once; only a family selected by the observed shape is repeated in a
 	# separate confirmation run.
+	# Keep the singleton replicate axis loop-shaped for confirmation runs.
+	# shellcheck disable=SC2043
 	for replicate in 1; do
 		local safe
 		safe="$(sanitize "$phase-$family-$scale-r$replicate")"
@@ -228,6 +230,8 @@ run_screen() {
 
 	for route in exact-recipe shared-extra structural; do
 		for persistence in transient imported; do
+			# Keep the singleton ownership axis loop-shaped for future modes.
+			# shellcheck disable=SC2043
 			for ownership in fresh-session; do
 				for scale in 256 512 1024 2048; do
 					run_point serial "lookup-$route-$persistence-$ownership" "$scale" \
@@ -239,6 +243,8 @@ run_screen() {
 
 	for operation in direct receiver; do
 		for persistence in transient imported; do
+			# Keep the singleton ownership axis loop-shaped for future modes.
+			# shellcheck disable=SC2043
 			for ownership in fresh-session; do
 				for scale in 256 512 1024 2048; do
 					run_point serial "id-$operation-$persistence-$ownership" "$scale" \

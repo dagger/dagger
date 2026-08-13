@@ -1040,7 +1040,7 @@ func egraphBenchmarkReportLocks(b *testing.B, recorder *egraphBenchmarkLockRecor
 	}
 }
 
-func egraphBenchmarkRunMeasured(b *testing.B, f *egraphBenchmarkFixture, recorderCapacity int, fn func() error) time.Duration {
+func egraphBenchmarkRunMeasured(b *testing.B, f *egraphBenchmarkFixture, recorderCapacity int, fn func() error) {
 	b.Helper()
 	widths := egraphBenchmarkWidthsForCache(f.cache)
 	targetOutput := egraphBenchmarkTargetOutputShapeForFixture(f)
@@ -1064,7 +1064,6 @@ func egraphBenchmarkRunMeasured(b *testing.B, f *egraphBenchmarkFixture, recorde
 		b.Logf("EGRAPH_BENCH_STOP operation exceeded %s: %s", egraphBenchmarkOperationLimit, duration)
 	}
 	egraphBenchmarkReportLocks(b, recorder)
-	return duration
 }
 
 func TestCacheEGraphBenchmarkLockRecorder(t *testing.T) {
