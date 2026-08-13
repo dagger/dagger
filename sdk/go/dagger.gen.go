@@ -5426,7 +5426,7 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 
 // EngineCachePruneOpts contains options for EngineCache.Prune
 type EngineCachePruneOpts struct {
-	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	// Use enabled engine-wide default disk and structural policies. If no default disk policy is enabled, the disk stage falls back to pruning all releasable disk-cache entries. If false, explicit options select stages; with no options, all releasable disk-cache entries are pruned.
 	UseDefaultPolicy bool
 	// Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
 	MaxUsedSpace string
@@ -5436,6 +5436,10 @@ type EngineCachePruneOpts struct {
 	MinFreeSpace string
 	// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
 	TargetSpace string
+	// Override the maximum structural metadata estimate in absolute bytes. Explicit values must be positive; the configured/default value is used when omitted.
+	MaxEstimatedBytes int
+	// Override the structural metadata estimate to target in absolute bytes. Explicit values must be positive and lower than the resolved maximum; the configured/default value is used when omitted.
+	TargetEstimatedBytes int
 }
 
 // Prune the cache of releaseable entries
@@ -5464,6 +5468,14 @@ func (r *EngineCache) Prune(ctx context.Context, opts ...EngineCachePruneOpts) e
 		// `targetSpace` optional argument
 		if !querybuilder.IsZeroValue(opts[i].TargetSpace) {
 			q = q.Arg("targetSpace", opts[i].TargetSpace)
+		}
+		// `maxEstimatedBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxEstimatedBytes) {
+			q = q.Arg("maxEstimatedBytes", opts[i].MaxEstimatedBytes)
+		}
+		// `targetEstimatedBytes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TargetEstimatedBytes) {
+			q = q.Arg("targetEstimatedBytes", opts[i].TargetEstimatedBytes)
 		}
 	}
 

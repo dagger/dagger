@@ -79,31 +79,105 @@ func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCac
 	return engineCacheEntrySetFromUsage(entries), nil
 }
 
-// Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
-// use the engine-wide default pruning policy, otherwise prune the whole cache
-// of any releasable entries.
+// Prune the local cache of releaseable entries. With no options, preserve the
+// legacy behavior of pruning all releasable disk cache entries. Explicit disk
+// and structural controls run only their respective stages; UseDefaultPolicy
+// runs both configured stages when automatic GC is enabled.
 func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.EngineCachePruneOptions) (*core.EngineCacheEntrySet, error) {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 	srv.metadataPruneMonitorBlocked.Store(false)
 
-	dstat, _ := disk.GetDiskStat(srv.rootDir)
-	prunePolicies, err := resolveEngineLocalCachePrunePolicies(
-		srv.workerGCPolicies,
-		opts,
-		dstat,
-	)
-	if err != nil {
-		return nil, err
+	pruneDisk, pruneMetadata := engineLocalCachePruneModes(opts, srv.localCacheGCEnabled)
+	var maximumEstimatedBytes, targetEstimatedBytes int64
+	if pruneMetadata {
+		var err error
+		maximumEstimatedBytes, targetEstimatedBytes, err = resolveEngineLocalCacheMetadataPruneOptions(
+			srv.dagqlCacheMaxEstimatedBytes,
+			srv.dagqlCacheTargetEstimatedBytes,
+			opts,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
-	report, err := srv.engineCache.Prune(ctx, prunePolicies)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prune dagql cache: %w", err)
+
+	var (
+		report dagql.CachePruneReport
+		rerr   error
+	)
+	if pruneDisk {
+		dstat, _ := disk.GetDiskStat(srv.rootDir)
+		prunePolicies, err := resolveEngineLocalCachePrunePolicies(
+			srv.workerGCPolicies,
+			opts,
+			dstat,
+		)
+		if err != nil {
+			return nil, err
+		}
+		report, err = srv.engineCache.Prune(ctx, prunePolicies)
+		if err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to prune dagql cache: %w", err))
+		}
+	}
+
+	if pruneMetadata {
+		_, err := srv.engineCache.PruneMetadataEstimate(ctx, maximumEstimatedBytes, targetEstimatedBytes)
+		if err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to prune dagql cache metadata: %w", err))
+		}
+	}
+	if rerr != nil {
+		return nil, rerr
 	}
 	if len(report.Entries) == 0 {
 		return &core.EngineCacheEntrySet{}, nil
 	}
 	return engineCacheEntrySetFromUsage(report.Entries), nil
+}
+
+func engineLocalCachePruneModes(opts core.EngineCachePruneOptions, automaticGCEnabled bool) (disk, metadata bool) {
+	explicitMetadata := opts.MaxEstimatedBytes != nil || opts.TargetEstimatedBytes != nil
+	metadata = explicitMetadata || (opts.UseDefaultPolicy && automaticGCEnabled)
+	maxUsedSpace, reservedSpace, minFreeSpace, targetSpace := trimmedPruneOpts(opts)
+	hasDiskOptions := maxUsedSpace != "" || reservedSpace != "" || minFreeSpace != "" || targetSpace != ""
+
+	// Preserve the legacy no-option prune-all behavior, while ensuring that a
+	// structural-only request does not run that implicit disk stage first.
+	disk = opts.UseDefaultPolicy || hasDiskOptions || !explicitMetadata
+	return disk, metadata
+}
+
+func resolveEngineLocalCacheMetadataPruneOptions(
+	defaultMaximumBytes,
+	defaultTargetBytes int64,
+	opts core.EngineCachePruneOptions,
+) (maximumBytes, targetBytes int64, _ error) {
+	maximumBytes = defaultMaximumBytes
+	targetBytes = defaultTargetBytes
+	if opts.MaxEstimatedBytes != nil {
+		maximumBytes = *opts.MaxEstimatedBytes
+	}
+	if opts.TargetEstimatedBytes != nil {
+		targetBytes = *opts.TargetEstimatedBytes
+	}
+
+	if maximumBytes <= 0 {
+		return 0, 0, fmt.Errorf(
+			"maxEstimatedBytes must be positive (resolved maxEstimatedBytes=%d, targetEstimatedBytes=%d)",
+			maximumBytes,
+			targetBytes,
+		)
+	}
+	if targetBytes <= 0 || targetBytes >= maximumBytes {
+		return 0, 0, fmt.Errorf(
+			"targetEstimatedBytes must be positive and lower than maxEstimatedBytes (resolved maxEstimatedBytes=%d, targetEstimatedBytes=%d)",
+			maximumBytes,
+			targetBytes,
+		)
+	}
+	return maximumBytes, targetBytes, nil
 }
 
 func trimmedPruneOpts(opts core.EngineCachePruneOptions) (maxUsedSpace, reservedSpace, minFreeSpace, targetSpace string) {

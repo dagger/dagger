@@ -15,6 +15,20 @@ import (
 	"gotest.tools/v3/assert/cmp"
 )
 
+type cancelOnErrCheckContext struct {
+	context.Context
+	cancel   context.CancelFunc
+	cancelAt int32
+	checks   atomic.Int32
+}
+
+func (ctx *cancelOnErrCheckContext) Err() error {
+	if ctx.checks.Add(1) == ctx.cancelAt {
+		ctx.cancel()
+	}
+	return ctx.Context.Err()
+}
+
 func TestCacheMetadataEstimateFormula(t *testing.T) {
 	t.Parallel()
 
@@ -149,6 +163,67 @@ func TestCacheMetadataPruneCandidateOrder(t *testing.T) {
 		ids = append(ids, candidate.resultID)
 	}
 	assert.DeepEqual(t, ids, []sharedResultID{2, 1, 3, 4})
+}
+
+func TestCacheMetadataPruneCandidateSortCancellation(t *testing.T) {
+	t.Parallel()
+
+	const candidateCount = pruneCancellationCheckInterval + 44
+	candidates := make([]pruneCandidate, 0, candidateCount)
+	for i := candidateCount; i > 0; i-- {
+		candidates = append(candidates, pruneCandidate{resultID: sharedResultID(i)})
+	}
+
+	base, cancel := context.WithCancel(t.Context())
+	cancelingCtx := &cancelOnErrCheckContext{
+		Context:  base,
+		cancel:   cancel,
+		cancelAt: 2,
+	}
+	defer cancel()
+
+	err := sortPruneCandidatesCancelable(candidates, time.Now(), newPruneCancellationChecker(cancelingCtx))
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, int32(2), cancelingCtx.checks.Load())
+}
+
+func TestCacheMetadataPruneDependencySortCancellation(t *testing.T) {
+	t.Parallel()
+
+	const dependencyCount = pruneCancellationCheckInterval + 44
+	deps := make(map[sharedResultID]struct{}, dependencyCount)
+	for i := 1; i <= dependencyCount; i++ {
+		deps[sharedResultID(i)] = struct{}{}
+	}
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{
+		dependencyCount + 1: {
+			id:   dependencyCount + 1,
+			deps: deps,
+		},
+	}}
+
+	base, cancel := context.WithCancel(t.Context())
+	cancelingCtx := &cancelOnErrCheckContext{
+		Context: base,
+		cancel:  cancel,
+		// The first three checks occur at snapshot start, on the result,
+		// and while copying its dependencies. The fourth occurs after a
+		// bounded number of comparisons inside dependency ordering.
+		cancelAt: 4,
+	}
+	defer cancel()
+
+	snapshot, err := c.snapshotPruneStateCancelable(
+		nil,
+		pruneSnapshotMetadata,
+		cacheMetadataResultEstimatedBytes,
+		newPruneCancellationChecker(cancelingCtx),
+	)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Assert(t, snapshot.results == nil)
+	assert.Assert(t, snapshot.usageIdentities == nil)
+	assert.Equal(t, int64(0), snapshot.usedBytes)
+	assert.Equal(t, int32(4), cancelingCtx.checks.Load())
 }
 
 func TestCachePruneMetadataEstimateSkipsPhysicalMeasurementAndUsesColdOrder(t *testing.T) {
@@ -434,4 +509,46 @@ func TestCachePruneMetadataEstimateCancellationDoesNotMutate(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.DeepEqual(t, before, c.MetadataEstimate())
 	assert.Equal(t, 1, c.EntryStats().RetainedCalls)
+}
+
+func TestCachePruneMetadataEstimateCancellationDuringPlanningDoesNotMutate(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	const resultCount = pruneCancellationCheckInterval + 44
+	for i := range resultCount {
+		call := cacheTestIntCall(fmt.Sprintf("metadata-prune-canceled-during-planning-%d", i))
+		_, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+			ResultCall:    call,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(call, i), nil
+		})
+		assert.NilError(t, err)
+	}
+	cacheTestReleaseSession(t, c, ctx)
+
+	// PruneMetadataEstimate checks Err twice before structural planning. The
+	// cancelable active-root and graph snapshots perform checks three and four,
+	// then the graph walk performs check five on its first item and check six
+	// after a bounded amount of work. Cancel there to exercise in-flight
+	// cancellation deterministically, without sleeps or scheduling races.
+	base, cancel := context.WithCancel(ctx)
+	planningCtx := &cancelOnErrCheckContext{
+		Context:  base,
+		cancel:   cancel,
+		cancelAt: 6,
+	}
+	defer cancel()
+
+	before := c.MetadataEstimate()
+	report, err := c.PruneMetadataEstimate(planningCtx, before.EstimatedBytes-1, 1)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Assert(t, report.Triggered)
+	assert.Equal(t, int32(6), planningCtx.checks.Load())
+	assert.Equal(t, 0, report.RemovedPersistedRootCount)
+	assert.Equal(t, resultCount, c.EntryStats().RetainedCalls)
+	assert.DeepEqual(t, before, c.MetadataEstimate())
 }

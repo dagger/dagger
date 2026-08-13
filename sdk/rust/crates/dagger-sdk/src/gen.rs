@@ -6150,6 +6150,9 @@ pub struct EngineCacheEntrySetOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EngineCachePruneOpts<'a> {
+    /// Override the maximum structural metadata estimate in absolute bytes. Explicit values must be positive; the configured/default value is used when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub max_estimated_bytes: Option<isize>,
     /// Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
     #[builder(setter(into, strip_option), default)]
     pub max_used_space: Option<&'a str>,
@@ -6159,10 +6162,13 @@ pub struct EngineCachePruneOpts<'a> {
     /// Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
     #[builder(setter(into, strip_option), default)]
     pub reserved_space: Option<&'a str>,
+    /// Override the structural metadata estimate to target in absolute bytes. Explicit values must be positive and lower than the resolved maximum; the configured/default value is used when omitted.
+    #[builder(setter(into, strip_option), default)]
+    pub target_estimated_bytes: Option<isize>,
     /// Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
     #[builder(setter(into, strip_option), default)]
     pub target_space: Option<&'a str>,
-    /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    /// Use enabled engine-wide default disk and structural policies. If no default disk policy is enabled, the disk stage falls back to pruning all releasable disk-cache entries. If false, explicit options select stages; with no options, all releasable disk-cache entries are pruned.
     #[builder(setter(into, strip_option), default)]
     pub use_default_policy: Option<bool>,
 }
@@ -6267,6 +6273,12 @@ impl EngineCache {
         }
         if let Some(target_space) = opts.target_space {
             query = query.arg("targetSpace", target_space);
+        }
+        if let Some(max_estimated_bytes) = opts.max_estimated_bytes {
+            query = query.arg("maxEstimatedBytes", max_estimated_bytes);
+        }
+        if let Some(target_estimated_bytes) = opts.target_estimated_bytes {
+            query = query.arg("targetEstimatedBytes", target_estimated_bytes);
         }
         query.execute(self.graphql_client.clone()).await
     }

@@ -249,8 +249,11 @@ The limits can be changed in `engine.json` using absolute integer bytes:
 `targetEstimatedBytes` must be positive and lower than
 `maxEstimatedBytes`. Omitting either field, or setting it to `0`, uses its
 built-in default. These fields do not accept percentages or size strings.
-Setting `gc.enabled` to `false` disables both disk and operation-metadata
-garbage collection.
+Setting `gc.enabled` to `false` disables automatic disk and operation-metadata
+garbage collection. Explicit manual structural pruning remains available.
+Manual `useDefaultPolicy` does not enable the structural stage in this case;
+because no default disk policies are active, its existing disk path falls back
+to pruning all releasable disk-cache entries.
 
 The metadata value is a coarse structural estimate based on the number of live
 cached results, symbolic operation terms, and allocated equivalence-class
