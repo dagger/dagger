@@ -31,7 +31,7 @@ const (
 type egraphBenchmarkPersistence string
 
 const (
-	egraphBenchmarkTransient      egraphBenchmarkPersistence = "fresh"
+	egraphBenchmarkTransient      egraphBenchmarkPersistence = "transient"
 	egraphBenchmarkPersistedFresh egraphBenchmarkPersistence = "persisted-fresh"
 	egraphBenchmarkImported       egraphBenchmarkPersistence = "imported"
 )
@@ -808,7 +808,19 @@ func newEgraphBenchmarkSignalingRecorder(capacity int, operation string) *egraph
 
 func (r *egraphBenchmarkLockRecorder) cacheEgraphLockShouldMeasure(_ string, _ cacheEgraphLockMode) bool {
 	sequence := r.sampleNext.Add(1) - 1
-	return sequence%r.sampleEvery == 0
+	if r.sampleEvery == 1 {
+		return true
+	}
+	// A plain sequence%sampleEvery aliases with fixed multi-lock operation
+	// patterns. Select one mixed offset in each complete sampling block instead:
+	// this preserves the exact sampling rate while moving the selected phase so
+	// alternating read/write acquisitions are both represented.
+	block := sequence / r.sampleEvery
+	target := block + 0x9e3779b97f4a7c15
+	target = (target ^ (target >> 30)) * 0xbf58476d1ce4e5b9
+	target = (target ^ (target >> 27)) * 0x94d049bb133111eb
+	target ^= target >> 31
+	return sequence%r.sampleEvery == target%r.sampleEvery
 }
 
 func (r *egraphBenchmarkLockRecorder) cacheEgraphLockAcquired(operation string, _ cacheEgraphLockMode) {
@@ -984,27 +996,21 @@ func egraphBenchmarkSummarizeMeasurements(observations []cacheEgraphMeasurementO
 func egraphBenchmarkReportLocks(b *testing.B, recorder *egraphBenchmarkLockRecorder) {
 	b.Helper()
 	observations := recorder.snapshot()
-	waits := make([]time.Duration, 0, len(observations))
-	holds := make([]time.Duration, 0, len(observations))
-	for _, obs := range observations {
-		waits = append(waits, obs.Wait)
-		holds = append(holds, obs.Hold)
-	}
-	waitDist := egraphBenchmarkDurationDistributionFor(waits)
-	holdDist := egraphBenchmarkDurationDistributionFor(holds)
-	b.ReportMetric(float64(len(observations)), "egraph-lock-acquires")
+	b.ReportMetric(float64(len(observations)), "egraph-lock-samples-recorded")
 	b.ReportMetric(float64(recorder.sampleNext.Load()), "egraph-lock-attempts")
 	b.ReportMetric(float64(recorder.sampleEvery), "lock-sample-every")
-	b.ReportMetric(float64(waitDist.P50NS), "lock-wait-p50-ns")
-	b.ReportMetric(float64(waitDist.P95NS), "lock-wait-p95-ns")
-	b.ReportMetric(float64(waitDist.P99NS), "lock-wait-p99-ns")
-	b.ReportMetric(float64(waitDist.MaxNS), "lock-wait-max-ns")
-	b.ReportMetric(float64(holdDist.P50NS), "lock-hold-p50-ns")
-	b.ReportMetric(float64(holdDist.P95NS), "lock-hold-p95-ns")
-	b.ReportMetric(float64(holdDist.P99NS), "lock-hold-p99-ns")
-	b.ReportMetric(float64(holdDist.MaxNS), "lock-hold-max-ns")
 	b.ReportMetric(float64(recorder.dropped.Load()), "lock-observations-dropped")
 	for _, summary := range egraphBenchmarkSummarizeLocks(observations) {
+		prefix := "lock-" + summary.Operation + "-" + summary.Mode
+		b.ReportMetric(float64(summary.Wait.Count), prefix+"-samples")
+		b.ReportMetric(float64(summary.Wait.P50NS), prefix+"-wait-p50-ns")
+		b.ReportMetric(float64(summary.Wait.P95NS), prefix+"-wait-p95-ns")
+		b.ReportMetric(float64(summary.Wait.P99NS), prefix+"-wait-p99-ns")
+		b.ReportMetric(float64(summary.Wait.MaxNS), prefix+"-wait-max-ns")
+		b.ReportMetric(float64(summary.Hold.P50NS), prefix+"-hold-p50-ns")
+		b.ReportMetric(float64(summary.Hold.P95NS), prefix+"-hold-p95-ns")
+		b.ReportMetric(float64(summary.Hold.P99NS), prefix+"-hold-p99-ns")
+		b.ReportMetric(float64(summary.Hold.MaxNS), prefix+"-hold-max-ns")
 		payload, err := json.Marshal(summary)
 		if err != nil {
 			b.Fatalf("marshal lock summary: %v", err)
@@ -1015,11 +1021,22 @@ func egraphBenchmarkReportLocks(b *testing.B, recorder *egraphBenchmarkLockRecor
 	b.ReportMetric(float64(len(measurementObservations)), "egraph-detail-observations")
 	b.ReportMetric(float64(recorder.measurementDropped.Load()), "detail-observations-dropped")
 	for _, summary := range egraphBenchmarkSummarizeMeasurements(measurementObservations) {
+		prefix := "detail-" + summary.Operation
+		b.ReportMetric(float64(summary.Duration.SumNS), prefix+"-duration-sum-ns")
+		b.ReportMetric(float64(summary.Duration.MaxNS), prefix+"-duration-max-ns")
+		b.ReportMetric(float64(summary.Count.Max), prefix+"-count-max")
+		b.ReportMetric(float64(summary.Maximum.Max), prefix+"-maximum-max")
 		payload, err := json.Marshal(summary)
 		if err != nil {
 			b.Fatalf("marshal detailed measurement summary: %v", err)
 		}
 		b.Logf("EGRAPH_DETAIL_METRIC %s", payload)
+	}
+	if dropped := recorder.dropped.Load(); dropped != 0 {
+		b.Fatalf("lock observation recorder capacity exhausted: dropped %d observations", dropped)
+	}
+	if dropped := recorder.measurementDropped.Load(); dropped != 0 {
+		b.Fatalf("detail observation recorder capacity exhausted: dropped %d observations", dropped)
 	}
 }
 
@@ -1041,12 +1058,12 @@ func egraphBenchmarkRunMeasured(b *testing.B, f *egraphBenchmarkFixture, recorde
 	}
 	egraphBenchmarkReportWidths(b, widths)
 	egraphBenchmarkReportTargetOutputShape(b, targetOutput)
-	egraphBenchmarkReportLocks(b, recorder)
 	b.ReportMetric(float64(duration.Nanoseconds()), "operation-wall-ns")
 	if duration > egraphBenchmarkOperationLimit {
 		b.ReportMetric(1, "stop-limit-exceeded")
 		b.Logf("EGRAPH_BENCH_STOP operation exceeded %s: %s", egraphBenchmarkOperationLimit, duration)
 	}
+	egraphBenchmarkReportLocks(b, recorder)
 	return duration
 }
 
@@ -1085,6 +1102,34 @@ func TestCacheEGraphBenchmarkLockRecorder(t *testing.T) {
 	assert.Assert(t, sawCandidates, "expected a candidate materialization observation")
 }
 
+func TestCacheEGraphBenchmarkSampledLockCoverage(t *testing.T) {
+	const operationCount = 1024
+	f := egraphBenchmarkWideOutputFixture(t, 4, egraphBenchmarkTransient, nil)
+	defer f.close(t)
+	assert.NilError(t, egraphBenchmarkRunLookup(f, egraphBenchmarkLookupExact, "sampled-warm"))
+
+	recorder := newEgraphBenchmarkSampledLockRecorder(2*operationCount+64, 32)
+	f.cache.egraphLockObserver = recorder
+	for range operationCount {
+		assert.NilError(t, egraphBenchmarkRunLookup(f, egraphBenchmarkLookupExact, "sampled-warm"))
+	}
+	f.cache.egraphLockObserver = nil
+
+	assert.Equal(t, recorder.sampleNext.Load(), uint64(2*operationCount))
+	assert.Equal(t, recorder.dropped.Load(), uint64(0))
+	observations := recorder.snapshot()
+	assert.Equal(t, len(observations), 2*operationCount/32)
+	summaries := egraphBenchmarkSummarizeLocks(observations)
+	seen := make(map[string]int64, len(summaries))
+	for _, summary := range summaries {
+		seen[summary.Operation+"/"+summary.Mode] = summary.Wait.Count
+	}
+	assert.Assert(t, seen["recipe-digest-result-ref/read"] > 0,
+		"sampler omitted the exact-hit read acquisition")
+	assert.Assert(t, seen["lookup-request/write"] > 0,
+		"sampler omitted the exact-hit write acquisition")
+}
+
 func TestCacheEGraphBenchmarkCollectorMeasurement(t *testing.T) {
 	const resultCount = 8
 	f := egraphBenchmarkOwnershipFixture(t, resultCount, egraphBenchmarkStarFanout, nil)
@@ -1106,6 +1151,109 @@ func TestCacheEGraphBenchmarkCollectorMeasurement(t *testing.T) {
 	assert.Equal(t, collector.Count, int64(resultCount))
 	assert.Equal(t, collector.Maximum, int64(resultCount-1))
 	assert.Equal(t, len(f.cache.resultsByID), 0)
+}
+
+func egraphBenchmarkMeasurementForOperation(t *testing.T, recorder *egraphBenchmarkLockRecorder, operation string) cacheEgraphMeasurementObservation {
+	t.Helper()
+	for _, obs := range recorder.measurementSnapshot() {
+		if obs.Operation == operation {
+			return obs
+		}
+	}
+	t.Fatalf("missing %q detail observation", operation)
+	return cacheEgraphMeasurementObservation{}
+}
+
+func TestCacheEGraphBenchmarkDetailMeasurements(t *testing.T) {
+	t.Run("lookup candidates", func(t *testing.T) {
+		const width = 4
+		f := egraphBenchmarkWideOutputFixture(t, width, egraphBenchmarkTransient, nil)
+		defer f.close(t)
+
+		recipeMiss := digest.FromString("egraph-wide-extra-miss")
+		f.cache.egraphMu.Lock()
+		match := f.cache.lookupMatchForDigestsLocked(recipeMiss, []call.ExtraDigest{{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: f.sharedOutputDigest,
+		}}, time.Now().Unix())
+		f.cache.egraphMu.Unlock()
+		assert.Equal(t, match.route, CacheHitRouteDigest)
+		assert.Equal(t, match.candidates.Size(), width)
+
+		recorder := newEgraphBenchmarkLockRecorder(64)
+		f.cache.egraphLockObserver = recorder
+		assert.NilError(t, egraphBenchmarkRunLookup(f, egraphBenchmarkLookupExtra, "detail-extra"))
+		f.cache.egraphLockObserver = nil
+		digestCandidates := egraphBenchmarkMeasurementForOperation(t, recorder, "digest-lookup-candidates")
+		assert.Equal(t, digestCandidates.Count, int64(width))
+	})
+
+	t.Run("canonical candidates", func(t *testing.T) {
+		const width = 4
+		f := egraphBenchmarkWideOutputFixture(t, width, egraphBenchmarkImported, nil)
+		defer f.close(t)
+		recorder := newEgraphBenchmarkLockRecorder(64)
+		f.cache.egraphLockObserver = recorder
+		_, err := f.cache.loadResultByResultID(f.ctx, "detail-id-load", nil, uint64(f.outputResultIDs[0]))
+		f.cache.egraphLockObserver = nil
+		assert.NilError(t, err)
+		canonical := egraphBenchmarkMeasurementForOperation(t, recorder, "canonical-candidates")
+		assert.Equal(t, canonical.Count, int64(width))
+	})
+
+	t.Run("metadata prune phases", func(t *testing.T) {
+		const resultCount = 4
+		f := egraphBenchmarkIndependentFixture(t, resultCount, egraphBenchmarkPersistedFresh, nil)
+		defer f.close(t)
+		estimate := f.cache.MetadataEstimate()
+		recorder := newEgraphBenchmarkLockRecorder(128)
+		f.cache.egraphLockObserver = recorder
+		report, err := f.cache.PruneMetadataEstimate(f.ctx, estimate.EstimatedBytes-1, 1)
+		f.cache.egraphLockObserver = nil
+		assert.NilError(t, err)
+		assert.Equal(t, report.RemovedPersistedRootCount, resultCount)
+		snapshot := egraphBenchmarkMeasurementForOperation(t, recorder, "metadata-prune-snapshot")
+		assert.Equal(t, snapshot.Count, int64(resultCount))
+		assert.Equal(t, snapshot.Maximum, int64(0))
+		plan := egraphBenchmarkMeasurementForOperation(t, recorder, "metadata-prune-plan")
+		assert.Equal(t, plan.Count, int64(resultCount))
+		assert.Equal(t, plan.Maximum, int64(resultCount))
+		apply := egraphBenchmarkMeasurementForOperation(t, recorder, "metadata-prune-apply")
+		assert.Equal(t, apply.Count, int64(resultCount))
+		assert.Equal(t, apply.Maximum, int64(resultCount))
+	})
+
+	t.Run("policy prune phases", func(t *testing.T) {
+		const resultCount = 3
+		f := &egraphBenchmarkFixture{setupSession: "detail-policy-prune"}
+		f.cache, f.ctx = egraphBenchmarkNewCache(t, f.setupSession, "", nil)
+		defer f.close(t)
+		for i := range resultCount {
+			frame := cacheTestIntCall("detail-policy-prune-" + strconv.Itoa(i))
+			identity := "detail-policy-prune-identity-" + strconv.Itoa(i)
+			res, err := f.cache.GetOrInitCall(f.ctx, f.setupSession, noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+				return cacheTestSizedIntResult(frame, i, 1, identity, nil), nil
+			})
+			assert.NilError(t, err)
+			egraphBenchmarkAppendResult(f, res)
+		}
+		assert.NilError(t, f.cache.ReleaseSession(f.ctx, f.setupSession))
+		recorder := newEgraphBenchmarkLockRecorder(128)
+		f.cache.egraphLockObserver = recorder
+		report, err := f.cache.Prune(f.ctx, []CachePrunePolicy{{All: true}})
+		f.cache.egraphLockObserver = nil
+		assert.NilError(t, err)
+		assert.Equal(t, len(report.Entries), resultCount)
+		egraphBenchmarkMeasurementForOperation(t, recorder, "policy-prune-measure-sizes")
+		snapshot := egraphBenchmarkMeasurementForOperation(t, recorder, "policy-prune-snapshot")
+		assert.Equal(t, snapshot.Count, int64(resultCount))
+		plan := egraphBenchmarkMeasurementForOperation(t, recorder, "policy-prune-plan")
+		assert.Equal(t, plan.Count, int64(resultCount))
+		assert.Equal(t, plan.Maximum, int64(resultCount))
+		apply := egraphBenchmarkMeasurementForOperation(t, recorder, "policy-prune-apply")
+		assert.Equal(t, apply.Count, int64(resultCount))
+		assert.Equal(t, apply.Maximum, int64(resultCount))
+	})
 }
 
 func TestCacheEGraphBenchmarkFixtureShapes(t *testing.T) {
@@ -1185,19 +1333,36 @@ func TestEGraphBenchmarkDistributions(t *testing.T) {
 	assert.Equal(t, measurements[0].Count.Max, 3)
 	assert.Equal(t, measurements[0].Maximum.Max, 8)
 
-	recorder := newEgraphBenchmarkSampledLockRecorder(64, 8)
-	measured := 0
-	for range 17 {
-		if recorder.cacheEgraphLockShouldMeasure("sample", cacheEgraphLockWrite) {
-			measured++
+	recorder := newEgraphBenchmarkSampledLockRecorder(256, 32)
+	readSamples := 0
+	writeSamples := 0
+	for i := range 4096 {
+		mode := cacheEgraphLockRead
+		if i%2 != 0 {
+			mode = cacheEgraphLockWrite
+		}
+		if recorder.cacheEgraphLockShouldMeasure("sample", mode) {
+			if i%2 == 0 {
+				readSamples++
+			} else {
+				writeSamples++
+			}
 		}
 	}
-	assert.Equal(t, measured, 3)
-	assert.Equal(t, recorder.sampleNext.Load(), uint64(17))
-}
+	assert.Assert(t, readSamples > 0, "deterministic sampler omitted alternating reads")
+	assert.Assert(t, writeSamples > 0, "deterministic sampler omitted alternating writes")
+	assert.Assert(t, readSamples < 4096/2)
+	assert.Assert(t, writeSamples < 4096/2)
+	assert.Equal(t, readSamples+writeSamples, 4096/32)
+	assert.Equal(t, recorder.sampleNext.Load(), uint64(4096))
 
-func egraphBenchmarkSortedIDs(ids []sharedResultID) []sharedResultID {
-	out := slices.Clone(ids)
-	slices.Sort(out)
-	return out
+	bounded := newEgraphBenchmarkLockRecorder(64)
+	for range 65 {
+		bounded.cacheEgraphLockObserved(cacheEgraphLockObservation{})
+		bounded.cacheEgraphMeasurementObserved(cacheEgraphMeasurementObservation{})
+	}
+	assert.Equal(t, len(bounded.snapshot()), 64)
+	assert.Equal(t, bounded.dropped.Load(), uint64(1))
+	assert.Equal(t, len(bounded.measurementSnapshot()), 64)
+	assert.Equal(t, bounded.measurementDropped.Load(), uint64(1))
 }

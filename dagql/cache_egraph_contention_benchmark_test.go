@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -69,7 +68,7 @@ func BenchmarkCacheEGraphRelease(b *testing.B) {
 
 	for _, n := range egraphBenchmarkScales(b, []int{1_000, 10_000, 50_000}) {
 		for _, shape := range []egraphBenchmarkOwnershipShape{egraphBenchmarkChain, egraphBenchmarkStarFanout, egraphBenchmarkStarShared} {
-			b.Run(fmt.Sprintf("%s/fresh/%d", shape, n), func(b *testing.B) {
+			b.Run(fmt.Sprintf("%s/transient/%d", shape, n), func(b *testing.B) {
 				egraphBenchmarkRequireOneIteration(b)
 				guard := newEgraphBenchmarkGuard(b)
 				f := egraphBenchmarkOwnershipFixture(b, n, shape, guard)
@@ -107,7 +106,7 @@ func BenchmarkCacheEGraphRelease(b *testing.B) {
 	}
 
 	for _, width := range egraphBenchmarkScales(b, []int{1_000, 10_000}) {
-		b.Run(fmt.Sprintf("wide-digest/fresh/%d", width), func(b *testing.B) {
+		b.Run(fmt.Sprintf("wide-digest/transient/%d", width), func(b *testing.B) {
 			egraphBenchmarkRequireOneIteration(b)
 			guard := newEgraphBenchmarkGuard(b)
 			f := egraphBenchmarkWideDigestFixture(b, width, guard)
@@ -349,7 +348,7 @@ func BenchmarkCacheEGraphPrune(b *testing.B) {
 
 	for _, n := range egraphBenchmarkScales(b, []int{1_000, 10_000, 50_000}) {
 		for _, shape := range []egraphBenchmarkOwnershipShape{egraphBenchmarkChain, egraphBenchmarkStarFanout, egraphBenchmarkStarShared} {
-			b.Run(fmt.Sprintf("%s/persisted-fresh/%d", shape, n), func(b *testing.B) {
+			b.Run(fmt.Sprintf("%s/in-memory-persisted-roots/%d", shape, n), func(b *testing.B) {
 				egraphBenchmarkRequireOneIteration(b)
 				guard := newEgraphBenchmarkGuard(b)
 				f := egraphBenchmarkOwnershipFixture(b, n, shape, guard)
@@ -396,22 +395,22 @@ func egraphBenchmarkRunMetadataPrune(b *testing.B, f *egraphBenchmarkFixture) {
 	}
 }
 
-func BenchmarkCacheEGraphDiskPruneRepresentative(b *testing.B) {
+func BenchmarkCacheEGraphPolicyPruneRepresentative(b *testing.B) {
 	for _, n := range egraphBenchmarkScales(b, []int{1_000, 10_000}) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			egraphBenchmarkRequireOneIteration(b)
 			guard := newEgraphBenchmarkGuard(b)
-			f := &egraphBenchmarkFixture{setupSession: "disk-prune-setup"}
+			f := &egraphBenchmarkFixture{setupSession: "policy-prune-setup"}
 			f.cache, f.ctx = egraphBenchmarkNewCache(b, f.setupSession, "", nil)
 			for i := range n {
 				guard.checkpoint(i)
-				frame := cacheTestIntCall("egraph-disk-prune-" + strconv.Itoa(i))
-				identity := "egraph-disk-identity-" + strconv.Itoa(i)
+				frame := cacheTestIntCall("egraph-policy-prune-" + strconv.Itoa(i))
+				identity := "egraph-policy-identity-" + strconv.Itoa(i)
 				res, err := f.cache.GetOrInitCall(f.ctx, f.setupSession, noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
 					return cacheTestSizedIntResult(frame, i, 1, identity, nil), nil
 				})
 				if err != nil {
-					b.Fatalf("publish disk result %d: %v", i, err)
+					b.Fatalf("publish policy-prune result %d: %v", i, err)
 				}
 				egraphBenchmarkAppendResult(f, res)
 			}
@@ -426,49 +425,53 @@ func BenchmarkCacheEGraphDiskPruneRepresentative(b *testing.B) {
 				report, err = f.cache.Prune(f.ctx, []CachePrunePolicy{{All: true}})
 				return err
 			})
-			b.ReportMetric(float64(len(report.Entries)), "disk-prune-entries")
-			b.ReportMetric(float64(report.ReclaimedBytes), "disk-prune-reclaimed-B")
+			b.ReportMetric(float64(len(report.Entries)), "policy-prune-entries")
+			b.ReportMetric(float64(report.ReclaimedBytes), "policy-prune-reclaimed-B")
 			if len(f.cache.resultsByID) != 0 {
-				b.Fatalf("results after disk prune: got %d, want 0", len(f.cache.resultsByID))
+				b.Fatalf("results after policy prune: got %d, want 0", len(f.cache.resultsByID))
 			}
 		})
 	}
 }
 
 func BenchmarkCacheEGraphInstrumentationOverhead(b *testing.B) {
-	for pair := range 5 {
+	orders := [][]string{
+		{"disabled", "sampled", "full"},
+		{"sampled", "full", "disabled"},
+		{"full", "disabled", "sampled"},
+		{"disabled", "full", "sampled"},
+		{"sampled", "disabled", "full"},
+	}
+	for pair, order := range orders {
 		b.Run(fmt.Sprintf("pair-%d", pair+1), func(b *testing.B) {
-			for _, measured := range []bool{false, true} {
-				name := "disabled"
-				if measured {
-					name = "enabled"
-				}
-				b.Run(name, func(b *testing.B) {
-					f := egraphBenchmarkIndependentFixture(b, 1, egraphBenchmarkTransient, nil)
+			for _, instrumentation := range order {
+				b.Run(instrumentation, func(b *testing.B) {
+					f := egraphBenchmarkWideOutputFixture(b, 64, egraphBenchmarkTransient, nil)
 					defer f.close(b)
-					request := cacheTestIntCall("egraph-independent-0")
-					if _, err := f.cache.GetOrInitCall(f.ctx, "overhead-session", noopTypeResolver{}, &CallRequest{ResultCall: request}, func(context.Context) (AnyResult, error) {
-						return nil, fmt.Errorf("overhead warmup missed")
-					}); err != nil {
-						b.Fatal(err)
+					const sessionID = "overhead-session"
+					if err := egraphBenchmarkRunLookup(f, egraphBenchmarkLookupExact, sessionID); err != nil {
+						b.Fatalf("overhead warmup: %v", err)
 					}
 					var recorder *egraphBenchmarkLockRecorder
-					if measured {
-						recorder = newEgraphBenchmarkSampledLockRecorder(b.N/32+64, 32)
+					switch instrumentation {
+					case "sampled":
+						recorder = newEgraphBenchmarkSampledLockRecorder(2*b.N+128, 32)
+					case "full":
+						recorder = newEgraphBenchmarkLockRecorder(2*b.N + 128)
+					}
+					if recorder != nil {
 						f.cache.egraphLockObserver = recorder
 					}
 					b.ReportAllocs()
 					b.ResetTimer()
 					for range b.N {
-						if _, err := f.cache.GetOrInitCall(f.ctx, "overhead-session", noopTypeResolver{}, &CallRequest{ResultCall: request}, func(context.Context) (AnyResult, error) {
-							return nil, fmt.Errorf("overhead lookup missed")
-						}); err != nil {
+						if err := egraphBenchmarkRunLookup(f, egraphBenchmarkLookupExact, sessionID); err != nil {
 							b.Fatal(err)
 						}
 					}
 					b.StopTimer()
 					f.cache.egraphLockObserver = nil
-					if measured {
+					if recorder != nil {
 						egraphBenchmarkReportLocks(b, recorder)
 					}
 				})
@@ -520,7 +523,11 @@ func egraphBenchmarkRunSteadyState(b *testing.B, f *egraphBenchmarkFixture, oper
 	totalOperations := workers * operationsPerWorker
 	widths := egraphBenchmarkWidthsForCache(f.cache)
 	targetOutput := egraphBenchmarkTargetOutputShapeForFixture(f)
-	recorder := newEgraphBenchmarkSampledLockRecorder(totalOperations/32+128, 32)
+	expectedLockAttempts := totalOperations
+	if operation == "exact-recipe" {
+		expectedLockAttempts *= 2
+	}
+	recorder := newEgraphBenchmarkSampledLockRecorder(expectedLockAttempts+128, 32)
 	f.cache.egraphLockObserver = recorder
 	latencies := make([]time.Duration, totalOperations)
 	start := make(chan struct{})
@@ -565,7 +572,6 @@ func egraphBenchmarkRunSteadyState(b *testing.B, f *egraphBenchmarkFixture, oper
 	}
 	egraphBenchmarkReportWidths(b, widths)
 	egraphBenchmarkReportTargetOutputShape(b, targetOutput)
-	egraphBenchmarkReportLocks(b, recorder)
 	dist := egraphBenchmarkDurationDistributionFor(latencies)
 	b.ReportMetric(float64(totalOperations), "foreground-operations")
 	b.ReportMetric(float64(totalOperations)/duration.Seconds(), "foreground-ops/s")
@@ -577,6 +583,7 @@ func egraphBenchmarkRunSteadyState(b *testing.B, f *egraphBenchmarkFixture, oper
 		b.ReportMetric(1, "stop-limit-exceeded")
 		b.Logf("EGRAPH_BENCH_STOP steady-state operation exceeded %s: %s", egraphBenchmarkOperationLimit, duration)
 	}
+	egraphBenchmarkReportLocks(b, recorder)
 }
 
 type egraphBenchmarkContentionOperation string
@@ -654,7 +661,8 @@ func egraphBenchmarkRunContention(b *testing.B, f *egraphBenchmarkFixture, worke
 	f.cache.egraphLockObserver = recorder
 	b.StartTimer()
 	latencies := make([]time.Duration, workers)
-	errs := make(chan error, workers+1)
+	errs := make(chan error, workers)
+	abort := make(chan struct{})
 	var ready sync.WaitGroup
 	ready.Add(workers)
 	var done sync.WaitGroup
@@ -663,7 +671,11 @@ func egraphBenchmarkRunContention(b *testing.B, f *egraphBenchmarkFixture, worke
 		go func(i int) {
 			defer done.Done()
 			ready.Done()
-			<-recorder.signal
+			select {
+			case <-recorder.signal:
+			case <-abort:
+				return
+			}
 			started := time.Now()
 			_, err := f.cache.GetOrInitCall(f.ctx, fmt.Sprintf("contention-foreground-%d", i), noopTypeResolver{}, &CallRequest{ResultCall: stableFrame}, func(context.Context) (AnyResult, error) {
 				return nil, fmt.Errorf("foreground exact lookup missed")
@@ -675,26 +687,27 @@ func egraphBenchmarkRunContention(b *testing.B, f *egraphBenchmarkFixture, worke
 		}(i)
 	}
 	ready.Wait()
-	longDone := make(chan time.Duration, 1)
-	go func() {
-		started := time.Now()
-		err := longOp()
-		longDone <- time.Since(started)
-		if err != nil {
-			errs <- err
-		}
-	}()
-
+	longStarted := time.Now()
+	longErr := longOp()
+	longDuration := time.Since(longStarted)
+	signaled := false
 	select {
 	case <-recorder.signal:
-	case <-time.After(5 * time.Second):
-		f.cache.egraphLockObserver = nil
-		b.Fatalf("long operation never acquired %q within 5s", signalOp)
+		signaled = true
+	default:
 	}
-	longDuration := <-longDone
+	if !signaled {
+		close(abort)
+	}
 	done.Wait()
 	close(errs)
 	f.cache.egraphLockObserver = nil
+	if longErr != nil {
+		b.Fatal(longErr)
+	}
+	if !signaled {
+		b.Fatalf("long operation completed without acquiring measured lock %q", signalOp)
+	}
 	for err := range errs {
 		if err != nil {
 			b.Fatal(err)
@@ -703,19 +716,19 @@ func egraphBenchmarkRunContention(b *testing.B, f *egraphBenchmarkFixture, worke
 	b.StopTimer()
 	egraphBenchmarkReportWidths(b, widths)
 	egraphBenchmarkReportTargetOutputShape(b, targetOutput)
-	egraphBenchmarkReportLocks(b, recorder)
 	dist := egraphBenchmarkDurationDistributionFor(latencies)
 	b.ReportMetric(float64(longDuration.Nanoseconds()), "long-operation-ns")
-	b.ReportMetric(float64(dist.P50NS), "foreground-p50-ns")
-	b.ReportMetric(float64(dist.P95NS), "foreground-p95-ns")
-	b.ReportMetric(float64(dist.P99NS), "foreground-p99-ns")
-	b.ReportMetric(float64(dist.MaxNS), "foreground-max-ns")
+	b.ReportMetric(float64(workers), "foreground-latency-samples")
+	if workers == 1 {
+		b.ReportMetric(float64(dist.MaxNS), "foreground-latency-ns")
+	} else {
+		b.ReportMetric(float64(dist.P50NS), "foreground-latency-sample-p50-ns")
+		b.ReportMetric(float64(dist.P95NS), "foreground-latency-sample-p95-ns")
+		b.ReportMetric(float64(dist.MaxNS), "foreground-latency-sample-max-ns")
+	}
 	if longDuration > egraphBenchmarkOperationLimit {
 		b.ReportMetric(1, "stop-limit-exceeded")
 		b.Logf("EGRAPH_BENCH_STOP contention long operation exceeded %s: %s", egraphBenchmarkOperationLimit, longDuration)
 	}
-}
-
-func egraphBenchmarkCaseFromName(name string) string {
-	return strings.ReplaceAll(name, "/", "_")
+	egraphBenchmarkReportLocks(b, recorder)
 }

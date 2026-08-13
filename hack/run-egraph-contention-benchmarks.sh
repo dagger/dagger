@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+invocation_args=("$@")
 mode="${1:-screen}"
 output_root="${2:-/tmp/dagger-egraph-bench}"
 mkdir -p "$output_root/raw" "$output_root/profiles"
@@ -12,6 +13,10 @@ fi
 
 characterize_environment() {
 	{
+		printf 'phase=%s\n' "$mode"
+		printf 'argv='
+		printf '%q ' "${invocation_args[@]}"
+		printf '\n'
 		date -u +'%Y-%m-%dT%H:%M:%SZ'
 		uname -a
 		go version
@@ -27,7 +32,8 @@ characterize_environment() {
 			printf '%s=' "$governor"
 			<"$governor"
 		done
-	} >"$output_root/environment.txt" 2>&1
+		printf '\n'
+	} >>"$output_root/environment-history.txt" 2>&1
 }
 
 sanitize() {
@@ -35,6 +41,44 @@ sanitize() {
 }
 
 declare -A stopped
+
+extract_max_rss() {
+	local raw="$1"
+	local max_rss
+	max_rss="$(awk -F: '/Maximum resident set size \(kbytes\)/ {gsub(/^[[:space:]]+/, "", $2); print $2}' "$raw" | tail -n1)"
+	printf '%s' "${max_rss:-0}"
+}
+
+run_preflight() {
+	local family="$1"
+	local raw_name="$2"
+	shift 2
+	local raw="$output_root/raw/$raw_name"
+	if [[ -e "$raw" ]]; then
+		printf 'refusing to overwrite existing preflight output: %s\n' "$raw" >&2
+		exit 2
+	fi
+	local started=$SECONDS
+	set +e
+	/usr/bin/time -v timeout --signal=TERM 75s "$@" >"$raw" 2>&1
+	local status=$?
+	set -e
+	local elapsed=$((SECONDS - started))
+	local max_rss
+	max_rss="$(extract_max_rss "$raw")"
+	printf 'preflight\t%s\t-\t1\t%s\t%s\t%s\t%s\n' \
+		"$family" "$status" "$elapsed" "$max_rss" "$raw" >>"$manifest"
+	if [[ "$status" -ne 0 ]]; then
+		printf 'preflight failed or exceeded 75s: family=%s status=%s raw=%s\n' \
+			"$family" "$status" "$raw" >&2
+		exit "$status"
+	fi
+	if (( max_rss > 4194304 )); then
+		printf 'preflight exceeded 4 GiB RSS: family=%s max_rss_kib=%s raw=%s\n' \
+			"$family" "$max_rss" "$raw" >&2
+		exit 1
+	fi
+}
 
 run_point() {
 	local phase="$1"
@@ -49,6 +93,10 @@ run_point() {
 		local safe
 		safe="$(sanitize "$phase-$family-$scale-r$replicate")"
 		local raw="$output_root/raw/$safe.txt"
+		if [[ -e "$raw" ]]; then
+			printf 'refusing to overwrite existing benchmark output: %s\n' "$raw" >&2
+			exit 2
+		fi
 		local started=$SECONDS
 		set +e
 		/usr/bin/time -v timeout --signal=TERM 75s \
@@ -57,10 +105,13 @@ run_point() {
 			>"$raw" 2>&1
 		local status=$?
 		set -e
+		if [[ "$status" -eq 0 ]] && ! grep -Eq '^BenchmarkCacheEGraph.*-[0-9]+[[:space:]]+1[[:space:]]' "$raw"; then
+			printf 'runner validation: benchmark emitted no one-iteration result line\n' >>"$raw"
+			status=1
+		fi
 		local elapsed=$((SECONDS - started))
 		local max_rss
-		max_rss="$(awk -F: '/Maximum resident set size \(kbytes\)/ {gsub(/^[[:space:]]+/, "", $2); print $2}' "$raw" | tail -n1)"
-		max_rss="${max_rss:-0}"
+		max_rss="$(extract_max_rss "$raw")"
 		printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
 			"$phase" "$family" "$scale" "$replicate" "$status" "$elapsed" "$max_rss" "$raw" >>"$manifest"
 
@@ -87,10 +138,6 @@ run_point() {
 				"$family" "$scale" "$max_rss" "$raw"
 			return 0
 		fi
-		if ! grep -Eq '^BenchmarkCacheEGraph.*-[0-9]+[[:space:]]+1[[:space:]]' "$raw"; then
-			printf 'benchmark emitted no result line: family=%s scale=%s raw=%s\n' "$family" "$scale" "$raw" >&2
-			exit 1
-		fi
 	done
 }
 
@@ -102,30 +149,93 @@ run_unscaled_point() {
 }
 
 run_correctness_and_overhead() {
-	go test ./dagql -run 'TestCacheEGraphBenchmark|TestEGraphBenchmarkDistributions' -count=1 \
-		>"$output_root/raw/correctness.txt" 2>&1
-	go test ./dagql -run '^$' -bench '^BenchmarkCacheEGraphInstrumentationOverhead$' \
-		-benchtime=100000x -count=1 -v >"$output_root/raw/instrumentation-overhead.txt" 2>&1
+	run_preflight correctness correctness.txt \
+		go test ./dagql -run 'TestCacheEGraphBenchmark|TestEGraphBenchmarkDistributions' -count=1
+	run_preflight instrumentation-overhead instrumentation-overhead.txt \
+		go test ./dagql -run '^$' -bench '^BenchmarkCacheEGraphInstrumentationOverhead$' \
+		-benchtime=100000x -count=1 -v
 	local overhead_raw="$output_root/raw/instrumentation-overhead.txt"
-	local disabled_median
-	local enabled_median
-	local paired_overhead_median
-	disabled_median="$(awk 'index($1, "/disabled-") && $4 == "ns/op" {print $3}' "$overhead_raw" | sort -n | awk '{v[NR]=$1} END {if (NR > 0) print v[int((NR+1)/2)]}')"
-	enabled_median="$(awk 'index($1, "/enabled-") && $4 == "ns/op" {print $3}' "$overhead_raw" | sort -n | awk '{v[NR]=$1} END {if (NR > 0) print v[int((NR+1)/2)]}')"
-	paired_overhead_median="$(awk '
-		index($1, "/disabled-") && $4 == "ns/op" {key=$1; sub(/\/disabled-.*/, "", key); disabled[key]=$3}
-		index($1, "/enabled-") && $4 == "ns/op" {key=$1; sub(/\/enabled-.*/, "", key); enabled[key]=$3}
-		END {for (key in disabled) if (key in enabled) print 100 * (enabled[key]-disabled[key]) / disabled[key]}
-	' "$overhead_raw" | sort -n | awk '{v[NR]=$1} END {if (NR > 0) printf "%.3f", v[int((NR+1)/2)]}')"
-	if [[ -z "$disabled_median" || -z "$enabled_median" || -z "$paired_overhead_median" ]]; then
-		printf 'could not parse instrumentation overhead medians from %s\n' "$overhead_raw" >&2
-		exit 1
+	local gate="$output_root/instrumentation-gate.txt"
+	if [[ -e "$gate" ]]; then
+		printf 'refusing to overwrite existing instrumentation gate: %s\n' "$gate" >&2
+		exit 2
 	fi
-	printf 'disabled_median_ns_per_op=%s\nenabled_median_ns_per_op=%s\npaired_overhead_median_percent=%s\n' \
-		"$disabled_median" "$enabled_median" "$paired_overhead_median" >"$output_root/instrumentation-gate.txt"
-	if awk -v overhead="$paired_overhead_median" 'BEGIN {exit !(overhead > 5)}'; then
-		printf 'instrumentation overhead %.3f%% exceeds 5%%; stop for review (%s)\n' \
-			"$paired_overhead_median" "$overhead_raw" >&2
+	set +e
+	awk '
+		function sort_numbers(values, count,    i, j, tmp) {
+			for (i = 1; i <= count; i++) {
+				for (j = i + 1; j <= count; j++) {
+					if (values[j] < values[i]) {
+						tmp = values[i]; values[i] = values[j]; values[j] = tmp
+					}
+				}
+			}
+		}
+		function absolute(value) { return value < 0 ? -value : value }
+		$4 == "ns/op" && index($1, "BenchmarkCacheEGraphInstrumentationOverhead/") == 1 {
+			split($1, parts, "/")
+			pair = parts[2]
+			config = parts[3]
+			sub(/-[0-9]+$/, "", config)
+			elapsed[pair SUBSEP config] = $3
+		}
+		END {
+			status = 0
+			for (pair_number = 1; pair_number <= 5; pair_number++) {
+				pair = "pair-" pair_number
+				if (!((pair SUBSEP "disabled") in elapsed) ||
+				    !((pair SUBSEP "sampled") in elapsed) ||
+				    !((pair SUBSEP "full") in elapsed)) {
+					printf "missing_pair=%s\n", pair
+					status = 10
+					continue
+				}
+				disabled[pair_number] = elapsed[pair SUBSEP "disabled"]
+				for (config_number = 1; config_number <= 2; config_number++) {
+					config = config_number == 1 ? "sampled" : "full"
+					overhead[config, pair_number] = 100 * (elapsed[pair SUBSEP config] - disabled[pair_number]) / disabled[pair_number]
+					printf "%s_pair_%d_disabled_ns_per_op=%.3f\n", config, pair_number, disabled[pair_number]
+					printf "%s_pair_%d_instrumented_ns_per_op=%.3f\n", config, pair_number, elapsed[pair SUBSEP config]
+					printf "%s_pair_%d_overhead_percent=%.3f\n", config, pair_number, overhead[config, pair_number]
+				}
+			}
+			if (status != 0) exit status
+			for (config_number = 1; config_number <= 2; config_number++) {
+				config = config_number == 1 ? "sampled" : "full"
+				delete values
+				for (i = 1; i <= 5; i++) values[i] = overhead[config, i]
+				sort_numbers(values, 5)
+				center = values[3]
+				delete deviations
+				for (i = 1; i <= 5; i++) deviations[i] = absolute(values[i] - center)
+				sort_numbers(deviations, 5)
+				mad = deviations[3]
+				printf "%s_median_overhead_percent=%.3f\n", config, center
+				printf "%s_mad_percentage_points=%.3f\n", config, mad
+				printf "%s_min_overhead_percent=%.3f\n", config, values[1]
+				printf "%s_max_overhead_percent=%.3f\n", config, values[5]
+				problem = ""
+				if (absolute(center) > 5) problem = "median_magnitude_exceeds_5_percent"
+				if (mad > 5) {
+					if (problem != "") problem = problem "+"
+					problem = problem "pair_variability_exceeds_5_percentage_points"
+				}
+				if (problem == "") printf "%s_gate_status=pass\n", config
+				else {
+					printf "%s_gate_status=%s\n", config, problem
+					status = 11
+				}
+			}
+			if (status == 0) print "gate_status=pass"
+			else print "gate_status=fail"
+			exit status
+		}
+	' "$overhead_raw" >"$gate"
+	local gate_status=$?
+	set -e
+	if [[ "$gate_status" -ne 0 ]]; then
+		printf 'instrumentation overhead gate did not pass: status=%s gate=%s raw=%s\n' \
+			"$gate_status" "$gate" "$overhead_raw" >&2
 		exit 1
 	fi
 }
@@ -133,7 +243,7 @@ run_correctness_and_overhead() {
 run_screen() {
 	run_correctness_and_overhead
 
-	for persistence in fresh imported; do
+	for persistence in transient imported; do
 		for scale in 10000 50000 200000; do
 			run_point serial "release-independent-$persistence" "$scale" \
 				"^BenchmarkCacheEGraphRelease/independent/$persistence/$scale$"
@@ -142,10 +252,10 @@ run_screen() {
 	for shape in chain star-fanout star-shared; do
 		for scale in 1000 10000 50000; do
 			run_point serial "release-$shape" "$scale" \
-				"^BenchmarkCacheEGraphRelease/$shape/fresh/$scale$"
+				"^BenchmarkCacheEGraphRelease/$shape/transient/$scale$"
 		done
 	done
-	for persistence in fresh imported; do
+	for persistence in transient imported; do
 		for scale in 64 128 256 512 1024 2048; do
 			run_point serial "release-wide-output-$persistence" "$scale" \
 				"^BenchmarkCacheEGraphRelease/wide-output/$persistence/$scale$"
@@ -153,11 +263,11 @@ run_screen() {
 	done
 	for scale in 1000 10000; do
 		run_point serial release-wide-digest "$scale" \
-			"^BenchmarkCacheEGraphRelease/wide-digest/fresh/$scale$"
+			"^BenchmarkCacheEGraphRelease/wide-digest/transient/$scale$"
 	done
 
 	for route in exact-recipe shared-extra structural; do
-		for persistence in fresh imported; do
+		for persistence in transient imported; do
 			for ownership in fresh-session same-session-repeat; do
 				for scale in 64 128 256 512 1024 2048; do
 					run_point serial "lookup-$route-$persistence-$ownership" "$scale" \
@@ -168,7 +278,7 @@ run_screen() {
 	done
 
 	for operation in direct receiver; do
-		for persistence in fresh imported; do
+		for persistence in transient imported; do
 			for ownership in fresh-session same-session-repeat; do
 				for scale in 64 128 256 512 1024 2048; do
 					run_point serial "id-$operation-$persistence-$ownership" "$scale" \
@@ -184,7 +294,7 @@ run_screen() {
 				"^BenchmarkCacheEGraphPublication/publish/$publication/$scale$"
 		done
 	done
-	for persistence in fresh imported; do
+	for persistence in transient imported; do
 		for terms in 1000 10000 50000; do
 			for merges in 1 8 64; do
 				run_point serial "popular-$persistence-merges-$merges" "$terms" \
@@ -202,7 +312,7 @@ run_screen() {
 	for shape in chain star-fanout star-shared; do
 		for scale in 1000 10000 50000; do
 			run_point serial "prune-$shape" "$scale" \
-				"^BenchmarkCacheEGraphPrune/$shape/persisted-fresh/$scale$"
+				"^BenchmarkCacheEGraphPrune/$shape/in-memory-persisted-roots/$scale$"
 		done
 	done
 	for persistence in persisted-fresh imported; do
@@ -212,19 +322,23 @@ run_screen() {
 		done
 	done
 	for scale in 1000 10000; do
-		run_point serial disk-prune-representative "$scale" \
-			"^BenchmarkCacheEGraphDiskPruneRepresentative/$scale$"
+		run_point serial policy-prune-representative "$scale" \
+			"^BenchmarkCacheEGraphPolicyPruneRepresentative/$scale$"
 	done
 
+	local max_workers=24
+	if (( max_workers > $(nproc) )); then
+		max_workers="$(nproc)"
+	fi
+	local worker_counts=(1)
+	if (( max_workers != 1 )); then
+		worker_counts+=("$max_workers")
+	fi
 	for operation in exact-recipe id-load; do
-		for persistence in fresh imported; do
-			for workers in 1 24; do
-				local actual_workers="$workers"
-				if (( workers > $(nproc) )); then
-					actual_workers="$(nproc)"
-				fi
-				run_unscaled_point steady "steady-$operation-$persistence-workers-$actual_workers" \
-					"^BenchmarkCacheEGraphSteadyState/$operation/$persistence/workers-$actual_workers$"
+		for persistence in transient imported; do
+			for workers in "${worker_counts[@]}"; do
+				run_unscaled_point steady "steady-$operation-$persistence-workers-$workers" \
+					"^BenchmarkCacheEGraphSteadyState/$operation/$persistence/workers-$workers$"
 			done
 		done
 	done
@@ -260,29 +374,55 @@ run_profile() {
 		printf 'a first-anomaly profile already exists at %s\n' "$marker" >&2
 		exit 2
 	fi
-	local raw="$output_root/raw/profile-first-anomaly.txt"
-	printf 'scale=%s\nregex=%s\nraw=%s\n' "$scale" "$regex" "$raw" >"$marker"
+	local claim="$output_root/profiles/.first-anomaly-in-progress"
+	if ! mkdir "$claim" 2>/dev/null; then
+		printf 'a first-anomaly profile is already in progress at %s\n' "$claim" >&2
+		exit 2
+	fi
+	local attempt_id
+	attempt_id="$(date -u +'%Y%m%dT%H%M%SZ')-$$"
+	local attempt="$output_root/profiles/attempt-$attempt_id"
+	mkdir "$attempt"
+	local raw="$output_root/raw/profile-first-anomaly-$attempt_id.txt"
+	printf 'scale=%s\nregex=%s\nraw=%s\n' "$scale" "$regex" "$raw" >"$attempt/request.txt"
+	local started=$SECONDS
 	set +e
 	/usr/bin/time -v timeout --signal=TERM 75s env DAGGER_EGRAPH_BENCH_SCALE="$scale" go test ./dagql -run '^$' -bench "$regex" \
 		-benchtime=1x -count=1 -v \
-		-cpuprofile "$output_root/profiles/cpu.pprof" \
-		-memprofile "$output_root/profiles/heap.pprof" \
-		-mutexprofile "$output_root/profiles/mutex.pprof" \
-		-blockprofile "$output_root/profiles/block.pprof" \
+		-cpuprofile "$attempt/cpu.pprof" \
+		-memprofile "$attempt/heap.pprof" \
+		-mutexprofile "$attempt/mutex.pprof" \
+		-blockprofile "$attempt/block.pprof" \
 		>"$raw" 2>&1
 	local status=$?
 	set -e
+	if [[ "$status" -eq 0 ]] && ! grep -Eq '^BenchmarkCacheEGraph.*-[0-9]+[[:space:]]+1[[:space:]]' "$raw"; then
+		printf 'runner validation: profile emitted no one-iteration result line\n' >>"$raw"
+		status=1
+	fi
+	local elapsed=$((SECONDS - started))
+	local max_rss
+	max_rss="$(extract_max_rss "$raw")"
+	printf 'profile\tfirst-anomaly\t%s\t1\t%s\t%s\t%s\t%s\n' \
+		"$scale" "$status" "$elapsed" "$max_rss" "$raw" >>"$manifest"
 	if [[ "$status" -ne 0 ]]; then
+		printf 'status=%s\n' "$status" >"$attempt/FAILED"
+		rmdir "$claim"
 		printf 'profile failed or exceeded 75s: status=%s raw=%s\n' "$status" "$raw" >&2
 		exit "$status"
 	fi
-	local max_rss
-	max_rss="$(awk -F: '/Maximum resident set size \(kbytes\)/ {gsub(/^[[:space:]]+/, "", $2); print $2}' "$raw" | tail -n1)"
-	max_rss="${max_rss:-0}"
 	if (( max_rss > 4194304 )); then
+		printf 'max_rss_kib=%s\n' "$max_rss" >"$attempt/FAILED"
+		rmdir "$claim"
 		printf 'profile exceeded 4 GiB RSS: max_rss_kib=%s raw=%s\n' "$max_rss" "$raw" >&2
 		exit 1
 	fi
+	printf 'scale=%s\nregex=%s\nraw=%s\nattempt=%s\n' \
+		"$scale" "$regex" "$raw" "$attempt" >"$attempt/SUCCESS"
+	printf 'scale=%s\nregex=%s\nraw=%s\nattempt=%s\n' \
+		"$scale" "$regex" "$raw" "$attempt" >"$marker.tmp"
+	mv "$marker.tmp" "$marker"
+	rmdir "$claim"
 }
 
 characterize_environment

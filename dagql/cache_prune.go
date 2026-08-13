@@ -276,10 +276,10 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	compactedNeeded := false
 	for policyIdx, policy := range policies {
 		activeRoots := c.snapshotSessionResultIDs()
-		sizeMeasurement := c.beginEgraphMeasurement("disk-prune-measure-sizes")
+		sizeMeasurement := c.beginEgraphMeasurement("policy-prune-measure-sizes")
 		c.measureAllResultSizes(ctx)
 		c.endEgraphMeasurement(sizeMeasurement, 0, 0)
-		snapshotMeasurement := c.beginEgraphMeasurement("disk-prune-snapshot")
+		snapshotMeasurement := c.beginEgraphMeasurement("policy-prune-snapshot")
 		snapshot := c.snapshotPruneState(activeRoots, pruneSnapshotDisk, 0)
 		c.endEgraphMeasurement(snapshotMeasurement, len(snapshot.results), len(activeRoots))
 
@@ -291,7 +291,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			continue
 		}
 
-		planMeasurement := c.beginEgraphMeasurement("disk-prune-plan")
+		planMeasurement := c.beginEgraphMeasurement("policy-prune-plan")
 		activeClosure := pruneActiveClosure(snapshot, activeRoots)
 		candidates := c.collectPruneCandidates(ctx, policyIdx, snapshot, activeClosure, policy, now)
 		if len(candidates) == 0 {
@@ -307,7 +307,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 
 		policyReclaimed := int64(0)
 		policyApplied := 0
-		applyMeasurement := c.beginEgraphMeasurement("disk-prune-apply")
+		applyMeasurement := c.beginEgraphMeasurement("policy-prune-apply")
 		for _, planEntry := range plan {
 			snapRes, ok := snapshot.results[planEntry.candidate.resultID]
 			if ok {
@@ -364,7 +364,7 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	}
 
 	if compactedNeeded {
-		lock := c.lockEgraphMeasured("disk-prune-compaction")
+		lock := c.lockEgraphMeasured("policy-prune-compaction")
 		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(false); compacted {
 			slog.Debug("dagql prune compacted eq classes",
 				"oldSlots", oldSlots,
