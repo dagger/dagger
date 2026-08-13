@@ -248,6 +248,15 @@ class Context:
         gql_name = element_type._graphql_name()  # noqa: SLF001
         return [element_type(ctx.select_id(gql_name, v.id)) for v in ids]
 
+    async def execute_object(self, object_type: type[Obj_T]) -> Obj_T | None:
+        ctx = self.select("id", [])
+        id_ = await ctx.execute(str | None)
+        if id_ is None:
+            return None
+
+        gql_name = object_type._graphql_name()  # noqa: SLF001
+        return object_type(ctx.select_id(gql_name, id_))
+
     async def execute_sync(
         self,
         obj: Obj_T,
