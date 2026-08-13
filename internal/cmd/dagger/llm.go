@@ -101,6 +101,12 @@ type LLMSession struct {
 	workspaceHostResolved bool
 	workspaceHostRoot     string
 	workspaceHostCwd      string
+
+	// contextVizURL is the context visualizer's URL once its local web
+	// server has started (see context_viz.go); contextVizL guards the
+	// start-once dance.
+	contextVizURL string
+	contextVizL   sync.Mutex
 }
 
 func NewLLMSession(

@@ -303,6 +303,25 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			},
 		},
 		{
+			Use:         ".context",
+			Description: "Open the context visualizer: a web UI showing what occupies the context window",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				llm, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				url, err := llm.ContextVizURL()
+				if err != nil {
+					return err
+				}
+				llm.ShowContextViz()
+				return h.Print(ctx, url)
+			},
+		},
+		{
 			Use:         ".resume [session]",
 			Description: "Resume a saved session (interactive picker if no id given)",
 			GroupID:     "llm",

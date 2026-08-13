@@ -206,6 +206,14 @@ type sessionAgent struct {
 	// .clear. Paths already inside the workspace are not tracked here: they
 	// are rewritten to workspace-relative paths instead of being mounted.
 	references []referenceInfo
+
+	// tunnels tracks the URLs the user has attached with @ this conversation
+	// (see attachTunnel). Each runs as a container-to-host tunnel on the
+	// session network, with the prompt token rewritten to its engine-side
+	// address; they share the "References" sidebar and are likewise dropped
+	// on .clear. The services themselves keep running: they are cached
+	// per-session, so a sibling conversation may be relying on the same one.
+	tunnels []tunnelInfo
 }
 
 // errAgentInterrupted is the cancellation cause a Ctrl-C on this conversation
@@ -644,10 +652,11 @@ func (a *sessionAgent) WithPrompt(ctx context.Context, input string) error {
 	a.beginTurn(cancel)
 	defer a.endTurn()
 
-	// Resolve any @-path references in the prompt: paths already inside the
-	// workspace are rewritten to workspace-relative paths, and the rest are
-	// mounted read-only in the workspace with the prompt annotated with their
-	// workspace locations.
+	// Resolve any @-references in the prompt: paths already inside the
+	// workspace are rewritten to workspace-relative paths, other paths are
+	// mounted read-only in the workspace, and URLs are remapped to
+	// container-to-host tunnels — with the prompt annotated with the
+	// resulting workspace locations and addresses.
 	input = a.attachReferences(a.session.plumbingCtx, input)
 
 	resolvedModel, err := a.llm.Model(a.session.plumbingCtx)
@@ -1146,6 +1155,7 @@ func (a *sessionAgent) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rer
 func (a *sessionAgent) Clear() {
 	a.reset()
 	a.references = nil
+	a.tunnels = nil
 	a.updateReferencesPreview()
 }
 

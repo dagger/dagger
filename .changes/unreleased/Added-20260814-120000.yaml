@@ -1,0 +1,18 @@
+kind: Added
+body: |
+  `dagger agent` @-references now understand URLs: attaching
+  `@https://localhost:6060` (or any `scheme://host[:port]` endpoint) sets up a
+  container-to-host tunnel to the referenced address and rewrites the token to
+  the tunnel's engine-side address, so the agent's containers can reach
+  endpoints only your machine can see — localhost dev servers, VPN'd or
+  intranet hosts. The endpoint is dialed from the host's network exactly as
+  typed, and lazily: each connection is forwarded on demand, so the server
+  doesn't need to be running when you write the prompt — only when the agent
+  actually touches it. The prompt is annotated with the original-to-tunnel
+  mapping, and attached URLs show up in the References sidebar alongside
+  @-mounted paths. Well-known schemes (http, https, ws, wss) imply their
+  default ports; any other scheme works with an explicit port.
+time: 2026-08-14T12:00:00Z
+custom:
+  Author: vito
+  PR: ""
